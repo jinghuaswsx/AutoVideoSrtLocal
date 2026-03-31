@@ -23,6 +23,7 @@ Thumbs.db
 dist/
 build/
 out/
+.worktrees/
 
 # Logs
 *.log
