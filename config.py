@@ -21,6 +21,15 @@ def _path(name: str, default: str) -> str:
     return str((BASE_DIR / value).resolve())
 
 
+def _optional_path(name: str) -> str:
+    value = _env(name)
+    if not value:
+        return ""
+    if os.path.isabs(value):
+        return value
+    return str((BASE_DIR / value).resolve())
+
+
 # 火山引擎豆包 ASR
 VOLC_API_KEY = _env("VOLC_API_KEY")
 VOLC_RESOURCE_ID = _env("VOLC_RESOURCE_ID", "volc.seedasr.auc")
@@ -52,6 +61,7 @@ OUTPUT_DIR = _path("OUTPUT_DIR", "output")
 UPLOAD_DIR = _path("UPLOAD_DIR", "uploads")
 VOICES_FILE = _path("VOICES_FILE", "voices/voices.json")
 CAPCUT_TEMPLATE_DIR = _path("CAPCUT_TEMPLATE_DIR", "capcut_example")
+JIANYING_PROJECT_DIR = _optional_path("JIANYING_PROJECT_DIR")
 
 # 字幕配置
 SUBTITLE_MAX_CHARS_PER_LINE = int(_env("SUBTITLE_MAX_CHARS_PER_LINE", "42"))

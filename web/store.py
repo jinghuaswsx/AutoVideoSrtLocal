@@ -6,7 +6,25 @@ MVP 阶段用进程内字典；后续可替换为 Redis 而不影响其他层。
 """
 from typing import Optional
 
+from pipeline.localization import VARIANT_LABELS
+
 _tasks: dict = {}
+
+
+def _empty_variant_state(label: str) -> dict:
+    return {
+        "label": label,
+        "localized_translation": {},
+        "tts_script": {},
+        "tts_result": {},
+        "english_asr_result": {},
+        "corrected_subtitle": {},
+        "timeline_manifest": {},
+        "result": {},
+        "exports": {},
+        "artifacts": {},
+        "preview_files": {},
+    }
 
 
 def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None) -> dict:
@@ -45,6 +63,10 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "exports": {},
         "artifacts": {},
         "preview_files": {},
+        "variants": {
+            key: _empty_variant_state(label)
+            for key, label in VARIANT_LABELS.items()
+        },
     }
     _tasks[task_id] = task
     return task
@@ -59,6 +81,15 @@ def update(task_id: str, **kwargs):
     task = _tasks.get(task_id)
     if task:
         task.update(kwargs)
+
+
+def update_variant(task_id: str, variant: str, **kwargs):
+    task = _tasks.get(task_id)
+    if task:
+        variants = task.setdefault("variants", {})
+        variant_state = dict(variants.get(variant, _empty_variant_state(variant)))
+        variant_state.update(kwargs)
+        variants[variant] = variant_state
 
 
 def set_step(task_id: str, step: str, status: str):
@@ -77,6 +108,22 @@ def set_preview_file(task_id: str, name: str, path: str):
     task = _tasks.get(task_id)
     if task:
         task.setdefault("preview_files", {})[name] = path
+
+
+def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
+    task = _tasks.get(task_id)
+    if task:
+        variants = task.setdefault("variants", {})
+        variant_state = variants.setdefault(variant, _empty_variant_state(variant))
+        variant_state.setdefault("artifacts", {})[step] = payload
+
+
+def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
+    task = _tasks.get(task_id)
+    if task:
+        variants = task.setdefault("variants", {})
+        variant_state = variants.setdefault(variant, _empty_variant_state(variant))
+        variant_state.setdefault("preview_files", {})[name] = path
 
 
 def _localized_translation_from_segments(task: dict, segments: list) -> dict:

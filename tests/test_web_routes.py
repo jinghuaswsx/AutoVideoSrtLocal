@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from web import store
 from web.app import create_app
 
@@ -39,6 +41,30 @@ def test_index_page_supports_new_localization_preview_types():
     assert "item.type === \"subtitle_chunks\"" in body
 
 
+def test_index_page_supports_variant_compare_layout():
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "artifact.layout === \"variant_compare\"" in body
+    assert "renderVariantCompareArtifact" in body
+
+
+def test_index_page_supports_action_preview_items():
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "item.type === \"action\"" in body
+    assert "triggerAction(" in body
+
+
 def test_task_detail_returns_artifacts_structure():
     app = create_app()
     client = app.test_client()
@@ -51,6 +77,14 @@ def test_task_detail_returns_artifacts_structure():
     payload = response.get_json()
     assert "artifacts" in payload
     assert payload["artifacts"] == {}
+
+
+def test_store_create_initializes_two_variants():
+    task = store.create("task-variants", "video.mp4", "output/task-variants")
+
+    assert set(task["variants"].keys()) == {"normal", "hook_cta"}
+    assert task["variants"]["normal"]["label"] == "普通版"
+    assert task["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
 
 
 def test_artifact_route_serves_whitelisted_preview_file(tmp_path):
@@ -68,6 +102,21 @@ def test_artifact_route_serves_whitelisted_preview_file(tmp_path):
     assert response.data == b"audio-preview"
 
 
+def test_artifact_route_serves_variant_preview_file(tmp_path):
+    app = create_app()
+    client = app.test_client()
+
+    video_path = tmp_path / "preview.mp4"
+    video_path.write_bytes(b"video-preview")
+    store.create("task-variant-file", "video.mp4", str(tmp_path))
+    store.update_variant("task-variant-file", "hook_cta", preview_files={"soft_video": str(video_path)})
+
+    response = client.get("/api/tasks/task-variant-file/artifact/soft_video?variant=hook_cta")
+
+    assert response.status_code == 200
+    assert response.data == b"video-preview"
+
+
 def test_artifact_route_rejects_unknown_name(tmp_path):
     app = create_app()
     client = app.test_client()
@@ -77,6 +126,23 @@ def test_artifact_route_rejects_unknown_name(tmp_path):
     response = client.get("/api/tasks/task-bad/artifact/not_allowed")
 
     assert response.status_code == 404
+
+
+def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_path, monkeypatch):
+    app = create_app()
+    client = app.test_client()
+
+    task_id = "task-restored"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    preview_path = task_dir / f"{task_id}_soft.mp4"
+    preview_path.write_bytes(b"soft-video-preview")
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path))
+
+    response = client.get(f"/api/tasks/{task_id}/artifact/soft_video")
+
+    assert response.status_code == 200
+    assert response.data == b"soft-video-preview"
 
 
 def test_alignment_route_compiles_script_segments():
@@ -196,3 +262,54 @@ def test_voice_routes_support_crud(tmp_path, monkeypatch):
 
     deleted = client.delete(f"/api/voices/{voice_id}")
     assert deleted.status_code == 200
+
+
+def test_download_route_can_return_hook_cta_capcut_archive(tmp_path):
+    app = create_app()
+    client = app.test_client()
+
+    archive_path = tmp_path / "capcut_hook_cta.zip"
+    archive_path.write_bytes(b"capcut-archive")
+    store.create("task-download-variant", "video.mp4", str(tmp_path))
+    store.update_variant(
+        "task-download-variant",
+        "hook_cta",
+        exports={"capcut_archive": str(archive_path)},
+    )
+
+    response = client.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
+
+    assert response.status_code == 200
+    assert response.data == b"capcut-archive"
+
+
+def test_deploy_route_copies_variant_capcut_project(tmp_path, monkeypatch):
+    app = create_app()
+    client = app.test_client()
+
+    project_dir = tmp_path / "capcut_hook_cta"
+    project_dir.mkdir()
+    (project_dir / "draft_content.json").write_text("{}", encoding="utf-8")
+    store.create("task-deploy-variant", "video.mp4", str(tmp_path))
+    store.update_variant(
+        "task-deploy-variant",
+        "hook_cta",
+        exports={"capcut_project": str(project_dir)},
+    )
+
+    deployed_dir = tmp_path / "jianying" / "deployed"
+
+    def fake_deploy_capcut_project(path):
+        target = deployed_dir / Path(path).name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "draft_content.json").write_text("{}", encoding="utf-8")
+        return str(target)
+
+    monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
+
+    response = client.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["deployed_project_dir"].endswith("capcut_hook_cta")
+    assert store.get("task-deploy-variant")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].endswith("capcut_hook_cta")

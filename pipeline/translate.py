@@ -45,10 +45,18 @@ def _parse_json_content(raw: str):
     return json.loads(content.strip())
 
 
-def generate_localized_translation(source_full_text_zh: str, script_segments: list[dict]) -> dict:
+def generate_localized_translation(
+    source_full_text_zh: str,
+    script_segments: list[dict],
+    variant: str = "normal",
+) -> dict:
     response = client.chat.completions.create(
         model=_model_name(),
-        messages=build_localized_translation_messages(source_full_text_zh, script_segments),
+        messages=build_localized_translation_messages(
+            source_full_text_zh,
+            script_segments,
+            variant=variant,
+        ),
         temperature=0.2,
         max_tokens=4096,
         extra_body={

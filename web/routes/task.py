@@ -11,11 +11,52 @@ from flask import Blueprint, request, jsonify, send_file
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.alignment import build_script_segments
+from pipeline.capcut import deploy_capcut_project
 from web.preview_artifacts import build_alignment_artifact, build_translate_artifact
 from web import store
 from web.services import pipeline_runner
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
+
+
+def _artifact_candidates(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> list[str]:
+    task_dir = (task or {}).get("task_dir") or os.path.join(OUTPUT_DIR, task_id)
+    candidates: list[str] = []
+
+    preview_files = (
+        ((task or {}).get("variants", {}).get(variant, {}).get("preview_files", {}))
+        if variant
+        else (task or {}).get("preview_files", {})
+    )
+    preview_path = preview_files.get(name)
+    if preview_path:
+        candidates.append(preview_path)
+
+    if variant:
+        filename_map = {
+            "tts_full_audio": [f"tts_full.{variant}.mp3", f"tts_full.{variant}.wav"],
+            "soft_video": [f"{task_id}_soft.{variant}.mp4"],
+            "hard_video": [f"{task_id}_hard.{variant}.mp4"],
+        }
+    else:
+        filename_map = {
+            "audio_extract": [f"{task_id}_audio.wav", f"{task_id}_audio.mp3"],
+            "tts_full_audio": ["tts_full.mp3", "tts_full.wav"],
+            "soft_video": [f"{task_id}_soft.mp4", "soft.mp4"],
+            "hard_video": [f"{task_id}_hard.mp4", "hard.mp4"],
+        }
+
+    for filename in filename_map.get(name, []):
+        candidates.append(os.path.join(task_dir, filename))
+
+    return candidates
+
+
+def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> str | None:
+    for path in _artifact_candidates(task_id, name, task, variant=variant):
+        if path and os.path.exists(path):
+            return os.path.abspath(path)
+    return None
 
 
 @bp.route("", methods=["POST"])
@@ -51,15 +92,12 @@ def get_task(task_id):
 @bp.route("/<task_id>/artifact/<name>", methods=["GET"])
 def get_artifact(task_id, name):
     task = store.get(task_id)
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
-
-    preview_files = task.get("preview_files", {})
-    path = preview_files.get(name)
-    if not path or not os.path.exists(path):
+    variant = request.args.get("variant") or None
+    path = _resolve_artifact_path(task_id, name, task, variant=variant)
+    if not path:
         return jsonify({"error": "Artifact not found"}), 404
 
-    return send_file(os.path.abspath(path), as_attachment=False)
+    return send_file(path, as_attachment=False)
 
 
 @bp.route("/<task_id>/start", methods=["POST"])
@@ -129,15 +167,46 @@ def download(task_id, file_type):
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    result = task.get("result", {})
+    variant = request.args.get("variant") or None
+    variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
+    result = variant_state.get("result", {}) if variant else task.get("result", {})
     path_map = {
         "soft": result.get("soft_video"),
         "hard": result.get("hard_video"),
-        "srt":  result.get("srt"),
-        "capcut": task.get("exports", {}).get("capcut_archive"),
+        "srt": result.get("srt"),
+        "capcut": (
+            variant_state.get("exports", {}).get("capcut_archive")
+            if variant
+            else task.get("exports", {}).get("capcut_archive")
+        ),
     }
     path = path_map.get(file_type)
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
 
     return send_file(os.path.abspath(path), as_attachment=True)
+
+
+@bp.route("/<task_id>/deploy/capcut", methods=["POST"])
+def deploy_capcut(task_id):
+    task = store.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    variant = request.args.get("variant") or None
+    variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
+    exports = variant_state.get("exports", {}) if variant else task.get("exports", {})
+    project_dir = exports.get("capcut_project")
+    if not project_dir or not os.path.isdir(project_dir):
+        return jsonify({"error": "CapCut project not ready"}), 404
+
+    deployed_project_dir = deploy_capcut_project(project_dir)
+    exports = dict(exports)
+    exports["jianying_project_dir"] = deployed_project_dir
+
+    if variant:
+        store.update_variant(task_id, variant, exports=exports)
+    else:
+        store.update(task_id, exports=exports)
+
+    return jsonify({"status": "ok", "deployed_project_dir": deployed_project_dir})

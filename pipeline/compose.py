@@ -15,12 +15,14 @@ def compose_video(
     output_dir: str,
     subtitle_position: str = "bottom",
     timeline_manifest: dict | None = None,
+    variant: str | None = None,
 ) -> dict:
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(video_path))[0]
+    suffix = f".{variant}" if variant else ""
 
-    soft_output = os.path.join(output_dir, f"{base_name}_soft.mp4")
-    hard_output = os.path.join(output_dir, f"{base_name}_hard.mp4")
+    soft_output = os.path.join(output_dir, f"{base_name}_soft{suffix}.mp4")
+    hard_output = os.path.join(output_dir, f"{base_name}_hard{suffix}.mp4")
 
     if timeline_manifest:
         _compose_soft_from_manifest(video_path, tts_audio_path, timeline_manifest, soft_output)

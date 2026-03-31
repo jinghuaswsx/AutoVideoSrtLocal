@@ -255,19 +255,38 @@
         const status = currentTask?.steps?.[step] || "pending";
         const artifact = artifacts[step];
         stepEl.classList.toggle("expanded", ["running", "waiting", "done"].includes(status));
-        if (!artifact || !artifact.items || !artifact.items.length) {
+        if (!artifact) {
           previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
           return;
         }
-        previewEl.innerHTML = artifact.items.map(renderPreviewItem).join("");
+        if (artifact.layout === "variant_compare") {
+          previewEl.innerHTML = renderVariantCompareArtifact(artifact);
+          return;
+        }
+        if (!artifact.items || !artifact.items.length) {
+          previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+          return;
+        }
+        previewEl.innerHTML = artifact.items.map(item => renderPreviewItem(item)).join("");
       });
     }
 
-    function renderPreviewItem(item) {
+    function renderVariantCompareArtifact(artifact) {
+      const variants = artifact.variants || {};
+      return `<div class="preview-compare" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">${Object.entries(variants).map(([variantKey, variantPayload]) => `
+        <div class="preview-block">
+          <div class="preview-label">${escapeHtml(variantPayload.label || variantKey)}</div>
+          <div style="display:flex;flex-direction:column;gap:10px;">${(variantPayload.items || []).map(item => renderPreviewItem(item, variantKey)).join("")}</div>
+        </div>
+      `).join("")}</div>`;
+    }
+
+    function renderPreviewItem(item, variantKey = null) {
       const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
-      if (item.type === "audio") return `<div class="preview-block">${label}<audio class="media-player" controls preload="metadata" src="${artifactUrl(item.artifact)}"></audio></div>`;
-      if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${artifactUrl(item.artifact)}"></video></div>`;
+      if (item.type === "audio") return `<div class="preview-block">${label}<audio class="media-player" controls preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></audio></div>`;
+      if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
       if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
+      if (item.type === "action") return `<div class="preview-block">${label}<button class="download-btn" onclick="triggerAction('${escapeJs(item.url)}','${escapeJs(item.method || "POST")}');return false;">${escapeHtml(item.label || "执行")}</button></div>`;
       if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
       if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
       if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -412,7 +431,11 @@
       if (grid.children.length) document.getElementById("resultPanel").classList.remove("hidden");
     }
 
-    function artifactUrl(name) { return `/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`; }
+    function artifactUrl(name, variantKey = null) {
+      const url = new URL(`/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`, window.location.origin);
+      if (variantKey) url.searchParams.set("variant", variantKey);
+      return url.pathname + url.search;
+    }
     function dlFile(url, filename) {
       const a = document.createElement("a");
       a.href = url;
@@ -420,6 +443,19 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    }
+    async function triggerAction(url, method = "POST") {
+      clearError();
+      const response = await fetch(url, { method });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {}
+      if (!response.ok) {
+        showError(payload.error || "操作失败");
+        return;
+      }
+      scheduleRefreshTaskState(0);
     }
     function placeholderText(status) {
       if (status === "running") return "当前步骤正在生成产物，完成后会自动显示在这里。";

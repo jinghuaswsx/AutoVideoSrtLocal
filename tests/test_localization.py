@@ -1,6 +1,10 @@
 import types
 
 from pipeline.localization import (
+    LOCALIZED_TRANSLATION_SYSTEM_PROMPT,
+    TTS_SCRIPT_SYSTEM_PROMPT,
+    _subtitle_word_signature,
+    build_localized_translation_messages,
     build_source_full_text_zh,
     validate_localized_translation,
     validate_tts_script,
@@ -32,12 +36,12 @@ def test_validate_localized_translation_requires_full_text_and_source_segment_in
     assert validated["sentences"][1]["source_segment_indices"] == [1]
 
 
-def test_validate_tts_script_rejects_chunk_text_that_does_not_match_full_text():
+def test_validate_tts_script_rebuilds_invalid_subtitle_chunks_from_blocks():
     payload = {
-        "full_text": "Say it smooth. Keep it fun.",
+        "full_text": "say it smooth. keep it fun.",
         "blocks": [
-            {"index": 0, "text": "Say it smooth.", "sentence_indices": [0], "source_segment_indices": [0]},
-            {"index": 1, "text": "Keep it fun.", "sentence_indices": [1], "source_segment_indices": [1]},
+            {"index": 0, "text": "say it smooth.", "sentence_indices": [0], "source_segment_indices": [0]},
+            {"index": 1, "text": "keep it fun.", "sentence_indices": [1], "source_segment_indices": [1]},
         ],
         "subtitle_chunks": [
             {"index": 0, "text": "Say it smooth.", "block_indices": [0], "sentence_indices": [0], "source_segment_indices": [0]},
@@ -45,12 +49,180 @@ def test_validate_tts_script_rejects_chunk_text_that_does_not_match_full_text():
         ],
     }
 
-    try:
-        validate_tts_script(payload)
-    except ValueError as exc:
-        assert "subtitle_chunks" in str(exc)
-    else:
-        raise AssertionError("expected ValueError")
+    validated = validate_tts_script(payload)
+
+    assert [chunk["text"] for chunk in validated["subtitle_chunks"]] == [
+        "Say it smooth",
+        "Keep it fun",
+    ]
+
+
+def test_validate_localized_translation_normalizes_em_dash_and_curly_quotes():
+    payload = {
+        "full_text": "A hands-on toy like this—your kids will love it.",
+        "sentences": [
+            {
+                "index": 0,
+                "text": "A hands-on toy like this—your kids will love it.",
+                "source_segment_indices": [0],
+            }
+        ],
+    }
+
+    validated = validate_localized_translation(payload)
+
+    assert "—" not in validated["full_text"]
+    assert validated["full_text"] == "A hands-on toy like this, your kids will love it."
+
+
+def test_validate_tts_script_normalizes_dash_split_boundaries():
+    payload = {
+        "full_text": "Frame pieces—follow the instructions.",
+        "blocks": [
+            {
+                "index": 0,
+                "text": "Frame pieces—follow the instructions.",
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [
+            {
+                "index": 0,
+                "text": "Frame pieces—",
+                "block_indices": [0],
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            },
+            {
+                "index": 1,
+                "text": "follow the instructions.",
+                "block_indices": [0],
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            },
+        ],
+    }
+
+    validated = validate_tts_script(payload)
+
+    assert validated["full_text"] == "Frame pieces, follow the instructions."
+    assert validated["subtitle_chunks"][0]["text"] == "Frame pieces, follow the instructions"
+
+
+def test_validate_tts_script_splits_subtitle_chunk_longer_than_ten_words():
+    payload = {
+        "full_text": "One two three four five six seven eight nine ten eleven.",
+        "blocks": [
+            {
+                "index": 0,
+                "text": "One two three four five six seven eight nine ten eleven.",
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [
+            {
+                "index": 0,
+                "text": "One two three four five six seven eight nine ten eleven.",
+                "block_indices": [0],
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+    }
+
+    validated = validate_tts_script(payload)
+
+    assert all(len(chunk["text"].split()) <= 10 for chunk in validated["subtitle_chunks"])
+    assert _subtitle_word_signature(" ".join(chunk["text"] for chunk in validated["subtitle_chunks"])) == _subtitle_word_signature(validated["full_text"])
+
+
+def test_validate_tts_script_rebuilds_subtitle_chunks_when_model_drops_words():
+    payload = {
+        "full_text": "Keep every word exactly the same for subtitles.",
+        "blocks": [
+            {
+                "index": 0,
+                "text": "Keep every word exactly the same for subtitles.",
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [
+            {
+                "index": 0,
+                "text": "Keep every word the same for subtitles.",
+                "block_indices": [0],
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+    }
+
+    validated = validate_tts_script(payload)
+
+    assert "exactly" in validated["subtitle_chunks"][0]["text"]
+    assert " ".join(chunk["text"] for chunk in validated["subtitle_chunks"]).replace(".", "") == validated["full_text"].replace(".", "")
+
+
+def test_validate_tts_script_avoids_one_and_two_word_fragments_when_five_to_ten_is_possible():
+    payload = {
+        "full_text": "circuit boards, motors, propellers, and a frame",
+        "blocks": [
+            {
+                "index": 0,
+                "text": "circuit boards, motors, propellers, and a frame",
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [],
+    }
+
+    validated = validate_tts_script(payload)
+
+    assert len(validated["subtitle_chunks"]) == 1
+    assert validated["subtitle_chunks"][0]["text"] == "Circuit boards, motors, propellers, and a frame"
+    assert 5 <= len(validated["subtitle_chunks"][0]["text"].split()) <= 10
+
+
+def test_validate_tts_script_balances_long_sentence_to_avoid_tiny_tail_chunks():
+    payload = {
+        "full_text": "Give them this kit with circuit boards, motors, propellers, and frame pieces.",
+        "blocks": [
+            {
+                "index": 0,
+                "text": "Give them this kit with circuit boards, motors, propellers, and frame pieces.",
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [],
+    }
+
+    validated = validate_tts_script(payload)
+    counts = [len(chunk["text"].split()) for chunk in validated["subtitle_chunks"]]
+
+    assert len(validated["subtitle_chunks"]) == 2
+    assert all(5 <= count <= 10 for count in counts)
+
+
+def test_prompts_require_shorter_sentences_and_no_em_dash():
+    assert "Do not use em dashes" in LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    assert "5-10 words" in TTS_SCRIPT_SYSTEM_PROMPT
+
+
+def test_hook_cta_prompt_mentions_first_three_seconds_and_single_cta():
+    messages = build_localized_translation_messages(
+        source_full_text_zh="test chinese",
+        script_segments=[{"index": 0, "text": "test chinese"}],
+        variant="hook_cta",
+    )
+
+    system_prompt = messages[0]["content"]
+    assert "first 3 spoken seconds" in system_prompt
+    assert "exactly one clear purchase CTA" in system_prompt
 
 
 def test_generate_localized_translation_parses_structured_output(monkeypatch):
@@ -82,6 +254,32 @@ def test_generate_localized_translation_parses_structured_output(monkeypatch):
     assert captured["model"] == "anthropic/claude-sonnet-4.5"
 
 
+def test_generate_localized_translation_passes_variant_specific_prompt(monkeypatch):
+    captured = {}
+
+    def fake_create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return types.SimpleNamespace(
+            choices=[
+                types.SimpleNamespace(
+                    message=types.SimpleNamespace(
+                        content='{"full_text":"Hook line.","sentences":[{"index":0,"text":"Hook line.","source_segment_indices":[0]}]}'
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr("pipeline.translate.client.chat.completions.create", fake_create)
+
+    generate_localized_translation(
+        source_full_text_zh="test chinese",
+        script_segments=[{"index": 0, "text": "test chinese"}],
+        variant="hook_cta",
+    )
+
+    assert "exactly one clear purchase CTA" in captured["messages"][0]["content"]
+
+
 def test_generate_tts_script_returns_validated_blocks(monkeypatch):
     def fake_create(**kwargs):
         return types.SimpleNamespace(
@@ -106,4 +304,5 @@ def test_generate_tts_script_returns_validated_blocks(monkeypatch):
         }
     )
 
-    assert payload["subtitle_chunks"][1]["text"] == "Keep it fun."
+    assert payload["subtitle_chunks"][0]["text"] == "Say it smooth"
+    assert payload["subtitle_chunks"][1]["text"] == "Keep it fun"

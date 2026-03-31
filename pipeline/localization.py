@@ -1,18 +1,45 @@
 from __future__ import annotations
 
 import json
+import re
 
+
+VARIANT_KEYS = ("normal", "hook_cta")
+VARIANT_LABELS = {
+    "normal": "普通版",
+    "hook_cta": "黄金3秒 + CTA版",
+}
 
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a US TikTok commerce copywriter.
 Return valid JSON only.
 Translate the Chinese source into natural, native, sales-capable American English.
-You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices."""
+You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
+Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
+Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
+
+HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US TikTok Shop copywriter.
+Return valid JSON only.
+Translate the Chinese source into natural, native, sales-capable American English.
+You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
+Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
+Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks.
+Sentence 1 must function as the first-3-seconds hook for a US TikTok video.
+Treat the first 3 spoken seconds as roughly the first 7-10 English words.
+Sentence 1 should prioritize one of these hook patterns: strong outcome, obvious benefit, curiosity, or surprise contrast.
+The full script must contain exactly one clear purchase CTA.
+Put the CTA where it feels most natural, usually in the middle or near the end.
+You may reorder emphasis to improve hook performance, but you must preserve the original selling points."""
 
 TTS_SCRIPT_SYSTEM_PROMPT = """You are preparing text for ElevenLabs narration and subtitle display.
 Return valid JSON only.
 Use the localized English as the only wording source.
 blocks optimize speaking rhythm.
-subtitle_chunks optimize on-screen reading without changing wording relative to full_text."""
+subtitle_chunks optimize on-screen reading without changing wording relative to full_text.
+Each subtitle chunk should usually be 5-10 words.
+Avoid 1-3 word fragments unless there is no natural way to merge them.
+Prefer semantically complete chunks that still read naturally on screen.
+Do not end subtitle_chunks with punctuation.
+Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
 
 LOCALIZED_TRANSLATION_RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -129,13 +156,208 @@ def _concat_items(items: list[dict], key: str) -> str:
     ).strip()
 
 
+def _sanitize_model_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    cleaned = cleaned.replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.replace("“", '"').replace("”", '"')
+    cleaned = re.sub(r"[–—―]", ", ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.!?])", r"\1", cleaned)
+    cleaned = re.sub(r",\s*,+", ", ", cleaned)
+    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_text_items(items: list[dict], text_key: str) -> list[dict]:
+    normalized = []
+    for item in items:
+        item_copy = dict(item)
+        item_copy[text_key] = _sanitize_model_text(item_copy.get(text_key, ""))
+        normalized.append(item_copy)
+    return normalized
+
+
+def _subtitle_word_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text))
+
+
+def _subtitle_word_signature(text: str) -> list[str]:
+    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text)]
+
+
+def _strip_terminal_punctuation(text: str) -> str:
+    return re.sub(r"[,.!?;:]+$", "", (text or "").strip()).strip()
+
+
+def _capitalize_first_character(text: str) -> str:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return cleaned
+    return cleaned[0].upper() + cleaned[1:]
+
+
+def _split_block_text_balanced(text: str, min_words: int = 5, max_words: int = 10) -> list[str]:
+    words = text.split()
+    if not words:
+        return []
+    if len(words) <= max_words:
+        return [text.strip()]
+
+    weak_starters = {"and", "or", "but", "to", "for", "with", "of", "the", "a", "an"}
+    chunk_count = max(1, (len(words) + max_words - 1) // max_words)
+    base_size = len(words) // chunk_count
+    remainder = len(words) % chunk_count
+    target_sizes = [base_size + (1 if index < remainder else 0) for index in range(chunk_count)]
+
+    chunks: list[str] = []
+    cursor = 0
+
+    for chunk_index in range(chunk_count):
+        remaining_words = len(words) - cursor
+        remaining_chunks = chunk_count - chunk_index
+        if remaining_chunks == 1:
+            chunks.append(" ".join(words[cursor:]).strip())
+            break
+
+        min_size = max(min_words, remaining_words - max_words * (remaining_chunks - 1))
+        max_size = min(max_words, remaining_words - min_words * (remaining_chunks - 1))
+        target_size = target_sizes[chunk_index]
+
+        best_end = cursor + min_size
+        best_score = None
+        for size in range(min_size, max_size + 1):
+            end = cursor + size
+            previous_token = words[end - 1]
+            next_token = words[end] if end < len(words) else ""
+
+            score = abs(size - target_size)
+            if previous_token.endswith((",", ";", ":", ".", "!", "?")):
+                score -= 1.2
+            if next_token.strip(",.;:!?").lower() in weak_starters:
+                score += 0.85
+            if previous_token.strip(",.;:!?").lower() in weak_starters:
+                score += 0.55
+
+            if best_score is None or score < best_score:
+                best_score = score
+                best_end = end
+
+        chunks.append(" ".join(words[cursor:best_end]).strip())
+        cursor = best_end
+
+    return [chunk for chunk in chunks if chunk]
+
+
+def _merge_chunk_dicts(left: dict, right: dict) -> dict:
+    return {
+        "text": f"{left['text']} {right['text']}".strip(),
+        "block_indices": sorted(set((left.get("block_indices") or []) + (right.get("block_indices") or []))),
+        "sentence_indices": sorted(set((left.get("sentence_indices") or []) + (right.get("sentence_indices") or []))),
+        "source_segment_indices": sorted(
+            set((left.get("source_segment_indices") or []) + (right.get("source_segment_indices") or []))
+        ),
+    }
+
+
+def _finalize_subtitle_chunk(chunk: dict) -> dict:
+    chunk_copy = dict(chunk)
+    chunk_copy["text"] = _capitalize_first_character(
+        _strip_terminal_punctuation(chunk_copy.get("text", ""))
+    )
+    return chunk_copy
+
+
+def _merge_short_subtitle_chunks(chunks: list[dict], min_words: int = 5, max_words: int = 10) -> list[dict]:
+    merged = [dict(chunk) for chunk in chunks]
+
+    while True:
+        changed = False
+        index = 0
+        while index < len(merged):
+            current = merged[index]
+            current_words = _subtitle_word_count(current["text"])
+            if current_words >= min_words:
+                index += 1
+                continue
+
+            candidates = []
+            if index > 0:
+                previous = merged[index - 1]
+                if previous.get("sentence_indices") == current.get("sentence_indices"):
+                    merged_prev = _merge_chunk_dicts(previous, current)
+                    if _subtitle_word_count(merged_prev["text"]) <= max_words:
+                        candidates.append(("prev", merged_prev))
+            if index + 1 < len(merged):
+                following = merged[index + 1]
+                if following.get("sentence_indices") == current.get("sentence_indices"):
+                    merged_next = _merge_chunk_dicts(current, following)
+                    if _subtitle_word_count(merged_next["text"]) <= max_words:
+                        candidates.append(("next", merged_next))
+
+            if not candidates:
+                index += 1
+                continue
+
+            target_size = 7
+            direction, replacement = min(
+                candidates,
+                key=lambda item: abs(_subtitle_word_count(item[1]["text"]) - target_size),
+            )
+            if direction == "prev":
+                merged[index - 1] = replacement
+                del merged[index]
+            else:
+                merged[index] = replacement
+                del merged[index + 1]
+            changed = True
+            break
+
+        if not changed:
+            break
+
+    finalized = []
+    for index, chunk in enumerate(merged):
+        chunk_copy = _finalize_subtitle_chunk(chunk)
+        chunk_copy["index"] = index
+        finalized.append(chunk_copy)
+    return finalized
+
+
+def _rebuild_subtitle_chunks(blocks: list[dict], min_words: int = 5, max_words: int = 10) -> list[dict]:
+    rebuilt: list[dict] = []
+
+    for block in blocks:
+        pieces = _split_block_text_balanced(
+            block.get("text", ""),
+            min_words=min_words,
+            max_words=max_words,
+        )
+        for piece in pieces:
+            rebuilt.append(
+                {
+                    "text": piece,
+                    "block_indices": [block["index"]],
+                    "sentence_indices": list(block.get("sentence_indices") or []),
+                    "source_segment_indices": list(block.get("source_segment_indices") or []),
+                }
+            )
+
+    return _merge_short_subtitle_chunks(rebuilt, min_words=min_words, max_words=max_words)
+
+
 def build_localized_translation_messages(
     source_full_text_zh: str,
     script_segments: list[dict],
+    variant: str = "normal",
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
+    prompt = (
+        HOOK_CTA_TRANSLATION_SYSTEM_PROMPT
+        if variant == "hook_cta"
+        else LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    )
     return [
-        {"role": "system", "content": LOCALIZED_TRANSLATION_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": (
@@ -181,8 +403,8 @@ def build_tts_segments(tts_script: dict, script_segments: list[dict]) -> list[di
 
 
 def validate_localized_translation(payload: dict) -> dict:
-    sentences = payload.get("sentences") or []
-    full_text = (payload.get("full_text") or "").strip()
+    sentences = _sanitize_text_items(payload.get("sentences") or [], "text")
+    full_text = _sanitize_model_text(payload.get("full_text") or "")
     if not full_text or not sentences:
         raise ValueError("localized_translation requires full_text and sentences")
 
@@ -198,16 +420,22 @@ def validate_localized_translation(payload: dict) -> dict:
 
 
 def validate_tts_script(payload: dict) -> dict:
-    blocks = payload.get("blocks") or []
-    subtitle_chunks = payload.get("subtitle_chunks") or []
-    full_text = (payload.get("full_text") or "").strip()
-    if not full_text or not blocks or not subtitle_chunks:
-        raise ValueError("tts_script requires full_text, blocks, and subtitle_chunks")
+    blocks = _sanitize_text_items(payload.get("blocks") or [], "text")
+    full_text = _sanitize_model_text(payload.get("full_text") or "")
+    if not full_text or not blocks:
+        raise ValueError("tts_script requires full_text and blocks")
 
     if _concat_items(blocks, "text") != full_text:
         raise ValueError("tts_script blocks do not match full_text")
-    if _concat_items(subtitle_chunks, "text") != full_text:
+
+    subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=10)
+    if not subtitle_chunks:
+        raise ValueError("tts_script could not rebuild subtitle_chunks from blocks")
+    if _subtitle_word_signature(_concat_items(subtitle_chunks, "text")) != _subtitle_word_signature(full_text):
         raise ValueError("tts_script subtitle_chunks do not match full_text")
+    for chunk in subtitle_chunks:
+        if _subtitle_word_count(chunk["text"]) > 10:
+            raise ValueError("tts_script subtitle_chunks must be 10 words or fewer")
 
     return {
         "full_text": full_text,

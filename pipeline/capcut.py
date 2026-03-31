@@ -3,10 +3,11 @@ import json
 import shutil
 import time
 import uuid
+from os import name as os_name
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from config import CAPCUT_TEMPLATE_DIR
+from config import CAPCUT_TEMPLATE_DIR, JIANYING_PROJECT_DIR
 
 
 def export_capcut_project(
@@ -17,9 +18,10 @@ def export_capcut_project(
     output_dir: str,
     subtitle_position: str = "bottom",
     draft_title: str | None = None,
+    variant: str | None = None,
 ) -> dict:
     source_name = draft_title or Path(video_path).name
-    draft_name = _build_draft_name(source_name)
+    draft_name = _build_draft_name(source_name, variant=variant)
     project_dir = Path(output_dir) / draft_name
     if project_dir.exists():
         shutil.rmtree(project_dir)
@@ -75,7 +77,23 @@ def export_capcut_project(
         "project_dir": str(project_dir),
         "archive_path": str(archive_path),
         "manifest_path": str(manifest_path),
+        "jianying_project_dir": "",
     }
+
+
+def deploy_capcut_project(project_dir: str, target_root: str | None = None) -> str:
+    source_dir = Path(project_dir)
+    if not source_dir.exists():
+        raise FileNotFoundError(f"CapCut project directory not found: {project_dir}")
+
+    deployed_project_dir = _build_jianying_deploy_path(source_dir.name, target_root=target_root)
+    if not deployed_project_dir:
+        raise RuntimeError("Jianying project directory is not configured and no default path is available")
+
+    if deployed_project_dir.exists():
+        shutil.rmtree(deployed_project_dir)
+    shutil.copytree(source_dir, deployed_project_dir)
+    return str(deployed_project_dir)
 
 
 def _export_with_pyjianyingdraft(
@@ -209,15 +227,45 @@ def _subtitle_transform_y(position: str) -> float:
     return mapping.get(position, -0.78)
 
 
-def _build_draft_name(source_name: str) -> str:
+def _build_draft_name(source_name: str, variant: str | None = None) -> str:
     timestamp = time.strftime("%y-%m-%d-%H-%M-%S")
     stem = _sanitize_draft_name(Path(source_name).stem)
+    if variant:
+        return f"{stem}_{variant}_{timestamp}"
     return f"{stem}_{timestamp}"
 
 
 def _sanitize_draft_name(name: str) -> str:
     sanitized = "".join("_" if char in '<>:"/\\|?*' else char for char in name).strip()
     return sanitized or "capcut_project"
+
+
+def _build_jianying_deploy_path(draft_name: str, target_root: str | None = None) -> Path | None:
+    root = _resolve_jianying_project_root(target_root=target_root)
+    if not root:
+        return None
+    return root / draft_name
+
+
+def _resolve_jianying_project_root(target_root: str | None = None) -> Path | None:
+    if target_root:
+        root = Path(target_root)
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    if JIANYING_PROJECT_DIR:
+        root = Path(JIANYING_PROJECT_DIR)
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    if os_name != "nt":
+        return None
+
+    default_root = Path.home() / "AppData" / "Local" / "JianyingPro" / "User Data" / "Projects" / "com.lveditor.draft"
+    if default_root.exists() or default_root.parent.exists():
+        default_root.mkdir(parents=True, exist_ok=True)
+        return default_root
+    return None
 
 
 def _probe_media_duration(video_path: Path) -> float:

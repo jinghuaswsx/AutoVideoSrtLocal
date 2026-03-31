@@ -44,14 +44,19 @@ def generate_segment_audio(text: str, voice_id: str, output_path: str) -> str:
     return output_path
 
 
-def generate_full_audio(segments: List[Dict], voice_id: str, output_dir: str) -> Dict:
+def generate_full_audio(
+    segments: List[Dict],
+    voice_id: str,
+    output_dir: str,
+    variant: str | None = None,
+) -> Dict:
     """
     为所有翻译段落生成音频并拼接成完整音轨
 
     Returns:
         {"full_audio_path": str, "segments": [...]}  # 每段新增 tts_path, tts_duration
     """
-    seg_dir = os.path.join(output_dir, "tts_segments")
+    seg_dir = os.path.join(output_dir, "tts_segments", variant) if variant else os.path.join(output_dir, "tts_segments")
     os.makedirs(seg_dir, exist_ok=True)
 
     updated_segments = []
@@ -72,7 +77,8 @@ def generate_full_audio(segments: List[Dict], voice_id: str, output_dir: str) ->
 
             concat_f.write(f"file '{os.path.abspath(seg_path)}'\n")
 
-    full_audio_path = os.path.join(output_dir, "tts_full.mp3")
+    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_path = os.path.join(output_dir, full_audio_name)
     result = subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", full_audio_path],
         capture_output=True, text=True

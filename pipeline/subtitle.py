@@ -6,6 +6,7 @@
   - 最多 2 行，尽量均衡；较长行放第一行
 """
 import os
+import re
 from typing import List, Dict
 
 
@@ -24,6 +25,48 @@ def capitalize_sentence(text: str) -> str:
     if not text:
         return text
     return text[0].upper() + text[1:]
+
+
+def _strip_terminal_punctuation(text: str) -> str:
+    return re.sub(r"[,.!?;:]+$", "", text.strip()).strip()
+
+
+def _choose_balanced_split(words: List[str]) -> int:
+    weak_boundary_words = {"and", "or", "to", "of", "for", "with", "the", "a", "an"}
+    best_index = max(1, len(words) // 2)
+    best_score = None
+
+    for index in range(2, len(words) - 1):
+        left_count = index
+        right_count = len(words) - index
+        score = abs(left_count - right_count)
+
+        if words[index - 1].strip(",").lower() in weak_boundary_words:
+            score += 1.0
+        if words[index].strip(",").lower() in weak_boundary_words:
+            score += 1.0
+        if words[index - 1].endswith(","):
+            score -= 0.25
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_index = index
+
+    return best_index
+
+
+def format_subtitle_chunk_text(text: str) -> str:
+    cleaned = capitalize_sentence(_strip_terminal_punctuation(text))
+    words = cleaned.split()
+    if len(words) <= 5:
+        return cleaned
+
+    split_index = _choose_balanced_split(words)
+    line1 = " ".join(words[:split_index]).strip()
+    line2 = " ".join(words[split_index:]).strip()
+    if not line1 or not line2:
+        return cleaned
+    return f"{line1}\n{line2}"
 
 
 def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
@@ -141,7 +184,7 @@ def build_srt_from_chunks(chunks: List[Dict]) -> str:
         srt_lines.append(
             f"{format_timestamp(float(chunk['start_time']))} --> {format_timestamp(float(chunk['end_time']))}"
         )
-        srt_lines.append(chunk["text"])
+        srt_lines.append(format_subtitle_chunk_text(chunk["text"]))
         srt_lines.append("")
 
     return "\n".join(srt_lines)

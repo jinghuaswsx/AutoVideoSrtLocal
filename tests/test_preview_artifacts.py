@@ -6,6 +6,7 @@ from web.preview_artifacts import (
     build_extract_artifact,
     build_subtitle_artifact,
     build_translate_artifact,
+    build_variant_compare_artifact,
     build_tts_artifact,
 )
 
@@ -47,3 +48,23 @@ def test_preview_artifact_builders_cover_all_pipeline_steps():
     assert compose["items"][1]["artifact"] == "hard_video"
     assert export["items"][0]["type"] == "download"
     assert export["items"][1]["content"] == '{"backend":"pyJianYingDraft"}'
+
+
+def test_build_variant_compare_artifact_contains_two_named_columns():
+    artifact = build_variant_compare_artifact(
+        title="翻译本土化",
+        variants={
+            "normal": {
+                "label": "普通版",
+                "items": [{"type": "text", "label": "整段英文", "content": "A"}],
+            },
+            "hook_cta": {
+                "label": "黄金3秒 + CTA版",
+                "items": [{"type": "text", "label": "整段英文", "content": "B"}],
+            },
+        },
+    )
+
+    assert artifact["layout"] == "variant_compare"
+    assert artifact["variants"]["normal"]["label"] == "普通版"
+    assert artifact["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"

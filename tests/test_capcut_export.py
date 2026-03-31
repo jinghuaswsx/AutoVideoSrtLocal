@@ -3,7 +3,7 @@ import types
 import sys
 import json
 
-from pipeline.capcut import _probe_media_duration, export_capcut_project
+from pipeline.capcut import _probe_media_duration, deploy_capcut_project, export_capcut_project
 
 
 def test_capcut_export_creates_project_directory_and_archive(tmp_path):
@@ -323,6 +323,149 @@ def test_capcut_export_clamps_source_ranges_before_pyjianyingdraft(tmp_path, mon
     assert "fallback_reason" not in manifest
     last_video_segment = [item for item in calls if item[0] == "VideoSegment"][-1]
     assert last_video_segment[3] == ("trange", "26.358s", "3.209s")
+
+
+def test_capcut_export_names_archives_by_variant(tmp_path, monkeypatch):
+    fake_module = types.ModuleType("pyJianYingDraft")
+    calls = []
+
+    class FakeScript:
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, *args, **kwargs):
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            calls.append(("save",))
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            calls.append(("create_draft", name))
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript()
+
+    class FakeSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = type("AudioSegment", (FakeSegment,), {})
+    fake_module.VideoSegment = type("VideoSegment", (FakeSegment,), {})
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr("pipeline.capcut.time.strftime", lambda fmt: "26-03-31-20-01-00")
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={"segments": []},
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+        variant="hook_cta",
+    )
+
+    assert ("create_draft", "sample_hook_cta_26-03-31-20-01-00") in calls
+    assert Path(export["project_dir"]).name == "sample_hook_cta_26-03-31-20-01-00"
+    assert Path(export["archive_path"]).name == "sample_hook_cta_26-03-31-20-01-00.zip"
+
+
+def test_capcut_export_does_not_auto_copy_into_jianying_project_dir(tmp_path, monkeypatch):
+    fake_module = types.ModuleType("pyJianYingDraft")
+
+    class FakeScript:
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, *args, **kwargs):
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            return None
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript()
+
+    class FakeSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = type("AudioSegment", (FakeSegment,), {})
+    fake_module.VideoSegment = type("VideoSegment", (FakeSegment,), {})
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr("pipeline.capcut.time.strftime", lambda fmt: "26-03-31-20-15-00")
+    monkeypatch.setattr("pipeline.capcut.JIANYING_PROJECT_DIR", str(tmp_path / "jianying" / "com.lveditor.draft"))
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={"segments": []},
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+    )
+
+    deployed_dir = Path(tmp_path / "jianying" / "com.lveditor.draft" / "sample_26-03-31-20-15-00")
+    assert not deployed_dir.exists()
+    assert export["jianying_project_dir"] == ""
+
+
+def test_deploy_capcut_project_copies_project_into_jianying_project_dir(tmp_path, monkeypatch):
+    project_dir = tmp_path / "output" / "sample_26-03-31-20-15-00"
+    project_dir.mkdir(parents=True)
+    (project_dir / "draft_content.json").write_text("{}", encoding="utf-8")
+    (project_dir / "codex_export_manifest.json").write_text('{"backend":"pyJianYingDraft"}', encoding="utf-8")
+    monkeypatch.setattr("pipeline.capcut.JIANYING_PROJECT_DIR", str(tmp_path / "jianying" / "com.lveditor.draft"))
+
+    deployed_dir = deploy_capcut_project(str(project_dir))
+
+    deployed_path = Path(deployed_dir)
+    assert deployed_path.exists()
+    assert deployed_path.name == "sample_26-03-31-20-15-00"
+    assert (deployed_path / "draft_content.json").exists()
 
 
 def test_probe_media_duration_uses_pymediainfo_milliseconds(monkeypatch):
