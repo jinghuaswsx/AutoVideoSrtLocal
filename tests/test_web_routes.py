@@ -26,6 +26,19 @@ def test_index_page_contains_step_preview_container():
     assert "renderStepPreviews" in body
 
 
+def test_index_page_supports_new_localization_preview_types():
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "item.type === \"sentences\"" in body
+    assert "item.type === \"tts_blocks\"" in body
+    assert "item.type === \"subtitle_chunks\"" in body
+
+
 def test_task_detail_returns_artifacts_structure():
     app = create_app()
     client = app.test_client()
@@ -108,6 +121,48 @@ def test_segments_route_updates_translate_artifact():
     saved = store.get("task-translate")
     assert saved["_segments_confirmed"] is True
     assert saved["artifacts"]["translate"]["items"][0]["segments"][0]["translated"] == "Hello there"
+
+
+def test_segments_route_updates_localized_translation_for_future_tts():
+    app = create_app()
+    client = app.test_client()
+
+    store.create("task-translate-localized", "video.mp4", "output/task-translate-localized")
+    store.update(
+        "task-translate-localized",
+        source_full_text_zh="你好世界",
+        script_segments=[{"index": 0, "text": "你好世界", "start_time": 0.0, "end_time": 1.6}],
+        segments=[{"index": 0, "text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
+    )
+
+    response = client.put(
+        "/api/tasks/task-translate-localized/segments",
+        json={"segments": [{"index": 0, "text": "你好世界", "translated": "Hello there", "start_time": 0.0, "end_time": 1.6}]},
+    )
+
+    assert response.status_code == 200
+    saved = store.get("task-translate-localized")
+    assert saved["script_segments"][0]["text"] == "你好世界"
+    assert saved["localized_translation"]["full_text"] == "Hello there"
+    assert saved["localized_translation"]["sentences"][0]["source_segment_indices"] == [0]
+
+
+def test_task_payload_exposes_tts_script_and_corrected_subtitle():
+    app = create_app()
+    client = app.test_client()
+    store.create("task-payload", "video.mp4", "output/task-payload")
+    store.update(
+        "task-payload",
+        tts_script={"full_text": "Say it smooth.", "blocks": [], "subtitle_chunks": []},
+        corrected_subtitle={"chunks": [], "srt_content": "1\n00:00:00,000 --> 00:00:01,000\nSay it smooth.\n"},
+    )
+
+    response = client.get("/api/tasks/task-payload")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["tts_script"]["full_text"] == "Say it smooth."
+    assert "Say it smooth." in payload["corrected_subtitle"]["srt_content"]
 
 
 def test_voice_routes_support_crud(tmp_path, monkeypatch):

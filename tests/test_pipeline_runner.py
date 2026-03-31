@@ -5,8 +5,8 @@ from web.services import pipeline_runner
 def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path, monkeypatch):
     task = store.create("task-auto-alignment", "video.mp4", str(tmp_path))
     task["utterances"] = [
-        {"text": "你好", "start_time": 0.0, "end_time": 0.8},
-        {"text": "世界", "start_time": 0.8, "end_time": 1.6},
+        {"text": "hello", "start_time": 0.0, "end_time": 0.8},
+        {"text": "world", "start_time": 0.8, "end_time": 1.6},
     ]
 
     monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
@@ -16,7 +16,7 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
         lambda utterances, scene_cuts=None: {
             "break_after": [False, True],
             "script_segments": [
-                {"text": "你好世界", "start_time": 0.0, "end_time": 1.6},
+                {"index": 0, "text": "hello world", "start_time": 0.0, "end_time": 1.6},
             ],
         },
     )
@@ -32,29 +32,35 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
     saved = store.get("task-auto-alignment")
     assert saved["_alignment_confirmed"] is True
     assert saved["steps"]["alignment"] == "done"
-    assert saved["script_segments"][0]["text"] == "你好世界"
+    assert saved["script_segments"][0]["text"] == "hello world"
 
 
-def test_step_translate_auto_confirms_when_interactive_review_disabled(tmp_path, monkeypatch):
-    task = store.create("task-auto-translate", "video.mp4", str(tmp_path))
+def test_step_translate_persists_source_text_and_localized_translation(tmp_path, monkeypatch):
+    task = store.create("task-localized", "video.mp4", str(tmp_path))
     task["script_segments"] = [
-        {"text": "你好世界", "start_time": 0.0, "end_time": 1.6},
+        {"index": 0, "text": "part one", "start_time": 0.0, "end_time": 1.0},
+        {"index": 1, "text": "part two", "start_time": 1.0, "end_time": 2.0},
     ]
 
     monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
+    monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
     monkeypatch.setattr(
-        "pipeline.translate.translate_segments",
-        lambda segments: [
-            {"text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6},
-        ],
+        "pipeline.translate.generate_localized_translation",
+        lambda source_full_text_zh, script_segments: {
+            "full_text": "Hook line. Closing line.",
+            "sentences": [
+                {"index": 0, "text": "Hook line.", "source_segment_indices": [0]},
+                {"index": 1, "text": "Closing line.", "source_segment_indices": [1]},
+            ],
+        },
     )
 
-    pipeline_runner._step_translate("task-auto-translate")
+    pipeline_runner._step_translate("task-localized")
 
-    saved = store.get("task-auto-translate")
-    assert saved["_segments_confirmed"] is True
+    saved = store.get("task-localized")
     assert saved["steps"]["translate"] == "done"
-    assert saved["script_segments"][0]["translated"] == "Hello world"
+    assert saved["source_full_text_zh"] == "part one\npart two"
+    assert saved["localized_translation"]["full_text"] == "Hook line. Closing line."
 
 
 def test_start_route_defaults_interactive_review_to_false(monkeypatch):

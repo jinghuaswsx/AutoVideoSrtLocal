@@ -82,7 +82,8 @@ def _interactive_review_enabled(task_id: str) -> bool:
 
 def _wait_for_confirmation(task_id: str, flag_name: str, timeout_seconds: int = 600):
     for _ in range(timeout_seconds):
-        if store.get(task_id).get(flag_name):
+        current = store.get(task_id) or {}
+        if current.get(flag_name):
             return
         time.sleep(1)
 
@@ -112,7 +113,7 @@ def _step_asr(task_id: str, task_dir: str):
     tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
     audio_url = upload_file(audio_path, tos_key)
 
-    set_step(task_id, "asr", "running", "正在识别语音...")
+    set_step(task_id, "asr", "running", "正在识别中文语音...")
     try:
         utterances = transcribe(audio_url)
     finally:
@@ -123,7 +124,7 @@ def _step_asr(task_id: str, task_dir: str):
 
     store.update(task_id, utterances=utterances)
     store.set_artifact(task_id, "asr", build_asr_artifact(utterances))
-    _save_json(task_dir, "asr_result.json", utterances)
+    _save_json(task_dir, "asr_result.json", {"utterances": utterances})
 
     set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
     emit(task_id, "asr_result", {"segments": utterances})
@@ -201,40 +202,50 @@ def _step_translate(task_id: str):
     task = store.get(task_id)
     task_dir = task["task_dir"]
 
-    set_step(task_id, "translate", "running", "正在翻译文案...")
+    set_step(task_id, "translate", "running", "正在生成整段本土化翻译...")
 
-    from pipeline.translate import translate_segments
+    from pipeline.localization import build_source_full_text_zh
+    from pipeline.translate import generate_localized_translation
 
-    segments = translate_segments(task["script_segments"])
-    store.update(task_id, segments=segments, script_segments=segments, _segments_confirmed=False)
-    store.set_artifact(task_id, "translate", build_translate_artifact(segments))
-    _save_json(task_dir, "translate_result.json", segments)
+    source_full_text_zh = build_source_full_text_zh(task.get("script_segments", []))
+    localized_translation = generate_localized_translation(source_full_text_zh, task.get("script_segments", []))
 
-    requires_confirmation = _interactive_review_enabled(task_id)
-    emit(task_id, "translate_result", {"segments": segments, "requires_confirmation": requires_confirmation})
+    store.update(
+        task_id,
+        source_full_text_zh=source_full_text_zh,
+        localized_translation=localized_translation,
+        _segments_confirmed=True,
+    )
+    store.set_artifact(task_id, "asr", build_asr_artifact(task.get("utterances", []), source_full_text_zh))
+    store.set_artifact(
+        task_id,
+        "translate",
+        build_translate_artifact(source_full_text_zh, localized_translation),
+    )
+    _save_json(task_dir, "source_full_text_zh.json", {"full_text": source_full_text_zh})
+    _save_json(task_dir, "localized_translation.json", localized_translation)
 
-    if requires_confirmation:
-        set_step(task_id, "translate", "waiting", "翻译完成，等待确认")
-        _wait_for_confirmation(task_id, "_segments_confirmed")
-        confirmed_segments = store.get(task_id)["script_segments"]
-        done_message = "翻译已确认"
-    else:
-        store.confirm_segments(task_id, segments)
-        confirmed_segments = store.get(task_id)["script_segments"]
-        done_message = "翻译已自动确认，继续执行"
-
-    store.set_artifact(task_id, "translate", build_translate_artifact(confirmed_segments))
-    _save_json(task_dir, "translate_confirmed.json", confirmed_segments)
-    set_step(task_id, "translate", "done", done_message)
+    emit(
+        task_id,
+        "translate_result",
+        {
+            "source_full_text_zh": source_full_text_zh,
+            "localized_translation": localized_translation,
+            "requires_confirmation": False,
+        },
+    )
+    set_step(task_id, "translate", "done", "本土化翻译完成")
 
 
 def _step_tts(task_id: str, task_dir: str):
     task = store.get(task_id)
 
-    set_step(task_id, "tts", "running", "正在生成英文配音...")
+    set_step(task_id, "tts", "running", "正在生成 ElevenLabs 朗读文案与配音...")
 
     from pipeline.extract import get_video_duration
+    from pipeline.localization import build_tts_segments
     from pipeline.timeline import build_timeline_manifest
+    from pipeline.translate import generate_tts_script
     from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
 
     voice = None
@@ -245,7 +256,9 @@ def _step_tts(task_id: str, task_dir: str):
     if not voice:
         voice = get_default_voice(task.get("voice_gender", "male"))
 
-    result = generate_full_audio(task["script_segments"], voice["elevenlabs_voice_id"], task_dir)
+    tts_script = generate_tts_script(task.get("localized_translation", {}))
+    tts_segments = build_tts_segments(tts_script, task.get("script_segments", []))
+    result = generate_full_audio(tts_segments, voice["elevenlabs_voice_id"], task_dir)
     timeline_manifest = build_timeline_manifest(
         result["segments"],
         video_duration=get_video_duration(task["video_path"]),
@@ -254,34 +267,70 @@ def _step_tts(task_id: str, task_dir: str):
     store.update(
         task_id,
         segments=result["segments"],
-        script_segments=result["segments"],
+        tts_script=tts_script,
         tts_audio_path=result["full_audio_path"],
         voice_id=voice["id"],
         timeline_manifest=timeline_manifest,
     )
     store.set_preview_file(task_id, "tts_full_audio", result["full_audio_path"])
-    store.set_artifact(task_id, "tts", build_tts_artifact(result["segments"]))
+    store.set_artifact(task_id, "tts", build_tts_artifact(tts_script, result["segments"]))
+    _save_json(task_dir, "tts_script.json", tts_script)
     _save_json(task_dir, "tts_result.json", result["segments"])
     _save_json(task_dir, "timeline_manifest.json", timeline_manifest)
 
-    set_step(task_id, "tts", "done", "语音生成完成")
+    emit(task_id, "tts_script_ready", {"tts_script": tts_script})
+    set_step(task_id, "tts", "done", "英文配音生成完成")
 
 
 def _step_subtitle(task_id: str, task_dir: str):
     task = store.get(task_id)
 
-    set_step(task_id, "subtitle", "running", "正在生成字幕...")
+    set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
 
-    from pipeline.subtitle import build_srt_from_manifest, save_srt
+    from pipeline.asr import transcribe_local_audio
+    from pipeline.subtitle import build_srt_from_chunks, save_srt
+    from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+    from pipeline.tts import _get_audio_duration
 
-    srt_content = build_srt_from_manifest(task["timeline_manifest"])
+    english_utterances = transcribe_local_audio(task["tts_audio_path"], prefix=f"tts-asr/{task_id}")
+    english_asr_result = {
+        "full_text": " ".join(
+            utterance.get("text", "").strip()
+            for utterance in english_utterances
+            if utterance.get("text")
+        ).strip(),
+        "utterances": english_utterances,
+    }
+    corrected_chunks = align_subtitle_chunks_to_asr(
+        task.get("tts_script", {}).get("subtitle_chunks", []),
+        english_asr_result,
+        total_duration=_get_audio_duration(task["tts_audio_path"]),
+    )
+    srt_content = build_srt_from_chunks(corrected_chunks)
     srt_path = os.path.join(task_dir, "subtitle.srt")
     save_srt(srt_content, srt_path)
 
-    store.update(task_id, srt_path=srt_path)
-    store.set_artifact(task_id, "subtitle", build_subtitle_artifact(srt_content))
-    set_step(task_id, "subtitle", "done", "字幕生成完成")
+    store.update(
+        task_id,
+        english_asr_result=english_asr_result,
+        corrected_subtitle={"chunks": corrected_chunks, "srt_content": srt_content},
+        srt_path=srt_path,
+    )
+    store.set_artifact(
+        task_id,
+        "subtitle",
+        build_subtitle_artifact(english_asr_result, corrected_chunks, srt_content),
+    )
+    _save_json(task_dir, "english_asr_result.json", english_asr_result)
+    _save_json(
+        task_dir,
+        "corrected_subtitle.json",
+        {"chunks": corrected_chunks, "srt_content": srt_content},
+    )
+
+    emit(task_id, "english_asr_result", english_asr_result)
     emit(task_id, "subtitle_preview", {"srt": srt_content})
+    set_step(task_id, "subtitle", "done", "英文字幕生成完成")
 
 
 def _step_compose(task_id: str, video_path: str, task_dir: str):

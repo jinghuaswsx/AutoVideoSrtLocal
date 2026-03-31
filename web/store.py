@@ -31,6 +31,11 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "alignment": {},
         "script_segments": [],
         "segments": [],
+        "source_full_text_zh": "",
+        "localized_translation": {},
+        "tts_script": {},
+        "english_asr_result": {},
+        "corrected_subtitle": {},
         "voice_gender": "male",
         "voice_id": None,
         "recommended_voice_id": None,
@@ -74,11 +79,50 @@ def set_preview_file(task_id: str, name: str, path: str):
         task.setdefault("preview_files", {})[name] = path
 
 
+def _localized_translation_from_segments(task: dict, segments: list) -> dict:
+    sentences = []
+    full_text_parts = []
+    source_segments = task.get("script_segments") or []
+
+    for fallback_index, segment in enumerate(segments):
+        translated = (segment.get("translated") or "").strip()
+        if not translated:
+            continue
+
+        indices = segment.get("source_segment_indices") or []
+        if not indices:
+            segment_index = segment.get("index")
+            if segment_index is not None:
+                indices = [segment_index]
+        if not indices and fallback_index < len(source_segments):
+            source_index = source_segments[fallback_index].get("index")
+            if source_index is not None:
+                indices = [source_index]
+        if not indices:
+            indices = [fallback_index]
+
+        sentences.append(
+            {
+                "index": len(sentences),
+                "text": translated,
+                "source_segment_indices": indices,
+            }
+        )
+        full_text_parts.append(translated)
+
+    return {
+        "full_text": " ".join(full_text_parts).strip(),
+        "sentences": sentences,
+    }
+
+
 def confirm_segments(task_id: str, segments: list):
     task = _tasks.get(task_id)
     if task:
         task["segments"] = segments
-        task["script_segments"] = segments
+        if not task.get("script_segments"):
+            task["script_segments"] = segments
+        task["localized_translation"] = _localized_translation_from_segments(task, segments)
         task["_segments_confirmed"] = True
 
 

@@ -20,7 +20,7 @@
     .config-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
     .config-item label { display: block; margin-bottom: 8px; color: #aab2c0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
     .config-item select, .segment-translated { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
-    .segment-translated { min-height: 44px; resize: vertical; }
+    .segment-translated { min-height: 88px; resize: vertical; }
     .btn { border: none; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
     .btn-primary { background: #fe2c55; color: white; }
     .btn-sm { padding: 8px 14px; font-size: 13px; }
@@ -58,7 +58,7 @@
 <body>
   <div class="container">
     <h1>AutoVideoSrt</h1>
-    <p class="subtitle">每一步都把当前关键产物留在页面里，文本可看，音频可听，视频可播。</p>
+    <p class="subtitle">每一步都会把关键中间产物留在页面里，文本可看，音频可听，视频可播。</p>
 
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="fileInput" accept="video/*" />
@@ -82,7 +82,7 @@
             <option value="middle">中部</option>
             <option value="top">顶部</option>
           </select>
-          <div class="hint">硬字幕和 CapCut 导出都会使用这里的字幕位置。</div>
+          <div class="hint">硬字幕与 CapCut 导出都会使用这里的字幕位置。</div>
         </div>
       </div>
       <div class="review-actions"><button class="btn btn-primary" id="startBtn">开始处理</button></div>
@@ -136,7 +136,11 @@
     uploadZone.addEventListener("click", () => fileInput.click());
     uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
     uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
-    uploadZone.addEventListener("drop", e => { e.preventDefault(); uploadZone.classList.remove("drag-over"); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+    uploadZone.addEventListener("drop", e => {
+      e.preventDefault();
+      uploadZone.classList.remove("drag-over");
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
     fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
     bootVoices();
@@ -165,6 +169,7 @@
       const res = await fetch("/api/tasks", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok || data.error) return showError(data.error || "上传失败");
+
       taskId = data.task_id;
       currentTask = null;
       document.getElementById("startBtn").disabled = false;
@@ -174,7 +179,7 @@
       document.getElementById("translateReview").classList.add("hidden");
       document.getElementById("resultPanel").classList.add("hidden");
       renderStepPreviews({});
-      uploadZone.innerHTML = `<div class="icon">✅</div><strong>${escapeHtml(file.name)}</strong><p>上传完成，可以开始处理</p>`;
+      uploadZone.innerHTML = `<div class="icon">✓</div><strong>${escapeHtml(file.name)}</strong><p>上传完成，可以开始处理</p>`;
     }
 
     document.getElementById("startBtn").addEventListener("click", async () => {
@@ -186,7 +191,10 @@
       await fetch(`/api/tasks/${taskId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voice_id: document.getElementById("voiceSelect").value, subtitle_position: document.getElementById("subtitlePosition").value })
+        body: JSON.stringify({
+          voice_id: document.getElementById("voiceSelect").value,
+          subtitle_position: document.getElementById("subtitlePosition").value,
+        }),
       });
       scheduleRefreshTaskState(0);
     });
@@ -218,6 +226,8 @@
       }
       scheduleRefreshTaskState(0);
     });
+    socket.on("tts_script_ready", () => scheduleRefreshTaskState(0));
+    socket.on("english_asr_result", () => scheduleRefreshTaskState(0));
     socket.on("subtitle_preview", () => scheduleRefreshTaskState(0));
     socket.on("capcut_ready", () => scheduleRefreshTaskState(0));
     socket.on("pipeline_done", ({ downloads }) => { renderDownloads(downloads); scheduleRefreshTaskState(0); });
@@ -257,33 +267,77 @@
       const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
       if (item.type === "audio") return `<div class="preview-block">${label}<audio class="media-player" controls preload="metadata" src="${artifactUrl(item.artifact)}"></audio></div>`;
       if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${artifactUrl(item.artifact)}"></video></div>`;
-      if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || '下载')}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
+      if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
       if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
       if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
       if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
       if (item.type === "segments") return `<div class="preview-block">${label}<div class="preview-list">${(item.segments || []).map(seg => renderSegmentPreview(seg, item.break_after || [])).join("")}</div></div>`;
+      if (item.type === "sentences") return `<div class="preview-block">${label}<div class="preview-list">${(item.sentences || []).map(renderSentencePreview).join("")}</div></div>`;
+      if (item.type === "tts_blocks") return `<div class="preview-block">${label}<div class="preview-list">${(item.blocks || []).map(renderTtsBlockPreview).join("")}</div></div>`;
+      if (item.type === "subtitle_chunks") return `<div class="preview-block">${label}<div class="preview-list">${(item.chunks || []).map(renderSubtitleChunkPreview).join("")}</div></div>`;
       return `<div class="preview-block">${label}<div class="preview-text">暂不支持的预览类型</div></div>`;
     }
 
     function renderSegmentPreview(seg, breakAfter) {
       const parts = [
         `<div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div>`,
-        `<div class="preview-original">${escapeHtml(seg.text || "")}</div>`
+        `<div class="preview-original">${escapeHtml(seg.text || "")}</div>`,
       ];
       if (seg.translated) parts.push(`<div class="preview-translated">译文：${escapeHtml(seg.translated)}</div>`);
       if (seg.tts_duration !== undefined && seg.tts_duration !== null) parts.push(`<div class="preview-note">TTS 时长：${Number(seg.tts_duration).toFixed(2)}s</div>`);
-      if (breakAfter.length) parts.push(`<div class="preview-note">断点索引：${breakAfter.map((flag, idx) => flag ? idx : null).filter(v => v !== null).join(", ") || "无"}</div>`);
+      if ((seg.source_segment_indices || []).length) parts.push(`<div class="preview-note">源分段：${escapeHtml(seg.source_segment_indices.join(", "))}</div>`);
+      if (breakAfter.length) parts.push(`<div class="preview-note">断点索引：${escapeHtml(breakAfter.map((flag, idx) => flag ? idx : null).filter(v => v !== null).join(", ") || "无")}</div>`);
       return `<div class="preview-block">${parts.join("")}</div>`;
+    }
+
+    function renderSentencePreview(sentence) {
+      const notes = [];
+      if ((sentence.source_segment_indices || []).length) notes.push(`源分段：${sentence.source_segment_indices.join(", ")}`);
+      return `<div class="preview-block"><div class="preview-note">句子 ${Number(sentence.index ?? 0) + 1}</div><div class="preview-original">${escapeHtml(sentence.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+    }
+
+    function renderTtsBlockPreview(block) {
+      const notes = [];
+      if ((block.sentence_indices || []).length) notes.push(`句子索引：${block.sentence_indices.join(", ")}`);
+      if ((block.source_segment_indices || []).length) notes.push(`源分段：${block.source_segment_indices.join(", ")}`);
+      return `<div class="preview-block"><div class="preview-note">朗读块 ${Number(block.index ?? 0) + 1}</div><div class="preview-original">${escapeHtml(block.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+    }
+
+    function renderSubtitleChunkPreview(chunk) {
+      const notes = [];
+      if ((chunk.block_indices || []).length) notes.push(`朗读块索引：${chunk.block_indices.join(", ")}`);
+      if ((chunk.sentence_indices || []).length) notes.push(`句子索引：${chunk.sentence_indices.join(", ")}`);
+      if ((chunk.source_segment_indices || []).length) notes.push(`源分段：${chunk.source_segment_indices.join(", ")}`);
+      if (chunk.source_asr_text) notes.push(`ASR 对齐：${chunk.source_asr_text}`);
+      const timeLine = chunk.start_time === undefined || chunk.end_time === undefined
+        ? ""
+        : `<div class="preview-time">${fmtTime(chunk.start_time)} → ${fmtTime(chunk.end_time)}</div>`;
+      return `<div class="preview-block">${timeLine}<div class="preview-original">${escapeHtml(chunk.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+    }
+
+    function renderPreviewNotes(lines) {
+      return (lines || []).map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("");
     }
 
     function renderAlignmentReview({ utterances, scene_cuts, break_after, recommended_voice_id }) {
       const list = document.getElementById("alignmentList");
       const sceneCutList = document.getElementById("sceneCutList");
-      sceneCutList.textContent = scene_cuts && scene_cuts.length ? `检测到镜头切换点：${scene_cuts.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点，这次主要依据语义停顿来推荐分段。";
-      list.innerHTML = utterances.map((u, index) => `<div class="review-item"><div class="review-time">${fmtTime(u.start_time)} → ${fmtTime(u.end_time)}</div><div class="review-original">${escapeHtml(u.text || "")}</div><label class="break-row"><input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} /><span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这一句后断开新段落"}</span></label></div>`).join("");
+      sceneCutList.textContent = scene_cuts && scene_cuts.length
+        ? `检测到镜头切换点：${scene_cuts.map(fmtTime).join(" / ")}`
+        : "没有检测到明显镜头切换点，这次主要依据语义停顿来推荐分段。";
+      list.innerHTML = utterances.map((u, index) => `
+        <div class="review-item">
+          <div class="review-time">${fmtTime(u.start_time)} → ${fmtTime(u.end_time)}</div>
+          <div class="review-original">${escapeHtml(u.text || "")}</div>
+          <label class="break-row">
+            <input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} />
+            <span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这句后断开新段落"}</span>
+          </label>
+        </div>
+      `).join("");
       if (recommended_voice_id) {
         const option = [...document.getElementById("voiceSelect").options].find(item => item.value === recommended_voice_id);
-        if (option) document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果你保持 Auto，后续会自动使用它。`;
+        if (option) document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果保持 Auto，后续会自动使用它。`;
       }
       document.getElementById("alignmentReview").classList.remove("hidden");
       document.getElementById("alignmentReview").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -291,14 +345,24 @@
 
     document.getElementById("confirmAlignment").addEventListener("click", async () => {
       const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
-      await fetch(`/api/tasks/${taskId}/alignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ break_after: breakAfter }) });
+      await fetch(`/api/tasks/${taskId}/alignment`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ break_after: breakAfter }),
+      });
       document.getElementById("alignmentReview").classList.add("hidden");
       scheduleRefreshTaskState(0);
     });
 
-    function renderTranslateReview({ segments }) {
+    function renderTranslateReview({ segments = [] }) {
       const list = document.getElementById("segmentList");
-      list.innerHTML = segments.map((segment, index) => `<div class="review-item"><div class="review-time">${fmtTime(segment.start_time)} → ${fmtTime(segment.end_time)}</div><div class="review-original">原文：${escapeHtml(segment.text || "")}</div><textarea class="segment-translated" data-index="${index}">${escapeTextarea(segment.translated || "")}</textarea></div>`).join("");
+      list.innerHTML = segments.map((segment, index) => `
+        <div class="review-item">
+          <div class="review-time">${fmtTime(segment.start_time)} → ${fmtTime(segment.end_time)}</div>
+          <div class="review-original">原文：${escapeHtml(segment.text || "")}</div>
+          <textarea class="segment-translated" data-index="${index}">${escapeTextarea(segment.translated || "")}</textarea>
+        </div>
+      `).join("");
       document.getElementById("translateReview").classList.remove("hidden");
       document.getElementById("translateReview").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -307,8 +371,15 @@
       const res = await fetch(`/api/tasks/${taskId}`);
       currentTask = await res.json();
       const originalSegments = currentTask.script_segments || currentTask.segments || [];
-      const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => ({ ...(originalSegments[index] || {}), translated: textarea.value }));
-      await fetch(`/api/tasks/${taskId}/segments`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ segments }) });
+      const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => ({
+        ...(originalSegments[index] || {}),
+        translated: textarea.value,
+      }));
+      await fetch(`/api/tasks/${taskId}/segments`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segments }),
+      });
       document.getElementById("translateReview").classList.add("hidden");
       scheduleRefreshTaskState(0);
     });
@@ -332,21 +403,64 @@
         link.href = "#";
         link.className = "download-btn";
         link.textContent = label;
-        link.addEventListener("click", e => { e.preventDefault(); dlFile(downloads[key], label); });
+        link.addEventListener("click", e => {
+          e.preventDefault();
+          dlFile(downloads[key], label);
+        });
         grid.appendChild(link);
       });
       if (grid.children.length) document.getElementById("resultPanel").classList.remove("hidden");
     }
 
     function artifactUrl(name) { return `/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`; }
-    function dlFile(url, filename) { const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
-    function placeholderText(status) { return status === "running" ? "当前步骤正在生成产物，完成后会自动显示在这里。" : status === "waiting" ? "当前步骤结果已生成，等待确认后继续。" : status === "error" ? "这一步执行失败，已生成的预览会尽量保留。" : "等待前序步骤完成后，这里的关键产出会自动出现。"; }
-    function showError(message) { const el = document.getElementById("errorMsg"); el.textContent = `错误：${message}`; el.style.display = "block"; }
-    function clearError() { const el = document.getElementById("errorMsg"); el.textContent = ""; el.style.display = "none"; }
-    function fmtTime(seconds) { if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) return "--"; const v = Number(seconds); return `${Math.floor(v / 60)}:${(v % 60).toFixed(1).padStart(4, "0")}`; }
-    function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
-    function escapeTextarea(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
-    function escapeJs(value) { return String(value || "").replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
+    function dlFile(url, filename) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    function placeholderText(status) {
+      if (status === "running") return "当前步骤正在生成产物，完成后会自动显示在这里。";
+      if (status === "waiting") return "当前步骤结果已生成，等待确认后继续。";
+      if (status === "error") return "这一步执行失败，已生成的预览会尽量保留。";
+      return "等待前序步骤完成后，这里的关键产出会自动出现。";
+    }
+    function showError(message) {
+      const el = document.getElementById("errorMsg");
+      el.textContent = `错误：${message}`;
+      el.style.display = "block";
+    }
+    function clearError() {
+      const el = document.getElementById("errorMsg");
+      el.textContent = "";
+      el.style.display = "none";
+    }
+    function fmtTime(seconds) {
+      if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) return "--";
+      const value = Number(seconds);
+      return `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, "0")}`;
+    }
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+    function escapeTextarea(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+    function escapeJs(value) {
+      return String(value || "")
+        .replaceAll("\\", "\\\\")
+        .replaceAll("'", "\\'");
+    }
   </script>
 </body>
 </html>
