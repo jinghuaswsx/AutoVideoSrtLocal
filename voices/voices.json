@@ -1,0 +1,24 @@
+{
+  "voices": [
+    {
+      "id": "male_default",
+      "name": "Adam",
+      "gender": "male",
+      "elevenlabs_voice_id": "pNInz6obpgDQGcFmaJgB",
+      "description": "美式男声，自然有力，适合卖货展示类视频",
+      "style_tags": ["energetic", "trustworthy", "casual"],
+      "is_default_male": true,
+      "is_default_female": false
+    },
+    {
+      "id": "female_default",
+      "name": "Rachel",
+      "gender": "female",
+      "elevenlabs_voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "description": "美式女声，亲切自然，适合美妆护肤生活类视频",
+      "style_tags": ["warm", "friendly", "expressive"],
+      "is_default_male": false,
+      "is_default_female": true
+    }
+  ]
+}

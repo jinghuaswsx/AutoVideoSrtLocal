@@ -26,3 +26,7 @@ out/
 
 # Logs
 *.log
+uploads/
+output/
+capcut_example/
+example.mp4
