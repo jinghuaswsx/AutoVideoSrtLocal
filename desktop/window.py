@@ -57,16 +57,23 @@ class MainWindow(QMainWindow):
 
     @Slot(str, str, str)
     def _on_start(self, video_path: str, voice_name: str, subtitle_position: str) -> None:
-        task_id = uuid.uuid4().hex[:12]
-        task_dir = os.path.join(OUTPUT_DIR, task_id)
-        os.makedirs(task_dir, exist_ok=True)
-        dest = os.path.join(task_dir, os.path.basename(video_path))
-        shutil.copy2(video_path, dest)
-        task_state.create(task_id, dest, task_dir, os.path.basename(video_path))
-        task_state.update(task_id, voice_name=voice_name, subtitle_position=subtitle_position)
-        self.current_task_id = task_id
-        self.step_list.reset()
-        self.runner.run(task_id)
+        try:
+            task_id = uuid.uuid4().hex[:12]
+            task_dir = os.path.join(OUTPUT_DIR, task_id)
+            os.makedirs(task_dir, exist_ok=True)
+            dest = os.path.join(task_dir, os.path.basename(video_path))
+            shutil.copy2(video_path, dest)
+            task_state.create(task_id, dest, task_dir, os.path.basename(video_path))
+            task_state.update(task_id, voice_name=voice_name, subtitle_position=subtitle_position)
+            self.current_task_id = task_id
+            self.step_list.reset()
+            self.runner.start(task_id)
+        except Exception as e:
+            import traceback
+            self.config_panel.enable_start()
+            self.config_panel.set_status(f"启动失败: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "启动失败", traceback.format_exc())
 
     @Slot(object)
     def _handle_event(self, event: Event) -> None:

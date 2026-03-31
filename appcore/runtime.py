@@ -277,7 +277,7 @@ class PipelineRunner:
                 total_duration=total_duration,
             )
             srt_content = build_srt_from_chunks(corrected_chunks)
-            srt_path = save_srt(srt_content, task_dir, variant=variant)
+            srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
             variant_state.update({
                 "english_asr_result": english_asr_result,
                 "corrected_subtitle": {"chunks": corrected_chunks, "srt_content": srt_content},
