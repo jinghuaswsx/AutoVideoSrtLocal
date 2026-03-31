@@ -1,10 +1,17 @@
-"""
-翻译模块：通过 OpenRouter 调用 Claude，将中文文案翻译为 TikTok 卖货广告英文文案
-"""
 import json
-from typing import List, Dict
+from typing import Dict, List
+
 from openai import OpenAI
-from config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, CLAUDE_MODEL
+
+from config import CLAUDE_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
+from pipeline.localization import (
+    LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+    TTS_SCRIPT_RESPONSE_FORMAT,
+    build_localized_translation_messages,
+    build_tts_script_messages,
+    validate_localized_translation,
+    validate_tts_script,
+)
 
 client = OpenAI(
     api_key=OPENROUTER_API_KEY,
@@ -14,70 +21,84 @@ client = OpenAI(
 SYSTEM_PROMPT = """You are an expert copywriter specializing in TikTok e-commerce advertising for the US market.
 
 Your task is to translate Chinese short video scripts into English copy that:
-1. Sounds completely native — written by an American creator, NOT translated
-2. Matches the energy and style of the original (enthusiastic, urgent, conversational)
-3. Uses natural spoken American English — contractions, casual phrasing, direct address ("you", "your")
-4. Adapts Chinese cultural references, idioms, and platform slang into US TikTok equivalents
-5. Maintains persuasive selling power — hooks, social proof, calls-to-action must land hard
-6. Keeps the same sentence count and rhythm as the original for audio/video sync
-7. Each translated segment must be proportional in length to its original — don't make short segments long or long segments short
+1. Sounds completely native, written by an American creator, not translated
+2. Matches the energy and style of the original
+3. Uses natural spoken American English
+4. Adapts cultural references into US TikTok equivalents
+5. Maintains persuasive selling power
+6. Keeps the same sentence count and rhythm as the original for audio and video sync
 
-TikTok Ad Copy Rules:
-- Open with a scroll-stopping hook (question, bold claim, or relatable pain point)
-- Use simple vocabulary — 8th grade reading level max
-- Active voice, present tense preferred
-- Avoid formal or academic language
-- "This thing is insane" beats "This product is remarkable"
-- Price reveals, before/after, and urgency phrases should feel organic, not salesy
+Output only a valid JSON array.
+Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}]"""
 
-Output ONLY a valid JSON array. No explanations, no markdown, no extra text.
-Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}, ...]"""
+
+def _model_name() -> str:
+    return CLAUDE_MODEL.replace("claude-sonnet-4-5", "claude-sonnet-4.5")
+
+
+def _parse_json_content(raw: str):
+    content = raw.strip()
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+    return json.loads(content.strip())
+
+
+def generate_localized_translation(source_full_text_zh: str, script_segments: list[dict]) -> dict:
+    response = client.chat.completions.create(
+        model=_model_name(),
+        messages=build_localized_translation_messages(source_full_text_zh, script_segments),
+        temperature=0.2,
+        max_tokens=4096,
+        extra_body={
+            "response_format": LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            "plugins": [{"id": "response-healing"}],
+        },
+    )
+    payload = _parse_json_content(response.choices[0].message.content)
+    return validate_localized_translation(payload)
+
+
+def generate_tts_script(localized_translation: dict) -> dict:
+    response = client.chat.completions.create(
+        model=_model_name(),
+        messages=build_tts_script_messages(localized_translation),
+        temperature=0.2,
+        max_tokens=4096,
+        extra_body={
+            "response_format": TTS_SCRIPT_RESPONSE_FORMAT,
+            "plugins": [{"id": "response-healing"}],
+        },
+    )
+    payload = _parse_json_content(response.choices[0].message.content)
+    return validate_tts_script(payload)
 
 
 def translate_segments(segments: List[Dict]) -> List[Dict]:
-    """
-    翻译 ASR 分段结果
-
-    Args:
-        segments: [{"text": str, "start_time": float, "end_time": float}, ...]
-
-    Returns:
-        同结构，每个 dict 新增 "translated" 字段
-    """
     if not segments:
         return segments
 
-    # 构建待翻译列表
     items = [{"index": i, "text": seg["text"]} for i, seg in enumerate(segments)]
-
     user_prompt = f"""Translate these Chinese TikTok ad script segments to native American English.
-Each segment is one spoken sentence/phrase. Keep the same count and order.
+Each segment is one spoken sentence or phrase. Keep the same count and order.
 
 Segments:
 {json.dumps(items, ensure_ascii=False, indent=2)}
 
-Remember: output ONLY the JSON array."""
+Remember: output only the JSON array."""
 
     response = client.chat.completions.create(
-        model=CLAUDE_MODEL,
+        model=_model_name(),
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ],
         temperature=0.7,
         max_tokens=4096,
     )
 
-    raw = response.choices[0].message.content.strip()
-
-    # 防御性解析：去掉可能的 markdown 代码块
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
-
-    translations = json.loads(raw)
+    translations = _parse_json_content(response.choices[0].message.content)
     translation_map = {item["index"]: item["translated"] for item in translations}
 
     result = []
