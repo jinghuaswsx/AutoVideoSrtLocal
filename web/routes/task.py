@@ -36,7 +36,7 @@ def upload():
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     file.save(video_path)
 
-    store.create(task_id, video_path, task_dir)
+    store.create(task_id, video_path, task_dir, original_filename=os.path.basename(file.filename))
     return jsonify({"task_id": task_id}), 201
 
 

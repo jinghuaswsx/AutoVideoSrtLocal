@@ -16,8 +16,11 @@ def export_capcut_project(
     timeline_manifest: dict,
     output_dir: str,
     subtitle_position: str = "bottom",
+    draft_title: str | None = None,
 ) -> dict:
-    project_dir = Path(output_dir) / "capcut_project"
+    source_name = draft_title or Path(video_path).name
+    draft_name = _build_draft_name(source_name)
+    project_dir = Path(output_dir) / draft_name
     if project_dir.exists():
         shutil.rmtree(project_dir)
 
@@ -50,6 +53,7 @@ def export_capcut_project(
     manifest_path = project_dir / "codex_export_manifest.json"
     export_manifest = {
         "backend": export_backend,
+        "draft_name": draft_name,
         "video": "Resources/auto_generated/" + Path(video_path).name,
         "audio": "Resources/auto_generated/" + Path(tts_audio_path).name,
         "subtitle": "Resources/auto_generated/" + Path(srt_path).name,
@@ -61,7 +65,7 @@ def export_capcut_project(
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(export_manifest, fh, ensure_ascii=False, indent=2)
 
-    archive_path = Path(output_dir) / "capcut_project.zip"
+    archive_path = Path(output_dir) / f"{draft_name}.zip"
     with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         for file_path in project_dir.rglob("*"):
             if file_path.is_file():
@@ -85,6 +89,7 @@ def _export_with_pyjianyingdraft(
     draft = importlib.import_module("pyJianYingDraft")
     output_dir = project_dir.parent
     draft_name = project_dir.name
+    media_duration = _probe_media_duration(video_path) or float(timeline_manifest.get("video_duration", 0.0) or 0.0)
 
     draft_folder = draft.DraftFolder(str(output_dir))
     script = draft_folder.create_draft(draft_name, 1080, 1920, allow_replace=True)
@@ -111,15 +116,20 @@ def _export_with_pyjianyingdraft(
     for segment in timeline_manifest.get("segments", []):
         target_cursor = float(segment.get("timeline_start", 0.0) or 0.0)
         for clip in segment.get("video_ranges", []):
-            clip_start = float(clip["start"])
-            clip_duration = max(float(clip["end"]) - clip_start, 0.0)
+            clip_start = max(float(clip["start"]), 0.0)
+            clip_end = float(clip["end"])
+            if media_duration > 0:
+                clip_end = min(clip_end, media_duration)
+            clip_duration = max(clip_end - clip_start, 0.0)
             if clip_duration <= 0:
                 continue
+            clip_start = round(clip_start, 3)
+            clip_duration = round(clip_duration, 3)
             script.add_segment(
                 draft.VideoSegment(
                     str(copied_video),
-                    draft.trange(f"{round(target_cursor, 3)}s", f"{round(clip_duration, 3)}s"),
-                    source_timerange=draft.trange(f"{round(clip_start, 3)}s", f"{round(clip_duration, 3)}s"),
+                    draft.trange(f"{round(target_cursor, 3)}s", f"{clip_duration}s"),
+                    source_timerange=draft.trange(f"{clip_start}s", f"{clip_duration}s"),
                 ),
                 track_name="video",
             )
@@ -197,3 +207,44 @@ def _subtitle_transform_y(position: str) -> float:
         "bottom": -0.78,
     }
     return mapping.get(position, -0.78)
+
+
+def _build_draft_name(source_name: str) -> str:
+    timestamp = time.strftime("%y-%m-%d-%H-%M-%S")
+    stem = _sanitize_draft_name(Path(source_name).stem)
+    return f"{stem}_{timestamp}"
+
+
+def _sanitize_draft_name(name: str) -> str:
+    sanitized = "".join("_" if char in '<>:"/\\|?*' else char for char in name).strip()
+    return sanitized or "capcut_project"
+
+
+def _probe_media_duration(video_path: Path) -> float:
+    try:
+        media_info = importlib.import_module("pymediainfo").MediaInfo
+    except ModuleNotFoundError:
+        return 0.0
+
+    try:
+        info = media_info.parse(str(video_path))
+    except Exception:
+        return 0.0
+
+    for track in getattr(info, "video_tracks", []) or []:
+        duration_ms = getattr(track, "duration", None)
+        try:
+            if duration_ms is not None:
+                return float(duration_ms) / 1000.0
+        except (TypeError, ValueError):
+            continue
+
+    for track in getattr(info, "audio_tracks", []) or []:
+        duration_ms = getattr(track, "duration", None)
+        try:
+            if duration_ms is not None:
+                return float(duration_ms) / 1000.0
+        except (TypeError, ValueError):
+            continue
+
+    return 0.0

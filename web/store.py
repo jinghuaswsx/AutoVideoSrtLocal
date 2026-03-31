@@ -9,12 +9,13 @@ from typing import Optional
 _tasks: dict = {}
 
 
-def create(task_id: str, video_path: str, task_dir: str) -> dict:
+def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None) -> dict:
     task = {
         "id": task_id,
         "status": "uploaded",
         "video_path": video_path,
         "task_dir": task_dir,
+        "original_filename": original_filename,
         "steps": {
             "extract": "pending",
             "asr": "pending",

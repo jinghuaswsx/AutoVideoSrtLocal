@@ -322,6 +322,7 @@ def _step_export(task_id: str, video_path: str, task_dir: str):
         timeline_manifest=task.get("timeline_manifest", {}),
         output_dir=task_dir,
         subtitle_position=task.get("subtitle_position", "bottom"),
+        draft_title=task.get("original_filename"),
     )
 
     exports = dict(task.get("exports", {}))
