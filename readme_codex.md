@@ -92,6 +92,7 @@
 - `subtitle.hook_cta.srt`
 - `timeline_manifest.normal.json`
 - `timeline_manifest.hook_cta.json`
+- `timeline_manifest.json`（兼容入口，默认映射普通版）
 - `*_soft.normal.mp4`
 - `*_soft.hook_cta.mp4`
 - `*_hard.normal.mp4`
