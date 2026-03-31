@@ -1,4 +1,4 @@
-from pipeline.subtitle import build_srt_from_manifest
+from pipeline.subtitle import build_srt_from_chunks, build_srt_from_manifest
 
 
 def test_build_srt_from_manifest_uses_manifest_timing():
@@ -24,3 +24,16 @@ def test_build_srt_from_manifest_uses_manifest_timing():
     assert "00:00:00,000 --> 00:00:01,250" in srt
     assert "00:00:01,250 --> 00:00:02,750" in srt
     assert "Hello there" in srt
+
+
+def test_build_srt_from_chunks_uses_corrected_text_and_timing():
+    srt = build_srt_from_chunks(
+        [
+            {"index": 0, "text": "Say it smooth.", "start_time": 0.0, "end_time": 0.8},
+            {"index": 1, "text": "Keep it fun.", "start_time": 0.8, "end_time": 1.8},
+        ]
+    )
+
+    assert "00:00:00,000 --> 00:00:00,800" in srt
+    assert "Say it smooth." in srt
+    assert "Keep it fun." in srt

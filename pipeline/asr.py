@@ -44,6 +44,20 @@ def transcribe(audio_url: str) -> List[Dict]:
     return _parse(result)
 
 
+def transcribe_local_audio(local_audio_path: str, prefix: str) -> List[Dict]:
+    from pipeline.storage import delete_file, upload_file
+
+    object_key = f"{prefix}_{uuid.uuid4().hex[:8]}.mp3"
+    audio_url = upload_file(local_audio_path, object_key)
+    try:
+        return transcribe(audio_url)
+    finally:
+        try:
+            delete_file(object_key)
+        except Exception:
+            pass
+
+
 def _build_headers(request_id: str) -> dict:
     return {
         "Content-Type": "application/json",

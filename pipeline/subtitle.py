@@ -134,6 +134,19 @@ def build_srt_from_manifest(manifest: Dict) -> str:
     return "\n".join(srt_lines)
 
 
+def build_srt_from_chunks(chunks: List[Dict]) -> str:
+    srt_lines = []
+    for i, chunk in enumerate(chunks, 1):
+        srt_lines.append(str(i))
+        srt_lines.append(
+            f"{format_timestamp(float(chunk['start_time']))} --> {format_timestamp(float(chunk['end_time']))}"
+        )
+        srt_lines.append(chunk["text"])
+        srt_lines.append("")
+
+    return "\n".join(srt_lines)
+
+
 def save_srt(content: str, output_path: str) -> str:
     """保存 .srt 文件"""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
