@@ -66,3 +66,24 @@ def test_build_timeline_manifest_marks_tail_truncation_when_video_runs_out():
     assert manifest["segments"][1]["video_ranges"] == [{"start": 4.0, "end": 6.0}]
     assert manifest["segments"][1]["video_truncated"] is True
     assert manifest["video_consumed_duration"] == 6.0
+
+
+def test_build_timeline_manifest_uses_tts_block_text_and_source_window():
+    manifest = build_timeline_manifest(
+        [
+            {
+                "index": 0,
+                "text": "part one",
+                "translated": "Hook line.",
+                "source_segment_indices": [0],
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "tts_duration": 1.5,
+            }
+        ],
+        video_duration=10.0,
+    )
+
+    assert manifest["segments"][0]["translated"] == "Hook line."
+    assert manifest["segments"][0]["source_window"]["end"] == 1.0
+    assert manifest["segments"][0]["source_segment_indices"] == [0]

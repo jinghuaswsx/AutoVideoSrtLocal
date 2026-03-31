@@ -28,6 +28,7 @@ def build_timeline_manifest(script_segments: List[Dict], video_duration: float) 
                 "index": index,
                 "text": segment.get("text", ""),
                 "translated": segment.get("translated", segment.get("text", "")),
+                "source_segment_indices": segment.get("source_segment_indices", []),
                 "utterance_indices": segment.get("utterance_indices", []),
                 "source_window": {
                     "start": round(float(segment.get("start_time", 0.0)), 3),

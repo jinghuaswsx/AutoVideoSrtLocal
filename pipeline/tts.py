@@ -59,7 +59,7 @@ def generate_full_audio(segments: List[Dict], voice_id: str, output_dir: str) ->
 
     with open(concat_list_path, "w", encoding="utf-8") as concat_f:
         for i, seg in enumerate(segments):
-            text = seg.get("translated", seg.get("text", ""))
+            text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
             seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
 
             generate_segment_audio(text, voice_id, seg_path)
