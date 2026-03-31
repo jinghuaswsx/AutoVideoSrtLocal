@@ -1,5 +1,16 @@
+"""
+Pipeline runner integration tests.
+
+Now tests appcore.runtime directly; web/services/pipeline_runner is a thin adapter.
+"""
+import appcore.runtime as runtime
+from appcore.events import EventBus
 from web import store
-from web.services import pipeline_runner
+
+
+def _silent_bus():
+    """EventBus that discards all events (no socketio needed in tests)."""
+    return EventBus()
 
 
 def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path, monkeypatch):
@@ -9,7 +20,6 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
         {"text": "world", "start_time": 0.8, "end_time": 1.6},
     ]
 
-    monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
     monkeypatch.setattr("pipeline.alignment.detect_scene_cuts", lambda video_path: [])
     monkeypatch.setattr(
         "pipeline.alignment.compile_alignment",
@@ -27,7 +37,9 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
 
     monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
 
-    pipeline_runner._step_alignment("task-auto-alignment", "video.mp4", str(tmp_path))
+    bus = _silent_bus()
+    runner = runtime.PipelineRunner(bus=bus)
+    runner._step_alignment("task-auto-alignment", "video.mp4", str(tmp_path))
 
     saved = store.get("task-auto-alignment")
     assert saved["_alignment_confirmed"] is True
@@ -42,7 +54,6 @@ def test_step_translate_persists_source_text_and_localized_translation(tmp_path,
         {"index": 1, "text": "part two", "start_time": 1.0, "end_time": 2.0},
     ]
 
-    monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
     monkeypatch.setattr(
         "pipeline.translate.generate_localized_translation",
@@ -55,7 +66,9 @@ def test_step_translate_persists_source_text_and_localized_translation(tmp_path,
         },
     )
 
-    pipeline_runner._step_translate("task-localized")
+    bus = _silent_bus()
+    runner = runtime.PipelineRunner(bus=bus)
+    runner._step_translate("task-localized")
 
     saved = store.get("task-localized")
     assert saved["steps"]["translate"] == "done"
@@ -70,7 +83,6 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
         {"index": 1, "text": "part two", "start_time": 1.0, "end_time": 2.0},
     ]
 
-    monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
 
     def fake_generate_localized_translation(source_full_text_zh, script_segments, variant="normal"):
@@ -90,7 +102,9 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
 
     monkeypatch.setattr("pipeline.translate.generate_localized_translation", fake_generate_localized_translation)
 
-    pipeline_runner._step_translate("task-variant-translate")
+    bus = _silent_bus()
+    runner = runtime.PipelineRunner(bus=bus)
+    runner._step_translate("task-variant-translate")
 
     saved = store.get("task-variant-translate")
     assert saved["variants"]["normal"]["localized_translation"]["full_text"] == "Normal copy."
@@ -113,48 +127,38 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
         "sentences": [{"index": 0, "text": "Hook CTA copy.", "source_segment_indices": [0]}],
     }
 
-    monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
-    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.0)
-    monkeypatch.setattr("pipeline.tts.get_voice_by_id", lambda voice_id: {"id": voice_id, "elevenlabs_voice_id": "voice_1"})
-    monkeypatch.setattr("pipeline.tts.get_default_voice", lambda gender="male": {"id": "default", "elevenlabs_voice_id": "voice_1"})
-
-    def fake_generate_tts_script(localized_translation):
-        text = localized_translation["full_text"]
-        return {
-            "full_text": text,
-            "blocks": [{"index": 0, "text": text, "sentence_indices": [0], "source_segment_indices": [0]}],
-            "subtitle_chunks": [{"index": 0, "text": text.rstrip("."), "block_indices": [0], "sentence_indices": [0], "source_segment_indices": [0]}],
-        }
-
-    monkeypatch.setattr("pipeline.translate.generate_tts_script", fake_generate_tts_script)
+    monkeypatch.setattr(
+        "pipeline.tts.get_voice_by_id",
+        lambda vid: {"id": vid, "name": "Adam", "elevenlabs_voice_id": "el_adam"},
+    )
+    monkeypatch.setattr(
+        "pipeline.translate.generate_tts_script",
+        lambda localized_translation: {
+            "full_text": localized_translation["full_text"],
+            "subtitle_chunks": [],
+            "sentences": localized_translation["sentences"],
+        },
+    )
     monkeypatch.setattr(
         "pipeline.localization.build_tts_segments",
-        lambda tts_script, script_segments: [
-            {
-                "index": 0,
-                "text": script_segments[0]["text"],
-                "translated": tts_script["full_text"],
-                "tts_text": tts_script["full_text"],
-                "source_segment_indices": [0],
-                "start_time": 0.0,
-                "end_time": 1.0,
-            }
-        ],
+        lambda tts_script, script_segments: [],
     )
 
-    def fake_generate_full_audio(segments, voice_id, output_dir, variant=None):
-        return {
-            "full_audio_path": str(tmp_path / f"tts_full.{variant}.mp3"),
-            "segments": [{**segments[0], "tts_path": f"{variant}.mp3", "tts_duration": 1.2}],
-        }
+    def fake_generate_full_audio(tts_segments, voice_id, output_dir, variant="normal"):
+        path = str(tmp_path / f"tts_full.{variant}.mp3")
+        open(path, "wb").write(b"fake")
+        return {"full_audio_path": path, "segments": []}
 
     monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_generate_full_audio)
     monkeypatch.setattr(
         "pipeline.timeline.build_timeline_manifest",
         lambda segments, video_duration: {"segments": segments, "video_duration": video_duration, "total_tts_duration": 1.2},
     )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 10.0)
 
-    pipeline_runner._step_tts("task-variant-tts", str(tmp_path))
+    bus = _silent_bus()
+    runner = runtime.PipelineRunner(bus=bus)
+    runner._step_tts("task-variant-tts", str(tmp_path))
 
     saved = store.get("task-variant-tts")
     assert saved["variants"]["normal"]["tts_script"]["full_text"] == "Normal copy."
@@ -193,52 +197,54 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
         )
 
     messages = []
-    monkeypatch.setattr(pipeline_runner, "emit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        pipeline_runner,
-        "set_step",
-        lambda task_id, step, status, message="": messages.append((step, status, message)),
-    )
+
+    def fake_set_step(task_id, step, status, message=""):
+        messages.append((step, status, message))
+        import appcore.task_state as ts
+        ts.set_step(task_id, step, status)
+
+    monkeypatch.setattr(runtime.PipelineRunner, "_set_step", lambda self, tid, step, status, msg="": messages.append((step, status, msg)) or __import__("appcore.task_state", fromlist=["set_step"]).set_step(tid, step, status))
     monkeypatch.setattr(
         "pipeline.asr.transcribe_local_audio",
         lambda path, prefix="": [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}],
     )
-    monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 1.0)
     monkeypatch.setattr(
         "pipeline.subtitle_alignment.align_subtitle_chunks_to_asr",
-        lambda subtitle_chunks, english_asr_result, total_duration=0.0: [
-            {
-                "index": 0,
-                "text": subtitle_chunks[0]["text"],
-                "start_time": 0.0,
-                "end_time": 1.0,
-            }
-        ],
+        lambda chunks, asr_result, total_duration=0.0: chunks,
+    )
+    monkeypatch.setattr(
+        "pipeline.subtitle.build_srt_from_chunks",
+        lambda chunks: "1\n00:00:00,000 --> 00:00:01,000\nHello\n",
+    )
+    monkeypatch.setattr(
+        "pipeline.subtitle.save_srt",
+        lambda srt_content, output_dir, variant=None: str(tmp_path / f"subtitle.{variant}.srt"),
     )
     monkeypatch.setattr(
         "pipeline.compose.compose_video",
         lambda **kwargs: {
-            "soft_video": str(tmp_path / f"{kwargs['variant']}_soft.mp4"),
-            "hard_video": str(tmp_path / f"{kwargs['variant']}_hard.mp4"),
-            "srt": kwargs["srt_path"],
+            "soft_video": str(tmp_path / f"soft.{kwargs.get('variant','normal')}.mp4"),
+            "hard_video": str(tmp_path / f"hard.{kwargs.get('variant','normal')}.mp4"),
         },
     )
 
-    def fake_export_capcut_project(**kwargs):
-        variant = kwargs["variant"]
+    def fake_export_capcut_project(video_path=None, tts_audio_path=None, srt_path=None, output_dir=None, timeline_manifest=None, variant="normal", **kwargs):
         manifest_path = tmp_path / f"manifest.{variant}.json"
-        manifest_path.write_text('{"backend":"pyJianYingDraft"}', encoding="utf-8")
+        manifest_path.write_text("{}", encoding="utf-8")
         return {
             "project_dir": str(tmp_path / f"capcut_{variant}"),
             "archive_path": str(tmp_path / f"capcut_{variant}.zip"),
             "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
         }
 
     monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
 
-    pipeline_runner._step_subtitle("task-tail-messages", str(tmp_path))
-    pipeline_runner._step_compose("task-tail-messages", "video.mp4", str(tmp_path))
-    pipeline_runner._step_export("task-tail-messages", "video.mp4", str(tmp_path))
+    bus = _silent_bus()
+    runner = runtime.PipelineRunner(bus=bus)
+    runner._step_subtitle("task-tail-messages", str(tmp_path))
+    runner._step_compose("task-tail-messages", "video.mp4", str(tmp_path))
+    runner._step_export("task-tail-messages", "video.mp4", str(tmp_path))
 
     assert ("subtitle", "running", "正在根据英文音频校正字幕...") in messages
     assert ("subtitle", "done", "英文字幕生成完成") in messages
@@ -249,6 +255,7 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
 
 
 def test_start_route_defaults_interactive_review_to_false(monkeypatch):
+    from web.services import pipeline_runner
     app = __import__("web.app", fromlist=["create_app"]).create_app()
     client = app.test_client()
     store.create("task-start-auto", "video.mp4", "output/task-start-auto")
