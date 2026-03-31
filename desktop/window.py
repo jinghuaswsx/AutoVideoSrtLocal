@@ -80,13 +80,20 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_step_clicked(self, step_id: str) -> None:
         if not self.current_task_id:
+            self.config_panel.set_status("尚未开始任务")
             return
         task = task_state.get(self.current_task_id)
         if not task:
+            self.config_panel.set_status("任务状态丢失")
             return
         artifact = task.get("artifacts", {}).get(step_id)
         preview_files = task.get("preview_files", {})
-        self.preview.show_artifact(artifact or {}, preview_files)
+        if not artifact:
+            self.config_panel.set_status(f"{step_id} 暂无预览（步骤未完成）")
+            self.preview.show_placeholder()
+            return
+        self.config_panel.set_status(f"预览: {step_id}")
+        self.preview.show_artifact(artifact, preview_files)
 
     @Slot(object)
     def _handle_event(self, event: Event) -> None:

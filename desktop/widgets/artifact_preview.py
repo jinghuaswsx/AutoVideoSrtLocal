@@ -27,11 +27,15 @@ class AudioPreviewWidget(QWidget):
         self._audio_out = QAudioOutput(self)
         self._player.setAudioOutput(self._audio_out)
         self._player.playbackStateChanged.connect(self._on_state_changed)
+        self._player.errorOccurred.connect(self._on_error)
 
     def load(self, path: str, label: str = "") -> None:
-        self._label.setText(label or path)
+        self._label.setText(f"{label or ''}\n{path}")
         self._player.setSource(QUrl.fromLocalFile(path))
         self._play_btn.setText("▶ 播放")
+
+    def _on_error(self, error, error_string: str) -> None:
+        self._label.setText(f"播放错误: {error_string}\n{self._label.text()}")
 
     def _toggle_play(self) -> None:
         if self._player.playbackState() == QMediaPlayer.PlayingState:
@@ -99,6 +103,7 @@ class ArtifactPreviewWidget(QStackedWidget):
     def show_audio(self, path: str, label: str = "") -> None:
         self._audio_view.load(path, label)
         self.setCurrentIndex(2)
+        self._audio_view._player.play()
 
     def show_video(self, path: str) -> None:
         self._video_view.load(path)
