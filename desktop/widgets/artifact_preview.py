@@ -1,4 +1,4 @@
-"""Artifact preview widget — renders text, audio, video, and subtitle artifacts."""
+"""Artifact preview widget — renders text, audio, video, and structured artifacts."""
 from __future__ import annotations
 
 from PySide6.QtCore import QUrl
@@ -28,7 +28,8 @@ class AudioPreviewWidget(QWidget):
         self._player.setAudioOutput(self._audio_out)
         self._player.playbackStateChanged.connect(self._on_state_changed)
 
-    def load(self, path: str) -> None:
+    def load(self, path: str, label: str = "") -> None:
+        self._label.setText(label or path)
         self._player.setSource(QUrl.fromLocalFile(path))
         self._play_btn.setText("▶ 播放")
 
@@ -39,10 +40,7 @@ class AudioPreviewWidget(QWidget):
             self._player.play()
 
     def _on_state_changed(self, state) -> None:
-        if state == QMediaPlayer.PlayingState:
-            self._play_btn.setText("⏸ 暂停")
-        else:
-            self._play_btn.setText("▶ 播放")
+        self._play_btn.setText("⏸ 暂停" if state == QMediaPlayer.PlayingState else "▶ 播放")
 
 
 class VideoPreviewWidget(QWidget):
@@ -72,10 +70,7 @@ class VideoPreviewWidget(QWidget):
             self._player.play()
 
     def _on_state_changed(self, state) -> None:
-        if state == QMediaPlayer.PlayingState:
-            self._play_btn.setText("⏸ 暂停")
-        else:
-            self._play_btn.setText("▶ 播放")
+        self._play_btn.setText("⏸ 暂停" if state == QMediaPlayer.PlayingState else "▶ 播放")
 
 
 class ArtifactPreviewWidget(QStackedWidget):
@@ -83,7 +78,8 @@ class ArtifactPreviewWidget(QStackedWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._placeholder = QLabel("选择步骤后查看预览")
+        self._placeholder = QLabel("点击左侧步骤查看预览")
+        self._placeholder.setWordWrap(True)
         self._text_view = QPlainTextEdit()
         self._text_view.setReadOnly(True)
         self._audio_view = AudioPreviewWidget()
@@ -100,10 +96,61 @@ class ArtifactPreviewWidget(QStackedWidget):
         self._text_view.setPlainText(content)
         self.setCurrentIndex(1)
 
-    def show_audio(self, path: str) -> None:
-        self._audio_view.load(path)
+    def show_audio(self, path: str, label: str = "") -> None:
+        self._audio_view.load(path, label)
         self.setCurrentIndex(2)
 
     def show_video(self, path: str) -> None:
         self._video_view.load(path)
         self.setCurrentIndex(3)
+
+    def show_artifact(self, artifact: dict, preview_files: dict) -> None:
+        """Render a structured artifact dict from task_state."""
+        if not artifact:
+            self.show_placeholder()
+            return
+
+        layout = artifact.get("layout", "")
+        items = artifact.get("items", [])
+        title = artifact.get("title", "")
+
+        # variant_compare: use normal variant's items
+        if layout == "variant_compare":
+            variants = artifact.get("variants", {})
+            normal = variants.get("normal", variants.get(next(iter(variants), ""), {}))
+            items = normal.get("items", [])
+
+        # Find first renderable item
+        for item in items:
+            itype = item.get("type", "")
+            if itype == "text":
+                content = item.get("content", "")
+                if content:
+                    self.show_text(f"[{title}] {item.get('label','')}\n\n{content}")
+                    return
+            elif itype == "utterances":
+                utterances = item.get("utterances", [])
+                lines = [f"{u.get('start',0):.1f}s  {u.get('text','')}" for u in utterances]
+                self.show_text(f"[{title}] {item.get('label','')}\n\n" + "\n".join(lines))
+                return
+            elif itype == "subtitle_chunks":
+                chunks = item.get("chunks", [])
+                lines = [f"{c.get('start',0):.1f}–{c.get('end',0):.1f}s  {c.get('text','')}" for c in chunks]
+                self.show_text(f"[{title}] {item.get('label','')}\n\n" + "\n".join(lines))
+                return
+            elif itype == "audio":
+                key = item.get("artifact", "")
+                path = preview_files.get(key, "")
+                if path:
+                    self.show_audio(path, item.get("label", ""))
+                    return
+            elif itype == "video":
+                key = item.get("artifact", "")
+                path = preview_files.get(key, "")
+                if path:
+                    self.show_video(path)
+                    return
+
+        # Fallback: dump raw artifact as text
+        import json
+        self.show_text(json.dumps(artifact, ensure_ascii=False, indent=2))

@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(splitter)
 
         self.config_panel.start_requested.connect(self._on_start)
+        self.step_list.step_clicked.connect(self._on_step_clicked)
 
     @Slot(str, str, str)
     def _on_start(self, video_path: str, voice_name: str, subtitle_position: str) -> None:
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
             task_state.update(task_id, voice_name=voice_name, subtitle_position=subtitle_position)
             self.current_task_id = task_id
             self.step_list.reset()
+            self.preview.show_placeholder()
             self.runner.start(task_id)
         except Exception as e:
             import traceback
@@ -74,6 +76,17 @@ class MainWindow(QMainWindow):
             self.config_panel.set_status(f"启动失败: {e}")
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "启动失败", traceback.format_exc())
+
+    @Slot(str)
+    def _on_step_clicked(self, step_id: str) -> None:
+        if not self.current_task_id:
+            return
+        task = task_state.get(self.current_task_id)
+        if not task:
+            return
+        artifact = task.get("artifacts", {}).get(step_id)
+        preview_files = task.get("preview_files", {})
+        self.preview.show_artifact(artifact or {}, preview_files)
 
     @Slot(object)
     def _handle_event(self, event: Event) -> None:
@@ -83,16 +96,9 @@ class MainWindow(QMainWindow):
                 event.payload.get("status", ""),
                 event.payload.get("message", ""),
             )
-        elif event.type == EVT_SUBTITLE_READY:
-            content = event.payload.get("srt") or event.payload.get("content", "")
-            self.preview.show_text(str(content))
-        elif event.type == EVT_CAPCUT_READY:
-            path = event.payload.get("video_path") or event.payload.get("path", "")
-            if path:
-                self.preview.show_video(path)
         elif event.type == EVT_PIPELINE_DONE:
             self.config_panel.enable_start()
-            self.config_panel.set_status("处理完成")
+            self.config_panel.set_status("处理完成 ✓ 点击左侧步骤查看结果")
         elif event.type == EVT_PIPELINE_ERROR:
             self.config_panel.enable_start()
             self.config_panel.set_status(f"错误: {event.payload.get('error', '')}")
