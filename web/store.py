@@ -34,8 +34,11 @@ def create(task_id: str, video_path: str, task_dir: str) -> dict:
         "voice_id": None,
         "recommended_voice_id": None,
         "subtitle_position": "bottom",
+        "interactive_review": False,
         "result": {},
         "exports": {},
+        "artifacts": {},
+        "preview_files": {},
     }
     _tasks[task_id] = task
     return task
@@ -56,6 +59,18 @@ def set_step(task_id: str, step: str, status: str):
     task = _tasks.get(task_id)
     if task:
         task["steps"][step] = status
+
+
+def set_artifact(task_id: str, step: str, payload: dict):
+    task = _tasks.get(task_id)
+    if task:
+        task.setdefault("artifacts", {})[step] = payload
+
+
+def set_preview_file(task_id: str, name: str, path: str):
+    task = _tasks.get(task_id)
+    if task:
+        task.setdefault("preview_files", {})[name] = path
 
 
 def confirm_segments(task_id: str, segments: list):

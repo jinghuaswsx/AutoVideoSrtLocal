@@ -1,24 +1,35 @@
 """
-流水线执行服务
+Pipeline execution service.
 
-负责按顺序调度各 pipeline 模块，通过 SocketIO 推送实时进度。
-与 HTTP 路由层解耦：路由只负责启动线程，具体执行逻辑在此处。
+Runs each processing step in order and streams status updates over Socket.IO.
 """
-import os
+
+from __future__ import annotations
+
 import json
+import os
+import threading
 import time
 import uuid
-import threading
 
-from web.extensions import socketio
 from web import store
+from web.extensions import socketio
+from web.preview_artifacts import (
+    build_alignment_artifact,
+    build_asr_artifact,
+    build_compose_artifact,
+    build_export_artifact,
+    build_extract_artifact,
+    build_subtitle_artifact,
+    build_translate_artifact,
+    build_tts_artifact,
+)
 
 
 def _save_json(task_dir: str, filename: str, data):
-    """保存中间结果到任务目录"""
     path = os.path.join(task_dir, filename)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
 def emit(task_id: str, event: str, data: dict):
@@ -31,7 +42,6 @@ def set_step(task_id: str, step: str, status: str, message: str = ""):
 
 
 def start(task_id: str):
-    """在后台线程中启动流水线"""
     thread = threading.Thread(target=_run, args=(task_id,), daemon=True)
     thread.start()
 
@@ -55,13 +65,38 @@ def _run(task_id: str):
         emit(task_id, "pipeline_error", {"error": str(exc)})
 
 
-# ── 各步骤 ────────────────────────────────────────────────────
+def _artifact_download_url(task_id: str, file_type: str) -> str:
+    return f"/api/tasks/{task_id}/download/{file_type}"
+
+
+def _set_export_artifact(task_id: str, manifest_text: str):
+    payload = build_export_artifact(manifest_text)
+    payload["items"][0]["url"] = _artifact_download_url(task_id, "capcut")
+    store.set_artifact(task_id, "export", payload)
+
+
+def _interactive_review_enabled(task_id: str) -> bool:
+    task = store.get(task_id) or {}
+    return bool(task.get("interactive_review"))
+
+
+def _wait_for_confirmation(task_id: str, flag_name: str, timeout_seconds: int = 600):
+    for _ in range(timeout_seconds):
+        if store.get(task_id).get(flag_name):
+            return
+        time.sleep(1)
+
 
 def _step_extract(task_id: str, video_path: str, task_dir: str):
     set_step(task_id, "extract", "running", "正在提取音频...")
+
     from pipeline.extract import extract_audio
+
     audio_path = extract_audio(video_path, task_dir)
     store.update(task_id, audio_path=audio_path)
+    store.set_preview_file(task_id, "audio_extract", audio_path)
+    store.set_artifact(task_id, "extract", build_extract_artifact())
+
     set_step(task_id, "extract", "done", "音频提取完成")
 
 
@@ -70,13 +105,14 @@ def _step_asr(task_id: str, task_dir: str):
     audio_path = task["audio_path"]
 
     set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
-    from pipeline.storage import upload_file, delete_file
+
     from pipeline.asr import transcribe
+    from pipeline.storage import delete_file, upload_file
 
     tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
     audio_url = upload_file(audio_path, tos_key)
 
-    set_step(task_id, "asr", "running", "正在识别语音（豆包 ASR）...")
+    set_step(task_id, "asr", "running", "正在识别语音...")
     try:
         utterances = transcribe(audio_url)
     finally:
@@ -86,7 +122,9 @@ def _step_asr(task_id: str, task_dir: str):
             pass
 
     store.update(task_id, utterances=utterances)
+    store.set_artifact(task_id, "asr", build_asr_artifact(utterances))
     _save_json(task_dir, "asr_result.json", utterances)
+
     set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
     emit(task_id, "asr_result", {"segments": utterances})
 
@@ -95,6 +133,7 @@ def _step_alignment(task_id: str, video_path: str, task_dir: str):
     task = store.get(task_id)
 
     set_step(task_id, "alignment", "running", "正在分析镜头并生成分段建议...")
+
     from pipeline.alignment import compile_alignment, detect_scene_cuts
     from pipeline.voice_library import get_voice_library
 
@@ -113,9 +152,15 @@ def _step_alignment(task_id: str, video_path: str, task_dir: str):
         recommended_voice_id=suggested_voice["id"] if suggested_voice else None,
         _alignment_confirmed=False,
     )
+    store.set_artifact(
+        task_id,
+        "alignment",
+        build_alignment_artifact(scene_cuts, alignment["script_segments"], alignment["break_after"]),
+    )
     _save_json(task_dir, "scene_cuts.json", scene_cuts)
     _save_json(task_dir, "alignment_draft.json", alignment)
-    set_step(task_id, "alignment", "waiting", "分段建议已生成，等待您确认")
+
+    requires_confirmation = _interactive_review_enabled(task_id)
     emit(
         task_id,
         "alignment_result",
@@ -125,50 +170,72 @@ def _step_alignment(task_id: str, video_path: str, task_dir: str):
             "break_after": alignment["break_after"],
             "script_segments": alignment["script_segments"],
             "recommended_voice_id": suggested_voice["id"] if suggested_voice else None,
+            "requires_confirmation": requires_confirmation,
         },
     )
 
-    for _ in range(600):
-        if store.get(task_id).get("_alignment_confirmed"):
-            break
-        time.sleep(1)
+    if requires_confirmation:
+        set_step(task_id, "alignment", "waiting", "分段建议已生成，等待确认")
+        _wait_for_confirmation(task_id, "_alignment_confirmed")
+        confirmed = store.get(task_id).get("alignment", alignment)
+        done_message = "分段已确认"
+    else:
+        store.confirm_alignment(task_id, alignment["break_after"], alignment["script_segments"])
+        confirmed = store.get(task_id).get("alignment", alignment)
+        done_message = "分段已自动确认，继续执行"
 
-    confirmed = store.get(task_id).get("alignment", alignment)
+    store.set_artifact(
+        task_id,
+        "alignment",
+        build_alignment_artifact(
+            store.get(task_id).get("scene_cuts", []),
+            confirmed.get("script_segments", []),
+            confirmed.get("break_after", []),
+        ),
+    )
     _save_json(task_dir, "alignment_draft.json", confirmed)
-    set_step(task_id, "alignment", "done", "分段已确认")
+    set_step(task_id, "alignment", "done", done_message)
 
 
 def _step_translate(task_id: str):
     task = store.get(task_id)
     task_dir = task["task_dir"]
 
-    set_step(task_id, "translate", "running", "正在翻译文案（Claude）...")
+    set_step(task_id, "translate", "running", "正在翻译文案...")
+
     from pipeline.translate import translate_segments
+
     segments = translate_segments(task["script_segments"])
-
     store.update(task_id, segments=segments, script_segments=segments, _segments_confirmed=False)
+    store.set_artifact(task_id, "translate", build_translate_artifact(segments))
     _save_json(task_dir, "translate_result.json", segments)
-    set_step(task_id, "translate", "waiting", "翻译完成，等待您确认/编辑")
-    emit(task_id, "translate_result", {"segments": segments})
 
-    # 等待用户确认（最多 10 分钟）
-    for _ in range(600):
-        if store.get(task_id).get("_segments_confirmed"):
-            break
-        time.sleep(1)
+    requires_confirmation = _interactive_review_enabled(task_id)
+    emit(task_id, "translate_result", {"segments": segments, "requires_confirmation": requires_confirmation})
 
-    # 保存用户确认后的最终版本
-    _save_json(task_dir, "translate_confirmed.json", store.get(task_id)["script_segments"])
-    set_step(task_id, "translate", "done", "翻译已确认")
+    if requires_confirmation:
+        set_step(task_id, "translate", "waiting", "翻译完成，等待确认")
+        _wait_for_confirmation(task_id, "_segments_confirmed")
+        confirmed_segments = store.get(task_id)["script_segments"]
+        done_message = "翻译已确认"
+    else:
+        store.confirm_segments(task_id, segments)
+        confirmed_segments = store.get(task_id)["script_segments"]
+        done_message = "翻译已自动确认，继续执行"
+
+    store.set_artifact(task_id, "translate", build_translate_artifact(confirmed_segments))
+    _save_json(task_dir, "translate_confirmed.json", confirmed_segments)
+    set_step(task_id, "translate", "done", done_message)
 
 
 def _step_tts(task_id: str, task_dir: str):
     task = store.get(task_id)
 
-    set_step(task_id, "tts", "running", "正在生成英文语音（ElevenLabs）...")
+    set_step(task_id, "tts", "running", "正在生成英文配音...")
+
     from pipeline.extract import get_video_duration
     from pipeline.timeline import build_timeline_manifest
-    from pipeline.tts import get_default_voice, get_voice_by_id, generate_full_audio
+    from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
 
     voice = None
     if task.get("voice_id"):
@@ -178,15 +245,12 @@ def _step_tts(task_id: str, task_dir: str):
     if not voice:
         voice = get_default_voice(task.get("voice_gender", "male"))
 
-    result = generate_full_audio(
-        task["script_segments"],
-        voice["elevenlabs_voice_id"],
-        task_dir,
-    )
+    result = generate_full_audio(task["script_segments"], voice["elevenlabs_voice_id"], task_dir)
     timeline_manifest = build_timeline_manifest(
         result["segments"],
         video_duration=get_video_duration(task["video_path"]),
     )
+
     store.update(
         task_id,
         segments=result["segments"],
@@ -195,8 +259,11 @@ def _step_tts(task_id: str, task_dir: str):
         voice_id=voice["id"],
         timeline_manifest=timeline_manifest,
     )
+    store.set_preview_file(task_id, "tts_full_audio", result["full_audio_path"])
+    store.set_artifact(task_id, "tts", build_tts_artifact(result["segments"]))
     _save_json(task_dir, "tts_result.json", result["segments"])
     _save_json(task_dir, "timeline_manifest.json", timeline_manifest)
+
     set_step(task_id, "tts", "done", "语音生成完成")
 
 
@@ -204,12 +271,15 @@ def _step_subtitle(task_id: str, task_dir: str):
     task = store.get(task_id)
 
     set_step(task_id, "subtitle", "running", "正在生成字幕...")
+
     from pipeline.subtitle import build_srt_from_manifest, save_srt
+
     srt_content = build_srt_from_manifest(task["timeline_manifest"])
     srt_path = os.path.join(task_dir, "subtitle.srt")
     save_srt(srt_content, srt_path)
 
     store.update(task_id, srt_path=srt_path)
+    store.set_artifact(task_id, "subtitle", build_subtitle_artifact(srt_content))
     set_step(task_id, "subtitle", "done", "字幕生成完成")
     emit(task_id, "subtitle_preview", {"srt": srt_content})
 
@@ -218,7 +288,9 @@ def _step_compose(task_id: str, video_path: str, task_dir: str):
     task = store.get(task_id)
 
     set_step(task_id, "compose", "running", "正在合成视频...")
+
     from pipeline.compose import compose_video
+
     result = compose_video(
         video_path=video_path,
         tts_audio_path=task["tts_audio_path"],
@@ -227,13 +299,20 @@ def _step_compose(task_id: str, video_path: str, task_dir: str):
         subtitle_position=task.get("subtitle_position", "bottom"),
         timeline_manifest=task.get("timeline_manifest"),
     )
+
     store.update(task_id, result=result, status="composing_done")
-    set_step(task_id, "compose", "done", "合成完成！")
+    store.set_preview_file(task_id, "soft_video", result["soft_video"])
+    store.set_preview_file(task_id, "hard_video", result["hard_video"])
+    store.set_artifact(task_id, "compose", build_compose_artifact())
+
+    set_step(task_id, "compose", "done", "视频合成完成")
 
 
 def _step_export(task_id: str, video_path: str, task_dir: str):
     task = store.get(task_id)
+
     set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
+
     from pipeline.capcut import export_capcut_project
 
     export_result = export_capcut_project(
@@ -244,6 +323,7 @@ def _step_export(task_id: str, video_path: str, task_dir: str):
         output_dir=task_dir,
         subtitle_position=task.get("subtitle_position", "bottom"),
     )
+
     exports = dict(task.get("exports", {}))
     exports.update(
         {
@@ -253,14 +333,27 @@ def _step_export(task_id: str, video_path: str, task_dir: str):
         }
     )
     store.update(task_id, exports=exports, status="done")
+
+    manifest_text = ""
+    try:
+        with open(export_result["manifest_path"], "r", encoding="utf-8") as fh:
+            manifest_text = fh.read()
+    except OSError:
+        manifest_text = ""
+    _set_export_artifact(task_id, manifest_text)
+
     set_step(task_id, "export", "done", "CapCut 项目已导出")
-    emit(task_id, "capcut_ready", {"download": f"/api/tasks/{task_id}/download/capcut"})
-    emit(task_id, "pipeline_done", {
-        "task_id": task_id,
-        "downloads": {
-            "soft": f"/api/tasks/{task_id}/download/soft",
-            "hard": f"/api/tasks/{task_id}/download/hard",
-            "srt": f"/api/tasks/{task_id}/download/srt",
-            "capcut": f"/api/tasks/{task_id}/download/capcut",
+    emit(task_id, "capcut_ready", {"download": _artifact_download_url(task_id, "capcut")})
+    emit(
+        task_id,
+        "pipeline_done",
+        {
+            "task_id": task_id,
+            "downloads": {
+                "soft": _artifact_download_url(task_id, "soft"),
+                "hard": _artifact_download_url(task_id, "hard"),
+                "srt": _artifact_download_url(task_id, "srt"),
+                "capcut": _artifact_download_url(task_id, "capcut"),
+            },
         },
-    })
+    )

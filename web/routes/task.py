@@ -11,6 +11,7 @@ from flask import Blueprint, request, jsonify, send_file
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.alignment import build_script_segments
+from web.preview_artifacts import build_alignment_artifact, build_translate_artifact
 from web import store
 from web.services import pipeline_runner
 
@@ -47,6 +48,20 @@ def get_task(task_id):
     return jsonify(task)
 
 
+@bp.route("/<task_id>/artifact/<name>", methods=["GET"])
+def get_artifact(task_id, name):
+    task = store.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    preview_files = task.get("preview_files", {})
+    path = preview_files.get(name)
+    if not path or not os.path.exists(path):
+        return jsonify({"error": "Artifact not found"}), 404
+
+    return send_file(os.path.abspath(path), as_attachment=False)
+
+
 @bp.route("/<task_id>/start", methods=["POST"])
 def start(task_id):
     """配置并启动流水线"""
@@ -60,6 +75,7 @@ def start(task_id):
         voice_gender=body.get("voice_gender", "male"),
         voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
         subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=bool(body.get("interactive_review", False)),
     )
     pipeline_runner.start(task_id)
     return jsonify({"status": "started"})
@@ -82,6 +98,11 @@ def update_alignment(task_id):
         return jsonify({"error": str(exc)}), 400
 
     store.confirm_alignment(task_id, break_after, script_segments)
+    store.set_artifact(
+        task_id,
+        "alignment",
+        build_alignment_artifact(task.get("scene_cuts", []), script_segments, break_after),
+    )
     return jsonify({"status": "ok", "script_segments": script_segments})
 
 
@@ -97,6 +118,7 @@ def update_segments(task_id):
         return jsonify({"error": "segments required"}), 400
 
     store.confirm_segments(task_id, body["segments"])
+    store.set_artifact(task_id, "translate", build_translate_artifact(body["segments"]))
     return jsonify({"status": "ok"})
 
 

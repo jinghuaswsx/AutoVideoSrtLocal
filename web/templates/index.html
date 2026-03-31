@@ -3,153 +3,62 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AutoVideoSrt — 抖音转 TikTok</title>
+  <title>AutoVideoSrt</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f0f0f; color: #e8e8e8; min-height: 100vh; }
-    .container { max-width: 980px; margin: 0 auto; padding: 32px 20px 48px; }
-    h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
-    .subtitle { color: #999; font-size: 14px; margin-bottom: 28px; }
-    .card { background: #171717; border: 1px solid #252525; border-radius: 14px; padding: 22px; margin-top: 18px; }
-    .card h2, .card h3 { font-size: 16px; margin-bottom: 14px; }
-    .muted { color: #8e8e8e; }
+    body { font-family: "Segoe UI", "PingFang SC", sans-serif; background: #0c0d10; color: #edf0f6; min-height: 100vh; }
+    .container { max-width: 1080px; margin: 0 auto; padding: 28px 18px 48px; }
+    .subtitle { color: #98a0af; margin: 6px 0 24px; font-size: 14px; }
+    .card { background: #17191f; border: 1px solid #282c36; border-radius: 16px; padding: 20px; margin-top: 16px; }
     .hidden { display: none; }
-
-    .upload-zone {
-      border: 2px dashed #333;
-      border-radius: 14px;
-      padding: 46px 24px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
-      background: #151515;
-    }
-    .upload-zone:hover, .upload-zone.drag-over { border-color: #fe2c55; background: #1a1416; }
+    .upload-zone { border: 1px dashed #3a3f4d; border-radius: 16px; padding: 46px 22px; text-align: center; background: #14161b; cursor: pointer; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: #fe2c55; background: #1c1419; }
     .upload-zone input { display: none; }
-    .upload-zone .icon { font-size: 42px; margin-bottom: 12px; }
-    .upload-zone p { color: #888; margin-top: 8px; font-size: 14px; }
-
-    .config-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .config-item label { display: block; font-size: 12px; color: #9d9d9d; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
-    .config-item select {
-      width: 100%;
-      background: #222;
-      border: 1px solid #343434;
-      border-radius: 10px;
-      color: #f0f0f0;
-      padding: 10px 12px;
-      font-size: 14px;
-    }
-    .hint { font-size: 12px; color: #9d9d9d; margin-top: 8px; line-height: 1.5; }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      border: none;
-      border-radius: 10px;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s ease;
-    }
-    .btn:hover { opacity: 0.88; }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-primary { background: #fe2c55; color: #fff; }
-    .btn-secondary { background: #303030; color: #f0f0f0; }
+    .upload-zone .icon { font-size: 38px; margin-bottom: 12px; }
+    .upload-zone p, .hint, .step-msg, .scene-cut-list, .review-time, .preview-time, .preview-note { color: #98a0af; font-size: 12px; }
+    .config-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+    .config-item label { display: block; margin-bottom: 8px; color: #aab2c0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .config-item select, .segment-translated { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
+    .segment-translated { min-height: 44px; resize: vertical; }
+    .btn { border: none; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn-primary { background: #fe2c55; color: white; }
     .btn-sm { padding: 8px 14px; font-size: 13px; }
-
-    .steps { display: flex; flex-direction: column; gap: 10px; }
-    .step {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px 16px;
-      border-radius: 12px;
-      background: #1c1c1c;
-      border: 1px solid #2a2a2a;
-      transition: border-color 0.2s ease;
-    }
+    .review-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .steps { display: flex; flex-direction: column; gap: 12px; }
+    .step { border: 1px solid #2a2e38; border-radius: 14px; padding: 16px; background: #1b1d23; }
     .step.running { border-color: #fe2c55; }
     .step.done { border-color: #1db954; }
     .step.waiting { border-color: #f5a623; }
     .step.error { border-color: #e74c3c; }
-    .step-icon {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      flex-shrink: 0;
-      background: #262626;
-      color: #686868;
-    }
-    .step-icon.running { background: rgba(254,44,85,0.16); color: #fe2c55; }
-    .step-icon.done { background: rgba(29,185,84,0.16); color: #1db954; }
-    .step-icon.waiting { background: rgba(245,166,35,0.16); color: #f5a623; }
-    .step-icon.error { background: rgba(231,76,60,0.16); color: #e74c3c; }
-    .step-name { font-size: 14px; font-weight: 600; }
-    .step-msg { font-size: 12px; color: #969696; margin-top: 2px; }
-
+    .step-main { display: flex; gap: 12px; align-items: flex-start; }
+    .step-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #262a33; color: #7f8695; font-weight: 700; flex-shrink: 0; }
+    .step-icon.running { color: #fe2c55; background: rgba(254, 44, 85, 0.14); }
+    .step-icon.done { color: #1db954; background: rgba(29, 185, 84, 0.14); }
+    .step-icon.waiting { color: #f5a623; background: rgba(245, 166, 35, 0.14); }
+    .step-icon.error { color: #e74c3c; background: rgba(231, 76, 60, 0.14); }
+    .step-name { font-weight: 700; }
+    .step-preview { margin-top: 14px; padding-top: 14px; border-top: 1px solid #2a2e38; display: flex; flex-direction: column; gap: 10px; }
+    .preview-placeholder, .preview-block, .review-item { background: #15181e; border: 1px solid #272c36; border-radius: 12px; padding: 12px; }
+    .preview-label { color: #aab2c0; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .preview-text, .review-original, .preview-original, .preview-translated { white-space: pre-wrap; word-break: break-word; line-height: 1.6; font-size: 13px; }
+    .preview-text { max-height: 260px; overflow: auto; }
+    .preview-list, .review-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow: auto; }
+    .break-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
+    .break-row input { accent-color: #fe2c55; }
+    .media-player { width: 100%; border-radius: 10px; background: #0f1116; }
+    video.media-player { max-height: 320px; }
+    .result-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; border: 1px solid #343946; background: #20242d; color: #f2f4f8; text-decoration: none; }
+    .error-msg { display: none; margin-top: 16px; padding: 14px; border-radius: 14px; border: 1px solid #e74c3c; background: rgba(231, 76, 60, 0.14); color: #ff9b90; white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fe2c55; border-top-color: transparent; animation: spin 0.7s linear infinite; }
-
-    .review-list { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; }
-    .review-item { background: #212121; border: 1px solid #313131; border-radius: 10px; padding: 12px; }
-    .review-time { font-size: 11px; color: #767676; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; margin-bottom: 4px; }
-    .review-original { font-size: 13px; color: #c9c9c9; line-height: 1.5; margin-bottom: 8px; }
-    .segment-translated {
-      width: 100%;
-      background: #2a2a2a;
-      color: #ededed;
-      border: 1px solid #3a3a3a;
-      border-radius: 8px;
-      padding: 8px 10px;
-      resize: vertical;
-      min-height: 40px;
-      font-size: 14px;
-    }
-    .segment-translated:focus { outline: none; border-color: #fe2c55; }
-    .break-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #ddd; }
-    .break-row input { accent-color: #fe2c55; width: 16px; height: 16px; }
-    .review-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-    .scene-cut-list { font-size: 12px; color: #969696; margin-bottom: 12px; }
-
-    .result-grid { display: flex; flex-wrap: wrap; gap: 12px; }
-    .download-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 18px;
-      border-radius: 12px;
-      border: 1px solid #353535;
-      background: #222;
-      color: #f3f3f3;
-      text-decoration: none;
-      font-size: 14px;
-    }
-    .download-btn:hover { border-color: #fe2c55; }
-
-    .error-msg {
-      display: none;
-      margin-top: 18px;
-      padding: 14px 16px;
-      border-radius: 12px;
-      border: 1px solid #e74c3c;
-      background: rgba(231,76,60,0.14);
-      color: #ff8f83;
-    }
+    .spinner { width: 14px; height: 14px; border: 2px solid #fe2c55; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>AutoVideoSrt</h1>
-    <p class="subtitle">抖音视频 → TikTok 英文广告视频自动生成</p>
+    <p class="subtitle">每一步都把当前关键产物留在页面里，文本可看，音频可听，视频可播。</p>
 
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="fileInput" accept="video/*" />
@@ -163,10 +72,8 @@
       <div class="config-row">
         <div class="config-item">
           <label for="voiceSelect">音色</label>
-          <select id="voiceSelect">
-            <option value="auto">Auto（按内容推荐）</option>
-          </select>
-          <div class="hint" id="voiceHint">当前会在识别后给出推荐音色，最终以你的选择为准。</div>
+          <select id="voiceSelect"><option value="auto">Auto（按内容推荐）</option></select>
+          <div class="hint" id="voiceHint">识别完成后会推荐音色，保持 Auto 会自动应用。</div>
         </div>
         <div class="config-item">
           <label for="subtitlePosition">字幕位置</label>
@@ -175,25 +82,23 @@
             <option value="middle">中部</option>
             <option value="top">顶部</option>
           </select>
-          <div class="hint">硬字幕与 CapCut 导出都会使用这里的字幕位置。</div>
+          <div class="hint">硬字幕和 CapCut 导出都会使用这里的字幕位置。</div>
         </div>
       </div>
-      <div class="review-actions">
-        <button class="btn btn-primary" id="startBtn">开始处理</button>
-      </div>
+      <div class="review-actions"><button class="btn btn-primary" id="startBtn">开始处理</button></div>
     </div>
 
     <div class="card hidden" id="pipelineCard">
       <h2>处理进度</h2>
       <div class="steps">
-        <div class="step" id="step-extract"><div class="step-icon" id="icon-extract">1</div><div><div class="step-name">音频提取</div><div class="step-msg" id="msg-extract">等待中...</div></div></div>
-        <div class="step" id="step-asr"><div class="step-icon" id="icon-asr">2</div><div><div class="step-name">语音识别</div><div class="step-msg" id="msg-asr">等待中...</div></div></div>
-        <div class="step" id="step-alignment"><div class="step-icon" id="icon-alignment">3</div><div><div class="step-name">分段确认</div><div class="step-msg" id="msg-alignment">等待中...</div></div></div>
-        <div class="step" id="step-translate"><div class="step-icon" id="icon-translate">4</div><div><div class="step-name">翻译本土化</div><div class="step-msg" id="msg-translate">等待中...</div></div></div>
-        <div class="step" id="step-tts"><div class="step-icon" id="icon-tts">5</div><div><div class="step-name">语音生成</div><div class="step-msg" id="msg-tts">等待中...</div></div></div>
-        <div class="step" id="step-subtitle"><div class="step-icon" id="icon-subtitle">6</div><div><div class="step-name">字幕生成</div><div class="step-msg" id="msg-subtitle">等待中...</div></div></div>
-        <div class="step" id="step-compose"><div class="step-icon" id="icon-compose">7</div><div><div class="step-name">视频合成</div><div class="step-msg" id="msg-compose">等待中...</div></div></div>
-        <div class="step" id="step-export"><div class="step-icon" id="icon-export">8</div><div><div class="step-name">CapCut 导出</div><div class="step-msg" id="msg-export">等待中...</div></div></div>
+        <div class="step" id="step-extract"><div class="step-main"><div class="step-icon" id="icon-extract">1</div><div><div class="step-name">音频提取</div><div class="step-msg" id="msg-extract">等待中...</div></div></div><div class="step-preview" id="preview-extract"></div></div>
+        <div class="step" id="step-asr"><div class="step-main"><div class="step-icon" id="icon-asr">2</div><div><div class="step-name">语音识别</div><div class="step-msg" id="msg-asr">等待中...</div></div></div><div class="step-preview" id="preview-asr"></div></div>
+        <div class="step" id="step-alignment"><div class="step-main"><div class="step-icon" id="icon-alignment">3</div><div><div class="step-name">分段确认</div><div class="step-msg" id="msg-alignment">等待中...</div></div></div><div class="step-preview" id="preview-alignment"></div></div>
+        <div class="step" id="step-translate"><div class="step-main"><div class="step-icon" id="icon-translate">4</div><div><div class="step-name">翻译本土化</div><div class="step-msg" id="msg-translate">等待中...</div></div></div><div class="step-preview" id="preview-translate"></div></div>
+        <div class="step" id="step-tts"><div class="step-main"><div class="step-icon" id="icon-tts">5</div><div><div class="step-name">语音生成</div><div class="step-msg" id="msg-tts">等待中...</div></div></div><div class="step-preview" id="preview-tts"></div></div>
+        <div class="step" id="step-subtitle"><div class="step-main"><div class="step-icon" id="icon-subtitle">6</div><div><div class="step-name">字幕生成</div><div class="step-msg" id="msg-subtitle">等待中...</div></div></div><div class="step-preview" id="preview-subtitle"></div></div>
+        <div class="step" id="step-compose"><div class="step-main"><div class="step-icon" id="icon-compose">7</div><div><div class="step-name">视频合成</div><div class="step-msg" id="msg-compose">等待中...</div></div></div><div class="step-preview" id="preview-compose"></div></div>
+        <div class="step" id="step-export"><div class="step-main"><div class="step-icon" id="icon-export">8</div><div><div class="step-name">CapCut 导出</div><div class="step-msg" id="msg-export">等待中...</div></div></div><div class="step-preview" id="preview-export"></div></div>
       </div>
     </div>
 
@@ -201,17 +106,13 @@
       <h3>分段确认</h3>
       <div class="scene-cut-list" id="sceneCutList"></div>
       <div class="review-list" id="alignmentList"></div>
-      <div class="review-actions">
-        <button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button>
-      </div>
+      <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button></div>
     </div>
 
     <div class="card hidden" id="translateReview">
       <h3>翻译确认</h3>
       <div class="review-list" id="segmentList"></div>
-      <div class="review-actions">
-        <button class="btn btn-primary btn-sm" id="confirmTranslate">确认翻译并继续</button>
-      </div>
+      <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmTranslate">确认翻译并继续</button></div>
     </div>
 
     <div class="error-msg" id="errorMsg"></div>
@@ -224,78 +125,70 @@
 
   <script>
     const socket = io();
+    const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+    const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
     let taskId = null;
     let currentTask = null;
-    const stepIcons = { pending: "●", waiting: "!", done: "✓", error: "✗" };
+    let refreshTimer = null;
 
     const uploadZone = document.getElementById("uploadZone");
     const fileInput = document.getElementById("fileInput");
-
     uploadZone.addEventListener("click", () => fileInput.click());
-    uploadZone.addEventListener("dragover", event => {
-      event.preventDefault();
-      uploadZone.classList.add("drag-over");
-    });
+    uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
     uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
-    uploadZone.addEventListener("drop", event => {
-      event.preventDefault();
-      uploadZone.classList.remove("drag-over");
-      const file = event.dataTransfer.files[0];
-      if (file) handleFile(file);
-    });
-    fileInput.addEventListener("change", () => {
-      if (fileInput.files[0]) handleFile(fileInput.files[0]);
-    });
+    uploadZone.addEventListener("drop", e => { e.preventDefault(); uploadZone.classList.remove("drag-over"); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+    bootVoices();
+    renderStepPreviews({});
 
     async function bootVoices() {
-      const select = document.getElementById("voiceSelect");
       try {
-        const response = await fetch("/api/voices");
-        const payload = await response.json();
-        (payload.voices || []).forEach(voice => {
+        const res = await fetch("/api/voices");
+        const data = await res.json();
+        (data.voices || []).forEach(voice => {
           const option = document.createElement("option");
           option.value = voice.id;
           option.textContent = `${voice.name} · ${voice.gender === "female" ? "女声" : "男声"}`;
-          select.appendChild(option);
+          document.getElementById("voiceSelect").appendChild(option);
         });
-      } catch (error) {
+      } catch {
         document.getElementById("voiceHint").textContent = "音色列表加载失败，将继续使用 Auto 推荐。";
       }
     }
 
-    bootVoices();
-
     async function handleFile(file) {
-      uploadZone.innerHTML = `<div class="icon">⏳</div><strong>上传中：${file.name}</strong><p>${(file.size / 1024 / 1024).toFixed(1)} MB</p>`;
-      const formData = new FormData();
-      formData.append("video", file);
-
-      const response = await fetch("/api/tasks", { method: "POST", body: formData });
-      const payload = await response.json();
-      if (payload.error) {
-        showError(payload.error);
-        return;
-      }
-
-      taskId = payload.task_id;
-      uploadZone.innerHTML = `<div class="icon">✅</div><strong>${file.name}</strong><p>上传完成，可以开始处理</p>`;
+      clearError();
+      uploadZone.innerHTML = `<div class="icon">⏳</div><strong>上传中：${escapeHtml(file.name)}</strong><p>${(file.size / 1024 / 1024).toFixed(1)} MB</p>`;
+      const form = new FormData();
+      form.append("video", file);
+      const res = await fetch("/api/tasks", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok || data.error) return showError(data.error || "上传失败");
+      taskId = data.task_id;
+      currentTask = null;
+      document.getElementById("startBtn").disabled = false;
       document.getElementById("configPanel").classList.remove("hidden");
+      document.getElementById("pipelineCard").classList.add("hidden");
+      document.getElementById("alignmentReview").classList.add("hidden");
+      document.getElementById("translateReview").classList.add("hidden");
+      document.getElementById("resultPanel").classList.add("hidden");
+      renderStepPreviews({});
+      uploadZone.innerHTML = `<div class="icon">✅</div><strong>${escapeHtml(file.name)}</strong><p>上传完成，可以开始处理</p>`;
     }
 
     document.getElementById("startBtn").addEventListener("click", async () => {
       if (!taskId) return;
+      clearError();
       document.getElementById("startBtn").disabled = true;
       document.getElementById("pipelineCard").classList.remove("hidden");
       socket.emit("join_task", { task_id: taskId });
-
       await fetch(`/api/tasks/${taskId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          voice_id: document.getElementById("voiceSelect").value,
-          subtitle_position: document.getElementById("subtitlePosition").value
-        })
+        body: JSON.stringify({ voice_id: document.getElementById("voiceSelect").value, subtitle_position: document.getElementById("subtitlePosition").value })
       });
+      scheduleRefreshTaskState(0);
     });
 
     socket.on("step_update", ({ step, status, message }) => {
@@ -303,145 +196,157 @@
       const iconEl = document.getElementById(`icon-${step}`);
       const msgEl = document.getElementById(`msg-${step}`);
       if (!stepEl) return;
-
       stepEl.className = `step ${status}`;
       iconEl.className = `step-icon ${status}`;
-      iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "●");
+      iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
       if (message) msgEl.textContent = message;
+      scheduleRefreshTaskState();
     });
+    socket.on("alignment_result", payload => {
+      if (payload.requires_confirmation) {
+        renderAlignmentReview(payload);
+      } else {
+        document.getElementById("alignmentReview").classList.add("hidden");
+      }
+      scheduleRefreshTaskState(0);
+    });
+    socket.on("translate_result", payload => {
+      if (payload.requires_confirmation) {
+        renderTranslateReview(payload);
+      } else {
+        document.getElementById("translateReview").classList.add("hidden");
+      }
+      scheduleRefreshTaskState(0);
+    });
+    socket.on("subtitle_preview", () => scheduleRefreshTaskState(0));
+    socket.on("capcut_ready", () => scheduleRefreshTaskState(0));
+    socket.on("pipeline_done", ({ downloads }) => { renderDownloads(downloads); scheduleRefreshTaskState(0); });
+    socket.on("pipeline_error", ({ error }) => { showError(error); scheduleRefreshTaskState(0); });
 
-    socket.on("alignment_result", ({ utterances, scene_cuts, break_after, recommended_voice_id }) => {
-      const panel = document.getElementById("alignmentReview");
+    async function refreshTaskState() {
+      if (!taskId) return;
+      const res = await fetch(`/api/tasks/${taskId}`);
+      if (!res.ok) return;
+      currentTask = await res.json();
+      renderStepPreviews(currentTask.artifacts || {});
+      renderResultPanelFromTask();
+    }
+
+    function scheduleRefreshTaskState(delay = 120) {
+      if (!taskId) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refreshTaskState, delay);
+    }
+
+    function renderStepPreviews(artifacts) {
+      STEP_ORDER.forEach(step => {
+        const previewEl = document.getElementById(`preview-${step}`);
+        const stepEl = document.getElementById(`step-${step}`);
+        const status = currentTask?.steps?.[step] || "pending";
+        const artifact = artifacts[step];
+        stepEl.classList.toggle("expanded", ["running", "waiting", "done"].includes(status));
+        if (!artifact || !artifact.items || !artifact.items.length) {
+          previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+          return;
+        }
+        previewEl.innerHTML = artifact.items.map(renderPreviewItem).join("");
+      });
+    }
+
+    function renderPreviewItem(item) {
+      const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
+      if (item.type === "audio") return `<div class="preview-block">${label}<audio class="media-player" controls preload="metadata" src="${artifactUrl(item.artifact)}"></audio></div>`;
+      if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${artifactUrl(item.artifact)}"></video></div>`;
+      if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || '下载')}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
+      if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
+      if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
+      if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
+      if (item.type === "segments") return `<div class="preview-block">${label}<div class="preview-list">${(item.segments || []).map(seg => renderSegmentPreview(seg, item.break_after || [])).join("")}</div></div>`;
+      return `<div class="preview-block">${label}<div class="preview-text">暂不支持的预览类型</div></div>`;
+    }
+
+    function renderSegmentPreview(seg, breakAfter) {
+      const parts = [
+        `<div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div>`,
+        `<div class="preview-original">${escapeHtml(seg.text || "")}</div>`
+      ];
+      if (seg.translated) parts.push(`<div class="preview-translated">译文：${escapeHtml(seg.translated)}</div>`);
+      if (seg.tts_duration !== undefined && seg.tts_duration !== null) parts.push(`<div class="preview-note">TTS 时长：${Number(seg.tts_duration).toFixed(2)}s</div>`);
+      if (breakAfter.length) parts.push(`<div class="preview-note">断点索引：${breakAfter.map((flag, idx) => flag ? idx : null).filter(v => v !== null).join(", ") || "无"}</div>`);
+      return `<div class="preview-block">${parts.join("")}</div>`;
+    }
+
+    function renderAlignmentReview({ utterances, scene_cuts, break_after, recommended_voice_id }) {
       const list = document.getElementById("alignmentList");
       const sceneCutList = document.getElementById("sceneCutList");
-      list.innerHTML = "";
-
-      sceneCutList.textContent = scene_cuts && scene_cuts.length
-        ? `检测到镜头切换点：${scene_cuts.map(value => fmtTime(value)).join(" / ")}`
-        : "未检测到明显镜头切换点，本次以语义停顿为主做分段建议。";
-
-      utterances.forEach((utterance, index) => {
-        const item = document.createElement("div");
-        item.className = "review-item";
-        const checked = break_after[index] ? "checked" : "";
-        const disabled = index === utterances.length - 1 ? "disabled" : "";
-        item.innerHTML = `
-          <div class="review-time">${fmtTime(utterance.start_time)} → ${fmtTime(utterance.end_time)}</div>
-          <div class="review-original">${utterance.text}</div>
-          <label class="break-row">
-            <input type="checkbox" class="break-after" data-index="${index}" ${checked} ${disabled} />
-            <span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这一句后断开新段落"}</span>
-          </label>
-        `;
-        list.appendChild(item);
-      });
-
+      sceneCutList.textContent = scene_cuts && scene_cuts.length ? `检测到镜头切换点：${scene_cuts.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点，这次主要依据语义停顿来推荐分段。";
+      list.innerHTML = utterances.map((u, index) => `<div class="review-item"><div class="review-time">${fmtTime(u.start_time)} → ${fmtTime(u.end_time)}</div><div class="review-original">${escapeHtml(u.text || "")}</div><label class="break-row"><input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} /><span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这一句后断开新段落"}</span></label></div>`).join("");
       if (recommended_voice_id) {
-        const select = document.getElementById("voiceSelect");
-        const option = [...select.options].find(item => item.value === recommended_voice_id);
-        if (option) {
-          document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果你保持 Auto，后续会自动使用它。`;
-        }
+        const option = [...document.getElementById("voiceSelect").options].find(item => item.value === recommended_voice_id);
+        if (option) document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果你保持 Auto，后续会自动使用它。`;
       }
-
-      panel.classList.remove("hidden");
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+      document.getElementById("alignmentReview").classList.remove("hidden");
+      document.getElementById("alignmentReview").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 
     document.getElementById("confirmAlignment").addEventListener("click", async () => {
       const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
-      await fetch(`/api/tasks/${taskId}/alignment`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ break_after: breakAfter })
-      });
+      await fetch(`/api/tasks/${taskId}/alignment`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ break_after: breakAfter }) });
       document.getElementById("alignmentReview").classList.add("hidden");
+      scheduleRefreshTaskState(0);
     });
 
-    socket.on("translate_result", ({ segments }) => {
-      const panel = document.getElementById("translateReview");
+    function renderTranslateReview({ segments }) {
       const list = document.getElementById("segmentList");
-      list.innerHTML = "";
-
-      segments.forEach((segment, index) => {
-        const item = document.createElement("div");
-        item.className = "review-item";
-        item.innerHTML = `
-          <div class="review-time">${fmtTime(segment.start_time)} → ${fmtTime(segment.end_time)}</div>
-          <div class="review-original">原文：${segment.text}</div>
-          <textarea class="segment-translated" data-index="${index}">${segment.translated || ""}</textarea>
-        `;
-        list.appendChild(item);
-      });
-
-      panel.classList.remove("hidden");
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+      list.innerHTML = segments.map((segment, index) => `<div class="review-item"><div class="review-time">${fmtTime(segment.start_time)} → ${fmtTime(segment.end_time)}</div><div class="review-original">原文：${escapeHtml(segment.text || "")}</div><textarea class="segment-translated" data-index="${index}">${escapeTextarea(segment.translated || "")}</textarea></div>`).join("");
+      document.getElementById("translateReview").classList.remove("hidden");
+      document.getElementById("translateReview").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 
     document.getElementById("confirmTranslate").addEventListener("click", async () => {
-      const response = await fetch(`/api/tasks/${taskId}`);
-      currentTask = await response.json();
+      const res = await fetch(`/api/tasks/${taskId}`);
+      currentTask = await res.json();
       const originalSegments = currentTask.script_segments || currentTask.segments || [];
-      const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => {
-        const segment = { ...(originalSegments[index] || {}) };
-        segment.translated = textarea.value;
-        return segment;
-      });
-
-      await fetch(`/api/tasks/${taskId}/segments`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segments })
-      });
+      const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => ({ ...(originalSegments[index] || {}), translated: textarea.value }));
+      await fetch(`/api/tasks/${taskId}/segments`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ segments }) });
       document.getElementById("translateReview").classList.add("hidden");
+      scheduleRefreshTaskState(0);
     });
 
-    socket.on("pipeline_done", ({ downloads }) => {
+    function renderResultPanelFromTask() {
+      if (!currentTask) return;
+      const downloads = {};
+      if (currentTask.result?.hard_video) downloads.hard = `/api/tasks/${taskId}/download/hard`;
+      if (currentTask.result?.soft_video) downloads.soft = `/api/tasks/${taskId}/download/soft`;
+      if (currentTask.result?.srt) downloads.srt = `/api/tasks/${taskId}/download/srt`;
+      if (currentTask.exports?.capcut_archive) downloads.capcut = `/api/tasks/${taskId}/download/capcut`;
+      renderDownloads(downloads);
+    }
+
+    function renderDownloads(downloads) {
       const grid = document.getElementById("downloadGrid");
       grid.innerHTML = "";
-      renderDownload(grid, downloads.hard, "📥 硬字幕版视频");
-      renderDownload(grid, downloads.soft, "📥 软字幕版视频");
-      renderDownload(grid, downloads.srt, "📄 字幕文件 .srt");
-      if (downloads.capcut) renderDownload(grid, downloads.capcut, "🧩 CapCut 工程包");
-      document.getElementById("resultPanel").classList.remove("hidden");
-      document.getElementById("resultPanel").scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-
-    socket.on("pipeline_error", ({ error }) => showError(error));
-
-    function renderDownload(container, url, label) {
-      const button = document.createElement("a");
-      button.href = "#";
-      button.className = "download-btn";
-      button.textContent = label;
-      button.addEventListener("click", event => {
-        event.preventDefault();
-        dlFile(url, label);
+      [["hard", "硬字幕视频"], ["soft", "软字幕视频"], ["srt", "字幕文件 .srt"], ["capcut", "CapCut 工程包"]].forEach(([key, label]) => {
+        if (!downloads[key]) return;
+        const link = document.createElement("a");
+        link.href = "#";
+        link.className = "download-btn";
+        link.textContent = label;
+        link.addEventListener("click", e => { e.preventDefault(); dlFile(downloads[key], label); });
+        grid.appendChild(link);
       });
-      container.appendChild(button);
+      if (grid.children.length) document.getElementById("resultPanel").classList.remove("hidden");
     }
 
-    function dlFile(url, filename) {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-    }
-
-    function showError(message) {
-      const el = document.getElementById("errorMsg");
-      el.textContent = `错误：${message}`;
-      el.style.display = "block";
-    }
-
-    function fmtTime(seconds) {
-      if (seconds === undefined || seconds === null) return "--";
-      const minutes = Math.floor(seconds / 60);
-      const remain = (seconds % 60).toFixed(1).padStart(4, "0");
-      return `${minutes}:${remain}`;
-    }
+    function artifactUrl(name) { return `/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`; }
+    function dlFile(url, filename) { const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+    function placeholderText(status) { return status === "running" ? "当前步骤正在生成产物，完成后会自动显示在这里。" : status === "waiting" ? "当前步骤结果已生成，等待确认后继续。" : status === "error" ? "这一步执行失败，已生成的预览会尽量保留。" : "等待前序步骤完成后，这里的关键产出会自动出现。"; }
+    function showError(message) { const el = document.getElementById("errorMsg"); el.textContent = `错误：${message}`; el.style.display = "block"; }
+    function clearError() { const el = document.getElementById("errorMsg"); el.textContent = ""; el.style.display = "none"; }
+    function fmtTime(seconds) { if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) return "--"; const v = Number(seconds); return `${Math.floor(v / 60)}:${(v % 60).toFixed(1).padStart(4, "0")}`; }
+    function escapeHtml(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"); }
+    function escapeTextarea(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
+    function escapeJs(value) { return String(value || "").replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
   </script>
 </body>
 </html>

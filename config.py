@@ -3,7 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+if os.getenv("AUTOVIDEOSRT_DISABLE_DOTENV") != "1":
+    load_dotenv()
 
 
 BASE_DIR = Path(__file__).resolve().parent

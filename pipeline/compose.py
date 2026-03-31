@@ -112,19 +112,7 @@ def _compose_soft_legacy(video_path: str, audio_path: str, duration: float, outp
 
 
 def _compose_hard(video_path: str, srt_path: str, position: str, output_path: str):
-    position_map = {
-        "bottom": "Alignment=2,MarginV=50",
-        "middle": "Alignment=5",
-        "top": "Alignment=8,MarginV=50",
-    }
-    style_override = position_map.get(position, position_map["bottom"])
-    srt_escaped = srt_path.replace("\\", "/").replace(":", "\\:")
-
-    vf = (
-        "subtitles="
-        f"{srt_escaped}:force_style='FontName=Arial,FontSize=18,PrimaryColour=&HFFFFFF,"
-        f"OutlineColour=&H000000,Outline=2,Bold=1,{style_override}'"
-    )
+    vf = _build_subtitle_filter(srt_path, position)
 
     cmd = [
         "ffmpeg", "-y",
@@ -139,6 +127,26 @@ def _compose_hard(video_path: str, srt_path: str, position: str, output_path: st
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"硬字幕版合成失败: {result.stderr}")
+
+
+def _build_subtitle_filter(srt_path: str, position: str) -> str:
+    position_map = {
+        "bottom": "Alignment=2,MarginV=50",
+        "middle": "Alignment=5",
+        "top": "Alignment=8,MarginV=50",
+    }
+    style_override = position_map.get(position, position_map["bottom"])
+    escaped_path = _escape_subtitle_filter_path(srt_path)
+    return (
+        "subtitles="
+        f"filename='{escaped_path}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&HFFFFFF,"
+        f"OutlineColour=&H000000,Outline=2,Bold=1,{style_override}'"
+    )
+
+
+def _escape_subtitle_filter_path(srt_path: str) -> str:
+    normalized = srt_path.replace("\\", "/")
+    return normalized.replace(":", "\\:")
 
 
 def _get_duration(path: str) -> float:
