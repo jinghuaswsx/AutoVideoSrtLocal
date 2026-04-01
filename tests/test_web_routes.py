@@ -23,6 +23,16 @@ def test_index_page_contains_step_preview_container(authed_client_no_db):
     assert "renderStepPreviews" in body
 
 
+def test_index_page_contains_active_task_refresh_fallback(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "startActiveRefreshLoop" in body
+    assert "stopActiveRefreshLoop" in body
+    assert "setInterval(refreshTaskState" in body
+
+
 def test_index_page_supports_new_localization_preview_types(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 

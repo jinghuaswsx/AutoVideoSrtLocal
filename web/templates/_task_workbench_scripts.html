@@ -12,6 +12,7 @@
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
   let currentTask = TASK_WORKBENCH_CONFIG.initialTask;
   let refreshTimer = null;
+  let activeRefreshLoop = null;
 
   const uploadZone = document.getElementById("uploadZone");
   const fileInput = document.getElementById("fileInput");
@@ -231,6 +232,34 @@
     refreshTimer = setTimeout(refreshTaskState, delay);
   }
 
+  function taskNeedsLiveRefresh(task) {
+    if (!task || !taskId) return false;
+    if (task.status === "done" || task.status === "error") return false;
+    return STEP_ORDER.some(step => {
+      const status = task.steps?.[step];
+      return status === "running" || status === "waiting";
+    });
+  }
+
+  function startActiveRefreshLoop() {
+    if (activeRefreshLoop || !taskId) return;
+    activeRefreshLoop = setInterval(refreshTaskState, 5000);
+  }
+
+  function stopActiveRefreshLoop() {
+    if (!activeRefreshLoop) return;
+    clearInterval(activeRefreshLoop);
+    activeRefreshLoop = null;
+  }
+
+  function syncActiveRefreshLoop(task) {
+    if (taskNeedsLiveRefresh(task)) {
+      startActiveRefreshLoop();
+      return;
+    }
+    stopActiveRefreshLoop();
+  }
+
   function renderTaskState() {
     if (!currentTask) return;
     renderStepMessages();
@@ -238,6 +267,7 @@
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
+    syncActiveRefreshLoop(currentTask);
   }
 
   function renderStepMessages() {
