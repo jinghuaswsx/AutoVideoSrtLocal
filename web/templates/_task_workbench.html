@@ -2,6 +2,7 @@
 <a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 {% endif %}
 
+
 {% if allow_upload %}
 <div class="upload-zone" id="uploadZone">
   <input type="file" id="fileInput" accept="video/*" />
@@ -16,6 +17,17 @@
     <div class="hero-icon">✓</div>
     <div class="hero-title" id="taskHeroTitle"></div>
     <div class="hero-status" id="taskHeroStatus"></div>
+  </div>
+  <div class="hero-download-bar hidden" id="heroDownloadBar">
+    <a class="hero-download-btn" id="heroCapcutBtn" href="#" onclick="heroDownload('capcut');return false;">
+      ⬇ 下载 CapCut 工程包
+    </a>
+    <a class="hero-download-btn hero-download-btn--secondary" id="heroHardBtn" href="#" onclick="heroDownload('hard');return false;">
+      ⬇ 硬字幕视频
+    </a>
+    <a class="hero-download-btn hero-download-btn--secondary" id="heroSoftBtn" href="#" onclick="heroDownload('soft');return false;">
+      ⬇ 软字幕视频
+    </a>
   </div>
 </div>
 
