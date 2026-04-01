@@ -13,4 +13,3 @@ pytest>=8.2.0
 scenedetect>=0.6.3
 tos>=2.7.1
 pyJianYingDraft>=0.2.6
-PySide6>=6.6.0
