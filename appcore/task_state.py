@@ -5,6 +5,8 @@ MVP: in-process dict. Can be replaced with Redis later without touching callers.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta
 from typing import Optional
 
 from pipeline.localization import VARIANT_LABELS
@@ -28,7 +30,50 @@ def _empty_variant_state(label: str) -> dict:
     }
 
 
-def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None) -> dict:
+def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | None = None) -> None:
+    """Write or update the projects row for this task."""
+    try:
+        from appcore.db import execute as db_execute
+        state_json = json.dumps(task, ensure_ascii=False, default=str)
+        expires_at = datetime.now() + timedelta(hours=24)
+        db_execute(
+            """INSERT INTO projects (id, user_id, original_filename, status, task_dir, state_json, expires_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON DUPLICATE KEY UPDATE
+                 status = VALUES(status),
+                 state_json = VALUES(state_json),
+                 task_dir = VALUES(task_dir)""",
+            (task_id, user_id, original_filename,
+             task.get("status", "uploaded"),
+             task.get("task_dir", ""),
+             state_json,
+             expires_at.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+    except Exception:
+        pass  # DB errors never break pipeline
+
+
+def _sync_task_to_db(task_id: str) -> None:
+    """Sync current in-memory state to DB state_json and status column."""
+    task = _tasks.get(task_id)
+    if not task:
+        return
+    user_id = task.get("_user_id")
+    if user_id is None:
+        return
+    try:
+        from appcore.db import execute as db_execute
+        state_json = json.dumps(task, ensure_ascii=False, default=str)
+        db_execute(
+            "UPDATE projects SET state_json = %s, status = %s WHERE id = %s",
+            (state_json, task.get("status", "uploaded"), task_id),
+        )
+    except Exception:
+        pass
+
+
+def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None,
+           user_id: int | None = None) -> dict:
     task = {
         "id": task_id,
         "status": "uploaded",
@@ -69,12 +114,29 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
             for key, label in VARIANT_LABELS.items()
         },
     }
+    if user_id is not None:
+        task["_user_id"] = user_id
     _tasks[task_id] = task
+    if user_id is not None:
+        _db_upsert(task_id, user_id, task, original_filename)
     return task
 
 
 def get(task_id: str) -> Optional[dict]:
-    return _tasks.get(task_id)
+    if task_id in _tasks:
+        return _tasks[task_id]
+    # Fall back to DB
+    try:
+        from appcore.db import query_one
+        row = query_one("SELECT state_json, user_id FROM projects WHERE id = %s", (task_id,))
+        if row and row.get("state_json"):
+            task = json.loads(row["state_json"])
+            task["_user_id"] = row["user_id"]
+            _tasks[task_id] = task
+            return task
+    except Exception:
+        pass
+    return None
 
 
 def get_all() -> dict:
@@ -85,6 +147,7 @@ def update(task_id: str, **kwargs):
     task = _tasks.get(task_id)
     if task:
         task.update(kwargs)
+        _sync_task_to_db(task_id)
 
 
 def update_variant(task_id: str, variant: str, **kwargs):
@@ -100,18 +163,21 @@ def set_step(task_id: str, step: str, status: str):
     task = _tasks.get(task_id)
     if task:
         task["steps"][step] = status
+        _sync_task_to_db(task_id)
 
 
 def set_artifact(task_id: str, step: str, payload: dict):
     task = _tasks.get(task_id)
     if task:
         task.setdefault("artifacts", {})[step] = payload
+        _sync_task_to_db(task_id)
 
 
 def set_preview_file(task_id: str, name: str, path: str):
     task = _tasks.get(task_id)
     if task:
         task.setdefault("preview_files", {})[name] = path
+        _sync_task_to_db(task_id)
 
 
 def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
@@ -120,6 +186,7 @@ def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
         variants = task.setdefault("variants", {})
         variant_state = variants.setdefault(variant, _empty_variant_state(variant))
         variant_state.setdefault("artifacts", {})[step] = payload
+        _sync_task_to_db(task_id)
 
 
 def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
@@ -128,6 +195,7 @@ def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
         variants = task.setdefault("variants", {})
         variant_state = variants.setdefault(variant, _empty_variant_state(variant))
         variant_state.setdefault("preview_files", {})[name] = path
+        _sync_task_to_db(task_id)
 
 
 def _localized_translation_from_segments(task: dict, segments: list) -> dict:
@@ -175,6 +243,7 @@ def confirm_segments(task_id: str, segments: list):
             task["script_segments"] = segments
         task["localized_translation"] = _localized_translation_from_segments(task, segments)
         task["_segments_confirmed"] = True
+        _sync_task_to_db(task_id)
 
 
 def confirm_alignment(task_id: str, break_after: list, script_segments: list):
@@ -187,3 +256,4 @@ def confirm_alignment(task_id: str, break_after: list, script_segments: list):
         task["script_segments"] = script_segments
         task["segments"] = script_segments
         task["_alignment_confirmed"] = True
+        _sync_task_to_db(task_id)
