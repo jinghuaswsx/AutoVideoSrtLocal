@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}API 配置 — AutoVideoSrt{% endblock %}
+{% block extra_style %}
+.settings-card { background: #17191f; border: 1px solid #282c36; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
+.settings-card h2 { font-size: 15px; margin-bottom: 16px; }
+label { display: block; color: #aab2c0; font-size: 12px; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
+input[type=text], input[type=password] { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
+.save-btn { margin-top: 24px; background: #fe2c55; color: white; border: none; border-radius: 10px; padding: 10px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.success { color: #4ade80; font-size: 13px; margin-bottom: 16px; }
+.hint { color: #98a0af; font-size: 12px; margin-top: 4px; }
+{% endblock %}
+{% block content %}
+<h1 style="font-size:20px;margin-bottom:20px">API Key 配置</h1>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
+{% endwith %}
+<form method="post">
+  <div class="settings-card">
+    <h2>豆包 ASR（火山引擎语音识别）</h2>
+    <label>API Key</label>
+    <input type="password" name="doubao_asr_key" placeholder="留空则使用系统默认"
+           value="{{ keys.get('doubao_asr', {}).get('key_value', '') }}">
+    <label>App ID</label>
+    <input type="text" name="doubao_asr_app_id" placeholder="可选"
+           value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('app_id', '') }}">
+    <label>Cluster</label>
+    <input type="text" name="doubao_asr_cluster" placeholder="可选，默认 volc.seedasr.auc"
+           value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('cluster', '') }}">
+  </div>
+  <div class="settings-card">
+    <h2>ElevenLabs（TTS 配音）</h2>
+    <label>API Key</label>
+    <input type="password" name="elevenlabs_key" placeholder="留空则使用系统默认"
+           value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
+  </div>
+  <div class="settings-card">
+    <h2>OpenRouter（翻译 / TTS 文案）</h2>
+    <label>API Key</label>
+    <input type="password" name="openrouter_key" placeholder="留空则使用系统默认"
+           value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
+    <p class="hint">OpenRouter 用于调用翻译和 TTS 文案生成模型</p>
+  </div>
+  <button class="save-btn" type="submit">保存配置</button>
+</form>
+{% endblock %}
