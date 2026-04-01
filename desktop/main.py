@@ -30,7 +30,7 @@ def main():
     _lock_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation)
     _lock = QLockFile(os.path.join(_lock_dir, "AutoVideoSrt.lock"))
     _lock.setStaleLockTime(0)
-    if not _lock.tryLock():
+    if not _lock.tryLock(0):
         QMessageBox.warning(None, "启动失败", "AutoVideoSrt 已经在运行中，请勿重复启动。")
         sys.exit(1)
         return
