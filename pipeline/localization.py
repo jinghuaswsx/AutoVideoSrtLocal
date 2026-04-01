@@ -442,3 +442,9 @@ def validate_tts_script(payload: dict) -> dict:
         "blocks": blocks,
         "subtitle_chunks": subtitle_chunks,
     }
+
+
+DEFAULT_PROMPTS = [
+    {"name": "普通翻译", "prompt_text": LOCALIZED_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
+    {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
+]

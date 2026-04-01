@@ -26,6 +26,7 @@ from web.routes.settings import bp as settings_bp
 from web.routes.admin import bp as admin_bp
 from web.routes.admin_usage import bp as admin_usage_bp
 from web.routes.tos_upload import bp as tos_upload_bp
+from web.routes.prompt import bp as prompt_bp
 
 
 def create_app() -> Flask:
@@ -46,6 +47,7 @@ def create_app() -> Flask:
     app.register_blueprint(task_bp)
     app.register_blueprint(tos_upload_bp)
     app.register_blueprint(voice_bp)
+    app.register_blueprint(prompt_bp)
 
     # WebSocket 事件
     @socketio.on("join_task")
