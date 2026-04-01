@@ -21,6 +21,7 @@ from web.preview_artifacts import (
 )
 from web import store
 from web.services import pipeline_runner
+from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
@@ -46,6 +47,38 @@ def _parse_bool(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on", "manual"}
     return bool(value)
+
+
+def _default_display_name(original_filename: str) -> str:
+    """取文件名（去扩展名）前10个字符作为默认展示名。"""
+    name = os.path.splitext(original_filename)[0] if original_filename else ""
+    return name[:10] or "未命名"
+
+
+def _resolve_name_conflict(user_id: int, desired_name: str, exclude_task_id: str | None = None) -> str:
+    """
+    检查 desired_name 是否已被同用户其他项目占用。
+    若冲突则在末尾追加 (2)、(3)… 直到不冲突。
+    exclude_task_id: 重命名时排除自身。
+    """
+    base = desired_name
+    candidate = base
+    n = 2
+    while True:
+        if exclude_task_id:
+            row = db_query_one(
+                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND id!=%s AND deleted_at IS NULL",
+                (user_id, candidate, exclude_task_id),
+            )
+        else:
+            row = db_query_one(
+                "SELECT id FROM projects WHERE user_id=%s AND display_name=%s AND deleted_at IS NULL",
+                (user_id, candidate),
+            )
+        if not row:
+            return candidate
+        candidate = f"{base} ({n})"
+        n += 1
 
 
 def _build_translate_compare_artifact(task: dict) -> dict:
@@ -135,9 +168,13 @@ def upload():
                  original_filename=os.path.basename(file.filename),
                  user_id=user_id)
 
+    if user_id is not None:
+        default_name = _default_display_name(os.path.basename(file.filename))
+        display_name = _resolve_name_conflict(user_id, default_name)
+        db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+
     thumb = _extract_thumbnail(video_path, task_dir)
     if thumb and user_id is not None:
-        from appcore.db import execute as db_execute
         db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
 
     return jsonify({"task_id": task_id}), 201
@@ -155,7 +192,6 @@ def get_task(task_id):
 @bp.route("/<task_id>/thumbnail")
 @login_required
 def thumbnail(task_id: str):
-    from appcore.db import query_one as db_query_one
     row = db_query_one(
         "SELECT thumbnail_path FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
