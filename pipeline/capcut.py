@@ -212,7 +212,7 @@ def _write_archive(project_dir: Path, archive_path: Path) -> None:
     with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         for file_path in project_dir.rglob("*"):
             if file_path.is_file():
-                archive.write(file_path, file_path.relative_to(project_dir.parent))
+                archive.write(file_path, file_path.relative_to(project_dir))
 
 
 def _export_with_pyjianyingdraft(
