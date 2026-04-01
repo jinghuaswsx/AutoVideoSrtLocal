@@ -5,7 +5,7 @@ from dotenv import load_dotenv; load_dotenv()
 from appcore.users import create_user, get_by_username
 
 username = "admin"
-password = "admin123"   # change after first login
+password = "709709@"
 if get_by_username(username):
     print(f"User '{username}' already exists.")
 else:
