@@ -77,7 +77,6 @@ def test_capcut_export_prefers_pyjianyingdraft_backend_when_available(tmp_path, 
     fake_module.trange = lambda start, duration: ("trange", start, duration)
 
     monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
-    monkeypatch.setattr("pipeline.capcut.time.strftime", lambda fmt: "26-03-31-18-20-58")
 
     video = tmp_path / "sample.mp4"
     audio = tmp_path / "sample.mp3"
@@ -103,7 +102,7 @@ def test_capcut_export_prefers_pyjianyingdraft_backend_when_available(tmp_path, 
         subtitle_position="top",
     )
 
-    assert ("create_draft", "sample_26-03-31-18-20-58", 1080, 1920, True) in calls
+    assert ("create_draft", "sample_capcut", 1080, 1920, True) in calls
     assert any(item[0] == "import_srt" for item in calls)
     assert any(item[0] == "save" for item in calls)
     assert Path(export["project_dir"]).exists()
@@ -111,7 +110,7 @@ def test_capcut_export_prefers_pyjianyingdraft_backend_when_available(tmp_path, 
     assert manifest["backend"] == "pyJianYingDraft"
 
 
-def test_capcut_export_uses_video_filename_and_timestamp_for_draft_name(tmp_path, monkeypatch):
+def test_capcut_export_uses_video_filename_for_stable_capcut_name(tmp_path, monkeypatch):
     fake_module = types.ModuleType("pyJianYingDraft")
     calls = []
 
@@ -152,7 +151,6 @@ def test_capcut_export_uses_video_filename_and_timestamp_for_draft_name(tmp_path
     fake_module.trange = lambda start, duration: ("trange", start, duration)
 
     monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
-    monkeypatch.setattr("pipeline.capcut.time.strftime", lambda fmt: "26-03-31-18-20-59")
 
     video = tmp_path / "my_video.mp4"
     audio = tmp_path / "sample.mp3"
@@ -170,9 +168,9 @@ def test_capcut_export_uses_video_filename_and_timestamp_for_draft_name(tmp_path
         subtitle_position="bottom",
     )
 
-    assert ("create_draft", "my_video_26-03-31-18-20-59") in calls
-    assert Path(export["project_dir"]).name == "my_video_26-03-31-18-20-59"
-    assert Path(export["archive_path"]).name == "my_video_26-03-31-18-20-59.zip"
+    assert ("create_draft", "my_video_capcut") in calls
+    assert Path(export["project_dir"]).name == "my_video_capcut"
+    assert Path(export["archive_path"]).name == "my_video_capcut.zip"
 
 
 def test_capcut_export_prefers_explicit_draft_title_over_storage_filename(tmp_path, monkeypatch):
@@ -235,8 +233,8 @@ def test_capcut_export_prefers_explicit_draft_title_over_storage_filename(tmp_pa
         draft_title="我的视频.mp4",
     )
 
-    assert ("create_draft", "我的视频_26-03-31-18-21-30") in calls
-    assert Path(export["project_dir"]).name == "我的视频_26-03-31-18-21-30"
+    assert ("create_draft", "我的视频_capcut") in calls
+    assert Path(export["project_dir"]).name == "我的视频_capcut"
 
 
 def test_capcut_export_clamps_source_ranges_before_pyjianyingdraft(tmp_path, monkeypatch):
@@ -468,9 +466,9 @@ def test_capcut_export_names_archives_by_variant(tmp_path, monkeypatch):
         variant="hook_cta",
     )
 
-    assert ("create_draft", "sample_hook_cta_26-03-31-20-01-00") in calls
-    assert Path(export["project_dir"]).name == "sample_hook_cta_26-03-31-20-01-00"
-    assert Path(export["archive_path"]).name == "sample_hook_cta_26-03-31-20-01-00.zip"
+    assert ("create_draft", "sample_capcut_hook_cta") in calls
+    assert Path(export["project_dir"]).name == "sample_capcut_hook_cta"
+    assert Path(export["archive_path"]).name == "sample_capcut_hook_cta.zip"
 
 
 def test_capcut_export_does_not_auto_copy_into_jianying_project_dir(tmp_path, monkeypatch):
@@ -531,9 +529,9 @@ def test_capcut_export_does_not_auto_copy_into_jianying_project_dir(tmp_path, mo
         subtitle_position="bottom",
     )
 
-    deployed_dir = Path(tmp_path / "jianying" / "com.lveditor.draft" / "sample_26-03-31-20-15-00")
+    deployed_dir = Path(tmp_path / "jianying" / "com.lveditor.draft" / "sample_capcut")
     assert not deployed_dir.exists()
-    assert export["jianying_project_dir"] == str(PureWindowsPath(DEFAULT_JIANYING_PROJECT_ROOT) / "sample_26-03-31-20-15-00")
+    assert export["jianying_project_dir"] == str(PureWindowsPath(DEFAULT_JIANYING_PROJECT_ROOT) / "sample_capcut")
 
 
 def test_capcut_export_rewrites_material_paths_to_jianying_root(tmp_path, monkeypatch):
@@ -618,7 +616,7 @@ def test_capcut_export_rewrites_material_paths_to_jianying_root(tmp_path, monkey
         jianying_project_root=r"D:\JianyingDrafts",
     )
 
-    draft_name = "sample_hook_cta_26-04-01-18-00-00"
+    draft_name = "sample_capcut_hook_cta"
     expected_dir = PureWindowsPath(r"D:\JianyingDrafts") / draft_name
     expected_audio = str(expected_dir / "Resources" / "auto_generated" / "sample.mp3")
     expected_video = str(expected_dir / "Resources" / "auto_generated" / "sample.mp4")

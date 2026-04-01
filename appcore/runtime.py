@@ -499,6 +499,11 @@ class PipelineRunner:
         variants = dict(task.get("variants", {}))
         compare_variants = {}
         jianying_project_root = resolve_jianying_project_root(self.user_id)
+        draft_title = (
+            task.get("display_name")
+            or task.get("original_filename")
+            or os.path.basename(video_path)
+        )
         for variant in VARIANT_KEYS:
             variant_state = dict(variants.get(variant, {}))
             export_result = export_capcut_project(
@@ -508,6 +513,7 @@ class PipelineRunner:
                 output_dir=task_dir,
                 timeline_manifest=variant_state.get("timeline_manifest"),
                 variant=variant,
+                draft_title=draft_title,
                 jianying_project_root=jianying_project_root,
             )
             exports = dict(variant_state.get("exports", {}))

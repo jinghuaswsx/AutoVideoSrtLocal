@@ -91,7 +91,7 @@ def test_step_translate_persists_source_text_and_localized_translation(tmp_path,
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
     monkeypatch.setattr(
         "pipeline.translate.generate_localized_translation",
-        lambda source_full_text_zh, script_segments, variant="normal": {
+        lambda source_full_text_zh, script_segments, variant="normal", **kwargs: {
             "full_text": "Hook line. Closing line.",
             "sentences": [
                 {"index": 0, "text": "Hook line.", "source_segment_indices": [0]},
@@ -119,7 +119,7 @@ def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypa
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "hello there")
     monkeypatch.setattr(
         "pipeline.translate.generate_localized_translation",
-        lambda source_full_text_zh, script_segments, variant="normal": {
+        lambda source_full_text_zh, script_segments, variant="normal", **kwargs: {
             "full_text": "Hello there",
             "sentences": [
                 {"index": 0, "text": "Hello there", "source_segment_indices": [0]},
@@ -147,7 +147,7 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
 
     monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one\npart two")
 
-    def fake_generate_localized_translation(source_full_text_zh, script_segments, variant="normal"):
+    def fake_generate_localized_translation(source_full_text_zh, script_segments, variant="normal", **kwargs):
         if variant == "hook_cta":
             return {
                 "full_text": "Hook CTA copy.",
@@ -194,7 +194,7 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "pipeline.translate.generate_tts_script",
-        lambda localized_translation: {
+        lambda localized_translation, **kwargs: {
             "full_text": localized_translation["full_text"],
             "subtitle_chunks": [],
             "sentences": localized_translation["sentences"],
@@ -205,7 +205,7 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
         lambda tts_script, script_segments: [],
     )
 
-    def fake_generate_full_audio(tts_segments, voice_id, output_dir, variant="normal"):
+    def fake_generate_full_audio(tts_segments, voice_id, output_dir, variant="normal", **kwargs):
         path = str(tmp_path / f"tts_full.{variant}.mp3")
         open(path, "wb").write(b"fake")
         return {"full_audio_path": path, "segments": []}
@@ -310,6 +310,50 @@ def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkey
     }
 
 
+def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch):
+    task = store.create("task-export-display-name", "video.mp4", str(tmp_path), user_id=123)
+    task["video_path"] = "video.mp4"
+    task["display_name"] = "example"
+    task["subtitle_position"] = "bottom"
+
+    for variant in ("normal", "hook_cta"):
+        audio_path = tmp_path / f"tts_full.{variant}.mp3"
+        audio_path.write_bytes(b"fake-audio")
+        srt_path = tmp_path / f"subtitle.{variant}.srt"
+        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+        task["variants"][variant].update(
+            {
+                "tts_audio_path": str(audio_path),
+                "srt_path": str(srt_path),
+                "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+            }
+        )
+
+    captured_titles = {}
+
+    def fake_export_capcut_project(video_path=None, tts_audio_path=None, srt_path=None, output_dir=None, timeline_manifest=None, variant="normal", draft_title=None, **kwargs):
+        captured_titles[variant] = draft_title
+        manifest_path = tmp_path / f"manifest.{variant}.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / f"{draft_title}_capcut_{variant}"),
+            "archive_path": str(tmp_path / f"{draft_title}_capcut_{variant}.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("appcore.runtime.resolve_jianying_project_root", lambda user_id: r"D:\JianyingDrafts")
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=123)
+    runner._step_export("task-export-display-name", "video.mp4", str(tmp_path))
+
+    assert captured_titles == {
+        "normal": "example",
+        "hook_cta": "example",
+    }
+
+
 def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     task = store.create("task-tail-messages", "video.mp4", str(tmp_path))
     task["video_path"] = "video.mp4"
@@ -349,7 +393,7 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "pipeline.asr.transcribe_local_audio",
-        lambda path, prefix="": [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}],
+        lambda path, prefix="", **kwargs: [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}],
     )
     monkeypatch.setattr(
         "pipeline.subtitle_alignment.align_subtitle_chunks_to_asr",
@@ -397,7 +441,7 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
 
 
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
-    store.create("task-start-auto", "video.mp4", "output/task-start-auto")
+    store.create("task-start-auto", "video.mp4", "output/task-start-auto", user_id=1)
     captured = {}
 
     monkeypatch.setattr(

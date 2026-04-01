@@ -139,10 +139,17 @@ def get(task_id: str) -> Optional[dict]:
     # Fall back to DB
     try:
         from appcore.db import query_one
-        row = query_one("SELECT state_json, user_id FROM projects WHERE id = %s", (task_id,))
+        row = query_one(
+            "SELECT state_json, user_id, display_name, original_filename FROM projects WHERE id = %s",
+            (task_id,),
+        )
         if row and row.get("state_json"):
             task = json.loads(row["state_json"])
             task["_user_id"] = row["user_id"]
+            if row.get("display_name") and not task.get("display_name"):
+                task["display_name"] = row["display_name"]
+            if row.get("original_filename") and not task.get("original_filename"):
+                task["original_filename"] = row["original_filename"]
             _tasks[task_id] = task
             return task
     except Exception:

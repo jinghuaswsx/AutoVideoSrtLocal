@@ -24,7 +24,7 @@ def export_capcut_project(
     jianying_project_root: str | None = None,
 ) -> dict:
     source_name = draft_title or Path(video_path).name
-    draft_name = _build_draft_name(source_name, variant=variant)
+    draft_name = build_capcut_draft_name(source_name, variant=variant)
     project_dir = Path(output_dir) / draft_name
     if project_dir.exists():
         shutil.rmtree(project_dir)
@@ -70,7 +70,7 @@ def export_capcut_project(
     with open(manifest_path, "w", encoding="utf-8") as fh:
         json.dump(export_manifest, fh, ensure_ascii=False, indent=2)
 
-    archive_path = Path(output_dir) / f"{draft_name}.zip"
+    archive_path = Path(output_dir) / build_capcut_archive_name(source_name, variant=variant)
     jianying_project_dir = rewrite_capcut_project_paths(
         project_dir=str(project_dir),
         manifest_path=str(manifest_path),
@@ -349,12 +349,15 @@ def _subtitle_transform_y(position: str) -> float:
     return mapping.get(position, -0.78)
 
 
-def _build_draft_name(source_name: str, variant: str | None = None) -> str:
-    timestamp = time.strftime("%y-%m-%d-%H-%M-%S")
+def build_capcut_draft_name(source_name: str, variant: str | None = None) -> str:
     stem = _sanitize_draft_name(Path(source_name).stem)
     if variant:
-        return f"{stem}_{variant}_{timestamp}"
-    return f"{stem}_{timestamp}"
+        return f"{stem}_capcut_{variant}"
+    return f"{stem}_capcut"
+
+
+def build_capcut_archive_name(source_name: str, variant: str | None = None) -> str:
+    return f"{build_capcut_draft_name(source_name, variant=variant)}.zip"
 
 
 def _sanitize_draft_name(name: str) -> str:

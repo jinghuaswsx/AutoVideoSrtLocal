@@ -342,6 +342,7 @@ def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, authed_clie
     archive_path = tmp_path / "capcut_hook_cta.zip"
     archive_path.write_bytes(b"capcut-archive")
     store.create("task-download-variant", "video.mp4", str(tmp_path), user_id=1)
+    store.update("task-download-variant", display_name="example")
     store.update_variant(
         "task-download-variant",
         "hook_cta",
@@ -352,6 +353,7 @@ def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, authed_clie
 
     assert response.status_code == 200
     assert response.data == b"capcut-archive"
+    assert 'filename=example_capcut_hook_cta.zip' in response.headers["Content-Disposition"]
 
 
 def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
@@ -408,6 +410,38 @@ def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path,
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["timeline_manifest"]["segments"][0]["tts_path"] == ""
     assert store.get("task-download-rewrite")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
+
+
+def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):
+    archive_path = tmp_path / "capcut_normal.zip"
+    archive_path.write_bytes(b"capcut-archive")
+    store.create("task-rename-download", "video.mp4", str(tmp_path), user_id=1)
+    store.update_variant(
+        "task-rename-download",
+        "normal",
+        exports={"capcut_archive": str(archive_path)},
+    )
+
+    def fake_db_query_one(sql, args):
+        if "SELECT id, user_id FROM projects" in sql:
+            return {"id": "task-rename-download", "user_id": 1}
+        return None
+
+    monkeypatch.setattr("web.routes.task.db_query_one", fake_db_query_one)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+
+    rename_response = authed_client_no_db.patch(
+        "/api/tasks/task-rename-download",
+        json={"display_name": "example"},
+    )
+
+    assert rename_response.status_code == 200
+    assert store.get("task-rename-download")["display_name"] == "example"
+
+    download_response = authed_client_no_db.get("/api/tasks/task-rename-download/download/capcut?variant=normal")
+
+    assert download_response.status_code == 200
+    assert 'filename=example_capcut_normal.zip' in download_response.headers["Content-Disposition"]
 
 
 def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, monkeypatch):

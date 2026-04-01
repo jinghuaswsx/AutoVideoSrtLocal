@@ -14,7 +14,11 @@ from flask_login import login_required, current_user
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore.api_keys import resolve_jianying_project_root
 from pipeline.alignment import build_script_segments
-from pipeline.capcut import deploy_capcut_project, rewrite_capcut_project_paths
+from pipeline.capcut import (
+    build_capcut_archive_name,
+    deploy_capcut_project,
+    rewrite_capcut_project_paths,
+)
 from web.preview_artifacts import (
     build_alignment_artifact,
     build_translate_artifact,
@@ -173,6 +177,7 @@ def upload():
         default_name = _default_display_name(os.path.basename(file.filename))
         display_name = _resolve_name_conflict(user_id, default_name)
         db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+        store.update(task_id, display_name=display_name)
 
     thumb = _extract_thumbnail(video_path, task_dir)
     if thumb and user_id is not None:
@@ -327,7 +332,12 @@ def download(task_id, file_type):
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
 
-    return send_file(os.path.abspath(path), as_attachment=True)
+    download_name = None
+    if file_type == "capcut":
+        source_name = task.get("display_name") or task.get("original_filename") or task_id
+        download_name = build_capcut_archive_name(source_name, variant=variant)
+
+    return send_file(os.path.abspath(path), as_attachment=True, download_name=download_name)
 
 
 @bp.route("/<task_id>/deploy/capcut", methods=["POST"])
@@ -376,6 +386,8 @@ def rename_task(task_id):
 
     resolved = _resolve_name_conflict(current_user.id, new_name, exclude_task_id=task_id)
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
+    store.get(task_id)
+    store.update(task_id, display_name=resolved)
     return jsonify({"status": "ok", "display_name": resolved})
 
 
