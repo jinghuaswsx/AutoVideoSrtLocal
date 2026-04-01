@@ -5,6 +5,7 @@
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .page-header h1 { font-size: 20px; font-weight: 700; color: #111827; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.project-card-wrap { position: relative; }
 .project-card {
   background: #fff;
   border: 1.5px solid #e5e7eb;
@@ -26,7 +27,54 @@
 .badge-running { background: #ede9fe; color: #7c3aed; }
 .badge-expired { background: #f3f4f6; color: #9ca3af; }
 .badge-uploaded { background: #dbeafe; color: #2563eb; }
+.badge-error { background: #fee2e2; color: #dc2626; }
 .empty { text-align: center; padding: 80px 0; color: #9ca3af; }
+.card-menu-btn {
+  position: absolute; top: 10px; right: 10px;
+  width: 28px; height: 28px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; z-index: 2;
+  backdrop-filter: blur(4px);
+  font-family: inherit;
+}
+.card-menu-btn:hover { background: #fff; border-color: #7c6fe0; }
+.card-menu {
+  display: none; position: absolute; top: 44px; right: 10px;
+  background: #fff; border: 1.5px solid #e5e7eb; border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  z-index: 10; min-width: 130px; overflow: hidden;
+}
+.card-menu.open { display: block; }
+.card-menu button {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 14px; font-size: 13px; color: #374151;
+  background: none; border: none; cursor: pointer;
+  font-family: inherit;
+}
+.card-menu button:hover { background: #f3f4f6; }
+.card-menu button.danger { color: #dc2626; }
+.card-menu button.danger:hover { background: #fef2f2; }
+.rename-modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.3); z-index: 200;
+  align-items: center; justify-content: center;
+}
+.rename-modal-overlay.open { display: flex; }
+.rename-modal {
+  background: #fff; border-radius: 16px; padding: 28px;
+  width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+.rename-modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #111827; }
+.rename-modal input {
+  width: 100%; background: #f9fafb; border: 1.5px solid #e5e7eb;
+  border-radius: 10px; color: #111827; padding: 10px 12px; font-size: 14px;
+  font-family: inherit; outline: none; margin-bottom: 16px; box-sizing: border-box;
+}
+.rename-modal input:focus { border-color: #7c6fe0; background: #fff; }
+.rename-modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 {% endblock %}
 {% block content %}
 <div class="page-header">
@@ -36,22 +84,29 @@
 {% if projects %}
 <div class="grid">
   {% for p in projects %}
-  <a class="project-card" href="{{ url_for('projects.detail', task_id=p.id) }}">
-    <div class="thumb">
-      {% if p.thumbnail_path %}
-        <img src="/api/tasks/{{ p.id }}/thumbnail" alt="">
-      {% else %}
-        🎬
-      {% endif %}
-    </div>
-    <div class="info">
-      <div class="filename">{{ p.original_filename or p.id }}</div>
-      <div class="meta">
-        <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
-        <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+  <div class="project-card-wrap">
+    <a class="project-card" href="{{ url_for('projects.detail', task_id=p.id) }}">
+      <div class="thumb">
+        {% if p.thumbnail_path %}
+          <img src="/api/tasks/{{ p.id }}/thumbnail" alt="">
+        {% else %}
+          🎬
+        {% endif %}
       </div>
+      <div class="info">
+        <div class="filename">{{ p.display_name or (p.original_filename or p.id)[:10] }}</div>
+        <div class="meta">
+          <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
+          <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+        </div>
+      </div>
+    </a>
+    <button class="card-menu-btn" onclick="toggleMenu(event,'menu-{{ p.id }}')">⋯</button>
+    <div class="card-menu" id="menu-{{ p.id }}">
+      <button onclick="openRename('{{ p.id }}','{{ (p.display_name or (p.original_filename or '')[:10])|e }}')">重命名</button>
+      <button class="danger" onclick="deleteTask(event,'{{ p.id }}')">删除</button>
     </div>
-  </a>
+  </div>
   {% endfor %}
 </div>
 {% else %}
@@ -60,4 +115,75 @@
   <p>还没有项目，点击右上角新建</p>
 </div>
 {% endif %}
+
+<!-- 重命名弹窗 -->
+<div class="rename-modal-overlay" id="renameOverlay">
+  <div class="rename-modal">
+    <h3>重命名项目</h3>
+    <input type="text" id="renameInput" maxlength="50" placeholder="输入新名称（最多50字符）">
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeRename()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmRename()">确认</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _renameTaskId = null;
+
+function toggleMenu(e, menuId) {
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.card-menu.open').forEach(function(m) {
+    if (m.id !== menuId) m.classList.remove('open');
+  });
+  document.getElementById(menuId).classList.toggle('open');
+}
+document.addEventListener('click', function() {
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+});
+
+function openRename(taskId, currentName) {
+  _renameTaskId = taskId;
+  document.getElementById('renameInput').value = currentName;
+  document.getElementById('renameOverlay').classList.add('open');
+  setTimeout(function() { document.getElementById('renameInput').focus(); }, 50);
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+}
+function closeRename() {
+  document.getElementById('renameOverlay').classList.remove('open');
+  _renameTaskId = null;
+}
+async function confirmRename() {
+  var name = document.getElementById('renameInput').value.trim();
+  if (!name || !_renameTaskId) return;
+  var res = await fetch('/api/tasks/' + _renameTaskId, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({display_name: name})
+  });
+  var data = await res.json();
+  if (res.ok) {
+    location.reload();
+  } else {
+    alert(data.error || '重命名失败');
+  }
+}
+document.getElementById('renameInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') confirmRename();
+  if (e.key === 'Escape') closeRename();
+});
+
+async function deleteTask(e, taskId) {
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+  if (!confirm('确定删除这个项目吗？此操作不可恢复。')) return;
+  var res = await fetch('/api/tasks/' + taskId, {method: 'DELETE'});
+  if (res.ok) {
+    location.reload();
+  } else {
+    var data = await res.json();
+    alert(data.error || '删除失败');
+  }
+}
+</script>
 {% endblock %}
