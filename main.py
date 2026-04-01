@@ -15,6 +15,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = create_app()
 
+from appcore.scheduler import get_scheduler
+_scheduler = get_scheduler()
+_scheduler.start()
+
 if __name__ == "__main__":
     validate_runtime_config()
     print("AutoVideoSrt 启动中...")
