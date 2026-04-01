@@ -354,6 +354,45 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
     }
 
 
+def test_upload_artifacts_to_tos_persists_metadata_for_all_final_outputs(tmp_path, monkeypatch):
+    task = store.create("task-upload-artifacts", "video.mp4", str(tmp_path), user_id=7)
+    for variant in ("normal", "hook_cta"):
+        soft_path = tmp_path / f"{variant}.soft.mp4"
+        hard_path = tmp_path / f"{variant}.hard.mp4"
+        srt_path = tmp_path / f"{variant}.subtitle.srt"
+        capcut_path = tmp_path / f"{variant}.capcut.zip"
+        soft_path.write_bytes(b"soft")
+        hard_path.write_bytes(b"hard")
+        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+        capcut_path.write_bytes(b"zip")
+        task["variants"][variant]["result"] = {
+            "soft_video": str(soft_path),
+            "hard_video": str(hard_path),
+        }
+        task["variants"][variant]["srt_path"] = str(srt_path)
+        task["variants"][variant]["exports"] = {"capcut_archive": str(capcut_path)}
+
+    uploaded = []
+
+    monkeypatch.setattr("appcore.runtime.tos_clients.is_tos_configured", lambda: True)
+    monkeypatch.setattr(
+        "appcore.runtime.tos_clients.build_artifact_object_key",
+        lambda user_id, task_id, variant, filename: f"artifacts/{user_id}/{task_id}/{variant}/{filename}",
+    )
+    monkeypatch.setattr(
+        "appcore.runtime.tos_clients.upload_file",
+        lambda local_path, object_key: uploaded.append((local_path, object_key)),
+    )
+
+    runtime._upload_artifacts_to_tos(task, "task-upload-artifacts")
+
+    saved = store.get("task-upload-artifacts")["tos_uploads"]
+    assert saved["normal:soft_video"]["tos_key"] == "artifacts/7/task-upload-artifacts/normal/normal.soft.mp4"
+    assert saved["normal:capcut_archive"]["artifact_kind"] == "capcut_archive"
+    assert saved["hook_cta:srt"]["variant"] == "hook_cta"
+    assert len(uploaded) == 8
+
+
 def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     task = store.create("task-tail-messages", "video.mp4", str(tmp_path))
     task["video_path"] = "video.mp4"

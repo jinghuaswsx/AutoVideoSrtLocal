@@ -62,6 +62,16 @@ def test_index_page_supports_action_preview_items(authed_client_no_db):
     assert "triggerAction(" in body
 
 
+def test_index_page_uses_tos_direct_upload_bootstrap(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "/api/tos-upload/bootstrap" in body
+    assert "/api/tos-upload/complete" in body
+    assert 'xhr.open("PUT", bootstrap.upload_url, true)' in body
+
+
 def test_index_page_contains_confirmation_mode_control(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 
@@ -356,6 +366,30 @@ def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, authed_clie
     assert 'filename=example_capcut_hook_cta.zip' in response.headers["Content-Disposition"]
 
 
+def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_client_no_db, monkeypatch):
+    store.create("task-download-tos", "video.mp4", "output/task-download-tos", user_id=1)
+    store.update(
+        "task-download-tos",
+        tos_uploads={
+            "normal:soft_video": {
+                "tos_key": "artifacts/1/task-download-tos/normal/example_soft.mp4",
+                "artifact_kind": "soft_video",
+                "variant": "normal",
+            }
+        },
+    )
+
+    monkeypatch.setattr(
+        "web.routes.task.tos_clients.generate_signed_download_url",
+        lambda object_key: f"https://signed.example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.get("/api/tasks/task-download-tos/download/soft")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-tos/normal/example_soft.mp4"
+
+
 def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
     project_dir = tmp_path / "capcut_hook_cta"
     resources_dir = project_dir / "Resources" / "auto_generated"
@@ -410,6 +444,102 @@ def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path,
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["timeline_manifest"]["segments"][0]["tts_path"] == ""
     assert store.get("task-download-rewrite")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
+
+
+def test_delete_route_cleans_source_and_artifact_tos_objects(tmp_path, authed_client_no_db, monkeypatch):
+    task_dir = tmp_path / "task-delete"
+    task_dir.mkdir()
+    store.create("task-delete-tos", "video.mp4", str(task_dir), user_id=1)
+    store.update(
+        "task-delete-tos",
+        source_tos_key="uploads/1/task-delete-tos/source.mp4",
+        tos_uploads={
+            "normal:soft_video": {
+                "tos_key": "artifacts/1/task-delete-tos/normal/example_soft.mp4",
+                "artifact_kind": "soft_video",
+                "variant": "normal",
+            }
+        },
+    )
+
+    monkeypatch.setattr(
+        "web.routes.task.db_query_one",
+        lambda sql, args: {"id": "task-delete-tos", "task_dir": str(task_dir), "state_json": "{}", "user_id": 1},
+    )
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    deleted_keys = []
+    monkeypatch.setattr("web.routes.task.cleanup.delete_task_storage", lambda task: deleted_keys.extend(sorted(task["tos_keys"])))
+
+    response = authed_client_no_db.delete("/api/tasks/task-delete-tos")
+
+    assert response.status_code == 200
+    assert deleted_keys == [
+        "artifacts/1/task-delete-tos/normal/example_soft.mp4",
+        "uploads/1/task-delete-tos/source.mp4",
+    ]
+    assert store.get("task-delete-tos")["status"] == "deleted"
+
+
+def test_delete_route_cleans_persisted_tos_objects_when_store_is_cold(authed_client_no_db, monkeypatch):
+    state = {
+        "source_tos_key": "uploads/1/task-delete-cold/source.mp4",
+        "tos_uploads": {
+            "normal:soft_video": {
+                "tos_key": "artifacts/1/task-delete-cold/normal/example_soft.mp4",
+                "artifact_kind": "soft_video",
+                "variant": "normal",
+            }
+        },
+    }
+
+    monkeypatch.setattr(
+        "web.routes.task.db_query_one",
+        lambda sql, args: {
+            "id": "task-delete-cold",
+            "task_dir": "",
+            "state_json": json.dumps(state),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    deleted_keys = []
+    monkeypatch.setattr("web.routes.task.cleanup.delete_task_storage", lambda task: deleted_keys.extend(sorted(task["tos_keys"])))
+
+    response = authed_client_no_db.delete("/api/tasks/task-delete-cold")
+
+    assert response.status_code == 200
+    assert deleted_keys == [
+        "artifacts/1/task-delete-cold/normal/example_soft.mp4",
+        "uploads/1/task-delete-cold/source.mp4",
+    ]
+
+
+def test_start_route_materializes_source_video_from_tos_before_processing(tmp_path, authed_client_no_db, monkeypatch):
+    task_dir = tmp_path / "task-start-tos"
+    task_dir.mkdir()
+    video_path = tmp_path / "uploads" / "task-start-tos.mp4"
+    store.create("task-start-tos", str(video_path), str(task_dir), user_id=1)
+    store.update("task-start-tos", source_tos_key="uploads/1/task-start-tos/demo.mp4")
+
+    downloaded = []
+    started = []
+
+    def fake_download_file(object_key, local_path):
+        downloaded.append((object_key, local_path))
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(local_path).write_bytes(b"video")
+        return local_path
+
+    monkeypatch.setattr("web.routes.task.tos_clients.download_file", fake_download_file)
+    monkeypatch.setattr("web.routes.task._extract_thumbnail", lambda video_path, task_dir: None)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.services.pipeline_runner.start", lambda task_id, user_id=None: started.append((task_id, user_id)))
+
+    response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json={})
+
+    assert response.status_code == 200
+    assert downloaded == [("uploads/1/task-start-tos/demo.mp4", str(video_path))]
+    assert started == [("task-start-tos", 1)]
 
 
 def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):

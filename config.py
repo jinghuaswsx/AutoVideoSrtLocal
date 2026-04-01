@@ -42,10 +42,18 @@ LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", "http://127.0.0.1:5000")
 # 火山引擎 TOS
 TOS_ACCESS_KEY = _env("TOS_ACCESS_KEY")
 TOS_SECRET_KEY = _env("TOS_SECRET_KEY")
-TOS_ENDPOINT = _env("TOS_ENDPOINT", "tos-cn-shanghai.volces.com")
 TOS_REGION = _env("TOS_REGION", "cn-shanghai")
 TOS_BUCKET = _env("TOS_BUCKET", "auto-video-srt")
+TOS_ENDPOINT = _env("TOS_ENDPOINT", "tos-cn-shanghai.volces.com")
+TOS_PUBLIC_ENDPOINT = _env("TOS_PUBLIC_ENDPOINT", TOS_ENDPOINT or "tos-cn-shanghai.volces.com")
+TOS_PRIVATE_ENDPOINT = _env("TOS_PRIVATE_ENDPOINT", "tos-cn-shanghai.ivolces.com")
+TOS_USE_PRIVATE_ENDPOINT = _env("TOS_USE_PRIVATE_ENDPOINT", "false").lower() in {"1", "true", "yes", "on"}
 TOS_PREFIX = _env("TOS_PREFIX", "asr-audio/")
+TOS_BROWSER_UPLOAD_PREFIX = _env("TOS_BROWSER_UPLOAD_PREFIX", "uploads/")
+TOS_FINAL_ARTIFACT_PREFIX = _env("TOS_FINAL_ARTIFACT_PREFIX", "artifacts/")
+TOS_SIGNED_URL_EXPIRES = int(_env("TOS_SIGNED_URL_EXPIRES", "3600"))
+TOS_PRIVATE_PROBE_TTL = int(_env("TOS_PRIVATE_PROBE_TTL", "60"))
+TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS = int(_env("TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS", str(24 * 3600)))
 
 # OpenRouter Claude
 OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
