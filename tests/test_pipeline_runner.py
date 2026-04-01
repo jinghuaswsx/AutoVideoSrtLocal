@@ -254,16 +254,16 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     assert ("export", "done", "CapCut 项目已导出") in messages
 
 
-def test_start_route_defaults_interactive_review_to_false(monkeypatch):
-    from web.services import pipeline_runner
-    app = __import__("web.app", fromlist=["create_app"]).create_app()
-    client = app.test_client()
+def test_start_route_defaults_interactive_review_to_false(logged_in_client, monkeypatch):
     store.create("task-start-auto", "video.mp4", "output/task-start-auto")
     captured = {}
 
-    monkeypatch.setattr("web.services.pipeline_runner.start", lambda task_id: captured.setdefault("task_id", task_id))
+    monkeypatch.setattr(
+        "web.services.pipeline_runner.start",
+        lambda task_id, user_id=None: captured.setdefault("task_id", task_id),
+    )
 
-    response = client.post("/api/tasks/task-start-auto/start", json={})
+    response = logged_in_client.post("/api/tasks/task-start-auto/start", json={})
 
     assert response.status_code == 200
     assert captured["task_id"] == "task-start-auto"

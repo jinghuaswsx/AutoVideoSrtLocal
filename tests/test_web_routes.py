@@ -4,11 +4,8 @@ from web import store
 from web.app import create_app
 
 
-def test_index_page_contains_alignment_and_voice_controls():
-    app = create_app()
-    client = app.test_client()
-
-    response = client.get("/")
+def test_index_page_contains_alignment_and_voice_controls(logged_in_client):
+    response = logged_in_client.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -16,11 +13,8 @@ def test_index_page_contains_alignment_and_voice_controls():
     assert "alignmentReview" in body
 
 
-def test_index_page_contains_step_preview_container():
-    app = create_app()
-    client = app.test_client()
-
-    response = client.get("/")
+def test_index_page_contains_step_preview_container(logged_in_client):
+    response = logged_in_client.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -28,11 +22,8 @@ def test_index_page_contains_step_preview_container():
     assert "renderStepPreviews" in body
 
 
-def test_index_page_supports_new_localization_preview_types():
-    app = create_app()
-    client = app.test_client()
-
-    response = client.get("/")
+def test_index_page_supports_new_localization_preview_types(logged_in_client):
+    response = logged_in_client.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -41,11 +32,8 @@ def test_index_page_supports_new_localization_preview_types():
     assert "item.type === \"subtitle_chunks\"" in body
 
 
-def test_index_page_supports_variant_compare_layout():
-    app = create_app()
-    client = app.test_client()
-
-    response = client.get("/")
+def test_index_page_supports_variant_compare_layout(logged_in_client):
+    response = logged_in_client.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -53,11 +41,8 @@ def test_index_page_supports_variant_compare_layout():
     assert "renderVariantCompareArtifact" in body
 
 
-def test_index_page_supports_action_preview_items():
-    app = create_app()
-    client = app.test_client()
-
-    response = client.get("/")
+def test_index_page_supports_action_preview_items(logged_in_client):
+    response = logged_in_client.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -65,13 +50,10 @@ def test_index_page_supports_action_preview_items():
     assert "triggerAction(" in body
 
 
-def test_task_detail_returns_artifacts_structure():
-    app = create_app()
-    client = app.test_client()
-
+def test_task_detail_returns_artifacts_structure(logged_in_client):
     store.create("task-preview", "video.mp4", "output/task-preview")
 
-    response = client.get("/api/tasks/task-preview")
+    response = logged_in_client.get("/api/tasks/task-preview")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -87,51 +69,39 @@ def test_store_create_initializes_two_variants():
     assert task["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
 
 
-def test_artifact_route_serves_whitelisted_preview_file(tmp_path):
-    app = create_app()
-    client = app.test_client()
-
+def test_artifact_route_serves_whitelisted_preview_file(tmp_path, logged_in_client):
     audio_path = tmp_path / "preview.mp3"
     audio_path.write_bytes(b"audio-preview")
     store.create("task-file", "video.mp4", str(tmp_path))
     store.update("task-file", preview_files={"audio_extract": str(audio_path)})
 
-    response = client.get("/api/tasks/task-file/artifact/audio_extract")
+    response = logged_in_client.get("/api/tasks/task-file/artifact/audio_extract")
 
     assert response.status_code == 200
     assert response.data == b"audio-preview"
 
 
-def test_artifact_route_serves_variant_preview_file(tmp_path):
-    app = create_app()
-    client = app.test_client()
-
+def test_artifact_route_serves_variant_preview_file(tmp_path, logged_in_client):
     video_path = tmp_path / "preview.mp4"
     video_path.write_bytes(b"video-preview")
     store.create("task-variant-file", "video.mp4", str(tmp_path))
     store.update_variant("task-variant-file", "hook_cta", preview_files={"soft_video": str(video_path)})
 
-    response = client.get("/api/tasks/task-variant-file/artifact/soft_video?variant=hook_cta")
+    response = logged_in_client.get("/api/tasks/task-variant-file/artifact/soft_video?variant=hook_cta")
 
     assert response.status_code == 200
     assert response.data == b"video-preview"
 
 
-def test_artifact_route_rejects_unknown_name(tmp_path):
-    app = create_app()
-    client = app.test_client()
-
+def test_artifact_route_rejects_unknown_name(tmp_path, logged_in_client):
     store.create("task-bad", "video.mp4", str(tmp_path))
 
-    response = client.get("/api/tasks/task-bad/artifact/not_allowed")
+    response = logged_in_client.get("/api/tasks/task-bad/artifact/not_allowed")
 
     assert response.status_code == 404
 
 
-def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_path, monkeypatch):
-    app = create_app()
-    client = app.test_client()
-
+def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_path, logged_in_client, monkeypatch):
     task_id = "task-restored"
     task_dir = tmp_path / task_id
     task_dir.mkdir()
@@ -139,23 +109,20 @@ def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_
     preview_path.write_bytes(b"soft-video-preview")
     monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path))
 
-    response = client.get(f"/api/tasks/{task_id}/artifact/soft_video")
+    response = logged_in_client.get(f"/api/tasks/{task_id}/artifact/soft_video")
 
     assert response.status_code == 200
     assert response.data == b"soft-video-preview"
 
 
-def test_alignment_route_compiles_script_segments():
-    app = create_app()
-    client = app.test_client()
-
+def test_alignment_route_compiles_script_segments(logged_in_client):
     task = store.create("task-1", "video.mp4", "output/task-1")
     task["utterances"] = [
         {"text": "浣犲ソ", "start_time": 0.0, "end_time": 0.8, "words": []},
         {"text": "涓栫晫", "start_time": 0.8, "end_time": 1.6, "words": []},
     ]
 
-    response = client.put(
+    response = logged_in_client.put(
         "/api/tasks/task-1/alignment",
         json={"break_after": [False, True]},
     )
@@ -167,10 +134,7 @@ def test_alignment_route_compiles_script_segments():
     assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "浣犲ソ涓栫晫"
 
 
-def test_segments_route_updates_translate_artifact():
-    app = create_app()
-    client = app.test_client()
-
+def test_segments_route_updates_translate_artifact(logged_in_client):
     store.create("task-translate", "video.mp4", "output/task-translate")
     store.update(
         "task-translate",
@@ -178,7 +142,7 @@ def test_segments_route_updates_translate_artifact():
         segments=[{"text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
     )
 
-    response = client.put(
+    response = logged_in_client.put(
         "/api/tasks/task-translate/segments",
         json={"segments": [{"text": "你好世界", "translated": "Hello there", "start_time": 0.0, "end_time": 1.6}]},
     )
@@ -189,10 +153,7 @@ def test_segments_route_updates_translate_artifact():
     assert saved["artifacts"]["translate"]["items"][0]["segments"][0]["translated"] == "Hello there"
 
 
-def test_segments_route_updates_localized_translation_for_future_tts():
-    app = create_app()
-    client = app.test_client()
-
+def test_segments_route_updates_localized_translation_for_future_tts(logged_in_client):
     store.create("task-translate-localized", "video.mp4", "output/task-translate-localized")
     store.update(
         "task-translate-localized",
@@ -201,7 +162,7 @@ def test_segments_route_updates_localized_translation_for_future_tts():
         segments=[{"index": 0, "text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
     )
 
-    response = client.put(
+    response = logged_in_client.put(
         "/api/tasks/task-translate-localized/segments",
         json={"segments": [{"index": 0, "text": "你好世界", "translated": "Hello there", "start_time": 0.0, "end_time": 1.6}]},
     )
@@ -213,9 +174,7 @@ def test_segments_route_updates_localized_translation_for_future_tts():
     assert saved["localized_translation"]["sentences"][0]["source_segment_indices"] == [0]
 
 
-def test_task_payload_exposes_tts_script_and_corrected_subtitle():
-    app = create_app()
-    client = app.test_client()
+def test_task_payload_exposes_tts_script_and_corrected_subtitle(logged_in_client):
     store.create("task-payload", "video.mp4", "output/task-payload")
     store.update(
         "task-payload",
@@ -223,7 +182,7 @@ def test_task_payload_exposes_tts_script_and_corrected_subtitle():
         corrected_subtitle={"chunks": [], "srt_content": "1\n00:00:00,000 --> 00:00:01,000\nSay it smooth.\n"},
     )
 
-    response = client.get("/api/tasks/task-payload")
+    response = logged_in_client.get("/api/tasks/task-payload")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -264,10 +223,7 @@ def test_voice_routes_support_crud(tmp_path, monkeypatch):
     assert deleted.status_code == 200
 
 
-def test_download_route_can_return_hook_cta_capcut_archive(tmp_path):
-    app = create_app()
-    client = app.test_client()
-
+def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, logged_in_client):
     archive_path = tmp_path / "capcut_hook_cta.zip"
     archive_path.write_bytes(b"capcut-archive")
     store.create("task-download-variant", "video.mp4", str(tmp_path))
@@ -277,16 +233,13 @@ def test_download_route_can_return_hook_cta_capcut_archive(tmp_path):
         exports={"capcut_archive": str(archive_path)},
     )
 
-    response = client.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
+    response = logged_in_client.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
 
     assert response.status_code == 200
     assert response.data == b"capcut-archive"
 
 
-def test_deploy_route_copies_variant_capcut_project(tmp_path, monkeypatch):
-    app = create_app()
-    client = app.test_client()
-
+def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, monkeypatch):
     project_dir = tmp_path / "capcut_hook_cta"
     project_dir.mkdir()
     (project_dir / "draft_content.json").write_text("{}", encoding="utf-8")
@@ -307,7 +260,7 @@ def test_deploy_route_copies_variant_capcut_project(tmp_path, monkeypatch):
 
     monkeypatch.setattr("web.routes.task.deploy_capcut_project", fake_deploy_capcut_project)
 
-    response = client.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
+    response = logged_in_client.post("/api/tasks/task-deploy-variant/deploy/capcut?variant=hook_cta")
 
     assert response.status_code == 200
     payload = response.get_json()

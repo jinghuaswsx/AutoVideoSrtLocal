@@ -23,3 +23,25 @@ def _base_env(monkeypatch, tmp_path):
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("VOICES_FILE", str(ROOT / "voices" / "voices.json"))
+
+
+@pytest.fixture
+def logged_in_client():
+    """Returns a Flask test client authenticated as a test user (uses live DB)."""
+    from web.app import create_app
+    from appcore.users import create_user, get_by_username
+    from appcore.db import execute
+
+    username = "_test_web_user_"
+    password = "testpass"
+
+    execute("DELETE FROM users WHERE username = %s", (username,))
+    create_user(username, password, role="admin")
+
+    app = create_app()
+    client = app.test_client()
+    client.post("/login", data={"username": username, "password": password}, follow_redirects=True)
+
+    yield client
+
+    execute("DELETE FROM users WHERE username = %s", (username,))

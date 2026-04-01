@@ -21,9 +21,9 @@ def _make_socketio_handler(task_id: str):
     return handler
 
 
-def start(task_id: str):
+def start(task_id: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
     runner = PipelineRunner(bus=bus)
-    thread = threading.Thread(target=runner.run, args=(task_id,), daemon=True)
+    thread = threading.Thread(target=runner.start, args=(task_id,), daemon=True)
     thread.start()

@@ -5,9 +5,11 @@
 不包含任何业务执行逻辑，执行逻辑在 services/pipeline_runner.py。
 """
 import os
+import subprocess
 import uuid
 
-from flask import Blueprint, request, jsonify, send_file, render_template
+from flask import Blueprint, request, jsonify, send_file, render_template, abort
+from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.alignment import build_script_segments
@@ -19,7 +21,23 @@ from web.services import pipeline_runner
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
 
+def _extract_thumbnail(video_path: str, task_dir: str) -> str | None:
+    """Extract first frame as JPEG. Returns path or None on failure."""
+    try:
+        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-vframes", "1", "-f", "image2", thumb_path],
+            capture_output=True, timeout=15,
+        )
+        if os.path.exists(thumb_path):
+            return thumb_path
+    except Exception:
+        pass
+    return None
+
+
 @bp.route("/upload-page", endpoint="upload_page")
+@login_required
 def upload_page():
     return render_template("index.html")
 
@@ -65,6 +83,7 @@ def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, va
 
 
 @bp.route("", methods=["POST"])
+@login_required
 def upload():
     """上传视频，创建任务，返回 task_id"""
     if "video" not in request.files:
@@ -82,11 +101,21 @@ def upload():
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     file.save(video_path)
 
-    store.create(task_id, video_path, task_dir, original_filename=os.path.basename(file.filename))
+    user_id = current_user.id if current_user.is_authenticated else None
+    store.create(task_id, video_path, task_dir,
+                 original_filename=os.path.basename(file.filename),
+                 user_id=user_id)
+
+    thumb = _extract_thumbnail(video_path, task_dir)
+    if thumb and user_id is not None:
+        from appcore.db import execute as db_execute
+        db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+
     return jsonify({"task_id": task_id}), 201
 
 
 @bp.route("/<task_id>", methods=["GET"])
+@login_required
 def get_task(task_id):
     task = store.get(task_id)
     if not task:
@@ -94,7 +123,21 @@ def get_task(task_id):
     return jsonify(task)
 
 
+@bp.route("/<task_id>/thumbnail")
+@login_required
+def thumbnail(task_id: str):
+    from appcore.db import query_one as db_query_one
+    row = db_query_one(
+        "SELECT thumbnail_path FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row or not row.get("thumbnail_path") or not os.path.exists(row["thumbnail_path"]):
+        abort(404)
+    return send_file(row["thumbnail_path"], mimetype="image/jpeg")
+
+
 @bp.route("/<task_id>/artifact/<name>", methods=["GET"])
+@login_required
 def get_artifact(task_id, name):
     task = store.get(task_id)
     variant = request.args.get("variant") or None
@@ -106,6 +149,7 @@ def get_artifact(task_id, name):
 
 
 @bp.route("/<task_id>/start", methods=["POST"])
+@login_required
 def start(task_id):
     """配置并启动流水线"""
     task = store.get(task_id)
@@ -120,11 +164,13 @@ def start(task_id):
         subtitle_position=body.get("subtitle_position", "bottom"),
         interactive_review=bool(body.get("interactive_review", False)),
     )
-    pipeline_runner.start(task_id)
+    user_id = current_user.id if current_user.is_authenticated else None
+    pipeline_runner.start(task_id, user_id=user_id)
     return jsonify({"status": "started"})
 
 
 @bp.route("/<task_id>/alignment", methods=["PUT"])
+@login_required
 def update_alignment(task_id):
     task = store.get(task_id)
     if not task:
@@ -150,6 +196,7 @@ def update_alignment(task_id):
 
 
 @bp.route("/<task_id>/segments", methods=["PUT"])
+@login_required
 def update_segments(task_id):
     """用户确认/编辑翻译结果"""
     task = store.get(task_id)
@@ -166,6 +213,7 @@ def update_segments(task_id):
 
 
 @bp.route("/<task_id>/download/<file_type>", methods=["GET"])
+@login_required
 def download(task_id, file_type):
     """下载成品文件，file_type: soft | hard | srt"""
     task = store.get(task_id)
@@ -193,6 +241,7 @@ def download(task_id, file_type):
 
 
 @bp.route("/<task_id>/deploy/capcut", methods=["POST"])
+@login_required
 def deploy_capcut(task_id):
     task = store.get(task_id)
     if not task:
