@@ -17,7 +17,7 @@
     :root {
       --bg-body: #f2f4f8;
       --text-main: #111827;
-      --bg-sidebar: linear-gradient(180deg, #7c6fe0 0%, #6a5dd4 50%, #5a4ec8 100%);
+      --bg-sidebar: linear-gradient(180deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%);
       --sidebar-text: #fff;
       --sidebar-hover-bg: rgba(255,255,255,0.12);
       --sidebar-active-bg: rgba(255,255,255,0.2);
@@ -30,38 +30,38 @@
       --text-btn-danger: #dc2626;
       --bg-btn-danger-hover: #fecaca;
       --bg-card: #fff;
-      --primary-color: #7c6fe0;
-      --primary-gradient: linear-gradient(135deg, #7c6fe0, #9b6fd4);
+      --primary-color: #3b82f6;
+      --primary-gradient: linear-gradient(135deg, #2563eb, #0ea5e9);
       --btn-ghost-bg: #fff;
       --btn-ghost-text: #374151;
       --btn-ghost-border: #e5e7eb;
-      --btn-ghost-hover-border: #7c6fe0;
-      --btn-ghost-hover-text: #7c6fe0;
+      --btn-ghost-hover-border: #3b82f6;
+      --btn-ghost-hover-text: #3b82f6;
     }
 
     [data-theme='dark'] {
-      --bg-body: #0f172a;
+      --bg-body: #0a0f1c;
       --text-main: #e2e8f0;
-      --bg-sidebar: linear-gradient(180deg, #1e1b4b 0%, #2e1065 50%, #3b0764 100%);
+      --bg-sidebar: linear-gradient(180deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
       --sidebar-text: #f8fafc;
-      --sidebar-hover-bg: rgba(139, 92, 246, 0.2);
-      --sidebar-active-bg: rgba(139, 92, 246, 0.4);
+      --sidebar-hover-bg: rgba(14, 165, 233, 0.15);
+      --sidebar-active-bg: rgba(14, 165, 233, 0.25);
       --sidebar-border: rgba(255,255,255,0.05);
-      --bg-topbar: rgba(30, 41, 59, 0.8);
-      --border-main: #334155;
-      --bg-user-badge: #334155;
+      --bg-topbar: rgba(15, 23, 42, 0.8);
+      --border-main: #1e293b;
+      --bg-user-badge: #1e293b;
       --text-user-badge: #cbd5e1;
-      --bg-btn-danger: rgba(239, 68, 68, 0.2);
+      --bg-btn-danger: rgba(239, 68, 68, 0.15);
       --text-btn-danger: #fca5a5;
-      --bg-btn-danger-hover: rgba(239, 68, 68, 0.3);
-      --bg-card: #1e293b;
-      --primary-color: #a78bfa;
-      --primary-gradient: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      --bg-btn-danger-hover: rgba(239, 68, 68, 0.25);
+      --bg-card: #0f172a;
+      --primary-color: #0ea5e9;
+      --primary-gradient: linear-gradient(135deg, #0284c7, #22d3ee);
       --btn-ghost-bg: transparent;
       --btn-ghost-text: #cbd5e1;
-      --btn-ghost-border: #475569;
-      --btn-ghost-hover-border: #38bdf8;
-      --btn-ghost-hover-text: #38bdf8;
+      --btn-ghost-border: #334155;
+      --btn-ghost-hover-border: #22d3ee;
+      --btn-ghost-hover-text: #22d3ee;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -256,12 +256,23 @@
     .btn-primary:hover { opacity: 0.9; box-shadow: 0 0 15px var(--primary-color); }
     .btn-sm { padding: 5px 12px; font-size: 12px; }
     .btn-ghost { background: var(--btn-ghost-bg); border: 1.5px solid var(--btn-ghost-border); color: var(--btn-ghost-text); }
-    .btn-ghost:hover { border-color: var(--btn-ghost-hover-border); color: var(--btn-ghost-hover-text); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
+    .btn-ghost:hover { border-color: var(--btn-ghost-hover-border); color: var(--btn-ghost-hover-text); box-shadow: 0 0 10px rgba(14, 165, 233, 0.2); }
     
-    .theme-toggle-wrap { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,0.06); margin-top: 4px; }
-    .theme-toggle-label { font-size: 12px; color: rgba(255,255,255,0.7); }
-    .theme-btn { background: rgba(0,0,0,0.2); border: none; color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 6px; }
-    .theme-btn:hover { background: rgba(0,0,0,0.4); }
+    .theme-btn {
+      background: var(--bg-user-badge);
+      border: 1px solid var(--border-main);
+      color: var(--text-main);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .theme-btn:hover { background: var(--bg-card); border-color: var(--primary-color); }
     {% block extra_style %}{% endblock %}
   </style>
 </head>
@@ -296,12 +307,6 @@
           <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">退出登录</a>
         </div>
       </div>
-      <div class="theme-toggle-wrap">
-        <span class="theme-toggle-label">外观</span>
-        <button id="themeToggleBtn" class="theme-btn">
-          <span class="icon">☀️</span>
-        </button>
-      </div>
     </div>
   </aside>
 
@@ -310,6 +315,9 @@
     <header class="topbar">
       <span class="topbar-title">{% block page_title %}{% endblock %}</span>
       <span class="topbar-spacer"></span>
+      <button id="themeToggleBtn" class="theme-btn" style="margin-right: 12px;">
+        <span class="icon">☀️</span> 亮色
+      </button>
       <div class="topbar-user">
         <div class="topbar-user-dot">{{ current_user.username[0] | upper }}</div>
         {{ current_user.username }}
