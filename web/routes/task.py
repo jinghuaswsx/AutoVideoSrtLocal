@@ -7,7 +7,7 @@
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, render_template
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.alignment import build_script_segments
@@ -17,6 +17,11 @@ from web import store
 from web.services import pipeline_runner
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
+
+
+@bp.route("/upload-page", endpoint="upload_page")
+def upload_page():
+    return render_template("index.html")
 
 
 def _artifact_candidates(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> list[str]:

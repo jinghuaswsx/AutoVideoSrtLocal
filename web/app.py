@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from flask import Flask, render_template
+from flask import Flask
 from flask_socketio import join_room
 
 from web.extensions import socketio
@@ -21,6 +21,7 @@ from web.auth import login_manager
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
 from web.routes.auth import bp as auth_bp
+from web.routes.projects import bp as projects_bp
 
 
 def create_app() -> Flask:
@@ -34,14 +35,10 @@ def create_app() -> Flask:
 
     # 注册蓝图
     app.register_blueprint(auth_bp)
+    app.register_blueprint(projects_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(voice_bp)
-    # (projects, settings, admin blueprints added in later tasks)
-
-    # 页面路由 — temporary, replaced when projects blueprint is registered
-    @app.route("/")
-    def index():
-        return render_template("index.html")
+    # (settings, admin blueprints added in later tasks)
 
     # WebSocket 事件
     @socketio.on("join_task")

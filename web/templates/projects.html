@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+{% block title %}我的项目 — AutoVideoSrt{% endblock %}
+{% block extra_style %}
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.project-card { background: #17191f; border: 1px solid #282c36; border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; display: block; transition: border-color .15s; }
+.project-card:hover { border-color: #fe2c55; }
+.project-card .thumb { width: 100%; height: 148px; background: #0e0f13; display: flex; align-items: center; justify-content: center; color: #3a3f4d; font-size: 32px; overflow: hidden; }
+.project-card .thumb img { width: 100%; height: 148px; object-fit: cover; }
+.project-card .info { padding: 14px; }
+.project-card .filename { font-size: 14px; font-weight: 600; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-card .meta { font-size: 12px; color: #98a0af; display: flex; justify-content: space-between; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.badge-done { background: #1a3a2a; color: #4ade80; }
+.badge-running { background: #3a1a1a; color: #fe2c55; }
+.badge-expired { background: #222; color: #666; }
+.badge-uploaded { background: #1a2a3a; color: #60a5fa; }
+.empty { text-align: center; padding: 80px 0; color: #3a3f4d; }
+.new-btn { background: #fe2c55; color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>我的项目</h1>
+  <a href="{{ url_for('task.upload_page') }}" class="new-btn">+ 新建项目</a>
+</div>
+{% if projects %}
+<div class="grid">
+  {% for p in projects %}
+  <a class="project-card" href="{{ url_for('projects.detail', task_id=p.id) }}">
+    <div class="thumb">
+      {% if p.thumbnail_path %}
+        <img src="/api/tasks/{{ p.id }}/thumbnail" alt="">
+      {% else %}
+        🎬
+      {% endif %}
+    </div>
+    <div class="info">
+      <div class="filename">{{ p.original_filename or p.id }}</div>
+      <div class="meta">
+        <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
+        <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  <p style="font-size:48px;margin-bottom:16px">🎬</p>
+  <p>还没有项目，点击右上角新建</p>
+</div>
+{% endif %}
+{% endblock %}

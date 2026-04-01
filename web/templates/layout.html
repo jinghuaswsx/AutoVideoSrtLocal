@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AutoVideoSrt{% endblock %}</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI","PingFang SC",sans-serif; background: #0c0d10; color: #edf0f6; min-height: 100vh; }
+    nav { background: #13141a; border-bottom: 1px solid #1f222b; padding: 0 24px; height: 52px; display: flex; align-items: center; gap: 24px; }
+    nav .brand { font-weight: 700; font-size: 16px; color: #fe2c55; text-decoration: none; }
+    nav a { color: #aab2c0; text-decoration: none; font-size: 14px; }
+    nav a:hover, nav a.active { color: #edf0f6; }
+    nav .spacer { flex: 1; }
+    nav .user { color: #98a0af; font-size: 13px; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 28px 18px 48px; }
+    .btn { border: none; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn-primary { background: #fe2c55; color: white; }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .btn-ghost { background: transparent; border: 1px solid #343946; color: #aab2c0; }
+    {% block extra_style %}{% endblock %}
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="brand" href="{{ url_for('projects.index') }}">AutoVideoSrt</a>
+    <a href="{{ url_for('projects.index') }}" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>项目</a>
+    <a href="{{ url_for('settings.index') }}" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>API 配置</a>
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('admin.users') }}" {% if request.endpoint and 'admin' in request.endpoint %}class="active"{% endif %}>用户管理</a>
+    {% endif %}
+    <span class="spacer"></span>
+    <span class="user">{{ current_user.username }}</span>
+    <a href="{{ url_for('auth.logout') }}">退出</a>
+  </nav>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
