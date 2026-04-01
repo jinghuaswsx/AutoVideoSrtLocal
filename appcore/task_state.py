@@ -14,6 +14,16 @@ from pipeline.localization import VARIANT_LABELS
 _tasks: dict = {}
 
 
+def _empty_preparation_state() -> dict:
+    return {
+        "active": False,
+        "phase": "",
+        "message": "",
+        "progress": 0,
+        "source_sync": False,
+    }
+
+
 def _empty_variant_state(label: str) -> dict:
     return {
         "label": label,
@@ -116,6 +126,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "recommended_voice_id": None,
         "subtitle_position": "bottom",
         "interactive_review": False,
+        "preparation": _empty_preparation_state(),
         "source_tos_key": "",
         "source_object_info": {},
         "tos_uploads": {},
@@ -149,6 +160,7 @@ def get(task_id: str) -> Optional[dict]:
         if row and row.get("state_json"):
             task = json.loads(row["state_json"])
             task["_user_id"] = row["user_id"]
+            task.setdefault("preparation", _empty_preparation_state())
             if row.get("display_name") and not task.get("display_name"):
                 task["display_name"] = row["display_name"]
             if row.get("original_filename") and not task.get("original_filename"):

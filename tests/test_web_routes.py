@@ -72,6 +72,18 @@ def test_index_page_uses_tos_direct_upload_bootstrap(authed_client_no_db):
     assert 'xhr.open("PUT", bootstrap.upload_url, true)' in body
 
 
+def test_index_page_contains_start_preparation_overlay(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "startPreparationOverlay" in body
+    assert "showStartPreparationOverlay" in body
+    assert "hideStartPreparationOverlay" in body
+    assert "startRequestInFlight" in body
+    assert "startPreparationProgressBar" in body
+
+
 def test_index_page_contains_confirmation_mode_control(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 
@@ -523,9 +535,11 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
 
     downloaded = []
     started = []
+    observed_preparation = {}
 
     def fake_download_file(object_key, local_path):
         downloaded.append((object_key, local_path))
+        observed_preparation.update(store.get("task-start-tos")["preparation"])
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         Path(local_path).write_bytes(b"video")
         return local_path
@@ -538,8 +552,42 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     response = authed_client_no_db.post("/api/tasks/task-start-tos/start", json={})
 
     assert response.status_code == 200
+    payload = response.get_json()
     assert downloaded == [("uploads/1/task-start-tos/demo.mp4", str(video_path))]
     assert started == [("task-start-tos", 1)]
+    assert observed_preparation["active"] is True
+    assert observed_preparation["phase"] == "source_sync"
+    assert observed_preparation["source_sync"] is True
+    assert payload["preparation"]["phase"] == "handoff"
+    assert payload["preparation"]["source_sync"] is True
+
+
+def test_start_route_returns_preparing_when_source_sync_is_already_in_progress(tmp_path, authed_client_no_db, monkeypatch):
+    task_dir = tmp_path / "task-start-preparing"
+    task_dir.mkdir()
+    video_path = tmp_path / "uploads" / "task-start-preparing.mp4"
+    store.create("task-start-preparing", str(video_path), str(task_dir), user_id=1)
+    store.update(
+        "task-start-preparing",
+        source_tos_key="uploads/1/task-start-preparing/demo.mp4",
+        preparation={
+            "active": True,
+            "phase": "source_sync",
+            "message": "syncing",
+            "progress": 55,
+            "source_sync": True,
+        },
+    )
+    started = []
+    monkeypatch.setattr("web.services.pipeline_runner.start", lambda task_id, user_id=None: started.append((task_id, user_id)))
+
+    response = authed_client_no_db.post("/api/tasks/task-start-preparing/start", json={})
+
+    assert response.status_code == 202
+    payload = response.get_json()
+    assert payload["status"] == "preparing"
+    assert payload["preparation"]["phase"] == "source_sync"
+    assert started == []
 
 
 def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):
