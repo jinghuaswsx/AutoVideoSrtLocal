@@ -1,16 +1,18 @@
 {% extends "layout.html" %}
 {% block title %}API 配置 — AutoVideoSrt{% endblock %}
+{% block page_title %}API 配置{% endblock %}
 {% block extra_style %}
-.settings-card { background: #17191f; border: 1px solid #282c36; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
-.settings-card h2 { font-size: 15px; margin-bottom: 16px; }
-label { display: block; color: #aab2c0; font-size: 12px; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
-input[type=text], input[type=password] { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
-.save-btn { margin-top: 24px; background: #fe2c55; color: white; border: none; border-radius: 10px; padding: 10px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
-.success { color: #4ade80; font-size: 13px; margin-bottom: 16px; }
-.hint { color: #98a0af; font-size: 12px; margin-top: 4px; }
+.settings-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
+.settings-card h2 { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 16px; }
+label { display: block; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
+input[type=text], input[type=password] { width: 100%; background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 10px; color: #111827; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
+input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; background: #fff; }
+.save-btn { margin-top: 24px; }
+.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
+.hint { color: #9ca3af; font-size: 12px; margin-top: 4px; }
 {% endblock %}
 {% block content %}
-<h1 style="font-size:20px;margin-bottom:20px">API Key 配置</h1>
+<h1 style="font-size:20px;font-weight:700;color:#111827;margin-bottom:20px">API Key 配置</h1>
 {% with messages = get_flashed_messages() %}
   {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
 {% endwith %}
@@ -40,6 +42,6 @@ input[type=text], input[type=password] { width: 100%; background: #22262f; borde
            value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
     <p class="hint">OpenRouter 用于调用翻译和 TTS 文案生成模型</p>
   </div>
-  <button class="save-btn" type="submit">保存配置</button>
+  <button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>
 {% endblock %}

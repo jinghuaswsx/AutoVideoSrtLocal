@@ -6,27 +6,108 @@
   <title>登录 — AutoVideoSrt</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: "Segoe UI","PingFang SC",sans-serif; background: #0c0d10; color: #edf0f6; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-    .card { background: #17191f; border: 1px solid #282c36; border-radius: 16px; padding: 36px 32px; width: 360px; }
-    h1 { font-size: 22px; margin-bottom: 24px; }
-    label { display: block; color: #aab2c0; font-size: 12px; text-transform: uppercase; margin-bottom: 6px; margin-top: 16px; }
-    input { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
-    .btn { width: 100%; margin-top: 24px; background: #fe2c55; color: white; border: none; border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; }
-    .error { color: #fe2c55; font-size: 13px; margin-top: 12px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #7c6fe0 0%, #9b6fd4 40%, #b06ec8 70%, #c47ec4 100%);
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 36px 36px;
+      width: 380px;
+      box-shadow: 0 20px 60px rgba(100, 70, 200, 0.25), 0 4px 16px rgba(0,0,0,0.08);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo-icon {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, #7c6fe0, #b06ec8);
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      margin-bottom: 12px;
+    }
+    .logo h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .logo p {
+      font-size: 13px;
+      color: #9ca3af;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      background: #f9fafb;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 10px;
+      color: #111827;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color .15s;
+      outline: none;
+    }
+    input::placeholder { color: #9ca3af; }
+    input:focus { border-color: #7c6fe0; background: #fff; }
+    .btn {
+      width: 100%;
+      margin-top: 8px;
+      background: linear-gradient(135deg, #7c6fe0, #9b6fd4);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.5px;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #ef4444;
+      font-size: 13px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>AutoVideoSrt</h1>
+    <div class="logo">
+      <div class="logo-icon">🎬</div>
+      <h1>AutoVideoSrt</h1>
+      <p>AI 视频字幕处理平台</p>
+    </div>
     {% with messages = get_flashed_messages() %}
-      {% if messages %}<p class="error">{{ messages[0] }}</p>{% endif %}
+      {% if messages %}<div class="error">{{ messages[0] }}</div>{% endif %}
     {% endwith %}
     <form method="post">
-      <label>用户名</label>
-      <input type="text" name="username" autofocus required>
-      <label>密码</label>
-      <input type="password" name="password" required>
-      <button class="btn" type="submit">登录</button>
+      <div class="form-group">
+        <input type="text" name="username" placeholder="用户名" autofocus required>
+      </div>
+      <div class="form-group">
+        <input type="password" name="password" placeholder="密码" required>
+      </div>
+      <button class="btn" type="submit">登 录</button>
     </form>
   </div>
 </body>
