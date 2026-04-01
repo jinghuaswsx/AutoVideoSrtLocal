@@ -14,7 +14,8 @@
   let refreshTimer = null;
   let activeRefreshLoop = null;
   let startRequestInFlight = false;
-  let startPreparationPoller = null;
+  const START_BUTTON_DEFAULT_LABEL = "开始处理";
+  const START_BUTTON_LOADING_LABEL = "加载视频中...";
 
   const uploadZone = document.getElementById("uploadZone");
   const fileInput = document.getElementById("fileInput");
@@ -184,82 +185,15 @@
     if (hero) hero.classList.remove("hidden");
   }
 
-  function emptyPreparationState() {
-    return {
-      active: false,
-      phase: "",
-      message: "",
-      progress: 0,
-      source_sync: false,
-    };
+  function setStartButtonBusy(isBusy, label = START_BUTTON_DEFAULT_LABEL) {
+    const startBtn = document.getElementById("startBtn");
+    if (!startBtn) return;
+    startBtn.disabled = Boolean(isBusy);
+    startBtn.textContent = label;
   }
 
-  function normalizePreparationState(preparation = {}) {
-    return {
-      ...emptyPreparationState(),
-      ...(preparation || {}),
-    };
-  }
-
-  function getPreparationState(task = currentTask) {
-    return normalizePreparationState(task?.preparation);
-  }
-
-  function showStartPreparationOverlay(preparation = {}) {
-    const state = normalizePreparationState(preparation);
-    const overlay = document.getElementById("startPreparationOverlay");
-    const titleEl = document.getElementById("startPreparationTitle");
-    const messageEl = document.getElementById("startPreparationMessage");
-    const percentEl = document.getElementById("startPreparationPercent");
-    const progressEl = document.getElementById("startPreparationProgressBar");
-    const progress = Math.max(6, Math.min(100, Number(state.progress || 0)));
-
-    overlay.classList.remove("hidden");
-    titleEl.textContent = state.source_sync || state.phase === "source_sync" ? "正在准备源视频" : "准备开始处理";
-    messageEl.textContent = state.message || "正在校验任务配置";
-    percentEl.textContent = `${progress}%`;
-    progressEl.style.width = `${progress}%`;
-  }
-
-  function hideStartPreparationOverlay() {
-    document.getElementById("startPreparationOverlay").classList.add("hidden");
-  }
-
-  function stopStartPreparationPolling() {
-    if (!startPreparationPoller) return;
-    clearInterval(startPreparationPoller);
-    startPreparationPoller = null;
-  }
-
-  async function pollStartPreparationState() {
-    if (!taskId) return;
-    const res = await fetch(`/api/tasks/${taskId}`);
-    if (!res.ok) return;
-    currentTask = await res.json();
-    renderTaskHero();
-    applyTaskConfigToForm();
-    renderTaskState();
-    restoreReviewState();
-  }
-
-  function startStartPreparationPolling() {
-    if (startPreparationPoller || !taskId) return;
-    startPreparationPoller = setInterval(() => {
-      pollStartPreparationState().catch(() => {});
-    }, 1200);
-  }
-
-  function syncStartPreparationOverlay(task = currentTask) {
-    const preparation = getPreparationState(task);
-    if (preparation.active) {
-      showStartPreparationOverlay(preparation);
-      return;
-    }
-    if (startRequestInFlight) {
-      return;
-    }
-    hideStartPreparationOverlay();
-    stopStartPreparationPolling();
+  function resetStartButton() {
+    setStartButtonBusy(false, START_BUTTON_DEFAULT_LABEL);
   }
 
   function applyTaskConfigToForm() {
@@ -283,8 +217,6 @@
   }
 
   function statusSummary(task) {
-    const preparation = getPreparationState(task);
-    if (preparation.active) return preparation.message || "正在准备处理流程";
     const waitingStep = STEP_ORDER.find(step => task.steps?.[step] === "waiting");
     if (waitingStep) return `等待确认：${stepLabel(waitingStep)}`;
     const runningStep = STEP_ORDER.find(step => task.steps?.[step] === "running");
@@ -379,19 +311,11 @@
   }
 
   document.getElementById("startBtn").addEventListener("click", async () => {
-    if (!taskId || startRequestInFlight || getPreparationState().active) return;
+    if (!taskId || startRequestInFlight) return;
     clearError();
     startRequestInFlight = true;
-    updateStartButtonState();
+    setStartButtonBusy(true, START_BUTTON_LOADING_LABEL);
     showTaskWorkbench();
-    showStartPreparationOverlay({
-      active: true,
-      phase: "validating",
-      message: "正在校验任务配置",
-      progress: 18,
-      source_sync: false,
-    });
-    startStartPreparationPolling();
     socket.emit("join_task", { task_id: taskId });
 
     try {
@@ -405,23 +329,24 @@
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok && response.status !== 202) {
+      if (!response.ok) {
         throw new Error(payload.error || "启动失败");
       }
       if (payload.task) {
         currentTask = payload.task;
-      } else if (currentTask) {
-        currentTask.preparation = normalizePreparationState(payload.preparation);
       }
       renderTaskHero();
       renderTaskState();
       restoreReviewState();
       scheduleRefreshTaskState(0);
+      if (payload.status === "source_ready") {
+        resetStartButton();
+      }
     } catch (err) {
       showError(err.message || "启动失败");
+      resetStartButton();
     } finally {
       startRequestInFlight = false;
-      syncStartPreparationOverlay(currentTask);
       updateStartButtonState();
     }
   });
@@ -482,8 +407,6 @@
   function taskNeedsLiveRefresh(task) {
     if (!task || !taskId) return false;
     if (task.status === "done" || task.status === "error") return false;
-    if (getPreparationState(task).active) return true;
-    if (task.status === "preparing" || task.status === "starting") return true;
     return STEP_ORDER.some(step => {
       const status = task.steps?.[step];
       return status === "running" || status === "waiting";
@@ -514,7 +437,6 @@
     renderStepMessages();
     renderStepPreviews(currentTask.artifacts || {});
     renderResultPanelFromTask();
-    syncStartPreparationOverlay(currentTask);
     updateStartButtonState();
     updateResumeButtons(currentTask);
     syncActiveRefreshLoop(currentTask);
@@ -711,14 +633,16 @@
   function updateStartButtonState() {
     const startBtn = document.getElementById("startBtn");
     if (!currentTask) {
-      startBtn.disabled = true;
+      setStartButtonBusy(true, START_BUTTON_DEFAULT_LABEL);
       return;
     }
-    const isPreparing = getPreparationState().active || currentTask.status === "preparing" || currentTask.status === "starting";
     const hasStarted = STEP_ORDER.some(step => (currentTask.steps?.[step] || "pending") !== "pending");
     const isWaiting = STEP_ORDER.some(step => currentTask.steps?.[step] === "waiting");
     const isRunning = STEP_ORDER.some(step => currentTask.steps?.[step] === "running");
-    startBtn.disabled = startRequestInFlight || isPreparing || hasStarted || isWaiting || isRunning || currentTask.status === "done";
+    startBtn.disabled = startRequestInFlight || hasStarted || isWaiting || isRunning || currentTask.status === "done";
+    if (!startRequestInFlight) {
+      startBtn.textContent = START_BUTTON_DEFAULT_LABEL;
+    }
   }
 
   function updateResumeButtons(task) {
@@ -852,8 +776,6 @@
     el.textContent = `错误：${message}`;
     el.style.display = "block";
     startRequestInFlight = false;
-    stopStartPreparationPolling();
-    hideStartPreparationOverlay();
   }
 
   function clearError() {

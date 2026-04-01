@@ -33,26 +33,6 @@ from appcore.db import query_one as db_query_one, execute as db_execute, query a
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
 
-def _empty_preparation_state() -> dict:
-    return {
-        "active": False,
-        "phase": "",
-        "message": "",
-        "progress": 0,
-        "source_sync": False,
-    }
-
-
-def _build_preparation_state(*, active: bool, phase: str = "", message: str = "", progress: int = 0, source_sync: bool = False) -> dict:
-    return {
-        "active": active,
-        "phase": phase,
-        "message": message,
-        "progress": progress,
-        "source_sync": source_sync,
-    }
-
-
 def _extract_thumbnail(video_path: str, task_dir: str) -> str | None:
     """Extract first frame as JPEG. Returns path or None on failure."""
     try:
@@ -327,64 +307,25 @@ def start(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    current_preparation = task.get("preparation") or _empty_preparation_state()
-    if current_preparation.get("active"):
-        return jsonify({"status": "preparing", "preparation": current_preparation, "task": task}), 202
-
     body = request.get_json(silent=True) or {}
-    needs_source_sync = _task_requires_source_sync(task)
+    store.update(
+        task_id,
+        voice_gender=body.get("voice_gender", "male"),
+        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
+        subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=_parse_bool(body.get("interactive_review", False)),
+    )
+    task = store.get(task_id) or task
 
-    try:
-        store.update(
-            task_id,
-            voice_gender=body.get("voice_gender", "male"),
-            voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
-            subtitle_position=body.get("subtitle_position", "bottom"),
-            interactive_review=_parse_bool(body.get("interactive_review", False)),
-            status="preparing",
-            preparation=_build_preparation_state(
-                active=True,
-                phase="validating",
-                message="正在校验任务配置",
-                progress=18,
-                source_sync=needs_source_sync,
-            ),
-        )
-        task = store.get(task_id) or task
-
-        if needs_source_sync:
-            store.update(
-                task_id,
-                preparation=_build_preparation_state(
-                    active=True,
-                    phase="source_sync",
-                    message="正在从 TOS 准备源视频",
-                    progress=58,
-                    source_sync=True,
-                ),
-            )
-            task = store.get(task_id) or task
-
+    if _task_requires_source_sync(task):
         _ensure_local_source_video(task_id, task)
-
-        store.update(
-            task_id,
-            status="starting",
-            preparation=_build_preparation_state(
-                active=True,
-                phase="handoff",
-                message="准备完成，正在启动处理流程",
-                progress=100,
-                source_sync=needs_source_sync,
-            ),
-        )
-        user_id = current_user.id if current_user.is_authenticated else None
-        pipeline_runner.start(task_id, user_id=user_id)
         updated_task = store.get(task_id) or task
-        return jsonify({"status": "started", "preparation": updated_task.get("preparation", {}), "task": updated_task})
-    except Exception as exc:
-        store.update(task_id, status="uploaded", preparation=_empty_preparation_state())
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"status": "source_ready", "task": updated_task})
+
+    user_id = current_user.id if current_user.is_authenticated else None
+    pipeline_runner.start(task_id, user_id=user_id)
+    updated_task = store.get(task_id) or task
+    return jsonify({"status": "started", "task": updated_task})
 
 
 @bp.route("/<task_id>/alignment", methods=["PUT"])
