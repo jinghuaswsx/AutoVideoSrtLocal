@@ -4,6 +4,7 @@
 提供音色列表查询、基础 CRUD 和 ElevenLabs Voice Library 导入。
 """
 from flask import Blueprint, jsonify, request
+from flask_login import login_required, current_user
 
 from pipeline.voice_library import get_voice_library
 
@@ -11,41 +12,50 @@ bp = Blueprint("voice", __name__, url_prefix="/api/voices")
 
 
 @bp.route("", methods=["GET"])
+@login_required
 def list_voices():
-    return jsonify({"voices": get_voice_library().list_voices()})
+    lib = get_voice_library()
+    lib.ensure_defaults(current_user.id)
+    return jsonify({"voices": lib.list_voices(current_user.id)})
 
 
 @bp.route("", methods=["POST"])
+@login_required
 def create_voice():
     body = request.get_json(silent=True) or {}
     try:
-        voice = get_voice_library().create_voice(body)
+        voice = get_voice_library().create_voice(current_user.id, body)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"voice": voice}), 201
 
 
-@bp.route("/<voice_id>", methods=["PUT"])
+@bp.route("/<int:voice_id>", methods=["PUT"])
+@login_required
 def update_voice(voice_id):
     body = request.get_json(silent=True) or {}
-    try:
-        voice = get_voice_library().update_voice(voice_id, body)
-    except KeyError:
+    lib = get_voice_library()
+    if not lib.get_voice(voice_id, current_user.id):
         return jsonify({"error": "Voice not found"}), 404
+    try:
+        voice = lib.update_voice(voice_id, current_user.id, body)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"voice": voice})
 
 
-@bp.route("/<voice_id>", methods=["DELETE"])
+@bp.route("/<int:voice_id>", methods=["DELETE"])
+@login_required
 def delete_voice(voice_id):
-    if not get_voice_library().get_voice(voice_id):
+    lib = get_voice_library()
+    if not lib.get_voice(voice_id, current_user.id):
         return jsonify({"error": "Voice not found"}), 404
-    get_voice_library().delete_voice(voice_id)
+    lib.delete_voice(voice_id, current_user.id)
     return jsonify({"status": "ok"})
 
 
 @bp.route("/import", methods=["POST"])
+@login_required
 def import_voice():
     """Import a voice from ElevenLabs Voice Library by voiceId or URL."""
     from pipeline.elevenlabs_voices import import_voice as do_import
@@ -57,7 +67,7 @@ def import_voice():
 
     overrides = {}
     for key in ("name", "gender", "description", "style_tags",
-                "is_default_male", "is_default_female"):
+                "is_default"):
         if key in body:
             overrides[key] = body[key]
 
@@ -67,6 +77,7 @@ def import_voice():
     try:
         voice = do_import(
             source,
+            user_id=current_user.id,
             api_key=api_key,
             save_to_elevenlabs=save_to_elevenlabs,
             overrides=overrides,
@@ -78,15 +89,3 @@ def import_voice():
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 502
     return jsonify({"voice": voice, "imported": True}), 201
-
-
-@bp.route("/preview/<voice_id>", methods=["GET"])
-def preview_voice(voice_id):
-    """Return the ElevenLabs preview_url for a voice, if available."""
-    voice = get_voice_library().get_voice(voice_id)
-    if not voice:
-        return jsonify({"error": "Voice not found"}), 404
-    preview_url = voice.get("preview_url", "")
-    if not preview_url:
-        return jsonify({"error": "该音色没有预览音频"}), 404
-    return jsonify({"preview_url": preview_url})

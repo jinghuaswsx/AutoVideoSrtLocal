@@ -158,11 +158,8 @@ def _map_shared_voice_to_local(shared: dict, overrides: dict | None = None) -> d
         "elevenlabs_voice_id": shared.get("voice_id") or "",
         "description": overrides.get("description") or shared.get("description") or "Imported from ElevenLabs Voice Library",
         "style_tags": style_tags,
-        "is_default_male": bool(overrides.get("is_default_male", False)),
-        "is_default_female": bool(overrides.get("is_default_female", False)),
+        "is_default": bool(overrides.get("is_default", False)),
         "source": "elevenlabs_voice_library",
-        "source_voice_id": shared.get("voice_id") or "",
-        "source_public_user_id": shared.get("public_owner_id") or "",
         "preview_url": preview_url,
         "labels": labels,
     }
@@ -171,6 +168,7 @@ def _map_shared_voice_to_local(shared: dict, overrides: dict | None = None) -> d
 def import_voice(
     source: str,
     *,
+    user_id: int,
     api_key: str | None = None,
     save_to_elevenlabs: bool = False,
     overrides: dict | None = None,
@@ -198,15 +196,11 @@ def import_voice(
     lib = get_voice_library()
 
     # Idempotent: if same elevenlabs_voice_id already exists, update it
-    existing = None
-    for v in lib.list_voices():
-        if v.get("elevenlabs_voice_id") == voice_id:
-            existing = v
-            break
+    existing = lib.get_voice_by_elevenlabs_id(voice_id, user_id)
 
     if existing:
-        voice = lib.update_voice(existing["id"], local_payload)
+        voice = lib.update_voice(existing["id"], user_id, local_payload)
     else:
-        voice = lib.create_voice(local_payload)
+        voice = lib.create_voice(user_id, local_payload)
 
     return voice
