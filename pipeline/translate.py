@@ -56,6 +56,7 @@ def generate_localized_translation(
     script_segments: list[dict],
     variant: str = "normal",
     openrouter_api_key: str | None = None,
+    custom_system_prompt: str | None = None,
 ) -> dict:
     response = _get_client(openrouter_api_key).chat.completions.create(
         model=_model_name(),
@@ -63,6 +64,7 @@ def generate_localized_translation(
             source_full_text_zh,
             script_segments,
             variant=variant,
+            custom_system_prompt=custom_system_prompt,
         ),
         temperature=0.2,
         max_tokens=4096,
