@@ -1,0 +1,14 @@
+[Unit]
+Description=AutoVideoSrt Web Service
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment="PATH=/opt/autovideosrt/venv/bin"
+ExecStart=/opt/autovideosrt/venv/bin/gunicorn -w 1 -k eventlet --bind 0.0.0.0:8888 --timeout 300 main:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
