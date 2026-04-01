@@ -1,65 +1,48 @@
-from pathlib import Path
-
-from pipeline.voice_library import VoiceLibrary
-
-
-def test_voice_library_crud_round_trip(tmp_path):
-    voice_file = tmp_path / "voices.json"
-    lib = VoiceLibrary(Path(voice_file))
-
-    created = lib.create_voice(
-        {
-            "name": "Alex",
-            "gender": "male",
-            "elevenlabs_voice_id": "voice_123",
-            "description": "Test voice",
-            "style_tags": ["tech", "clear"],
-        }
-    )
-
-    assert created["id"] == "alex"
-
-    updated = lib.update_voice(
-        "alex",
-        {
-            "description": "Updated",
-            "style_tags": ["tech"],
-            "is_default_male": True,
-        },
-    )
-
-    assert updated["description"] == "Updated"
-    assert lib.list_voices()[0]["is_default_male"] is True
-
-    lib.delete_voice("alex")
-
-    assert lib.list_voices() == []
+import pytest
+from unittest.mock import patch, MagicMock
 
 
-def test_voice_library_recommendation_prefers_beauty_friendly_voice(tmp_path):
-    voice_file = tmp_path / "voices.json"
-    lib = VoiceLibrary(Path(voice_file))
-    lib.create_voice(
-        {
-            "name": "Adam",
-            "gender": "male",
-            "elevenlabs_voice_id": "male_voice",
-            "description": "Energetic male for gadgets",
-            "style_tags": ["energetic", "tech"],
-            "is_default_male": True,
-        }
-    )
-    lib.create_voice(
-        {
-            "name": "Rachel",
-            "gender": "female",
-            "elevenlabs_voice_id": "female_voice",
-            "description": "Warm female for skincare",
-            "style_tags": ["warm", "beauty"],
-            "is_default_female": True,
-        }
-    )
+def _mock_query(sql, args=()):
+    """Mock appcore.db.query for voice library tests."""
+    return []
 
-    recommended = lib.recommend_voice("这款精华和面霜太绝了，妆前用起来很服帖")
 
-    assert recommended["name"] == "Rachel"
+def _mock_execute(sql, args=()):
+    """Mock appcore.db.execute for voice library tests."""
+    return 1
+
+
+def _mock_query_one(sql, args=()):
+    return None
+
+
+@patch("pipeline.voice_library.db_query", _mock_query)
+@patch("pipeline.voice_library.db_execute", _mock_execute)
+@patch("pipeline.voice_library.db_query_one", _mock_query_one)
+def test_ensure_defaults_inserts_for_new_user():
+    from pipeline.voice_library import VoiceLibrary
+    lib = VoiceLibrary()
+    calls = []
+    with patch("pipeline.voice_library.db_execute", side_effect=lambda sql, args=(): calls.append((sql, args)) or 1):
+        with patch("pipeline.voice_library.db_query", return_value=[]):
+            lib.ensure_defaults(user_id=99)
+    assert len(calls) == 2  # Adam + Rachel
+    assert any("pNInz6obpgDQGcFmaJgB" in str(c) for c in calls)
+    assert any("21m00Tcm4TlvDq8ikWAM" in str(c) for c in calls)
+
+
+@patch("pipeline.voice_library.db_query", _mock_query)
+@patch("pipeline.voice_library.db_execute", _mock_execute)
+@patch("pipeline.voice_library.db_query_one", _mock_query_one)
+def test_list_voices_filters_by_user_id():
+    from pipeline.voice_library import VoiceLibrary
+    lib = VoiceLibrary()
+    captured = []
+    def mock_q(sql, args=()):
+        captured.append((sql, args))
+        return [{"id": 1, "name": "Test", "gender": "male", "elevenlabs_voice_id": "abc"}]
+    with patch("pipeline.voice_library.db_query", mock_q):
+        result = lib.list_voices(user_id=5)
+    assert len(result) == 1
+    assert "user_id" in captured[0][0]
+    assert captured[0][1] == (5,)
