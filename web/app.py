@@ -17,23 +17,28 @@ from flask import Flask, render_template
 from flask_socketio import join_room
 
 from web.extensions import socketio
+from web.auth import login_manager
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
+from web.routes.auth import bp as auth_bp
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
 
     # 初始化扩展
+    login_manager.init_app(app)
     socketio.init_app(app)
 
     # 注册蓝图
+    app.register_blueprint(auth_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(voice_bp)
+    # (projects, settings, admin blueprints added in later tasks)
 
-    # 页面路由
+    # 页面路由 — temporary, replaced when projects blueprint is registered
     @app.route("/")
     def index():
         return render_template("index.html")
