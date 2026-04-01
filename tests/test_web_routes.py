@@ -3,6 +3,7 @@ import json
 
 from web import store
 from web.app import create_app
+from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
 
 
 def test_index_page_contains_alignment_and_voice_controls(authed_client_no_db):
@@ -131,6 +132,37 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
     assert "task-project-state" in body
     assert "\"interactive_review\": true" in body.lower()
     assert "\"current_review_step\": \"alignment\"" in body.lower()
+
+
+def test_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
+
+    response = authed_client_no_db.get("/settings")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "jianying_project_root" in body
+    assert DEFAULT_JIANYING_PROJECT_ROOT in body
+
+
+def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, monkeypatch):
+    custom_root = r"D:\JianyingDrafts"
+    captured = []
+
+    def fake_set_key(user_id, service, key_value, extra=None):
+        captured.append((user_id, service, key_value, extra))
+
+    monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {"jianying": {"key_value": "", "extra": {"project_root": custom_root}}})
+    monkeypatch.setattr("web.routes.settings.set_key", fake_set_key)
+
+    response = authed_client_no_db.post(
+        "/settings",
+        data={"jianying_project_root": custom_root},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert (1, "jianying", "", {"project_root": custom_root}) in captured
 
 
 def test_task_detail_returns_artifacts_structure(logged_in_client):
@@ -306,20 +338,76 @@ def test_voice_routes_support_crud(tmp_path, monkeypatch):
     assert deleted.status_code == 200
 
 
-def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, logged_in_client):
+def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, authed_client_no_db):
     archive_path = tmp_path / "capcut_hook_cta.zip"
     archive_path.write_bytes(b"capcut-archive")
-    store.create("task-download-variant", "video.mp4", str(tmp_path))
+    store.create("task-download-variant", "video.mp4", str(tmp_path), user_id=1)
     store.update_variant(
         "task-download-variant",
         "hook_cta",
         exports={"capcut_archive": str(archive_path)},
     )
 
-    response = logged_in_client.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
+    response = authed_client_no_db.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
 
     assert response.status_code == 200
     assert response.data == b"capcut-archive"
+
+
+def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
+    project_dir = tmp_path / "capcut_hook_cta"
+    resources_dir = project_dir / "Resources" / "auto_generated"
+    resources_dir.mkdir(parents=True)
+    (resources_dir / "tts_full.hook_cta.mp3").write_bytes(b"audio")
+    (project_dir / "draft_content.json").write_text(
+        json.dumps(
+            {
+                "materials": {
+                    "audios": [
+                        {
+                            "path": str(resources_dir / "tts_full.hook_cta.mp3"),
+                        }
+                    ]
+                }
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (project_dir / "draft_meta_info.json").write_text(
+        json.dumps({"draft_fold_path": "", "draft_name": ""}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    manifest_path = project_dir / "codex_export_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"timeline_manifest": {"segments": [{"tts_path": "/opt/autovideosrt/output/seg_0001.mp3"}]}}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    archive_path = tmp_path / "capcut_hook_cta.zip"
+    archive_path.write_bytes(b"stale-archive")
+
+    store.create("task-download-rewrite", "video.mp4", str(tmp_path), user_id=1)
+    store.update_variant(
+        "task-download-rewrite",
+        "hook_cta",
+        exports={
+            "capcut_project": str(project_dir),
+            "capcut_archive": str(archive_path),
+            "capcut_manifest": str(manifest_path),
+        },
+    )
+
+    monkeypatch.setattr("web.routes.task.resolve_jianying_project_root", lambda user_id: DEFAULT_JIANYING_PROJECT_ROOT)
+
+    response = authed_client_no_db.get("/api/tasks/task-download-rewrite/download/capcut?variant=hook_cta")
+
+    assert response.status_code == 200
+    draft_content = json.loads((project_dir / "draft_content.json").read_text(encoding="utf-8"))
+    assert draft_content["materials"]["audios"][0]["path"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["timeline_manifest"]["segments"][0]["tts_path"] == ""
+    assert store.get("task-download-rewrite")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
 
 
 def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, monkeypatch):

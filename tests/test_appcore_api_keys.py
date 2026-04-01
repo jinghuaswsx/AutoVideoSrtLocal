@@ -1,6 +1,6 @@
 import pytest
 from appcore.users import create_user
-from appcore.api_keys import set_key, get_key, get_all
+from appcore.api_keys import get_all, get_key, set_key
 from appcore.db import execute, query_one
 
 

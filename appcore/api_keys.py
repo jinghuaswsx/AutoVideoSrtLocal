@@ -3,6 +3,8 @@ import json
 import os
 from appcore.db import query_one, execute, query
 
+DEFAULT_JIANYING_PROJECT_ROOT = r"C:\Users\admin\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft"
+
 
 def set_key(user_id: int, service: str, key_value: str, extra: dict | None = None) -> None:
     extra_json = json.dumps(extra) if extra else None
@@ -62,3 +64,9 @@ def get_all(user_id: int) -> dict[str, dict]:
                 extra = {}
         result[row["service"]] = {"key_value": row["key_value"], "extra": extra or {}}
     return result
+
+
+def resolve_jianying_project_root(user_id: int | None) -> str:
+    extra = resolve_extra(user_id, "jianying")
+    project_root = (extra.get("project_root") or "").strip() if isinstance(extra, dict) else ""
+    return project_root or DEFAULT_JIANYING_PROJECT_ROOT

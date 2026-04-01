@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}API 配置 — AutoVideoSrt{% endblock %}
+{% block title %}API 配置 - AutoVideoSrt{% endblock %}
 {% block page_title %}API 配置{% endblock %}
 {% block extra_style %}
 .settings-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
@@ -18,9 +18,9 @@ input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; back
 {% endwith %}
 <form method="post">
   <div class="settings-card">
-    <h2>豆包 ASR（火山引擎语音识别）</h2>
+    <h2>豆包 ASR</h2>
     <label>API Key</label>
-    <input type="password" name="doubao_asr_key" placeholder="留空则使用系统默认"
+    <input type="password" name="doubao_asr_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('doubao_asr', {}).get('key_value', '') }}">
     <label>App ID</label>
     <input type="text" name="doubao_asr_app_id" placeholder="可选"
@@ -30,17 +30,24 @@ input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; back
            value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('cluster', '') }}">
   </div>
   <div class="settings-card">
-    <h2>ElevenLabs（TTS 配音）</h2>
+    <h2>ElevenLabs</h2>
     <label>API Key</label>
-    <input type="password" name="elevenlabs_key" placeholder="留空则使用系统默认"
+    <input type="password" name="elevenlabs_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
   </div>
   <div class="settings-card">
-    <h2>OpenRouter（翻译 / TTS 文案）</h2>
+    <h2>OpenRouter</h2>
     <label>API Key</label>
-    <input type="password" name="openrouter_key" placeholder="留空则使用系统默认"
+    <input type="password" name="openrouter_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
-    <p class="hint">OpenRouter 用于调用翻译和 TTS 文案生成模型</p>
+    <p class="hint">用于翻译和文案生成。</p>
+  </div>
+  <div class="settings-card">
+    <h2>剪映导出</h2>
+    <label>项目根目录</label>
+    <input type="text" name="jianying_project_root"
+           value="{{ jianying_project_root }}">
+    <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
   </div>
   <button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>

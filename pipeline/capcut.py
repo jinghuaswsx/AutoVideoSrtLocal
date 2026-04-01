@@ -1,12 +1,14 @@
+from copy import deepcopy
 import importlib
 import json
 import shutil
 import time
 import uuid
 from os import name as os_name
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
 from config import CAPCUT_TEMPLATE_DIR, JIANYING_PROJECT_DIR
 
 
@@ -19,6 +21,7 @@ def export_capcut_project(
     subtitle_position: str = "bottom",
     draft_title: str | None = None,
     variant: str | None = None,
+    jianying_project_root: str | None = None,
 ) -> dict:
     source_name = draft_title or Path(video_path).name
     draft_name = _build_draft_name(source_name, variant=variant)
@@ -68,17 +71,38 @@ def export_capcut_project(
         json.dump(export_manifest, fh, ensure_ascii=False, indent=2)
 
     archive_path = Path(output_dir) / f"{draft_name}.zip"
-    with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
-        for file_path in project_dir.rglob("*"):
-            if file_path.is_file():
-                archive.write(file_path, file_path.relative_to(project_dir.parent))
+    jianying_project_dir = rewrite_capcut_project_paths(
+        project_dir=str(project_dir),
+        manifest_path=str(manifest_path),
+        archive_path=str(archive_path),
+        jianying_project_root=jianying_project_root,
+    )
 
     return {
         "project_dir": str(project_dir),
         "archive_path": str(archive_path),
         "manifest_path": str(manifest_path),
-        "jianying_project_dir": "",
+        "jianying_project_dir": jianying_project_dir,
     }
+
+
+def rewrite_capcut_project_paths(
+    project_dir: str,
+    manifest_path: str | None = None,
+    archive_path: str | None = None,
+    jianying_project_root: str | None = None,
+) -> str:
+    source_dir = Path(project_dir)
+    jianying_project_dir = _build_export_jianying_project_dir(source_dir.name, jianying_project_root)
+
+    _rewrite_draft_content_paths(source_dir, jianying_project_dir)
+    _rewrite_draft_meta_info(source_dir, jianying_project_dir)
+    if manifest_path:
+        _rewrite_export_manifest(Path(manifest_path), jianying_project_dir)
+    if archive_path:
+        _write_archive(source_dir, Path(archive_path))
+
+    return str(jianying_project_dir)
 
 
 def deploy_capcut_project(project_dir: str, target_root: str | None = None) -> str:
@@ -94,6 +118,101 @@ def deploy_capcut_project(project_dir: str, target_root: str | None = None) -> s
         shutil.rmtree(deployed_project_dir)
     shutil.copytree(source_dir, deployed_project_dir)
     return str(deployed_project_dir)
+
+
+def _rewrite_draft_content_paths(project_dir: Path, jianying_project_dir: PureWindowsPath) -> None:
+    draft_content_path = project_dir / "draft_content.json"
+    if not draft_content_path.exists():
+        return
+
+    try:
+        data = json.loads(draft_content_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    resource_path_map = _build_resource_path_map(project_dir, jianying_project_dir)
+    _rewrite_path_fields(data, resource_path_map)
+    draft_content_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _rewrite_draft_meta_info(project_dir: Path, jianying_project_dir: PureWindowsPath) -> None:
+    draft_meta_path = project_dir / "draft_meta_info.json"
+    if not draft_meta_path.exists():
+        return
+
+    try:
+        data = json.loads(draft_meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    data["draft_fold_path"] = str(jianying_project_dir)
+    data["draft_name"] = project_dir.name
+    draft_meta_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _rewrite_export_manifest(manifest_path: Path, jianying_project_dir: PureWindowsPath) -> None:
+    if not manifest_path.exists():
+        return
+
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    data["jianying_project_dir"] = str(jianying_project_dir)
+    data["timeline_manifest"] = _sanitize_timeline_manifest(data.get("timeline_manifest") or {})
+    manifest_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _build_resource_path_map(project_dir: Path, jianying_project_dir: PureWindowsPath) -> dict[str, str]:
+    resources_dir = project_dir / "Resources" / "auto_generated"
+    if not resources_dir.exists():
+        return {}
+
+    target_resources_dir = jianying_project_dir / "Resources" / "auto_generated"
+    path_map = {}
+    for file_path in resources_dir.iterdir():
+        if file_path.is_file():
+            path_map[file_path.name] = str(target_resources_dir / file_path.name)
+    return path_map
+
+
+def _rewrite_path_fields(node, resource_path_map: dict[str, str]) -> None:
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "path" and isinstance(value, str):
+                replacement = resource_path_map.get(_basename_from_any_path(value))
+                if replacement:
+                    node[key] = replacement
+            else:
+                _rewrite_path_fields(value, resource_path_map)
+        return
+
+    if isinstance(node, list):
+        for item in node:
+            _rewrite_path_fields(item, resource_path_map)
+
+
+def _sanitize_timeline_manifest(node):
+    if isinstance(node, dict):
+        cleaned = {}
+        for key, value in node.items():
+            if key == "tts_path" and isinstance(value, str):
+                cleaned[key] = ""
+            else:
+                cleaned[key] = _sanitize_timeline_manifest(value)
+        return cleaned
+    if isinstance(node, list):
+        return [_sanitize_timeline_manifest(item) for item in node]
+    return deepcopy(node)
+
+
+def _basename_from_any_path(path_value: str) -> str:
+    return path_value.replace("\\", "/").rstrip("/").split("/")[-1]
+
+
+def _write_archive(project_dir: Path, archive_path: Path) -> None:
+    with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
+        for file_path in project_dir.rglob("*"):
+            if file_path.is_file():
+                archive.write(file_path, file_path.relative_to(project_dir.parent))
 
 
 def _export_with_pyjianyingdraft(
@@ -238,6 +357,16 @@ def _build_draft_name(source_name: str, variant: str | None = None) -> str:
 def _sanitize_draft_name(name: str) -> str:
     sanitized = "".join("_" if char in '<>:"/\\|?*' else char for char in name).strip()
     return sanitized or "capcut_project"
+
+
+def _build_export_jianying_project_dir(draft_name: str, jianying_project_root: str | None = None) -> PureWindowsPath:
+    root = _resolve_export_jianying_project_root(jianying_project_root)
+    return PureWindowsPath(root) / draft_name
+
+
+def _resolve_export_jianying_project_root(jianying_project_root: str | None = None) -> str:
+    root = (jianying_project_root or "").strip().strip('"').strip("'")
+    return root or DEFAULT_JIANYING_PROJECT_ROOT
 
 
 def _build_jianying_deploy_path(draft_name: str, target_root: str | None = None) -> Path | None:

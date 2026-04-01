@@ -12,8 +12,9 @@ from flask import Blueprint, request, jsonify, send_file, render_template, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
+from appcore.api_keys import resolve_jianying_project_root
 from pipeline.alignment import build_script_segments
-from pipeline.capcut import deploy_capcut_project
+from pipeline.capcut import deploy_capcut_project, rewrite_capcut_project_paths
 from web.preview_artifacts import (
     build_alignment_artifact,
     build_translate_artifact,
@@ -298,18 +299,31 @@ def download(task_id, file_type):
 
     variant = request.args.get("variant") or None
     variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
+    exports = variant_state.get("exports", {}) if variant else task.get("exports", {})
     result = variant_state.get("result", {}) if variant else task.get("result", {})
     path_map = {
         "soft": result.get("soft_video"),
         "hard": result.get("hard_video"),
         "srt": variant_state.get("srt_path") if variant else task.get("srt_path"),
-        "capcut": (
-            variant_state.get("exports", {}).get("capcut_archive")
-            if variant
-            else task.get("exports", {}).get("capcut_archive")
-        ),
+        "capcut": exports.get("capcut_archive"),
     }
     path = path_map.get(file_type)
+    if file_type == "capcut" and path:
+        project_dir = exports.get("capcut_project")
+        if project_dir and os.path.isdir(project_dir):
+            manifest_path = exports.get("capcut_manifest")
+            jianying_project_dir = rewrite_capcut_project_paths(
+                project_dir=project_dir,
+                manifest_path=manifest_path,
+                archive_path=path,
+                jianying_project_root=resolve_jianying_project_root(current_user.id),
+            )
+            updated_exports = dict(exports)
+            updated_exports["jianying_project_dir"] = jianying_project_dir
+            if variant:
+                store.update_variant(task_id, variant, exports=updated_exports)
+            else:
+                store.update(task_id, exports=updated_exports)
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
 

@@ -10,6 +10,7 @@ import os
 import uuid
 
 import appcore.task_state as task_state
+from appcore.api_keys import resolve_jianying_project_root
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -497,6 +498,7 @@ class PipelineRunner:
 
         variants = dict(task.get("variants", {}))
         compare_variants = {}
+        jianying_project_root = resolve_jianying_project_root(self.user_id)
         for variant in VARIANT_KEYS:
             variant_state = dict(variants.get(variant, {}))
             export_result = export_capcut_project(
@@ -506,12 +508,14 @@ class PipelineRunner:
                 output_dir=task_dir,
                 timeline_manifest=variant_state.get("timeline_manifest"),
                 variant=variant,
+                jianying_project_root=jianying_project_root,
             )
             exports = dict(variant_state.get("exports", {}))
             exports.update({
                 "capcut_project": export_result["project_dir"],
                 "capcut_archive": export_result["archive_path"],
                 "capcut_manifest": export_result["manifest_path"],
+                "jianying_project_dir": export_result.get("jianying_project_dir", ""),
             })
             variant_state["exports"] = exports
             variants[variant] = variant_state

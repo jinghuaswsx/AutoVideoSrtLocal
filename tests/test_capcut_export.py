@@ -1,8 +1,9 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import types
 import sys
 import json
 
+from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
 from pipeline.capcut import _probe_media_duration, deploy_capcut_project, export_capcut_project
 
 
@@ -450,7 +451,106 @@ def test_capcut_export_does_not_auto_copy_into_jianying_project_dir(tmp_path, mo
 
     deployed_dir = Path(tmp_path / "jianying" / "com.lveditor.draft" / "sample_26-03-31-20-15-00")
     assert not deployed_dir.exists()
-    assert export["jianying_project_dir"] == ""
+    assert export["jianying_project_dir"] == str(PureWindowsPath(DEFAULT_JIANYING_PROJECT_ROOT) / "sample_26-03-31-20-15-00")
+
+
+def test_capcut_export_rewrites_material_paths_to_jianying_root(tmp_path, monkeypatch):
+    fake_module = types.ModuleType("pyJianYingDraft")
+
+    class FakeScript:
+        def __init__(self, draft_dir):
+            self.draft_dir = draft_dir
+
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, *args, **kwargs):
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            resources_dir = self.draft_dir / "Resources" / "auto_generated"
+            video_path = resources_dir / "sample.mp4"
+            audio_path = resources_dir / "sample.mp3"
+            (self.draft_dir / "draft_content.json").write_text(
+                json.dumps(
+                    {
+                        "materials": {
+                            "audios": [{"name": "sample.mp3", "path": str(audio_path)}],
+                            "videos": [{"path": str(video_path)}],
+                        }
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            (self.draft_dir / "draft_meta_info.json").write_text(
+                json.dumps({"draft_fold_path": "", "draft_name": ""}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            return None
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript(draft_dir)
+
+    class FakeSegment:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = type("AudioSegment", (FakeSegment,), {})
+    fake_module.VideoSegment = type("VideoSegment", (FakeSegment,), {})
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr("pipeline.capcut.time.strftime", lambda fmt: "26-04-01-18-00-00")
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={"segments": [{"tts_path": str(tmp_path / "tts_segments" / "seg_0001.mp3")}]},
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+        variant="hook_cta",
+        jianying_project_root=r"D:\JianyingDrafts",
+    )
+
+    draft_name = "sample_hook_cta_26-04-01-18-00-00"
+    expected_dir = PureWindowsPath(r"D:\JianyingDrafts") / draft_name
+    expected_audio = str(expected_dir / "Resources" / "auto_generated" / "sample.mp3")
+    expected_video = str(expected_dir / "Resources" / "auto_generated" / "sample.mp4")
+
+    draft_content = json.loads((Path(export["project_dir"]) / "draft_content.json").read_text(encoding="utf-8"))
+    assert draft_content["materials"]["audios"][0]["path"] == expected_audio
+    assert draft_content["materials"]["videos"][0]["path"] == expected_video
+
+    meta = json.loads((Path(export["project_dir"]) / "draft_meta_info.json").read_text(encoding="utf-8"))
+    assert meta["draft_fold_path"] == str(expected_dir)
+
+    manifest = json.loads(Path(export["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["jianying_project_dir"] == str(expected_dir)
+    assert manifest["timeline_manifest"]["segments"][0]["tts_path"] == ""
 
 
 def test_deploy_capcut_project_copies_project_into_jianying_project_dir(tmp_path, monkeypatch):
