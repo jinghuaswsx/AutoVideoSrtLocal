@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+{% block title %}用户管理 — AutoVideoSrt{% endblock %}
+{% block extra_style %}
+.admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: #98a0af; font-size: 12px; text-transform: uppercase; padding: 8px 12px; border-bottom: 1px solid #282c36; }
+td { padding: 12px; border-bottom: 1px solid #1f222b; font-size: 14px; }
+.create-card { background: #17191f; border: 1px solid #282c36; border-radius: 14px; padding: 20px; margin-bottom: 24px; }
+.create-card h2 { font-size: 15px; margin-bottom: 16px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr 120px 120px; gap: 12px; align-items: end; }
+label { display: block; color: #aab2c0; font-size: 12px; margin-bottom: 6px; }
+input[type=text],input[type=password],select { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 8px; color: #eff2f8; padding: 9px 10px; font-size: 14px; }
+.error { color: #fe2c55; font-size: 13px; margin-bottom: 12px; }
+.success-msg { color: #4ade80; font-size: 13px; margin-bottom: 12px; }
+{% endblock %}
+{% block content %}
+<div class="admin-header"><h1 style="font-size:20px">用户管理</h1></div>
+
+<div class="create-card">
+  <h2>创建新用户</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}<p class="success-msg">{{ messages[0] }}</p>{% endif %}
+  {% endwith %}
+  <form method="post">
+    <input type="hidden" name="action" value="create">
+    <div class="form-row">
+      <div><label>用户名</label><input type="text" name="username" required></div>
+      <div><label>密码</label><input type="password" name="password" required></div>
+      <div><label>角色</label>
+        <select name="role">
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
+        </select>
+      </div>
+      <div style="padding-top:18px"><button class="btn btn-primary" type="submit">创建</button></div>
+    </div>
+  </form>
+</div>
+
+<table>
+  <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ '正常' if u.is_active else '已禁用' }}</td>
+      <td>{{ u.created_at }}</td>
+      <td>
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="toggle_active">
+          <input type="hidden" name="user_id" value="{{ u.id }}">
+          <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">
+          <button class="btn btn-ghost btn-sm" type="submit">{{ '禁用' if u.is_active else '启用' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
