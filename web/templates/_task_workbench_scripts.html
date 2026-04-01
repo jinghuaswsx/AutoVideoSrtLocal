@@ -195,6 +195,7 @@
     renderStepPreviews(currentTask.artifacts || {});
     renderResultPanelFromTask();
     updateStartButtonState();
+    updateResumeButtons(currentTask);
   }
 
   function renderStepMessages() {
@@ -396,6 +397,47 @@
     const isRunning = STEP_ORDER.some(step => currentTask.steps?.[step] === "running");
     startBtn.disabled = hasStarted || isWaiting || isRunning || currentTask.status === "done";
   }
+
+  function updateResumeButtons(task) {
+    const steps = task.steps || {};
+    const isRunning = task.status === "running";
+    STEP_ORDER.forEach(step => {
+      const btn = document.getElementById(`resume-${step}`);
+      if (!btn) return;
+      const stepStatus = steps[step];
+      if (!isRunning && (stepStatus === "done" || stepStatus === "error" || stepStatus === "waiting")) {
+        btn.classList.remove("hidden");
+      } else {
+        btn.classList.add("hidden");
+      }
+    });
+  }
+
+  document.querySelectorAll(".resume-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const step = btn.dataset.step;
+      const stepNameEl = btn.closest(".step").querySelector(".step-name");
+      const stepName = stepNameEl ? stepNameEl.textContent : step;
+      if (!confirm(`从「${stepName}」步骤重新开始？前面已完成的结果保留不变。`)) return;
+      btn.disabled = true;
+      btn.textContent = "启动中…";
+      const res = await fetch(`/api/tasks/${taskId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start_step: step }),
+      });
+      if (res.ok) {
+        socket.emit("join_task", { task_id: taskId });
+        scheduleRefreshTaskState(200);
+      } else {
+        const data = await res.json();
+        showError(data.error || "启动失败");
+        btn.disabled = false;
+        btn.textContent = "从此步继续";
+      }
+    });
+  });
 
   function renderResultPanelFromTask() {
     if (!currentTask) return;
