@@ -105,17 +105,59 @@
     }[step] || step;
   }
 
-  async function handleFile(file) {
+  function handleFile(file) {
     clearError();
     if (uploadZone) {
-      uploadZone.innerHTML = `<div class="icon">⏳</div><strong>上传中：${escapeHtml(file.name)}</strong><p>${(file.size / 1024 / 1024).toFixed(1)} MB</p>`;
+      uploadZone.innerHTML = `
+        <div class="icon">⏳</div>
+        <strong>上传中：${escapeHtml(file.name)}</strong>
+        <p>${(file.size / 1024 / 1024).toFixed(1)} MB</p>
+        <div class="progress-bar-container" style="width: 100%; max-width: 300px; height: 6px; background: var(--border-main); border-radius: 999px; margin: 12px auto 0; overflow: hidden;">
+          <div id="uploadProgress" style="width: 0%; height: 100%; background: var(--primary-gradient); transition: width 0.1s linear;"></div>
+        </div>
+        <p id="uploadPercent" style="margin-top: 8px; font-weight: 600; color: var(--primary-color);">0%</p>
+      `;
     }
     const form = new FormData();
     form.append("video", file);
-    const res = await fetch("/api/tasks", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok || data.error) return showError(data.error || "上传失败");
-    window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/tasks", true);
+    
+    xhr.upload.onprogress = function(event) {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        const progressEl = document.getElementById("uploadProgress");
+        const percentEl = document.getElementById("uploadPercent");
+        if (progressEl) progressEl.style.width = percent + "%";
+        if (percentEl) percentEl.textContent = percent + "%";
+      }
+    };
+    
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (data.error) throw new Error(data.error);
+          window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
+        } catch (err) {
+          showError(err.message || "上传失败");
+        }
+      } else {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          showError(data.error || "上传失败");
+        } catch {
+          showError("上传失败");
+        }
+      }
+    };
+    
+    xhr.onerror = function() {
+      showError("网络或系统异常，上传失败");
+    };
+    
+    xhr.send(form);
   }
 
   document.getElementById("startBtn").addEventListener("click", async () => {
