@@ -124,6 +124,18 @@ class PipelineRunner:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
 
     def _set_step(self, task_id: str, step: str, status: str, message: str = "") -> None:
+        if status == "running":
+            task_state.update(
+                task_id,
+                status="running",
+                preparation={
+                    "active": False,
+                    "phase": "",
+                    "message": "",
+                    "progress": 0,
+                    "source_sync": False,
+                },
+            )
         task_state.set_step(task_id, step, status)
         task_state.set_step_message(task_id, step, message)
         self._emit(task_id, EVT_STEP_UPDATE, {"step": step, "status": status, "message": message})
