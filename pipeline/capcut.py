@@ -351,6 +351,7 @@ def _subtitle_transform_y(position: str) -> float:
 
 def build_capcut_draft_name(source_name: str, variant: str | None = None) -> str:
     stem = _sanitize_draft_name(Path(source_name).stem)
+    stem = stem[:50]
     if variant:
         return f"{stem}_capcut_{variant}"
     return f"{stem}_capcut"
