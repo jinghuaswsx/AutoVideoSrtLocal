@@ -34,15 +34,25 @@ def test_signed_urls_always_use_public_endpoint(monkeypatch):
         def __init__(self, url):
             self.signed_url = url
 
+    class FakeHttpMethod:
+        def __init__(self, value):
+            self.value = value
+
     class FakeClient:
         def __init__(self, *, endpoint, **kwargs):
             self.endpoint = endpoint
 
         def pre_signed_url(self, method, bucket, object_key, expires=3600):
-            captured.append((self.endpoint, method, bucket, object_key, expires))
-            return FakeSignedUrl(f"https://{self.endpoint}/{bucket}/{object_key}?method={method}")
+            captured.append((self.endpoint, method.value, bucket, object_key, expires))
+            return FakeSignedUrl(f"https://{self.endpoint}/{bucket}/{object_key}?method={method.value}")
 
-    fake_tos = types.SimpleNamespace(TosClientV2=FakeClient)
+    fake_tos = types.SimpleNamespace(
+        TosClientV2=FakeClient,
+        HttpMethodType=types.SimpleNamespace(
+            Http_Method_Get=FakeHttpMethod("GET"),
+            Http_Method_Put=FakeHttpMethod("PUT"),
+        ),
+    )
     monkeypatch.setitem(sys.modules, "tos", fake_tos)
     tos_clients = _reload_tos_clients(monkeypatch, use_private=True)
 
@@ -51,8 +61,8 @@ def test_signed_urls_always_use_public_endpoint(monkeypatch):
 
     assert download_url.startswith("https://public.tos.example.com/")
     assert upload_url.startswith("https://public.tos.example.com/")
-    assert captured[0][0] == "public.tos.example.com"
-    assert captured[1][0] == "public.tos.example.com"
+    assert captured[0][:2] == ("public.tos.example.com", "GET")
+    assert captured[1][:2] == ("public.tos.example.com", "PUT")
 
 
 def test_server_client_uses_public_when_private_disabled(monkeypatch):
