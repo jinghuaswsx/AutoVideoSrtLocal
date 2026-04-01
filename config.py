@@ -76,6 +76,14 @@ REQUIRED_CREDENTIALS = {
 }
 
 
+# MySQL
+DB_HOST = _env("DB_HOST", "14.103.220.208")
+DB_PORT = int(_env("DB_PORT", "3306"))
+DB_NAME = _env("DB_NAME", "auto_video")
+DB_USER = _env("DB_USER", "root")
+DB_PASSWORD = _env("DB_PASSWORD", "wylf1109")
+
+
 def validate_runtime_config(required_keys=None):
     keys = required_keys or list(REQUIRED_CREDENTIALS.keys())
     missing = [key for key in keys if not globals().get(key)]

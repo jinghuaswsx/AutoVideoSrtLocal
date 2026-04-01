@@ -1,0 +1,51 @@
+CREATE DATABASE IF NOT EXISTS auto_video CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE auto_video;
+
+CREATE TABLE IF NOT EXISTS users (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    username     VARCHAR(64) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role         ENUM('admin','user') NOT NULL DEFAULT 'user',
+    is_active    TINYINT(1) NOT NULL DEFAULT 1,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT NOT NULL,
+    service      VARCHAR(32) NOT NULL,
+    key_value    VARCHAR(512) NOT NULL,
+    extra_config JSON,
+    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_user_service (user_id, service),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id               VARCHAR(36) PRIMARY KEY,
+    user_id          INT NOT NULL,
+    original_filename VARCHAR(255),
+    thumbnail_path   VARCHAR(512),
+    status           VARCHAR(32) NOT NULL DEFAULT 'uploaded',
+    task_dir         VARCHAR(512),
+    state_json       LONGTEXT,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at       DATETIME NOT NULL,
+    deleted_at       DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS usage_logs (
+    id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id                INT NOT NULL,
+    project_id             VARCHAR(36),
+    service                VARCHAR(32) NOT NULL,
+    model_name             VARCHAR(128),
+    called_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    success                TINYINT(1) NOT NULL DEFAULT 1,
+    input_tokens           INT,
+    output_tokens          INT,
+    audio_duration_seconds FLOAT,
+    extra_data             JSON,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
