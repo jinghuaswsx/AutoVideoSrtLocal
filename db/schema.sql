@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS projects (
     id               VARCHAR(36) PRIMARY KEY,
     user_id          INT NOT NULL,
     original_filename VARCHAR(255),
+    display_name     VARCHAR(255),
     thumbnail_path   VARCHAR(512),
     status           VARCHAR(32) NOT NULL DEFAULT 'uploaded',
     task_dir         VARCHAR(512),
