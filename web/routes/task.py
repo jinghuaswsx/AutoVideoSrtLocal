@@ -338,3 +338,46 @@ def deploy_capcut(task_id):
         store.update(task_id, exports=exports)
 
     return jsonify({"status": "ok", "deployed_project_dir": deployed_project_dir})
+
+
+@bp.route("/<task_id>", methods=["PATCH"])
+@login_required
+def rename_task(task_id):
+    """重命名任务展示名称"""
+    row = db_query_one(
+        "SELECT id, user_id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    new_name = (body.get("display_name") or "").strip()
+    if not new_name:
+        return jsonify({"error": "display_name required"}), 400
+    if len(new_name) > 50:
+        return jsonify({"error": "名称不超过50个字符"}), 400
+
+    resolved = _resolve_name_conflict(current_user.id, new_name, exclude_task_id=task_id)
+    db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (resolved, task_id))
+    return jsonify({"status": "ok", "display_name": resolved})
+
+
+@bp.route("/<task_id>", methods=["DELETE"])
+@login_required
+def delete_task(task_id):
+    """软删除任务（设置 deleted_at）"""
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    from datetime import datetime
+    db_execute(
+        "UPDATE projects SET deleted_at=%s WHERE id=%s",
+        (datetime.utcnow(), task_id),
+    )
+    store.update(task_id, status="deleted")
+    return jsonify({"status": "ok"})
