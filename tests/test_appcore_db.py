@@ -18,3 +18,5 @@ def test_execute_and_query_one():
     assert row is not None
     assert row["role"] == "user"
     execute("DELETE FROM users WHERE username = %s", ("_test_db_user_",))
+    # Also clean up any leftover
+    execute("DELETE FROM users WHERE username = %s", ("_test_db_user_",))

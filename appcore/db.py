@@ -39,8 +39,8 @@ def query(sql: str, args: tuple = ()) -> list[dict]:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, args)
-            return cur.fetchall()
+            cur.execute(sql, args or None)
+            return list(cur.fetchall())
     finally:
         conn.close()
 
@@ -55,7 +55,7 @@ def execute(sql: str, args: tuple = ()) -> int:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, args)
+            cur.execute(sql, args or None)
             return cur.lastrowid or cur.rowcount
     finally:
         conn.close()
