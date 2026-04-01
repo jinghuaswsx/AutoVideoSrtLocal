@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS user_voices (
     name VARCHAR(100) NOT NULL,
     gender ENUM('male','female') NOT NULL,
     elevenlabs_voice_id VARCHAR(50) NOT NULL,
-    description TEXT DEFAULT '',
+    description TEXT,
     style_tags JSON DEFAULT NULL,
     preview_url VARCHAR(500) DEFAULT '',
     source VARCHAR(50) DEFAULT 'manual',
