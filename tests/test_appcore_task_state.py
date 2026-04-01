@@ -25,13 +25,7 @@ def test_create_initializes_expected_keys():
     assert task["source_tos_key"] == ""
     assert task["source_object_info"] == {}
     assert task["tos_uploads"] == {}
-    assert task["preparation"] == {
-        "active": False,
-        "phase": "",
-        "message": "",
-        "progress": 0,
-        "source_sync": False,
-    }
+    assert "preparation" not in task
 
 
 def test_create_stores_original_filename():
