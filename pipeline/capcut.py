@@ -227,6 +227,7 @@ def _export_with_pyjianyingdraft(
     output_dir = project_dir.parent
     draft_name = project_dir.name
     media_duration = _probe_media_duration(video_path) or float(timeline_manifest.get("video_duration", 0.0) or 0.0)
+    audio_duration = _probe_media_duration(tts_audio_path)
 
     draft_folder = draft.DraftFolder(str(output_dir))
     script = draft_folder.create_draft(draft_name, 1080, 1920, allow_replace=True)
@@ -242,6 +243,8 @@ def _export_with_pyjianyingdraft(
 
     total_duration = float(timeline_manifest.get("total_tts_duration", 0.0) or 0.0)
     if total_duration > 0:
+        if audio_duration > 0:
+            total_duration = min(total_duration, _truncate_milliseconds(audio_duration))
         script.add_segment(
             draft.AudioSegment(
                 str(copied_audio),
@@ -425,3 +428,7 @@ def _probe_media_duration(video_path: Path) -> float:
             continue
 
     return 0.0
+
+
+def _truncate_milliseconds(value: float) -> float:
+    return max(int(value * 1000), 0) / 1000.0
