@@ -184,7 +184,7 @@ def upload():
 @login_required
 def get_task(task_id):
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(task)
 
@@ -205,6 +205,8 @@ def thumbnail(task_id: str):
 @login_required
 def get_artifact(task_id, name):
     task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
     variant = request.args.get("variant") or None
     path = _resolve_artifact_path(task_id, name, task, variant=variant)
     if not path:
@@ -218,7 +220,7 @@ def get_artifact(task_id, name):
 def start(task_id):
     """配置并启动流水线"""
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -238,7 +240,7 @@ def start(task_id):
 @login_required
 def update_alignment(task_id):
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -269,7 +271,7 @@ def update_alignment(task_id):
 def update_segments(task_id):
     """用户确认/编辑翻译结果"""
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json()
@@ -291,7 +293,7 @@ def update_segments(task_id):
 def download(task_id, file_type):
     """下载成品文件，file_type: soft | hard | srt"""
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None
