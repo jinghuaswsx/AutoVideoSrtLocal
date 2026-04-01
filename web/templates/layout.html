@@ -168,6 +168,18 @@
       font-weight: 700;
       color: #fff;
     }
+    .topbar-logout-btn {
+      margin-left: 12px;
+      padding: 7px 16px;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background .12s;
+    }
+    .topbar-logout-btn:hover { background: #fecaca; }
     .main-content {
       flex: 1;
       padding: 28px 28px 48px;
@@ -223,6 +235,7 @@
         <div class="topbar-user-dot">{{ current_user.username[0] | upper }}</div>
         {{ current_user.username }}
       </div>
+      <a href="{{ url_for('auth.logout') }}" class="topbar-logout-btn">退出登录</a>
     </header>
     <main class="main-content">
       {% block content %}{% endblock %}
