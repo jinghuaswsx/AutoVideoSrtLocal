@@ -381,3 +381,42 @@ def delete_task(task_id):
     )
     store.update(task_id, status="deleted")
     return jsonify({"status": "ok"})
+
+
+RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+
+
+@bp.route("/<task_id>/resume", methods=["POST"])
+@login_required
+def resume_from_step(task_id):
+    """从指定步骤重新开始流水线，该步骤之前已完成的结果保留不动。"""
+    task = store.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    start_step = body.get("start_step", "")
+    if start_step not in RESUMABLE_STEPS:
+        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
+
+    # 把 start_step 及之后的步骤状态重置为 pending
+    started = False
+    for s in RESUMABLE_STEPS:
+        if s == start_step:
+            started = True
+        if started:
+            store.set_step(task_id, s, "pending")
+            store.set_step_message(task_id, s, "等待中...")
+
+    store.update(task_id, status="running", current_review_step="")
+
+    # 调用 pipeline_runner.resume（签名为 resume(task_id, start_step)，不接受 user_id）
+    pipeline_runner.resume(task_id, start_step)
+    return jsonify({"status": "started", "start_step": start_step})
