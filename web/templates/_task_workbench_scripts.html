@@ -519,6 +519,27 @@
     if (currentTask.srt_path) downloads.srt = `/api/tasks/${taskId}/download/srt`;
     if (currentTask.exports?.capcut_archive) downloads.capcut = `/api/tasks/${taskId}/download/capcut`;
     renderDownloads(downloads);
+    updateHeroDownloadBar(downloads);
+  }
+
+  function updateHeroDownloadBar(downloads) {
+    const bar = document.getElementById("heroDownloadBar");
+    if (!bar) return;
+    const hasDone = currentTask?.status === "done";
+    bar.classList.toggle("hidden", !hasDone);
+    document.getElementById("heroCapcutBtn").classList.toggle("hidden", !downloads.capcut);
+    document.getElementById("heroHardBtn").classList.toggle("hidden", !downloads.hard);
+    document.getElementById("heroSoftBtn").classList.toggle("hidden", !downloads.soft);
+    // store urls for heroDownload()
+    bar.dataset.capcut = downloads.capcut || "";
+    bar.dataset.hard = downloads.hard || "";
+    bar.dataset.soft = downloads.soft || "";
+  }
+
+  function heroDownload(key) {
+    const bar = document.getElementById("heroDownloadBar");
+    const url = bar?.dataset[key];
+    if (url) dlFile(url, key === "capcut" ? "CapCut工程包" : key === "hard" ? "硬字幕视频" : "软字幕视频");
   }
 
   function renderDownloads(downloads) {

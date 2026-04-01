@@ -1,12 +1,16 @@
 .page-title { font-size: 28px; font-weight: 800; color: var(--text-main); line-height: 1.2; margin-bottom: 6px; }
 .page-subtitle { color: #6b7280; margin: 0 0 24px; font-size: 14px; }
-.back-link { color: #6b7280; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 18px; }
-.back-link:hover { color: var(--primary-color); }
+.back-link { display: inline-flex; align-items: center; gap: 8px; color: #7c6fe0; text-decoration: none; font-size: 16px; font-weight: 700; background: rgba(124,111,224,0.08); border: 2px solid rgba(124,111,224,0.3); border-radius: 14px; padding: 12px 24px; margin-bottom: 24px; transition: background .15s, border-color .15s, color .15s; }
+.back-link:hover { background: rgba(124,111,224,0.15); border-color: #7c6fe0; color: #5a4ec8; }
 .hidden { display: none !important; }
-.task-hero { display: flex; align-items: center; justify-content: center; min-height: 240px; text-align: center; }
+.task-hero { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px; text-align: center; }
 .task-hero .hero-icon { font-size: 56px; margin-bottom: 18px; }
 .task-hero .hero-title { font-size: 20px; font-weight: 800; color: var(--text-main); }
 .task-hero .hero-status { margin-top: 8px; color: #6b7280; }
+.hero-download-bar { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; justify-content: center; }
+.hero-download-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #7c6fe0, #9b6fd4); color: #fff; font-size: 15px; font-weight: 700; padding: 12px 28px; border-radius: 999px; text-decoration: none; transition: opacity .15s, transform .1s; box-shadow: 0 4px 16px rgba(124, 111, 224, 0.35); }
+.hero-download-btn:hover { opacity: .88; transform: translateY(-1px); }
+.hero-download-btn--secondary { background: #fff; color: #7c6fe0; border: 2px solid #7c6fe0; box-shadow: none; font-size: 13px; font-weight: 600; padding: 10px 20px; }
 .card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 16px; padding: 20px; margin-top: 16px; }
 .upload-zone { border: 2px dashed var(--border-main); border-radius: 16px; padding: 46px 22px; text-align: center; background: var(--bg-body); cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary-color); background: var(--sidebar-hover-bg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
