@@ -349,9 +349,13 @@ def _subtitle_transform_y(position: str) -> float:
     return mapping.get(position, -0.78)
 
 
+_VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+
+
 def build_capcut_draft_name(source_name: str, variant: str | None = None) -> str:
-    stem = _sanitize_draft_name(Path(source_name).stem)
-    stem = stem[:50]
+    p = Path(source_name)
+    stem = p.stem if p.suffix.lower() in _VIDEO_SUFFIXES else source_name
+    stem = _sanitize_draft_name(stem)[:50]
     if variant:
         return f"{stem}_capcut_{variant}"
     return f"{stem}_capcut"
