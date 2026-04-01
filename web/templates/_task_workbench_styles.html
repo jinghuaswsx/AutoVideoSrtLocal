@@ -1,0 +1,50 @@
+.page-title { font-size: 40px; line-height: 1.05; margin-bottom: 10px; }
+.page-subtitle { color: #98a0af; margin: 0 0 28px; font-size: 15px; }
+.back-link { color: #98a0af; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 18px; }
+.back-link:hover { color: #edf0f6; }
+.hidden { display: none !important; }
+.task-hero { display: flex; align-items: center; justify-content: center; min-height: 240px; text-align: center; }
+.task-hero .hero-icon { font-size: 56px; margin-bottom: 18px; }
+.task-hero .hero-title { font-size: 20px; font-weight: 800; }
+.task-hero .hero-status { margin-top: 8px; color: #98a0af; }
+.card { background: #17191f; border: 1px solid #282c36; border-radius: 16px; padding: 20px; margin-top: 16px; }
+.upload-zone { border: 1px dashed #3a3f4d; border-radius: 16px; padding: 46px 22px; text-align: center; background: #14161b; cursor: pointer; }
+.upload-zone:hover, .upload-zone.drag-over { border-color: #fe2c55; background: #1c1419; }
+.upload-zone input { display: none; }
+.upload-zone .icon { font-size: 38px; margin-bottom: 12px; }
+.upload-zone p, .hint, .step-msg, .scene-cut-list, .review-time, .preview-time, .preview-note { color: #98a0af; font-size: 12px; }
+.config-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.config-item label { display: block; margin-bottom: 8px; color: #aab2c0; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+.config-item select, .segment-translated { width: 100%; background: #22262f; border: 1px solid #343946; border-radius: 10px; color: #eff2f8; padding: 10px 12px; font-size: 14px; }
+.segment-translated { min-height: 88px; resize: vertical; }
+.mode-note { margin-top: 6px; color: #98a0af; font-size: 12px; }
+.review-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.steps { display: flex; flex-direction: column; gap: 12px; }
+.step { border: 1px solid #2a2e38; border-radius: 14px; padding: 16px; background: #1b1d23; }
+.step.running { border-color: #fe2c55; }
+.step.done { border-color: #1db954; }
+.step.waiting { border-color: #f5a623; }
+.step.error { border-color: #e74c3c; }
+.step-main { display: flex; gap: 12px; align-items: flex-start; }
+.step-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #262a33; color: #7f8695; font-weight: 700; flex-shrink: 0; }
+.step-icon.running { color: #fe2c55; background: rgba(254, 44, 85, 0.14); }
+.step-icon.done { color: #1db954; background: rgba(29, 185, 84, 0.14); }
+.step-icon.waiting { color: #f5a623; background: rgba(245, 166, 35, 0.14); }
+.step-icon.error { color: #e74c3c; background: rgba(231, 76, 60, 0.14); }
+.step-name { font-weight: 700; }
+.step-preview { margin-top: 14px; padding-top: 14px; border-top: 1px solid #2a2e38; display: flex; flex-direction: column; gap: 10px; }
+.preview-placeholder, .preview-block, .review-item { background: #15181e; border: 1px solid #272c36; border-radius: 12px; padding: 12px; }
+.preview-label { color: #aab2c0; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.preview-text, .review-original, .preview-original, .preview-translated { white-space: pre-wrap; word-break: break-word; line-height: 1.6; font-size: 13px; }
+.preview-text { max-height: 260px; overflow: auto; }
+.preview-list, .review-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow: auto; }
+.break-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; }
+.break-row input { accent-color: #fe2c55; }
+.media-player { width: 100%; border-radius: 10px; background: #0f1116; }
+video.media-player { max-height: 320px; }
+.result-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; border: 1px solid #343946; background: #20242d; color: #f2f4f8; text-decoration: none; cursor: pointer; }
+.error-msg { display: none; margin-top: 16px; padding: 14px; border-radius: 14px; border: 1px solid #e74c3c; background: rgba(231, 76, 60, 0.14); color: #ff9b90; white-space: pre-wrap; word-break: break-word; max-height: 340px; overflow: auto; }
+.expired-notice { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 32px; text-align: center; color: #666; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 14px; height: 14px; border: 2px solid #fe2c55; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }

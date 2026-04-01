@@ -1,67 +1,29 @@
 {% extends "layout.html" %}
-{% block title %}{{ project.original_filename }} — AutoVideoSrt{% endblock %}
+{% if not project.deleted_at %}
+{% set allow_upload = false %}
+{% set show_back_link = true %}
+{% set task_id = project.id %}
+{% set initial_task = state %}
+{% endif %}
+{% block title %}{{ project.original_filename or project.id }} - AutoVideoSrt{% endblock %}
 {% block extra_style %}
-.back { color: #98a0af; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 16px; }
-.back:hover { color: #edf0f6; }
-.proj-header { margin-bottom: 24px; }
-.proj-header h1 { font-size: 20px; margin-bottom: 6px; }
-.proj-meta { font-size: 13px; color: #98a0af; }
-.steps { display: flex; flex-direction: column; gap: 12px; }
-.step-card { background: #17191f; border: 1px solid #282c36; border-radius: 14px; padding: 16px; }
-.step-card h3 { font-size: 14px; margin-bottom: 10px; color: #aab2c0; }
-.artifact-text { background: #0e0f13; border-radius: 8px; padding: 12px; font-size: 13px; white-space: pre-wrap; color: #c8d0de; max-height: 300px; overflow-y: auto; }
-.download-link { display: inline-block; margin-top: 8px; color: #fe2c55; font-size: 13px; text-decoration: none; }
-.download-link:hover { text-decoration: underline; }
-.expired-notice { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 32px; text-align: center; color: #666; }
+{% include "_task_workbench_styles.html" %}
 {% endblock %}
 {% block content %}
-<a class="back" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
-<div class="proj-header">
-  <h1>{{ project.original_filename or project.id }}</h1>
-  <div class="proj-meta">
-    创建时间: {{ project.created_at }} &nbsp;|&nbsp;
-    状态: {{ project.status }}
-    {% if project.expires_at and not project.deleted_at %}
-      &nbsp;|&nbsp; 过期时间: {{ project.expires_at }}
-    {% endif %}
-  </div>
-</div>
-
 {% if project.deleted_at %}
+<a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 <div class="expired-notice">
-  <p style="font-size:32px;margin-bottom:12px">🗑</p>
-  <p>该项目已过期，文件已清理。</p>
+  <p style="font-size: 32px; margin-bottom: 12px;">任务已过期</p>
+  <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
 </div>
 {% else %}
-<div class="steps">
-  {% set step_labels = [
-    ('extract','音频提取'), ('asr','语音识别'), ('alignment','分段对齐'),
-    ('translate','本土化翻译'), ('tts','英文配音'), ('subtitle','字幕生成'),
-    ('compose','视频合成'), ('export','CapCut 导出')
-  ] %}
-  {% for step_id, step_name in step_labels %}
-  {% set step_status = state.get('steps', {}).get(step_id, 'pending') %}
-  {% if step_status in ['done','error'] %}
-  <div class="step-card">
-    <h3>{{ step_name }} — {{ step_status }}</h3>
-    {% set artifact = state.get('artifacts', {}).get(step_id) %}
-    {% if artifact %}
-      {% if artifact.get('items') %}
-        {% for item in artifact['items'][:2] %}
-          {% if item.type == 'text' and item.get('content') %}
-            <div class="artifact-text">{{ item.content[:800] }}</div>
-          {% endif %}
-        {% endfor %}
-      {% endif %}
-    {% endif %}
-    {% if step_id in ['compose','export'] %}
-      <a class="download-link" href="/api/tasks/{{ project.id }}/artifact/soft_video?variant=normal" download>⬇ 下载软字幕视频 (普通版)</a><br>
-      <a class="download-link" href="/api/tasks/{{ project.id }}/artifact/soft_video?variant=hook_cta" download>⬇ 下载软字幕视频 (hook版)</a><br>
-      <a class="download-link" href="/api/tasks/{{ project.id }}/artifact/srt?variant=normal" download>⬇ 下载 SRT (普通版)</a>
-    {% endif %}
-  </div>
-  {% endif %}
-  {% endfor %}
-</div>
+<h1 class="page-title">AutoVideoSrt</h1>
+<p class="page-subtitle">每一步都会把关键中间产物留在页面里，文本可看，音频可听，视频可播。</p>
+{% include "_task_workbench.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if not project.deleted_at %}
+{% include "_task_workbench_scripts.html" %}
 {% endif %}
 {% endblock %}

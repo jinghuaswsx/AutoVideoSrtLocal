@@ -90,6 +90,17 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
             "compose": "pending",
             "export": "pending",
         },
+        "step_messages": {
+            "extract": "",
+            "asr": "",
+            "alignment": "",
+            "translate": "",
+            "tts": "",
+            "subtitle": "",
+            "compose": "",
+            "export": "",
+        },
+        "current_review_step": "",
         "utterances": [],
         "scene_cuts": [],
         "alignment": {},
@@ -157,12 +168,27 @@ def update_variant(task_id: str, variant: str, **kwargs):
         variant_state = dict(variants.get(variant, _empty_variant_state(variant)))
         variant_state.update(kwargs)
         variants[variant] = variant_state
+        _sync_task_to_db(task_id)
 
 
 def set_step(task_id: str, step: str, status: str):
     task = _tasks.get(task_id)
     if task:
         task["steps"][step] = status
+        _sync_task_to_db(task_id)
+
+
+def set_step_message(task_id: str, step: str, message: str):
+    task = _tasks.get(task_id)
+    if task:
+        task.setdefault("step_messages", {})[step] = message
+        _sync_task_to_db(task_id)
+
+
+def set_current_review_step(task_id: str, step: str):
+    task = _tasks.get(task_id)
+    if task:
+        task["current_review_step"] = step
         _sync_task_to_db(task_id)
 
 
@@ -242,6 +268,9 @@ def confirm_segments(task_id: str, segments: list):
         if not task.get("script_segments"):
             task["script_segments"] = segments
         task["localized_translation"] = _localized_translation_from_segments(task, segments)
+        variants = task.setdefault("variants", {})
+        if "normal" in variants:
+            variants["normal"]["localized_translation"] = task["localized_translation"]
         task["_segments_confirmed"] = True
         _sync_task_to_db(task_id)
 

@@ -14,7 +14,11 @@ from flask_login import login_required, current_user
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
-from web.preview_artifacts import build_alignment_artifact, build_translate_artifact
+from web.preview_artifacts import (
+    build_alignment_artifact,
+    build_translate_artifact,
+    build_variant_compare_artifact,
+)
 from web import store
 from web.services import pipeline_runner
 
@@ -34,6 +38,31 @@ def _extract_thumbnail(video_path: str, task_dir: str) -> str | None:
     except Exception:
         pass
     return None
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "manual"}
+    return bool(value)
+
+
+def _build_translate_compare_artifact(task: dict) -> dict:
+    variants = dict(task.get("variants", {}))
+    compare_variants = {}
+    source_full_text_zh = task.get("source_full_text_zh", "")
+
+    for variant, variant_state in variants.items():
+        localized_translation = variant_state.get("localized_translation", {})
+        payload = build_translate_artifact(source_full_text_zh, localized_translation)
+        store.set_variant_artifact(task["id"], variant, "translate", payload)
+        compare_variants[variant] = {
+            "label": variant_state.get("label", variant),
+            "items": payload.get("items", []),
+        }
+
+    return build_variant_compare_artifact("翻译本土化", compare_variants)
 
 
 @bp.route("/upload-page", endpoint="upload_page")
@@ -162,7 +191,7 @@ def start(task_id):
         voice_gender=body.get("voice_gender", "male"),
         voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
         subtitle_position=body.get("subtitle_position", "bottom"),
-        interactive_review=bool(body.get("interactive_review", False)),
+        interactive_review=_parse_bool(body.get("interactive_review", False)),
     )
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.start(task_id, user_id=user_id)
@@ -192,6 +221,10 @@ def update_alignment(task_id):
         "alignment",
         build_alignment_artifact(task.get("scene_cuts", []), script_segments, break_after),
     )
+    store.set_current_review_step(task_id, "")
+    store.set_step(task_id, "alignment", "done")
+    store.set_step_message(task_id, "alignment", "分段确认完成")
+    pipeline_runner.resume(task_id, "translate")
     return jsonify({"status": "ok", "script_segments": script_segments})
 
 
@@ -208,7 +241,12 @@ def update_segments(task_id):
         return jsonify({"error": "segments required"}), 400
 
     store.confirm_segments(task_id, body["segments"])
-    store.set_artifact(task_id, "translate", build_translate_artifact(body["segments"]))
+    updated_task = store.get(task_id) or task
+    store.set_artifact(task_id, "translate", _build_translate_compare_artifact(updated_task))
+    store.set_current_review_step(task_id, "")
+    store.set_step(task_id, "translate", "done")
+    store.set_step_message(task_id, "translate", "翻译确认完成")
+    pipeline_runner.resume(task_id, "tts")
     return jsonify({"status": "ok"})
 
 
@@ -226,7 +264,7 @@ def download(task_id, file_type):
     path_map = {
         "soft": result.get("soft_video"),
         "hard": result.get("hard_video"),
-        "srt": result.get("srt"),
+        "srt": variant_state.get("srt_path") if variant else task.get("srt_path"),
         "capcut": (
             variant_state.get("exports", {}).get("capcut_archive")
             if variant

@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import json
 import os
-import threading
 import uuid
 
 import appcore.task_state as task_state
 from appcore.events import (
+    EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
     EVT_CAPCUT_READY,
     EVT_ENGLISH_ASR_RESULT,
@@ -19,6 +19,7 @@ from appcore.events import (
     EVT_PIPELINE_ERROR,
     EVT_STEP_UPDATE,
     EVT_SUBTITLE_READY,
+    EVT_TRANSLATE_RESULT,
     EVT_TTS_SCRIPT_READY,
     Event,
     EventBus,
@@ -42,6 +43,38 @@ def _save_json(task_dir: str, filename: str, data) -> None:
         json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
+def _build_review_segments(script_segments: list[dict], localized_translation: dict) -> list[dict]:
+    review_segments: list[dict] = []
+    sentences = localized_translation.get("sentences", []) or []
+
+    for fallback_index, sentence in enumerate(sentences):
+        indices = sentence.get("source_segment_indices") or [fallback_index]
+        source_segments = [
+            script_segments[index]
+            for index in indices
+            if 0 <= index < len(script_segments)
+        ]
+        base_segment = source_segments[0] if source_segments else (
+            script_segments[fallback_index] if fallback_index < len(script_segments) else {}
+        )
+        review_segments.append(
+            {
+                "index": sentence.get("index", fallback_index),
+                "text": " ".join(
+                    segment.get("text", "").strip()
+                    for segment in source_segments
+                    if segment.get("text")
+                ).strip() or base_segment.get("text", ""),
+                "translated": sentence.get("text", ""),
+                "start_time": source_segments[0].get("start_time") if source_segments else base_segment.get("start_time"),
+                "end_time": source_segments[-1].get("end_time") if source_segments else base_segment.get("end_time"),
+                "source_segment_indices": indices,
+            }
+        )
+
+    return review_segments
+
+
 class PipelineRunner:
     def __init__(self, bus: EventBus) -> None:
         self.bus = bus
@@ -51,25 +84,41 @@ class PipelineRunner:
 
     def _set_step(self, task_id: str, step: str, status: str, message: str = "") -> None:
         task_state.set_step(task_id, step, status)
+        task_state.set_step_message(task_id, step, message)
         self._emit(task_id, EVT_STEP_UPDATE, {"step": step, "status": status, "message": message})
 
     def start(self, task_id: str) -> None:
-        thread = threading.Thread(target=self._run, args=(task_id,), daemon=True)
-        thread.start()
+        self._run(task_id, start_step="extract")
 
-    def _run(self, task_id: str) -> None:
+    def resume(self, task_id: str, start_step: str) -> None:
+        self._run(task_id, start_step=start_step)
+
+    def _run(self, task_id: str, start_step: str = "extract") -> None:
         task = task_state.get(task_id)
         video_path = task["video_path"]
         task_dir = task["task_dir"]
+        steps = [
+            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
+            ("asr", lambda: self._step_asr(task_id, task_dir)),
+            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir)),
+            ("translate", lambda: self._step_translate(task_id)),
+            ("tts", lambda: self._step_tts(task_id, task_dir)),
+            ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
+            ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
+            ("export", lambda: self._step_export(task_id, video_path, task_dir)),
+        ]
+
         try:
-            self._step_extract(task_id, video_path, task_dir)
-            self._step_asr(task_id, task_dir)
-            self._step_alignment(task_id, video_path, task_dir)
-            self._step_translate(task_id)
-            self._step_tts(task_id, task_dir)
-            self._step_subtitle(task_id, task_dir)
-            self._step_compose(task_id, video_path, task_dir)
-            self._step_export(task_id, video_path, task_dir)
+            should_run = False
+            for step_name, step_fn in steps:
+                if step_name == start_step:
+                    should_run = True
+                if not should_run:
+                    continue
+                step_fn()
+                current = task_state.get(task_id) or {}
+                if current.get("steps", {}).get(step_name) == "waiting":
+                    return
         except Exception as exc:
             task_state.update(task_id, status="error", error=str(exc))
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
@@ -77,6 +126,7 @@ class PipelineRunner:
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
         from pipeline.extract import extract_audio
+
         audio_path = extract_audio(video_path, task_dir)
         task_state.update(task_id, audio_path=audio_path)
         task_state.set_preview_file(task_id, "audio_extract", audio_path)
@@ -89,6 +139,7 @@ class PipelineRunner:
         self._set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
         from pipeline.asr import transcribe
         from pipeline.storage import delete_file, upload_file
+
         tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
         audio_url = upload_file(audio_path, tos_key)
         self._set_step(task_id, "asr", "running", "正在识别中文语音...")
@@ -99,6 +150,7 @@ class PipelineRunner:
                 delete_file(tos_key)
             except Exception:
                 pass
+
         task_state.update(task_id, utterances=utterances)
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
@@ -110,6 +162,7 @@ class PipelineRunner:
         self._set_step(task_id, "alignment", "running", "正在分析镜头并生成分段建议...")
         from pipeline.alignment import compile_alignment, detect_scene_cuts
         from pipeline.voice_library import get_voice_library
+
         scene_cuts = detect_scene_cuts(video_path)
         alignment = compile_alignment(task.get("utterances", []), scene_cuts=scene_cuts)
         suggested_voice = get_voice_library().recommend_voice(
@@ -125,19 +178,31 @@ class PipelineRunner:
             _alignment_confirmed=False,
         )
         task_state.set_artifact(
-            task_id, "alignment",
+            task_id,
+            "alignment",
             build_alignment_artifact(scene_cuts, alignment["script_segments"], alignment["break_after"]),
         )
         _save_json(task_dir, "alignment_result.json", alignment)
-        self._set_step(task_id, "alignment", "done", "分段分析完成")
-        self._emit(task_id, "alignment_ready", {
+
+        current = task_state.get(task_id) or {}
+        payload = {
+            "utterances": task.get("utterances", []),
             "scene_cuts": scene_cuts,
             "alignment": alignment,
+            "break_after": alignment["break_after"],
             "recommended_voice_id": suggested_voice["id"] if suggested_voice else None,
-        })
-        current = task_state.get(task_id) or {}
-        if not current.get("interactive_review"):
-            task_state.update(task_id, _alignment_confirmed=True)
+            "requires_confirmation": bool(current.get("interactive_review")),
+        }
+        if current.get("interactive_review"):
+            task_state.set_current_review_step(task_id, "alignment")
+            self._set_step(task_id, "alignment", "waiting", "分段结果已生成，等待人工确认")
+            self._emit(task_id, EVT_ALIGNMENT_READY, payload)
+            return
+
+        task_state.set_current_review_step(task_id, "")
+        task_state.update(task_id, _alignment_confirmed=True)
+        self._set_step(task_id, "alignment", "done", "分段分析完成")
+        self._emit(task_id, EVT_ALIGNMENT_READY, payload)
 
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
@@ -145,26 +210,32 @@ class PipelineRunner:
         self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...")
         from pipeline.localization import VARIANT_KEYS, build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
-        segments = task.get("script_segments", [])
-        source_full_text_zh = build_source_full_text_zh(segments)
+
+        script_segments = task.get("script_segments", [])
+        source_full_text_zh = build_source_full_text_zh(script_segments)
         variants = dict(task.get("variants", {}))
         for variant in VARIANT_KEYS:
             localized_translation = generate_localized_translation(
-                source_full_text_zh, segments, variant=variant
+                source_full_text_zh, script_segments, variant=variant
             )
             variant_state = dict(variants.get(variant, {}))
             variant_state["localized_translation"] = localized_translation
             variants[variant] = variant_state
             _save_json(task_dir, f"localized_translation.{variant}.json", localized_translation)
+
         normal_lt = variants.get("normal", {}).get("localized_translation", {})
+        review_segments = _build_review_segments(script_segments, normal_lt)
+        requires_confirmation = bool(task.get("interactive_review"))
         task_state.update(
             task_id,
             source_full_text_zh=source_full_text_zh,
             localized_translation=normal_lt,
             variants=variants,
-            _segments_confirmed=True,
+            segments=review_segments,
+            _segments_confirmed=not requires_confirmation,
         )
         task_state.set_artifact(task_id, "asr", build_asr_artifact(task.get("utterances", []), source_full_text_zh))
+
         compare_variants = {}
         for variant, variant_state in variants.items():
             payload = build_translate_artifact(source_full_text_zh, variant_state.get("localized_translation", {}))
@@ -173,15 +244,24 @@ class PipelineRunner:
                 "label": variant_state.get("label", variant),
                 "items": payload.get("items", []),
             }
+
         task_state.set_artifact(task_id, "translate", build_variant_compare_artifact("翻译本土化", compare_variants))
         _save_json(task_dir, "source_full_text_zh.json", {"full_text": source_full_text_zh})
         _save_json(task_dir, "localized_translation.json", normal_lt)
-        self._set_step(task_id, "translate", "done", "本土化翻译完成")
-        self._emit(task_id, "translate_result", {
+
+        if requires_confirmation:
+            task_state.set_current_review_step(task_id, "translate")
+            self._set_step(task_id, "translate", "waiting", "翻译结果已生成，等待人工确认")
+        else:
+            task_state.set_current_review_step(task_id, "")
+            self._set_step(task_id, "translate", "done", "本土化翻译完成")
+
+        self._emit(task_id, EVT_TRANSLATE_RESULT, {
             "source_full_text_zh": source_full_text_zh,
             "localized_translation": normal_lt,
+            "segments": review_segments,
             "variants": variants,
-            "requires_confirmation": False,
+            "requires_confirmation": requires_confirmation,
         })
 
     def _step_tts(self, task_id: str, task_dir: str) -> None:
@@ -192,6 +272,7 @@ class PipelineRunner:
         from pipeline.timeline import build_timeline_manifest
         from pipeline.translate import generate_tts_script
         from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
+
         voice = None
         if task.get("voice_id"):
             voice = get_voice_by_id(task["voice_id"])
@@ -199,6 +280,7 @@ class PipelineRunner:
             voice = get_voice_by_id(task["recommended_voice_id"])
         if not voice:
             voice = get_default_voice(task.get("voice_gender", "male"))
+
         variants = dict(task.get("variants", {}))
         video_duration = get_video_duration(task["video_path"])
         for variant in VARIANT_KEYS:
@@ -220,6 +302,7 @@ class PipelineRunner:
             _save_json(task_dir, f"tts_script.{variant}.json", tts_script)
             _save_json(task_dir, f"tts_result.{variant}.json", result["segments"])
             _save_json(task_dir, f"timeline_manifest.{variant}.json", timeline_manifest)
+
         normal_variant = variants.get("normal", {})
         task_state.update(
             task_id,
@@ -232,6 +315,7 @@ class PipelineRunner:
         )
         if normal_variant.get("tts_audio_path"):
             task_state.set_preview_file(task_id, "tts_full_audio", normal_variant["tts_audio_path"])
+
         compare_variants = {}
         for variant, variant_state in variants.items():
             payload = build_tts_artifact(
@@ -243,6 +327,7 @@ class PipelineRunner:
                 "label": variant_state.get("label", variant),
                 "items": payload.get("items", []),
             }
+
         task_state.set_artifact(task_id, "tts", build_variant_compare_artifact("语音生成", compare_variants))
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": normal_variant.get("tts_script", {}), "variants": variants})
         self._set_step(task_id, "tts", "done", "英文配音生成完成")
@@ -254,6 +339,7 @@ class PipelineRunner:
         from pipeline.localization import VARIANT_KEYS
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+
         variants = dict(task.get("variants", {}))
         compare_variants = {}
         for variant in VARIANT_KEYS:
@@ -270,6 +356,7 @@ class PipelineRunner:
             }
             tts_script = variant_state.get("tts_script", {})
             from pipeline.tts import _get_audio_duration
+
             total_duration = _get_audio_duration(tts_audio_path) if tts_audio_path else 0.0
             corrected_chunks = align_subtitle_chunks_to_asr(
                 tts_script.get("subtitle_chunks", []),
@@ -293,6 +380,7 @@ class PipelineRunner:
             }
             _save_json(task_dir, f"english_asr_result.{variant}.json", english_asr_result)
             _save_json(task_dir, f"corrected_subtitle.{variant}.json", {"chunks": corrected_chunks, "srt_content": srt_content})
+
         normal_variant = variants.get("normal", {})
         task_state.update(
             task_id,
@@ -311,6 +399,7 @@ class PipelineRunner:
         self._set_step(task_id, "compose", "running", "正在合成视频...")
         from pipeline.compose import compose_video
         from pipeline.localization import VARIANT_KEYS
+
         variants = dict(task.get("variants", {}))
         compare_variants = {}
         for variant in VARIANT_KEYS:
@@ -334,6 +423,7 @@ class PipelineRunner:
                 "label": variant_state.get("label", variant),
                 "items": payload.get("items", []),
             }
+
         normal_variant = variants.get("normal", {})
         task_state.update(task_id, variants=variants, result=normal_variant.get("result", {}), status="composing_done")
         if normal_variant.get("result", {}).get("soft_video"):
@@ -348,6 +438,7 @@ class PipelineRunner:
         self._set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
         from pipeline.capcut import export_capcut_project
         from pipeline.localization import VARIANT_KEYS
+
         variants = dict(task.get("variants", {}))
         compare_variants = {}
         for variant in VARIANT_KEYS:
@@ -380,6 +471,7 @@ class PipelineRunner:
                 "label": variant_state.get("label", variant),
                 "items": payload.get("items", []),
             }
+
         normal_variant = variants.get("normal", {})
         task_state.update(task_id, variants=variants, exports=normal_variant.get("exports", {}), status="done")
         task_state.set_artifact(task_id, "export", build_variant_compare_artifact("CapCut 导出", compare_variants))
@@ -387,5 +479,5 @@ class PipelineRunner:
         self._emit(task_id, EVT_CAPCUT_READY, {"variants": list(variants.keys())})
         self._emit(task_id, EVT_PIPELINE_DONE, {
             "task_id": task_id,
-            "exports": {v: vs.get("exports", {}) for v, vs in variants.items()},
+            "exports": {variant: variant_state.get("exports", {}) for variant, variant_state in variants.items()},
         })

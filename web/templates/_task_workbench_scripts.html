@@ -1,0 +1,503 @@
+<script>
+  const socket = io();
+  const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
+  const TASK_WORKBENCH_CONFIG = {
+    taskId: {{ task_id|tojson }},
+    initialTask: {{ initial_task|tojson }},
+    allowUpload: {{ 'true' if allow_upload else 'false' }},
+    detailUrlTemplate: {{ url_for('projects.detail', task_id='__TASK_ID__')|tojson }},
+  };
+
+  let taskId = TASK_WORKBENCH_CONFIG.taskId;
+  let currentTask = TASK_WORKBENCH_CONFIG.initialTask;
+  let refreshTimer = null;
+
+  const uploadZone = document.getElementById("uploadZone");
+  const fileInput = document.getElementById("fileInput");
+
+  if (uploadZone && fileInput) {
+    uploadZone.addEventListener("click", () => fileInput.click());
+    uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
+    uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
+    uploadZone.addEventListener("drop", e => {
+      e.preventDefault();
+      uploadZone.classList.remove("drag-over");
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+  }
+
+  bootVoices();
+  renderStepPreviews({});
+  bootInitialTask();
+
+  async function bootVoices() {
+    try {
+      const res = await fetch("/api/voices");
+      const data = await res.json();
+      (data.voices || []).forEach(voice => {
+        const option = document.createElement("option");
+        option.value = voice.id;
+        option.textContent = `${voice.name} · ${voice.gender === "female" ? "女声" : "男声"}`;
+        document.getElementById("voiceSelect").appendChild(option);
+      });
+      applyTaskConfigToForm();
+    } catch {
+      document.getElementById("voiceHint").textContent = "音色列表加载失败，将继续使用 Auto 推荐。";
+    }
+  }
+
+  function bootInitialTask() {
+    if (!currentTask || !taskId) return;
+    showTaskWorkbench();
+    renderTaskHero();
+    renderTaskState();
+    restoreReviewState();
+    socket.emit("join_task", { task_id: taskId });
+  }
+
+  function showTaskWorkbench() {
+    document.getElementById("configPanel").classList.remove("hidden");
+    document.getElementById("pipelineCard").classList.remove("hidden");
+    const hero = document.getElementById("taskHero");
+    if (hero) hero.classList.remove("hidden");
+  }
+
+  function applyTaskConfigToForm() {
+    if (!currentTask) return;
+    document.getElementById("voiceSelect").value = currentTask.voice_id || "auto";
+    document.getElementById("subtitlePosition").value = currentTask.subtitle_position || "bottom";
+    document.getElementById("interactiveReviewToggle").value = String(Boolean(currentTask.interactive_review));
+  }
+
+  function renderTaskHero() {
+    if (!currentTask) return;
+    const title = currentTask.original_filename || currentTask.id || taskId;
+    const statuses = {
+      uploaded: "上传完成，可以开始处理",
+      done: "处理完成，所有中间产物都保留在页面里",
+      error: "任务执行失败，可以查看已生成的中间产物",
+    };
+    const message = statuses[currentTask.status] || statusSummary(currentTask);
+    document.getElementById("taskHeroTitle").textContent = title;
+    document.getElementById("taskHeroStatus").textContent = message;
+  }
+
+  function statusSummary(task) {
+    const waitingStep = STEP_ORDER.find(step => task.steps?.[step] === "waiting");
+    if (waitingStep) return `等待确认：${stepLabel(waitingStep)}`;
+    const runningStep = STEP_ORDER.find(step => task.steps?.[step] === "running");
+    if (runningStep) return `处理中：${stepLabel(runningStep)}`;
+    return "上传完成，可以开始处理";
+  }
+
+  function stepLabel(step) {
+    return {
+      extract: "音频提取",
+      asr: "语音识别",
+      alignment: "分段确认",
+      translate: "翻译本土化",
+      tts: "语音生成",
+      subtitle: "字幕生成",
+      compose: "视频合成",
+      export: "CapCut 导出",
+    }[step] || step;
+  }
+
+  async function handleFile(file) {
+    clearError();
+    if (uploadZone) {
+      uploadZone.innerHTML = `<div class="icon">⏳</div><strong>上传中：${escapeHtml(file.name)}</strong><p>${(file.size / 1024 / 1024).toFixed(1)} MB</p>`;
+    }
+    const form = new FormData();
+    form.append("video", file);
+    const res = await fetch("/api/tasks", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok || data.error) return showError(data.error || "上传失败");
+    window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
+  }
+
+  document.getElementById("startBtn").addEventListener("click", async () => {
+    if (!taskId) return;
+    clearError();
+    document.getElementById("startBtn").disabled = true;
+    showTaskWorkbench();
+    socket.emit("join_task", { task_id: taskId });
+    await fetch(`/api/tasks/${taskId}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        voice_id: document.getElementById("voiceSelect").value,
+        subtitle_position: document.getElementById("subtitlePosition").value,
+        interactive_review: document.getElementById("interactiveReviewToggle").value === "true",
+      }),
+    });
+    scheduleRefreshTaskState(0);
+  });
+
+  socket.on("step_update", ({ step, status, message }) => {
+    if (!taskId) return;
+    if (currentTask) {
+      currentTask.steps = currentTask.steps || {};
+      currentTask.steps[step] = status;
+      currentTask.step_messages = currentTask.step_messages || {};
+      currentTask.step_messages[step] = message || "";
+    }
+    renderTaskState();
+    scheduleRefreshTaskState();
+  });
+  socket.on("alignment_ready", payload => {
+    if (payload.requires_confirmation) {
+      if (currentTask) currentTask.current_review_step = "alignment";
+      renderAlignmentReview(payload);
+    } else {
+      document.getElementById("alignmentReview").classList.add("hidden");
+    }
+    scheduleRefreshTaskState(0);
+  });
+  socket.on("translate_result", payload => {
+    if (payload.requires_confirmation) {
+      if (currentTask) currentTask.current_review_step = "translate";
+      renderTranslateReview(payload);
+    } else {
+      document.getElementById("translateReview").classList.add("hidden");
+    }
+    scheduleRefreshTaskState(0);
+  });
+  socket.on("tts_script_ready", () => scheduleRefreshTaskState(0));
+  socket.on("english_asr_result", () => scheduleRefreshTaskState(0));
+  socket.on("subtitle_ready", () => scheduleRefreshTaskState(0));
+  socket.on("capcut_ready", () => scheduleRefreshTaskState(0));
+  socket.on("pipeline_done", () => scheduleRefreshTaskState(0));
+  socket.on("pipeline_error", ({ error }) => { showError(error); scheduleRefreshTaskState(0); });
+
+  async function refreshTaskState() {
+    if (!taskId) return;
+    const res = await fetch(`/api/tasks/${taskId}`);
+    if (!res.ok) return;
+    currentTask = await res.json();
+    renderTaskHero();
+    applyTaskConfigToForm();
+    renderTaskState();
+    restoreReviewState();
+  }
+
+  function scheduleRefreshTaskState(delay = 120) {
+    if (!taskId) return;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(refreshTaskState, delay);
+  }
+
+  function renderTaskState() {
+    if (!currentTask) return;
+    renderStepMessages();
+    renderStepPreviews(currentTask.artifacts || {});
+    renderResultPanelFromTask();
+    updateStartButtonState();
+  }
+
+  function renderStepMessages() {
+    STEP_ORDER.forEach(step => {
+      const stepEl = document.getElementById(`step-${step}`);
+      const iconEl = document.getElementById(`icon-${step}`);
+      const msgEl = document.getElementById(`msg-${step}`);
+      const status = currentTask?.steps?.[step] || "pending";
+      const message = currentTask?.step_messages?.[step] || placeholderText(status);
+      stepEl.className = `step ${status}`;
+      iconEl.className = `step-icon ${status}`;
+      iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
+      msgEl.textContent = message;
+    });
+  }
+
+  function renderStepPreviews(artifacts) {
+    STEP_ORDER.forEach(step => {
+      const previewEl = document.getElementById(`preview-${step}`);
+      const artifact = artifacts[step];
+      const status = currentTask?.steps?.[step] || "pending";
+      if (!artifact) {
+        previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+        return;
+      }
+      if (artifact.layout === "variant_compare") {
+        previewEl.innerHTML = renderVariantCompareArtifact(artifact);
+        return;
+      }
+      if (!artifact.items || !artifact.items.length) {
+        previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+        return;
+      }
+      previewEl.innerHTML = artifact.items.map(item => renderPreviewItem(item)).join("");
+    });
+  }
+
+  function renderVariantCompareArtifact(artifact) {
+    const variants = artifact.variants || {};
+    return `<div class="preview-compare" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">${Object.entries(variants).map(([variantKey, variantPayload]) => `
+      <div class="preview-block">
+        <div class="preview-label">${escapeHtml(variantPayload.label || variantKey)}</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">${(variantPayload.items || []).map(item => renderPreviewItem(item, variantKey)).join("")}</div>
+      </div>
+    `).join("")}</div>`;
+  }
+
+  function renderPreviewItem(item, variantKey = null) {
+    const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
+    if (item.type === "audio") return `<div class="preview-block">${label}<audio class="media-player" controls preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></audio></div>`;
+    if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
+    if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
+    if (item.type === "action") return `<div class="preview-block">${label}<button class="download-btn" onclick="triggerAction('${escapeJs(item.url)}','${escapeJs(item.method || "POST")}');return false;">${escapeHtml(item.label || "执行")}</button></div>`;
+    if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
+    if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
+    if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
+    if (item.type === "segments") return `<div class="preview-block">${label}<div class="preview-list">${(item.segments || []).map(seg => renderSegmentPreview(seg, item.break_after || [])).join("")}</div></div>`;
+    if (item.type === "sentences") return `<div class="preview-block">${label}<div class="preview-list">${(item.sentences || []).map(renderSentencePreview).join("")}</div></div>`;
+    if (item.type === "tts_blocks") return `<div class="preview-block">${label}<div class="preview-list">${(item.blocks || []).map(renderTtsBlockPreview).join("")}</div></div>`;
+    if (item.type === "subtitle_chunks") return `<div class="preview-block">${label}<div class="preview-list">${(item.chunks || []).map(renderSubtitleChunkPreview).join("")}</div></div>`;
+    return `<div class="preview-block">${label}<div class="preview-text">暂不支持的预览类型</div></div>`;
+  }
+
+  function renderSegmentPreview(seg, breakAfter) {
+    const parts = [
+      `<div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div>`,
+      `<div class="preview-original">${escapeHtml(seg.text || "")}</div>`,
+    ];
+    if (seg.translated) parts.push(`<div class="preview-translated">译文：${escapeHtml(seg.translated)}</div>`);
+    if (seg.tts_duration !== undefined && seg.tts_duration !== null) parts.push(`<div class="preview-note">TTS 时长：${Number(seg.tts_duration).toFixed(2)}s</div>`);
+    if ((seg.source_segment_indices || []).length) parts.push(`<div class="preview-note">源分段：${escapeHtml(seg.source_segment_indices.join(", "))}</div>`);
+    if (breakAfter.length) parts.push(`<div class="preview-note">断点索引：${escapeHtml(breakAfter.map((flag, idx) => flag ? idx : null).filter(v => v !== null).join(", ") || "无")}</div>`);
+    return `<div class="preview-block">${parts.join("")}</div>`;
+  }
+
+  function renderSentencePreview(sentence) {
+    const notes = [];
+    if ((sentence.source_segment_indices || []).length) notes.push(`源分段：${sentence.source_segment_indices.join(", ")}`);
+    return `<div class="preview-block"><div class="preview-note">句子 ${Number(sentence.index ?? 0) + 1}</div><div class="preview-original">${escapeHtml(sentence.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+  }
+
+  function renderTtsBlockPreview(block) {
+    const notes = [];
+    if ((block.sentence_indices || []).length) notes.push(`句子索引：${block.sentence_indices.join(", ")}`);
+    if ((block.source_segment_indices || []).length) notes.push(`源分段：${block.source_segment_indices.join(", ")}`);
+    return `<div class="preview-block"><div class="preview-note">朗读块 ${Number(block.index ?? 0) + 1}</div><div class="preview-original">${escapeHtml(block.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+  }
+
+  function renderSubtitleChunkPreview(chunk) {
+    const notes = [];
+    if ((chunk.block_indices || []).length) notes.push(`朗读块索引：${chunk.block_indices.join(", ")}`);
+    if ((chunk.sentence_indices || []).length) notes.push(`句子索引：${chunk.sentence_indices.join(", ")}`);
+    if ((chunk.source_segment_indices || []).length) notes.push(`源分段：${chunk.source_segment_indices.join(", ")}`);
+    if (chunk.source_asr_text) notes.push(`ASR 对齐：${chunk.source_asr_text}`);
+    const timeLine = chunk.start_time === undefined || chunk.end_time === undefined
+      ? ""
+      : `<div class="preview-time">${fmtTime(chunk.start_time)} → ${fmtTime(chunk.end_time)}</div>`;
+    return `<div class="preview-block">${timeLine}<div class="preview-original">${escapeHtml(chunk.text || "")}</div>${renderPreviewNotes(notes)}</div>`;
+  }
+
+  function renderPreviewNotes(lines) {
+    return (lines || []).map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("");
+  }
+
+  function renderAlignmentReview({ utterances = [], scene_cuts = [], break_after = [], recommended_voice_id }) {
+    const list = document.getElementById("alignmentList");
+    const sceneCutList = document.getElementById("sceneCutList");
+    sceneCutList.textContent = scene_cuts.length
+      ? `检测到镜头切换点：${scene_cuts.map(fmtTime).join(" / ")}`
+      : "没有检测到明显镜头切换点，本次主要依据语义停顿来推荐分段。";
+    list.innerHTML = utterances.map((u, index) => `
+      <div class="review-item">
+        <div class="review-time">${fmtTime(u.start_time)} → ${fmtTime(u.end_time)}</div>
+        <div class="review-original">${escapeHtml(u.text || "")}</div>
+        <label class="break-row">
+          <input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} />
+          <span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这句后断开新段落"}</span>
+        </label>
+      </div>
+    `).join("");
+    if (recommended_voice_id) {
+      const option = [...document.getElementById("voiceSelect").options].find(item => item.value === recommended_voice_id);
+      if (option) document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果保持 Auto，后续会自动使用它。`;
+    }
+    document.getElementById("alignmentReview").classList.remove("hidden");
+    document.getElementById("translateReview").classList.add("hidden");
+  }
+
+  document.getElementById("confirmAlignment").addEventListener("click", async () => {
+    const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
+    await fetch(`/api/tasks/${taskId}/alignment`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ break_after: breakAfter }),
+    });
+    document.getElementById("alignmentReview").classList.add("hidden");
+    if (currentTask) currentTask.current_review_step = "";
+    scheduleRefreshTaskState(0);
+  });
+
+  function renderTranslateReview({ segments = [] }) {
+    const list = document.getElementById("segmentList");
+    list.innerHTML = segments.map((segment, index) => `
+      <div class="review-item">
+        <div class="review-time">${fmtTime(segment.start_time)} → ${fmtTime(segment.end_time)}</div>
+        <div class="review-original">原文：${escapeHtml(segment.text || "")}</div>
+        <textarea class="segment-translated" data-index="${index}">${escapeTextarea(segment.translated || "")}</textarea>
+      </div>
+    `).join("");
+    document.getElementById("translateReview").classList.remove("hidden");
+    document.getElementById("alignmentReview").classList.add("hidden");
+  }
+
+  document.getElementById("confirmTranslate").addEventListener("click", async () => {
+    const res = await fetch(`/api/tasks/${taskId}`);
+    currentTask = await res.json();
+    const originalSegments = currentTask.segments || currentTask.script_segments || [];
+    const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => ({
+      ...(originalSegments[index] || {}),
+      translated: textarea.value,
+    }));
+    await fetch(`/api/tasks/${taskId}/segments`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments }),
+    });
+    document.getElementById("translateReview").classList.add("hidden");
+    if (currentTask) currentTask.current_review_step = "";
+    scheduleRefreshTaskState(0);
+  });
+
+  function restoreReviewState() {
+    if (!currentTask) return;
+    if (currentTask.current_review_step === "alignment" && currentTask.steps?.alignment === "waiting") {
+      renderAlignmentReview({
+        utterances: currentTask.utterances || [],
+        scene_cuts: currentTask.scene_cuts || [],
+        break_after: currentTask.alignment?.break_after || [],
+        recommended_voice_id: currentTask.recommended_voice_id || null,
+      });
+      return;
+    }
+    if (currentTask.current_review_step === "translate" && currentTask.steps?.translate === "waiting") {
+      renderTranslateReview({ segments: currentTask.segments || [] });
+      return;
+    }
+    document.getElementById("alignmentReview").classList.add("hidden");
+    document.getElementById("translateReview").classList.add("hidden");
+  }
+
+  function updateStartButtonState() {
+    const startBtn = document.getElementById("startBtn");
+    if (!currentTask) {
+      startBtn.disabled = true;
+      return;
+    }
+    const hasStarted = STEP_ORDER.some(step => (currentTask.steps?.[step] || "pending") !== "pending");
+    const isWaiting = STEP_ORDER.some(step => currentTask.steps?.[step] === "waiting");
+    const isRunning = STEP_ORDER.some(step => currentTask.steps?.[step] === "running");
+    startBtn.disabled = hasStarted || isWaiting || isRunning || currentTask.status === "done";
+  }
+
+  function renderResultPanelFromTask() {
+    if (!currentTask) return;
+    const downloads = {};
+    if (currentTask.result?.hard_video) downloads.hard = `/api/tasks/${taskId}/download/hard`;
+    if (currentTask.result?.soft_video) downloads.soft = `/api/tasks/${taskId}/download/soft`;
+    if (currentTask.srt_path) downloads.srt = `/api/tasks/${taskId}/download/srt`;
+    if (currentTask.exports?.capcut_archive) downloads.capcut = `/api/tasks/${taskId}/download/capcut`;
+    renderDownloads(downloads);
+  }
+
+  function renderDownloads(downloads) {
+    const grid = document.getElementById("downloadGrid");
+    grid.innerHTML = "";
+    [["hard", "硬字幕视频"], ["soft", "软字幕视频"], ["srt", "字幕文件 .srt"], ["capcut", "CapCut 工程包"]].forEach(([key, label]) => {
+      if (!downloads[key]) return;
+      const link = document.createElement("a");
+      link.href = "#";
+      link.className = "download-btn";
+      link.textContent = label;
+      link.addEventListener("click", e => {
+        e.preventDefault();
+        dlFile(downloads[key], label);
+      });
+      grid.appendChild(link);
+    });
+    document.getElementById("resultPanel").classList.toggle("hidden", !grid.children.length);
+  }
+
+  function artifactUrl(name, variantKey = null) {
+    const url = new URL(`/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`, window.location.origin);
+    if (variantKey) url.searchParams.set("variant", variantKey);
+    return url.pathname + url.search;
+  }
+
+  function dlFile(url, filename) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function triggerAction(url, method = "POST") {
+    clearError();
+    const response = await fetch(url, { method });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {}
+    if (!response.ok) {
+      showError(payload.error || "操作失败");
+      return;
+    }
+    scheduleRefreshTaskState(0);
+  }
+
+  function placeholderText(status) {
+    if (status === "running") return "当前步骤正在生成产物，完成后会自动显示在这里。";
+    if (status === "waiting") return "当前步骤结果已生成，等待确认后继续。";
+    if (status === "error") return "这一步执行失败，已生成的预览会尽量保留。";
+    return "等待前序步骤完成后，这里的关键产出会自动出现。";
+  }
+
+  function showError(message) {
+    const el = document.getElementById("errorMsg");
+    el.textContent = `错误：${message}`;
+    el.style.display = "block";
+  }
+
+  function clearError() {
+    const el = document.getElementById("errorMsg");
+    el.textContent = "";
+    el.style.display = "none";
+  }
+
+  function fmtTime(seconds) {
+    if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) return "--";
+    const value = Number(seconds);
+    return `${Math.floor(value / 60)}:${(value % 60).toFixed(1).padStart(4, "0")}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function escapeTextarea(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  function escapeJs(value) {
+    return String(value || "")
+      .replaceAll("\\", "\\\\")
+      .replaceAll("'", "\\'");
+  }
+</script>

@@ -1,11 +1,12 @@
 from pathlib import Path
+import json
 
 from web import store
 from web.app import create_app
 
 
-def test_index_page_contains_alignment_and_voice_controls(logged_in_client):
-    response = logged_in_client.get("/api/tasks/upload-page")
+def test_index_page_contains_alignment_and_voice_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -13,8 +14,8 @@ def test_index_page_contains_alignment_and_voice_controls(logged_in_client):
     assert "alignmentReview" in body
 
 
-def test_index_page_contains_step_preview_container(logged_in_client):
-    response = logged_in_client.get("/api/tasks/upload-page")
+def test_index_page_contains_step_preview_container(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -22,8 +23,8 @@ def test_index_page_contains_step_preview_container(logged_in_client):
     assert "renderStepPreviews" in body
 
 
-def test_index_page_supports_new_localization_preview_types(logged_in_client):
-    response = logged_in_client.get("/api/tasks/upload-page")
+def test_index_page_supports_new_localization_preview_types(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -32,8 +33,8 @@ def test_index_page_supports_new_localization_preview_types(logged_in_client):
     assert "item.type === \"subtitle_chunks\"" in body
 
 
-def test_index_page_supports_variant_compare_layout(logged_in_client):
-    response = logged_in_client.get("/api/tasks/upload-page")
+def test_index_page_supports_variant_compare_layout(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -41,13 +42,85 @@ def test_index_page_supports_variant_compare_layout(logged_in_client):
     assert "renderVariantCompareArtifact" in body
 
 
-def test_index_page_supports_action_preview_items(logged_in_client):
-    response = logged_in_client.get("/api/tasks/upload-page")
+def test_index_page_supports_action_preview_items(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "item.type === \"action\"" in body
     assert "triggerAction(" in body
+
+
+def test_index_page_contains_confirmation_mode_control(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "interactiveReviewToggle" in body
+    assert "全自动" in body
+    assert "手动确认" in body
+
+
+def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-workbench", "video.mp4", "output/task-project-workbench")
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-workbench")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "voiceSelect" in body
+    assert "interactiveReviewToggle" in body
+    assert "renderStepPreviews" in body
+    assert "pipelineCard" in body
+
+
+def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-state", "video.mp4", "output/task-project-state")
+    store.update(
+        "task-project-state",
+        interactive_review=True,
+        current_review_step="alignment",
+        steps={
+            "extract": "done",
+            "asr": "done",
+            "alignment": "waiting",
+            "translate": "pending",
+            "tts": "pending",
+            "subtitle": "pending",
+            "compose": "pending",
+            "export": "pending",
+        },
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get("task-project-state"), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-state")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "task-project-state" in body
+    assert "\"interactive_review\": true" in body.lower()
+    assert "\"current_review_step\": \"alignment\"" in body.lower()
 
 
 def test_task_detail_returns_artifacts_structure(logged_in_client):

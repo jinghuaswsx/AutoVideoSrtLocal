@@ -37,14 +37,48 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
 
     monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
 
-    bus = _silent_bus()
-    runner = runtime.PipelineRunner(bus=bus)
+    runner = runtime.PipelineRunner(bus=_silent_bus())
     runner._step_alignment("task-auto-alignment", "video.mp4", str(tmp_path))
 
     saved = store.get("task-auto-alignment")
     assert saved["_alignment_confirmed"] is True
     assert saved["steps"]["alignment"] == "done"
     assert saved["script_segments"][0]["text"] == "hello world"
+
+
+def test_step_alignment_waits_when_interactive_review_enabled(tmp_path, monkeypatch):
+    task = store.create("task-manual-alignment", "video.mp4", str(tmp_path))
+    task["interactive_review"] = True
+    task["utterances"] = [
+        {"text": "hello", "start_time": 0.0, "end_time": 0.8},
+        {"text": "world", "start_time": 0.8, "end_time": 1.6},
+    ]
+
+    monkeypatch.setattr("pipeline.alignment.detect_scene_cuts", lambda video_path: [])
+    monkeypatch.setattr(
+        "pipeline.alignment.compile_alignment",
+        lambda utterances, scene_cuts=None: {
+            "break_after": [False, True],
+            "script_segments": [
+                {"index": 0, "text": "hello world", "start_time": 0.0, "end_time": 1.6},
+            ],
+        },
+    )
+
+    class FakeVoiceLibrary:
+        def recommend_voice(self, text):
+            return {"id": "adam"}
+
+    monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_alignment("task-manual-alignment", "video.mp4", str(tmp_path))
+
+    saved = store.get("task-manual-alignment")
+    assert saved["steps"]["alignment"] == "waiting"
+    assert saved["_alignment_confirmed"] is False
+    assert saved["current_review_step"] == "alignment"
+    assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "hello world"
 
 
 def test_step_translate_persists_source_text_and_localized_translation(tmp_path, monkeypatch):
@@ -66,14 +100,42 @@ def test_step_translate_persists_source_text_and_localized_translation(tmp_path,
         },
     )
 
-    bus = _silent_bus()
-    runner = runtime.PipelineRunner(bus=bus)
+    runner = runtime.PipelineRunner(bus=_silent_bus())
     runner._step_translate("task-localized")
 
     saved = store.get("task-localized")
     assert saved["steps"]["translate"] == "done"
     assert saved["source_full_text_zh"] == "part one\npart two"
     assert saved["localized_translation"]["full_text"] == "Hook line. Closing line."
+
+
+def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypatch):
+    task = store.create("task-manual-translate", "video.mp4", str(tmp_path))
+    task["interactive_review"] = True
+    task["script_segments"] = [
+        {"index": 0, "text": "hello there", "start_time": 0.0, "end_time": 1.0},
+    ]
+
+    monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "hello there")
+    monkeypatch.setattr(
+        "pipeline.translate.generate_localized_translation",
+        lambda source_full_text_zh, script_segments, variant="normal": {
+            "full_text": "Hello there",
+            "sentences": [
+                {"index": 0, "text": "Hello there", "source_segment_indices": [0]},
+            ],
+        },
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_translate("task-manual-translate")
+
+    saved = store.get("task-manual-translate")
+    assert saved["steps"]["translate"] == "waiting"
+    assert saved["_segments_confirmed"] is False
+    assert saved["current_review_step"] == "translate"
+    assert saved["segments"][0]["translated"] == "Hello there"
+    assert saved["artifacts"]["translate"]["layout"] == "variant_compare"
 
 
 def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
@@ -102,8 +164,7 @@ def test_step_translate_populates_both_variants(tmp_path, monkeypatch):
 
     monkeypatch.setattr("pipeline.translate.generate_localized_translation", fake_generate_localized_translation)
 
-    bus = _silent_bus()
-    runner = runtime.PipelineRunner(bus=bus)
+    runner = runtime.PipelineRunner(bus=_silent_bus())
     runner._step_translate("task-variant-translate")
 
     saved = store.get("task-variant-translate")
@@ -156,8 +217,7 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 10.0)
 
-    bus = _silent_bus()
-    runner = runtime.PipelineRunner(bus=bus)
+    runner = runtime.PipelineRunner(bus=_silent_bus())
     runner._step_tts("task-variant-tts", str(tmp_path))
 
     saved = store.get("task-variant-tts")
@@ -198,12 +258,12 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
 
     messages = []
 
-    def fake_set_step(task_id, step, status, message=""):
-        messages.append((step, status, message))
-        import appcore.task_state as ts
-        ts.set_step(task_id, step, status)
-
-    monkeypatch.setattr(runtime.PipelineRunner, "_set_step", lambda self, tid, step, status, msg="": messages.append((step, status, msg)) or __import__("appcore.task_state", fromlist=["set_step"]).set_step(tid, step, status))
+    monkeypatch.setattr(
+        runtime.PipelineRunner,
+        "_set_step",
+        lambda self, tid, step, status, msg="": messages.append((step, status, msg))
+        or __import__("appcore.task_state", fromlist=["set_step"]).set_step(tid, step, status),
+    )
     monkeypatch.setattr(
         "pipeline.asr.transcribe_local_audio",
         lambda path, prefix="": [{"text": "hello there", "start_time": 0.0, "end_time": 1.0}],
@@ -223,8 +283,8 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "pipeline.compose.compose_video",
         lambda **kwargs: {
-            "soft_video": str(tmp_path / f"soft.{kwargs.get('variant','normal')}.mp4"),
-            "hard_video": str(tmp_path / f"hard.{kwargs.get('variant','normal')}.mp4"),
+            "soft_video": str(tmp_path / f"soft.{kwargs.get('variant', 'normal')}.mp4"),
+            "hard_video": str(tmp_path / f"hard.{kwargs.get('variant', 'normal')}.mp4"),
         },
     )
 
@@ -240,8 +300,7 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
 
     monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
 
-    bus = _silent_bus()
-    runner = runtime.PipelineRunner(bus=bus)
+    runner = runtime.PipelineRunner(bus=_silent_bus())
     runner._step_subtitle("task-tail-messages", str(tmp_path))
     runner._step_compose("task-tail-messages", "video.mp4", str(tmp_path))
     runner._step_export("task-tail-messages", "video.mp4", str(tmp_path))
@@ -254,7 +313,7 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     assert ("export", "done", "CapCut 项目已导出") in messages
 
 
-def test_start_route_defaults_interactive_review_to_false(logged_in_client, monkeypatch):
+def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
     store.create("task-start-auto", "video.mp4", "output/task-start-auto")
     captured = {}
 
@@ -263,7 +322,7 @@ def test_start_route_defaults_interactive_review_to_false(logged_in_client, monk
         lambda task_id, user_id=None: captured.setdefault("task_id", task_id),
     )
 
-    response = logged_in_client.post("/api/tasks/task-start-auto/start", json={})
+    response = authed_client_no_db.post("/api/tasks/task-start-auto/start", json={})
 
     assert response.status_code == 200
     assert captured["task_id"] == "task-start-auto"

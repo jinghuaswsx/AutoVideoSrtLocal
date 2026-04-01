@@ -27,3 +27,11 @@ def start(task_id: str, user_id: int | None = None):
     runner = PipelineRunner(bus=bus)
     thread = threading.Thread(target=runner.start, args=(task_id,), daemon=True)
     thread.start()
+
+
+def resume(task_id: str, start_step: str):
+    bus = EventBus()
+    bus.subscribe(_make_socketio_handler(task_id))
+    runner = PipelineRunner(bus=bus)
+    thread = threading.Thread(target=runner.resume, args=(task_id, start_step), daemon=True)
+    thread.start()

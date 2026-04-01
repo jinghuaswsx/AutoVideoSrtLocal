@@ -1,0 +1,85 @@
+{% if show_back_link %}
+<a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
+{% endif %}
+
+{% if allow_upload %}
+<div class="upload-zone" id="uploadZone">
+  <input type="file" id="fileInput" accept="video/*" />
+  <div class="icon">🎞</div>
+  <strong>点击或拖拽视频文件</strong>
+  <p>支持 MP4 / MOV / AVI，最大 500MB</p>
+</div>
+{% endif %}
+
+<div class="card task-hero hidden" id="taskHero">
+  <div>
+    <div class="hero-icon">✓</div>
+    <div class="hero-title" id="taskHeroTitle"></div>
+    <div class="hero-status" id="taskHeroStatus"></div>
+  </div>
+</div>
+
+<div class="card hidden" id="configPanel">
+  <h2>生成配置</h2>
+  <div class="config-row">
+    <div class="config-item">
+      <label for="voiceSelect">音色</label>
+      <select id="voiceSelect"><option value="auto">Auto（按内容推荐）</option></select>
+      <div class="hint" id="voiceHint">识别完成后会推荐音色，保持 Auto 会自动应用。</div>
+    </div>
+    <div class="config-item">
+      <label for="subtitlePosition">字幕位置</label>
+      <select id="subtitlePosition">
+        <option value="bottom" selected>底部（默认）</option>
+        <option value="middle">中部</option>
+        <option value="top">顶部</option>
+      </select>
+      <div class="hint">硬字幕与 CapCut 导出都会使用这里的字幕位置。</div>
+    </div>
+    <div class="config-item">
+      <label for="interactiveReviewToggle">确认模式</label>
+      <select id="interactiveReviewToggle">
+        <option value="false" selected>全自动</option>
+        <option value="true">手动确认</option>
+      </select>
+      <div class="mode-note">手动确认时，分段和翻译会等待你点击下一步。</div>
+    </div>
+  </div>
+  <div class="review-actions">
+    <button class="btn btn-primary" id="startBtn">开始处理</button>
+  </div>
+</div>
+
+<div class="card hidden" id="pipelineCard">
+  <h2>处理进度</h2>
+  <div class="steps">
+    <div class="step" id="step-extract"><div class="step-main"><div class="step-icon" id="icon-extract">1</div><div><div class="step-name">音频提取</div><div class="step-msg" id="msg-extract">等待中...</div></div></div><div class="step-preview" id="preview-extract"></div></div>
+    <div class="step" id="step-asr"><div class="step-main"><div class="step-icon" id="icon-asr">2</div><div><div class="step-name">语音识别</div><div class="step-msg" id="msg-asr">等待中...</div></div></div><div class="step-preview" id="preview-asr"></div></div>
+    <div class="step" id="step-alignment"><div class="step-main"><div class="step-icon" id="icon-alignment">3</div><div><div class="step-name">分段确认</div><div class="step-msg" id="msg-alignment">等待中...</div></div></div><div class="step-preview" id="preview-alignment"></div></div>
+    <div class="step" id="step-translate"><div class="step-main"><div class="step-icon" id="icon-translate">4</div><div><div class="step-name">翻译本土化</div><div class="step-msg" id="msg-translate">等待中...</div></div></div><div class="step-preview" id="preview-translate"></div></div>
+    <div class="step" id="step-tts"><div class="step-main"><div class="step-icon" id="icon-tts">5</div><div><div class="step-name">语音生成</div><div class="step-msg" id="msg-tts">等待中...</div></div></div><div class="step-preview" id="preview-tts"></div></div>
+    <div class="step" id="step-subtitle"><div class="step-main"><div class="step-icon" id="icon-subtitle">6</div><div><div class="step-name">字幕生成</div><div class="step-msg" id="msg-subtitle">等待中...</div></div></div><div class="step-preview" id="preview-subtitle"></div></div>
+    <div class="step" id="step-compose"><div class="step-main"><div class="step-icon" id="icon-compose">7</div><div><div class="step-name">视频合成</div><div class="step-msg" id="msg-compose">等待中...</div></div></div><div class="step-preview" id="preview-compose"></div></div>
+    <div class="step" id="step-export"><div class="step-main"><div class="step-icon" id="icon-export">8</div><div><div class="step-name">CapCut 导出</div><div class="step-msg" id="msg-export">等待中...</div></div></div><div class="step-preview" id="preview-export"></div></div>
+  </div>
+</div>
+
+<div class="card hidden" id="alignmentReview">
+  <h3>分段确认</h3>
+  <div class="scene-cut-list" id="sceneCutList"></div>
+  <div class="review-list" id="alignmentList"></div>
+  <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button></div>
+</div>
+
+<div class="card hidden" id="translateReview">
+  <h3>翻译确认</h3>
+  <div class="review-list" id="segmentList"></div>
+  <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmTranslate">确认翻译并继续</button></div>
+</div>
+
+<div class="error-msg" id="errorMsg"></div>
+
+<div class="card hidden" id="resultPanel">
+  <h3>生成结果</h3>
+  <div class="result-grid" id="downloadGrid"></div>
+</div>

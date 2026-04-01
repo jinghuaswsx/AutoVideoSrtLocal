@@ -33,4 +33,9 @@ def detail(task_id: str):
             state = json.loads(row["state_json"])
         except Exception:
             pass
-    return render_template("project_detail.html", project=row, state=state)
+    return render_template(
+        "project_detail.html",
+        project=row,
+        state=state,
+        initial_task_json=json.dumps(state, ensure_ascii=False),
+    )
