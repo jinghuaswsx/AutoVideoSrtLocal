@@ -21,7 +21,6 @@ def test_create_initializes_expected_keys():
     assert task["steps"]["asr"] == "pending"
     assert "variants" in task
     assert "normal" in task["variants"]
-    assert "hook_cta" in task["variants"]
     assert task["source_tos_key"] == ""
     assert task["source_object_info"] == {}
     assert task["tos_uploads"] == {}

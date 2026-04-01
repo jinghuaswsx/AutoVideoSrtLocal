@@ -11,7 +11,7 @@ def test_index_page_contains_alignment_and_voice_controls(authed_client_no_db):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "voiceSelect" in body
+    assert "voiceList" in body
     assert "alignmentReview" in body
 
 
@@ -110,7 +110,7 @@ def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "voiceSelect" in body
+    assert "voiceList" in body
     assert "interactiveReviewToggle" in body
     assert "renderStepPreviews" in body
     assert "pipelineCard" in body
@@ -185,10 +185,10 @@ def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, m
     assert (1, "jianying", "", {"project_root": custom_root}) in captured
 
 
-def test_task_detail_returns_artifacts_structure(logged_in_client):
-    store.create("task-preview", "video.mp4", "output/task-preview")
+def test_task_detail_returns_artifacts_structure(authed_client_no_db):
+    store.create("task-preview", "video.mp4", "output/task-preview", user_id=1)
 
-    response = logged_in_client.get("/api/tasks/task-preview")
+    response = authed_client_no_db.get("/api/tasks/task-preview")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -196,68 +196,68 @@ def test_task_detail_returns_artifacts_structure(logged_in_client):
     assert payload["artifacts"] == {}
 
 
-def test_store_create_initializes_two_variants():
+def test_store_create_initializes_single_variant():
     task = store.create("task-variants", "video.mp4", "output/task-variants")
 
-    assert set(task["variants"].keys()) == {"normal", "hook_cta"}
+    assert set(task["variants"].keys()) == {"normal"}
     assert task["variants"]["normal"]["label"] == "普通版"
-    assert task["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
 
 
-def test_artifact_route_serves_whitelisted_preview_file(tmp_path, logged_in_client):
+def test_artifact_route_serves_whitelisted_preview_file(tmp_path, authed_client_no_db):
     audio_path = tmp_path / "preview.mp3"
     audio_path.write_bytes(b"audio-preview")
-    store.create("task-file", "video.mp4", str(tmp_path))
+    store.create("task-file", "video.mp4", str(tmp_path), user_id=1)
     store.update("task-file", preview_files={"audio_extract": str(audio_path)})
 
-    response = logged_in_client.get("/api/tasks/task-file/artifact/audio_extract")
+    response = authed_client_no_db.get("/api/tasks/task-file/artifact/audio_extract")
 
     assert response.status_code == 200
     assert response.data == b"audio-preview"
 
 
-def test_artifact_route_serves_variant_preview_file(tmp_path, logged_in_client):
+def test_artifact_route_serves_variant_preview_file(tmp_path, authed_client_no_db):
     video_path = tmp_path / "preview.mp4"
     video_path.write_bytes(b"video-preview")
-    store.create("task-variant-file", "video.mp4", str(tmp_path))
-    store.update_variant("task-variant-file", "hook_cta", preview_files={"soft_video": str(video_path)})
+    store.create("task-variant-file", "video.mp4", str(tmp_path), user_id=1)
+    store.update_variant("task-variant-file", "normal", preview_files={"soft_video": str(video_path)})
 
-    response = logged_in_client.get("/api/tasks/task-variant-file/artifact/soft_video?variant=hook_cta")
+    response = authed_client_no_db.get("/api/tasks/task-variant-file/artifact/soft_video?variant=normal")
 
     assert response.status_code == 200
     assert response.data == b"video-preview"
 
 
-def test_artifact_route_rejects_unknown_name(tmp_path, logged_in_client):
-    store.create("task-bad", "video.mp4", str(tmp_path))
+def test_artifact_route_rejects_unknown_name(tmp_path, authed_client_no_db):
+    store.create("task-bad", "video.mp4", str(tmp_path), user_id=1)
 
-    response = logged_in_client.get("/api/tasks/task-bad/artifact/not_allowed")
+    response = authed_client_no_db.get("/api/tasks/task-bad/artifact/not_allowed")
 
     assert response.status_code == 404
 
 
-def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_path, logged_in_client, monkeypatch):
+def test_artifact_route_falls_back_to_output_dir_when_task_state_is_missing(tmp_path, authed_client_no_db, monkeypatch):
     task_id = "task-restored"
     task_dir = tmp_path / task_id
     task_dir.mkdir()
     preview_path = task_dir / f"{task_id}_soft.mp4"
     preview_path.write_bytes(b"soft-video-preview")
+    store.create(task_id, "video.mp4", str(task_dir), user_id=1)
     monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path))
 
-    response = logged_in_client.get(f"/api/tasks/{task_id}/artifact/soft_video")
+    response = authed_client_no_db.get(f"/api/tasks/{task_id}/artifact/soft_video")
 
     assert response.status_code == 200
     assert response.data == b"soft-video-preview"
 
 
-def test_alignment_route_compiles_script_segments(logged_in_client):
-    task = store.create("task-1", "video.mp4", "output/task-1")
+def test_alignment_route_compiles_script_segments(authed_client_no_db):
+    task = store.create("task-1", "video.mp4", "output/task-1", user_id=1)
     task["utterances"] = [
         {"text": "浣犲ソ", "start_time": 0.0, "end_time": 0.8, "words": []},
         {"text": "涓栫晫", "start_time": 0.8, "end_time": 1.6, "words": []},
     ]
 
-    response = logged_in_client.put(
+    response = authed_client_no_db.put(
         "/api/tasks/task-1/alignment",
         json={"break_after": [False, True]},
     )
@@ -269,15 +269,15 @@ def test_alignment_route_compiles_script_segments(logged_in_client):
     assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "浣犲ソ涓栫晫"
 
 
-def test_segments_route_updates_translate_artifact(logged_in_client):
-    store.create("task-translate", "video.mp4", "output/task-translate")
+def test_segments_route_updates_translate_artifact(authed_client_no_db):
+    store.create("task-translate", "video.mp4", "output/task-translate", user_id=1)
     store.update(
         "task-translate",
         script_segments=[{"text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
         segments=[{"text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
     )
 
-    response = logged_in_client.put(
+    response = authed_client_no_db.put(
         "/api/tasks/task-translate/segments",
         json={"segments": [{"text": "你好世界", "translated": "Hello there", "start_time": 0.0, "end_time": 1.6}]},
     )
@@ -285,11 +285,13 @@ def test_segments_route_updates_translate_artifact(logged_in_client):
     assert response.status_code == 200
     saved = store.get("task-translate")
     assert saved["_segments_confirmed"] is True
-    assert saved["artifacts"]["translate"]["items"][0]["segments"][0]["translated"] == "Hello there"
+    normal_translate = saved["variants"]["normal"]["artifacts"]["translate"]
+    # The translate artifact now uses text_item + sentences layout, not segments
+    assert normal_translate["items"][1]["content"] == "Hello there"  # "整段本土化英文" text_item
 
 
-def test_segments_route_updates_localized_translation_for_future_tts(logged_in_client):
-    store.create("task-translate-localized", "video.mp4", "output/task-translate-localized")
+def test_segments_route_updates_localized_translation_for_future_tts(authed_client_no_db):
+    store.create("task-translate-localized", "video.mp4", "output/task-translate-localized", user_id=1)
     store.update(
         "task-translate-localized",
         source_full_text_zh="你好世界",
@@ -297,7 +299,7 @@ def test_segments_route_updates_localized_translation_for_future_tts(logged_in_c
         segments=[{"index": 0, "text": "你好世界", "translated": "Hello world", "start_time": 0.0, "end_time": 1.6}],
     )
 
-    response = logged_in_client.put(
+    response = authed_client_no_db.put(
         "/api/tasks/task-translate-localized/segments",
         json={"segments": [{"index": 0, "text": "你好世界", "translated": "Hello there", "start_time": 0.0, "end_time": 1.6}]},
     )
@@ -309,15 +311,15 @@ def test_segments_route_updates_localized_translation_for_future_tts(logged_in_c
     assert saved["localized_translation"]["sentences"][0]["source_segment_indices"] == [0]
 
 
-def test_task_payload_exposes_tts_script_and_corrected_subtitle(logged_in_client):
-    store.create("task-payload", "video.mp4", "output/task-payload")
+def test_task_payload_exposes_tts_script_and_corrected_subtitle(authed_client_no_db):
+    store.create("task-payload", "video.mp4", "output/task-payload", user_id=1)
     store.update(
         "task-payload",
         tts_script={"full_text": "Say it smooth.", "blocks": [], "subtitle_chunks": []},
         corrected_subtitle={"chunks": [], "srt_content": "1\n00:00:00,000 --> 00:00:01,000\nSay it smooth.\n"},
     )
 
-    response = logged_in_client.get("/api/tasks/task-payload")
+    response = authed_client_no_db.get("/api/tasks/task-payload")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -325,12 +327,44 @@ def test_task_payload_exposes_tts_script_and_corrected_subtitle(logged_in_client
     assert "Say it smooth." in payload["corrected_subtitle"]["srt_content"]
 
 
-def test_voice_routes_support_crud(tmp_path, monkeypatch):
-    monkeypatch.setenv("VOICES_FILE", str(tmp_path / "voices.json"))
-    app = create_app()
-    client = app.test_client()
+def test_voice_routes_support_crud(authed_client_no_db, monkeypatch):
+    _voices: dict[int, dict] = {}
+    _next_id = [1]
 
-    created = client.post(
+    class FakeVoiceLibrary:
+        def ensure_defaults(self, user_id):
+            pass
+
+        def list_voices(self, user_id):
+            return [v for v in _voices.values() if v.get("user_id") == user_id]
+
+        def create_voice(self, user_id, body):
+            vid = _next_id[0]
+            _next_id[0] += 1
+            voice = {"id": vid, "user_id": user_id, **body}
+            _voices[vid] = voice
+            return voice
+
+        def get_voice(self, voice_id, user_id):
+            v = _voices.get(voice_id)
+            return v if v and v.get("user_id") == user_id else None
+
+        def update_voice(self, voice_id, user_id, body):
+            v = _voices[voice_id]
+            v.update(body)
+            return v
+
+        def delete_voice(self, voice_id, user_id):
+            _voices.pop(voice_id, None)
+
+    monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
+    monkeypatch.setattr("web.routes.voice.get_voice_library", lambda: FakeVoiceLibrary())
+
+    # Use a single fake instance for consistent state
+    fake_lib = FakeVoiceLibrary()
+    monkeypatch.setattr("web.routes.voice.get_voice_library", lambda: fake_lib)
+
+    created = authed_client_no_db.post(
         "/api/voices",
         json={
             "name": "Taylor",
@@ -343,37 +377,38 @@ def test_voice_routes_support_crud(tmp_path, monkeypatch):
     assert created.status_code == 201
     voice_id = created.get_json()["voice"]["id"]
 
-    updated = client.put(
+    updated = authed_client_no_db.put(
         f"/api/voices/{voice_id}",
         json={"description": "Warm and updated"},
     )
     assert updated.status_code == 200
     assert updated.get_json()["voice"]["description"] == "Warm and updated"
 
-    listed = client.get("/api/voices")
+    listed = authed_client_no_db.get("/api/voices")
     assert listed.status_code == 200
     assert listed.get_json()["voices"][0]["id"] == voice_id
 
-    deleted = client.delete(f"/api/voices/{voice_id}")
+    deleted = authed_client_no_db.delete(f"/api/voices/{voice_id}")
     assert deleted.status_code == 200
 
 
-def test_download_route_can_return_hook_cta_capcut_archive(tmp_path, authed_client_no_db):
-    archive_path = tmp_path / "capcut_hook_cta.zip"
+def test_download_route_can_return_normal_capcut_archive(tmp_path, authed_client_no_db, monkeypatch):
+    archive_path = tmp_path / "capcut_normal.zip"
     archive_path.write_bytes(b"capcut-archive")
     store.create("task-download-variant", "video.mp4", str(tmp_path), user_id=1)
     store.update("task-download-variant", display_name="example")
     store.update_variant(
         "task-download-variant",
-        "hook_cta",
+        "normal",
         exports={"capcut_archive": str(archive_path)},
     )
+    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
 
-    response = authed_client_no_db.get("/api/tasks/task-download-variant/download/capcut?variant=hook_cta")
+    response = authed_client_no_db.get("/api/tasks/task-download-variant/download/capcut?variant=normal")
 
     assert response.status_code == 200
     assert response.data == b"capcut-archive"
-    assert 'filename=example_capcut_hook_cta.zip' in response.headers["Content-Disposition"]
+    assert 'filename=example_capcut_normal.zip' in response.headers["Content-Disposition"]
 
 
 def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_client_no_db, monkeypatch):
@@ -401,17 +436,17 @@ def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_cl
 
 
 def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
-    project_dir = tmp_path / "capcut_hook_cta"
+    project_dir = tmp_path / "capcut_normal"
     resources_dir = project_dir / "Resources" / "auto_generated"
     resources_dir.mkdir(parents=True)
-    (resources_dir / "tts_full.hook_cta.mp3").write_bytes(b"audio")
+    (resources_dir / "tts_full.normal.mp3").write_bytes(b"audio")
     (project_dir / "draft_content.json").write_text(
         json.dumps(
             {
                 "materials": {
                     "audios": [
                         {
-                            "path": str(resources_dir / "tts_full.hook_cta.mp3"),
+                            "path": str(resources_dir / "tts_full.normal.mp3"),
                         }
                     ]
                 }
@@ -430,13 +465,13 @@ def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path,
         json.dumps({"timeline_manifest": {"segments": [{"tts_path": "/opt/autovideosrt/output/seg_0001.mp3"}]}}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    archive_path = tmp_path / "capcut_hook_cta.zip"
+    archive_path = tmp_path / "capcut_normal.zip"
     archive_path.write_bytes(b"stale-archive")
 
     store.create("task-download-rewrite", "video.mp4", str(tmp_path), user_id=1)
     store.update_variant(
         "task-download-rewrite",
-        "hook_cta",
+        "normal",
         exports={
             "capcut_project": str(project_dir),
             "capcut_archive": str(archive_path),
@@ -445,15 +480,16 @@ def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path,
     )
 
     monkeypatch.setattr("web.routes.task.resolve_jianying_project_root", lambda user_id: DEFAULT_JIANYING_PROJECT_ROOT)
+    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
 
-    response = authed_client_no_db.get("/api/tasks/task-download-rewrite/download/capcut?variant=hook_cta")
+    response = authed_client_no_db.get("/api/tasks/task-download-rewrite/download/capcut?variant=normal")
 
     assert response.status_code == 200
     draft_content = json.loads((project_dir / "draft_content.json").read_text(encoding="utf-8"))
     assert draft_content["materials"]["audios"][0]["path"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["timeline_manifest"]["segments"][0]["tts_path"] == ""
-    assert store.get("task-download-rewrite")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
+    assert store.get("task-download-rewrite")["variants"]["normal"]["exports"]["jianying_project_dir"].startswith(DEFAULT_JIANYING_PROJECT_ROOT)
 
 
 def test_delete_route_cleans_source_and_artifact_tos_objects(tmp_path, authed_client_no_db, monkeypatch):
@@ -577,6 +613,7 @@ def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, a
 
     monkeypatch.setattr("web.routes.task.db_query_one", fake_db_query_one)
     monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
 
     rename_response = authed_client_no_db.patch(
         "/api/tasks/task-rename-download",
