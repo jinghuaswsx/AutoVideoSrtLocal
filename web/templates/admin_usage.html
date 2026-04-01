@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+{% block title %}用量统计 — AutoVideoSrt{% endblock %}
+{% block page_title %}用量统计{% endblock %}
+{% block extra_style %}
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px; border-bottom: 1.5px solid #e5e7eb; font-weight: 600; }
+td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #374151; }
+tr:hover td { background: #f9fafb; }
+.filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+.filter-bar input, .filter-bar select { background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 10px; color: #111827; padding: 8px 12px; font-size: 13px; font-family: inherit; outline: none; }
+.filter-bar input:focus, .filter-bar select:focus { border-color: #7c6fe0; background: #fff; }
+.table-wrap { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; overflow: hidden; }
+.empty-row td { text-align: center; color: #9ca3af; padding: 40px; }
+{% endblock %}
+{% block content %}
+<form method="get" class="filter-bar">
+  <select name="service">
+    <option value="">全部服务</option>
+    <option value="doubao_asr" {% if service=='doubao_asr' %}selected{% endif %}>豆包 ASR</option>
+    <option value="elevenlabs" {% if service=='elevenlabs' %}selected{% endif %}>ElevenLabs</option>
+    <option value="openrouter" {% if service=='openrouter' %}selected{% endif %}>OpenRouter</option>
+  </select>
+  <input type="date" name="from" value="{{ date_from }}">
+  <input type="date" name="to" value="{{ date_to }}">
+  <button type="submit" class="btn btn-primary btn-sm">筛选</button>
+</form>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>日期</th><th>用户</th><th>服务</th><th>调用次数</th>
+        <th>输入 Tokens</th><th>输出 Tokens</th><th>音频时长(s)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.day }}</td>
+        <td>{{ r.username }}</td>
+        <td>{{ r.service }}</td>
+        <td>{{ r.calls }}</td>
+        <td>{{ r.input_tokens or '-' }}</td>
+        <td>{{ r.output_tokens or '-' }}</td>
+        <td>{{ '%.1f'|format(r.audio_seconds) if r.audio_seconds else '-' }}</td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr class="empty-row"><td colspan="7">暂无数据</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

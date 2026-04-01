@@ -24,6 +24,7 @@ from web.routes.auth import bp as auth_bp
 from web.routes.projects import bp as projects_bp
 from web.routes.settings import bp as settings_bp
 from web.routes.admin import bp as admin_bp
+from web.routes.admin_usage import bp as admin_usage_bp
 
 
 def create_app() -> Flask:
@@ -40,6 +41,7 @@ def create_app() -> Flask:
     app.register_blueprint(projects_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_usage_bp)
     app.register_blueprint(task_bp)
     app.register_blueprint(voice_bp)
 

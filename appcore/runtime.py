@@ -158,6 +158,8 @@ class PipelineRunner:
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
         self._set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
+        from appcore.usage_log import record as _log_usage
+        _log_usage(self.user_id, task_id, "doubao_asr", success=True)
         self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
 
     def _step_alignment(self, task_id: str, video_path: str, task_dir: str) -> None:
@@ -255,6 +257,10 @@ class PipelineRunner:
         _save_json(task_dir, "source_full_text_zh.json", {"full_text": source_full_text_zh})
         _save_json(task_dir, "localized_translation.json", normal_lt)
 
+        from appcore.usage_log import record as _log_usage
+        from pipeline.translate import _model_name as _get_model_name
+        _log_usage(self.user_id, task_id, "openrouter", model_name=_get_model_name(), success=True)
+
         if requires_confirmation:
             task_state.set_current_review_step(task_id, "translate")
             self._set_step(task_id, "translate", "waiting", "翻译结果已生成，等待人工确认")
@@ -341,6 +347,8 @@ class PipelineRunner:
         task_state.set_artifact(task_id, "tts", build_variant_compare_artifact("语音生成", compare_variants))
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": normal_variant.get("tts_script", {}), "variants": variants})
         self._set_step(task_id, "tts", "done", "英文配音生成完成")
+        from appcore.usage_log import record as _log_usage
+        _log_usage(self.user_id, task_id, "elevenlabs", success=True)
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
