@@ -79,7 +79,7 @@ def get_server_endpoint() -> str:
 
 def generate_signed_download_url(object_key: str, expires: int | None = None) -> str:
     signed = get_public_client().pre_signed_url(
-        "GET",
+        tos.HttpMethodType.Http_Method_Get,
         config.TOS_BUCKET,
         object_key,
         expires=expires or config.TOS_SIGNED_URL_EXPIRES,
@@ -89,7 +89,7 @@ def generate_signed_download_url(object_key: str, expires: int | None = None) ->
 
 def generate_signed_upload_url(object_key: str, expires: int | None = None) -> str:
     signed = get_public_client().pre_signed_url(
-        "PUT",
+        tos.HttpMethodType.Http_Method_Put,
         config.TOS_BUCKET,
         object_key,
         expires=expires or config.TOS_SIGNED_URL_EXPIRES,
