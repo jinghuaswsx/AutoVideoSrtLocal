@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from datetime import datetime
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
+from appcore import tos_clients
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -41,30 +43,32 @@ from web.preview_artifacts import (
 def _upload_artifacts_to_tos(task: dict, task_id: str) -> None:
     """Upload final video/srt artifacts to TOS. Errors are silently ignored."""
     try:
-        import tos as tos_sdk
-        import config
-        if not config.TOS_ACCESS_KEY or not config.TOS_SECRET_KEY:
+        if not tos_clients.is_tos_configured():
             return
-        client = tos_sdk.TosClientV2(
-            ak=config.TOS_ACCESS_KEY, sk=config.TOS_SECRET_KEY,
-            endpoint=config.TOS_ENDPOINT, region=config.TOS_REGION,
-        )
         user_id = task.get("_user_id", "anon")
-        tos_uploads = {}
+        tos_uploads = dict(task.get("tos_uploads") or {})
+        uploaded_at = datetime.now().isoformat(timespec="seconds")
 
         for variant, variant_state in (task.get("variants") or {}).items():
             result = variant_state.get("result", {})
-            for key in ("soft_video", "hard_video"):
-                path = result.get(key)
+            export_state = variant_state.get("exports", {})
+            artifact_paths = {
+                "soft_video": result.get("soft_video"),
+                "hard_video": result.get("hard_video"),
+                "srt": variant_state.get("srt_path"),
+                "capcut_archive": export_state.get("capcut_archive"),
+            }
+            for artifact_kind, path in artifact_paths.items():
                 if path and os.path.exists(path):
-                    tos_key = f"{user_id}/{task_id}/{variant}/{os.path.basename(path)}"
-                    client.put_object_from_file(config.TOS_BUCKET, tos_key, path)
-                    tos_uploads[tos_key] = key
-            srt_path = variant_state.get("srt_path")
-            if srt_path and os.path.exists(srt_path):
-                tos_key = f"{user_id}/{task_id}/{variant}/{os.path.basename(srt_path)}"
-                client.put_object_from_file(config.TOS_BUCKET, tos_key, srt_path)
-                tos_uploads[tos_key] = "srt"
+                    tos_key = tos_clients.build_artifact_object_key(user_id, task_id, variant, os.path.basename(path))
+                    tos_clients.upload_file(path, tos_key)
+                    tos_uploads[f"{variant}:{artifact_kind}"] = {
+                        "tos_key": tos_key,
+                        "artifact_kind": artifact_kind,
+                        "variant": variant,
+                        "file_size": os.path.getsize(path),
+                        "uploaded_at": uploaded_at,
+                    }
 
         if tos_uploads:
             import appcore.task_state as _ts

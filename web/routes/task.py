@@ -7,11 +7,13 @@
 import os
 import subprocess
 import uuid
+from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, send_file, render_template, abort
+from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
+from appcore import cleanup, tos_clients
 from appcore.api_keys import resolve_jianying_project_root
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import (
@@ -142,11 +144,81 @@ def _artifact_candidates(task_id: str, name: str, task: dict | None = None, vari
     return candidates
 
 
+def _resolved_variant_key(variant: str | None) -> str:
+    return variant or "normal"
+
+
+def _artifact_kind_for_download(file_type: str) -> str | None:
+    return {
+        "soft": "soft_video",
+        "hard": "hard_video",
+        "srt": "srt",
+        "capcut": "capcut_archive",
+    }.get(file_type)
+
+
+def _artifact_upload_slot(artifact_kind: str, variant: str | None = None) -> str:
+    return f"{_resolved_variant_key(variant)}:{artifact_kind}"
+
+
+def _get_tos_upload_record(task: dict, artifact_kind: str, variant: str | None = None) -> dict | None:
+    payload = (task.get("tos_uploads") or {}).get(_artifact_upload_slot(artifact_kind, variant))
+    if isinstance(payload, dict) and payload.get("tos_key"):
+        return payload
+    return None
+
+
+def _upload_capcut_archive_for_current_user(task_id: str, task: dict, variant: str | None, archive_path: str) -> dict | None:
+    if not archive_path or not os.path.exists(archive_path) or not tos_clients.is_tos_configured():
+        return None
+
+    resolved_variant = _resolved_variant_key(variant)
+    source_name = task.get("display_name") or task.get("original_filename") or task_id
+    download_name = build_capcut_archive_name(source_name, variant=variant)
+    tos_key = tos_clients.build_artifact_object_key(current_user.id, task_id, resolved_variant, download_name)
+    slot = _artifact_upload_slot("capcut_archive", variant)
+    uploads = dict(task.get("tos_uploads") or {})
+    previous = uploads.get(slot)
+
+    if isinstance(previous, dict):
+        previous_key = previous.get("tos_key")
+        if previous_key and previous_key != tos_key:
+            try:
+                tos_clients.delete_object(previous_key)
+            except Exception:
+                pass
+
+    tos_clients.upload_file(archive_path, tos_key)
+    payload = {
+        "tos_key": tos_key,
+        "artifact_kind": "capcut_archive",
+        "variant": resolved_variant,
+        "file_size": os.path.getsize(archive_path),
+        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        "jianying_project_root": resolve_jianying_project_root(current_user.id),
+    }
+    uploads[slot] = payload
+    store.update(task_id, tos_uploads=uploads)
+    return payload
+
+
 def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> str | None:
     for path in _artifact_candidates(task_id, name, task, variant=variant):
         if path and os.path.exists(path):
             return os.path.abspath(path)
     return None
+
+
+def _ensure_local_source_video(task_id: str, task: dict) -> None:
+    source_tos_key = (task.get("source_tos_key") or "").strip()
+    video_path = (task.get("video_path") or "").strip()
+    if not source_tos_key or not video_path or os.path.exists(video_path):
+        return
+
+    tos_clients.download_file(source_tos_key, video_path)
+    thumb = _extract_thumbnail(video_path, task.get("task_dir") or os.path.dirname(video_path))
+    if thumb:
+        db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
 
 
 @bp.route("", methods=["POST"])
@@ -237,6 +309,8 @@ def start(task_id):
         subtitle_position=body.get("subtitle_position", "bottom"),
         interactive_review=_parse_bool(body.get("interactive_review", False)),
     )
+    task = store.get(task_id) or task
+    _ensure_local_source_video(task_id, task)
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.start(task_id, user_id=user_id)
     return jsonify({"status": "started"})
@@ -313,6 +387,7 @@ def download(task_id, file_type):
         "capcut": exports.get("capcut_archive"),
     }
     path = path_map.get(file_type)
+    artifact_kind = _artifact_kind_for_download(file_type)
     if file_type == "capcut" and path:
         project_dir = exports.get("capcut_project")
         if project_dir and os.path.isdir(project_dir):
@@ -329,6 +404,21 @@ def download(task_id, file_type):
                 store.update_variant(task_id, variant, exports=updated_exports)
             else:
                 store.update(task_id, exports=updated_exports)
+        try:
+            upload_payload = _upload_capcut_archive_for_current_user(task_id, task, variant, path)
+        except Exception:
+            upload_payload = None
+        if upload_payload:
+            try:
+                return redirect(tos_clients.generate_signed_download_url(upload_payload["tos_key"]))
+            except Exception:
+                pass
+    uploaded_artifact = _get_tos_upload_record(task, artifact_kind, variant) if artifact_kind else None
+    if uploaded_artifact:
+        try:
+            return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
+        except Exception:
+            pass
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
 
@@ -396,16 +486,25 @@ def rename_task(task_id):
 def delete_task(task_id):
     """软删除任务（设置 deleted_at）"""
     row = db_query_one(
-        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
         (task_id, current_user.id),
     )
     if not row:
         return jsonify({"error": "Task not found"}), 404
 
-    from datetime import datetime
+    task = store.get(task_id) or {}
+    cleanup_payload = dict(task)
+    cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
+    cleanup_payload["state_json"] = row.get("state_json") or ""
+    cleanup_payload["tos_keys"] = cleanup.collect_task_tos_keys(cleanup_payload)
+    try:
+        cleanup.delete_task_storage(cleanup_payload)
+    except Exception:
+        pass
+
     db_execute(
         "UPDATE projects SET deleted_at=%s WHERE id=%s",
-        (datetime.utcnow(), task_id),
+        (datetime.now(timezone.utc), task_id),
     )
     store.update(task_id, status="deleted")
     return jsonify({"status": "ok"})
@@ -444,6 +543,8 @@ def resume_from_step(task_id):
             store.set_step_message(task_id, s, "等待中...")
 
     store.update(task_id, status="running", current_review_step="")
+    task = store.get(task_id) or task
+    _ensure_local_source_video(task_id, task)
 
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.resume(task_id, start_step, user_id=user_id)
