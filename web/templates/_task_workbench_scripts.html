@@ -35,20 +35,137 @@
   renderStepPreviews({});
   bootInitialTask();
 
+  let _voicesCache = [];
+
   async function bootVoices() {
     try {
       const res = await fetch("/api/voices");
       const data = await res.json();
-      (data.voices || []).forEach(voice => {
-        const option = document.createElement("option");
-        option.value = voice.id;
-        option.textContent = `${voice.name} · ${voice.gender === "female" ? "女声" : "男声"}`;
-        document.getElementById("voiceSelect").appendChild(option);
-      });
+      _voicesCache = data.voices || [];
+      renderVoiceOptions(_voicesCache);
       applyTaskConfigToForm();
     } catch {
       document.getElementById("voiceHint").textContent = "音色列表加载失败，将继续使用 Auto 推荐。";
     }
+  }
+
+  function renderVoiceOptions(voices) {
+    const sel = document.getElementById("voiceSelect");
+    // Keep "auto" option, remove the rest
+    while (sel.options.length > 1) sel.remove(1);
+    voices.forEach(voice => {
+      const option = document.createElement("option");
+      option.value = voice.id;
+      option.textContent = `${voice.name} · ${voice.gender === "female" ? "女声" : "男声"}`;
+      option.dataset.previewUrl = voice.preview_url || "";
+      sel.appendChild(option);
+    });
+    updatePreviewBtn();
+  }
+
+  // --- Voice preview ---
+  function updatePreviewBtn() {
+    const sel = document.getElementById("voiceSelect");
+    const btn = document.getElementById("voicePreviewBtn");
+    const selected = sel.options[sel.selectedIndex];
+    const hasPreview = selected && selected.dataset.previewUrl;
+    btn.style.display = hasPreview ? "flex" : "none";
+  }
+
+  document.getElementById("voiceSelect").addEventListener("change", updatePreviewBtn);
+
+  document.getElementById("voicePreviewBtn").addEventListener("click", () => {
+    const sel = document.getElementById("voiceSelect");
+    const selected = sel.options[sel.selectedIndex];
+    const url = selected?.dataset.previewUrl;
+    if (!url) return;
+    const audio = document.getElementById("voicePreviewAudio");
+    audio.src = url;
+    audio.style.display = "block";
+    audio.play().catch(() => {});
+  });
+
+  // --- Voice import modal ---
+  document.getElementById("voiceImportBtn").addEventListener("click", () => {
+    document.getElementById("voiceImportOverlay").classList.remove("hidden");
+    document.getElementById("importVoiceSource").value = "";
+    document.getElementById("importVoiceName").value = "";
+    document.getElementById("importVoiceGender").value = "";
+    document.getElementById("importVoiceError").classList.add("hidden");
+    document.getElementById("importPreviewSection").classList.add("hidden");
+    document.getElementById("importVoiceSource").focus();
+  });
+
+  document.getElementById("importVoiceCancel").addEventListener("click", () => {
+    document.getElementById("voiceImportOverlay").classList.add("hidden");
+  });
+
+  document.getElementById("voiceImportOverlay").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) {
+      document.getElementById("voiceImportOverlay").classList.add("hidden");
+    }
+  });
+
+  document.getElementById("importVoiceSubmit").addEventListener("click", async () => {
+    const source = document.getElementById("importVoiceSource").value.trim();
+    if (!source) {
+      showImportError("请输入 voiceId 或 ElevenLabs 链接");
+      return;
+    }
+    const errEl = document.getElementById("importVoiceError");
+    errEl.classList.add("hidden");
+    const submitBtn = document.getElementById("importVoiceSubmit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "导入中...";
+
+    const body = { source };
+    const name = document.getElementById("importVoiceName").value.trim();
+    const gender = document.getElementById("importVoiceGender").value;
+    if (name) body.name = name;
+    if (gender) body.gender = gender;
+
+    try {
+      const res = await fetch("/api/voices/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showImportError(data.error || "导入失败");
+        return;
+      }
+      // Success — refresh voice list and select the new voice
+      const voice = data.voice;
+      _voicesCache = _voicesCache.filter(v => v.id !== voice.id);
+      _voicesCache.push(voice);
+      renderVoiceOptions(_voicesCache);
+      document.getElementById("voiceSelect").value = voice.id;
+      updatePreviewBtn();
+
+      // Show preview if available
+      if (voice.preview_url) {
+        document.getElementById("importPreviewSection").classList.remove("hidden");
+        document.getElementById("importPreviewAudio").src = voice.preview_url;
+      }
+
+      document.getElementById("voiceHint").textContent = `已导入音色：${voice.name}`;
+      // Close modal after a short delay to let user see the preview
+      setTimeout(() => {
+        document.getElementById("voiceImportOverlay").classList.add("hidden");
+      }, voice.preview_url ? 1500 : 500);
+    } catch (err) {
+      showImportError(err.message || "网络错误");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "导入";
+    }
+  });
+
+  function showImportError(msg) {
+    const el = document.getElementById("importVoiceError");
+    el.textContent = msg;
+    el.classList.remove("hidden");
   }
 
   function bootInitialTask() {

@@ -4,8 +4,8 @@
 {% block extra_style %}
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.project-card-wrap { position: relative; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; justify-content: start; }
+.project-card-wrap { position: relative; max-width: 270px; width: 100%; margin: 0 auto; }
 .project-card {
   background: var(--bg-card);
   border: 1.5px solid var(--border-main);

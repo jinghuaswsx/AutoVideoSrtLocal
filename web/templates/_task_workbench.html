@@ -36,8 +36,13 @@
   <div class="config-row">
     <div class="config-item">
       <label for="voiceSelect">音色</label>
-      <select id="voiceSelect"><option value="auto">Auto（按内容推荐）</option></select>
+      <div class="voice-select-row">
+        <select id="voiceSelect"><option value="auto">Auto（按内容推荐）</option></select>
+        <button type="button" class="btn-icon" id="voicePreviewBtn" title="试听选中音色" style="display:none">&#9654;</button>
+        <button type="button" class="btn-icon" id="voiceImportBtn" title="导入 ElevenLabs 音色">+</button>
+      </div>
       <div class="hint" id="voiceHint">识别完成后会推荐音色，保持 Auto 会自动应用。</div>
+      <audio id="voicePreviewAudio" style="display:none"></audio>
     </div>
     <div class="config-item">
       <label for="subtitlePosition">字幕位置</label>
@@ -198,6 +203,34 @@
 </div>
 
 <div class="error-msg" id="errorMsg"></div>
+
+<!-- 导入 ElevenLabs 音色弹窗 -->
+<div class="voice-import-overlay hidden" id="voiceImportOverlay">
+  <div class="voice-import-modal">
+    <h3>导入 ElevenLabs 音色</h3>
+    <div class="voice-import-form">
+      <label>Voice ID 或 ElevenLabs 链接</label>
+      <input type="text" id="importVoiceSource" placeholder="粘贴 voiceId 或 Voice Library URL">
+      <label>性别（可选，留空自动识别）</label>
+      <select id="importVoiceGender">
+        <option value="">自动</option>
+        <option value="male">男声</option>
+        <option value="female">女声</option>
+      </select>
+      <label>名称（可选，留空用 ElevenLabs 原名）</label>
+      <input type="text" id="importVoiceName" placeholder="自定义音色名称">
+      <div class="voice-import-preview hidden" id="importPreviewSection">
+        <label>预览试听</label>
+        <audio id="importPreviewAudio" controls style="width:100%"></audio>
+      </div>
+      <div class="voice-import-error hidden" id="importVoiceError"></div>
+    </div>
+    <div class="voice-import-actions">
+      <button class="btn btn-ghost btn-sm" id="importVoiceCancel">取消</button>
+      <button class="btn btn-primary btn-sm" id="importVoiceSubmit">导入</button>
+    </div>
+  </div>
+</div>
 
 <div class="card hidden" id="resultPanel">
   <h3>生成结果</h3>

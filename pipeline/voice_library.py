@@ -110,7 +110,7 @@ class VoiceLibrary:
         if not elevenlabs_voice_id:
             raise ValueError("elevenlabs_voice_id is required")
 
-        return {
+        result = {
             "id": existing_id or _slugify(name),
             "name": name,
             "gender": gender,
@@ -120,6 +120,14 @@ class VoiceLibrary:
             "is_default_male": bool(payload.get("is_default_male", False)),
             "is_default_female": bool(payload.get("is_default_female", False)),
         }
+        # Optional fields for imported voices
+        for key in ("source", "source_voice_id", "source_public_user_id", "preview_url"):
+            val = payload.get(key)
+            if val:
+                result[key] = str(val).strip()
+        if payload.get("labels") and isinstance(payload["labels"], dict):
+            result["labels"] = payload["labels"]
+        return result
 
     def _read(self) -> Dict:
         if not self.path.exists():

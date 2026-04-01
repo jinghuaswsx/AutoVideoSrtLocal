@@ -70,3 +70,36 @@ video.media-player { max-height: 320px; }
   cursor: pointer; font-family: inherit; transition: all .2s;
 }
 .resume-btn:hover { background: var(--sidebar-hover-bg); box-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+.voice-select-row { display: flex; gap: 8px; align-items: center; }
+.voice-select-row select { flex: 1; }
+.btn-icon {
+  width: 36px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border-main);
+  background: var(--bg-body); color: var(--text-main); font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all .2s; font-family: inherit;
+}
+.btn-icon:hover { border-color: var(--primary-color); color: var(--primary-color); background: var(--sidebar-hover-bg); }
+.voice-import-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+}
+.voice-import-overlay.hidden { display: none; }
+.voice-import-modal {
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 16px;
+  padding: 28px; width: 420px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.voice-import-modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: var(--text-main); }
+.voice-import-form { display: flex; flex-direction: column; gap: 10px; }
+.voice-import-form label { font-size: 12px; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.voice-import-form input, .voice-import-form select {
+  width: 100%; background: var(--bg-body); border: 1.5px solid var(--border-main);
+  border-radius: 10px; color: var(--text-main); padding: 10px 12px; font-size: 14px;
+  font-family: inherit; outline: none; box-sizing: border-box; transition: all 0.2s;
+}
+.voice-import-form input:focus, .voice-import-form select:focus {
+  border-color: var(--primary-color); background: var(--bg-card); box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+}
+.voice-import-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.voice-import-error { background: var(--bg-btn-danger); color: var(--text-btn-danger); padding: 10px 12px; border-radius: 10px; font-size: 13px; }
+.voice-import-error.hidden { display: none; }
+.voice-import-preview.hidden { display: none; }
