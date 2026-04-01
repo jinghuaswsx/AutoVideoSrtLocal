@@ -262,7 +262,7 @@ def update_alignment(task_id):
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "alignment", "done")
     store.set_step_message(task_id, "alignment", "分段确认完成")
-    pipeline_runner.resume(task_id, "translate")
+    pipeline_runner.resume(task_id, "translate", user_id=current_user.id if current_user.is_authenticated else None)
     return jsonify({"status": "ok", "script_segments": script_segments})
 
 
@@ -284,7 +284,7 @@ def update_segments(task_id):
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "translate", "done")
     store.set_step_message(task_id, "translate", "翻译确认完成")
-    pipeline_runner.resume(task_id, "tts")
+    pipeline_runner.resume(task_id, "tts", user_id=current_user.id if current_user.is_authenticated else None)
     return jsonify({"status": "ok"})
 
 
@@ -419,6 +419,6 @@ def resume_from_step(task_id):
 
     store.update(task_id, status="running", current_review_step="")
 
-    # 调用 pipeline_runner.resume（签名为 resume(task_id, start_step)，不接受 user_id）
-    pipeline_runner.resume(task_id, start_step)
+    user_id = current_user.id if current_user.is_authenticated else None
+    pipeline_runner.resume(task_id, start_step, user_id=user_id)
     return jsonify({"status": "started", "start_step": start_step})

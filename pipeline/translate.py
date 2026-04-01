@@ -13,10 +13,16 @@ from pipeline.localization import (
     validate_tts_script,
 )
 
-client = OpenAI(
-    api_key=OPENROUTER_API_KEY,
-    base_url=OPENROUTER_BASE_URL,
-)
+_client: OpenAI | None = None
+
+
+def _get_client(api_key: str | None = None) -> OpenAI:
+    global _client
+    if api_key:
+        return OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+    if _client is None:
+        _client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
+    return _client
 
 SYSTEM_PROMPT = """You are an expert copywriter specializing in TikTok e-commerce advertising for the US market.
 
@@ -49,8 +55,9 @@ def generate_localized_translation(
     source_full_text_zh: str,
     script_segments: list[dict],
     variant: str = "normal",
+    openrouter_api_key: str | None = None,
 ) -> dict:
-    response = client.chat.completions.create(
+    response = _get_client(openrouter_api_key).chat.completions.create(
         model=_model_name(),
         messages=build_localized_translation_messages(
             source_full_text_zh,
@@ -68,8 +75,8 @@ def generate_localized_translation(
     return validate_localized_translation(payload)
 
 
-def generate_tts_script(localized_translation: dict) -> dict:
-    response = client.chat.completions.create(
+def generate_tts_script(localized_translation: dict, openrouter_api_key: str | None = None) -> dict:
+    response = _get_client(openrouter_api_key).chat.completions.create(
         model=_model_name(),
         messages=build_tts_script_messages(localized_translation),
         temperature=0.2,
@@ -83,7 +90,7 @@ def generate_tts_script(localized_translation: dict) -> dict:
     return validate_tts_script(payload)
 
 
-def translate_segments(segments: List[Dict]) -> List[Dict]:
+def translate_segments(segments: List[Dict], openrouter_api_key: str | None = None) -> List[Dict]:
     if not segments:
         return segments
 
@@ -96,7 +103,7 @@ Segments:
 
 Remember: output only the JSON array."""
 
-    response = client.chat.completions.create(
+    response = _get_client(openrouter_api_key).chat.completions.create(
         model=_model_name(),
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

@@ -24,14 +24,14 @@ def _make_socketio_handler(task_id: str):
 def start(task_id: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus)
+    runner = PipelineRunner(bus=bus, user_id=user_id)
     thread = threading.Thread(target=runner.start, args=(task_id,), daemon=True)
     thread.start()
 
 
-def resume(task_id: str, start_step: str):
+def resume(task_id: str, start_step: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus)
+    runner = PipelineRunner(bus=bus, user_id=user_id)
     thread = threading.Thread(target=runner.resume, args=(task_id, start_step), daemon=True)
     thread.start()

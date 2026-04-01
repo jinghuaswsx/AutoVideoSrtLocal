@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 from appcore.db import query_one, execute, query
 
 
@@ -19,6 +20,34 @@ def get_key(user_id: int, service: str) -> str | None:
         (user_id, service),
     )
     return row["key_value"] if row else None
+
+
+def resolve_key(user_id: int | None, service: str, env_var: str) -> str | None:
+    """Return per-user key if set, else fall back to os.environ / .env value."""
+    if user_id is not None:
+        user_key = get_key(user_id, service)
+        if user_key:
+            return user_key
+    return os.environ.get(env_var)
+
+
+def resolve_extra(user_id: int | None, service: str) -> dict:
+    """Return extra_config dict for a service, or {} if not set."""
+    if user_id is None:
+        return {}
+    row = query_one(
+        "SELECT extra_config FROM api_keys WHERE user_id = %s AND service = %s",
+        (user_id, service),
+    )
+    if not row or not row.get("extra_config"):
+        return {}
+    extra = row["extra_config"]
+    if isinstance(extra, str):
+        try:
+            return json.loads(extra)
+        except Exception:
+            return {}
+    return extra or {}
 
 
 def get_all(user_id: int) -> dict[str, dict]:

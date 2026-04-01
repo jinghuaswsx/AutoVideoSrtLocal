@@ -21,36 +21,38 @@ POLL_INTERVAL_SEC = 3
 POLL_MAX_RETRIES = 100  # 最多等 ~5 分钟
 
 
-def transcribe(audio_url: str) -> List[Dict]:
+def transcribe(audio_url: str, volc_api_key: str | None = None) -> List[Dict]:
     """
     调用豆包 v3 ASR 识别音频，返回带时间戳的句子列表
 
     Args:
         audio_url: 可被火山引擎服务端访问的音频文件 URL（mp3/wav）
+        volc_api_key: 可选的用户自定义 API Key，None 时使用系统配置
 
     Returns:
         List[Dict]: [{"text": str, "start_time": float, "end_time": float, "words": [...]}, ...]
         时间单位为秒
     """
     request_id = str(uuid.uuid4())
+    api_key = volc_api_key or VOLC_API_KEY
 
     # Step 1: 提交任务
-    _submit(audio_url, request_id)
+    _submit(audio_url, request_id, api_key)
 
     # Step 2: 轮询结果
-    result = _poll(request_id)
+    result = _poll(request_id, api_key)
 
     # Step 3: 解析
     return _parse(result)
 
 
-def transcribe_local_audio(local_audio_path: str, prefix: str) -> List[Dict]:
+def transcribe_local_audio(local_audio_path: str, prefix: str, volc_api_key: str | None = None) -> List[Dict]:
     from pipeline.storage import delete_file, upload_file
 
     object_key = f"{prefix}_{uuid.uuid4().hex[:8]}.mp3"
     audio_url = upload_file(local_audio_path, object_key)
     try:
-        return transcribe(audio_url)
+        return transcribe(audio_url, volc_api_key=volc_api_key)
     finally:
         try:
             delete_file(object_key)
@@ -58,17 +60,17 @@ def transcribe_local_audio(local_audio_path: str, prefix: str) -> List[Dict]:
             pass
 
 
-def _build_headers(request_id: str) -> dict:
+def _build_headers(request_id: str, api_key: str | None = None) -> dict:
     return {
         "Content-Type": "application/json",
-        "x-api-key": VOLC_API_KEY,
+        "x-api-key": api_key or VOLC_API_KEY,
         "X-Api-Resource-Id": VOLC_RESOURCE_ID,
         "X-Api-Request-Id": request_id,
         "X-Api-Sequence": "-1",
     }
 
 
-def _submit(audio_url: str, request_id: str):
+def _submit(audio_url: str, request_id: str, api_key: str | None = None):
     """提交识别任务"""
     payload = {
         "user": {"uid": "auto_video_srt"},
@@ -87,7 +89,7 @@ def _submit(audio_url: str, request_id: str):
         }
     }
 
-    headers = _build_headers(request_id)
+    headers = _build_headers(request_id, api_key)
     resp = requests.post(VOLC_ASR_SUBMIT_URL, json=payload, headers=headers, timeout=30)
     resp.raise_for_status()
 
@@ -100,9 +102,9 @@ def _submit(audio_url: str, request_id: str):
         )
 
 
-def _poll(request_id: str) -> dict:
+def _poll(request_id: str, api_key: str | None = None) -> dict:
     """轮询查询结果，直到成功或超时"""
-    headers = _build_headers(request_id)
+    headers = _build_headers(request_id, api_key)
 
     for attempt in range(POLL_MAX_RETRIES):
         resp = requests.post(

@@ -76,8 +76,9 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
 
 
 class PipelineRunner:
-    def __init__(self, bus: EventBus) -> None:
+    def __init__(self, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
+        self.user_id = user_id
 
     def _emit(self, task_id: str, event_type: str, payload: dict) -> None:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
@@ -137,14 +138,16 @@ class PipelineRunner:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
         self._set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
+        from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe
         from pipeline.storage import delete_file, upload_file
 
+        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
         tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
         audio_url = upload_file(audio_path, tos_key)
         self._set_step(task_id, "asr", "running", "正在识别中文语音...")
         try:
-            utterances = transcribe(audio_url)
+            utterances = transcribe(audio_url, volc_api_key=volc_api_key)
         finally:
             try:
                 delete_file(tos_key)
@@ -208,15 +211,18 @@ class PipelineRunner:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
         self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...")
+        from appcore.api_keys import resolve_key
         from pipeline.localization import VARIANT_KEYS, build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
 
+        openrouter_api_key = resolve_key(self.user_id, "openrouter", "OPENROUTER_API_KEY")
         script_segments = task.get("script_segments", [])
         source_full_text_zh = build_source_full_text_zh(script_segments)
         variants = dict(task.get("variants", {}))
         for variant in VARIANT_KEYS:
             localized_translation = generate_localized_translation(
-                source_full_text_zh, script_segments, variant=variant
+                source_full_text_zh, script_segments, variant=variant,
+                openrouter_api_key=openrouter_api_key,
             )
             variant_state = dict(variants.get(variant, {}))
             variant_state["localized_translation"] = localized_translation
@@ -267,11 +273,15 @@ class PipelineRunner:
     def _step_tts(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         self._set_step(task_id, "tts", "running", "正在生成 ElevenLabs 朗读文案与配音...")
+        from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
         from pipeline.localization import VARIANT_KEYS, build_tts_segments
         from pipeline.timeline import build_timeline_manifest
         from pipeline.translate import generate_tts_script
         from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
+
+        openrouter_api_key = resolve_key(self.user_id, "openrouter", "OPENROUTER_API_KEY")
+        elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
         voice = None
         if task.get("voice_id"):
@@ -286,9 +296,9 @@ class PipelineRunner:
         for variant in VARIANT_KEYS:
             variant_state = dict(variants.get(variant, {}))
             localized_translation = variant_state.get("localized_translation", {})
-            tts_script = generate_tts_script(localized_translation)
+            tts_script = generate_tts_script(localized_translation, openrouter_api_key=openrouter_api_key)
             tts_segments = build_tts_segments(tts_script, task.get("script_segments", []))
-            result = generate_full_audio(tts_segments, voice["elevenlabs_voice_id"], task_dir, variant=variant)
+            result = generate_full_audio(tts_segments, voice["elevenlabs_voice_id"], task_dir, variant=variant, elevenlabs_api_key=elevenlabs_api_key)
             timeline_manifest = build_timeline_manifest(result["segments"], video_duration=video_duration)
             variant_state.update({
                 "segments": result["segments"],
@@ -335,8 +345,11 @@ class PipelineRunner:
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
+        from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio
         from pipeline.localization import VARIANT_KEYS
+
+        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 
@@ -346,7 +359,7 @@ class PipelineRunner:
             variant_state = dict(variants.get(variant, {}))
             tts_audio_path = variant_state.get("tts_audio_path", "")
             english_utterances = transcribe_local_audio(
-                tts_audio_path, prefix=f"tts-asr/{task_id}/{variant}"
+                tts_audio_path, prefix=f"tts-asr/{task_id}/{variant}", volc_api_key=volc_api_key
             )
             english_asr_result = {
                 "full_text": " ".join(
