@@ -227,6 +227,46 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
     assert saved["variants"]["hook_cta"]["tts_audio_path"].endswith("tts_full.hook_cta.mp3")
 
 
+def test_step_export_populates_variant_capcut_download_urls(tmp_path, monkeypatch):
+    task = store.create("task-export-download-links", "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["subtitle_position"] = "bottom"
+
+    for variant in ("normal", "hook_cta"):
+        audio_path = tmp_path / f"tts_full.{variant}.mp3"
+        audio_path.write_bytes(b"fake-audio")
+        srt_path = tmp_path / f"subtitle.{variant}.srt"
+        srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+        task["variants"][variant].update(
+            {
+                "tts_audio_path": str(audio_path),
+                "srt_path": str(srt_path),
+                "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+            }
+        )
+
+    def fake_export_capcut_project(video_path=None, tts_audio_path=None, srt_path=None, output_dir=None, timeline_manifest=None, variant="normal", **kwargs):
+        manifest_path = tmp_path / f"manifest.{variant}.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / f"capcut_{variant}"),
+            "archive_path": str(tmp_path / f"capcut_{variant}.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_export("task-export-download-links", "video.mp4", str(tmp_path))
+
+    saved = store.get("task-export-download-links")
+    export_artifact = saved["artifacts"]["export"]
+
+    assert export_artifact["variants"]["normal"]["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=normal"
+    assert export_artifact["variants"]["hook_cta"]["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=hook_cta"
+
+
 def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     task = store.create("task-tail-messages", "video.mp4", str(tmp_path))
     task["video_path"] = "video.mp4"

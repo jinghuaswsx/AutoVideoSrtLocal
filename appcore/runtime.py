@@ -465,7 +465,8 @@ class PipelineRunner:
                     manifest_text = fh.read()
             except OSError:
                 manifest_text = ""
-            payload = build_export_artifact(manifest_text)
+            archive_url = f"/api/tasks/{task_id}/download/capcut?variant={variant}"
+            payload = build_export_artifact(manifest_text, archive_url=archive_url)
             task_state.set_variant_artifact(task_id, variant, "export", payload)
             compare_variants[variant] = {
                 "label": variant_state.get("label", variant),

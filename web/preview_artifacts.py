@@ -176,8 +176,10 @@ def build_compose_artifact() -> dict:
     }
 
 
-def build_export_artifact(manifest_text: str, deploy_url: str = "") -> dict:
-    items = [{"type": "download", "label": "下载 CapCut 工程包", "url": ""}]
+def build_export_artifact(manifest_text: str, archive_url: str = "", deploy_url: str = "") -> dict:
+    items = []
+    if archive_url:
+        items.append({"type": "download", "label": "下载 CapCut 工程包", "url": archive_url})
     if deploy_url:
         items.append(action_item("部署到剪映目录", deploy_url))
     items.append(text_item("导出清单", manifest_text or ""))
