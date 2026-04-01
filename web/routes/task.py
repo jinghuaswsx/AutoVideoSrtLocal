@@ -328,6 +328,93 @@ def start(task_id):
     return jsonify({"status": "started", "task": updated_task})
 
 
+@bp.route("/<task_id>/retranslate", methods=["POST"])
+@login_required
+def retranslate(task_id):
+    """Re-run translation with a different prompt. Stores result alongside existing translations."""
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    step_status = (task.get("steps") or {}).get("translate")
+    if step_status not in ("done", "error"):
+        return jsonify({"error": "翻译步骤尚未完成，无法重新翻译"}), 400
+
+    body = request.get_json(silent=True) or {}
+    prompt_text = (body.get("prompt_text") or "").strip()
+    prompt_id = body.get("prompt_id")
+
+    if not prompt_text and prompt_id:
+        row = db_query_one(
+            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
+            (prompt_id, current_user.id),
+        )
+        if row:
+            prompt_text = row["prompt_text"]
+
+    if not prompt_text:
+        return jsonify({"error": "需要提供 prompt_text 或有效的 prompt_id"}), 400
+
+    from pipeline.translate import generate_localized_translation
+    from pipeline.localization import build_source_full_text_zh
+    from appcore.api_keys import resolve_key
+
+    script_segments = task.get("script_segments") or []
+    source_full_text_zh = build_source_full_text_zh(script_segments)
+    openrouter_api_key = resolve_key(current_user.id, "openrouter", "OPENROUTER_API_KEY")
+
+    try:
+        result = generate_localized_translation(
+            source_full_text_zh, script_segments, variant="normal",
+            openrouter_api_key=openrouter_api_key,
+            custom_system_prompt=prompt_text,
+        )
+    except Exception as exc:
+        return jsonify({"error": f"翻译失败: {exc}"}), 500
+
+    # Store as additional translation attempt
+    translation_history = task.get("translation_history") or []
+    translation_history.append({
+        "prompt_text": prompt_text,
+        "prompt_id": prompt_id,
+        "result": result,
+    })
+    if len(translation_history) > 3:
+        translation_history = translation_history[-3:]
+
+    store.update(task_id, translation_history=translation_history)
+
+    return jsonify({
+        "translation": result,
+        "history_index": len(translation_history) - 1,
+        "translation_history": translation_history,
+    })
+
+
+@bp.route("/<task_id>/select-translation", methods=["PUT"])
+@login_required
+def select_translation(task_id):
+    """Select one of the translation attempts as the active translation."""
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    index = body.get("index")
+    if index is None:
+        return jsonify({"error": "index is required"}), 400
+
+    translation_history = task.get("translation_history") or []
+    if not (0 <= index < len(translation_history)):
+        return jsonify({"error": "无效的翻译索引"}), 400
+
+    selected = translation_history[index]["result"]
+    store.update_variant(task_id, "normal", localized_translation=selected)
+    store.update(task_id, selected_translation_index=index)
+
+    return jsonify({"status": "ok", "selected_index": index})
+
+
 @bp.route("/<task_id>/alignment", methods=["PUT"])
 @login_required
 def update_alignment(task_id):
