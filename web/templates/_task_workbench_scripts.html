@@ -37,56 +37,71 @@
   bootInitialTask();
 
   let _voicesCache = [];
+  let _selectedVoiceId = null;
+  let _playingAudio = null;
 
   async function bootVoices() {
     try {
       const res = await fetch("/api/voices");
       const data = await res.json();
       _voicesCache = data.voices || [];
-      renderVoiceOptions(_voicesCache);
+      renderVoiceList();
       applyTaskConfigToForm();
     } catch {
-      document.getElementById("voiceHint").textContent = "音色列表加载失败，将继续使用 Auto 推荐。";
+      document.getElementById("voiceList").innerHTML = '<div class="voice-list-empty">音色列表加载失败</div>';
     }
   }
 
-  function renderVoiceOptions(voices) {
-    const sel = document.getElementById("voiceSelect");
-    // Keep "auto" option, remove the rest
-    while (sel.options.length > 1) sel.remove(1);
-    voices.forEach(voice => {
-      const option = document.createElement("option");
-      option.value = voice.id;
-      option.textContent = `${voice.name} · ${voice.gender === "female" ? "女声" : "男声"}`;
-      option.dataset.previewUrl = voice.preview_url || "";
-      sel.appendChild(option);
-    });
-    updatePreviewBtn();
+  function renderVoiceList() {
+    const list = document.getElementById("voiceList");
+    if (!_voicesCache.length) {
+      list.innerHTML = '<div class="voice-list-empty">暂无音色，点击右上角导入</div>';
+      return;
+    }
+    list.innerHTML = _voicesCache.map(voice => `
+      <div class="voice-item ${_selectedVoiceId == voice.id ? 'selected' : ''}"
+           data-voice-id="${voice.id}" onclick="selectVoice(${voice.id})">
+        <div class="voice-item-info">
+          <div class="voice-item-name">${escapeHtml(voice.name)}</div>
+          <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
+        </div>
+        <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
+        ${voice.preview_url ? `<button class="voice-play-btn" onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)" title="试听">&#9654;</button>` : ''}
+      </div>
+    `).join("");
   }
 
-  // --- Voice preview ---
-  function updatePreviewBtn() {
-    const sel = document.getElementById("voiceSelect");
-    const btn = document.getElementById("voicePreviewBtn");
-    const selected = sel.options[sel.selectedIndex];
-    const hasPreview = selected && selected.dataset.previewUrl;
-    btn.style.display = hasPreview ? "flex" : "none";
+  function selectVoice(voiceId) {
+    _selectedVoiceId = voiceId;
+    renderVoiceList();
   }
 
-  document.getElementById("voiceSelect").addEventListener("change", updatePreviewBtn);
-
-  document.getElementById("voicePreviewBtn").addEventListener("click", () => {
-    const sel = document.getElementById("voiceSelect");
-    const selected = sel.options[sel.selectedIndex];
-    const url = selected?.dataset.previewUrl;
-    if (!url) return;
+  function playVoicePreview(e, url, btn) {
+    e.stopPropagation();
     const audio = document.getElementById("voicePreviewAudio");
+    if (_playingAudio === url && !audio.paused) {
+      audio.pause();
+      btn.classList.remove("playing");
+      btn.innerHTML = "&#9654;";
+      _playingAudio = null;
+      return;
+    }
+    document.querySelectorAll(".voice-play-btn.playing").forEach(b => {
+      b.classList.remove("playing");
+      b.innerHTML = "&#9654;";
+    });
     audio.src = url;
-    audio.style.display = "block";
     audio.play().catch(() => {});
-  });
+    btn.classList.add("playing");
+    btn.innerHTML = "&#9646;&#9646;";
+    _playingAudio = url;
+    audio.onended = () => {
+      btn.classList.remove("playing");
+      btn.innerHTML = "&#9654;";
+      _playingAudio = null;
+    };
+  }
 
-  // --- Voice import modal ---
   document.getElementById("voiceImportBtn").addEventListener("click", () => {
     document.getElementById("voiceImportOverlay").classList.remove("hidden");
     document.getElementById("importVoiceSource").value = "";
@@ -102,29 +117,22 @@
   });
 
   document.getElementById("voiceImportOverlay").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) {
-      document.getElementById("voiceImportOverlay").classList.add("hidden");
-    }
+    if (e.target === e.currentTarget) document.getElementById("voiceImportOverlay").classList.add("hidden");
   });
 
   document.getElementById("importVoiceSubmit").addEventListener("click", async () => {
     const source = document.getElementById("importVoiceSource").value.trim();
-    if (!source) {
-      showImportError("请输入 voiceId 或 ElevenLabs 链接");
-      return;
-    }
+    if (!source) { showImportError("请输入 voiceId 或 ElevenLabs 链接"); return; }
     const errEl = document.getElementById("importVoiceError");
     errEl.classList.add("hidden");
     const submitBtn = document.getElementById("importVoiceSubmit");
     submitBtn.disabled = true;
     submitBtn.textContent = "导入中...";
-
     const body = { source };
     const name = document.getElementById("importVoiceName").value.trim();
     const gender = document.getElementById("importVoiceGender").value;
     if (name) body.name = name;
     if (gender) body.gender = gender;
-
     try {
       const res = await fetch("/api/voices/import", {
         method: "POST",
@@ -132,29 +140,11 @@
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) {
-        showImportError(data.error || "导入失败");
-        return;
-      }
-      // Success — refresh voice list and select the new voice
-      const voice = data.voice;
-      _voicesCache = _voicesCache.filter(v => v.id !== voice.id);
-      _voicesCache.push(voice);
-      renderVoiceOptions(_voicesCache);
-      document.getElementById("voiceSelect").value = voice.id;
-      updatePreviewBtn();
-
-      // Show preview if available
-      if (voice.preview_url) {
-        document.getElementById("importPreviewSection").classList.remove("hidden");
-        document.getElementById("importPreviewAudio").src = voice.preview_url;
-      }
-
-      document.getElementById("voiceHint").textContent = `已导入音色：${voice.name}`;
-      // Close modal after a short delay to let user see the preview
-      setTimeout(() => {
-        document.getElementById("voiceImportOverlay").classList.add("hidden");
-      }, voice.preview_url ? 1500 : 500);
+      if (!res.ok) { showImportError(data.error || "导入失败"); return; }
+      _voicesCache.push(data.voice);
+      _selectedVoiceId = data.voice.id;
+      renderVoiceList();
+      document.getElementById("voiceImportOverlay").classList.add("hidden");
     } catch (err) {
       showImportError(err.message || "网络错误");
     } finally {
@@ -179,6 +169,7 @@
   }
 
   function showTaskWorkbench() {
+    document.getElementById("voicePanel").classList.remove("hidden");
     document.getElementById("configPanel").classList.remove("hidden");
     document.getElementById("pipelineCard").classList.remove("hidden");
     const hero = document.getElementById("taskHero");
@@ -198,7 +189,8 @@
 
   function applyTaskConfigToForm() {
     if (!currentTask) return;
-    document.getElementById("voiceSelect").value = currentTask.voice_id || "auto";
+    _selectedVoiceId = currentTask.voice_id || null;
+    renderVoiceList();
     document.getElementById("subtitlePosition").value = currentTask.subtitle_position || "bottom";
     document.getElementById("interactiveReviewToggle").value = String(Boolean(currentTask.interactive_review));
   }
@@ -323,7 +315,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          voice_id: document.getElementById("voiceSelect").value,
+          voice_id: _selectedVoiceId || "auto",
           subtitle_position: document.getElementById("subtitlePosition").value,
           interactive_review: document.getElementById("interactiveReviewToggle").value === "true",
         }),
@@ -560,9 +552,9 @@
         </label>
       </div>
     `).join("");
-    if (recommended_voice_id) {
-      const option = [...document.getElementById("voiceSelect").options].find(item => item.value === recommended_voice_id);
-      if (option) document.getElementById("voiceHint").textContent = `当前推荐音色：${option.textContent}。如果保持 Auto，后续会自动使用它。`;
+    if (recommended_voice_id && !_selectedVoiceId) {
+      _selectedVoiceId = recommended_voice_id;
+      renderVoiceList();
     }
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
@@ -811,4 +803,135 @@
       .replaceAll("\\", "\\\\")
       .replaceAll("'", "\\'");
   }
+
+  // --- Translation Prompt System ---
+  let _promptsCache = [];
+  let _selectedPromptId = null;
+  let _translationHistory = [];
+
+  async function bootPrompts() {
+    try {
+      const res = await fetch("/api/prompts");
+      const data = await res.json();
+      _promptsCache = data.prompts || [];
+      if (_promptsCache.length && !_selectedPromptId) {
+        _selectedPromptId = _promptsCache[0].id;
+      }
+      renderPromptTabs();
+    } catch {}
+  }
+
+  function renderPromptTabs() {
+    const tabs = document.getElementById("promptTabs");
+    if (!tabs) return;
+    tabs.innerHTML = _promptsCache.map(p => `
+      <button class="prompt-tab ${p.id === _selectedPromptId ? 'active' : ''}"
+              onclick="selectPrompt(${p.id})">${escapeHtml(p.name)}</button>
+    `).join("");
+    const selected = _promptsCache.find(p => p.id === _selectedPromptId);
+    if (selected) {
+      document.getElementById("promptEditor").value = selected.prompt_text;
+    }
+  }
+
+  function selectPrompt(promptId) {
+    _selectedPromptId = promptId;
+    renderPromptTabs();
+  }
+
+  function showTranslatePromptPanel() {
+    const panel = document.getElementById("translatePromptPanel");
+    if (panel) panel.classList.remove("hidden");
+    bootPrompts();
+  }
+
+  document.getElementById("savePromptBtn").addEventListener("click", async () => {
+    if (!_selectedPromptId) return;
+    const text = document.getElementById("promptEditor").value.trim();
+    if (!text) return;
+    await fetch(`/api/prompts/${_selectedPromptId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt_text: text }),
+    });
+    const p = _promptsCache.find(p => p.id === _selectedPromptId);
+    if (p) p.prompt_text = text;
+  });
+
+  document.getElementById("retranslateBtn").addEventListener("click", async () => {
+    if (!taskId) return;
+    const btn = document.getElementById("retranslateBtn");
+    btn.disabled = true;
+    btn.textContent = "翻译中...";
+    const promptText = document.getElementById("promptEditor").value.trim();
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showError(data.error || "翻译失败"); return; }
+      _translationHistory = data.translation_history || [];
+      renderTranslationHistory();
+    } catch (err) {
+      showError(err.message || "翻译失败");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "重新翻译";
+    }
+  });
+
+  function renderTranslationHistory() {
+    const container = document.getElementById("translationResults");
+    const panel = document.getElementById("translationHistory");
+    if (!container || !panel) return;
+    if (!_translationHistory.length) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+    const selectedIdx = currentTask?.selected_translation_index;
+    container.innerHTML = _translationHistory.map((item, idx) => {
+      const sentences = (item.result?.sentences || []).map(s => s.text).join(" ");
+      const isSelected = selectedIdx === idx;
+      return `
+        <div class="translation-result-card ${isSelected ? 'selected-result' : ''}">
+          <div class="translation-result-header">
+            <span class="translation-result-label">翻译 #${idx + 1}</span>
+            <button class="btn btn-ghost btn-sm" onclick="selectTranslation(${idx})">${isSelected ? '✓ 已选用' : '选用这个'}</button>
+          </div>
+          <div class="translation-result-text">${escapeHtml(sentences)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function selectTranslation(index) {
+    if (!taskId) return;
+    await fetch(`/api/tasks/${taskId}/select-translation`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
+    });
+    if (currentTask) currentTask.selected_translation_index = index;
+    renderTranslationHistory();
+    scheduleRefreshTaskState(0);
+  }
+
+  // Show prompt panel when translate step becomes active or done
+  const _origRenderStepMessages = renderStepMessages;
+  renderStepMessages = function() {
+    _origRenderStepMessages();
+    const translateStatus = currentTask?.steps?.translate;
+    if (translateStatus === "running" || translateStatus === "done" || translateStatus === "waiting") {
+      showTranslatePromptPanel();
+    }
+    if (currentTask?.translation_history) {
+      _translationHistory = currentTask.translation_history;
+      renderTranslationHistory();
+    }
+  };
+
+  bootPrompts();
 </script>

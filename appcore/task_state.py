@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 
-from pipeline.localization import VARIANT_LABELS
+# VARIANT_LABELS import removed — single-line pipeline
 
 _tasks: dict = {}
 
@@ -124,8 +124,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "artifacts": {},
         "preview_files": {},
         "variants": {
-            key: _empty_variant_state(label)
-            for key, label in VARIANT_LABELS.items()
+            "normal": _empty_variant_state("普通版"),
         },
     }
     if user_id is not None:

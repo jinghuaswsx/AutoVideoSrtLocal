@@ -31,19 +31,20 @@
   </div>
 </div>
 
+<div class="card hidden" id="voicePanel">
+  <div class="voice-panel-header">
+    <h2>音色选择</h2>
+    <button type="button" class="btn btn-ghost btn-sm" id="voiceImportBtn">+ 导入音色</button>
+  </div>
+  <div class="voice-list" id="voiceList">
+    <div class="voice-list-empty">加载中...</div>
+  </div>
+  <audio id="voicePreviewAudio" preload="none"></audio>
+</div>
+
 <div class="card hidden" id="configPanel">
   <h2>生成配置</h2>
   <div class="config-row">
-    <div class="config-item">
-      <label for="voiceSelect">音色</label>
-      <div class="voice-select-row">
-        <select id="voiceSelect"><option value="auto">Auto（按内容推荐）</option></select>
-        <button type="button" class="btn-icon" id="voicePreviewBtn" title="试听选中音色" style="display:none">&#9654;</button>
-        <button type="button" class="btn-icon" id="voiceImportBtn" title="导入 ElevenLabs 音色">+</button>
-      </div>
-      <div class="hint" id="voiceHint">识别完成后会推荐音色，保持 Auto 会自动应用。</div>
-      <audio id="voicePreviewAudio" style="display:none"></audio>
-    </div>
     <div class="config-item">
       <label for="subtitlePosition">字幕位置</label>
       <select id="subtitlePosition">
@@ -119,6 +120,21 @@
             <button class="resume-btn hidden" id="resume-translate" data-step="translate">从此步继续</button>
           </div>
           <div class="step-msg" id="msg-translate">等待中...</div>
+        </div>
+      </div>
+      <div class="translate-prompt-panel hidden" id="translatePromptPanel">
+        <div class="prompt-selector">
+          <label>翻译提示词</label>
+          <div class="prompt-tabs" id="promptTabs"></div>
+        </div>
+        <textarea class="prompt-editor" id="promptEditor" rows="8" placeholder="提示词内容"></textarea>
+        <div class="prompt-actions">
+          <button class="btn btn-ghost btn-sm" id="savePromptBtn">保存提示词</button>
+          <button class="btn btn-primary btn-sm" id="retranslateBtn">重新翻译</button>
+        </div>
+        <div class="translation-history hidden" id="translationHistory">
+          <label>翻译结果对比</label>
+          <div class="translation-results" id="translationResults"></div>
         </div>
       </div>
       <div class="step-preview" id="preview-translate"></div>

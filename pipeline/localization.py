@@ -349,13 +349,15 @@ def build_localized_translation_messages(
     source_full_text_zh: str,
     script_segments: list[dict],
     variant: str = "normal",
+    custom_system_prompt: str | None = None,
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
-    prompt = (
-        HOOK_CTA_TRANSLATION_SYSTEM_PROMPT
-        if variant == "hook_cta"
-        else LOCALIZED_TRANSLATION_SYSTEM_PROMPT
-    )
+    if custom_system_prompt:
+        prompt = custom_system_prompt
+    elif variant == "hook_cta":
+        prompt = HOOK_CTA_TRANSLATION_SYSTEM_PROMPT
+    else:
+        prompt = LOCALIZED_TRANSLATION_SYSTEM_PROMPT
     return [
         {"role": "system", "content": prompt},
         {
@@ -442,3 +444,9 @@ def validate_tts_script(payload: dict) -> dict:
         "blocks": blocks,
         "subtitle_chunks": subtitle_chunks,
     }
+
+
+DEFAULT_PROMPTS = [
+    {"name": "普通翻译", "prompt_text": LOCALIZED_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
+    {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
+]
