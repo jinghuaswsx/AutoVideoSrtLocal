@@ -29,16 +29,15 @@ def build_extract_artifact() -> dict:
 
 
 def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "") -> dict:
-    items = [
-        {
-            "type": "utterances",
-            "label": "中文识别分段",
-            "utterances": utterances or [],
-        }
-    ]
+    left = {
+        "type": "utterances",
+        "label": "中文识别分段",
+        "utterances": utterances or [],
+    }
+    right = text_item("整段中文", source_full_text_zh)
     if source_full_text_zh:
-        items.append(text_item("整段中文", source_full_text_zh))
-    return {"title": "语音识别", "items": items}
+        return {"title": "语音识别", "items": [{"type": "side_by_side", "left": left, "right": right}]}
+    return {"title": "语音识别", "items": [left]}
 
 
 def build_alignment_artifact(
@@ -84,6 +83,7 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
         "items": [
             {
                 "type": "side_by_side",
+                "show_retranslate": True,
                 "left": text_item("整段中文", str(source_or_segments or "")),
                 "right": text_item("整段本土化英文", translation.get("full_text", "")),
             },
