@@ -452,7 +452,8 @@
       const stepEl = document.getElementById(`step-${step}`);
       const iconEl = document.getElementById(`icon-${step}`);
       const msgEl = document.getElementById(`msg-${step}`);
-      const status = currentTask?.steps?.[step] || "pending";
+      let status = currentTask?.steps?.[step] || "pending";
+      if (status === "running" && currentTask?.status === "error") status = "error";
       const message = currentTask?.step_messages?.[step] || placeholderText(status);
       stepEl.className = `step ${status}`;
       iconEl.className = `step-icon ${status}`;
@@ -684,7 +685,7 @@
       const btn = document.getElementById(`resume-${step}`);
       if (!btn) return;
       const stepStatus = steps[step];
-      if (!isRunning && (stepStatus === "done" || stepStatus === "error" || stepStatus === "waiting")) {
+      if (!isRunning && stepStatus !== "pending") {
         btn.classList.remove("hidden");
       } else {
         btn.classList.add("hidden");
