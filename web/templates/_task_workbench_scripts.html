@@ -372,7 +372,7 @@
       if (currentTask) currentTask.current_review_step = "alignment";
       renderAlignmentReview(payload);
     } else {
-      document.getElementById("alignmentReview").classList.add("hidden");
+      closePanel("alignmentReview");
     }
     scheduleRefreshTaskState(0);
   });
@@ -381,7 +381,7 @@
       if (currentTask) currentTask.current_review_step = "translate";
       renderTranslateReview(payload);
     } else {
-      document.getElementById("translateReview").classList.add("hidden");
+      closePanel("translateReview");
     }
     scheduleRefreshTaskState(0);
   });
@@ -602,7 +602,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ break_after: breakAfter }),
     });
-    document.getElementById("alignmentReview").classList.add("hidden");
+    closePanel("alignmentReview");
     if (currentTask) currentTask.current_review_step = "";
     scheduleRefreshTaskState(0);
   });
@@ -617,7 +617,7 @@
       </div>
     `).join("");
     document.getElementById("translateReview").classList.remove("hidden");
-    document.getElementById("alignmentReview").classList.add("hidden");
+    closePanel("alignmentReview");
   }
 
   document.getElementById("confirmTranslate").addEventListener("click", async () => {
@@ -633,10 +633,15 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segments }),
     });
-    document.getElementById("translateReview").classList.add("hidden");
+    closePanel("translateReview");
     if (currentTask) currentTask.current_review_step = "";
     scheduleRefreshTaskState(0);
   });
+
+  function closePanel(panelId) {
+    document.getElementById(panelId).classList.add("hidden");
+    if (typeof removeMinimizedChip === "function") removeMinimizedChip(panelId);
+  }
 
   function restoreReviewState() {
     if (!currentTask) return;
@@ -653,8 +658,8 @@
       renderTranslateReview({ segments: currentTask.segments || [] });
       return;
     }
-    document.getElementById("alignmentReview").classList.add("hidden");
-    document.getElementById("translateReview").classList.add("hidden");
+    closePanel("alignmentReview");
+    closePanel("translateReview");
   }
 
   function updateStartButtonState() {
@@ -975,4 +980,64 @@
   };
 
   bootPrompts();
+
+  /* ── Draggable + Minimize for review panels ── */
+  const _panelTitles = { alignmentReview: "分段确认", translateReview: "翻译确认" };
+
+  function initDraggable(panel) {
+    const handle = panel.querySelector("[data-drag-handle]");
+    if (!handle) return;
+    let startX, startY, initLeft, initTop;
+
+    handle.addEventListener("mousedown", e => {
+      if (e.target.closest("button, input, select, textarea, a")) return;
+      e.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      if (!panel.classList.contains("dragged")) {
+        panel.style.left = rect.left + "px";
+        panel.style.top = rect.top + "px";
+        panel.classList.add("dragged");
+      }
+      startX = e.clientX; startY = e.clientY;
+      initLeft = rect.left; initTop = rect.top;
+
+      function onMove(ev) {
+        panel.style.left = Math.max(0, initLeft + ev.clientX - startX) + "px";
+        panel.style.top = Math.max(0, initTop + ev.clientY - startY) + "px";
+      }
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
+  function minimizePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    panel.classList.add("hidden");
+    const tray = document.getElementById("minimizedTray");
+    if (document.getElementById("chip-" + panelId)) return;
+    const chip = document.createElement("div");
+    chip.className = "review-minimized-chip";
+    chip.id = "chip-" + panelId;
+    chip.textContent = _panelTitles[panelId] || "面板";
+    chip.onclick = () => restorePanel(panelId);
+    tray.appendChild(chip);
+  }
+
+  function restorePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    panel.classList.remove("hidden");
+    const chip = document.getElementById("chip-" + panelId);
+    if (chip) chip.remove();
+  }
+
+  function removeMinimizedChip(panelId) {
+    const chip = document.getElementById("chip-" + panelId);
+    if (chip) chip.remove();
+  }
+
+  document.querySelectorAll(".review-panel").forEach(initDraggable);
 </script>
