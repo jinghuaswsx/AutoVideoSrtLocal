@@ -498,7 +498,7 @@
     if (item.type === "audio") {
       const src = item.url || artifactUrl(item.artifact, variantKey);
       const gid = "ag-" + Math.random().toString(36).slice(2, 8);
-      return `<div class="preview-block">${label}<div class="audio-btn-group" id="${gid}"><button class="audio-play-btn" onclick="playAudio('${gid}','${escapeJs(src)}')">&#9654; 播放</button><button class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${gid}')" disabled>⏸ 暂停</button></div></div>`;
+      return `<div class="preview-block">${label}<div class="audio-btn-group" id="${gid}"><button class="audio-play-btn" onclick="playAudio('${gid}','${escapeJs(src)}')">&#9654; 播放</button><button class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${gid}')" disabled>⏸ 暂停</button><span class="audio-time" id="${gid}-time"></span></div></div>`;
     }
     if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
     if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
@@ -791,14 +791,32 @@
     }
   }
 
+  let _audioTimeInterval = null;
+
+  function _fmtDuration(s) {
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return m + ":" + String(sec).padStart(2, "0");
+  }
+
+  function _updateAudioTime(gid) {
+    const el = document.getElementById(gid + "-time");
+    if (!el || !_previewAudio) return;
+    const cur = _fmtDuration(_previewAudio.currentTime || 0);
+    const dur = isFinite(_previewAudio.duration) ? _fmtDuration(_previewAudio.duration) : "--:--";
+    el.textContent = cur + " / " + dur;
+  }
+
   function playAudio(gid, src) {
     _resetOldAudio();
+    if (_audioTimeInterval) { clearInterval(_audioTimeInterval); _audioTimeInterval = null; }
     _previewAudioGid = gid;
     _previewAudio = new Audio();
     _previewAudio.preload = "auto";
+    _previewAudio.onloadedmetadata = () => _updateAudioTime(gid);
     _previewAudio.oncanplaythrough = () => { _setAudioBtns(gid, true); _previewAudio.play(); };
-    _previewAudio.onended = () => _setAudioBtns(gid, false);
-    _previewAudio.onerror = () => _setAudioBtns(gid, false);
+    _previewAudio.onended = () => { _setAudioBtns(gid, false); clearInterval(_audioTimeInterval); _updateAudioTime(gid); };
+    _previewAudio.onerror = () => { _setAudioBtns(gid, false); clearInterval(_audioTimeInterval); };
+    _audioTimeInterval = setInterval(() => _updateAudioTime(gid), 500);
     _previewAudio.src = src;
     _previewAudio.load();
   }
