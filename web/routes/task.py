@@ -308,28 +308,36 @@ def _send_with_range(path: str):
     range_header = request.headers.get("Range")
 
     if not range_header:
-        resp = make_response(send_file(path, mimetype=mime))
-        resp.headers["Accept-Ranges"] = "bytes"
-        resp.headers["Content-Length"] = file_size
-        return resp
-
-    # Parse "bytes=start-end"
-    try:
-        ranges = range_header.replace("bytes=", "").split("-")
-        start = int(ranges[0]) if ranges[0] else 0
-        end = int(ranges[1]) if ranges[1] else file_size - 1
-    except (ValueError, IndexError):
         start, end = 0, file_size - 1
+        status = 200
+    else:
+        try:
+            ranges = range_header.replace("bytes=", "").split("-")
+            start = int(ranges[0]) if ranges[0] else 0
+            end = int(ranges[1]) if ranges[1] else file_size - 1
+        except (ValueError, IndexError):
+            start, end = 0, file_size - 1
+        end = min(end, file_size - 1)
+        status = 206
 
-    end = min(end, file_size - 1)
     length = end - start + 1
 
-    with open(path, "rb") as f:
-        f.seek(start)
-        data = f.read(length)
+    def generate():
+        chunk_size = 64 * 1024
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
 
-    resp = Response(data, status=206, mimetype=mime)
-    resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    resp = Response(generate(), status=status, mimetype=mime)
+    if status == 206:
+        resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Content-Length"] = length
     return resp
