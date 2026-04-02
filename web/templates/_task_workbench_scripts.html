@@ -497,8 +497,8 @@
     const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
     if (item.type === "audio") {
       const src = item.url || artifactUrl(item.artifact, variantKey);
-      const btnId = "abtn-" + Math.random().toString(36).slice(2, 8);
-      return `<div class="preview-block">${label}<button class="audio-play-btn" id="${btnId}" onclick="toggleAudioPlay('${btnId}','${escapeJs(src)}')">&#9654; 播放</button></div>`;
+      const gid = "ag-" + Math.random().toString(36).slice(2, 8);
+      return `<div class="preview-block">${label}<div class="audio-btn-group" id="${gid}"><button class="audio-play-btn" onclick="playAudio('${gid}','${escapeJs(src)}')">&#9654; 播放</button><button class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${gid}')" disabled>⏸ 暂停</button></div></div>`;
     }
     if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
     if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
@@ -773,31 +773,41 @@
   }
 
   let _previewAudio = null;
-  let _previewAudioBtnId = null;
+  let _previewAudioGid = null;
 
-  function toggleAudioPlay(btnId, src) {
-    const btn = document.getElementById(btnId);
-    if (_previewAudio && _previewAudioBtnId === btnId && !_previewAudio.paused) {
-      _previewAudio.pause();
-      btn.innerHTML = "&#9654; 播放";
-      return;
-    }
+  function _setAudioBtns(gid, playing) {
+    const g = document.getElementById(gid);
+    if (!g) return;
+    const playBtn = g.querySelector(".audio-play-btn:not(.audio-pause-btn)");
+    const pauseBtn = g.querySelector(".audio-pause-btn");
+    if (playBtn) playBtn.disabled = playing;
+    if (pauseBtn) pauseBtn.disabled = !playing;
+  }
+
+  function _resetOldAudio() {
     if (_previewAudio) {
       _previewAudio.pause();
-      if (_previewAudioBtnId) {
-        const old = document.getElementById(_previewAudioBtnId);
-        if (old) old.innerHTML = "&#9654; 播放";
-      }
+      if (_previewAudioGid) _setAudioBtns(_previewAudioGid, false);
     }
-    btn.innerHTML = "⏳ 加载中...";
+  }
+
+  function playAudio(gid, src) {
+    _resetOldAudio();
+    _previewAudioGid = gid;
     _previewAudio = new Audio();
-    _previewAudioBtnId = btnId;
     _previewAudio.preload = "auto";
-    _previewAudio.oncanplay = () => { btn.innerHTML = "⏸ 暂停"; _previewAudio.play(); };
-    _previewAudio.onended = () => { btn.innerHTML = "&#9654; 播放"; };
-    _previewAudio.onerror = () => { btn.innerHTML = "&#9654; 播放失败，点击重试"; };
+    _previewAudio.oncanplaythrough = () => { _setAudioBtns(gid, true); _previewAudio.play(); };
+    _previewAudio.onended = () => _setAudioBtns(gid, false);
+    _previewAudio.onerror = () => _setAudioBtns(gid, false);
     _previewAudio.src = src;
     _previewAudio.load();
+  }
+
+  function pauseAudio(gid) {
+    if (_previewAudio && _previewAudioGid === gid) {
+      _previewAudio.pause();
+      _setAudioBtns(gid, false);
+    }
   }
 
   function artifactUrl(name, variantKey = null) {
