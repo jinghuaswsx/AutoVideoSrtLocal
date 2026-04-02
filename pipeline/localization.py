@@ -10,20 +10,20 @@ VARIANT_LABELS = {
     "hook_cta": "黄金3秒 + CTA版",
 }
 
-LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a US TikTok commerce copywriter.
+LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video commerce copywriter.
 Return valid JSON only.
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
 Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
 
-HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US TikTok Shop copywriter.
+HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video e-commerce copywriter.
 Return valid JSON only.
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
 Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks.
-Sentence 1 must function as the first-3-seconds hook for a US TikTok video.
+Sentence 1 must function as the first-3-seconds hook for a US short-form video.
 Treat the first 3 spoken seconds as roughly the first 7-10 English words.
 Sentence 1 should prioritize one of these hook patterns: strong outcome, obvious benefit, curiosity, or surprise contrast.
 The full script must contain exactly one clear purchase CTA.
@@ -446,20 +446,20 @@ def validate_tts_script(payload: dict) -> dict:
     }
 
 
-LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国 TikTok 电商文案写手。
+LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
 仅返回合法 JSON。
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
 不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。"""
 
-HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国 TikTok Shop 文案写手。
+HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
 仅返回合法 JSON。
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
 不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。
-第 1 句必须作为美国 TikTok 视频的前 3 秒钩子。
+第 1 句必须作为美国短视频的前 3 秒钩子。
 前 3 秒口播大约对应英文前 7-10 个单词。
 第 1 句应优先使用以下钩子模式之一：强结果、明显好处、好奇心或反差惊喜。
 完整脚本必须包含恰好一个清晰的购买 CTA。

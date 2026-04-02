@@ -17,11 +17,21 @@ def _ensure_defaults(user_id: int) -> None:
                 (user_id, p["name"], p["prompt_text"], p.get("prompt_text_zh", ""), p["is_default"]),
             )
         return
-    # Backfill prompt_text_zh for existing defaults that lack it
+    # Backfill / sync default prompts with latest content
     for p in DEFAULT_PROMPTS:
         if p.get("prompt_text_zh"):
             db_execute(
                 "UPDATE user_prompts SET prompt_text_zh = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND (prompt_text_zh IS NULL OR prompt_text_zh = '')",
+                (p["prompt_text_zh"], user_id, p["name"]),
+            )
+        # Update prompt_text for defaults that still contain outdated content (e.g. TikTok references)
+        db_execute(
+            "UPDATE user_prompts SET prompt_text = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND prompt_text LIKE '%%TikTok%%'",
+            (p["prompt_text"], user_id, p["name"]),
+        )
+        if p.get("prompt_text_zh"):
+            db_execute(
+                "UPDATE user_prompts SET prompt_text_zh = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND prompt_text_zh LIKE '%%TikTok%%'",
                 (p["prompt_text_zh"], user_id, p["name"]),
             )
 
