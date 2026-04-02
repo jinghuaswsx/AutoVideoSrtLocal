@@ -71,7 +71,7 @@
           <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
         </div>
         <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
-        <button class="voice-default-btn ${voice.is_default ? 'active' : ''}" onclick="setDefaultVoice(event, ${voice.id})">${voice.is_default ? '默认' : '设为默认'}</button>
+        <button class="voice-default-btn ${voice.is_default ? 'active' : ''}" onclick="setDefaultVoice(event, ${voice.id})">默认</button>
         <button class="voice-play-btn ${voice.preview_url ? '' : 'disabled'}" ${voice.preview_url ? `onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)"` : 'disabled'} title="试听">&#9654;</button>
       </div>
     `).join("");
