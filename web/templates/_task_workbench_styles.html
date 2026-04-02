@@ -92,6 +92,12 @@
 .break-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--text-main); }
 .break-row input { accent-color: var(--primary-color); }
 .media-player { width: 100%; border-radius: 10px; background: var(--bg-body); }
+.audio-play-btn {
+  padding: 8px 20px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  border: 1.5px solid var(--border-main); background: var(--bg-body); color: var(--text-main);
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.audio-play-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
 video.media-player { max-height: 320px; }
 .result-grid { display: flex; flex-wrap: wrap; gap: 10px; }
 .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 999px; border: 1.5px solid var(--btn-ghost-border); background: var(--btn-ghost-bg); color: var(--btn-ghost-text); text-decoration: none; cursor: pointer; font-weight: 600; font-size: 13px; transition: all .2s; }
