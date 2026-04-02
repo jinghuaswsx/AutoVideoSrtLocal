@@ -805,7 +805,7 @@
   // --- Translation Prompt System ---
   let _promptsCache = [];
   let _selectedPromptId = null;
-  let _selectedPromptLang = "en";
+
   let _translationHistory = [];
 
   async function bootPrompts() {
@@ -829,22 +829,13 @@
     `).join("");
     const selected = _promptsCache.find(p => p.id === _selectedPromptId);
     if (selected) {
-      const text = _selectedPromptLang === "zh" ? (selected.prompt_text_zh || selected.prompt_text) : selected.prompt_text;
-      document.getElementById("promptEditor").value = text;
+      document.getElementById("promptEditorEn").value = selected.prompt_text || "";
+      document.getElementById("promptEditorZh").value = selected.prompt_text_zh || "";
     }
-    // Update lang tab active state
-    document.querySelectorAll(".prompt-lang-tab").forEach(t => {
-      t.classList.toggle("active", t.dataset.lang === _selectedPromptLang);
-    });
   }
 
   function selectPrompt(promptId) {
     _selectedPromptId = promptId;
-    renderPromptTabs();
-  }
-
-  function switchPromptLang(lang) {
-    _selectedPromptLang = lang;
     renderPromptTabs();
   }
 
@@ -856,23 +847,23 @@
 
   document.getElementById("savePromptBtn").addEventListener("click", async () => {
     if (!_selectedPromptId) return;
-    const text = document.getElementById("promptEditor").value.trim();
-    if (!text) return;
-    const field = _selectedPromptLang === "zh" ? "prompt_text_zh" : "prompt_text";
+    const enText = document.getElementById("promptEditorEn").value.trim();
+    const zhText = document.getElementById("promptEditorZh").value.trim();
+    if (!enText) return;
     await fetch(`/api/prompts/${_selectedPromptId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: text }),
+      body: JSON.stringify({ prompt_text: enText, prompt_text_zh: zhText }),
     });
     const p = _promptsCache.find(p => p.id === _selectedPromptId);
-    if (p) p[field] = text;
+    if (p) { p.prompt_text = enText; p.prompt_text_zh = zhText; }
   });
 
   async function doRetranslate(triggerBtn) {
     if (!taskId) return;
     const allBtns = [document.getElementById("retranslateBtn"), document.getElementById("sideRetranslateBtn")].filter(Boolean);
     allBtns.forEach(b => { b.disabled = true; b.textContent = "正在翻译中..."; });
-    const promptText = document.getElementById("promptEditor").value.trim();
+    const promptText = document.getElementById("promptEditorEn").value.trim();
     try {
       const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
         method: "POST",
