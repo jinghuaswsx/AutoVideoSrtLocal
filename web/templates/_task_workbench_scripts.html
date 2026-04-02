@@ -573,6 +573,7 @@
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
     updateAlignmentPreview();
+    setTimeout(() => document.getElementById("alignmentReview").scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   function updateAlignmentPreview() {
@@ -587,14 +588,10 @@
       }
     });
     const container = document.getElementById("alignmentPreviewContent");
-    const wrapper = document.getElementById("alignmentPreview");
-    if (!segments.length) { wrapper.classList.add("hidden"); return; }
-    wrapper.classList.remove("hidden");
     container.innerHTML = segments.map((seg, idx) => `
-      <div class="preview-block">
-        <div class="preview-label">段落 ${idx + 1}（${seg.length} 句）</div>
+      <div class="preview-block alignment-segment-preview">
+        <div class="preview-label">段落 ${idx + 1} <span class="alignment-seg-count">${seg.length} 句 · ${fmtTime(seg[0].start_time)} → ${fmtTime(seg[seg.length - 1].end_time)}</span></div>
         <div class="preview-original">${seg.map(u => escapeHtml(u.text || "")).join("")}</div>
-        <div class="preview-time">${fmtTime(seg[0].start_time)} → ${fmtTime(seg[seg.length - 1].end_time)}</div>
       </div>
     `).join("");
   }
@@ -622,6 +619,7 @@
     `).join("");
     document.getElementById("translateReview").classList.remove("hidden");
     document.getElementById("alignmentReview").classList.add("hidden");
+    setTimeout(() => document.getElementById("translateReview").scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   document.getElementById("confirmTranslate").addEventListener("click", async () => {
