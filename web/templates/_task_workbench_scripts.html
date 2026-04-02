@@ -482,7 +482,7 @@
     if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
     if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
     if (item.type === "action") return `<div class="preview-block">${label}<button class="download-btn" onclick="triggerAction('${escapeJs(item.url)}','${escapeJs(item.method || "POST")}');return false;">${escapeHtml(item.label || "执行")}</button></div>`;
-    if (item.type === "side_by_side") return `<div class="preview-side-by-side"><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div><div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
+    if (item.type === "side_by_side") return `<div class="preview-side-by-side"><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div><div class="preview-side-center"><button class="btn btn-primary btn-sm side-retranslate-btn" id="sideRetranslateBtn" onclick="doRetranslate(this)">重新翻译</button></div><div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
     if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
     if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
     if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -868,11 +868,10 @@
     if (p) p[field] = text;
   });
 
-  document.getElementById("retranslateBtn").addEventListener("click", async () => {
+  async function doRetranslate(triggerBtn) {
     if (!taskId) return;
-    const btn = document.getElementById("retranslateBtn");
-    btn.disabled = true;
-    btn.textContent = "翻译中...";
+    const allBtns = [document.getElementById("retranslateBtn"), document.getElementById("sideRetranslateBtn")].filter(Boolean);
+    allBtns.forEach(b => { b.disabled = true; b.textContent = "翻译中..."; });
     const promptText = document.getElementById("promptEditor").value.trim();
     try {
       const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
@@ -887,10 +886,11 @@
     } catch (err) {
       showError(err.message || "翻译失败");
     } finally {
-      btn.disabled = false;
-      btn.textContent = "重新翻译";
+      allBtns.forEach(b => { b.disabled = false; b.textContent = "重新翻译"; });
     }
-  });
+  }
+
+  document.getElementById("retranslateBtn").addEventListener("click", () => doRetranslate());
 
   function renderTranslationHistory() {
     const container = document.getElementById("translationResults");

@@ -125,9 +125,12 @@ video.media-player { max-height: 320px; }
 }
 .prompt-lang-tab:hover { color: var(--text-main); border-color: var(--text-main); }
 .prompt-lang-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
-.preview-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.preview-side-by-side { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; align-items: stretch; }
+.preview-side-by-side .preview-side { padding: 0 6px; }
 .preview-side-by-side .preview-block { height: 100%; }
 .preview-side-by-side .preview-text { min-height: 80px; }
+.preview-side-center { display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+.side-retranslate-btn { writing-mode: horizontal-tb; white-space: nowrap; }
 .prompt-tab {
   padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
   border: 1.5px solid var(--border-main); background: var(--bg-body); color: var(--text-main);
