@@ -9,7 +9,9 @@ import subprocess
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect
+import mimetypes
+
+from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect, Response, make_response
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -296,7 +298,41 @@ def get_artifact(task_id, name):
     if not path:
         return jsonify({"error": "Artifact not found"}), 404
 
-    return send_file(path, as_attachment=False)
+    return _send_with_range(path)
+
+
+def _send_with_range(path: str):
+    """Serve a file with HTTP Range support for audio/video streaming."""
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get("Range")
+
+    if not range_header:
+        resp = make_response(send_file(path, mimetype=mime))
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = file_size
+        return resp
+
+    # Parse "bytes=start-end"
+    try:
+        ranges = range_header.replace("bytes=", "").split("-")
+        start = int(ranges[0]) if ranges[0] else 0
+        end = int(ranges[1]) if ranges[1] else file_size - 1
+    except (ValueError, IndexError):
+        start, end = 0, file_size - 1
+
+    end = min(end, file_size - 1)
+    length = end - start + 1
+
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read(length)
+
+    resp = Response(data, status=206, mimetype=mime)
+    resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = length
+    return resp
 
 
 @bp.route("/<task_id>/start", methods=["POST"])
