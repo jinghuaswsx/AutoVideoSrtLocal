@@ -44,6 +44,16 @@ def update_voice(voice_id):
     return jsonify({"voice": voice})
 
 
+@bp.route("/<int:voice_id>/set-default", methods=["POST"])
+@login_required
+def set_default_voice(voice_id):
+    lib = get_voice_library()
+    voice = lib.set_default_voice(voice_id, current_user.id)
+    if not voice:
+        return jsonify({"error": "Voice not found"}), 404
+    return jsonify({"voice": voice})
+
+
 @bp.route("/<int:voice_id>", methods=["DELETE"])
 @login_required
 def delete_voice(voice_id):

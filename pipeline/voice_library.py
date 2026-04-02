@@ -130,6 +130,26 @@ class VoiceLibrary:
         db_execute(f"UPDATE user_voices SET {', '.join(sets)} WHERE id = %s AND user_id = %s", tuple(args))
         return self.get_voice(voice_id, user_id)
 
+    def set_default_voice(self, voice_id: int, user_id: int) -> Optional[Dict]:
+        """Set a single voice as the user's default, clearing all others."""
+        db_execute("UPDATE user_voices SET is_default = FALSE WHERE user_id = %s", (user_id,))
+        db_execute("UPDATE user_voices SET is_default = TRUE WHERE id = %s AND user_id = %s", (voice_id, user_id))
+        return self.get_voice(voice_id, user_id)
+
+    def get_user_default_voice(self, user_id: int) -> Optional[Dict]:
+        """Get the user's single default voice, or fall back to the first voice."""
+        row = db_query_one(
+            "SELECT * FROM user_voices WHERE user_id = %s AND is_default = TRUE LIMIT 1",
+            (user_id,),
+        )
+        if row:
+            return _row_to_voice(row)
+        row = db_query_one(
+            "SELECT * FROM user_voices WHERE user_id = %s ORDER BY created_at LIMIT 1",
+            (user_id,),
+        )
+        return _row_to_voice(row) if row else None
+
     def delete_voice(self, voice_id: int, user_id: int) -> None:
         db_execute("DELETE FROM user_voices WHERE id = %s AND user_id = %s", (voice_id, user_id))
 

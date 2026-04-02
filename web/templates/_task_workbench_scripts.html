@@ -45,6 +45,11 @@
       const res = await fetch("/api/voices");
       const data = await res.json();
       _voicesCache = data.voices || [];
+      // Auto-select user's default voice (or first voice) if nothing selected yet
+      if (!_selectedVoiceId && _voicesCache.length) {
+        const defaultV = _voicesCache.find(v => v.is_default);
+        _selectedVoiceId = defaultV ? defaultV.id : _voicesCache[0].id;
+      }
       renderVoiceList();
       applyTaskConfigToForm();
     } catch {
@@ -62,10 +67,11 @@
       <div class="voice-item ${_selectedVoiceId == voice.id ? 'selected' : ''}"
            data-voice-id="${voice.id}" onclick="selectVoice(${voice.id})">
         <div class="voice-item-info">
-          <div class="voice-item-name">${escapeHtml(voice.name)}</div>
+          <div class="voice-item-name">${escapeHtml(voice.name)}${voice.is_default ? '<span class="voice-default-badge">默认</span>' : ''}</div>
           <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
         </div>
         <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
+        ${!voice.is_default ? `<button class="voice-set-default-btn" onclick="setDefaultVoice(event, ${voice.id})" title="设为默认">设为默认</button>` : ''}
         ${voice.preview_url ? `<button class="voice-play-btn" onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)" title="试听">&#9654;</button>` : ''}
       </div>
     `).join("");
@@ -74,6 +80,16 @@
   function selectVoice(voiceId) {
     _selectedVoiceId = voiceId;
     renderVoiceList();
+  }
+
+  async function setDefaultVoice(e, voiceId) {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/voices/${voiceId}/set-default`, { method: "POST" });
+      if (!res.ok) return;
+      _voicesCache.forEach(v => v.is_default = (v.id === voiceId));
+      renderVoiceList();
+    } catch {}
   }
 
   function playVoicePreview(e, url, btn) {
