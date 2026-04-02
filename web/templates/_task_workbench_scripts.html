@@ -551,18 +551,17 @@
     return (lines || []).map(line => `<div class="preview-note">${escapeHtml(line)}</div>`).join("");
   }
 
+  let _alignmentUtterances = [];
+
   function renderAlignmentReview({ utterances = [], scene_cuts = [], break_after = [], recommended_voice_id }) {
+    _alignmentUtterances = utterances;
     const list = document.getElementById("alignmentList");
-    const sceneCutList = document.getElementById("sceneCutList");
-    sceneCutList.textContent = scene_cuts.length
-      ? `检测到镜头切换点：${scene_cuts.map(fmtTime).join(" / ")}`
-      : "没有检测到明显镜头切换点，本次主要依据语义停顿来推荐分段。";
     list.innerHTML = utterances.map((u, index) => `
       <div class="review-item">
         <div class="review-time">${fmtTime(u.start_time)} → ${fmtTime(u.end_time)}</div>
         <div class="review-original">${escapeHtml(u.text || "")}</div>
         <label class="break-row">
-          <input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} />
+          <input type="checkbox" class="break-after" data-index="${index}" ${break_after[index] ? "checked" : ""} ${index === utterances.length - 1 ? "disabled" : ""} onchange="updateAlignmentPreview()" />
           <span>${index === utterances.length - 1 ? "最后一句自动断开" : "在这句后断开新段落"}</span>
         </label>
       </div>
@@ -573,6 +572,31 @@
     }
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
+    updateAlignmentPreview();
+  }
+
+  function updateAlignmentPreview() {
+    const checks = [...document.querySelectorAll(".break-after")].map(c => c.checked);
+    const segments = [];
+    let current = [];
+    _alignmentUtterances.forEach((u, i) => {
+      current.push(u);
+      if (checks[i] || i === _alignmentUtterances.length - 1) {
+        segments.push(current);
+        current = [];
+      }
+    });
+    const container = document.getElementById("alignmentPreviewContent");
+    const wrapper = document.getElementById("alignmentPreview");
+    if (!segments.length) { wrapper.classList.add("hidden"); return; }
+    wrapper.classList.remove("hidden");
+    container.innerHTML = segments.map((seg, idx) => `
+      <div class="preview-block">
+        <div class="preview-label">段落 ${idx + 1}（${seg.length} 句）</div>
+        <div class="preview-original">${seg.map(u => escapeHtml(u.text || "")).join("")}</div>
+        <div class="preview-time">${fmtTime(seg[0].start_time)} → ${fmtTime(seg[seg.length - 1].end_time)}</div>
+      </div>
+    `).join("");
   }
 
   document.getElementById("confirmAlignment").addEventListener("click", async () => {

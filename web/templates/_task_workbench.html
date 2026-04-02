@@ -205,9 +205,13 @@
 
 <div class="card hidden" id="alignmentReview">
   <h3>分段确认</h3>
-  <div class="scene-cut-list" id="sceneCutList"></div>
+  <p class="review-hint">以下是语音识别的每句话。勾选「在这句后断开」可以控制翻译分段——勾选处会切开，形成独立的翻译段落。</p>
   <div class="review-list" id="alignmentList"></div>
   <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button></div>
+  <div class="alignment-preview hidden" id="alignmentPreview">
+    <h4>分段结果预览</h4>
+    <div id="alignmentPreviewContent"></div>
+  </div>
 </div>
 
 <div class="card hidden" id="translateReview">
