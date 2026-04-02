@@ -203,30 +203,40 @@
   </div>
 </div>
 
-<div class="card hidden" id="alignmentReview">
-  <div class="review-header">
-    <div>
-      <h3>分段确认</h3>
-      <p class="review-hint">勾选「断开」控制翻译分段，右侧实时预览分段结果。</p>
+<!-- 分段确认弹窗 -->
+<div class="review-modal-overlay hidden" id="alignmentReview">
+  <div class="review-modal review-modal--wide">
+    <div class="review-modal-header">
+      <div>
+        <h3>分段确认</h3>
+        <p class="review-hint">勾选「断开」控制翻译分段，右侧实时预览分段结果。</p>
+      </div>
+      <button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button>
     </div>
-    <button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button>
-  </div>
-  <div class="alignment-split">
-    <div class="alignment-left">
-      <div class="alignment-col-title">识别句子</div>
-      <div class="review-list" id="alignmentList"></div>
-    </div>
-    <div class="alignment-right">
-      <div class="alignment-col-title">分段结果预览</div>
-      <div id="alignmentPreviewContent"></div>
+    <div class="review-modal-body alignment-split">
+      <div class="alignment-left">
+        <div class="alignment-col-title">识别句子</div>
+        <div class="review-list" id="alignmentList"></div>
+      </div>
+      <div class="alignment-right">
+        <div class="alignment-col-title">分段结果预览</div>
+        <div id="alignmentPreviewContent"></div>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="card hidden" id="translateReview">
-  <h3>翻译确认</h3>
-  <div class="review-list" id="segmentList"></div>
-  <div class="review-actions"><button class="btn btn-primary btn-sm" id="confirmTranslate">确认翻译并继续</button></div>
+<!-- 翻译确认弹窗 -->
+<div class="review-modal-overlay hidden" id="translateReview">
+  <div class="review-modal">
+    <div class="review-modal-header">
+      <h3>翻译确认</h3>
+      <button class="btn btn-primary btn-sm" id="confirmTranslate">确认翻译并继续</button>
+    </div>
+    <div class="review-modal-body">
+      <div class="review-list" id="segmentList"></div>
+    </div>
+  </div>
 </div>
 
 <div class="error-msg" id="errorMsg"></div>

@@ -573,7 +573,6 @@
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
     updateAlignmentPreview();
-    setTimeout(() => document.getElementById("alignmentReview").scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   function updateAlignmentPreview() {
@@ -619,7 +618,6 @@
     `).join("");
     document.getElementById("translateReview").classList.remove("hidden");
     document.getElementById("alignmentReview").classList.add("hidden");
-    setTimeout(() => document.getElementById("translateReview").scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   document.getElementById("confirmTranslate").addEventListener("click", async () => {

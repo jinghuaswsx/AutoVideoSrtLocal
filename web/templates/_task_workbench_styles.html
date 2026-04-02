@@ -25,12 +25,30 @@
 .segment-translated:focus { border-color: var(--primary-color); background: var(--bg-card); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
 .mode-note { margin-top: 6px; color: #9ca3af; font-size: 12px; }
 .review-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.review-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.review-header h3 { margin: 0; }
+.review-modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.review-modal-overlay.hidden { display: none !important; }
+.review-modal {
+  background: var(--bg-card); border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3); border: 1px solid var(--border-main);
+  width: 90vw; max-width: 560px; max-height: 80vh;
+  display: flex; flex-direction: column;
+}
+.review-modal--wide { max-width: 900px; }
+.review-modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 20px 24px 0; flex-shrink: 0;
+}
+.review-modal-header h3 { margin: 0; font-size: 18px; }
 .review-hint { color: #9ca3af; font-size: 13px; margin-top: 4px; line-height: 1.5; }
-.alignment-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.review-modal-body { padding: 16px 24px 24px; overflow: auto; flex: 1; min-height: 0; }
+.alignment-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; height: 100%; }
 .alignment-col-title { font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-.alignment-left .review-list, .alignment-right { max-height: 480px; overflow: auto; }
+.alignment-left .review-list, .alignment-right { max-height: 56vh; overflow: auto; }
 .alignment-right .preview-block { margin-bottom: 8px; }
 .alignment-seg-count { font-weight: 400; color: #9ca3af; }
 .steps { display: flex; flex-direction: column; gap: 12px; }
