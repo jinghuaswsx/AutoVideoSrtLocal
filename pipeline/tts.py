@@ -18,16 +18,16 @@ def _get_client(api_key: str | None = None) -> ElevenLabs:
     return _client
 
 
-def load_voices() -> List[Dict]:
-    return get_voice_library().list_voices()
+def load_voices(user_id: int) -> List[Dict]:
+    return get_voice_library().list_voices(user_id)
 
 
-def get_default_voice(gender: str = "male") -> Dict:
-    return get_voice_library().get_default_voice(gender)
+def get_default_voice(user_id: int, gender: str = "male") -> Dict:
+    return get_voice_library().get_default_voice(user_id, gender)
 
 
-def get_voice_by_id(voice_id: str) -> Dict | None:
-    return get_voice_library().get_voice(voice_id)
+def get_voice_by_id(voice_id: int, user_id: int) -> Dict | None:
+    return get_voice_library().get_voice(voice_id, user_id)
 
 
 def generate_segment_audio(text: str, voice_id: str, output_path: str, elevenlabs_api_key: str | None = None) -> str:

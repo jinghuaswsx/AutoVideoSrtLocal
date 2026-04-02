@@ -324,11 +324,11 @@ class PipelineRunner:
 
         voice = None
         if task.get("voice_id"):
-            voice = get_voice_by_id(task["voice_id"])
+            voice = get_voice_by_id(task["voice_id"], self.user_id)
         if not voice and task.get("recommended_voice_id"):
-            voice = get_voice_by_id(task["recommended_voice_id"])
+            voice = get_voice_by_id(task["recommended_voice_id"], self.user_id)
         if not voice:
-            voice = get_default_voice(task.get("voice_gender", "male"))
+            voice = get_default_voice(self.user_id, task.get("voice_gender", "male"))
 
         variant = "normal"
         variants = dict(task.get("variants", {}))
