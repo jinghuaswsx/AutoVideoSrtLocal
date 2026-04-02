@@ -283,13 +283,74 @@ def _export_with_pyjianyingdraft(
             prev_end_us = int((target_start + clip_duration) * 1_000_000)
             target_cursor += clip_duration
 
+    _import_srt_safe(draft, script, str(copied_srt), subtitle_position)
+    script.save()
+
+
+def _import_srt_safe(draft, script, srt_path: str, subtitle_position: str) -> None:
+    """Import SRT with overlap fix: sort entries and remove overlapping ones."""
+    _fix_srt_overlaps(srt_path)
     script.import_srt(
-        str(copied_srt),
+        srt_path,
         track_name="subtitle",
         text_style=draft.TextStyle(size=5.6, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=True, max_line_width=0.76),
         clip_settings=draft.ClipSettings(transform_y=_subtitle_transform_y(subtitle_position)),
     )
-    script.save()
+
+
+def _fix_srt_overlaps(srt_path: str) -> None:
+    """Parse SRT, sort by start time, remove overlapping entries, rewrite file."""
+    import re
+
+    try:
+        with open(srt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return
+
+    pattern = re.compile(
+        r"(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})\s*\n((?:(?!\n\d+\s*\n\d{2}:\d{2}).)*)",
+        re.DOTALL,
+    )
+
+    def ts_to_ms(ts: str) -> int:
+        h, m, rest = ts.split(":")
+        s, ms = rest.split(",")
+        return int(h) * 3600000 + int(m) * 60000 + int(s) * 1000 + int(ms)
+
+    def ms_to_ts(ms: int) -> str:
+        h = ms // 3600000
+        ms %= 3600000
+        m = ms // 60000
+        ms %= 60000
+        s = ms // 1000
+        ms %= 1000
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    entries = []
+    for match in pattern.finditer(content):
+        start_ms = ts_to_ms(match.group(2))
+        end_ms = ts_to_ms(match.group(3))
+        text = match.group(4).strip()
+        entries.append((start_ms, end_ms, text))
+
+    entries.sort(key=lambda e: e[0])
+
+    cleaned = []
+    for start, end, text in entries:
+        if cleaned and start < cleaned[-1][1]:
+            continue
+        cleaned.append((start, end, text))
+
+    if len(cleaned) == len(entries):
+        return
+
+    lines = []
+    for i, (start, end, text) in enumerate(cleaned, 1):
+        lines.append(f"{i}\n{ms_to_ts(start)} --> {ms_to_ts(end)}\n{text}\n")
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
 
 def _export_with_template_scaffold(
