@@ -331,9 +331,6 @@
       renderTaskState();
       restoreReviewState();
       scheduleRefreshTaskState(0);
-      if (payload.status === "source_ready") {
-        resetStartButton();
-      }
     } catch (err) {
       showError(err.message || "启动失败");
       resetStartButton();

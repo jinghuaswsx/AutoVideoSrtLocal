@@ -319,8 +319,6 @@ def start(task_id):
 
     if _task_requires_source_sync(task):
         _ensure_local_source_video(task_id, task)
-        updated_task = store.get(task_id) or task
-        return jsonify({"status": "source_ready", "task": updated_task})
 
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.start(task_id, user_id=user_id)
