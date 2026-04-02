@@ -117,6 +117,17 @@ video.media-player { max-height: 320px; }
   letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;
 }
 .prompt-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.prompt-lang-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.prompt-lang-tab {
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border-main); background: transparent; color: #9ca3af;
+  cursor: pointer; transition: all .15s; font-family: inherit;
+}
+.prompt-lang-tab:hover { color: var(--text-main); border-color: var(--text-main); }
+.prompt-lang-tab.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+.preview-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.preview-side-by-side .preview-block { height: 100%; }
+.preview-side-by-side .preview-text { min-height: 80px; }
 .prompt-tab {
   padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
   border: 1.5px solid var(--border-main); background: var(--bg-body); color: var(--text-main);

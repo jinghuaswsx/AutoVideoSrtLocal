@@ -482,6 +482,7 @@
     if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
     if (item.type === "download") return `<div class="preview-block">${label}<a class="download-btn" href="#" onclick="dlFile('${escapeJs(item.url)}','${escapeJs(item.label || "下载")}');return false;">${escapeHtml(item.label || "下载")}</a></div>`;
     if (item.type === "action") return `<div class="preview-block">${label}<button class="download-btn" onclick="triggerAction('${escapeJs(item.url)}','${escapeJs(item.method || "POST")}');return false;">${escapeHtml(item.label || "执行")}</button></div>`;
+    if (item.type === "side_by_side") return `<div class="preview-side-by-side"><div class="preview-side">${renderPreviewItem(item.left, variantKey)}</div><div class="preview-side">${renderPreviewItem(item.right, variantKey)}</div></div>`;
     if (item.type === "text") return `<div class="preview-block">${label}<pre class="preview-text">${escapeHtml(item.content || "")}</pre></div>`;
     if (item.type === "scene_cuts") return `<div class="preview-block">${label}<div class="preview-text">${(item.values || []).length ? `镜头切换点：${item.values.map(fmtTime).join(" / ")}` : "没有检测到明显镜头切换点。"}</div></div>`;
     if (item.type === "utterances") return `<div class="preview-block">${label}<div class="preview-list">${(item.utterances || []).map(seg => `<div class="preview-block"><div class="preview-time">${fmtTime(seg.start_time)} → ${fmtTime(seg.end_time)}</div><div class="preview-original">${escapeHtml(seg.text || "")}</div></div>`).join("")}</div></div>`;
@@ -804,6 +805,7 @@
   // --- Translation Prompt System ---
   let _promptsCache = [];
   let _selectedPromptId = null;
+  let _selectedPromptLang = "en";
   let _translationHistory = [];
 
   async function bootPrompts() {
@@ -827,12 +829,22 @@
     `).join("");
     const selected = _promptsCache.find(p => p.id === _selectedPromptId);
     if (selected) {
-      document.getElementById("promptEditor").value = selected.prompt_text;
+      const text = _selectedPromptLang === "zh" ? (selected.prompt_text_zh || selected.prompt_text) : selected.prompt_text;
+      document.getElementById("promptEditor").value = text;
     }
+    // Update lang tab active state
+    document.querySelectorAll(".prompt-lang-tab").forEach(t => {
+      t.classList.toggle("active", t.dataset.lang === _selectedPromptLang);
+    });
   }
 
   function selectPrompt(promptId) {
     _selectedPromptId = promptId;
+    renderPromptTabs();
+  }
+
+  function switchPromptLang(lang) {
+    _selectedPromptLang = lang;
     renderPromptTabs();
   }
 
@@ -846,13 +858,14 @@
     if (!_selectedPromptId) return;
     const text = document.getElementById("promptEditor").value.trim();
     if (!text) return;
+    const field = _selectedPromptLang === "zh" ? "prompt_text_zh" : "prompt_text";
     await fetch(`/api/prompts/${_selectedPromptId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt_text: text }),
+      body: JSON.stringify({ [field]: text }),
     });
     const p = _promptsCache.find(p => p.id === _selectedPromptId);
-    if (p) p.prompt_text = text;
+    if (p) p[field] = text;
   });
 
   document.getElementById("retranslateBtn").addEventListener("click", async () => {

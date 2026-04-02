@@ -10,13 +10,20 @@ bp = Blueprint("prompt", __name__, url_prefix="/api/prompts")
 
 def _ensure_defaults(user_id: int) -> None:
     existing = db_query("SELECT id FROM user_prompts WHERE user_id = %s LIMIT 1", (user_id,))
-    if existing:
+    if not existing:
+        for p in DEFAULT_PROMPTS:
+            db_execute(
+                "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default) VALUES (%s, %s, %s, %s, %s)",
+                (user_id, p["name"], p["prompt_text"], p.get("prompt_text_zh", ""), p["is_default"]),
+            )
         return
+    # Backfill prompt_text_zh for existing defaults that lack it
     for p in DEFAULT_PROMPTS:
-        db_execute(
-            "INSERT INTO user_prompts (user_id, name, prompt_text, is_default) VALUES (%s, %s, %s, %s)",
-            (user_id, p["name"], p["prompt_text"], p["is_default"]),
-        )
+        if p.get("prompt_text_zh"):
+            db_execute(
+                "UPDATE user_prompts SET prompt_text_zh = %s WHERE user_id = %s AND name = %s AND is_default = TRUE AND (prompt_text_zh IS NULL OR prompt_text_zh = '')",
+                (p["prompt_text_zh"], user_id, p["name"]),
+            )
 
 
 @bp.route("", methods=["GET"])
@@ -38,9 +45,10 @@ def create_prompt():
     prompt_text = (body.get("prompt_text") or "").strip()
     if not name or not prompt_text:
         return jsonify({"error": "name and prompt_text are required"}), 400
+    prompt_text_zh = (body.get("prompt_text_zh") or "").strip()
     row_id = db_execute(
-        "INSERT INTO user_prompts (user_id, name, prompt_text, is_default) VALUES (%s, %s, %s, FALSE)",
-        (current_user.id, name, prompt_text),
+        "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default) VALUES (%s, %s, %s, %s, FALSE)",
+        (current_user.id, name, prompt_text, prompt_text_zh),
     )
     row = db_query_one("SELECT * FROM user_prompts WHERE id = %s", (row_id,))
     return jsonify({"prompt": dict(row)}), 201
@@ -64,6 +72,9 @@ def update_prompt(prompt_id):
     if "prompt_text" in body:
         sets.append("prompt_text = %s")
         args.append(body["prompt_text"].strip())
+    if "prompt_text_zh" in body:
+        sets.append("prompt_text_zh = %s")
+        args.append(body["prompt_text_zh"].strip())
     if not sets:
         return jsonify({"prompt": dict(row)})
     args.extend([prompt_id, current_user.id])

@@ -82,8 +82,11 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
     return {
         "title": "翻译本土化",
         "items": [
-            text_item("整段中文", str(source_or_segments or "")),
-            text_item("整段本土化英文", translation.get("full_text", "")),
+            {
+                "type": "side_by_side",
+                "left": text_item("整段中文", str(source_or_segments or "")),
+                "right": text_item("整段本土化英文", translation.get("full_text", "")),
+            },
             {
                 "type": "sentences",
                 "label": "英文句子映射",

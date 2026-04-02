@@ -446,7 +446,27 @@ def validate_tts_script(payload: dict) -> dict:
     }
 
 
+LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国 TikTok 电商文案写手。
+仅返回合法 JSON。
+将中文原文翻译成自然、地道、具有销售力的美式英语。
+可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
+每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
+不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。"""
+
+HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国 TikTok Shop 文案写手。
+仅返回合法 JSON。
+将中文原文翻译成自然、地道、具有销售力的美式英语。
+可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
+每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
+不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。
+第 1 句必须作为美国 TikTok 视频的前 3 秒钩子。
+前 3 秒口播大约对应英文前 7-10 个单词。
+第 1 句应优先使用以下钩子模式之一：强结果、明显好处、好奇心或反差惊喜。
+完整脚本必须包含恰好一个清晰的购买 CTA。
+CTA 放在最自然的位置，通常在中间或接近结尾。
+可以重新排列重点以提高钩子效果，但必须保留原始卖点。"""
+
 DEFAULT_PROMPTS = [
-    {"name": "普通翻译", "prompt_text": LOCALIZED_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
-    {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "is_default": True},
+    {"name": "普通翻译", "prompt_text": LOCALIZED_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
+    {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
 ]
