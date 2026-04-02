@@ -67,12 +67,12 @@
       <div class="voice-item ${_selectedVoiceId == voice.id ? 'selected' : ''}"
            data-voice-id="${voice.id}" onclick="selectVoice(${voice.id})">
         <div class="voice-item-info">
-          <div class="voice-item-name">${escapeHtml(voice.name)}${voice.is_default ? '<span class="voice-default-badge">默认</span>' : ''}</div>
+          <div class="voice-item-name">${escapeHtml(voice.name)}</div>
           <div class="voice-item-desc">${escapeHtml(voice.description || '')}</div>
         </div>
         <span class="voice-item-gender ${voice.gender}">${voice.gender === 'female' ? '女声' : '男声'}</span>
-        ${!voice.is_default ? `<button class="voice-set-default-btn" onclick="setDefaultVoice(event, ${voice.id})" title="设为默认">设为默认</button>` : ''}
-        ${voice.preview_url ? `<button class="voice-play-btn" onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)" title="试听">&#9654;</button>` : ''}
+        <button class="voice-default-btn ${voice.is_default ? 'active' : ''}" onclick="setDefaultVoice(event, ${voice.id})">${voice.is_default ? '默认' : '设为默认'}</button>
+        <button class="voice-play-btn ${voice.preview_url ? '' : 'disabled'}" ${voice.preview_url ? `onclick="playVoicePreview(event, '${escapeJs(voice.preview_url)}', this)"` : 'disabled'} title="试听">&#9654;</button>
       </div>
     `).join("");
   }
