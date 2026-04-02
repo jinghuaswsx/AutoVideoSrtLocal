@@ -134,7 +134,7 @@ def _artifact_candidates(task_id: str, name: str, task: dict | None = None, vari
         }
     else:
         filename_map = {
-            "audio_extract": [f"{task_id}_audio.wav", f"{task_id}_audio.mp3"],
+            "audio_extract": [f"{task_id}_audio.mp3", f"{task_id}_audio.wav"],
             "tts_full_audio": ["tts_full.mp3", "tts_full.wav"],
             "soft_video": [f"{task_id}_soft.mp4", "soft.mp4"],
             "hard_video": [f"{task_id}_hard.mp4", "hard.mp4"],

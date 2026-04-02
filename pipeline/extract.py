@@ -8,9 +8,10 @@ import subprocess
 def extract_audio(video_path: str, output_dir: str) -> str:
     """
     从视频文件提取音频，输出 16kHz 单声道 WAV（豆包 ASR 推荐格式）
+    同时生成 MP3 预览文件供浏览器播放
 
     Returns:
-        str: 输出音频文件路径
+        str: 输出 WAV 音频文件路径
     """
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -29,6 +30,17 @@ def extract_audio(video_path: str, output_dir: str) -> str:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg 音频提取失败: {result.stderr}")
+
+    # Generate MP3 preview for browser playback
+    mp3_path = os.path.join(output_dir, f"{base_name}_audio.mp3")
+    mp3_cmd = [
+        "ffmpeg", "-y",
+        "-i", audio_path,
+        "-codec:a", "libmp3lame",
+        "-b:a", "64k",
+        mp3_path
+    ]
+    subprocess.run(mp3_cmd, capture_output=True, text=True)
 
     return audio_path
 
