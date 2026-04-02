@@ -519,8 +519,6 @@
     ];
     if (seg.translated) parts.push(`<div class="preview-translated">译文：${escapeHtml(seg.translated)}</div>`);
     if (seg.tts_duration !== undefined && seg.tts_duration !== null) parts.push(`<div class="preview-note">TTS 时长：${Number(seg.tts_duration).toFixed(2)}s</div>`);
-    if ((seg.source_segment_indices || []).length) parts.push(`<div class="preview-note">源分段：${escapeHtml(seg.source_segment_indices.join(", "))}</div>`);
-    if (breakAfter.length) parts.push(`<div class="preview-note">断点索引：${escapeHtml(breakAfter.map((flag, idx) => flag ? idx : null).filter(v => v !== null).join(", ") || "无")}</div>`);
     return `<div class="preview-block">${parts.join("")}</div>`;
   }
 

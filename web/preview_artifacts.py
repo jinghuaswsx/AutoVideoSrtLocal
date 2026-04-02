@@ -49,13 +49,8 @@ def build_alignment_artifact(
         "title": "分段确认",
         "items": [
             {
-                "type": "scene_cuts",
-                "label": "镜头切换",
-                "values": scene_cuts or [],
-            },
-            {
                 "type": "segments",
-                "label": "分段预览",
+                "label": "翻译分段",
                 "segments": script_segments or [],
                 "break_after": break_after or [],
             },
