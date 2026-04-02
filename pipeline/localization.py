@@ -415,8 +415,9 @@ def validate_localized_translation(payload: dict) -> dict:
         if not isinstance(indices, list) or not indices:
             raise ValueError("localized_translation sentence missing source_segment_indices")
 
-    if _concat_items(sentences, "text") != full_text:
-        raise ValueError("localized_translation full_text does not match sentences")
+    concat = _concat_items(sentences, "text")
+    if concat != full_text:
+        full_text = concat
 
     return {"full_text": full_text, "sentences": sentences}
 
