@@ -253,6 +253,7 @@ def _export_with_pyjianyingdraft(
             track_name="audio",
         )
 
+    prev_end_us = -1
     for segment in timeline_manifest.get("segments", []):
         target_cursor = float(segment.get("timeline_start", 0.0) or 0.0)
         for clip in segment.get("video_ranges", []):
@@ -265,14 +266,21 @@ def _export_with_pyjianyingdraft(
                 continue
             clip_start = round(clip_start, 3)
             clip_duration = round(clip_duration, 3)
+            target_start = round(target_cursor, 3)
+            # Prevent overlap: nudge start forward by 1ms if it would overlap
+            start_us = int(target_start * 1_000_000)
+            if prev_end_us >= 0 and start_us < prev_end_us:
+                target_start = (prev_end_us + 1000) / 1_000_000.0
+                clip_duration = max(clip_duration - (target_start - round(target_cursor, 3)), 0.001)
             script.add_segment(
                 draft.VideoSegment(
                     str(copied_video),
-                    draft.trange(f"{round(target_cursor, 3)}s", f"{clip_duration}s"),
+                    draft.trange(f"{target_start}s", f"{clip_duration}s"),
                     source_timerange=draft.trange(f"{clip_start}s", f"{clip_duration}s"),
                 ),
                 track_name="video",
             )
+            prev_end_us = int((target_start + clip_duration) * 1_000_000)
             target_cursor += clip_duration
 
     script.import_srt(
