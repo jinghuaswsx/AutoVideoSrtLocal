@@ -322,24 +322,16 @@ def _send_with_range(path: str):
 
     length = end - start + 1
 
-    def generate():
-        chunk_size = 64 * 1024
-        with open(path, "rb") as f:
-            f.seek(start)
-            remaining = length
-            while remaining > 0:
-                read_size = min(chunk_size, remaining)
-                data = f.read(read_size)
-                if not data:
-                    break
-                remaining -= len(data)
-                yield data
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read(length)
 
-    resp = Response(generate(), status=status, mimetype=mime)
+    resp = Response(data, status=status, mimetype=mime, direct_passthrough=True)
     if status == 206:
         resp.headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Content-Length"] = length
+    resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
