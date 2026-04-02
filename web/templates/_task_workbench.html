@@ -127,14 +127,16 @@
           <label>翻译提示词</label>
           <div class="prompt-tabs" id="promptTabs"></div>
         </div>
+        <div class="prompt-lang-bar">
+          <button class="prompt-lang-btn active" id="langBtnEn" onclick="selectPromptLang('en')">English</button>
+          <button class="prompt-lang-btn" id="langBtnZh" onclick="selectPromptLang('zh')">中文</button>
+        </div>
         <div class="prompt-dual-editors">
           <div class="prompt-dual-col">
-            <div class="prompt-dual-label active">English</div>
-            <textarea class="prompt-editor" id="promptEditorEn" rows="8" placeholder="English prompt"></textarea>
+            <textarea class="prompt-editor" id="promptEditorEn" rows="8" placeholder="English prompt" onfocus="selectPromptLang('en')"></textarea>
           </div>
           <div class="prompt-dual-col">
-            <div class="prompt-dual-label">中文</div>
-            <textarea class="prompt-editor" id="promptEditorZh" rows="8" placeholder="中文提示词"></textarea>
+            <textarea class="prompt-editor" id="promptEditorZh" rows="8" placeholder="中文提示词" onfocus="selectPromptLang('zh')"></textarea>
           </div>
         </div>
         <div class="prompt-actions">

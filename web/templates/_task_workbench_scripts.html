@@ -850,6 +850,13 @@
 
   let _translationHistory = [];
 
+  function selectPromptLang(lang) {
+    document.getElementById("langBtnEn").classList.toggle("active", lang === "en");
+    document.getElementById("langBtnZh").classList.toggle("active", lang === "zh");
+    document.getElementById("promptEditorEn").classList.toggle("prompt-editor--active", lang === "en");
+    document.getElementById("promptEditorZh").classList.toggle("prompt-editor--active", lang === "zh");
+  }
+
   async function bootPrompts() {
     try {
       const res = await fetch("/api/prompts");
