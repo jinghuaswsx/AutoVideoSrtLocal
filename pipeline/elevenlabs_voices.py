@@ -134,13 +134,13 @@ def _map_shared_voice_to_local(shared: dict, overrides: dict | None = None) -> d
     name = overrides.get("name") or shared.get("name") or "Imported Voice"
     labels = shared.get("labels") or {}
 
-    # Guess gender from labels
+    # Determine gender: override > labels > default male
     gender = overrides.get("gender") or ""
     if not gender:
         gender_label = labels.get("gender", "").lower()
         if "female" in gender_label:
             gender = "female"
-        elif "male" in gender_label:
+        else:
             gender = "male"
 
     # Build style tags from labels
