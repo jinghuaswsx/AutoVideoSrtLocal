@@ -661,8 +661,8 @@
       return;
     }
     if (currentTask.current_review_step === "translate" && currentTask.steps?.translate === "waiting") {
-      if (currentTask._translate_pre_select) {
-        // 预选模式：弹出模型+提示词选择面板
+      if (currentTask._translate_pre_select || !currentTask.localized_translation) {
+        // 预选模式：弹出模型+提示词选择面板（翻译还没跑过）
         showTranslatePromptPanel();
         return;
       }
@@ -987,7 +987,7 @@
     const modelProvider = document.getElementById("translateModelSelect").value;
     try {
       // 预选模式：首次翻译，调用 start-translate
-      if (currentTask && currentTask._translate_pre_select) {
+      if (currentTask && (currentTask._translate_pre_select || !currentTask.localized_translation)) {
         const res = await fetch(`/api/tasks/${taskId}/start-translate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
