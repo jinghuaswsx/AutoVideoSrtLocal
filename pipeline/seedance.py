@@ -135,8 +135,12 @@ def poll_video_task(
 
 def _extract_video_url(data: dict) -> str:
     """从任务结果中提取视频下载 URL。"""
-    # 格式1: data.content[] — 可能是 list of dict
+    # 格式1: data.content 为 dict，直接含 video_url
     content = data.get("content")
+    if isinstance(content, dict) and "video_url" in content:
+        return content["video_url"]
+
+    # 格式2: data.content[] — list of dict
     if isinstance(content, list):
         for item in content:
             if isinstance(item, dict):
@@ -145,7 +149,6 @@ def _extract_video_url(data: dict) -> str:
                     if isinstance(url, dict):
                         return url.get("url", "")
                     return url
-                # 嵌套格式: item.type == "video_url", item.video_url.url
                 if item.get("type") == "video_url":
                     vu = item.get("video_url", {})
                     if isinstance(vu, dict):
