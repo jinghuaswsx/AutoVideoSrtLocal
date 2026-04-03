@@ -451,6 +451,10 @@ function showDebugInfo(debug) {
         resources.push("帧文件: " + debug.keyframe_paths.join(", "));
     }
     document.getElementById("debugResources").textContent = resources.join("\n") || "无资源文件";
+    // 完整请求报文
+    if (debug.full_request) {
+        document.getElementById("debugFullRequest").textContent = JSON.stringify(debug.full_request, null, 2);
+    }
 }
 
 loadPrompts();

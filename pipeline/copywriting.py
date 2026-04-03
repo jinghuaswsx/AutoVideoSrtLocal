@@ -391,7 +391,45 @@ def generate_copy(
     log.info("调用 LLM 生成文案: provider=%s, model=%s, video=%s, images=%d",
              provider, model, bool(use_video), len(keyframe_paths) if use_vision else 0)
 
-    # 构建调试信息（不含 base64 数据）
+    # ── 构建完整可复现的请求报文（base64 截断） ──
+    def _truncate_base64(obj):
+        """递归截断 base64 数据，保留前100字符 + 长度信息。"""
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if k in ("url",) and isinstance(v, str) and v.startswith("data:"):
+                    prefix = v[:100]
+                    out[k] = f"{prefix}...[TRUNCATED, total {len(v)} chars]"
+                else:
+                    out[k] = _truncate_base64(v)
+            return out
+        elif isinstance(obj, list):
+            return [_truncate_base64(i) for i in obj]
+        return obj
+
+    base_url = client.base_url if hasattr(client, 'base_url') else "unknown"
+    request_payload = {
+        "model": model,
+        "messages": _truncate_base64(messages),
+        "temperature": extra_kwargs.get("temperature"),
+        "max_tokens": extra_kwargs.get("max_tokens"),
+        "response_format": extra_kwargs.get("response_format"),
+    }
+    if "extra_body" in extra_kwargs:
+        request_payload["extra_body"] = extra_kwargs["extra_body"]
+
+    full_request_log = {
+        "endpoint": f"{base_url}chat/completions",
+        "method": "POST",
+        "headers": {
+            "Authorization": "Bearer sk-***REDACTED***",
+            "Content-Type": "application/json",
+        },
+        "body": request_payload,
+    }
+    log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
+
+    # 构建调试信息（不含 base64 数据，存入结果供前端展示）
     debug_content = []
     for item in content:
         if item["type"] == "text":
@@ -409,6 +447,7 @@ def generate_copy(
         "video_file": os.path.basename(video_path) if use_video else None,
         "image_count": len(keyframe_paths) if use_vision else 0,
         "keyframe_paths": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
+        "full_request": full_request_log,
     }
 
     response = client.chat.completions.create(
