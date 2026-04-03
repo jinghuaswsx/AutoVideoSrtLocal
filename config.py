@@ -61,7 +61,9 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")
 
 # 豆包翻译 (火山引擎 ARK)
-DOUBAO_LLM_API_KEY = _env("DOUBAO_LLM_API_KEY")
+DOUBAO_LLM_API_KEY = _env("DOUBAO_LLM_API_KEY") or _env("VOLC_API_KEY")
+if DOUBAO_LLM_API_KEY and not os.environ.get("DOUBAO_LLM_API_KEY"):
+    os.environ["DOUBAO_LLM_API_KEY"] = DOUBAO_LLM_API_KEY
 DOUBAO_LLM_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DOUBAO_LLM_MODEL = _env("DOUBAO_LLM_MODEL", "doubao-seed-2-0-pro-260215")
 
