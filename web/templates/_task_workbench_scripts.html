@@ -442,6 +442,10 @@
     if (!currentTask) return;
     renderStepMessages();
     renderStepPreviews(currentTask.artifacts || {});
+    // 重渲染后恢复音频播放按钮状态
+    if (_previewAudio && !_previewAudio.paused && _previewAudioGid) {
+      _setAudioBtns(_previewAudioGid, true);
+    }
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
@@ -498,7 +502,9 @@
     const label = `<div class="preview-label">${escapeHtml(item.label || "预览")}</div>`;
     if (item.type === "audio") {
       const src = item.url || artifactUrl(item.artifact, variantKey);
-      const gid = "ag-" + Math.random().toString(36).slice(2, 8);
+      // 用 artifact name + variantKey 生成稳定 gid，避免刷新后 gid 变化导致暂停失效
+      const stableKey = (item.artifact || item.url || "") + (variantKey || "");
+      const gid = "ag-" + stableKey.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
       return `<div class="preview-block">${label}<div class="audio-btn-group" id="${gid}"><button class="audio-play-btn" onclick="playAudio('${gid}','${escapeJs(src)}')">&#9654; 播放</button><button class="audio-play-btn audio-pause-btn" onclick="pauseAudio('${gid}')">⏸ 暂停</button><span class="audio-time" id="${gid}-time"></span></div></div>`;
     }
     if (item.type === "video") return `<div class="preview-block">${label}<video class="media-player" controls playsinline preload="metadata" src="${item.url || artifactUrl(item.artifact, variantKey)}"></video></div>`;
@@ -830,9 +836,11 @@
   }
 
   function pauseAudio(gid) {
-    if (_previewAudio && _previewAudioGid === gid) {
+    if (_previewAudio) {
       _previewAudio.pause();
+      // 更新传入 gid 和实际 gid 的按钮状态
       _setAudioBtns(gid, false);
+      if (_previewAudioGid && _previewAudioGid !== gid) _setAudioBtns(_previewAudioGid, false);
     }
   }
 

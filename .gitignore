@@ -31,3 +31,9 @@ uploads/
 output/
 capcut_example/
 example.mp4
+
+# Superpowers temp
+.superpowers/
+
+# Stray empty file
+AutoVideoSrt
