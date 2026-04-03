@@ -377,6 +377,7 @@ def retranslate(task_id):
     body = request.get_json(silent=True) or {}
     prompt_text = (body.get("prompt_text") or "").strip()
     prompt_id = body.get("prompt_id")
+    model_provider = body.get("model_provider", "").strip()
 
     if not prompt_text and prompt_id:
         row = db_query_one(
@@ -389,19 +390,22 @@ def retranslate(task_id):
     if not prompt_text:
         return jsonify({"error": "需要提供 prompt_text 或有效的 prompt_id"}), 400
 
+    # Resolve provider: explicit param > user pref > default
+    if model_provider not in ("openrouter", "doubao"):
+        from appcore.api_keys import get_key
+        model_provider = get_key(current_user.id, "translate_pref") or "openrouter"
+
     from pipeline.translate import generate_localized_translation
     from pipeline.localization import build_source_full_text_zh
-    from appcore.api_keys import resolve_key
 
     script_segments = task.get("script_segments") or []
     source_full_text_zh = build_source_full_text_zh(script_segments)
-    openrouter_api_key = resolve_key(current_user.id, "openrouter", "OPENROUTER_API_KEY")
 
     try:
         result = generate_localized_translation(
             source_full_text_zh, script_segments, variant="normal",
-            openrouter_api_key=openrouter_api_key,
             custom_system_prompt=prompt_text,
+            provider=model_provider, user_id=current_user.id,
         )
     except Exception as exc:
         return jsonify({"error": f"翻译失败: {exc}"}), 500
@@ -411,6 +415,7 @@ def retranslate(task_id):
     translation_history.append({
         "prompt_text": prompt_text,
         "prompt_id": prompt_id,
+        "model_provider": model_provider,
         "result": result,
     })
     if len(translation_history) > 3:
