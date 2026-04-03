@@ -455,6 +455,63 @@ function showDebugInfo(debug) {
     if (debug.full_request) {
         document.getElementById("debugFullRequest").textContent = JSON.stringify(debug.full_request, null, 2);
     }
+    // 保存到全局供下载
+    window._lastDebugInfo = debug;
+}
+
+function downloadDebugReport() {
+    const debug = window._lastDebugInfo;
+    if (!debug) { alert("暂无报文数据"); return; }
+
+    let report = "=== 文案生成请求报文 ===\n";
+    report += "时间: " + new Date().toISOString() + "\n";
+    report += "任务ID: " + TASK_ID + "\n\n";
+
+    report += "--- 模型 ---\n";
+    report += "Provider: " + (debug.provider || "-") + "\n";
+    report += "Model: " + (debug.model || "-") + "\n\n";
+
+    report += "--- 系统提示词 ---\n";
+    report += (debug.system_prompt || "-") + "\n\n";
+
+    report += "--- 用户消息内容 ---\n";
+    (debug.user_content || []).forEach(function(item, i) {
+        if (item.type === "text") report += "[TEXT " + i + "] " + item.text + "\n\n";
+        else if (item.type === "image") report += "[IMAGE " + i + "] " + (item.info || item.file || "") + "\n";
+        else if (item.type === "video") report += "[VIDEO " + i + "] " + (item.info || item.file || "") + "\n";
+    });
+    report += "\n";
+
+    report += "--- 资源 ---\n";
+    report += "视频输入: " + (debug.video_input ? "是 (" + debug.video_file + ")" : "否") + "\n";
+    report += "图片数: " + (debug.image_count || 0) + "\n";
+    if (debug.keyframe_paths && debug.keyframe_paths.length) {
+        report += "关键帧: " + debug.keyframe_paths.join(", ") + "\n";
+    }
+    report += "\n";
+
+    if (debug.full_request) {
+        report += "--- 完整 HTTP 请求 ---\n";
+        report += JSON.stringify(debug.full_request, null, 2) + "\n\n";
+    }
+
+    // curl 命令
+    if (debug.full_request) {
+        const req = debug.full_request;
+        report += "--- cURL 命令（替换 API Key） ---\n";
+        report += "curl -X POST '" + (req.endpoint || "") + "' \\\n";
+        report += "  -H 'Authorization: Bearer YOUR_API_KEY' \\\n";
+        report += "  -H 'Content-Type: application/json' \\\n";
+        report += "  -d '" + JSON.stringify(req.body).replace(/'/g, "'\\''") + "'\n";
+    }
+
+    const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = TASK_ID + "_request_report.txt";
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 loadPrompts();
