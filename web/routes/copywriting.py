@@ -15,7 +15,7 @@ from flask_login import login_required, current_user
 from appcore import task_state
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
-from appcore.db import get_connection
+from appcore.db import get_conn as get_connection
 from config import UPLOAD_DIR, OUTPUT_DIR
 
 bp = Blueprint("copywriting", __name__)

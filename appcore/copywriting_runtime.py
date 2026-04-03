@@ -17,6 +17,7 @@ from appcore.events import (
 )
 from appcore import task_state
 from appcore.api_keys import resolve_key, resolve_extra
+from appcore.db import get_conn as get_connection
 
 log = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ class CopywritingRunner:
 
     def _load_product_inputs(self, task_id: str) -> dict:
         """从 copywriting_inputs 表加载商品信息。"""
-        from appcore.db import get_connection
+        # get_connection imported at module level
         conn = get_connection()
         try:
             with conn.cursor() as cur:
@@ -238,7 +239,7 @@ class CopywritingRunner:
         if not prompt_id:
             return None
 
-        from appcore.db import get_connection
+        # get_connection imported at module level
         conn = get_connection()
         try:
             with conn.cursor() as cur:
