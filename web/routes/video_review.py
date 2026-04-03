@@ -125,8 +125,8 @@ def start_review(task_id: str):
 
     # 检查文件大小（OpenRouter 有限制，一般 20MB 以内）
     file_size = os.path.getsize(video_path)
-    if file_size > 20 * 1024 * 1024:
-        return jsonify(error=f"视频文件过大（{file_size / 1024 / 1024:.1f}MB），请压缩到 20MB 以内"), 400
+    if file_size > 100 * 1024 * 1024:
+        return jsonify(error=f"视频文件过大（{file_size / 1024 / 1024:.1f}MB），请压缩到 100MB 以内"), 400
 
     _update_state(task_id, {
         "model": model,
