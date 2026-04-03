@@ -41,7 +41,8 @@ def list_page():
             projects = cur.fetchall()
     finally:
         conn.close()
-    return render_template("copywriting_list.html", projects=projects)
+    from datetime import datetime
+    return render_template("copywriting_list.html", projects=projects, now=datetime.now())
 
 
 @bp.route("/copywriting/<task_id>")
