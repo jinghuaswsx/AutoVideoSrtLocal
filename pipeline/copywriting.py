@@ -279,22 +279,32 @@ def _call_doubao_multimodal(
         ],
     )
 
-    # response.output 可能是 list 或 object，兼容两种格式
+    # 打印完整响应结构用于调试
+    log.info("Ark 响应 type=%s, output type=%s", type(response).__name__, type(response.output).__name__)
+    log.info("Ark 响应 output=%s", repr(response.output)[:2000])
+
     output = response.output
     if isinstance(output, list):
-        # list 格式: [{"type": "message", "content": [{"type": "output_text", "text": "..."}]}]
         for item in output:
+            # Pydantic model 对象
             if hasattr(item, 'content'):
                 for c in item.content:
-                    if hasattr(c, 'text') and c.text:
-                        return c.text
+                    text = getattr(c, 'text', None)
+                    if text:
+                        return text
+            # dict 对象
             elif isinstance(item, dict):
                 for c in item.get('content', []):
                     if isinstance(c, dict) and c.get('text'):
                         return c['text']
-        # 兜底：直接 str
-        log.warning("Ark 响应格式不符预期: %s", output)
-        return str(output)
+        log.warning("Ark 响应 list 中未找到 text，尝试其他属性...")
+        # 尝试直接取 text 属性
+        for item in output:
+            text = getattr(item, 'text', None)
+            if text:
+                return text
+        log.error("Ark 响应格式不符预期: %s", repr(output)[:2000])
+        raise ValueError(f"无法从 Ark 响应中提取文本: {repr(output)[:500]}")
     else:
         return output.content[0].text
 
