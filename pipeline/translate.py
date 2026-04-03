@@ -3,7 +3,14 @@ from typing import Dict, List
 
 from openai import OpenAI
 
-from config import CLAUDE_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
+from config import (
+    CLAUDE_MODEL,
+    DOUBAO_LLM_API_KEY,
+    DOUBAO_LLM_BASE_URL,
+    DOUBAO_LLM_MODEL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+)
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
@@ -13,16 +20,38 @@ from pipeline.localization import (
     validate_tts_script,
 )
 
-_client: OpenAI | None = None
+
+def _resolve_provider_config(
+    provider: str,
+    user_id: int | None = None,
+    api_key_override: str | None = None,
+) -> tuple[OpenAI, str]:
+    """Return (client, model_id) for the given provider."""
+    from appcore.api_keys import resolve_extra, resolve_key
+
+    if provider == "doubao":
+        key = api_key_override or (
+            resolve_key(user_id, "doubao_llm", "DOUBAO_LLM_API_KEY") if user_id else DOUBAO_LLM_API_KEY
+        )
+        extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
+        base_url = extra.get("base_url") or DOUBAO_LLM_BASE_URL
+        model = extra.get("model_id") or DOUBAO_LLM_MODEL
+    else:  # openrouter
+        key = api_key_override or (
+            resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") if user_id else OPENROUTER_API_KEY
+        )
+        extra = resolve_extra(user_id, "openrouter") if user_id else {}
+        base_url = extra.get("base_url") or OPENROUTER_BASE_URL
+        model = extra.get("model_id") or CLAUDE_MODEL
+
+    return OpenAI(api_key=key, base_url=base_url), model
 
 
-def _get_client(api_key: str | None = None) -> OpenAI:
-    global _client
-    if api_key:
-        return OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
-    if _client is None:
-        _client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
-    return _client
+def get_model_display_name(provider: str, user_id: int | None = None) -> str:
+    """Return the model ID string for logging/display."""
+    _, model = _resolve_provider_config(provider, user_id)
+    return model
+
 
 SYSTEM_PROMPT = """You are an expert copywriter specializing in TikTok e-commerce advertising for the US market.
 
@@ -38,10 +67,6 @@ Output only a valid JSON array.
 Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}]"""
 
 
-def _model_name() -> str:
-    return CLAUDE_MODEL.replace("claude-sonnet-4-5", "claude-sonnet-4.5")
-
-
 def _parse_json_content(raw: str):
     content = raw.strip()
     if content.startswith("```"):
@@ -55,11 +80,19 @@ def generate_localized_translation(
     source_full_text_zh: str,
     script_segments: list[dict],
     variant: str = "normal",
-    openrouter_api_key: str | None = None,
     custom_system_prompt: str | None = None,
+    *,
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    openrouter_api_key: str | None = None,
 ) -> dict:
-    response = _get_client(openrouter_api_key).chat.completions.create(
-        model=_model_name(),
+    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    extra_body: dict = {"response_format": LOCALIZED_TRANSLATION_RESPONSE_FORMAT}
+    if provider == "openrouter":
+        extra_body["plugins"] = [{"id": "response-healing"}]
+
+    response = client.chat.completions.create(
+        model=model,
         messages=build_localized_translation_messages(
             source_full_text_zh,
             script_segments,
@@ -68,33 +101,46 @@ def generate_localized_translation(
         ),
         temperature=0.2,
         max_tokens=4096,
-        extra_body={
-            "response_format": LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
-            "plugins": [{"id": "response-healing"}],
-        },
+        extra_body=extra_body,
     )
     payload = _parse_json_content(response.choices[0].message.content)
     return validate_localized_translation(payload)
 
 
-def generate_tts_script(localized_translation: dict, openrouter_api_key: str | None = None) -> dict:
-    response = _get_client(openrouter_api_key).chat.completions.create(
-        model=_model_name(),
+def generate_tts_script(
+    localized_translation: dict,
+    *,
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    openrouter_api_key: str | None = None,
+) -> dict:
+    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    extra_body: dict = {"response_format": TTS_SCRIPT_RESPONSE_FORMAT}
+    if provider == "openrouter":
+        extra_body["plugins"] = [{"id": "response-healing"}]
+
+    response = client.chat.completions.create(
+        model=model,
         messages=build_tts_script_messages(localized_translation),
         temperature=0.2,
         max_tokens=4096,
-        extra_body={
-            "response_format": TTS_SCRIPT_RESPONSE_FORMAT,
-            "plugins": [{"id": "response-healing"}],
-        },
+        extra_body=extra_body,
     )
     payload = _parse_json_content(response.choices[0].message.content)
     return validate_tts_script(payload)
 
 
-def translate_segments(segments: List[Dict], openrouter_api_key: str | None = None) -> List[Dict]:
+def translate_segments(
+    segments: List[Dict],
+    *,
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    openrouter_api_key: str | None = None,
+) -> List[Dict]:
     if not segments:
         return segments
+
+    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
 
     items = [{"index": i, "text": seg["text"]} for i, seg in enumerate(segments)]
     user_prompt = f"""Translate these Chinese TikTok ad script segments to native American English.
@@ -105,8 +151,8 @@ Segments:
 
 Remember: output only the JSON array."""
 
-    response = _get_client(openrouter_api_key).chat.completions.create(
-        model=_model_name(),
+    response = client.chat.completions.create(
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
