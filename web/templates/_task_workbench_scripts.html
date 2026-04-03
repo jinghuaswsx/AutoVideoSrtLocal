@@ -36,6 +36,8 @@
   let _voicesCache = [];
   let _selectedVoiceId = null;
   let _playingAudio = null;
+  let _previewAudio = null;
+  let _previewAudioGid = null;
 
   bootVoices();
   renderStepPreviews({});
@@ -789,9 +791,6 @@
     });
     document.getElementById("resultPanel").classList.toggle("hidden", !grid.children.length);
   }
-
-  let _previewAudio = null;
-  let _previewAudioGid = null;
 
   function _setAudioBtns(gid, playing) {
     const g = document.getElementById(gid);
