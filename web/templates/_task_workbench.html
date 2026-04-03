@@ -122,37 +122,7 @@
           <div class="step-msg" id="msg-translate">等待中...</div>
         </div>
       </div>
-      <div class="translate-prompt-panel hidden" id="translatePromptPanel">
-        <div class="prompt-selector" style="margin-bottom:12px;">
-          <label>翻译模型</label>
-          <select id="translateModelSelect" style="width:auto;min-width:200px;">
-            <option value="openrouter">Claude Sonnet (OpenRouter)</option>
-            <option value="doubao">豆包 2.0 Pro</option>
-          </select>
-        </div>
-        <div class="prompt-selector">
-          <label>翻译提示词</label>
-          <div class="prompt-tabs" id="promptTabs"></div>
-        </div>
-        <div class="prompt-dual-editors">
-          <div class="prompt-dual-col">
-            <button class="prompt-lang-btn active" id="langBtnEn" onclick="selectPromptLang('en')">English</button>
-            <textarea class="prompt-editor" id="promptEditorEn" rows="8" placeholder="English prompt" onfocus="selectPromptLang('en')"></textarea>
-          </div>
-          <div class="prompt-dual-col">
-            <button class="prompt-lang-btn" id="langBtnZh" onclick="selectPromptLang('zh')">中文</button>
-            <textarea class="prompt-editor" id="promptEditorZh" rows="8" placeholder="中文提示词" onfocus="selectPromptLang('zh')"></textarea>
-          </div>
-        </div>
-        <div class="prompt-actions">
-          <button class="btn btn-ghost btn-sm" id="savePromptBtn">保存提示词</button>
-          <button class="btn btn-primary btn-sm" id="retranslateBtn">开始翻译</button>
-        </div>
-        <div class="translation-history hidden" id="translationHistory">
-          <label>翻译结果对比</label>
-          <div class="translation-results" id="translationResults"></div>
-        </div>
-      </div>
+      <div class="translate-prompt-inline hidden" id="translatePromptInline"></div>
       <div class="step-preview" id="preview-translate"></div>
     </div>
     <div class="step" id="step-tts">
@@ -276,6 +246,41 @@
     <div class="voice-import-actions">
       <button class="btn btn-ghost btn-sm" id="importVoiceCancel">取消</button>
       <button class="btn btn-primary btn-sm" id="importVoiceSubmit">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 翻译配置弹窗 -->
+<div class="translate-overlay hidden" id="translateOverlay">
+  <div class="translate-modal">
+    <h3>翻译本土化配置</h3>
+    <p class="translate-modal-hint">选择翻译模型和提示词，点击「开始翻译」</p>
+    <div class="translate-modal-form">
+      <label>翻译模型</label>
+      <select id="translateModelSelect">
+        <option value="openrouter">Claude Sonnet (OpenRouter)</option>
+        <option value="doubao">豆包 2.0 Pro</option>
+      </select>
+      <label>翻译提示词</label>
+      <div class="prompt-tabs" id="promptTabs"></div>
+      <div class="prompt-dual-editors">
+        <div class="prompt-dual-col">
+          <button class="prompt-lang-btn active" id="langBtnEn" onclick="selectPromptLang('en')">English</button>
+          <textarea class="prompt-editor" id="promptEditorEn" rows="6" placeholder="English prompt" onfocus="selectPromptLang('en')"></textarea>
+        </div>
+        <div class="prompt-dual-col">
+          <button class="prompt-lang-btn" id="langBtnZh" onclick="selectPromptLang('zh')">中文</button>
+          <textarea class="prompt-editor" id="promptEditorZh" rows="6" placeholder="中文提示词" onfocus="selectPromptLang('zh')"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="translate-modal-actions">
+      <button class="btn btn-ghost btn-sm" id="savePromptBtn">保存提示词</button>
+      <button class="btn btn-primary" id="retranslateBtn">开始翻译</button>
+    </div>
+    <div class="translation-history hidden" id="translationHistory">
+      <label>翻译结果对比</label>
+      <div class="translation-results" id="translationResults"></div>
     </div>
   </div>
 </div>
