@@ -120,6 +120,8 @@ def poll_video_task(
             on_progress(status, f"已等待 {int(elapsed)}s")
 
         if status in ("succeeded", "success", "complete", "completed"):
+            # 打印完整响应用于调试
+            log.info("[Seedance] 任务完成，完整响应: %s", data)
             # 提取视频 URL
             video_url = _extract_video_url(data)
             return {"status": "succeeded", "video_url": video_url, "raw": data}
@@ -133,24 +135,46 @@ def poll_video_task(
 
 def _extract_video_url(data: dict) -> str:
     """从任务结果中提取视频下载 URL。"""
-    # 尝试多种可能的响应格式
-    # 格式1: data.content[].video_url
-    for item in data.get("content", []):
-        if "video_url" in item:
-            url = item["video_url"]
-            if isinstance(url, dict):
-                return url.get("url", "")
-            return url
+    # 格式1: data.content[] — 可能是 list of dict
+    content = data.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict):
+                if "video_url" in item:
+                    url = item["video_url"]
+                    if isinstance(url, dict):
+                        return url.get("url", "")
+                    return url
+                # 嵌套格式: item.type == "video_url", item.video_url.url
+                if item.get("type") == "video_url":
+                    vu = item.get("video_url", {})
+                    if isinstance(vu, dict):
+                        return vu.get("url", "")
+                    return vu
 
     # 格式2: data.output.video_url
-    output = data.get("output", {})
-    if "video_url" in output:
+    output = data.get("output")
+    if isinstance(output, dict) and "video_url" in output:
         return output["video_url"]
 
     # 格式3: data.result.video_url
-    result = data.get("result", {})
-    if "video_url" in result:
+    result = data.get("result")
+    if isinstance(result, dict) and "video_url" in result:
         return result["video_url"]
+
+    # 格式4: data.choices[].message.content (类 chat 格式)
+    choices = data.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            msg = choice.get("message", {})
+            msg_content = msg.get("content") if isinstance(msg, dict) else None
+            if isinstance(msg_content, list):
+                for c in msg_content:
+                    if isinstance(c, dict) and c.get("type") == "video_url":
+                        vu = c.get("video_url", {})
+                        return vu.get("url", "") if isinstance(vu, dict) else (vu or "")
 
     log.warning("[Seedance] 无法从响应中提取视频 URL: %s", data)
     raise RuntimeError("Seedance 返回结果中未找到视频 URL")
