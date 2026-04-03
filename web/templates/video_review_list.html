@@ -1,0 +1,122 @@
+{% extends "layout.html" %}
+{% block title %}视频评分 — AutoVideoSrt{% endblock %}
+{% block page_title %}视频评分{% endblock %}
+{% block extra_style %}
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
+.vr-empty { text-align: center; padding: 80px 20px; color: #9ca3af; }
+.vr-empty-icon { font-size: 48px; margin-bottom: 16px; }
+.vr-empty-text { font-size: 15px; margin-bottom: 24px; }
+
+/* 上传对话框 */
+.vr-upload-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
+.vr-upload-overlay.show { display: flex; }
+.vr-upload-modal { background: var(--bg-card); border-radius: 16px; padding: 28px; width: 480px; max-width: 90vw; }
+.vr-upload-modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.vr-upload-field { margin-bottom: 16px; }
+.vr-upload-label { font-size: 13px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
+.vr-upload-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
+.vr-upload-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+.vr-upload-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* 项目卡片 */
+.vr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.vr-card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; transition: border-color .2s, box-shadow .2s; display: flex; flex-direction: column; }
+.vr-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 16px rgba(59,130,246,0.15); }
+.vr-card-info { padding: 16px; flex: 1; }
+.vr-card-name { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vr-card-meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
+.vr-card-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.vr-card-status.done { background: rgba(22,163,74,0.15); color: #22c55e; }
+.vr-card-status.uploaded { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.vr-card-status.running { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.vr-card-status.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+.vr-card-score { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.vr-score-badge { font-size: 20px; font-weight: 800; }
+.vr-score-badge.grade-a { color: #22c55e; }
+.vr-score-badge.grade-b { color: #3b82f6; }
+.vr-score-badge.grade-c { color: #f59e0b; }
+.vr-score-badge.grade-d { color: #f97316; }
+.vr-score-badge.grade-f { color: #ef4444; }
+.vr-score-num { font-size: 13px; color: #9ca3af; }
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>视频评分</h1>
+  <button class="btn btn-primary" onclick="showUpload()">+ 上传视频评估</button>
+</div>
+
+{% if projects %}
+<div class="vr-grid">
+  {% for p in projects %}
+  {% set st = (p.state_json | default('{}')) %}
+  <a href="/video-review/{{ p.id }}" class="vr-card">
+    <div class="vr-card-info">
+      <div class="vr-card-name">{{ p.display_name or p.original_filename }}</div>
+      <div class="vr-card-meta">
+        <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+        <span class="vr-card-status {{ p.status }}">
+          {% if p.status == 'done' %}已完成{% elif p.status == 'uploaded' %}待评估{% elif p.status == 'running' %}评估中{% elif p.status == 'error' %}失败{% else %}{{ p.status }}{% endif %}
+        </span>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="vr-empty">
+  <div class="vr-empty-icon">📊</div>
+  <div class="vr-empty-text">还没有视频评估项目，上传视频开始 AI 评分</div>
+</div>
+{% endif %}
+
+<!-- 上传弹窗 -->
+<div class="vr-upload-overlay" id="uploadOverlay">
+  <div class="vr-upload-modal">
+    <h3>上传视频评估</h3>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="vr-upload-field">
+        <div class="vr-upload-label">选择视频</div>
+        <input type="file" name="video" accept="video/*" class="vr-upload-input" required>
+        <div class="vr-upload-hint">支持 MP4、MOV、WebM 格式，最大 20MB</div>
+      </div>
+      <div class="vr-upload-actions">
+        <button type="button" class="btn btn-ghost" onclick="hideUpload()">取消</button>
+        <button type="submit" class="btn btn-primary" id="uploadBtn">上传</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showUpload() { document.getElementById('uploadOverlay').classList.add('show'); }
+function hideUpload() { document.getElementById('uploadOverlay').classList.remove('show'); }
+
+document.getElementById('uploadOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) hideUpload();
+});
+
+document.getElementById('uploadForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true; btn.textContent = '上传中...';
+
+  const formData = new FormData(e.target);
+  try {
+    const res = await fetch('/api/video-review/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Upload failed');
+    }
+    const data = await res.json();
+    location.href = '/video-review/' + data.id;
+  } catch (e) {
+    alert('上传失败: ' + e.message);
+    btn.disabled = false; btn.textContent = '上传';
+  }
+});
+</script>
+{% endblock %}

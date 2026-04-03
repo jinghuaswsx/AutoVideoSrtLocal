@@ -1,0 +1,307 @@
+{% extends "layout.html" %}
+{% block title %}视频评分 — {{ state.get('display_name', '') }}{% endblock %}
+{% block page_title %}视频评分{% endblock %}
+{% block extra_style %}
+.vr-back { display: inline-flex; align-items: center; gap: 6px; color: var(--text-main); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1.5px solid var(--border-main); border-radius: 10px; margin-bottom: 20px; transition: all .15s; }
+.vr-back:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+.vr-layout { display: flex; gap: 24px; min-height: 500px; }
+.vr-left { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+.vr-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+.vr-card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 14px; padding: 20px; min-width: 0; overflow: hidden; }
+.vr-card-title { font-size: 15px; font-weight: 700; color: var(--text-main); margin-bottom: 14px; }
+
+/* 视频预览 */
+.vr-video { width: 100%; border-radius: 10px; background: #000; max-height: 300px; }
+
+/* 配置 */
+.vr-config-item { margin-bottom: 12px; }
+.vr-config-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
+.vr-select { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-main); border-radius: 8px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
+.vr-prompt { width: 100%; min-height: 80px; padding: 10px 12px; border: 1.5px solid var(--border-main); border-radius: 8px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; resize: vertical; }
+.vr-prompt:focus, .vr-select:focus { outline: none; border-color: var(--primary-color); }
+
+/* 生成按钮 */
+.vr-gen-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--primary-gradient); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .2s; }
+.vr-gen-btn:hover { opacity: 0.9; box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
+.vr-gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Loading */
+.vr-loading { text-align: center; padding: 40px; display: none; }
+.vr-loading.show { display: block; }
+.vr-spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border-main); border-top-color: var(--primary-color); border-radius: 50%; animation: vr-spin 0.8s linear infinite; }
+@keyframes vr-spin { to { transform: rotate(360deg); } }
+.vr-loading-text { margin-top: 12px; font-size: 13px; color: #9ca3af; }
+
+/* 结果区 */
+.vr-result-empty { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 14px; }
+
+/* 评分总览 */
+.vr-score-header { display: flex; align-items: center; gap: 20px; margin-bottom: 20px; padding: 20px; background: var(--bg-body); border-radius: 12px; }
+.vr-total-score { text-align: center; }
+.vr-total-num { font-size: 48px; font-weight: 800; line-height: 1; }
+.vr-total-num.grade-a { color: #22c55e; }
+.vr-total-num.grade-b { color: #3b82f6; }
+.vr-total-num.grade-c { color: #f59e0b; }
+.vr-total-num.grade-d { color: #f97316; }
+.vr-total-num.grade-f { color: #ef4444; }
+.vr-grade { font-size: 16px; font-weight: 700; margin-top: 4px; }
+.vr-verdict { flex: 1; }
+.vr-verdict-text { font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; }
+.vr-verdict-summary { font-size: 13px; color: #9ca3af; line-height: 1.6; }
+
+/* 概述 */
+.vr-overview { margin-bottom: 16px; }
+.vr-overview p { font-size: 13px; color: var(--text-main); line-height: 1.7; margin-bottom: 8px; }
+.vr-overview-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 2px; }
+
+/* 六维评分 */
+.vr-dimensions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+.vr-dim { padding: 14px; background: var(--bg-body); border-radius: 10px; }
+.vr-dim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.vr-dim-name { font-size: 13px; font-weight: 600; color: var(--text-main); }
+.vr-dim-score { font-size: 18px; font-weight: 800; }
+.vr-dim-bar { height: 4px; background: var(--border-main); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.vr-dim-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+.vr-dim-detail { font-size: 12px; color: #9ca3af; line-height: 1.5; }
+
+/* 问题列表 */
+.vr-issues { margin-bottom: 16px; }
+.vr-issue { padding: 12px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; margin-bottom: 8px; }
+.vr-issue-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vr-issue-severity { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.vr-issue-severity.high { background: rgba(239,68,68,0.15); color: #ef4444; }
+.vr-issue-severity.medium { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.vr-issue-severity.low { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.vr-issue-category { font-size: 12px; font-weight: 600; color: var(--text-main); }
+.vr-issue-desc { font-size: 13px; color: var(--text-main); line-height: 1.5; margin-bottom: 4px; }
+.vr-issue-suggestion { font-size: 12px; color: #22c55e; line-height: 1.5; }
+.vr-issue-suggestion::before { content: "💡 "; }
+{% endblock %}
+
+{% block content %}
+<a href="/video-review" class="vr-back">&larr; 返回列表</a>
+
+<div class="vr-layout">
+  <!-- 左侧：视频 + 配置 -->
+  <div class="vr-left">
+    <div class="vr-card">
+      <div class="vr-card-title">{{ state.get('original_filename', '') }}</div>
+      <video class="vr-video" controls>
+        <source src="/api/video-review/{{ task_id }}/video" type="video/mp4">
+      </video>
+    </div>
+
+    <div class="vr-card">
+      <div class="vr-card-title">评估配置</div>
+      <div class="vr-config-item">
+        <div class="vr-config-label">评估模型</div>
+        <select class="vr-select" id="modelSelect">
+          <option value="google/gemini-2.5-flash" {% if state.get('model') == 'google/gemini-2.5-flash' %}selected{% endif %}>Gemini 2.5 Flash</option>
+          <option value="google/gemini-2.5-flash-lite" {% if state.get('model') == 'google/gemini-2.5-flash-lite' %}selected{% endif %}>Gemini 2.5 Flash Lite</option>
+          <option value="google/gemini-2.5-pro" {% if state.get('model') == 'google/gemini-2.5-pro' %}selected{% endif %}>Gemini 2.5 Pro</option>
+        </select>
+      </div>
+      <div class="vr-config-item">
+        <div class="vr-config-label">额外要求（可选）</div>
+        <textarea class="vr-prompt" id="customPrompt" placeholder="输入额外的评估要求...&#10;例如：重点关注字幕翻译质量">{{ state.get('custom_prompt', '') }}</textarea>
+      </div>
+    </div>
+
+    <button class="vr-gen-btn" id="reviewBtn" onclick="doReview()"
+            {% if state.get('steps', {}).get('review') == 'running' %}disabled{% endif %}>
+      {% if state.get('steps', {}).get('review') == 'running' %}评估中...{% else %}开始评估{% endif %}
+    </button>
+  </div>
+
+  <!-- 右侧：结果 -->
+  <div class="vr-right">
+    <div class="vr-card" style="flex:1;">
+      <div class="vr-card-title">评估报告</div>
+
+      <div class="vr-loading" id="loadingArea" {% if state.get('steps', {}).get('review') == 'running' %}style="display:block"{% endif %}>
+        <div class="vr-spinner"></div>
+        <div class="vr-loading-text" id="loadingText">正在分析视频，预计需要 30-60 秒...</div>
+      </div>
+
+      <div id="resultArea">
+        {% if state.get('result') %}
+        <div id="resultContent"></div>
+        {% elif not state.get('steps', {}).get('review') == 'running' %}
+        <div class="vr-result-empty">上传视频后点击「开始评估」获取 AI 评分报告</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TASK_ID = '{{ task_id }}';
+const INITIAL_RESULT = {{ state.get('result') | tojson if state.get('result') else 'null' }};
+
+// ── Socket.IO ──
+const socket = io();
+socket.emit('join_task', {task_id: TASK_ID});
+
+socket.on('vr_step_update', data => {
+  if (data.message) {
+    document.getElementById('loadingText').textContent = data.message;
+  }
+});
+
+socket.on('vr_done', data => {
+  document.getElementById('loadingArea').style.display = 'none';
+  document.getElementById('reviewBtn').disabled = false;
+  document.getElementById('reviewBtn').textContent = '重新评估';
+  renderResult(data.result);
+});
+
+socket.on('vr_error', data => {
+  document.getElementById('loadingArea').style.display = 'none';
+  document.getElementById('reviewBtn').disabled = false;
+  document.getElementById('reviewBtn').textContent = '开始评估';
+  alert('评估失败: ' + (data.message || '未知错误'));
+});
+
+// ── 评估 ──
+async function doReview() {
+  const btn = document.getElementById('reviewBtn');
+  btn.disabled = true;
+  btn.textContent = '评估中...';
+  document.getElementById('loadingArea').style.display = 'block';
+  document.getElementById('resultArea').innerHTML = '';
+
+  try {
+    const res = await fetch(`/api/video-review/${TASK_ID}/review`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: document.getElementById('modelSelect').value,
+        custom_prompt: document.getElementById('customPrompt').value.trim(),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '开始评估';
+    document.getElementById('loadingArea').style.display = 'none';
+    alert('提交失败: ' + e.message);
+  }
+}
+
+// ── 渲染结果 ──
+function getGradeClass(grade) {
+  if (!grade) return '';
+  const g = grade.toUpperCase();
+  if (g === 'A') return 'grade-a';
+  if (g === 'B') return 'grade-b';
+  if (g === 'C') return 'grade-c';
+  if (g === 'D') return 'grade-d';
+  return 'grade-f';
+}
+
+function getScoreColor(score) {
+  if (score >= 9) return '#22c55e';
+  if (score >= 7) return '#3b82f6';
+  if (score >= 5) return '#f59e0b';
+  if (score >= 3) return '#f97316';
+  return '#ef4444';
+}
+
+function renderResult(r) {
+  if (!r || r._parse_error) {
+    document.getElementById('resultArea').innerHTML =
+      '<div class="vr-result-empty">评估结果解析失败，请重试</div>';
+    return;
+  }
+
+  let html = '';
+
+  // 评分总览
+  const scoring = r.scoring || {};
+  const gc = getGradeClass(scoring.grade);
+  html += `<div class="vr-score-header">
+    <div class="vr-total-score">
+      <div class="vr-total-num ${gc}">${scoring.total_score || '?'}</div>
+      <div class="vr-grade ${gc}">${scoring.grade || '?'}</div>
+    </div>
+    <div class="vr-verdict">
+      <div class="vr-verdict-text">${scoring.verdict || ''}</div>
+      <div class="vr-verdict-summary">${scoring.summary || ''}</div>
+    </div>
+  </div>`;
+
+  // 概述
+  const ov = r.overview || {};
+  html += `<div class="vr-card" style="margin-bottom:16px; padding:16px;">
+    <div class="vr-card-title">概述</div>
+    <div class="vr-overview">
+      <div class="vr-overview-label">内容概述</div>
+      <p>${ov.content_summary || ''}</p>
+      <div class="vr-overview-label">目标受众</div>
+      <p>${ov.target_audience || ''}</p>
+      <div class="vr-overview-label">平台适用性</div>
+      <p>${ov.platform_fit || ''}</p>
+    </div>
+  </div>`;
+
+  // 六维评分
+  const qa = r.quality_assessment || {};
+  const dims = [
+    ['visual_quality', '画面质量'],
+    ['audio_quality', '音频质量'],
+    ['editing_quality', '剪辑质量'],
+    ['content_quality', '内容质量'],
+    ['hook_effectiveness', 'Hook 吸引力'],
+    ['cta_effectiveness', 'CTA 效果'],
+  ];
+  html += '<div class="vr-card" style="margin-bottom:16px; padding:16px;"><div class="vr-card-title">质量评估</div><div class="vr-dimensions">';
+  for (const [key, label] of dims) {
+    const d = qa[key] || {};
+    const s = d.score || 0;
+    const color = getScoreColor(s);
+    html += `<div class="vr-dim">
+      <div class="vr-dim-header">
+        <span class="vr-dim-name">${label}</span>
+        <span class="vr-dim-score" style="color:${color}">${s}</span>
+      </div>
+      <div class="vr-dim-bar"><div class="vr-dim-fill" style="width:${s*10}%;background:${color}"></div></div>
+      <div class="vr-dim-detail">${d.details || ''}</div>
+    </div>`;
+  }
+  html += '</div></div>';
+
+  // 问题列表
+  const issues = r.issues || [];
+  if (issues.length) {
+    html += '<div class="vr-card" style="margin-bottom:16px; padding:16px;"><div class="vr-card-title">问题诊断</div><div class="vr-issues">';
+    for (const issue of issues) {
+      html += `<div class="vr-issue">
+        <div class="vr-issue-header">
+          <span class="vr-issue-severity ${issue.severity || 'low'}">${
+            issue.severity === 'high' ? '严重' : issue.severity === 'medium' ? '中等' : '轻微'
+          }</span>
+          <span class="vr-issue-category">${issue.category || ''}</span>
+        </div>
+        <div class="vr-issue-desc">${issue.description || ''}</div>
+        <div class="vr-issue-suggestion">${issue.suggestion || ''}</div>
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  document.getElementById('resultArea').innerHTML = html;
+}
+
+// 初始渲染
+if (INITIAL_RESULT) {
+  renderResult(INITIAL_RESULT);
+}
+</script>
+{% endblock %}
