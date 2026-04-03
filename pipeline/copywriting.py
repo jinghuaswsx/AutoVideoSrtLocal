@@ -259,7 +259,8 @@ def generate_copy(
             "[Note: Current model does not support image input. "
             "Generating copy based on text information only.]\n\n" + product_text
         )
-    content.append({"type": "text", "text": product_text})
+    if product_text.strip():
+        content.append({"type": "text", "text": product_text})
 
     # 语言指令
     if language == "zh":
