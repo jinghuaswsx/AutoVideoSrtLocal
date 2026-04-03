@@ -114,6 +114,15 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
     return review_segments
 
 
+def _resolve_translate_provider(user_id: int | None) -> str:
+    """Return the user's preferred translate provider, default 'openrouter'."""
+    from appcore.api_keys import get_key
+    if user_id is None:
+        return "openrouter"
+    pref = get_key(user_id, "translate_pref")
+    return pref if pref in ("openrouter", "doubao") else "openrouter"
+
+
 class PipelineRunner:
     def __init__(self, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
@@ -253,11 +262,10 @@ class PipelineRunner:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
         self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...")
-        from appcore.api_keys import resolve_key
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
 
-        openrouter_api_key = resolve_key(self.user_id, "openrouter", "OPENROUTER_API_KEY")
+        provider = _resolve_translate_provider(self.user_id)
         script_segments = task.get("script_segments", [])
         source_full_text_zh = build_source_full_text_zh(script_segments)
 
@@ -265,8 +273,8 @@ class PipelineRunner:
         custom_prompt = task.get("custom_translate_prompt")
         localized_translation = generate_localized_translation(
             source_full_text_zh, script_segments, variant=variant,
-            openrouter_api_key=openrouter_api_key,
             custom_system_prompt=custom_prompt,
+            provider=provider, user_id=self.user_id,
         )
 
         variants = dict(task.get("variants", {}))
@@ -292,8 +300,8 @@ class PipelineRunner:
         _save_json(task_dir, "localized_translation.json", localized_translation)
 
         from appcore.usage_log import record as _log_usage
-        from pipeline.translate import _model_name as _get_model_name
-        _log_usage(self.user_id, task_id, "openrouter", model_name=_get_model_name(), success=True)
+        from pipeline.translate import get_model_display_name
+        _log_usage(self.user_id, task_id, provider, model_name=get_model_display_name(provider, self.user_id), success=True)
 
         if requires_confirmation:
             task_state.set_current_review_step(task_id, "translate")
@@ -319,7 +327,7 @@ class PipelineRunner:
         from pipeline.translate import generate_tts_script
         from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
 
-        openrouter_api_key = resolve_key(self.user_id, "openrouter", "OPENROUTER_API_KEY")
+        provider = _resolve_translate_provider(self.user_id)
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
         voice = None
@@ -336,7 +344,7 @@ class PipelineRunner:
         localized_translation = variant_state.get("localized_translation", {})
         video_duration = get_video_duration(task["video_path"])
 
-        tts_script = generate_tts_script(localized_translation, openrouter_api_key=openrouter_api_key)
+        tts_script = generate_tts_script(localized_translation, provider=provider, user_id=self.user_id)
         tts_segments = build_tts_segments(tts_script, task.get("script_segments", []))
         result = generate_full_audio(tts_segments, voice["elevenlabs_voice_id"], task_dir, variant=variant, elevenlabs_api_key=elevenlabs_api_key)
         timeline_manifest = build_timeline_manifest(result["segments"], video_duration=video_duration)
