@@ -11,8 +11,9 @@
     <!-- 步骤状态栏 -->
     <div class="cw-steps">
         {% for step_key, step_label in [("keyframe", "抽帧"), ("copywrite", "文案"), ("tts", "语音"), ("compose", "合成")] %}
-        <div class="cw-step" id="step-{{ step_key }}"
-             data-status="{{ task.steps.get(step_key, 'pending') }}">
+        {% set ss = task.steps.get(step_key, 'pending') %}
+        <div class="cw-step {% if ss == 'done' %}done{% elif ss == 'running' %}active{% elif ss == 'error' %}error{% endif %}"
+             id="step-{{ step_key }}" data-status="{{ ss }}">
             {{ step_label }}
         </div>
         {% endfor %}
@@ -38,7 +39,9 @@
                          src="/api/copywriting/{{ task_id }}/keyframe/{{ i }}" alt="帧{{ i+1 }}">
                     {% endfor %}
                     {% if not task.keyframes %}
-                    <span style="font-size:12px; color:#9ca3af;">抽帧中...</span>
+                    <span style="font-size:12px; color:#9ca3af;">
+                        {% if task.steps.get('keyframe') == 'running' %}抽帧中...{% elif task.steps.get('keyframe') == 'error' %}抽帧失败{% else %}等待抽帧{% endif %}
+                    </span>
                     {% endif %}
                 </div>
             </div>
@@ -149,14 +152,22 @@
         </div>
     </div>
 
-    <!-- TTS & 合成结果区（动态显示） -->
-    <div class="cw-result" id="resultSection" style="display:none;">
+    <!-- TTS & 合成结果区 -->
+    {% set has_tts = task.steps.get('tts') == 'done' %}
+    {% set has_compose = task.steps.get('compose') == 'done' %}
+    <div class="cw-result" id="resultSection" style="{% if not has_tts and not has_compose %}display:none;{% endif %}">
         <h3>🎬 生成结果</h3>
-        <audio id="resultAudio" controls style="display:none;"></audio>
-        <video id="resultVideo" controls style="display:none;"></video>
-        <div class="cw-download-row" id="downloadRow" style="display:none;">
-            <a class="cw-btn cw-btn-secondary" id="dlVideo" href="#" download>下载视频</a>
-            <a class="cw-btn cw-btn-secondary" id="dlCopy" href="#" download>下载文案</a>
+        <audio id="resultAudio" controls
+               {% if has_tts %}src="/api/copywriting/{{ task_id }}/artifact/tts_audio"{% endif %}
+               style="{% if not has_tts %}display:none;{% endif %}"></audio>
+        <video id="resultVideo" controls
+               {% if has_compose %}src="/api/copywriting/{{ task_id }}/artifact/video"{% endif %}
+               style="{% if not has_compose %}display:none;{% endif %}"></video>
+        <div class="cw-download-row" id="downloadRow" style="{% if not has_compose %}display:none;{% endif %}">
+            <a class="cw-btn cw-btn-secondary" id="dlVideo"
+               href="/api/copywriting/{{ task_id }}/download/soft_video" download>下载视频</a>
+            <a class="cw-btn cw-btn-secondary" id="dlCopy"
+               href="/api/copywriting/{{ task_id }}/download/copy" download>下载文案</a>
         </div>
     </div>
 </div>

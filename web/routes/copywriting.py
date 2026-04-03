@@ -393,6 +393,21 @@ def save_segments(task_id: str):
     return jsonify(ok=True)
 
 
+@bp.route("/api/copywriting/<task_id>/fix-step", methods=["POST"])
+@login_required
+def fix_step(task_id: str):
+    """修正卡住的步骤状态（前端刷新时检测到不一致）。"""
+    task = task_state.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify(error="任务不存在"), 404
+    data = request.get_json(silent=True) or {}
+    step = data.get("step")
+    status = data.get("status")
+    if step and status and step in task.get("steps", {}):
+        task_state.set_step(task_id, step, status)
+    return jsonify(ok=True)
+
+
 @bp.route("/api/copywriting/<task_id>/tts", methods=["POST"])
 @login_required
 def start_tts(task_id: str):
