@@ -110,7 +110,9 @@ def _build_translate_compare_artifact(task: dict) -> dict:
 @bp.route("/upload-page", endpoint="upload_page")
 @login_required
 def upload_page():
-    return render_template("index.html")
+    from appcore.api_keys import get_key
+    translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    return render_template("index.html", translate_pref=translate_pref)
 
 
 def _artifact_candidates(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> list[str]:

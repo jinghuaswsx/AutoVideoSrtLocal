@@ -11,6 +11,7 @@
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
   let currentTask = TASK_WORKBENCH_CONFIG.initialTask;
+  const _userTranslatePref = {{ (translate_pref or 'openrouter')|tojson }};
   let refreshTimer = null;
   let activeRefreshLoop = null;
   let startRequestInFlight = false;
@@ -954,6 +955,8 @@
   function showTranslatePromptPanel() {
     const panel = document.getElementById("translatePromptPanel");
     if (panel) panel.classList.remove("hidden");
+    const modelSelect = document.getElementById("translateModelSelect");
+    if (modelSelect && _userTranslatePref) modelSelect.value = _userTranslatePref;
     bootPrompts();
   }
 
@@ -977,10 +980,11 @@
     allBtns.forEach(b => { b.disabled = true; b.textContent = "正在翻译中..."; });
     const promptText = document.getElementById("promptEditorEn").value.trim();
     try {
+      const modelProvider = document.getElementById("translateModelSelect").value;
       const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText }),
+        body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText, model_provider: modelProvider }),
       });
       const data = await res.json();
       if (!res.ok) { showError(data.error || "翻译失败"); return; }

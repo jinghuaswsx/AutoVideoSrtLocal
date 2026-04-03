@@ -33,11 +33,14 @@ def detail(task_id: str):
             state = json.loads(row["state_json"])
         except Exception:
             pass
+    from appcore.api_keys import get_key
+    translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
     return render_template(
         "project_detail.html",
         project=row,
         state=state,
         initial_task_json=json.dumps(state, ensure_ascii=False),
+        translate_pref=translate_pref,
     )
 
 
