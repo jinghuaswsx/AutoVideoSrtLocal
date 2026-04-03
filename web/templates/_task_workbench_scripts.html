@@ -661,6 +661,11 @@
       return;
     }
     if (currentTask.current_review_step === "translate" && currentTask.steps?.translate === "waiting") {
+      if (currentTask._translate_pre_select) {
+        // 预选模式：弹出模型+提示词选择面板
+        showTranslatePromptPanel();
+        return;
+      }
       renderTranslateReview({ segments: currentTask.segments || [] });
       return;
     }
@@ -979,8 +984,24 @@
     const allBtns = [document.getElementById("retranslateBtn"), document.getElementById("sideRetranslateBtn")].filter(Boolean);
     allBtns.forEach(b => { b.disabled = true; b.textContent = "正在翻译中..."; });
     const promptText = document.getElementById("promptEditorEn").value.trim();
+    const modelProvider = document.getElementById("translateModelSelect").value;
     try {
-      const modelProvider = document.getElementById("translateModelSelect").value;
+      // 预选模式：首次翻译，调用 start-translate
+      if (currentTask && currentTask._translate_pre_select) {
+        const res = await fetch(`/api/tasks/${taskId}/start-translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText, model_provider: modelProvider }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || "翻译启动失败"); return; }
+        currentTask._translate_pre_select = false;
+        const panel = document.getElementById("translatePromptPanel");
+        if (panel) panel.classList.add("hidden");
+        scheduleRefreshTaskState(200);
+        return;
+      }
+      // 重新翻译模式
       const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

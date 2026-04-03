@@ -364,6 +364,47 @@ def start(task_id):
     return jsonify({"status": "started", "task": updated_task})
 
 
+@bp.route("/<task_id>/start-translate", methods=["POST"])
+@login_required
+def start_translate(task_id):
+    """User picks model + prompt, then starts the translate step."""
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    if not task.get("_translate_pre_select"):
+        return jsonify({"error": "翻译步骤不在预选状态"}), 400
+
+    body = request.get_json(silent=True) or {}
+    model_provider = body.get("model_provider", "").strip()
+    prompt_id = body.get("prompt_id")
+    prompt_text = (body.get("prompt_text") or "").strip()
+
+    # Resolve prompt
+    if not prompt_text and prompt_id:
+        row = db_query_one(
+            "SELECT prompt_text FROM user_prompts WHERE id = %s AND user_id = %s",
+            (prompt_id, current_user.id),
+        )
+        if row:
+            prompt_text = row["prompt_text"]
+
+    # Save choices to task state so runtime can read them
+    updates = {"_translate_pre_select": False}
+    if model_provider in ("openrouter", "doubao"):
+        from appcore.api_keys import set_key
+        set_key(current_user.id, "translate_pref", model_provider)
+    if prompt_text:
+        updates["custom_translate_prompt"] = prompt_text
+
+    store.update(task_id, **updates)
+    store.set_current_review_step(task_id, "")
+
+    user_id = current_user.id if current_user.is_authenticated else None
+    pipeline_runner.resume(task_id, "translate", user_id=user_id)
+    return jsonify({"status": "started"})
+
+
 @bp.route("/<task_id>/retranslate", methods=["POST"])
 @login_required
 def retranslate(task_id):
@@ -482,7 +523,15 @@ def update_alignment(task_id):
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "alignment", "done")
     store.set_step_message(task_id, "alignment", "分段确认完成")
-    pipeline_runner.resume(task_id, "translate", user_id=current_user.id if current_user.is_authenticated else None)
+
+    if task.get("interactive_review"):
+        # 手动确认模式：暂停让用户先选模型和提示词
+        store.set_current_review_step(task_id, "translate")
+        store.set_step(task_id, "translate", "waiting")
+        store.set_step_message(task_id, "translate", "请选择翻译模型和提示词")
+        store.update(task_id, _translate_pre_select=True)
+    else:
+        pipeline_runner.resume(task_id, "translate", user_id=current_user.id if current_user.is_authenticated else None)
     return jsonify({"status": "ok", "script_segments": script_segments})
 
 
