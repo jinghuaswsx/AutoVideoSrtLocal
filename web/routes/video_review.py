@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from config import UPLOAD_DIR, OUTPUT_DIR
+from pipeline.video_review import get_review_prompts, save_review_prompts
 from web.extensions import socketio
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,7 @@ def start_review(task_id: str):
     body = request.get_json(silent=True) or {}
     model = body.get("model") or state.get("model") or "google/gemini-2.5-flash"
     custom_prompt = (body.get("custom_prompt") or "").strip()
+    prompt_lang = body.get("prompt_lang") or "en"
 
     video_path = state.get("video_path", "")
     if not video_path or not os.path.exists(video_path):
@@ -129,41 +131,60 @@ def start_review(task_id: str):
     _update_state(task_id, {
         "model": model,
         "custom_prompt": custom_prompt,
+        "prompt_lang": prompt_lang,
         "steps.review": "running",
     })
     db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
 
-    eventlet.spawn(_do_review, task_id, video_path, model, custom_prompt, current_user.id)
+    eventlet.spawn(_do_review, task_id, video_path, model, custom_prompt, current_user.id, prompt_lang)
 
     return jsonify({"status": "started"})
 
 
-def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str, user_id: int):
+def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
+               user_id: int, prompt_lang: str = "en"):
     """异步执行视频评估。"""
+    import time as _time
     from pipeline.video_review import review_video
 
     try:
         _emit_to_task(task_id, EVT_VR_STEP, {"step": "review", "status": "running", "message": "正在分析视频..."})
 
+        start_ts = _time.time()
         result = review_video(
             video_path,
             user_id=user_id,
             model=model,
             custom_prompt=custom_prompt or None,
+            prompt_lang=prompt_lang,
         )
+        elapsed = round(_time.time() - start_ts, 1)
 
         # 清除内部字段
         raw = result.pop("_raw", "")
         result.pop("_model", None)
+        usage = result.pop("_usage", None)
+
+        # 统计信息
+        stats = {
+            "completed_at": _time.strftime("%Y-%m-%d %H:%M:%S"),
+            "elapsed_seconds": elapsed,
+            "model": model,
+        }
+        if usage:
+            stats["prompt_tokens"] = usage.get("prompt_tokens", 0)
+            stats["completion_tokens"] = usage.get("completion_tokens", 0)
+            stats["total_tokens"] = usage.get("total_tokens", 0)
 
         _update_state(task_id, {
             "result": result,
+            "stats": stats,
             "raw_response": raw,
             "steps.review": "done",
         })
         db_execute("UPDATE projects SET status = 'done' WHERE id = %s", (task_id,))
 
-        _emit_to_task(task_id, EVT_VR_DONE, {"result": result})
+        _emit_to_task(task_id, EVT_VR_DONE, {"result": result, "stats": stats})
 
     except Exception as e:
         log.exception("[VR] 视频评估失败: %s", task_id)
@@ -187,6 +208,33 @@ def get_video(task_id: str):
     if not path or not os.path.exists(path):
         return "Not Found", 404
     return send_file(path)
+
+
+@bp.route("/api/video-review/prompts", methods=["GET"])
+@login_required
+def get_prompts():
+    """获取全局评分提示词（中英）。"""
+    prompts = get_review_prompts()
+    return jsonify(prompts)
+
+
+@bp.route("/api/video-review/prompts", methods=["PUT"])
+@login_required
+def update_prompts():
+    """保存全局评分提示词（仅管理员）。"""
+    if current_user.role != "admin":
+        return jsonify(error="仅管理员可修改提示词"), 403
+    body = request.get_json(silent=True) or {}
+    en = (body.get("en") or "").strip()
+    zh = (body.get("zh") or "").strip()
+    if not en and not zh:
+        return jsonify(error="提示词不能为空"), 400
+    # 如果只传了一个，另一个保持原值
+    current = get_review_prompts()
+    en = en or current["en"]
+    zh = zh or current["zh"]
+    save_review_prompts(en, zh)
+    return jsonify({"status": "ok", "en": en, "zh": zh})
 
 
 @bp.route("/api/video-review/<task_id>", methods=["DELETE"])

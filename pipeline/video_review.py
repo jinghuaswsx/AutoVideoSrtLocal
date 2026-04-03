@@ -20,7 +20,76 @@ GEMINI_MODELS = [
 ]
 DEFAULT_MODEL = "google/gemini-2.5-flash"
 
-SYSTEM_PROMPT = """你是一位资深的美国短视频电商运营专家和视频质量评审员。
+DEFAULT_PROMPT_EN = """You are a senior US short-video e-commerce operations expert and video quality reviewer.
+You will receive a short video intended for the US market. Please evaluate it comprehensively using the framework below.
+
+Reply in Chinese. Return valid JSON only, with this exact structure:
+
+{
+  "overview": {
+    "content_summary": "Video content overview (50-100 words)",
+    "target_audience": "Target audience analysis",
+    "platform_fit": "Platform suitability (TikTok/Instagram Reels/YouTube Shorts)"
+  },
+  "quality_assessment": {
+    "visual_quality": {
+      "score": 0-10,
+      "details": "Analysis of image quality, composition, color, lighting, etc."
+    },
+    "audio_quality": {
+      "score": 0-10,
+      "details": "Analysis of audio clarity, background music, rhythm, etc."
+    },
+    "editing_quality": {
+      "score": 0-10,
+      "details": "Analysis of editing pace, transitions, subtitle layout, etc."
+    },
+    "content_quality": {
+      "score": 0-10,
+      "details": "Analysis of information delivery, storytelling, appeal, etc."
+    },
+    "hook_effectiveness": {
+      "score": 0-10,
+      "details": "First-3-seconds hook analysis: does it effectively capture viewer attention?"
+    },
+    "cta_effectiveness": {
+      "score": 0-10,
+      "details": "Call-to-action analysis: does it effectively guide user action?"
+    }
+  },
+  "issues": [
+    {
+      "severity": "high/medium/low",
+      "category": "Issue category",
+      "description": "Issue description",
+      "suggestion": "Adjustment suggestion"
+    }
+  ],
+  "scoring": {
+    "total_score": 0-100,
+    "grade": "A/B/C/D/F",
+    "verdict": "Ready to use / Needs minor adjustments / Needs major revision / Recommend redo",
+    "summary": "One-sentence evaluation conclusion"
+  }
+}
+
+Grading criteria:
+- A (90-100): Ready to publish, excellent quality
+- B (75-89): Publishable but optimization recommended, good quality
+- C (60-74): Needs adjustments before publishing
+- D (40-59): Multiple issues, needs major revision
+- F (0-39): Below standard, recommend redo
+
+Evaluate based on US short-video e-commerce best practices:
+1. First 3 seconds must have a strong Hook
+2. Video pace should be fast, avoid dragging
+3. Subtitles/text must be clear and readable
+4. Audio quality must be acceptable
+5. CTA (Call to Action) must be clear
+6. Content must match the target platform's tone
+"""
+
+DEFAULT_PROMPT_ZH = """你是一位资深的美国短视频电商运营专家和视频质量评审员。
 你将收到一段用于美国市场投放的短视频。请根据以下框架进行全面评估。
 
 请用中文回复，返回有效的 JSON，结构如下：
@@ -90,6 +159,44 @@ SYSTEM_PROMPT = """你是一位资深的美国短视频电商运营专家和视�
 """
 
 
+def get_review_prompts() -> dict:
+    """获取全局视频评分提示词（中英）。优先读数据库，没有则返回默认值。"""
+    from appcore.db import query_one
+    row = query_one(
+        "SELECT key_value, extra_config FROM api_keys WHERE user_id = 0 AND service = 'video_review_prompt'"
+    )
+    if row:
+        en = row.get("key_value") or DEFAULT_PROMPT_EN
+        extra = row.get("extra_config")
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra)
+            except Exception:
+                extra = {}
+        zh = (extra or {}).get("prompt_zh") or DEFAULT_PROMPT_ZH
+        return {"en": en, "zh": zh}
+    return {"en": DEFAULT_PROMPT_EN, "zh": DEFAULT_PROMPT_ZH}
+
+
+def save_review_prompts(prompt_en: str, prompt_zh: str) -> None:
+    """保存全局视频评分提示词（仅管理员调用）。"""
+    from appcore.db import execute, query_one
+    extra = json.dumps({"prompt_zh": prompt_zh}, ensure_ascii=False)
+    existing = query_one(
+        "SELECT id FROM api_keys WHERE user_id = 0 AND service = 'video_review_prompt'"
+    )
+    if existing:
+        execute(
+            "UPDATE api_keys SET key_value = %s, extra_config = %s WHERE user_id = 0 AND service = 'video_review_prompt'",
+            (prompt_en, extra),
+        )
+    else:
+        execute(
+            "INSERT INTO api_keys (user_id, service, key_value, extra_config) VALUES (0, 'video_review_prompt', %s, %s)",
+            (prompt_en, extra),
+        )
+
+
 def _get_client(user_id: int | None = None, api_key: str | None = None) -> OpenAI:
     """获取 OpenRouter 客户端。"""
     from appcore.api_keys import resolve_extra, resolve_key
@@ -118,6 +225,7 @@ def review_video(
     user_id: int | None = None,
     model: str = DEFAULT_MODEL,
     custom_prompt: str | None = None,
+    prompt_lang: str = "en",
 ) -> dict:
     """分析视频并返回评估结果 JSON。
 
@@ -126,6 +234,7 @@ def review_video(
         user_id: 用户 ID（用于获取 API Key）
         model: Gemini 模型 ID
         custom_prompt: 可选的自定义提示词（追加到系统提示后面）
+        prompt_lang: 提示词语言 "en" 或 "zh"
 
     Returns:
         评估结果 dict
@@ -133,9 +242,10 @@ def review_video(
     client = _get_client(user_id=user_id)
     video_data_uri = _encode_video(video_path)
 
-    system = SYSTEM_PROMPT
+    prompts = get_review_prompts()
+    system = prompts.get(prompt_lang) or prompts.get("en") or DEFAULT_PROMPT_EN
     if custom_prompt:
-        system += f"\n\n用户额外要求：\n{custom_prompt}"
+        system += f"\n\nAdditional requirements:\n{custom_prompt}"
 
     file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
     log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)", model, video_path, file_size_mb)
@@ -164,10 +274,21 @@ def review_video(
     raw = response.choices[0].message.content or ""
     log.info("[VideoReview] 原始响应长度: %d", len(raw))
 
+    # 提取 token 用量
+    usage = {}
+    if response.usage:
+        usage = {
+            "prompt_tokens": response.usage.prompt_tokens or 0,
+            "completion_tokens": response.usage.completion_tokens or 0,
+            "total_tokens": response.usage.total_tokens or 0,
+        }
+        log.info("[VideoReview] Token 用量: %s", usage)
+
     # 解析 JSON
     result = _parse_json_response(raw)
     result["_raw"] = raw
     result["_model"] = model
+    result["_usage"] = usage
     return result
 
 
