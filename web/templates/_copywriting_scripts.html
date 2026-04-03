@@ -253,19 +253,31 @@ function setLanguage(lang) {
 
 // ── 模型选择 ────────────────────────────────────
 
-function getSelectedProvider() {
+function getSelectedModel() {
     const sel = document.getElementById("modelSelect");
-    return sel ? sel.value : "openrouter";
+    const val = sel ? sel.value : "openrouter:";
+    const idx = val.indexOf(":");
+    return {
+        provider: val.substring(0, idx),
+        model: val.substring(idx + 1) || null,
+    };
 }
 
 function onModelChange() {
-    const provider = getSelectedProvider();
+    const { provider, model } = getSelectedModel();
     const hint = document.getElementById("modelHint");
-    if (hint) {
-        hint.textContent = provider === "doubao" ? "注意：豆包不支持图片输入，将仅基于文本生成" : "支持图片输入（Vision）";
+    if (!hint) return;
+    if (model && model.includes("gemini")) {
+        hint.textContent = "支持直接视频输入 + 图片输入（Vision）";
+        hint.style.color = "#16a34a";
+    } else if (provider === "doubao") {
+        hint.textContent = "注意：豆包不支持图片/视频输入，将仅基于文本生成";
+        hint.style.color = "#dc2626";
+    } else {
+        hint.textContent = "支持图片输入（Vision），不支持视频";
+        hint.style.color = "#9ca3af";
     }
 }
-// 初始化提示
 onModelChange();
 
 // ── 提示词加载 & 预览 ──────────────────────────
@@ -324,15 +336,15 @@ async function startGenerate() {
     btn.textContent = "加载预览...";
 
     const promptId = document.getElementById("promptSelect").value;
-    const provider = getSelectedProvider();
+    const { provider, model } = getSelectedModel();
     try {
         const resp = await fetch("/api/copywriting/" + TASK_ID + "/preview", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt_id: promptId || null, provider: provider }),
+            body: JSON.stringify({ prompt_id: promptId || null, provider: provider, model: model }),
         });
         const data = await resp.json();
-        showPreviewModal(data, promptId, provider);
+        showPreviewModal(data, promptId, provider, model);
     } catch(err) {
         alert("预览失败: " + err.message);
     } finally {
@@ -341,7 +353,7 @@ async function startGenerate() {
     }
 }
 
-function showPreviewModal(data, promptId, provider) {
+function showPreviewModal(data, promptId, provider, model) {
     // 模型
     document.getElementById("previewModel").textContent = (data.provider || "") + " / " + (data.model || "");
 
@@ -359,8 +371,15 @@ function showPreviewModal(data, promptId, provider) {
     // 资源
     const res = data.resources || {};
     const lines = [];
-    lines.push("Vision: " + (res.vision_enabled ? "启用" : "未启用"));
-    if (res.keyframe_count > 0) lines.push("关键帧: " + res.keyframe_count + " 张 (" + (res.keyframes || []).join(", ") + ")");
+    if (res.video_input) {
+        lines.push("输入方式: 直接视频输入");
+        lines.push("视频文件: " + (res.video || "-") + " (" + (res.video_size_mb || "?") + " MB)");
+    } else if (res.vision_enabled) {
+        lines.push("输入方式: 关键帧图片");
+        lines.push("关键帧: " + res.keyframe_count + " 张 (" + (res.keyframes || []).join(", ") + ")");
+    } else {
+        lines.push("输入方式: 纯文本（不支持图片/视频）");
+    }
     if (res.product_image) lines.push("商品主图: " + res.product_image);
     const inputs = res.product_inputs || {};
     if (Object.keys(inputs).length) {
@@ -374,10 +393,12 @@ function showPreviewModal(data, promptId, provider) {
     const params = data.parameters || {};
     document.getElementById("previewParams").textContent = JSON.stringify(params, null, 2);
 
-    // 保存 promptId 和 provider 用于确认
-    document.getElementById("previewModal").dataset.promptId = promptId || "";
-    document.getElementById("previewModal").dataset.provider = provider || "openrouter";
-    document.getElementById("previewModal").classList.add("open");
+    // 保存 promptId、provider、model 用于确认
+    const modal = document.getElementById("previewModal");
+    modal.dataset.promptId = promptId || "";
+    modal.dataset.provider = provider || "openrouter";
+    modal.dataset.model = model || "";
+    modal.classList.add("open");
 }
 
 function closePreview() {
@@ -388,6 +409,7 @@ function confirmGenerate() {
     const modal = document.getElementById("previewModal");
     const promptId = modal.dataset.promptId;
     const provider = modal.dataset.provider;
+    const model = modal.dataset.model;
     closePreview();
 
     const configOverlay = document.getElementById("configOverlay");
@@ -399,7 +421,7 @@ function confirmGenerate() {
     fetch("/api/copywriting/" + TASK_ID + "/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt_id: promptId || null, provider: provider }),
+        body: JSON.stringify({ prompt_id: promptId || null, provider: provider, model: model || null }),
     });
 }
 

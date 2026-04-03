@@ -108,6 +108,7 @@ class CopywritingRunner:
         self._set_step(task_id, "copywrite", "running", "正在生成文案...")
         task = task_state.get(task_id)
         keyframes = task.get("keyframes", [])
+        video_path = task.get("video_path")
 
         # 从数据库读取商品信息
         product_inputs = self._load_product_inputs(task_id)
@@ -119,6 +120,9 @@ class CopywritingRunner:
         # 解析用户自定义提示词
         custom_prompt = self._load_user_prompt(task_id, language)
 
+        # 模型覆盖（如 Gemini）
+        model_override = task.get("cw_model")
+
         result = generate_copy(
             keyframe_paths=keyframes,
             product_inputs=product_inputs,
@@ -126,6 +130,8 @@ class CopywritingRunner:
             user_id=self._user_id,
             custom_system_prompt=custom_prompt,
             language=language,
+            video_path=video_path,
+            model_override=model_override,
         )
 
         task_state.set_copy(task_id, result)

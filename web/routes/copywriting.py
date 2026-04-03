@@ -67,32 +67,25 @@ def detail_page(task_id: str):
     from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
     from pipeline.translate import _resolve_provider_config
 
-    # 构建模型列表
-    models = [
-        ("openrouter", "Claude Sonnet 4.5 (OpenRouter)"),
-        ("doubao", "豆包 (Doubao)"),
-    ]
-    # 尝试获取实际模型名
+    # 构建模型列表: (value, label, provider, model_id)
+    # value 格式: provider:model_id (provider 和 model 用冒号分隔)
+    models = []
     try:
-        _, model_id = _resolve_provider_config("openrouter", user_id=current_user.id)
-        models[0] = ("openrouter", f"OpenRouter ({model_id})")
+        _, or_model = _resolve_provider_config("openrouter", user_id=current_user.id)
+        models.append((f"openrouter:{or_model}", f"OpenRouter ({or_model})"))
     except Exception:
-        pass
+        models.append(("openrouter:", "OpenRouter (Claude)"))
+    # Gemini 通过 OpenRouter
+    models.append(("openrouter:google/gemini-3-flash-preview", "Gemini 3 Flash Preview (支持视频)"))
+    models.append(("openrouter:google/gemini-2.5-flash", "Gemini 2.5 Flash (支持视频)"))
     try:
-        _, model_id = _resolve_provider_config("doubao", user_id=current_user.id)
-        models[1] = ("doubao", f"豆包 ({model_id})")
+        _, db_model = _resolve_provider_config("doubao", user_id=current_user.id)
+        models.append((f"doubao:{db_model}", f"豆包 ({db_model})"))
     except Exception:
-        pass
+        models.append(("doubao:", "豆包 (Doubao)"))
 
-    # 当前 provider
-    current_provider = "openrouter"
-    try:
-        from appcore.api_keys import resolve_extra
-        extra = resolve_extra(current_user.id, "translate_preference")
-        if extra and extra.get("provider"):
-            current_provider = extra["provider"]
-    except Exception:
-        pass
+    # 当前默认选中（第一个选项）
+    current_provider = models[0][0] if models else "openrouter:"
 
     return render_template("copywriting_detail.html",
                            task=task, inputs=inputs, task_id=task_id,
@@ -281,6 +274,8 @@ def preview(task_id: str):
         finally:
             conn.close()
 
+    model_override = data.get("model")
+
     result = preview_request(
         keyframe_paths=task.get("keyframes", []),
         product_inputs=product_inputs,
@@ -288,6 +283,8 @@ def preview(task_id: str):
         user_id=current_user.id,
         custom_system_prompt=custom_prompt,
         language=language,
+        video_path=task.get("video_path"),
+        model_override=model_override,
     )
     return jsonify(result)
 
@@ -306,6 +303,8 @@ def generate(task_id: str):
         task_state.update(task_id, prompt_id=data["prompt_id"])
     if data.get("provider"):
         task_state.update(task_id, cw_provider=data["provider"])
+    if data.get("model"):
+        task_state.update(task_id, cw_model=data["model"])
 
     from web.extensions import socketio
     bus = EventBus()

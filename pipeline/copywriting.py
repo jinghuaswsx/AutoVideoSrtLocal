@@ -159,6 +159,16 @@ def _image_to_base64_url(image_path: str) -> str:
     return f"data:{mime};base64,{data}"
 
 
+def _video_to_base64_url(video_path: str) -> str:
+    """将本地视频转为 base64 data URL。"""
+    with open(video_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode()
+    ext = os.path.splitext(video_path)[1].lower()
+    mime = {".mp4": "video/mp4", ".mov": "video/mov", ".mpeg": "video/mpeg",
+            ".webm": "video/webm", ".avi": "video/mp4"}.get(ext, "video/mp4")
+    return f"data:{mime};base64,{data}"
+
+
 def _parse_json_content(raw: str) -> dict:
     """解析 LLM 返回的 JSON（兼容 markdown code block 包裹）。"""
     text = raw.strip()
@@ -192,7 +202,13 @@ def _build_product_text(inputs: dict) -> str:
 
 def _supports_vision(provider: str) -> bool:
     """判断 provider 是否支持 vision（图片输入）。"""
-    return provider != "doubao"
+    return provider not in ("doubao",)
+
+
+def _supports_video(provider: str, model: str) -> bool:
+    """判断是否支持直接视频输入。"""
+    # Gemini 系列支持视频
+    return "gemini" in model.lower()
 
 
 # ── 主函数 ─────────────────────────────────────────────
@@ -204,11 +220,15 @@ def preview_request(
     user_id: int | None = None,
     custom_system_prompt: str | None = None,
     language: str = "en",
+    video_path: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """预览将要发送给 LLM 的完整请求结构（不实际调用）。"""
     from pipeline.translate import _resolve_provider_config
 
     _, model = _resolve_provider_config(provider, user_id=user_id)
+    if model_override:
+        model = model_override
 
     if custom_system_prompt:
         system_prompt = custom_system_prompt
@@ -217,23 +237,29 @@ def preview_request(
     else:
         system_prompt = DEFAULT_SYSTEM_PROMPT_EN
 
-    use_vision = _supports_vision(provider) and keyframe_paths
+    use_video = _supports_video(provider, model) and video_path and os.path.isfile(video_path)
+    use_vision = _supports_vision(provider) and keyframe_paths and not use_video
     user_content: list[dict] = []
 
-    if use_vision:
+    if use_video:
+        video_size = os.path.getsize(video_path) / (1024 * 1024)
+        user_content.append({"type": "text", "text": "Source video (full):"})
+        user_content.append({"type": "video", "file": os.path.basename(video_path),
+                             "size_mb": round(video_size, 1)})
+    elif use_vision:
         user_content.append({"type": "text", "text": "Video keyframes (in chronological order):"})
         for path in keyframe_paths:
             user_content.append({"type": "image", "file": os.path.basename(path)})
 
     product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
-    if use_vision and product_image and os.path.isfile(product_image):
+    if (use_vision or use_video) and product_image and os.path.isfile(product_image):
         user_content.append({"type": "text", "text": "Product image:"})
         user_content.append({"type": "image", "file": os.path.basename(product_image)})
 
     product_text = _build_product_text(product_inputs)
-    if not use_vision:
+    if not use_vision and not use_video:
         product_text = (
-            "[Note: Current model does not support image input. "
+            "[Note: Current model does not support image/video input. "
             "Generating copy based on text information only.]\n\n" + product_text
         )
     if product_text.strip():
@@ -250,9 +276,12 @@ def preview_request(
         "system_prompt": system_prompt,
         "user_content": user_content,
         "resources": {
-            "keyframes": [os.path.basename(p) for p in keyframe_paths],
-            "keyframe_count": len(keyframe_paths),
-            "vision_enabled": use_vision,
+            "video": os.path.basename(video_path) if use_video else None,
+            "video_size_mb": round(os.path.getsize(video_path) / (1024 * 1024), 1) if use_video else None,
+            "video_input": use_video,
+            "keyframes": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
+            "keyframe_count": len(keyframe_paths) if not use_video else 0,
+            "vision_enabled": use_vision or use_video,
             "product_image": os.path.basename(product_image) if (product_image and os.path.isfile(product_image)) else None,
             "product_inputs": {k: v for k, v in product_inputs.items() if v and k != "product_image_url"},
         },
@@ -271,6 +300,8 @@ def generate_copy(
     user_id: int | None = None,
     custom_system_prompt: str | None = None,
     language: str = "en",
+    video_path: str | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """生成短视频文案。
 
@@ -281,6 +312,7 @@ def generate_copy(
         user_id: 用户 ID（用于解析 API key）
         custom_system_prompt: 自定义系统提示词，为 None 则用默认
         language: 输出语言 "en" 或 "zh"
+        video_path: 原始视频路径（支持视频输入的模型直接传视频）
 
     Returns:
         dict: {segments, full_text, tone, target_duration}
@@ -288,6 +320,8 @@ def generate_copy(
     from pipeline.translate import _resolve_provider_config
 
     client, model = _resolve_provider_config(provider, user_id=user_id)
+    if model_override:
+        model = model_override
 
     # 系统提示词
     if custom_system_prompt:
@@ -300,9 +334,18 @@ def generate_copy(
     # 构建用户消息内容
     content: list[dict[str, Any]] = []
 
-    # 图片（仅 vision 支持的模型）
-    use_vision = _supports_vision(provider) and keyframe_paths
-    if use_vision:
+    # 判断是否支持直接视频输入
+    use_video = _supports_video(provider, model) and video_path and os.path.isfile(video_path)
+    use_vision = _supports_vision(provider) and keyframe_paths and not use_video
+
+    if use_video:
+        log.info("模型支持视频输入，直接传视频: %s", os.path.basename(video_path))
+        content.append({"type": "text", "text": "Source video:"})
+        content.append({
+            "type": "video_url",
+            "video_url": {"url": _video_to_base64_url(video_path)},
+        })
+    elif use_vision:
         content.append({"type": "text", "text": "Video keyframes (in chronological order):"})
         for path in keyframe_paths:
             content.append({
@@ -312,7 +355,7 @@ def generate_copy(
 
     # 商品主图
     product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
-    if use_vision and product_image and os.path.isfile(product_image):
+    if (use_vision or use_video) and product_image and os.path.isfile(product_image):
         content.append({"type": "text", "text": "Product image:"})
         content.append({
             "type": "image_url",
@@ -321,9 +364,9 @@ def generate_copy(
 
     # 商品文本信息
     product_text = _build_product_text(product_inputs)
-    if not use_vision:
+    if not use_vision and not use_video:
         product_text = (
-            "[Note: Current model does not support image input. "
+            "[Note: Current model does not support image/video input. "
             "Generating copy based on text information only.]\n\n" + product_text
         )
     if product_text.strip():
@@ -345,23 +388,27 @@ def generate_copy(
         extra_kwargs["extra_body"] = {"plugins": [{"id": "response-healing"}]}
     extra_kwargs["response_format"] = COPYWRITING_RESPONSE_FORMAT
 
-    log.info("调用 LLM 生成文案: provider=%s, model=%s, images=%d",
-             provider, model, len(keyframe_paths) if use_vision else 0)
+    log.info("调用 LLM 生成文案: provider=%s, model=%s, video=%s, images=%d",
+             provider, model, bool(use_video), len(keyframe_paths) if use_vision else 0)
 
-    # 构建调试信息（不含 base64 图片数据）
+    # 构建调试信息（不含 base64 数据）
     debug_content = []
     for item in content:
         if item["type"] == "text":
             debug_content.append({"type": "text", "text": item["text"]})
         elif item["type"] == "image_url":
             debug_content.append({"type": "image", "info": "(base64 image)"})
+        elif item["type"] == "video_url":
+            debug_content.append({"type": "video", "info": f"(base64 video: {os.path.basename(video_path)})"})
     debug_info = {
         "provider": provider,
         "model": model,
         "system_prompt": system_prompt,
         "user_content": debug_content,
+        "video_input": use_video,
+        "video_file": os.path.basename(video_path) if use_video else None,
         "image_count": len(keyframe_paths) if use_vision else 0,
-        "keyframe_paths": [os.path.basename(p) for p in keyframe_paths],
+        "keyframe_paths": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
     }
 
     response = client.chat.completions.create(
