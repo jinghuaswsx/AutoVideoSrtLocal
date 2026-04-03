@@ -302,12 +302,13 @@
       <a href="{{ url_for('settings.index') }}" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
         <span class="nav-icon">⚙️</span> API 配置
       </a>
+      <a href="{% if current_user.role == 'admin' %}{{ url_for('admin_usage.usage') }}{% else %}{{ url_for('user_usage.my_usage') }}{% endif %}"
+         {% if request.endpoint in ('admin_usage.usage', 'user_usage.my_usage') %}class="active"{% endif %}>
+        <span class="nav-icon">📊</span> 用量统计
+      </a>
       {% if current_user.role == 'admin' %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
-      </a>
-      <a href="{{ url_for('admin_usage.usage') }}" {% if request.endpoint == 'admin_usage.usage' %}class="active"{% endif %}>
-        <span class="nav-icon">📊</span> 用量统计
       </a>
       {% endif %}
     </nav>

@@ -376,6 +376,14 @@ def rewrite_segment(task_id: str):
         language=language,
     )
 
+    # 记录 rewrite 的 token 用量
+    _rw_usage = new_seg.pop("_usage", None) or {}
+    from appcore.usage_log import record as _log_usage
+    _log_usage(current_user.id, task_id, f"copywriting_rewrite:{provider}",
+               model_name=provider, success=True,
+               input_tokens=_rw_usage.get("input_tokens"),
+               output_tokens=_rw_usage.get("output_tokens"))
+
     new_seg["index"] = idx
     task_state.update_copy_segment(task_id, idx, new_seg)
 

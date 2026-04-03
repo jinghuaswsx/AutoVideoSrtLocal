@@ -112,7 +112,17 @@ def generate_localized_translation(
     log.info("localized_translation raw response (provider=%s): %s", provider, raw_content[:2000])
     payload = _parse_json_content(raw_content)
     log.info("localized_translation parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
-    return validate_localized_translation(payload)
+    result = validate_localized_translation(payload)
+    # 提取 token 用量
+    usage = getattr(response, "usage", None)
+    if usage:
+        result["_usage"] = {
+            "input_tokens": getattr(usage, "prompt_tokens", None),
+            "output_tokens": getattr(usage, "completion_tokens", None),
+        }
+        log.info("localized_translation token usage: input=%s, output=%s",
+                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+    return result
 
 
 def generate_tts_script(
@@ -140,7 +150,17 @@ def generate_tts_script(
     log.info("tts_script raw response (provider=%s): %s", provider, raw_content[:2000])
     payload = _parse_json_content(raw_content)
     log.info("tts_script parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
-    return validate_tts_script(payload)
+    result = validate_tts_script(payload)
+    # 提取 token 用量
+    usage = getattr(response, "usage", None)
+    if usage:
+        result["_usage"] = {
+            "input_tokens": getattr(usage, "prompt_tokens", None),
+            "output_tokens": getattr(usage, "completion_tokens", None),
+        }
+        log.info("tts_script token usage: input=%s, output=%s",
+                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+    return result
 
 
 def translate_segments(

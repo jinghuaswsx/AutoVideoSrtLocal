@@ -140,6 +140,15 @@ class CopywritingRunner:
         task_state.set_copy(task_id, result)
         self._set_step(task_id, "copywrite", "done",
                        f"文案生成完成: {len(result.get('segments', []))} 段")
+        # 记录 token 用量
+        from appcore.usage_log import record as _log_usage
+        _cw_usage = result.get("_usage") or {}
+        _model_name = (result.get("_debug") or {}).get("model") or model_override or provider
+        _log_usage(self._user_id, task_id, f"copywriting:{provider}",
+                   model_name=_model_name,
+                   success=True,
+                   input_tokens=_cw_usage.get("input_tokens"),
+                   output_tokens=_cw_usage.get("output_tokens"))
         self._emit(task_id, EVT_CW_COPY_READY, {"copy": result})
 
     def _step_tts(self, task_id: str):

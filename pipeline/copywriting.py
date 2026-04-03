@@ -243,8 +243,8 @@ def _call_doubao_multimodal(
     content_items: list[dict],
     api_key: str,
     base_url: str = "https://ark.cn-beijing.volces.com/api/v3",
-) -> str:
-    """用 volcengine Ark SDK 调用豆包多模态模型。"""
+) -> tuple[str, dict | None]:
+    """用 volcengine Ark SDK 调用豆包多模态模型。返回 (text, usage_dict)。"""
     try:
         from volcenginesdkarkruntime import Ark
     except ImportError:
@@ -283,6 +283,29 @@ def _call_doubao_multimodal(
     log.info("Ark 响应 type=%s, output type=%s", type(response).__name__, type(response.output).__name__)
     log.info("Ark 响应 output=%s", repr(response.output)[:2000])
 
+    # 提取 token 用量（Ark SDK: response.usage 或 response.ResponseMeta.Usage）
+    ark_usage = None
+    try:
+        usage_obj = getattr(response, "usage", None)
+        if usage_obj:
+            ark_usage = {
+                "input_tokens": getattr(usage_obj, "prompt_tokens", None) or getattr(usage_obj, "PromptTokens", None) or getattr(usage_obj, "input_tokens", None),
+                "output_tokens": getattr(usage_obj, "completion_tokens", None) or getattr(usage_obj, "CompletionTokens", None) or getattr(usage_obj, "output_tokens", None),
+            }
+        if not ark_usage or not ark_usage.get("input_tokens"):
+            meta = getattr(response, "ResponseMeta", None) or getattr(response, "response_meta", None)
+            if meta:
+                meta_usage = getattr(meta, "Usage", None) or getattr(meta, "usage", None)
+                if meta_usage:
+                    ark_usage = {
+                        "input_tokens": getattr(meta_usage, "PromptTokens", None) or getattr(meta_usage, "prompt_tokens", None),
+                        "output_tokens": getattr(meta_usage, "CompletionTokens", None) or getattr(meta_usage, "completion_tokens", None),
+                    }
+        if ark_usage:
+            log.info("Ark token usage: input=%s, output=%s", ark_usage["input_tokens"], ark_usage["output_tokens"])
+    except Exception as e:
+        log.debug("提取 Ark usage 失败: %s", e)
+
     output = response.output
     if isinstance(output, list):
         for item in output:
@@ -291,22 +314,22 @@ def _call_doubao_multimodal(
                 for c in item.content:
                     text = getattr(c, 'text', None)
                     if text:
-                        return text
+                        return text, ark_usage
             # dict 对象
             elif isinstance(item, dict):
                 for c in item.get('content', []):
                     if isinstance(c, dict) and c.get('text'):
-                        return c['text']
+                        return c['text'], ark_usage
         log.warning("Ark 响应 list 中未找到 text，尝试其他属性...")
         # 尝试直接取 text 属性
         for item in output:
             text = getattr(item, 'text', None)
             if text:
-                return text
+                return text, ark_usage
         log.error("Ark 响应格式不符预期: %s", repr(output)[:2000])
         raise ValueError(f"无法从 Ark 响应中提取文本: {repr(output)[:500]}")
     else:
-        return output.content[0].text
+        return output.content[0].text, ark_usage
 
 
 # ── 主函数 ─────────────────────────────────────────────
@@ -573,7 +596,7 @@ def generate_copy(
         }
         log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
 
-        raw = _call_doubao_multimodal(
+        raw, token_usage = _call_doubao_multimodal(
             model=model,
             system_prompt=system_prompt,
             content_items=content,
@@ -613,6 +636,16 @@ def generate_copy(
             **extra_kwargs,
         )
         raw = response.choices[0].message.content
+        # 提取 OpenAI SDK token 用量
+        token_usage = None
+        usage = getattr(response, "usage", None)
+        if usage:
+            token_usage = {
+                "input_tokens": getattr(usage, "prompt_tokens", None),
+                "output_tokens": getattr(usage, "completion_tokens", None),
+            }
+            log.info("copywriting token usage: input=%s, output=%s",
+                     token_usage["input_tokens"], token_usage["output_tokens"])
 
     debug_info = {
         "provider": provider,
@@ -633,6 +666,8 @@ def generate_copy(
         seg["index"] = i
 
     result["_debug"] = debug_info
+    if token_usage:
+        result["_usage"] = token_usage
 
     log.info("文案生成完成: %d 段, 预计时长 %ds",
              len(result.get("segments", [])), result.get("target_duration", 0))
@@ -684,4 +719,14 @@ def rewrite_segment(
     )
 
     raw = response.choices[0].message.content
-    return _parse_json_content(raw)
+    result = _parse_json_content(raw)
+    # 提取 token 用量
+    usage = getattr(response, "usage", None)
+    if usage:
+        result["_usage"] = {
+            "input_tokens": getattr(usage, "prompt_tokens", None),
+            "output_tokens": getattr(usage, "completion_tokens", None),
+        }
+        log.info("rewrite_segment token usage: input=%s, output=%s",
+                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+    return result

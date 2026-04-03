@@ -1,7 +1,12 @@
 {% extends "layout.html" %}
 {% block title %}用量统计 — AutoVideoSrt{% endblock %}
-{% block page_title %}用量统计{% endblock %}
+{% block page_title %}{% if admin_mode %}用量统计（管理员）{% else %}我的用量{% endif %}{% endblock %}
 {% block extra_style %}
+.usage-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.usage-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 18px 20px; }
+.usage-card .label { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.usage-card .value { font-size: 26px; font-weight: 700; color: #111827; line-height: 1.2; }
+.usage-card .unit { font-size: 13px; font-weight: 400; color: #6b7280; margin-left: 4px; }
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 12px; border-bottom: 1.5px solid #e5e7eb; font-weight: 600; }
 td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #374151; }
@@ -11,41 +16,89 @@ tr:hover td { background: #f9fafb; }
 .filter-bar input:focus, .filter-bar select:focus { border-color: #7c6fe0; background: #fff; }
 .table-wrap { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; overflow: hidden; }
 .empty-row td { text-align: center; color: #9ca3af; padding: 40px; }
+.svc-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+.svc-badge.asr { background: #dbeafe; color: #1d4ed8; }
+.svc-badge.llm { background: #ede9fe; color: #6d28d9; }
+.svc-badge.tts { background: #fef3c7; color: #92400e; }
+.svc-badge.other { background: #f3f4f6; color: #374151; }
+.token-num { font-variant-numeric: tabular-nums; }
 {% endblock %}
 {% block content %}
+
+<!-- 汇总卡片 -->
+<div class="usage-summary">
+  <div class="usage-card">
+    <div class="label">总调用次数</div>
+    <div class="value">{{ '{:,}'.format(summary.total_calls|int) }}</div>
+  </div>
+  <div class="usage-card">
+    <div class="label">输入 Tokens</div>
+    <div class="value">{{ '{:,}'.format(summary.total_input_tokens|int) }}</div>
+  </div>
+  <div class="usage-card">
+    <div class="label">输出 Tokens</div>
+    <div class="value">{{ '{:,}'.format(summary.total_output_tokens|int) }}</div>
+  </div>
+  <div class="usage-card">
+    <div class="label">音频时长</div>
+    <div class="value">{{ '%.1f'|format(summary.total_audio_seconds|float) }}<span class="unit">秒</span></div>
+  </div>
+</div>
+
+<!-- 筛选 -->
 <form method="get" class="filter-bar">
   <select name="service">
     <option value="">全部服务</option>
-    <option value="doubao_asr" {% if service=='doubao_asr' %}selected{% endif %}>豆包 ASR</option>
-    <option value="elevenlabs" {% if service=='elevenlabs' %}selected{% endif %}>ElevenLabs</option>
-    <option value="openrouter" {% if service=='openrouter' %}selected{% endif %}>OpenRouter</option>
+    {% for svc in service_list %}
+    <option value="{{ svc }}" {% if service == svc %}selected{% endif %}>{{ svc }}</option>
+    {% endfor %}
   </select>
-  <input type="date" name="from" value="{{ date_from }}">
-  <input type="date" name="to" value="{{ date_to }}">
+  <input type="date" name="from" value="{{ date_from }}" placeholder="开始日期">
+  <input type="date" name="to" value="{{ date_to }}" placeholder="结束日期">
   <button type="submit" class="btn btn-primary btn-sm">筛选</button>
 </form>
+
+<!-- 明细表 -->
 <div class="table-wrap">
   <table>
     <thead>
       <tr>
-        <th>日期</th><th>用户</th><th>服务</th><th>调用次数</th>
-        <th>输入 Tokens</th><th>输出 Tokens</th><th>音频时长(s)</th>
+        <th>日期</th>
+        {% if admin_mode %}<th>用户</th>{% endif %}
+        <th>服务</th>
+        <th>模型</th>
+        <th>调用次数</th>
+        <th>输入 Tokens</th>
+        <th>输出 Tokens</th>
+        <th>音频时长(s)</th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
       <tr>
         <td>{{ r.day }}</td>
-        <td>{{ r.username }}</td>
-        <td>{{ r.service }}</td>
+        {% if admin_mode %}<td>{{ r.username }}</td>{% endif %}
+        <td>
+          {% set svc = r.service or '' %}
+          {% if 'asr' in svc %}
+          <span class="svc-badge asr">{{ svc }}</span>
+          {% elif 'elevenlabs' in svc or 'tts' in svc %}
+          <span class="svc-badge tts">{{ svc }}</span>
+          {% elif 'openrouter' in svc or 'doubao' in svc or 'copywriting' in svc %}
+          <span class="svc-badge llm">{{ svc }}</span>
+          {% else %}
+          <span class="svc-badge other">{{ svc }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px; color:#6b7280;">{{ r.model_name or '-' }}</td>
         <td>{{ r.calls }}</td>
-        <td>{{ r.input_tokens or '-' }}</td>
-        <td>{{ r.output_tokens or '-' }}</td>
+        <td class="token-num">{{ '{:,}'.format(r.input_tokens|int) if r.input_tokens else '-' }}</td>
+        <td class="token-num">{{ '{:,}'.format(r.output_tokens|int) if r.output_tokens else '-' }}</td>
         <td>{{ '%.1f'|format(r.audio_seconds) if r.audio_seconds else '-' }}</td>
       </tr>
       {% endfor %}
       {% if not rows %}
-      <tr class="empty-row"><td colspan="7">暂无数据</td></tr>
+      <tr class="empty-row"><td colspan="{% if admin_mode %}8{% else %}7{% endif %}">暂无数据</td></tr>
       {% endif %}
     </tbody>
   </table>

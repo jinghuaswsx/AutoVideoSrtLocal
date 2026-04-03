@@ -307,7 +307,12 @@ class PipelineRunner:
 
         from appcore.usage_log import record as _log_usage
         from pipeline.translate import get_model_display_name
-        _log_usage(self.user_id, task_id, provider, model_name=get_model_display_name(provider, self.user_id), success=True)
+        _translate_usage = localized_translation.get("_usage") or {}
+        _log_usage(self.user_id, task_id, provider,
+                   model_name=get_model_display_name(provider, self.user_id),
+                   success=True,
+                   input_tokens=_translate_usage.get("input_tokens"),
+                   output_tokens=_translate_usage.get("output_tokens"))
 
         if requires_confirmation:
             task_state.set_current_review_step(task_id, "translate")
@@ -330,7 +335,7 @@ class PipelineRunner:
         from pipeline.extract import get_video_duration
         from pipeline.localization import build_tts_segments
         from pipeline.timeline import build_timeline_manifest
-        from pipeline.translate import generate_tts_script
+        from pipeline.translate import generate_tts_script, get_model_display_name
         from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
 
         provider = _resolve_translate_provider(self.user_id)
@@ -382,6 +387,14 @@ class PipelineRunner:
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": tts_script})
         self._set_step(task_id, "tts", "done", "英文配音生成完成")
         from appcore.usage_log import record as _log_usage
+        # 记录 TTS script LLM 调用的 token 用量
+        _tts_script_usage = tts_script.get("_usage") or {}
+        _log_usage(self.user_id, task_id, provider,
+                   model_name=get_model_display_name(provider, self.user_id),
+                   success=True,
+                   input_tokens=_tts_script_usage.get("input_tokens"),
+                   output_tokens=_tts_script_usage.get("output_tokens"))
+        # 记录 ElevenLabs TTS 调用
         _log_usage(self.user_id, task_id, "elevenlabs", success=True)
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
