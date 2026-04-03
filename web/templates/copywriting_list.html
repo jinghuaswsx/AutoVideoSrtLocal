@@ -1,0 +1,155 @@
+{% extends "layout.html" %}
+{% block title %}文案创作{% endblock %}
+{% block content %}
+<style>
+    .cw-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .cw-header h2 { margin:0; font-size:1.4rem; }
+    .btn-new { background:#4f46e5; color:#fff; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; text-decoration:none; }
+    .btn-new:hover { background:#4338ca; }
+    .cw-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
+    .cw-card { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--card-bg); cursor:pointer; transition:box-shadow .2s; }
+    .cw-card:hover { box-shadow:0 2px 12px rgba(0,0,0,.1); }
+    .cw-card-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; }
+    .cw-card-body { padding:12px; }
+    .cw-card-title { font-weight:600; font-size:14px; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cw-card-meta { font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; }
+    .badge { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
+    .badge-draft { background:#f3f4f6; color:#6b7280; }
+    .badge-done { background:#d1fae5; color:#065f46; }
+    .badge-running { background:#ede9fe; color:#5b21b6; }
+    .badge-error { background:#fee2e2; color:#991b1b; }
+    .empty-state { text-align:center; padding:60px 20px; color:var(--text-muted); }
+</style>
+
+<div class="cw-header">
+    <h2>文案创作</h2>
+    <a href="#" class="btn-new" onclick="openUploadModal(); return false;">新建文案</a>
+</div>
+
+{% if projects %}
+<div class="cw-grid">
+    {% for p in projects %}
+    <div class="cw-card" onclick="location.href='/copywriting/{{ p.id }}'">
+        {% if p.thumbnail_path %}
+        <img class="cw-card-thumb" src="/api/copywriting/{{ p.id }}/artifact/thumbnail" alt="">
+        {% else %}
+        <div class="cw-card-thumb" style="display:flex;align-items:center;justify-content:center;color:#666;">无缩略图</div>
+        {% endif %}
+        <div class="cw-card-body">
+            <div class="cw-card-title">{{ p.display_name or p.original_filename }}</div>
+            <div class="cw-card-meta">
+                <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+                {% if p.status == 'done' %}
+                <span class="badge badge-done">已完成</span>
+                {% elif p.status == 'running' %}
+                <span class="badge badge-running">生成中</span>
+                {% elif p.status == 'error' %}
+                <span class="badge badge-error">失败</span>
+                {% else %}
+                <span class="badge badge-draft">草稿</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>还没有文案项目</p>
+    <p style="font-size:13px; margin-top:8px;">点击"新建文案"开始创作</p>
+</div>
+{% endif %}
+
+<!-- 上传弹窗 -->
+<div id="uploadModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center;">
+    <div style="background:var(--card-bg); border-radius:12px; padding:24px; width:480px; max-height:80vh; overflow-y:auto;">
+        <h3 style="margin:0 0 16px;">新建文案项目</h3>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">视频文件 *</label>
+                <input type="file" name="video" accept="video/*" required style="width:100%;">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">商品主图</label>
+                <input type="file" name="product_image" accept="image/*" style="width:100%;">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">商品标题 *</label>
+                <input type="text" name="product_title" required class="form-input" placeholder="如：便携式榨汁机">
+            </div>
+            <div style="display:flex; gap:12px; margin-bottom:12px;">
+                <div style="flex:1;">
+                    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">价格</label>
+                    <input type="text" name="price" class="form-input" placeholder="$29.99">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">目标人群</label>
+                    <input type="text" name="target_audience" class="form-input" placeholder="年轻女性">
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">卖点（每行一个）</label>
+                <textarea name="selling_points" class="form-input" rows="3" placeholder="便携小巧&#10;30秒快速榨汁&#10;USB充电"></textarea>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">补充信息</label>
+                <textarea name="extra_info" class="form-input" rows="2" placeholder="其他想让AI知道的信息..."></textarea>
+            </div>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">文案语言</label>
+                <select name="language" class="form-input">
+                    <option value="en" selected>English</option>
+                    <option value="zh">中文</option>
+                </select>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" onclick="closeUploadModal()" style="padding:8px 16px; border-radius:6px; border:1px solid var(--border); background:transparent; cursor:pointer;">取消</button>
+                <button type="submit" class="btn-new" style="border-radius:6px;">开始创作</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .form-input { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text); box-sizing:border-box; }
+</style>
+
+<script>
+function openUploadModal() {
+    document.getElementById('uploadModal').style.display = 'flex';
+}
+function closeUploadModal() {
+    document.getElementById('uploadModal').style.display = 'none';
+}
+document.getElementById('uploadModal').addEventListener('click', function(e) {
+    if (e.target === this) closeUploadModal();
+});
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = new FormData(this);
+    // 将卖点文本转为 JSON 数组
+    const sp = form.get('selling_points');
+    if (sp) {
+        const arr = sp.split('\n').map(s => s.trim()).filter(Boolean);
+        form.set('selling_points', JSON.stringify(arr));
+    }
+    const btn = this.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = '上传中...';
+    try {
+        const resp = await fetch('/api/copywriting/upload', { method: 'POST', body: form });
+        const data = await resp.json();
+        if (data.task_id) {
+            location.href = '/copywriting/' + data.task_id;
+        } else {
+            alert(data.error || '上传失败');
+        }
+    } catch(err) {
+        alert('上传失败: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '开始创作';
+    }
+});
+</script>
+{% endblock %}
