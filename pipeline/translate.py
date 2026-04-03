@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Dict, List
 
 from openai import OpenAI
+
+log = logging.getLogger(__name__)
 
 from config import (
     CLAUDE_MODEL,
@@ -105,7 +108,10 @@ def generate_localized_translation(
         max_tokens=4096,
         **( {"extra_body": extra_body} if extra_body else {}),
     )
-    payload = _parse_json_content(response.choices[0].message.content)
+    raw_content = response.choices[0].message.content
+    log.info("localized_translation raw response (provider=%s): %s", provider, raw_content[:2000])
+    payload = _parse_json_content(raw_content)
+    log.info("localized_translation parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     return validate_localized_translation(payload)
 
 
@@ -130,7 +136,10 @@ def generate_tts_script(
         max_tokens=4096,
         **( {"extra_body": extra_body} if extra_body else {}),
     )
-    payload = _parse_json_content(response.choices[0].message.content)
+    raw_content = response.choices[0].message.content
+    log.info("tts_script raw response (provider=%s): %s", provider, raw_content[:2000])
+    payload = _parse_json_content(raw_content)
+    log.info("tts_script parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     return validate_tts_script(payload)
 
 
