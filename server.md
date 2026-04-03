@@ -13,6 +13,7 @@ Internal use only. This file records the production server access information fo
 | SSH user | `root` |
 | SSH port | `22` |
 | SSH key file | `C:\Users\admin\.ssh\openclaw-noobird.pem` |
+| SSH password | `wylf1109@` |
 
 ## Production
 
