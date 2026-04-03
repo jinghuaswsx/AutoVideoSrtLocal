@@ -205,9 +205,15 @@ class PipelineRunner:
         task_state.update(task_id, utterances=utterances)
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
-        self._set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
         from appcore.usage_log import record as _log_usage
         _log_usage(self.user_id, task_id, "doubao_asr", success=True)
+
+        if not utterances:
+            self._set_step(task_id, "asr", "done", "未检测到语音内容，可能是纯音乐/音效视频")
+            self._emit(task_id, EVT_ASR_RESULT, {"segments": []})
+            raise RuntimeError("未检测到语音内容。该视频可能是纯音乐或音效背景视频，无法进行语音翻译。")
+
+        self._set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
         self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
 
     def _step_alignment(self, task_id: str, video_path: str, task_dir: str) -> None:

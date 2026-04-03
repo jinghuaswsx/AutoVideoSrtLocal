@@ -399,7 +399,7 @@
   socket.on("subtitle_ready", () => scheduleRefreshTaskState(0));
   socket.on("capcut_ready", () => scheduleRefreshTaskState(0));
   socket.on("pipeline_done", () => scheduleRefreshTaskState(0));
-  socket.on("pipeline_error", ({ error }) => { showError(error); scheduleRefreshTaskState(0); });
+  socket.on("pipeline_error", ({ error }) => { showError(error); alert("错误: " + error); scheduleRefreshTaskState(0); });
 
   async function refreshTaskState() {
     if (!taskId) return;

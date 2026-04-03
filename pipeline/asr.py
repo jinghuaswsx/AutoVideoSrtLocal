@@ -127,6 +127,10 @@ def _poll(request_id: str, api_key: str | None = None) -> dict:
             time.sleep(POLL_INTERVAL_SEC)
             continue
 
+        if status_code == "20000003":
+            # 静音/无有效语音，返回空结果而非报错
+            return {"resp": {"text": "", "utterances": []}}
+
         # 其他状态码均为错误
         raise RuntimeError(
             f"豆包 ASR 识别失败: status={status_code}, message={message}"
