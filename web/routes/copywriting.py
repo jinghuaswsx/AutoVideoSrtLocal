@@ -65,10 +65,40 @@ def detail_page(task_id: str):
         conn.close()
 
     from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
+    from pipeline.translate import _resolve_provider_config
+
+    # 构建模型列表
+    models = [
+        ("openrouter", "Claude Sonnet 4.5 (OpenRouter)"),
+        ("doubao", "豆包 (Doubao)"),
+    ]
+    # 尝试获取实际模型名
+    try:
+        _, model_id = _resolve_provider_config("openrouter", user_id=current_user.id)
+        models[0] = ("openrouter", f"OpenRouter ({model_id})")
+    except Exception:
+        pass
+    try:
+        _, model_id = _resolve_provider_config("doubao", user_id=current_user.id)
+        models[1] = ("doubao", f"豆包 ({model_id})")
+    except Exception:
+        pass
+
+    # 当前 provider
+    current_provider = "openrouter"
+    try:
+        from appcore.api_keys import resolve_extra
+        extra = resolve_extra(current_user.id, "translate_preference")
+        if extra and extra.get("provider"):
+            current_provider = extra["provider"]
+    except Exception:
+        pass
+
     return render_template("copywriting_detail.html",
                            task=task, inputs=inputs, task_id=task_id,
                            default_prompt_en=DEFAULT_SYSTEM_PROMPT_EN,
-                           default_prompt_zh=DEFAULT_SYSTEM_PROMPT_ZH)
+                           default_prompt_zh=DEFAULT_SYSTEM_PROMPT_ZH,
+                           models=models, current_provider=current_provider)
 
 
 # ── API 路由 ──────────────────────────────────────────
@@ -227,15 +257,8 @@ def preview(task_id: str):
 
     language = product_inputs.get("language", "en")
 
-    # 解析 provider
-    provider = "openrouter"
-    try:
-        from appcore.api_keys import resolve_extra
-        extra = resolve_extra(current_user.id, "translate_preference")
-        if extra and extra.get("provider"):
-            provider = extra["provider"]
-    except Exception:
-        pass
+    # provider：优先用前端传入的
+    provider = data.get("provider") or "openrouter"
 
     # 解析自定义提示词
     custom_prompt = None
@@ -277,10 +300,12 @@ def generate(task_id: str):
     if not task:
         return jsonify(error="任务不存在"), 404
 
-    # 可选：前端传入 prompt_id
+    # 可选：前端传入 prompt_id 和 provider
     data = request.get_json(silent=True) or {}
     if data.get("prompt_id"):
         task_state.update(task_id, prompt_id=data["prompt_id"])
+    if data.get("provider"):
+        task_state.update(task_id, cw_provider=data["provider"])
 
     from web.extensions import socketio
     bus = EventBus()

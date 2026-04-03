@@ -113,8 +113,8 @@ class CopywritingRunner:
         product_inputs = self._load_product_inputs(task_id)
         language = product_inputs.get("language", "en")
 
-        # 解析 provider
-        provider = self._resolve_provider()
+        # 解析 provider（优先用任务级别的选择）
+        provider = task.get("cw_provider") or self._resolve_provider()
 
         # 解析用户自定义提示词
         custom_prompt = self._load_user_prompt(task_id, language)

@@ -251,6 +251,23 @@ function setLanguage(lang) {
     updatePromptPreview();
 }
 
+// ── 模型选择 ────────────────────────────────────
+
+function getSelectedProvider() {
+    const sel = document.getElementById("modelSelect");
+    return sel ? sel.value : "openrouter";
+}
+
+function onModelChange() {
+    const provider = getSelectedProvider();
+    const hint = document.getElementById("modelHint");
+    if (hint) {
+        hint.textContent = provider === "doubao" ? "注意：豆包不支持图片输入，将仅基于文本生成" : "支持图片输入（Vision）";
+    }
+}
+// 初始化提示
+onModelChange();
+
 // ── 提示词加载 & 预览 ──────────────────────────
 
 let promptsData = [];
@@ -307,14 +324,15 @@ async function startGenerate() {
     btn.textContent = "加载预览...";
 
     const promptId = document.getElementById("promptSelect").value;
+    const provider = getSelectedProvider();
     try {
         const resp = await fetch("/api/copywriting/" + TASK_ID + "/preview", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt_id: promptId || null }),
+            body: JSON.stringify({ prompt_id: promptId || null, provider: provider }),
         });
         const data = await resp.json();
-        showPreviewModal(data, promptId);
+        showPreviewModal(data, promptId, provider);
     } catch(err) {
         alert("预览失败: " + err.message);
     } finally {
@@ -323,7 +341,7 @@ async function startGenerate() {
     }
 }
 
-function showPreviewModal(data, promptId) {
+function showPreviewModal(data, promptId, provider) {
     // 模型
     document.getElementById("previewModel").textContent = (data.provider || "") + " / " + (data.model || "");
 
@@ -356,8 +374,9 @@ function showPreviewModal(data, promptId) {
     const params = data.parameters || {};
     document.getElementById("previewParams").textContent = JSON.stringify(params, null, 2);
 
-    // 保存 promptId 用于确认
+    // 保存 promptId 和 provider 用于确认
     document.getElementById("previewModal").dataset.promptId = promptId || "";
+    document.getElementById("previewModal").dataset.provider = provider || "openrouter";
     document.getElementById("previewModal").classList.add("open");
 }
 
@@ -366,7 +385,9 @@ function closePreview() {
 }
 
 function confirmGenerate() {
-    const promptId = document.getElementById("previewModal").dataset.promptId;
+    const modal = document.getElementById("previewModal");
+    const promptId = modal.dataset.promptId;
+    const provider = modal.dataset.provider;
     closePreview();
 
     const configOverlay = document.getElementById("configOverlay");
@@ -378,7 +399,7 @@ function confirmGenerate() {
     fetch("/api/copywriting/" + TASK_ID + "/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt_id: promptId || null }),
+        body: JSON.stringify({ prompt_id: promptId || null, provider: provider }),
     });
 }
 

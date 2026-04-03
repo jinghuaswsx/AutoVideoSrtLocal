@@ -70,6 +70,15 @@
                 </div>
             </div>
             <div>
+                <label class="cw-config-label">大模型</label>
+                <select class="cw-form-input" id="modelSelect" onchange="onModelChange()" style="max-width:320px;">
+                    {% for value, label in models %}
+                    <option value="{{ value }}" {% if value == current_provider %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div style="font-size:11px; color:#9ca3af; margin-top:4px;" id="modelHint"></div>
+            </div>
+            <div>
                 <label class="cw-config-label">提示词模板</label>
                 <select class="cw-form-input" id="promptSelect" onchange="onPromptChange()" style="max-width:320px;">
                     <option value="">默认提示词</option>
