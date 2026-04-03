@@ -47,23 +47,26 @@ class CopywritingRunner:
 
     def start(self, task_id: str):
         """启动管线：仅抽帧，等待用户确认配置后再生成文案。"""
+        log.info("[CW] start() 被调用, task_id=%s", task_id)
         task = task_state.get(task_id)
         if not task:
+            log.warning("[CW] task_id=%s 不存在，跳过", task_id)
             return
         task_state.update(task_id, status="running")
         try:
             self._step_keyframe(task_id)
         except Exception:
-            log.exception("文案管线异常: %s", task_id)
+            log.exception("[CW] 文案管线异常: %s", task_id)
             task_state.update(task_id, status="error")
             self._emit(task_id, EVT_CW_ERROR, {"message": "抽帧失败"})
 
     def generate_copy(self, task_id: str):
         """单独触发文案生成（重新生成）。"""
+        log.info("[CW] generate_copy() 被调用, task_id=%s", task_id)
         try:
             self._step_copywrite(task_id)
         except Exception:
-            log.exception("文案生成异常: %s", task_id)
+            log.exception("[CW] 文案生成异常: %s", task_id)
             self._set_step(task_id, "copywrite", "error", "文案生成失败")
             self._emit(task_id, EVT_CW_ERROR, {"message": "文案生成失败"})
 

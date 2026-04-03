@@ -1,8 +1,16 @@
 """
 启动入口
 """
+import logging
 import os
 import sys
+
+# 配置日志：确保应用层日志输出到 stderr（gunicorn 可捕获）
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stderr,
+)
 
 sys.path.insert(0, os.path.dirname(__file__))
 

@@ -89,12 +89,28 @@ function updateStepUI(step, status, message) {
     else if (status === "error") el.classList.add("error");
 
     // 遮罩控制
-    if (step === "keyframe" && status === "running") showOverlay("正在抽取关键帧...");
-    if (step === "copywrite" && status === "running") showOverlay("正在生成文案...");
+    if (step === "keyframe" && status === "running") {
+        document.getElementById("configOverlay").classList.add("active");
+        document.getElementById("configOverlayText").textContent = "正在抽取关键帧...";
+    }
+    if (step === "keyframe" && (status === "done" || status === "error")) {
+        document.getElementById("configOverlay").classList.remove("active");
+    }
+    if (step === "copywrite" && status === "running") {
+        document.getElementById("configOverlay").classList.add("active");
+        document.getElementById("configOverlayText").textContent = "正在生成文案...";
+        showOverlay("正在生成文案...");
+    }
     if (step === "tts" && status === "running") showOverlay("正在生成语音...");
     if (step === "compose" && status === "running") showOverlay("正在合成视频...");
-    if (status === "done" && (step === "copywrite" || step === "compose")) hideOverlay();
-    if (status === "error") hideOverlay();
+    if (status === "done" && (step === "copywrite" || step === "compose")) {
+        hideOverlay();
+        document.getElementById("configOverlay").classList.remove("active");
+    }
+    if (status === "error") {
+        hideOverlay();
+        document.getElementById("configOverlay").classList.remove("active");
+    }
 
     if (status === "running") {
         const loading = document.getElementById("copyLoading");
