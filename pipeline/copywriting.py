@@ -202,13 +202,71 @@ def _build_product_text(inputs: dict) -> str:
 
 def _supports_vision(provider: str) -> bool:
     """判断 provider 是否支持 vision（图片输入）。"""
-    return provider not in ("doubao",)
+    return True  # 所有 provider 都支持
 
 
 def _supports_video(provider: str, model: str) -> bool:
     """判断是否支持直接视频输入。"""
-    # Gemini 系列支持视频
-    return "gemini" in model.lower()
+    if "gemini" in model.lower():
+        return True
+    if provider == "doubao":
+        return True
+    return False
+
+
+def _upload_to_tos(local_path: str, prefix: str = "copywriting_media/") -> str:
+    """上传文件到 TOS，返回签名下载 URL。"""
+    from appcore.tos_clients import upload_file, generate_signed_download_url
+    object_key = f"{prefix}{os.path.basename(local_path)}"
+    upload_file(local_path, object_key)
+    url = generate_signed_download_url(object_key, expires=3600)
+    log.info("已上传到 TOS: %s -> %s", os.path.basename(local_path), object_key)
+    return url
+
+
+def _call_doubao_multimodal(
+    model: str,
+    system_prompt: str,
+    content_items: list[dict],
+    api_key: str,
+    base_url: str = "https://ark.cn-beijing.volces.com/api/v3",
+) -> str:
+    """用 volcengine Ark SDK 调用豆包多模态模型。"""
+    try:
+        from volcenginesdkarkruntime import Ark
+    except ImportError:
+        raise ImportError(
+            "volcenginesdkarkruntime 未安装，请运行: pip install volcenginesdkarkruntime"
+        )
+
+    client = Ark(base_url=base_url, api_key=api_key)
+
+    # 转换 content 为 Ark 格式
+    ark_content = []
+    for item in content_items:
+        if item["type"] == "text":
+            ark_content.append({"type": "input_text", "text": item["text"]})
+        elif item["type"] == "image_url":
+            # TOS URL
+            ark_content.append({
+                "type": "input_image",
+                "image_url": item["tos_url"],
+            })
+        elif item["type"] == "video_url":
+            ark_content.append({
+                "type": "input_video",
+                "video_url": item["tos_url"],
+            })
+
+    response = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+            {"role": "user", "content": ark_content},
+        ],
+    )
+
+    return response.output.content[0].text
 
 
 # ── 主函数 ─────────────────────────────────────────────
@@ -338,29 +396,68 @@ def generate_copy(
     use_video = _supports_video(provider, model) and video_path and os.path.isfile(video_path)
     use_vision = _supports_vision(provider) and keyframe_paths and not use_video
 
+    # 豆包多模态：先上传媒体到 TOS，拿 URL
+    is_doubao = provider == "doubao"
+    tos_urls: dict[str, str] = {}  # local_path -> tos_url
+
+    if is_doubao and (use_video or use_vision):
+        log.info("豆包多模态：上传媒体文件到 TOS...")
+        if use_video:
+            tos_urls[video_path] = _upload_to_tos(video_path)
+        elif use_vision:
+            for path in keyframe_paths:
+                tos_urls[path] = _upload_to_tos(path)
+        product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
+        if product_image and os.path.isfile(product_image):
+            tos_urls[product_image] = _upload_to_tos(product_image)
+
+    # 构建用户消息内容
+    content: list[dict[str, Any]] = []
+
     if use_video:
         log.info("模型支持视频输入，直接传视频: %s", os.path.basename(video_path))
         content.append({"type": "text", "text": "Source video:"})
-        content.append({
-            "type": "video_url",
-            "video_url": {"url": _video_to_base64_url(video_path)},
-        })
+        if is_doubao:
+            content.append({
+                "type": "video_url",
+                "video_url": {"url": tos_urls[video_path]},
+                "tos_url": tos_urls[video_path],
+            })
+        else:
+            content.append({
+                "type": "video_url",
+                "video_url": {"url": _video_to_base64_url(video_path)},
+            })
     elif use_vision:
         content.append({"type": "text", "text": "Video keyframes (in chronological order):"})
         for path in keyframe_paths:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": _image_to_base64_url(path)},
-            })
+            if is_doubao:
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": tos_urls[path]},
+                    "tos_url": tos_urls[path],
+                })
+            else:
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": _image_to_base64_url(path)},
+                })
 
     # 商品主图
     product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
     if (use_vision or use_video) and product_image and os.path.isfile(product_image):
         content.append({"type": "text", "text": "Product image:"})
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": _image_to_base64_url(product_image)},
-        })
+        if is_doubao:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": tos_urls.get(product_image, "")},
+                "tos_url": tos_urls.get(product_image, ""),
+            })
+        else:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": _image_to_base64_url(product_image)},
+            })
 
     # 商品文本信息
     product_text = _build_product_text(product_inputs)
@@ -378,66 +475,102 @@ def generate_copy(
     else:
         content.append({"type": "text", "text": "Write the script in English for the US market."})
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": content},
-    ]
-
-    extra_kwargs: dict[str, Any] = {"temperature": 0.7, "max_tokens": 4096}
-    if provider == "openrouter":
-        extra_kwargs["extra_body"] = {"plugins": [{"id": "response-healing"}]}
-    extra_kwargs["response_format"] = COPYWRITING_RESPONSE_FORMAT
-
     log.info("调用 LLM 生成文案: provider=%s, model=%s, video=%s, images=%d",
              provider, model, bool(use_video), len(keyframe_paths) if use_vision else 0)
 
-    # ── 构建完整可复现的请求报文（base64 截断） ──
-    def _truncate_base64(obj):
-        """递归截断 base64 数据，保留前100字符 + 长度信息。"""
+    # ── 构建调试信息 ──
+    def _truncate_data(obj):
+        """递归截断 base64/长 URL 数据。"""
         if isinstance(obj, dict):
             out = {}
             for k, v in obj.items():
-                if k in ("url",) and isinstance(v, str) and v.startswith("data:"):
-                    prefix = v[:100]
-                    out[k] = f"{prefix}...[TRUNCATED, total {len(v)} chars]"
+                if k in ("url",) and isinstance(v, str) and (v.startswith("data:") or len(v) > 500):
+                    out[k] = v[:120] + f"...[TRUNCATED, total {len(v)} chars]"
+                elif k == "tos_url":
+                    continue  # 不放入日志
                 else:
-                    out[k] = _truncate_base64(v)
+                    out[k] = _truncate_data(v)
             return out
         elif isinstance(obj, list):
-            return [_truncate_base64(i) for i in obj]
+            return [_truncate_data(i) for i in obj]
         return obj
 
-    base_url = client.base_url if hasattr(client, 'base_url') else "unknown"
-    request_payload = {
-        "model": model,
-        "messages": _truncate_base64(messages),
-        "temperature": extra_kwargs.get("temperature"),
-        "max_tokens": extra_kwargs.get("max_tokens"),
-        "response_format": extra_kwargs.get("response_format"),
-    }
-    if "extra_body" in extra_kwargs:
-        request_payload["extra_body"] = extra_kwargs["extra_body"]
-
-    full_request_log = {
-        "endpoint": f"{base_url}chat/completions",
-        "method": "POST",
-        "headers": {
-            "Authorization": "Bearer sk-***REDACTED***",
-            "Content-Type": "application/json",
-        },
-        "body": request_payload,
-    }
-    log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
-
-    # 构建调试信息（不含 base64 数据，存入结果供前端展示）
     debug_content = []
     for item in content:
         if item["type"] == "text":
             debug_content.append({"type": "text", "text": item["text"]})
         elif item["type"] == "image_url":
-            debug_content.append({"type": "image", "info": "(base64 image)"})
+            info = "(TOS URL image)" if is_doubao else "(base64 image)"
+            debug_content.append({"type": "image", "info": info})
         elif item["type"] == "video_url":
-            debug_content.append({"type": "video", "info": f"(base64 video: {os.path.basename(video_path)})"})
+            info = f"(TOS URL video: {os.path.basename(video_path)})" if is_doubao else f"(base64 video: {os.path.basename(video_path)})"
+            debug_content.append({"type": "video", "info": info})
+
+    # ── 实际调用 ──
+    if is_doubao and (use_video or use_vision):
+        # 豆包多模态：用 Ark SDK
+        from appcore.api_keys import resolve_key
+        api_key = resolve_key(user_id, "doubao_llm", "DOUBAO_LLM_API_KEY")
+        from appcore.api_keys import resolve_extra
+        extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
+        doubao_base_url = extra.get("base_url") or "https://ark.cn-beijing.volces.com/api/v3"
+
+        full_request_log = {
+            "endpoint": f"{doubao_base_url}/responses",
+            "method": "POST",
+            "sdk": "volcenginesdkarkruntime.Ark",
+            "headers": {"Authorization": "Bearer ***REDACTED***"},
+            "body": {
+                "model": model,
+                "input": _truncate_data([
+                    {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                    {"role": "user", "content": content},
+                ]),
+            },
+        }
+        log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
+
+        raw = _call_doubao_multimodal(
+            model=model,
+            system_prompt=system_prompt,
+            content_items=content,
+            api_key=api_key,
+            base_url=doubao_base_url,
+        )
+    else:
+        # OpenRouter / 豆包纯文本：用 OpenAI SDK
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": content},
+        ]
+
+        extra_kwargs: dict[str, Any] = {"temperature": 0.7, "max_tokens": 4096}
+        if provider == "openrouter":
+            extra_kwargs["extra_body"] = {"plugins": [{"id": "response-healing"}]}
+        extra_kwargs["response_format"] = COPYWRITING_RESPONSE_FORMAT
+
+        base_url = client.base_url if hasattr(client, 'base_url') else "unknown"
+        full_request_log = {
+            "endpoint": f"{base_url}chat/completions",
+            "method": "POST",
+            "headers": {"Authorization": "Bearer ***REDACTED***", "Content-Type": "application/json"},
+            "body": {
+                "model": model,
+                "messages": _truncate_data(messages),
+                "temperature": 0.7,
+                "max_tokens": 4096,
+                "response_format": extra_kwargs.get("response_format"),
+            },
+        }
+        log.info("完整请求报文:\n%s", json.dumps(full_request_log, ensure_ascii=False, indent=2))
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **extra_kwargs,
+        )
+        raw = response.choices[0].message.content
+
     debug_info = {
         "provider": provider,
         "model": model,
@@ -447,16 +580,9 @@ def generate_copy(
         "video_file": os.path.basename(video_path) if use_video else None,
         "image_count": len(keyframe_paths) if use_vision else 0,
         "keyframe_paths": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
+        "tos_urls": {os.path.basename(k): v[:80] + "..." for k, v in tos_urls.items()} if tos_urls else None,
         "full_request": full_request_log,
     }
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        **extra_kwargs,
-    )
-
-    raw = response.choices[0].message.content
     result = _parse_json_content(raw)
 
     # 补充 index
