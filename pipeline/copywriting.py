@@ -214,6 +214,19 @@ def _supports_video(provider: str, model: str) -> bool:
     return False
 
 
+def _resolve_model_only(provider: str, user_id: int | None = None) -> str:
+    """仅获取模型 ID，不创建 OpenAI client（避免 doubao 缺 key 时报错）。"""
+    from appcore.api_keys import resolve_extra
+    from config import CLAUDE_MODEL, DOUBAO_LLM_MODEL
+
+    if provider == "doubao":
+        extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
+        return extra.get("model_id") or DOUBAO_LLM_MODEL
+    else:
+        extra = resolve_extra(user_id, "openrouter") if user_id else {}
+        return extra.get("model_id") or CLAUDE_MODEL
+
+
 def _upload_to_tos(local_path: str, prefix: str = "copywriting_media/") -> str:
     """上传文件到 TOS，返回签名下载 URL。"""
     from appcore.tos_clients import upload_file, generate_signed_download_url
@@ -282,9 +295,7 @@ def preview_request(
     model_override: str | None = None,
 ) -> dict:
     """预览将要发送给 LLM 的完整请求结构（不实际调用）。"""
-    from pipeline.translate import _resolve_provider_config
-
-    _, model = _resolve_provider_config(provider, user_id=user_id)
+    model = _resolve_model_only(provider, user_id=user_id)
     if model_override:
         model = model_override
 
@@ -377,7 +388,13 @@ def generate_copy(
     """
     from pipeline.translate import _resolve_provider_config
 
-    client, model = _resolve_provider_config(provider, user_id=user_id)
+    # doubao 多模态走 Ark SDK，不需要 OpenAI client
+    is_doubao = provider == "doubao"
+    if is_doubao:
+        model = _resolve_model_only(provider, user_id=user_id)
+        client = None
+    else:
+        client, model = _resolve_provider_config(provider, user_id=user_id)
     if model_override:
         model = model_override
 
@@ -397,7 +414,6 @@ def generate_copy(
     use_vision = _supports_vision(provider) and keyframe_paths and not use_video
 
     # 豆包多模态：先上传媒体到 TOS，拿 URL
-    is_doubao = provider == "doubao"
     tos_urls: dict[str, str] = {}  # local_path -> tos_url
 
     if is_doubao and (use_video or use_vision):
