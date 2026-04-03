@@ -48,10 +48,18 @@ def create_app() -> Flask:
     app.register_blueprint(tos_upload_bp)
     app.register_blueprint(voice_bp)
     app.register_blueprint(prompt_bp)
+    from web.routes.copywriting import bp as copywriting_bp
+    app.register_blueprint(copywriting_bp)
 
     # WebSocket 事件
     @socketio.on("join_task")
     def on_join(data):
+        task_id = data.get("task_id")
+        if task_id:
+            join_room(task_id)
+
+    @socketio.on("join_copywriting_task")
+    def on_join_copywriting(data):
         task_id = data.get("task_id")
         if task_id:
             join_room(task_id)

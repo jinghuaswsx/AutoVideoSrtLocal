@@ -1,0 +1,241 @@
+{# web/templates/_copywriting_scripts.html #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<script>
+const TASK_ID = "{{ task_id }}";
+const socket = io();
+socket.emit("join_copywriting_task", { task_id: TASK_ID });
+
+let currentSegments = {{ task.copy.segments | tojson if task.copy and task.copy.segments else '[]' }};
+let rewriteIndex = -1;
+
+// ── SocketIO 事件处理 ────────────────────────────
+
+socket.on("cw_step_update", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    updateStepUI(data.step, data.status, data.message);
+});
+
+socket.on("cw_keyframes_ready", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    const row = document.getElementById("keyframesRow");
+    row.innerHTML = "";
+    for (let i = 0; i < data.count; i++) {
+        const img = document.createElement("img");
+        img.className = "cw-keyframe-thumb";
+        img.src = "/api/copywriting/" + TASK_ID + "/keyframe/" + i;
+        row.appendChild(img);
+    }
+});
+
+socket.on("cw_copy_ready", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    currentSegments = data.copy.segments || [];
+    renderSegments(currentSegments);
+    enableButtons(true);
+});
+
+socket.on("cw_tts_ready", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    document.getElementById("resultSection").style.display = "block";
+    const audio = document.getElementById("resultAudio");
+    audio.src = "/api/copywriting/" + TASK_ID + "/artifact/tts_audio";
+    audio.style.display = "block";
+});
+
+socket.on("cw_compose_ready", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    const video = document.getElementById("resultVideo");
+    video.src = "/api/copywriting/" + TASK_ID + "/artifact/video";
+    video.style.display = "block";
+    const dlRow = document.getElementById("downloadRow");
+    dlRow.style.display = "flex";
+    document.getElementById("dlVideo").href = "/api/copywriting/" + TASK_ID + "/download/soft_video";
+    document.getElementById("dlCopy").href = "/api/copywriting/" + TASK_ID + "/download/copy";
+    document.getElementById("btnTTS").disabled = false;
+    document.getElementById("btnTTS").textContent = "▶ 生成语音视频";
+});
+
+socket.on("cw_error", function(data) {
+    if (data.task_id !== TASK_ID) return;
+    alert("错误: " + (data.message || "未知错误"));
+    enableButtons(true);
+});
+
+// ── UI 更新 ──────────────────────────────────────
+
+function updateStepUI(step, status, message) {
+    const el = document.getElementById("step-" + step);
+    if (!el) return;
+    el.className = "cw-step";
+    if (status === "done") el.classList.add("done");
+    else if (status === "running") el.classList.add("active");
+    else if (status === "error") el.classList.add("error");
+
+    if (status === "running") {
+        const loading = document.getElementById("copyLoading");
+        if (loading) loading.innerHTML = '<span class="cw-spinner"></span>' + (message || "处理中...");
+    }
+}
+
+function renderSegments(segments) {
+    const container = document.getElementById("segmentsContainer");
+    container.innerHTML = "";
+    segments.forEach(function(seg, i) {
+        const div = document.createElement("div");
+        div.className = "cw-segment";
+        div.dataset.index = i;
+        div.innerHTML =
+            '<div class="cw-seg-label">' + seg.label + '</div>' +
+            '<div class="cw-seg-text" id="segText' + i + '">' + escapeHtml(seg.text) + '</div>' +
+            '<div class="cw-seg-duration">' + (seg.duration_hint || 0).toFixed(1) + 's</div>' +
+            '<div class="cw-seg-actions">' +
+            '<button class="cw-seg-btn" onclick="startEdit(' + i + ')">✏️</button>' +
+            '<button class="cw-seg-btn" onclick="openRewrite(' + i + ')">🔄</button>' +
+            '</div>';
+        container.appendChild(div);
+    });
+}
+
+function enableButtons(enabled) {
+    document.getElementById("btnExport").disabled = !enabled;
+    document.getElementById("btnDownload").disabled = !enabled;
+    document.getElementById("btnTTS").disabled = !enabled;
+    document.getElementById("btnRegenerate").disabled = !enabled;
+}
+
+function escapeHtml(text) {
+    const d = document.createElement("div");
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+// ── 素材区折叠 ──────────────────────────────────
+
+let materialsOpen = true;
+function toggleMaterials() {
+    materialsOpen = !materialsOpen;
+    document.getElementById("materialsBody").classList.toggle("collapsed", !materialsOpen);
+    document.getElementById("materialsToggle").textContent = materialsOpen ? "▼ 收起" : "▶ 展开";
+}
+
+// ── 文案操作 ─────────────────────────────────────
+
+function regenerateCopy() {
+    if (!confirm("重新生成将覆盖当前文案，确定？")) return;
+    document.getElementById("btnRegenerate").disabled = true;
+    const promptId = document.getElementById("promptSelect").value;
+    fetch("/api/copywriting/" + TASK_ID + "/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_id: promptId || null }),
+    });
+}
+
+function startEdit(index) {
+    const el = document.getElementById("segText" + index);
+    el.contentEditable = "true";
+    el.focus();
+    el.addEventListener("blur", function handler() {
+        el.contentEditable = "false";
+        currentSegments[index].text = el.textContent.trim();
+        saveCopy();
+        el.removeEventListener("blur", handler);
+    }, { once: true });
+}
+
+function saveCopy() {
+    fetch("/api/copywriting/" + TASK_ID + "/segments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segments: currentSegments }),
+    });
+}
+
+function openRewrite(index) {
+    rewriteIndex = index;
+    document.getElementById("rewriteOriginal").textContent =
+        "[" + currentSegments[index].label + "] " + currentSegments[index].text;
+    document.getElementById("rewriteInstruction").value = "";
+    document.getElementById("rewriteModal").style.display = "flex";
+}
+
+function closeRewrite() {
+    document.getElementById("rewriteModal").style.display = "none";
+    rewriteIndex = -1;
+}
+
+async function confirmRewrite() {
+    if (rewriteIndex < 0) return;
+    const btn = document.getElementById("btnConfirmRewrite");
+    btn.disabled = true;
+    btn.textContent = "重写中...";
+    try {
+        const resp = await fetch("/api/copywriting/" + TASK_ID + "/rewrite-segment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                index: rewriteIndex,
+                instruction: document.getElementById("rewriteInstruction").value,
+            }),
+        });
+        const data = await resp.json();
+        if (data.segment) {
+            currentSegments[rewriteIndex] = data.segment;
+            currentSegments[rewriteIndex].index = rewriteIndex;
+            renderSegments(currentSegments);
+        }
+    } catch (err) {
+        alert("重写失败: " + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "重写";
+        closeRewrite();
+    }
+}
+
+function exportCopy() {
+    const text = currentSegments.map(s => "[" + s.label + "]\n" + s.text).join("\n\n");
+    navigator.clipboard.writeText(text).then(() => alert("已复制到剪贴板"));
+}
+
+function downloadCopy() {
+    window.open("/api/copywriting/" + TASK_ID + "/download/copy");
+}
+
+function startTTS() {
+    document.getElementById("btnTTS").disabled = true;
+    document.getElementById("btnTTS").textContent = "生成中...";
+    fetch("/api/copywriting/" + TASK_ID + "/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+    });
+}
+
+function setLanguage(lang) {
+    document.querySelectorAll(".cw-lang-btn").forEach(b => b.classList.remove("active"));
+    event.target.classList.add("active");
+    fetch("/api/copywriting/" + TASK_ID + "/inputs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: lang }),
+    });
+}
+
+// ── 提示词加载 ──────────────────────────────────
+
+async function loadPrompts() {
+    try {
+        const resp = await fetch("/api/prompts?type=copywriting");
+        const data = await resp.json();
+        const select = document.getElementById("promptSelect");
+        (data.prompts || []).forEach(function(p) {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = p.name;
+            select.appendChild(opt);
+        });
+    } catch(e) { /* ignore */ }
+}
+loadPrompts();
+</script>

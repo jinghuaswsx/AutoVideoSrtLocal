@@ -295,3 +295,67 @@ def confirm_alignment(task_id: str, break_after: list, script_segments: list):
         task["segments"] = script_segments
         task["_alignment_confirmed"] = True
         _sync_task_to_db(task_id)
+
+
+def create_copywriting(task_id: str, video_path: str, task_dir: str,
+                       original_filename: str, user_id: int) -> dict:
+    """创建文案创作项目的初始状态。"""
+    task = {
+        "id": task_id,
+        "type": "copywriting",
+        "status": "uploaded",
+        "video_path": video_path,
+        "task_dir": task_dir,
+        "original_filename": original_filename,
+        "steps": {
+            "keyframe": "pending",
+            "copywrite": "pending",
+            "tts": "pending",
+            "compose": "pending",
+        },
+        "step_messages": {},
+        "keyframes": [],
+        "copy": {},
+        "copy_history": [],
+        "voice_id": None,
+        "source_tos_key": "",
+        "source_object_info": {},
+        "tos_uploads": {},
+        "result": {},
+        "artifacts": {},
+        "preview_files": {},
+        "_user_id": user_id,
+        "display_name": "",
+    }
+    _tasks[task_id] = task
+    _sync_task_to_db(task_id)
+    return task
+
+
+def set_keyframes(task_id: str, keyframes: list[str]) -> None:
+    """设置关键帧路径列表。"""
+    task = get(task_id)
+    if task:
+        task["keyframes"] = keyframes
+        _sync_task_to_db(task_id)
+
+
+def set_copy(task_id: str, copy_data: dict) -> None:
+    """设置生成的文案数据，并追加到历史。"""
+    task = get(task_id)
+    if task:
+        task["copy"] = copy_data
+        task.setdefault("copy_history", []).append(copy_data)
+        _sync_task_to_db(task_id)
+
+
+def update_copy_segment(task_id: str, index: int, segment: dict) -> None:
+    """更新文案中的某一段。"""
+    task = get(task_id)
+    if task and task.get("copy") and 0 <= index < len(task["copy"].get("segments", [])):
+        task["copy"]["segments"][index] = segment
+        # 重建 full_text
+        task["copy"]["full_text"] = " ".join(
+            s["text"] for s in task["copy"]["segments"]
+        )
+        _sync_task_to_db(task_id)

@@ -40,9 +40,10 @@ def _ensure_defaults(user_id: int) -> None:
 @login_required
 def list_prompts():
     _ensure_defaults(current_user.id)
+    prompt_type = request.args.get("type", "translation")
     rows = db_query(
-        "SELECT * FROM user_prompts WHERE user_id = %s ORDER BY is_default DESC, created_at",
-        (current_user.id,),
+        "SELECT * FROM user_prompts WHERE user_id = %s AND type = %s ORDER BY is_default DESC, created_at",
+        (current_user.id, prompt_type),
     )
     return jsonify({"prompts": [dict(r) for r in rows]})
 
@@ -56,9 +57,10 @@ def create_prompt():
     if not name or not prompt_text:
         return jsonify({"error": "name and prompt_text are required"}), 400
     prompt_text_zh = (body.get("prompt_text_zh") or "").strip()
+    prompt_type = body.get("type", "translation")
     row_id = db_execute(
-        "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default) VALUES (%s, %s, %s, %s, FALSE)",
-        (current_user.id, name, prompt_text, prompt_text_zh),
+        "INSERT INTO user_prompts (user_id, name, prompt_text, prompt_text_zh, is_default, type) VALUES (%s, %s, %s, %s, FALSE, %s)",
+        (current_user.id, name, prompt_text, prompt_text_zh, prompt_type),
     )
     row = db_query_one("SELECT * FROM user_prompts WHERE id = %s", (row_id,))
     return jsonify({"prompt": dict(row)}), 201
