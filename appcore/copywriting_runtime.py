@@ -157,7 +157,7 @@ class CopywritingRunner:
         else:
             voice = get_default_voice(self._user_id)
 
-        elevenlabs_key = resolve_key(self._user_id, "elevenlabs")
+        elevenlabs_key = resolve_key(self._user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
         result = generate_full_audio(
             segments=tts_segments,
