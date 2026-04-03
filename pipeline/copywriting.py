@@ -279,7 +279,24 @@ def _call_doubao_multimodal(
         ],
     )
 
-    return response.output.content[0].text
+    # response.output 可能是 list 或 object，兼容两种格式
+    output = response.output
+    if isinstance(output, list):
+        # list 格式: [{"type": "message", "content": [{"type": "output_text", "text": "..."}]}]
+        for item in output:
+            if hasattr(item, 'content'):
+                for c in item.content:
+                    if hasattr(c, 'text') and c.text:
+                        return c.text
+            elif isinstance(item, dict):
+                for c in item.get('content', []):
+                    if isinstance(c, dict) and c.get('text'):
+                        return c['text']
+        # 兜底：直接 str
+        log.warning("Ark 响应格式不符预期: %s", output)
+        return str(output)
+    else:
+        return output.content[0].text
 
 
 # ── 主函数 ─────────────────────────────────────────────
