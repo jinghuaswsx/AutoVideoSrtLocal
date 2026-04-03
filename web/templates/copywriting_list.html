@@ -1,125 +1,146 @@
 {% extends "layout.html" %}
 {% block title %}文案创作{% endblock %}
-{% block content %}
-<style>
-    .cw-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-    .cw-header h2 { margin:0; font-size:1.4rem; }
-    .btn-new { background:#4f46e5; color:#fff; border:none; padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; text-decoration:none; }
-    .btn-new:hover { background:#4338ca; }
-    .cw-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
-    .cw-card { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--card-bg); cursor:pointer; transition:box-shadow .2s; }
-    .cw-card:hover { box-shadow:0 2px 12px rgba(0,0,0,.1); }
-    .cw-card-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:#111; }
-    .cw-card-body { padding:12px; }
-    .cw-card-title { font-weight:600; font-size:14px; margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .cw-card-meta { font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; }
-    .badge { padding:2px 8px; border-radius:10px; font-size:11px; font-weight:500; }
-    .badge-draft { background:#f3f4f6; color:#6b7280; }
-    .badge-done { background:#d1fae5; color:#065f46; }
-    .badge-running { background:#ede9fe; color:#5b21b6; }
-    .badge-error { background:#fee2e2; color:#991b1b; }
-    .empty-state { text-align:center; padding:60px 20px; color:var(--text-muted); }
-</style>
+{% block page_title %}文案创作{% endblock %}
+{% block extra_style %}
+.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+.page-header h1 { font-size:20px; font-weight:700; color:var(--text-main); }
+.cw-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
+.cw-card {
+  background:var(--bg-card); border:1.5px solid var(--border-main); border-radius:14px;
+  overflow:hidden; cursor:pointer; text-decoration:none; color:inherit;
+  display:flex; flex-direction:column;
+  transition:border-color .2s, box-shadow .2s, background .2s;
+}
+.cw-card:hover { border-color:var(--primary-color); box-shadow:0 4px 16px rgba(59,130,246,0.15); background:var(--sidebar-hover-bg); }
+.cw-card-thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:var(--bg-body); }
+.cw-card-thumb-empty { width:100%; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; background:var(--bg-body); color:#d1d5db; font-size:32px; }
+.cw-card-body { padding:14px; flex:1; display:flex; flex-direction:column; justify-content:space-between; }
+.cw-card-title { font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cw-card-meta { font-size:12px; color:#9ca3af; display:flex; justify-content:space-between; align-items:center; }
+.badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+.badge-draft { background:#f3f4f6; color:#9ca3af; }
+.badge-done { background:#dcfce7; color:#16a34a; }
+.badge-running { background:#ede9fe; color:#7c3aed; }
+.badge-error { background:#fee2e2; color:#dc2626; }
+.badge-uploaded { background:#dbeafe; color:#2563eb; }
+.empty { text-align:center; padding:80px 0; color:#9ca3af; }
 
-<div class="cw-header">
-    <h2>文案创作</h2>
-    <a href="#" class="btn-new" onclick="openUploadModal(); return false;">新建文案</a>
+/* Modal */
+.cw-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.3); z-index:200; align-items:center; justify-content:center; }
+.cw-modal-overlay.open { display:flex; }
+.cw-modal {
+  background:var(--bg-card); border-radius:16px; padding:28px; width:480px; max-height:80vh; overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,0.3); border:1px solid var(--border-main);
+}
+.cw-modal h3 { font-size:16px; font-weight:700; margin:0 0 20px; color:var(--text-main); }
+.cw-form-group { margin-bottom:14px; }
+.cw-form-label { font-size:13px; font-weight:600; display:block; margin-bottom:4px; color:var(--text-main); }
+.cw-form-label .required { color:#dc2626; margin-left:2px; }
+.cw-form-label .optional { color:#9ca3af; font-weight:400; font-size:11px; margin-left:4px; }
+.cw-form-input {
+  width:100%; padding:10px 12px; background:var(--bg-body); border:1.5px solid var(--border-main);
+  border-radius:10px; color:var(--text-main); font-size:14px; font-family:inherit; box-sizing:border-box;
+  outline:none; transition:all .2s;
+}
+.cw-form-input:focus { border-color:var(--primary-color); background:var(--bg-card); box-shadow:0 0 10px rgba(59,130,246,0.2); }
+.cw-form-row { display:flex; gap:12px; }
+.cw-form-row > div { flex:1; }
+.cw-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>文案创作</h1>
+    <button class="btn btn-primary" onclick="openUploadModal()">+ 新建文案</button>
 </div>
 
 {% if projects %}
 <div class="cw-grid">
     {% for p in projects %}
-    <div class="cw-card" onclick="location.href='/copywriting/{{ p.id }}'">
+    <a class="cw-card" href="/copywriting/{{ p.id }}">
         {% if p.thumbnail_path %}
-        <img class="cw-card-thumb" src="/api/copywriting/{{ p.id }}/artifact/thumbnail" alt="">
+        <img class="cw-card-thumb" src="/api/copywriting/{{ p.id }}/artifact/thumbnail" alt="" loading="lazy">
         {% else %}
-        <div class="cw-card-thumb" style="display:flex;align-items:center;justify-content:center;color:#666;">无缩略图</div>
+        <div class="cw-card-thumb-empty">✍️</div>
         {% endif %}
         <div class="cw-card-body">
             <div class="cw-card-title">{{ p.display_name or p.original_filename }}</div>
             <div class="cw-card-meta">
                 <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
-                {% if p.status == 'done' %}
-                <span class="badge badge-done">已完成</span>
-                {% elif p.status == 'running' %}
-                <span class="badge badge-running">生成中</span>
-                {% elif p.status == 'error' %}
-                <span class="badge badge-error">失败</span>
-                {% else %}
-                <span class="badge badge-draft">草稿</span>
-                {% endif %}
+                <span class="badge badge-{{ p.status }}">
+                    {% if p.status == 'done' %}已完成
+                    {% elif p.status == 'running' %}生成中
+                    {% elif p.status == 'error' %}失败
+                    {% elif p.status == 'uploaded' %}已上传
+                    {% else %}草稿{% endif %}
+                </span>
             </div>
         </div>
-    </div>
+    </a>
     {% endfor %}
 </div>
 {% else %}
-<div class="empty-state">
-    <p>还没有文案项目</p>
-    <p style="font-size:13px; margin-top:8px;">点击"新建文案"开始创作</p>
+<div class="empty">
+    <p style="font-size:48px;margin-bottom:16px">✍️</p>
+    <p>还没有文案项目，点击右上角新建</p>
 </div>
 {% endif %}
 
 <!-- 上传弹窗 -->
-<div id="uploadModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:100; align-items:center; justify-content:center;">
-    <div style="background:var(--card-bg); border-radius:12px; padding:24px; width:480px; max-height:80vh; overflow-y:auto;">
-        <h3 style="margin:0 0 16px;">新建文案项目</h3>
+<div class="cw-modal-overlay" id="uploadModal">
+    <div class="cw-modal">
+        <h3>新建文案项目</h3>
         <form id="uploadForm" enctype="multipart/form-data">
-            <div style="margin-bottom:12px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">视频文件 *</label>
-                <input type="file" name="video" accept="video/*" required style="width:100%;">
+            <div class="cw-form-group">
+                <label class="cw-form-label">视频文件<span class="required">*</span></label>
+                <input type="file" name="video" accept="video/*" required class="cw-form-input" style="padding:8px;">
             </div>
-            <div style="margin-bottom:12px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">商品主图</label>
-                <input type="file" name="product_image" accept="image/*" style="width:100%;">
+            <div class="cw-form-group">
+                <label class="cw-form-label">商品主图<span class="optional">可选</span></label>
+                <input type="file" name="product_image" accept="image/*" class="cw-form-input" style="padding:8px;">
             </div>
-            <div style="margin-bottom:12px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">商品标题 *</label>
-                <input type="text" name="product_title" required class="form-input" placeholder="如：便携式榨汁机">
+            <div class="cw-form-group">
+                <label class="cw-form-label">商品标题<span class="optional">可选</span></label>
+                <input type="text" name="product_title" class="cw-form-input" placeholder="如：便携式榨汁机">
             </div>
-            <div style="display:flex; gap:12px; margin-bottom:12px;">
-                <div style="flex:1;">
-                    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">价格</label>
-                    <input type="text" name="price" class="form-input" placeholder="$29.99">
+            <div class="cw-form-row">
+                <div class="cw-form-group">
+                    <label class="cw-form-label">价格<span class="optional">可选</span></label>
+                    <input type="text" name="price" class="cw-form-input" placeholder="$29.99">
                 </div>
-                <div style="flex:1;">
-                    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">目标人群</label>
-                    <input type="text" name="target_audience" class="form-input" placeholder="年轻女性">
+                <div class="cw-form-group">
+                    <label class="cw-form-label">目标人群<span class="optional">可选</span></label>
+                    <input type="text" name="target_audience" class="cw-form-input" placeholder="年轻女性">
                 </div>
             </div>
-            <div style="margin-bottom:12px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">卖点（每行一个）</label>
-                <textarea name="selling_points" class="form-input" rows="3" placeholder="便携小巧&#10;30秒快速榨汁&#10;USB充电"></textarea>
+            <div class="cw-form-group">
+                <label class="cw-form-label">卖点<span class="optional">可选，每行一个</span></label>
+                <textarea name="selling_points" class="cw-form-input" rows="3" placeholder="便携小巧&#10;30秒快速榨汁&#10;USB充电"></textarea>
             </div>
-            <div style="margin-bottom:12px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">补充信息</label>
-                <textarea name="extra_info" class="form-input" rows="2" placeholder="其他想让AI知道的信息..."></textarea>
+            <div class="cw-form-group">
+                <label class="cw-form-label">补充信息<span class="optional">可选</span></label>
+                <textarea name="extra_info" class="cw-form-input" rows="2" placeholder="其他想让AI知道的信息..."></textarea>
             </div>
-            <div style="margin-bottom:16px;">
-                <label style="font-size:13px; font-weight:600; display:block; margin-bottom:4px;">文案语言</label>
-                <select name="language" class="form-input">
+            <div class="cw-form-group">
+                <label class="cw-form-label">文案语言<span class="optional">可选</span></label>
+                <select name="language" class="cw-form-input">
                     <option value="en" selected>English</option>
                     <option value="zh">中文</option>
                 </select>
             </div>
-            <div style="display:flex; gap:8px; justify-content:flex-end;">
-                <button type="button" onclick="closeUploadModal()" style="padding:8px 16px; border-radius:6px; border:1px solid var(--border); background:transparent; cursor:pointer;">取消</button>
-                <button type="submit" class="btn-new" style="border-radius:6px;">开始创作</button>
+            <div class="cw-modal-actions">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="closeUploadModal()">取消</button>
+                <button type="submit" class="btn btn-primary btn-sm" id="submitBtn">开始创作</button>
             </div>
         </form>
     </div>
 </div>
 
-<style>
-    .form-input { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; background:var(--card-bg); color:var(--text); box-sizing:border-box; }
-</style>
-
 <script>
 function openUploadModal() {
-    document.getElementById('uploadModal').style.display = 'flex';
+    document.getElementById('uploadModal').classList.add('open');
 }
 function closeUploadModal() {
-    document.getElementById('uploadModal').style.display = 'none';
+    document.getElementById('uploadModal').classList.remove('open');
 }
 document.getElementById('uploadModal').addEventListener('click', function(e) {
     if (e.target === this) closeUploadModal();
@@ -127,13 +148,12 @@ document.getElementById('uploadModal').addEventListener('click', function(e) {
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const form = new FormData(this);
-    // 将卖点文本转为 JSON 数组
     const sp = form.get('selling_points');
     if (sp) {
         const arr = sp.split('\n').map(s => s.trim()).filter(Boolean);
         form.set('selling_points', JSON.stringify(arr));
     }
-    const btn = this.querySelector('button[type=submit]');
+    const btn = document.getElementById('submitBtn');
     btn.disabled = true;
     btn.textContent = '上传中...';
     try {

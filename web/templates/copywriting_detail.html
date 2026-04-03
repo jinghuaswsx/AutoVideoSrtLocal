@@ -1,6 +1,7 @@
 {# web/templates/copywriting_detail.html #}
 {% extends "layout.html" %}
 {% block title %}文案创作 — {{ task.display_name or task.original_filename }}{% endblock %}
+{% block page_title %}文案创作{% endblock %}
 {% block content %}
 {% include "_copywriting_styles.html" %}
 
@@ -37,7 +38,7 @@
                          src="/api/copywriting/{{ task_id }}/keyframe/{{ i }}" alt="帧{{ i+1 }}">
                     {% endfor %}
                     {% if not task.keyframes %}
-                    <span style="font-size:12px; color:var(--text-muted);">抽帧中...</span>
+                    <span style="font-size:12px; color:#9ca3af;">抽帧中...</span>
                     {% endif %}
                 </div>
             </div>
@@ -131,9 +132,9 @@
 <div class="cw-rewrite-modal" id="rewriteModal" style="display:none;">
     <div class="cw-rewrite-box">
         <h3 style="margin:0 0 12px; font-size:14px;">重写段落</h3>
-        <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;" id="rewriteOriginal"></div>
-        <input type="text" id="rewriteInstruction" class="form-input"
-               placeholder="修改要求（可选，如：更口语化、加入紧迫感）" style="margin-bottom:12px; width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:13px; box-sizing:border-box;">
+        <div style="font-size:12px; color:#9ca3af; margin-bottom:8px;" id="rewriteOriginal"></div>
+        <input type="text" id="rewriteInstruction"
+               placeholder="修改要求（可选，如：更口语化、加入紧迫感）" style="margin-bottom:12px; width:100%; padding:10px 12px; background:var(--bg-body); border:1.5px solid var(--border-main); border-radius:10px; color:var(--text-main); font-size:14px; font-family:inherit; box-sizing:border-box;">
         <div style="display:flex; gap:8px; justify-content:flex-end;">
             <button class="cw-btn cw-btn-secondary" onclick="closeRewrite()">取消</button>
             <button class="cw-btn cw-btn-primary" onclick="confirmRewrite()" id="btnConfirmRewrite">重写</button>
