@@ -35,7 +35,7 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
     try:
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
-        expires_at = datetime.now() + timedelta(hours=24)
+        expires_at = datetime.now() + timedelta(hours=48)
         db_execute(
             """INSERT INTO projects (id, user_id, original_filename, status, task_dir, state_json, expires_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)
