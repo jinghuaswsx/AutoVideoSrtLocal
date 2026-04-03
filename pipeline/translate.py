@@ -87,7 +87,11 @@ def generate_localized_translation(
     openrouter_api_key: str | None = None,
 ) -> dict:
     client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-    extra_body: dict = {"response_format": LOCALIZED_TRANSLATION_RESPONSE_FORMAT}
+    extra_body: dict = {}
+    if provider == "doubao":
+        extra_body["response_format"] = {"type": "json_object"}
+    else:
+        extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
     if provider == "openrouter":
         extra_body["plugins"] = [{"id": "response-healing"}]
 
@@ -115,7 +119,11 @@ def generate_tts_script(
     openrouter_api_key: str | None = None,
 ) -> dict:
     client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-    extra_body: dict = {"response_format": TTS_SCRIPT_RESPONSE_FORMAT}
+    extra_body: dict = {}
+    if provider == "doubao":
+        extra_body["response_format"] = {"type": "json_object"}
+    else:
+        extra_body["response_format"] = TTS_SCRIPT_RESPONSE_FORMAT
     if provider == "openrouter":
         extra_body["plugins"] = [{"id": "response-healing"}]
 
