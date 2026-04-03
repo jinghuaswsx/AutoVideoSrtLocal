@@ -54,20 +54,54 @@
         </div>
     </div>
 
-    <!-- 文案编辑区 -->
-    <div class="cw-editor" id="editorSection">
+    <!-- 生成配置面板（文案未生成时显示） -->
+    <div class="cw-editor" id="configSection" style="position:relative;{% if task.copy and task.copy.segments %}display:none;{% endif %}">
         <div class="cw-editor-header">
-            <h3>📝 文案编辑</h3>
-            <div class="cw-editor-tools">
-                <select class="cw-prompt-select" id="promptSelect">
-                    <option value="">默认提示词</option>
-                </select>
+            <h3>⚙️ 生成配置</h3>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+            <div>
+                <label class="cw-config-label">文案语言</label>
                 <div class="cw-lang-toggle">
                     <button class="cw-lang-btn {% if (inputs.get('language','en')) == 'en' %}active{% endif %}"
                             onclick="setLanguage('en')">English</button>
                     <button class="cw-lang-btn {% if (inputs.get('language','en')) == 'zh' %}active{% endif %}"
                             onclick="setLanguage('zh')">中文</button>
                 </div>
+            </div>
+            <div>
+                <label class="cw-config-label">提示词模板</label>
+                <select class="cw-form-input" id="promptSelect" onchange="onPromptChange()" style="max-width:320px;">
+                    <option value="">默认提示词</option>
+                </select>
+            </div>
+            <div>
+                <label class="cw-config-label">提示词预览 <span style="font-weight:400;color:#9ca3af;font-size:11px;">（只读）</span></label>
+                <textarea class="cw-form-input cw-prompt-preview" id="promptPreview" readonly></textarea>
+            </div>
+        </div>
+        <div style="margin-top:18px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary" onclick="startGenerate()" id="btnStartGenerate">
+                开始生成文案
+            </button>
+        </div>
+        <!-- 生成中遮罩 -->
+        <div class="cw-overlay" id="configOverlay">
+            <span class="cw-spinner" style="width:24px;height:24px;border-width:3px;"></span>
+            <span id="configOverlayText">正在抽取关键帧...</span>
+        </div>
+    </div>
+
+    <!-- 文案编辑区（文案生成后显示） -->
+    <div class="cw-editor" id="editorSection" style="position:relative;{% if not task.copy or not task.copy.segments %}display:none;{% endif %}">
+        <!-- 生成中遮罩 -->
+        <div class="cw-overlay" id="editorOverlay">
+            <span class="cw-spinner" style="width:24px;height:24px;border-width:3px;"></span>
+            <span id="overlayText">正在生成文案中...</span>
+        </div>
+        <div class="cw-editor-header">
+            <h3>📝 文案编辑</h3>
+            <div class="cw-editor-tools">
                 <button class="cw-btn cw-btn-secondary" onclick="regenerateCopy()" id="btnRegenerate">
                     🔄 重新生成
                 </button>
@@ -87,16 +121,6 @@
                     </div>
                 </div>
                 {% endfor %}
-            {% else %}
-                <div class="cw-loading" id="copyLoading">
-                    {% if task.steps.get('copywrite') == 'running' %}
-                    <span class="cw-spinner"></span>文案生成中...
-                    {% elif task.steps.get('keyframe') == 'running' %}
-                    <span class="cw-spinner"></span>正在抽取关键帧...
-                    {% else %}
-                    等待文案生成...
-                    {% endif %}
-                </div>
             {% endif %}
         </div>
 
@@ -124,6 +148,54 @@
         <div class="cw-download-row" id="downloadRow" style="display:none;">
             <a class="cw-btn cw-btn-secondary" id="dlVideo" href="#" download>下载视频</a>
             <a class="cw-btn cw-btn-secondary" id="dlCopy" href="#" download>下载文案</a>
+        </div>
+    </div>
+</div>
+
+    <!-- 调试信息面板 -->
+    <div class="cw-debug-panel" id="debugPanel" style="display:none;">
+        <h3 onclick="toggleDebug()">🔍 请求详情 <span style="font-size:11px;color:#9ca3af;font-weight:400;" id="debugToggle">▶ 展开</span></h3>
+        <div class="cw-debug-content" id="debugContent">
+            <div class="cw-debug-label">模型</div>
+            <div class="cw-debug-pre" id="debugModel">-</div>
+            <div class="cw-debug-label">系统提示词</div>
+            <div class="cw-debug-pre" id="debugSystemPrompt">-</div>
+            <div class="cw-debug-label">用户消息内容</div>
+            <div class="cw-debug-pre" id="debugUserContent">-</div>
+            <div class="cw-debug-label">资源文件</div>
+            <div class="cw-debug-pre" id="debugResources">-</div>
+        </div>
+    </div>
+
+<!-- 预览确认弹窗 -->
+<div class="cw-modal-overlay" id="previewModal">
+    <div class="cw-modal" style="width:640px;">
+        <h3>确认生成配置</h3>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+            <div>
+                <div class="cw-debug-label">模型</div>
+                <div class="cw-debug-pre" id="previewModel">-</div>
+            </div>
+            <div>
+                <div class="cw-debug-label">系统提示词</div>
+                <div class="cw-debug-pre" id="previewSystemPrompt" style="max-height:200px;">-</div>
+            </div>
+            <div>
+                <div class="cw-debug-label">用户消息内容</div>
+                <div class="cw-debug-pre" id="previewUserContent" style="max-height:200px;">-</div>
+            </div>
+            <div>
+                <div class="cw-debug-label">资源文件</div>
+                <div class="cw-debug-pre" id="previewResources">-</div>
+            </div>
+            <div>
+                <div class="cw-debug-label">调用参数</div>
+                <div class="cw-debug-pre" id="previewParams">-</div>
+            </div>
+        </div>
+        <div style="margin-top:18px; display:flex; gap:10px; justify-content:flex-end;">
+            <button class="btn btn-ghost btn-sm" onclick="closePreview()">取消</button>
+            <button class="btn btn-primary btn-sm" onclick="confirmGenerate()">确认生成</button>
         </div>
     </div>
 </div>

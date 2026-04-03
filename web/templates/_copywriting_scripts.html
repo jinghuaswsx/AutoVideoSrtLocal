@@ -32,6 +32,12 @@ socket.on("cw_copy_ready", function(data) {
     currentSegments = data.copy.segments || [];
     renderSegments(currentSegments);
     enableButtons(true);
+    hideOverlay();
+    // 切换：隐藏配置面板，显示编辑区
+    document.getElementById("configSection").style.display = "none";
+    document.getElementById("editorSection").style.display = "block";
+    // 显示调试信息
+    if (data.copy && data.copy._debug) showDebugInfo(data.copy._debug);
 });
 
 socket.on("cw_tts_ready", function(data) {
@@ -44,6 +50,7 @@ socket.on("cw_tts_ready", function(data) {
 
 socket.on("cw_compose_ready", function(data) {
     if (data.task_id !== TASK_ID) return;
+    hideOverlay();
     const video = document.getElementById("resultVideo");
     video.src = "/api/copywriting/" + TASK_ID + "/artifact/video";
     video.style.display = "block";
@@ -57,11 +64,21 @@ socket.on("cw_compose_ready", function(data) {
 
 socket.on("cw_error", function(data) {
     if (data.task_id !== TASK_ID) return;
+    hideOverlay();
     alert("错误: " + (data.message || "未知错误"));
     enableButtons(true);
 });
 
 // ── UI 更新 ──────────────────────────────────────
+
+function showOverlay(text) {
+    const overlay = document.getElementById("editorOverlay");
+    document.getElementById("overlayText").textContent = text || "处理中...";
+    overlay.classList.add("active");
+}
+function hideOverlay() {
+    document.getElementById("editorOverlay").classList.remove("active");
+}
 
 function updateStepUI(step, status, message) {
     const el = document.getElementById("step-" + step);
@@ -70,6 +87,14 @@ function updateStepUI(step, status, message) {
     if (status === "done") el.classList.add("done");
     else if (status === "running") el.classList.add("active");
     else if (status === "error") el.classList.add("error");
+
+    // 遮罩控制
+    if (step === "keyframe" && status === "running") showOverlay("正在抽取关键帧...");
+    if (step === "copywrite" && status === "running") showOverlay("正在生成文案...");
+    if (step === "tts" && status === "running") showOverlay("正在生成语音...");
+    if (step === "compose" && status === "running") showOverlay("正在合成视频...");
+    if (status === "done" && (step === "copywrite" || step === "compose")) hideOverlay();
+    if (status === "error") hideOverlay();
 
     if (status === "running") {
         const loading = document.getElementById("copyLoading");
@@ -122,6 +147,7 @@ function toggleMaterials() {
 
 function regenerateCopy() {
     if (!confirm("重新生成将覆盖当前文案，确定？")) return;
+    showOverlay("正在重新生成文案...");
     document.getElementById("btnRegenerate").disabled = true;
     const promptId = document.getElementById("promptSelect").value;
     fetch("/api/copywriting/" + TASK_ID + "/generate", {
@@ -203,6 +229,7 @@ function downloadCopy() {
 }
 
 function startTTS() {
+    showOverlay("正在生成语音视频...");
     document.getElementById("btnTTS").disabled = true;
     document.getElementById("btnTTS").textContent = "生成中...";
     fetch("/api/copywriting/" + TASK_ID + "/tts", {
@@ -220,22 +247,184 @@ function setLanguage(lang) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ language: lang }),
     });
+    // 更新提示词预览
+    updatePromptPreview();
 }
 
-// ── 提示词加载 ──────────────────────────────────
+// ── 提示词加载 & 预览 ──────────────────────────
+
+let promptsData = [];
+const DEFAULT_PROMPT_EN = {{ default_prompt_en | tojson }};
+const DEFAULT_PROMPT_ZH = {{ default_prompt_zh | tojson }};
 
 async function loadPrompts() {
     try {
         const resp = await fetch("/api/prompts?type=copywriting");
         const data = await resp.json();
+        promptsData = data.prompts || [];
         const select = document.getElementById("promptSelect");
-        (data.prompts || []).forEach(function(p) {
+        promptsData.forEach(function(p) {
             const opt = document.createElement("option");
             opt.value = p.id;
             opt.textContent = p.name;
             select.appendChild(opt);
         });
+        updatePromptPreview();
     } catch(e) { /* ignore */ }
 }
+
+function onPromptChange() {
+    updatePromptPreview();
+}
+
+function updatePromptPreview() {
+    const preview = document.getElementById("promptPreview");
+    if (!preview) return;
+    const selectEl = document.getElementById("promptSelect");
+    const promptId = selectEl ? selectEl.value : "";
+    const isZh = document.querySelector(".cw-lang-btn.active");
+    const lang = (isZh && isZh.textContent.trim() === "中文") ? "zh" : "en";
+
+    if (!promptId) {
+        preview.value = lang === "zh" ? DEFAULT_PROMPT_ZH : DEFAULT_PROMPT_EN;
+        return;
+    }
+    const found = promptsData.find(p => String(p.id) === String(promptId));
+    if (found) {
+        if (lang === "zh" && found.prompt_text_zh) {
+            preview.value = found.prompt_text_zh;
+        } else {
+            preview.value = found.prompt_text || "";
+        }
+    }
+}
+
+// ── 预览 & 确认生成 ──────────────────────────────
+
+async function startGenerate() {
+    const btn = document.getElementById("btnStartGenerate");
+    btn.disabled = true;
+    btn.textContent = "加载预览...";
+
+    const promptId = document.getElementById("promptSelect").value;
+    try {
+        const resp = await fetch("/api/copywriting/" + TASK_ID + "/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt_id: promptId || null }),
+        });
+        const data = await resp.json();
+        showPreviewModal(data, promptId);
+    } catch(err) {
+        alert("预览失败: " + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "开始生成文案";
+    }
+}
+
+function showPreviewModal(data, promptId) {
+    // 模型
+    document.getElementById("previewModel").textContent = (data.provider || "") + " / " + (data.model || "");
+
+    // 系统提示词
+    document.getElementById("previewSystemPrompt").textContent = data.system_prompt || "-";
+
+    // 用户消息
+    const userContent = (data.user_content || []).map(function(item) {
+        if (item.type === "text") return "[TEXT] " + item.text;
+        if (item.type === "image") return "[IMAGE] " + item.file;
+        return JSON.stringify(item);
+    }).join("\n\n");
+    document.getElementById("previewUserContent").textContent = userContent || "-";
+
+    // 资源
+    const res = data.resources || {};
+    const lines = [];
+    lines.push("Vision: " + (res.vision_enabled ? "启用" : "未启用"));
+    if (res.keyframe_count > 0) lines.push("关键帧: " + res.keyframe_count + " 张 (" + (res.keyframes || []).join(", ") + ")");
+    if (res.product_image) lines.push("商品主图: " + res.product_image);
+    const inputs = res.product_inputs || {};
+    if (Object.keys(inputs).length) {
+        lines.push("商品信息: " + JSON.stringify(inputs, null, 2));
+    } else {
+        lines.push("商品信息: 无");
+    }
+    document.getElementById("previewResources").textContent = lines.join("\n");
+
+    // 参数
+    const params = data.parameters || {};
+    document.getElementById("previewParams").textContent = JSON.stringify(params, null, 2);
+
+    // 保存 promptId 用于确认
+    document.getElementById("previewModal").dataset.promptId = promptId || "";
+    document.getElementById("previewModal").classList.add("open");
+}
+
+function closePreview() {
+    document.getElementById("previewModal").classList.remove("open");
+}
+
+function confirmGenerate() {
+    const promptId = document.getElementById("previewModal").dataset.promptId;
+    closePreview();
+
+    const configOverlay = document.getElementById("configOverlay");
+    document.getElementById("configOverlayText").textContent = "正在生成文案...";
+    configOverlay.classList.add("active");
+    document.getElementById("btnStartGenerate").disabled = true;
+    document.getElementById("btnStartGenerate").textContent = "生成中...";
+
+    fetch("/api/copywriting/" + TASK_ID + "/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_id: promptId || null }),
+    });
+}
+
+// ── 调试面板 ─────────────────────────────────────
+
+let debugOpen = false;
+function toggleDebug() {
+    debugOpen = !debugOpen;
+    document.getElementById("debugContent").classList.toggle("active", debugOpen);
+    document.getElementById("debugToggle").textContent = debugOpen ? "▼ 收起" : "▶ 展开";
+}
+
+function showDebugInfo(debug) {
+    if (!debug) return;
+    document.getElementById("debugPanel").style.display = "block";
+    document.getElementById("debugModel").textContent = (debug.provider || "") + " / " + (debug.model || "");
+    document.getElementById("debugSystemPrompt").textContent = debug.system_prompt || "-";
+    const userContent = (debug.user_content || []).map(function(item) {
+        if (item.type === "text") return "[TEXT] " + item.text;
+        if (item.type === "image") return "[IMAGE] " + (item.info || item.file || "");
+        return JSON.stringify(item);
+    }).join("\n\n");
+    document.getElementById("debugUserContent").textContent = userContent || "-";
+    const resources = [];
+    if (debug.image_count > 0) resources.push("关键帧图片: " + debug.image_count + " 张");
+    if (debug.keyframe_paths && debug.keyframe_paths.length) {
+        resources.push("帧文件: " + debug.keyframe_paths.join(", "));
+    }
+    document.getElementById("debugResources").textContent = resources.join("\n") || "无资源文件";
+}
+
 loadPrompts();
+
+// 页面加载时，如果正在抽帧/生成中，显示遮罩
+(function() {
+    {% if task.steps.get('keyframe') == 'running' %}
+    document.getElementById("configOverlay").classList.add("active");
+    document.getElementById("configOverlayText").textContent = "正在抽取关键帧...";
+    {% elif task.steps.get('copywrite') == 'running' %}
+    document.getElementById("configOverlay").classList.add("active");
+    document.getElementById("configOverlayText").textContent = "正在生成文案...";
+    {% endif %}
+
+    // 如果已有调试信息
+    {% if task.copy and task.copy._debug %}
+    showDebugInfo({{ task.copy._debug | tojson }});
+    {% endif %}
+})();
 </script>

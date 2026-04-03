@@ -197,6 +197,73 @@ def _supports_vision(provider: str) -> bool:
 
 # ── 主函数 ─────────────────────────────────────────────
 
+def preview_request(
+    keyframe_paths: list[str],
+    product_inputs: dict,
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    custom_system_prompt: str | None = None,
+    language: str = "en",
+) -> dict:
+    """预览将要发送给 LLM 的完整请求结构（不实际调用）。"""
+    from pipeline.translate import _resolve_provider_config
+
+    _, model = _resolve_provider_config(provider, user_id=user_id)
+
+    if custom_system_prompt:
+        system_prompt = custom_system_prompt
+    elif language == "zh":
+        system_prompt = DEFAULT_SYSTEM_PROMPT_ZH
+    else:
+        system_prompt = DEFAULT_SYSTEM_PROMPT_EN
+
+    use_vision = _supports_vision(provider) and keyframe_paths
+    user_content: list[dict] = []
+
+    if use_vision:
+        user_content.append({"type": "text", "text": "Video keyframes (in chronological order):"})
+        for path in keyframe_paths:
+            user_content.append({"type": "image", "file": os.path.basename(path)})
+
+    product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
+    if use_vision and product_image and os.path.isfile(product_image):
+        user_content.append({"type": "text", "text": "Product image:"})
+        user_content.append({"type": "image", "file": os.path.basename(product_image)})
+
+    product_text = _build_product_text(product_inputs)
+    if not use_vision:
+        product_text = (
+            "[Note: Current model does not support image input. "
+            "Generating copy based on text information only.]\n\n" + product_text
+        )
+    if product_text.strip():
+        user_content.append({"type": "text", "text": product_text})
+
+    if language == "zh":
+        user_content.append({"type": "text", "text": "请用中文撰写文案。"})
+    else:
+        user_content.append({"type": "text", "text": "Write the script in English for the US market."})
+
+    return {
+        "provider": provider,
+        "model": model,
+        "system_prompt": system_prompt,
+        "user_content": user_content,
+        "resources": {
+            "keyframes": [os.path.basename(p) for p in keyframe_paths],
+            "keyframe_count": len(keyframe_paths),
+            "vision_enabled": use_vision,
+            "product_image": os.path.basename(product_image) if (product_image and os.path.isfile(product_image)) else None,
+            "product_inputs": {k: v for k, v in product_inputs.items() if v and k != "product_image_url"},
+        },
+        "parameters": {
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "response_format": "json_schema",
+        },
+    }
+
+
 def generate_copy(
     keyframe_paths: list[str],
     product_inputs: dict,
@@ -281,6 +348,22 @@ def generate_copy(
     log.info("调用 LLM 生成文案: provider=%s, model=%s, images=%d",
              provider, model, len(keyframe_paths) if use_vision else 0)
 
+    # 构建调试信息（不含 base64 图片数据）
+    debug_content = []
+    for item in content:
+        if item["type"] == "text":
+            debug_content.append({"type": "text", "text": item["text"]})
+        elif item["type"] == "image_url":
+            debug_content.append({"type": "image", "info": "(base64 image)"})
+    debug_info = {
+        "provider": provider,
+        "model": model,
+        "system_prompt": system_prompt,
+        "user_content": debug_content,
+        "image_count": len(keyframe_paths) if use_vision else 0,
+        "keyframe_paths": [os.path.basename(p) for p in keyframe_paths],
+    }
+
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -293,6 +376,8 @@ def generate_copy(
     # 补充 index
     for i, seg in enumerate(result.get("segments", [])):
         seg["index"] = i
+
+    result["_debug"] = debug_info
 
     log.info("文案生成完成: %d 段, 预计时长 %ds",
              len(result.get("segments", [])), result.get("target_duration", 0))

@@ -64,8 +64,11 @@ def detail_page(task_id: str):
     finally:
         conn.close()
 
+    from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
     return render_template("copywriting_detail.html",
-                           task=task, inputs=inputs, task_id=task_id)
+                           task=task, inputs=inputs, task_id=task_id,
+                           default_prompt_en=DEFAULT_SYSTEM_PROMPT_EN,
+                           default_prompt_zh=DEFAULT_SYSTEM_PROMPT_ZH)
 
 
 # ── API 路由 ──────────────────────────────────────────
@@ -193,6 +196,77 @@ def update_inputs(task_id: str):
     finally:
         conn.close()
     return jsonify(ok=True)
+
+
+@bp.route("/api/copywriting/<task_id>/preview", methods=["POST"])
+@login_required
+def preview(task_id: str):
+    """预览将要提交给 LLM 的完整请求结构。"""
+    from pipeline.copywriting import preview_request
+
+    task = task_state.get(task_id)
+    if not task:
+        return jsonify(error="任务不存在"), 404
+
+    data = request.get_json(silent=True) or {}
+
+    # 加载商品信息
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT product_title, product_image_url, price, "
+                "selling_points, target_audience, extra_info, language "
+                "FROM copywriting_inputs WHERE project_id = %s",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            product_inputs = dict(row) if row else {"language": "en"}
+    finally:
+        conn.close()
+
+    language = product_inputs.get("language", "en")
+
+    # 解析 provider
+    provider = "openrouter"
+    try:
+        from appcore.api_keys import resolve_extra
+        extra = resolve_extra(current_user.id, "translate_preference")
+        if extra and extra.get("provider"):
+            provider = extra["provider"]
+    except Exception:
+        pass
+
+    # 解析自定义提示词
+    custom_prompt = None
+    prompt_id = data.get("prompt_id")
+    if prompt_id:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT prompt_text, prompt_text_zh FROM user_prompts "
+                    "WHERE id = %s AND user_id = %s AND type = 'copywriting'",
+                    (prompt_id, current_user.id),
+                )
+                row = cur.fetchone()
+                if row:
+                    if language == "zh" and row.get("prompt_text_zh"):
+                        custom_prompt = row["prompt_text_zh"]
+                    else:
+                        custom_prompt = row.get("prompt_text")
+        finally:
+            conn.close()
+
+    result = preview_request(
+        keyframe_paths=task.get("keyframes", []),
+        product_inputs=product_inputs,
+        provider=provider,
+        user_id=current_user.id,
+        custom_system_prompt=custom_prompt,
+        language=language,
+    )
+    return jsonify(result)
 
 
 @bp.route("/api/copywriting/<task_id>/generate", methods=["POST"])
