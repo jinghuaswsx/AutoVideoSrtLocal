@@ -11,6 +11,27 @@ import subprocess
 log = logging.getLogger(__name__)
 
 
+def _detect_scenes_blocking(video_path: str, threshold: float) -> list[float] | None:
+    """在原生线程中执行场景检测（避免 eventlet 绿色线程阻塞）。"""
+    from scenedetect import open_video, SceneManager
+    from scenedetect.detectors import ContentDetector
+
+    video = open_video(video_path)
+    sm = SceneManager()
+    sm.add_detector(ContentDetector(threshold=threshold))
+    sm.detect_scenes(video)
+    scene_list = sm.get_scene_list()
+
+    if len(scene_list) < 2:
+        return None
+
+    timestamps: list[float] = []
+    for scene in scene_list:
+        start = scene[0].get_seconds()
+        timestamps.append(round(start, 3))
+    return timestamps
+
+
 def detect_scene_timestamps(video_path: str, threshold: float = 27.0) -> list[float]:
     """用 scenedetect 检测场景切换时间点（秒）。
 
@@ -24,20 +45,17 @@ def detect_scene_timestamps(video_path: str, threshold: float = 27.0) -> list[fl
         log.warning("scenedetect 未安装，回退到固定间隔采样")
         return _fallback_uniform_timestamps(video_path)
 
-    video = open_video(video_path)
-    sm = SceneManager()
-    sm.add_detector(ContentDetector(threshold=threshold))
-    sm.detect_scenes(video)
-    scene_list = sm.get_scene_list()
+    # scenedetect 内部用 OpenCV C 扩展读取视频，
+    # 在 eventlet 绿色线程中会阻塞，必须用 tpool 放到原生线程执行
+    try:
+        import eventlet.tpool
+        timestamps = eventlet.tpool.execute(_detect_scenes_blocking, video_path, threshold)
+    except ImportError:
+        timestamps = _detect_scenes_blocking(video_path, threshold)
 
-    if len(scene_list) < 2:
+    if timestamps is None:
         log.info("场景切换点不足，回退到固定间隔采样")
         return _fallback_uniform_timestamps(video_path)
-
-    timestamps: list[float] = []
-    for scene in scene_list:
-        start = scene[0].get_seconds()
-        timestamps.append(round(start, 3))
 
     return timestamps
 
@@ -51,6 +69,24 @@ def _fallback_uniform_timestamps(video_path: str, count: int = 6) -> list[float]
     return [round(step * (i + 1), 3) for i in range(count)]
 
 
+def _run_subprocess(cmd: list[str]) -> subprocess.CompletedProcess:
+    """在原生线程中执行子进程（兼容 eventlet）。"""
+    try:
+        import eventlet.tpool
+        return eventlet.tpool.execute(subprocess.run, cmd, capture_output=True, text=True, check=True)
+    except ImportError:
+        return subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+
+def _run_subprocess_bytes(cmd: list[str]) -> subprocess.CompletedProcess:
+    """在原生线程中执行子进程（bytes 模式）。"""
+    try:
+        import eventlet.tpool
+        return eventlet.tpool.execute(subprocess.run, cmd, capture_output=True, check=True)
+    except ImportError:
+        return subprocess.run(cmd, capture_output=True, check=True)
+
+
 def _get_video_duration(video_path: str) -> float:
     """通过 ffprobe 获取视频时长（秒）。"""
     cmd = [
@@ -60,7 +96,7 @@ def _get_video_duration(video_path: str) -> float:
         video_path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = _run_subprocess(cmd)
         return float(result.stdout.strip())
     except Exception:
         log.exception("ffprobe 获取时长失败")
@@ -108,7 +144,7 @@ def extract_keyframes(
             out_path,
         ]
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            _run_subprocess_bytes(cmd)
             if os.path.exists(out_path):
                 frame_paths.append(out_path)
         except subprocess.CalledProcessError:
