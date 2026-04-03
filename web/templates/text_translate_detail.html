@@ -1,0 +1,358 @@
+{% extends "layout.html" %}
+{% block title %}文案翻译 — AutoVideoSrt{% endblock %}
+{% block page_title %}文案翻译{% endblock %}
+{% block extra_style %}
+.tt-back { display: inline-flex; align-items: center; gap: 6px; color: var(--text-main); text-decoration: none; font-size: 13px; font-weight: 600; padding: 8px 16px; border: 1.5px solid var(--border-main); border-radius: 10px; margin-bottom: 20px; transition: all .15s; }
+.tt-back:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+/* ── 主布局：左右两栏 ── */
+.tt-layout { display: flex; gap: 24px; min-height: 500px; }
+.tt-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.tt-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+/* ── 卡片 ── */
+.tt-card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 14px; padding: 20px; }
+.tt-card-title { font-size: 15px; font-weight: 700; color: var(--text-main); margin-bottom: 14px; }
+
+/* ── 输入模式切换 ── */
+.tt-mode-tabs { display: flex; gap: 0; margin-bottom: 14px; border: 1.5px solid var(--border-main); border-radius: 8px; overflow: hidden; }
+.tt-mode-tab {
+  flex: 1; padding: 8px; text-align: center; font-size: 13px; font-weight: 600;
+  cursor: pointer; background: transparent; border: none; color: #9ca3af;
+  transition: all .15s; font-family: inherit;
+}
+.tt-mode-tab.active { background: var(--primary-color); color: #fff; }
+.tt-mode-tab:hover:not(.active) { background: var(--sidebar-hover-bg); color: var(--text-main); }
+
+/* ── 文本区 ── */
+.tt-textarea {
+  width: 100%; min-height: 200px; padding: 14px; border: 1.5px solid var(--border-main);
+  border-radius: 10px; font-size: 14px; line-height: 1.7; resize: vertical;
+  background: var(--bg-body); color: var(--text-main); font-family: inherit;
+  transition: border-color .15s;
+}
+.tt-textarea:focus { outline: none; border-color: var(--primary-color); }
+.tt-textarea::placeholder { color: #9ca3af; }
+
+/* ── 多段输入 ── */
+.tt-segments { display: flex; flex-direction: column; gap: 8px; }
+.tt-seg-row { display: flex; gap: 8px; align-items: flex-start; }
+.tt-seg-num { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #9ca3af; flex-shrink: 0; }
+.tt-seg-input {
+  flex: 1; padding: 8px 12px; border: 1.5px solid var(--border-main); border-radius: 8px;
+  font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit;
+  line-height: 1.5; resize: none; min-height: 36px;
+}
+.tt-seg-input:focus { outline: none; border-color: var(--primary-color); }
+.tt-seg-del {
+  width: 28px; height: 36px; border: none; background: transparent; color: #9ca3af;
+  cursor: pointer; font-size: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.tt-seg-del:hover { color: #ef4444; }
+.tt-seg-add { font-size: 13px; color: var(--primary-color); cursor: pointer; font-weight: 600; padding: 6px 0; background: none; border: none; font-family: inherit; }
+.tt-seg-add:hover { text-decoration: underline; }
+
+/* ── 配置区 ── */
+.tt-config { display: flex; gap: 12px; flex-wrap: wrap; }
+.tt-config-item { flex: 1; min-width: 180px; }
+.tt-config-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
+.tt-select {
+  width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-main); border-radius: 8px;
+  font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit;
+  cursor: pointer;
+}
+.tt-select:focus { outline: none; border-color: var(--primary-color); }
+
+/* ── 翻译按钮 ── */
+.tt-translate-btn {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: var(--primary-gradient); color: #fff; font-size: 15px; font-weight: 700;
+  cursor: pointer; font-family: inherit; transition: all .2s;
+}
+.tt-translate-btn:hover { opacity: 0.9; box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
+.tt-translate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── 结果区 ── */
+.tt-result-empty { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 14px; }
+.tt-result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.tt-result-model { font-size: 12px; color: #9ca3af; }
+.tt-pair { border: 1.5px solid var(--border-main); border-radius: 10px; padding: 14px; margin-bottom: 8px; background: var(--bg-body); }
+.tt-pair-zh { font-size: 13px; color: #9ca3af; line-height: 1.6; margin-bottom: 8px; }
+.tt-pair-en { font-size: 14px; color: var(--text-main); line-height: 1.6; font-weight: 500; }
+.tt-full-text {
+  margin-top: 16px; padding: 16px; border: 1.5px solid var(--primary-color);
+  border-radius: 10px; background: rgba(59,130,246,0.05);
+}
+.tt-full-text-label { font-size: 12px; font-weight: 700; color: var(--primary-color); margin-bottom: 8px; }
+.tt-full-text-content { font-size: 14px; line-height: 1.7; color: var(--text-main); white-space: pre-wrap; word-break: break-word; }
+.tt-copy-btn {
+  padding: 6px 14px; border: 1.5px solid var(--border-main); border-radius: 8px;
+  background: var(--bg-card); color: var(--text-main); font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.tt-copy-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+/* ── Loading ── */
+.tt-loading { display: none; text-align: center; padding: 40px; }
+.tt-loading.show { display: block; }
+.tt-spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid var(--border-main); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tt-loading-text { margin-top: 12px; font-size: 13px; color: #9ca3af; }
+{% endblock %}
+
+{% block content %}
+<a href="/text-translate" class="tt-back">&larr; 返回列表</a>
+
+<div class="tt-layout">
+  <!-- 左侧：输入 -->
+  <div class="tt-left">
+    <div class="tt-card">
+      <div class="tt-card-title">中文原文</div>
+
+      <div class="tt-mode-tabs">
+        <button class="tt-mode-tab active" data-mode="single" onclick="switchMode('single')">整段输入</button>
+        <button class="tt-mode-tab" data-mode="multi" onclick="switchMode('multi')">分段输入</button>
+      </div>
+
+      <!-- 单段模式 -->
+      <div id="singleMode">
+        <textarea class="tt-textarea" id="sourceText" placeholder="粘贴中文文案，系统按换行自动分段...">{{ state.get('source_text', '') }}</textarea>
+      </div>
+
+      <!-- 多段模式 -->
+      <div id="multiMode" style="display:none;">
+        <div class="tt-segments" id="segmentsList"></div>
+        <button class="tt-seg-add" onclick="addSegment()">+ 添加段落</button>
+      </div>
+    </div>
+
+    <div class="tt-card">
+      <div class="tt-card-title">翻译配置</div>
+      <div class="tt-config">
+        <div class="tt-config-item">
+          <div class="tt-config-label">翻译模型</div>
+          <select class="tt-select" id="providerSelect">
+            <option value="openrouter">OpenRouter (Claude)</option>
+            <option value="doubao">豆包</option>
+          </select>
+        </div>
+        <div class="tt-config-item">
+          <div class="tt-config-label">提示词</div>
+          <select class="tt-select" id="promptSelect">
+            <option value="">加载中...</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <button class="tt-translate-btn" id="translateBtn" onclick="doTranslate()">开始翻译</button>
+  </div>
+
+  <!-- 右侧：结果 -->
+  <div class="tt-right">
+    <div class="tt-card" style="flex:1;">
+      <div class="tt-result-header">
+        <div class="tt-card-title" style="margin-bottom:0;">翻译结果</div>
+        <span class="tt-result-model" id="resultModel"></span>
+      </div>
+
+      <div class="tt-loading" id="loadingArea">
+        <div class="tt-spinner"></div>
+        <div class="tt-loading-text">正在翻译中，请稍候...</div>
+      </div>
+
+      <div id="resultArea">
+        {% if state.get('result') %}
+          <!-- 服务端渲染已有结果 -->
+        {% else %}
+          <div class="tt-result-empty" id="emptyResult">翻译结果将在这里显示</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TASK_ID = '{{ record.id }}';
+const INITIAL_STATE = {{ state | tojson }};
+let currentMode = 'single';
+let segments = [];
+
+// ── 初始化 ──
+(function init() {
+  loadPrompts();
+  if (INITIAL_STATE.result) {
+    renderResult(INITIAL_STATE.result, INITIAL_STATE.model || '');
+  }
+  if (INITIAL_STATE.provider) {
+    document.getElementById('providerSelect').value = INITIAL_STATE.provider;
+  }
+  // 初始化多段模式
+  if (INITIAL_STATE.segments && INITIAL_STATE.segments.length > 0) {
+    segments = INITIAL_STATE.segments.slice();
+  } else {
+    segments = [''];
+  }
+  renderSegments();
+})();
+
+// ── 提示词加载 ──
+async function loadPrompts() {
+  try {
+    const res = await fetch('/api/prompts?type=translation');
+    const data = await res.json();
+    const sel = document.getElementById('promptSelect');
+    sel.innerHTML = '';
+    (data.prompts || []).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    if (INITIAL_STATE.prompt_id) {
+      sel.value = INITIAL_STATE.prompt_id;
+    }
+  } catch (e) {
+    console.error('Failed to load prompts:', e);
+  }
+}
+
+// ── 模式切换 ──
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.tt-mode-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  document.getElementById('singleMode').style.display = mode === 'single' ? '' : 'none';
+  document.getElementById('multiMode').style.display = mode === 'multi' ? '' : 'none';
+}
+
+// ── 多段管理 ──
+function renderSegments() {
+  const list = document.getElementById('segmentsList');
+  list.innerHTML = '';
+  segments.forEach((text, i) => {
+    const row = document.createElement('div');
+    row.className = 'tt-seg-row';
+    row.innerHTML = `
+      <div class="tt-seg-num">${i + 1}</div>
+      <textarea class="tt-seg-input" rows="1" oninput="updateSegment(${i}, this.value); autoResize(this)">${text}</textarea>
+      ${segments.length > 1 ? `<button class="tt-seg-del" onclick="removeSegment(${i})">✕</button>` : '<div style="width:28px"></div>'}
+    `;
+    list.appendChild(row);
+  });
+  // auto-resize all
+  list.querySelectorAll('.tt-seg-input').forEach(autoResize);
+}
+
+function updateSegment(i, val) { segments[i] = val; }
+function addSegment() { segments.push(''); renderSegments(); }
+function removeSegment(i) { segments.splice(i, 1); renderSegments(); }
+function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+// ── 翻译 ──
+async function doTranslate() {
+  const btn = document.getElementById('translateBtn');
+  const loading = document.getElementById('loadingArea');
+  const resultArea = document.getElementById('resultArea');
+
+  let sourceText = '';
+  let segsPayload = null;
+
+  if (currentMode === 'single') {
+    sourceText = document.getElementById('sourceText').value.trim();
+    if (!sourceText) { alert('请输入中文文案'); return; }
+  } else {
+    const validSegs = segments.filter(s => s.trim());
+    if (validSegs.length === 0) { alert('请至少输入一段文案'); return; }
+    segsPayload = validSegs;
+    sourceText = validSegs.join('\n');
+  }
+
+  const provider = document.getElementById('providerSelect').value;
+  const promptId = document.getElementById('promptSelect').value;
+
+  btn.disabled = true;
+  btn.textContent = '翻译中...';
+  loading.classList.add('show');
+  resultArea.innerHTML = '';
+
+  try {
+    const body = { source_text: sourceText, provider };
+    if (segsPayload) body.segments = segsPayload;
+    if (promptId) body.prompt_id = parseInt(promptId);
+
+    const res = await fetch(`/api/text-translate/${TASK_ID}/translate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    renderResult(data.result, data.model || '');
+  } catch (e) {
+    resultArea.innerHTML = `<div style="color:#ef4444;padding:20px;text-align:center;">翻译失败: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '开始翻译';
+    loading.classList.remove('show');
+  }
+}
+
+// ── 渲染结果 ──
+function renderResult(result, model) {
+  const resultArea = document.getElementById('resultArea');
+  document.getElementById('resultModel').textContent = model ? `模型: ${model}` : '';
+
+  let html = '';
+
+  // 中英对照
+  if (result.pairs && result.pairs.length > 0) {
+    result.pairs.forEach((p, i) => {
+      html += `
+        <div class="tt-pair">
+          <div class="tt-pair-zh">${escHtml(p.zh)}</div>
+          <div class="tt-pair-en">${escHtml(p.en)}</div>
+        </div>`;
+    });
+  }
+
+  // 完整英文文案
+  if (result.full_text) {
+    html += `
+      <div class="tt-full-text">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="tt-full-text-label">完整英文文案</div>
+          <button class="tt-copy-btn" onclick="copyText(this, '${escAttr(result.full_text)}')">复制</button>
+        </div>
+        <div class="tt-full-text-content">${escHtml(result.full_text)}</div>
+      </div>`;
+  }
+
+  resultArea.innerHTML = html || '<div class="tt-result-empty">无翻译结果</div>';
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '已复制';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function escAttr(s) {
+  return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+}
+</script>
+{% endblock %}

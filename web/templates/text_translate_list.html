@@ -1,0 +1,89 @@
+{% extends "layout.html" %}
+{% block title %}文案翻译 — AutoVideoSrt{% endblock %}
+{% block page_title %}文案翻译{% endblock %}
+{% block extra_style %}
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
+.tt-empty { text-align: center; padding: 80px 20px; color: #9ca3af; }
+.tt-empty-icon { font-size: 48px; margin-bottom: 16px; }
+.tt-empty-text { font-size: 15px; margin-bottom: 24px; }
+.tt-list { display: flex; flex-direction: column; gap: 8px; }
+.tt-item {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
+  padding: 16px 20px; text-decoration: none; color: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tt-item:hover { border-color: var(--primary-color); box-shadow: 0 2px 12px rgba(59,130,246,0.1); }
+.tt-item-icon { font-size: 24px; flex-shrink: 0; }
+.tt-item-info { flex: 1; min-width: 0; }
+.tt-item-title { font-size: 14px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-item-meta { font-size: 12px; color: #9ca3af; margin-top: 4px; display: flex; gap: 12px; }
+.tt-item-status { font-size: 11px; padding: 2px 10px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
+.tt-item-status.done { background: rgba(22,163,74,0.15); color: #22c55e; }
+.tt-item-status.created { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.tt-item-delete {
+  width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--border-main);
+  background: transparent; color: #9ca3af; font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all .15s;
+}
+.tt-item-delete:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.1); }
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>文案翻译</h1>
+  <button class="btn btn-primary" onclick="createNew()">+ 新建翻译</button>
+</div>
+
+{% if records %}
+<div class="tt-list">
+  {% for r in records %}
+  <a href="/text-translate/{{ r.id }}" class="tt-item" id="item-{{ r.id }}">
+    <div class="tt-item-icon">🌐</div>
+    <div class="tt-item-info">
+      <div class="tt-item-title">{{ r.display_name or '未命名' }}</div>
+      <div class="tt-item-meta">
+        <span>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }}</span>
+      </div>
+    </div>
+    <span class="tt-item-status {{ r.status }}">
+      {% if r.status == 'done' %}已完成{% elif r.status == 'created' %}待翻译{% else %}{{ r.status }}{% endif %}
+    </span>
+    <button class="tt-item-delete" onclick="deleteItem(event, '{{ r.id }}')" title="删除">🗑</button>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="tt-empty">
+  <div class="tt-empty-icon">🌐</div>
+  <div class="tt-empty-text">还没有翻译记录，点击上方按钮开始</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createNew() {
+  const res = await fetch('/api/text-translate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({source_text: ''}),
+  });
+  if (!res.ok) { alert('创建失败'); return; }
+  const data = await res.json();
+  location.href = '/text-translate/' + data.id;
+}
+
+async function deleteItem(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!confirm('确定删除这条翻译记录？')) return;
+  const res = await fetch('/api/text-translate/' + id, {method: 'DELETE'});
+  if (res.ok) {
+    document.getElementById('item-' + id)?.remove();
+  }
+}
+</script>
+{% endblock %}
