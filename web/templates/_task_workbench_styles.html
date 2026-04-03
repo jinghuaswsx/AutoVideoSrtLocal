@@ -11,7 +11,7 @@
 .hero-download-btn { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #7c6fe0, #9b6fd4); color: #fff; font-size: 15px; font-weight: 700; padding: 12px 28px; border-radius: 999px; text-decoration: none; transition: opacity .15s, transform .1s; box-shadow: 0 4px 16px rgba(124, 111, 224, 0.35); }
 .hero-download-btn:hover { opacity: .88; transform: translateY(-1px); }
 .hero-download-btn--secondary { background: #fff; color: #7c6fe0; border: 2px solid #7c6fe0; box-shadow: none; font-size: 13px; font-weight: 600; padding: 10px 20px; }
-.card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 16px; padding: 20px; margin-top: 16px; }
+.card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 16px; padding: 20px; margin-top: 16px; min-width: 0; overflow: hidden; }
 .upload-zone { border: 2px dashed var(--border-main); border-radius: 16px; padding: 46px 22px; text-align: center; background: var(--bg-body); cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--primary-color); background: var(--sidebar-hover-bg); box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
 .upload-zone input { display: none; }
@@ -161,7 +161,7 @@ video.media-player { max-height: 320px; }
 .voice-import-preview.hidden { display: none; }
 .voice-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .voice-panel-header h2 { margin: 0; }
-.voice-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.voice-list { max-height: 300px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .voice-list-empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 13px; }
 .voice-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 14px;
@@ -171,7 +171,7 @@ video.media-player { max-height: 320px; }
 .voice-item:hover { border-color: var(--primary-color); background: var(--sidebar-hover-bg); }
 .voice-item.selected { border-color: var(--primary-color); background: var(--sidebar-hover-bg); box-shadow: 0 0 8px rgba(59,130,246,0.15); }
 .voice-item-info { flex: 1; min-width: 0; }
-.voice-item-name { font-weight: 700; font-size: 14px; color: var(--text-main); }
+.voice-item-name { font-weight: 700; font-size: 14px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-item-desc { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .voice-item-gender { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
 .voice-item-gender.male { background: rgba(59,130,246,0.15); color: #3b82f6; }
