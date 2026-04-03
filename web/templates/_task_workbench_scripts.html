@@ -971,12 +971,25 @@
   }
 
   function showTranslatePromptPanel() {
-    const panel = document.getElementById("translatePromptPanel");
-    if (panel) panel.classList.remove("hidden");
+    const overlay = document.getElementById("translateOverlay");
+    if (overlay) overlay.classList.remove("hidden");
     const modelSelect = document.getElementById("translateModelSelect");
     if (modelSelect && _userTranslatePref) modelSelect.value = _userTranslatePref;
     bootPrompts();
   }
+
+  // 点击遮罩层不关闭（必须选择后操作）
+  document.getElementById("translateOverlay").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) {
+      // 可选：轻微抖动提示用户必须操作
+      const modal = e.target.querySelector(".translate-modal");
+      if (modal) {
+        modal.style.animation = "none";
+        modal.offsetHeight;
+        modal.style.animation = "shake 0.3s";
+      }
+    }
+  });
 
   document.getElementById("savePromptBtn").addEventListener("click", async () => {
     if (!_selectedPromptId) return;
@@ -1009,8 +1022,8 @@
         const data = await res.json();
         if (!res.ok) { showError(data.error || "翻译启动失败"); return; }
         currentTask._translate_pre_select = false;
-        const panel = document.getElementById("translatePromptPanel");
-        if (panel) panel.classList.add("hidden");
+        const overlay = document.getElementById("translateOverlay");
+        if (overlay) overlay.classList.add("hidden");
         scheduleRefreshTaskState(200);
         return;
       }
@@ -1073,13 +1086,15 @@
     scheduleRefreshTaskState(0);
   }
 
-  // Show prompt panel when translate step becomes active or done
+  // Show translate overlay when user needs to choose model/prompt (waiting + pre_select)
+  // Show inline retranslate panel when translate is done (for re-translate)
   const _origRenderStepMessages = renderStepMessages;
   renderStepMessages = function() {
     _origRenderStepMessages();
     const translateStatus = currentTask?.steps?.translate;
-    if (translateStatus === "running" || translateStatus === "done" || translateStatus === "waiting") {
-      showTranslatePromptPanel();
+    if (translateStatus === "done") {
+      // 翻译完成后可以重新翻译，只初始化提示词，不弹窗
+      bootPrompts();
     }
     if (currentTask?.translation_history) {
       _translationHistory = currentTask.translation_history;
