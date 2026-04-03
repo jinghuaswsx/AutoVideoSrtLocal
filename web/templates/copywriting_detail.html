@@ -1,0 +1,145 @@
+{# web/templates/copywriting_detail.html #}
+{% extends "layout.html" %}
+{% block title %}文案创作 — {{ task.display_name or task.original_filename }}{% endblock %}
+{% block content %}
+{% include "_copywriting_styles.html" %}
+
+<div class="cw-page">
+    <a href="/copywriting" class="cw-back">← 返回列表</a>
+
+    <!-- 步骤状态栏 -->
+    <div class="cw-steps">
+        {% for step_key, step_label in [("keyframe", "抽帧"), ("copywrite", "文案"), ("tts", "语音"), ("compose", "合成")] %}
+        <div class="cw-step" id="step-{{ step_key }}"
+             data-status="{{ task.steps.get(step_key, 'pending') }}">
+            {{ step_label }}
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 素材 & 商品信息区（可折叠） -->
+    <div class="cw-materials">
+        <div class="cw-materials-header" onclick="toggleMaterials()">
+            <h3>📦 素材 & 商品信息</h3>
+            <span class="cw-materials-toggle" id="materialsToggle">▼ 收起</span>
+        </div>
+        <div class="cw-materials-body" id="materialsBody">
+            <div class="cw-video-col">
+                <video class="cw-video-player" controls preload="metadata"
+                       src="/api/copywriting/{{ task_id }}/artifact/video_source">
+                </video>
+            </div>
+            <div class="cw-keyframes-col">
+                <div class="label" style="margin-bottom:4px;">关键帧</div>
+                <div class="cw-keyframes-row" id="keyframesRow">
+                    {% for i in range(task.keyframes|length) %}
+                    <img class="cw-keyframe-thumb"
+                         src="/api/copywriting/{{ task_id }}/keyframe/{{ i }}" alt="帧{{ i+1 }}">
+                    {% endfor %}
+                    {% if not task.keyframes %}
+                    <span style="font-size:12px; color:var(--text-muted);">抽帧中...</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="cw-product-col">
+                <div class="label">商品信息</div>
+                {% if inputs.get('product_image_url') %}
+                <img class="cw-product-img" src="/api/copywriting/{{ task_id }}/artifact/product_image" alt="">
+                {% endif %}
+                <div><strong>{{ inputs.get('product_title', '') }}</strong></div>
+                {% if inputs.get('price') %}<div>💰 {{ inputs.price }}</div>{% endif %}
+                {% if inputs.get('target_audience') %}<div>🎯 {{ inputs.target_audience }}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 文案编辑区 -->
+    <div class="cw-editor" id="editorSection">
+        <div class="cw-editor-header">
+            <h3>📝 文案编辑</h3>
+            <div class="cw-editor-tools">
+                <select class="cw-prompt-select" id="promptSelect">
+                    <option value="">默认提示词</option>
+                </select>
+                <div class="cw-lang-toggle">
+                    <button class="cw-lang-btn {% if (inputs.get('language','en')) == 'en' %}active{% endif %}"
+                            onclick="setLanguage('en')">English</button>
+                    <button class="cw-lang-btn {% if (inputs.get('language','en')) == 'zh' %}active{% endif %}"
+                            onclick="setLanguage('zh')">中文</button>
+                </div>
+                <button class="cw-btn cw-btn-secondary" onclick="regenerateCopy()" id="btnRegenerate">
+                    🔄 重新生成
+                </button>
+            </div>
+        </div>
+
+        <div class="cw-segments" id="segmentsContainer">
+            {% if task.copy and task.copy.segments %}
+                {% for seg in task.copy.segments %}
+                <div class="cw-segment" data-index="{{ loop.index0 }}">
+                    <div class="cw-seg-label">{{ seg.label }}</div>
+                    <div class="cw-seg-text" id="segText{{ loop.index0 }}">{{ seg.text }}</div>
+                    <div class="cw-seg-duration">{{ seg.duration_hint|round(1) }}s</div>
+                    <div class="cw-seg-actions">
+                        <button class="cw-seg-btn" onclick="startEdit({{ loop.index0 }})">✏️</button>
+                        <button class="cw-seg-btn" onclick="openRewrite({{ loop.index0 }})">🔄</button>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="cw-loading" id="copyLoading">
+                    {% if task.steps.get('copywrite') == 'running' %}
+                    <span class="cw-spinner"></span>文案生成中...
+                    {% elif task.steps.get('keyframe') == 'running' %}
+                    <span class="cw-spinner"></span>正在抽取关键帧...
+                    {% else %}
+                    等待文案生成...
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="cw-actions">
+            <button class="cw-btn cw-btn-secondary" onclick="exportCopy()" id="btnExport"
+                    {% if not task.copy %}disabled{% endif %}>
+                📋 复制文案
+            </button>
+            <button class="cw-btn cw-btn-secondary" onclick="downloadCopy()" id="btnDownload"
+                    {% if not task.copy %}disabled{% endif %}>
+                💾 导出文案
+            </button>
+            <button class="cw-btn cw-btn-primary" onclick="startTTS()" id="btnTTS"
+                    {% if not task.copy %}disabled{% endif %}>
+                ▶ 生成语音视频
+            </button>
+        </div>
+    </div>
+
+    <!-- TTS & 合成结果区（动态显示） -->
+    <div class="cw-result" id="resultSection" style="display:none;">
+        <h3>🎬 生成结果</h3>
+        <audio id="resultAudio" controls style="display:none;"></audio>
+        <video id="resultVideo" controls style="display:none;"></video>
+        <div class="cw-download-row" id="downloadRow" style="display:none;">
+            <a class="cw-btn cw-btn-secondary" id="dlVideo" href="#" download>下载视频</a>
+            <a class="cw-btn cw-btn-secondary" id="dlCopy" href="#" download>下载文案</a>
+        </div>
+    </div>
+</div>
+
+<!-- 重写弹窗 -->
+<div class="cw-rewrite-modal" id="rewriteModal" style="display:none;">
+    <div class="cw-rewrite-box">
+        <h3 style="margin:0 0 12px; font-size:14px;">重写段落</h3>
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;" id="rewriteOriginal"></div>
+        <input type="text" id="rewriteInstruction" class="form-input"
+               placeholder="修改要求（可选，如：更口语化、加入紧迫感）" style="margin-bottom:12px; width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:13px; box-sizing:border-box;">
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="cw-btn cw-btn-secondary" onclick="closeRewrite()">取消</button>
+            <button class="cw-btn cw-btn-primary" onclick="confirmRewrite()" id="btnConfirmRewrite">重写</button>
+        </div>
+    </div>
+</div>
+
+{% include "_copywriting_scripts.html" %}
+{% endblock %}
