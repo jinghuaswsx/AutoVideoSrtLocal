@@ -3,13 +3,19 @@
 {% block page_title %}API 配置{% endblock %}
 {% block extra_style %}
 .settings-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
-.settings-card h2 { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 16px; }
+.settings-card h2 { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+.settings-card .step-desc { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+.service-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 6px; margin-bottom: 10px; }
+.service-tag.blue { background: #f0f4ff; color: #4361ee; }
+.service-tag.orange { background: #fff3e0; color: #e65100; }
+.service-tag.green { background: #e8f5e9; color: #2e7d32; }
 label { display: block; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
-input[type=text], input[type=password] { width: 100%; background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 10px; color: #111827; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
-input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; background: #fff; }
+input[type=text], input[type=password], select { width: 100%; background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 10px; color: #111827; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
+input[type=text]:focus, input[type=password]:focus, select:focus { border-color: #7c6fe0; background: #fff; }
 .save-btn { margin-top: 24px; }
 .success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
 .hint { color: #9ca3af; font-size: 12px; margin-top: 4px; }
+.divider { border: none; border-top: 1px dashed #e5e7eb; margin: 16px 0; }
 {% endblock %}
 {% block content %}
 <h1 style="font-size:20px;font-weight:700;color:#111827;margin-bottom:20px">API Key 配置</h1>
@@ -17,8 +23,12 @@ input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; back
   {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
 {% endwith %}
 <form method="post">
+
+  {# ── 第一步：语音识别 ── #}
   <div class="settings-card">
-    <h2>豆包 ASR</h2>
+    <h2>第一步：语音识别</h2>
+    <p class="step-desc">将视频中的中文语音转为文字</p>
+    <span class="service-tag blue">豆包 ASR</span>
     <label>API Key</label>
     <input type="password" name="doubao_asr_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('doubao_asr', {}).get('key_value', '') }}">
@@ -29,26 +39,64 @@ input[type=text]:focus, input[type=password]:focus { border-color: #7c6fe0; back
     <input type="text" name="doubao_asr_cluster" placeholder="可选，默认 volc.seedasr.auc"
            value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('cluster', '') }}">
   </div>
+
+  {# ── 第二步：翻译与本土化 ── #}
   <div class="settings-card">
-    <h2>ElevenLabs</h2>
+    <h2>第二步：翻译与本土化</h2>
+    <p class="step-desc">将中文内容翻译为地道的英文</p>
+
+    <label>默认翻译模型</label>
+    <select name="translate_pref">
+      <option value="openrouter" {{ 'selected' if translate_pref == 'openrouter' }}>Claude Sonnet (OpenRouter)</option>
+      <option value="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
+    </select>
+    <p class="hint">每次翻译时也可临时切换</p>
+
+    <hr class="divider">
+    <span class="service-tag blue">Claude Sonnet · via OpenRouter</span>
+    <label>API Key</label>
+    <input type="password" name="openrouter_key" placeholder="留空则保持当前配置"
+           value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
+    <label>请求 URL</label>
+    <input type="text" name="openrouter_base_url" placeholder="https://openrouter.ai/api/v1"
+           value="{{ keys.get('openrouter', {}).get('extra', {}).get('base_url', '') }}">
+    <label>模型 ID</label>
+    <input type="text" name="openrouter_model_id" placeholder="anthropic/claude-sonnet-4-5"
+           value="{{ keys.get('openrouter', {}).get('extra', {}).get('model_id', '') }}">
+
+    <hr class="divider">
+    <span class="service-tag orange">豆包 2.0 Pro · via 火山引擎 ARK</span>
+    <label>API Key</label>
+    <input type="password" name="doubao_llm_key" placeholder="留空则保持当前配置"
+           value="{{ keys.get('doubao_llm', {}).get('key_value', '') }}">
+    <label>请求 URL</label>
+    <input type="text" name="doubao_llm_base_url" placeholder="https://ark.cn-beijing.volces.com/api/v3"
+           value="{{ keys.get('doubao_llm', {}).get('extra', {}).get('base_url', '') }}">
+    <label>模型 ID</label>
+    <input type="text" name="doubao_llm_model_id" placeholder="doubao-seed-2-0-pro-260215"
+           value="{{ keys.get('doubao_llm', {}).get('extra', {}).get('model_id', '') }}">
+  </div>
+
+  {# ── 第三步：配音合成 ── #}
+  <div class="settings-card">
+    <h2>第三步：配音合成</h2>
+    <p class="step-desc">生成英文配音音频</p>
+    <span class="service-tag green">ElevenLabs</span>
     <label>API Key</label>
     <input type="password" name="elevenlabs_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
   </div>
+
+  {# ── 第四步：导出 ── #}
   <div class="settings-card">
-    <h2>OpenRouter</h2>
-    <label>API Key</label>
-    <input type="password" name="openrouter_key" placeholder="留空则保持当前配置"
-           value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
-    <p class="hint">用于翻译和文案生成。</p>
-  </div>
-  <div class="settings-card">
-    <h2>剪映导出</h2>
-    <label>项目根目录</label>
+    <h2>第四步：导出</h2>
+    <p class="step-desc">导出到剪映项目</p>
+    <label>剪映项目根目录</label>
     <input type="text" name="jianying_project_root"
            value="{{ jianying_project_root }}">
     <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
   </div>
+
   <button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>
 {% endblock %}
