@@ -58,7 +58,7 @@
     </div>
 
     <!-- 生成配置面板（文案未生成时显示） -->
-    <div class="cw-editor" id="configSection" style="position:relative;{% if task.copy and task.copy.segments %}display:none;{% endif %}">
+    <div class="cw-editor" id="configSection" style="position:relative;{% if copy_segments %}display:none;{% endif %}">
         <div class="cw-editor-header">
             <h3>⚙️ 生成配置</h3>
         </div>
@@ -105,7 +105,7 @@
     </div>
 
     <!-- 文案编辑区（文案生成后显示） -->
-    <div class="cw-editor" id="editorSection" style="position:relative;{% if not task.copy or not task.copy.segments %}display:none;{% endif %}">
+    <div class="cw-editor" id="editorSection" style="position:relative;{% if not copy_segments %}display:none;{% endif %}">
         <!-- 生成中遮罩 -->
         <div class="cw-overlay" id="editorOverlay">
             <span class="cw-spinner" style="width:24px;height:24px;border-width:3px;"></span>
@@ -121,8 +121,8 @@
         </div>
 
         <div class="cw-segments" id="segmentsContainer">
-            {% if task.copy and task.copy.segments %}
-                {% for seg in task.copy.segments %}
+            {% if copy_segments %}
+                {% for seg in copy_segments %}
                 <div class="cw-segment" data-index="{{ loop.index0 }}">
                     <div class="cw-seg-label">{{ seg.label }}</div>
                     <div class="cw-seg-text" id="segText{{ loop.index0 }}">{{ seg.text }}</div>
@@ -138,15 +138,15 @@
 
         <div class="cw-actions">
             <button class="cw-btn cw-btn-secondary" onclick="exportCopy()" id="btnExport"
-                    {% if not task.copy %}disabled{% endif %}>
+                    {% if not copy_segments %}disabled{% endif %}>
                 📋 复制文案
             </button>
             <button class="cw-btn cw-btn-secondary" onclick="downloadCopy()" id="btnDownload"
-                    {% if not task.copy %}disabled{% endif %}>
+                    {% if not copy_segments %}disabled{% endif %}>
                 💾 导出文案
             </button>
             <button class="cw-btn cw-btn-primary" onclick="startTTS()" id="btnTTS"
-                    {% if not task.copy %}disabled{% endif %}>
+                    {% if not copy_segments %}disabled{% endif %}>
                 ▶ 生成语音视频
             </button>
         </div>

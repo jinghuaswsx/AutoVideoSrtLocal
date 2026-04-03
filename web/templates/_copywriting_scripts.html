@@ -5,7 +5,7 @@ const TASK_ID = "{{ task_id }}";
 const socket = io();
 socket.emit("join_copywriting_task", { task_id: TASK_ID });
 
-let currentSegments = {{ task.copy.segments | tojson if task.copy and task.copy.segments else '[]' }};
+let currentSegments = {{ copy_segments | tojson if copy_segments else '[]' }};
 let rewriteIndex = -1;
 
 // ── SocketIO 事件处理 ────────────────────────────
@@ -548,7 +548,7 @@ loadPrompts();
     var ttsStatus = "{{ task.steps.get('tts', 'pending') }}";
     var composeStatus = "{{ task.steps.get('compose', 'pending') }}";
     var hasKeyframes = {{ 'true' if task.keyframes else 'false' }};
-    var hasCopy = {{ 'true' if task.copy and task.copy.segments else 'false' }};
+    var hasCopy = {{ 'true' if copy_segments else 'false' }};
 
     // 修复卡住的 running 状态：如果关键帧已提取但步骤还是 running，修正为 done
     if (keyframeStatus === "running" && hasKeyframes) {
@@ -574,8 +574,8 @@ loadPrompts();
     }
 
     // 如果已有调试信息
-    {% if task.copy and task.copy._debug %}
-    showDebugInfo({{ task.copy._debug | tojson }});
+    {% if copy_debug %}
+    showDebugInfo({{ copy_debug | tojson }});
     {% endif %}
 })();
 </script>

@@ -88,8 +88,16 @@ def detail_page(task_id: str):
     # 当前默认选中（第一个选项）
     current_provider = models[0][0] if models else "openrouter:"
 
+    # Jinja2 中 task.copy 会调用 dict.copy() 方法而不是访问 key "copy"，
+    # 所以需要把关键数据单独传给模板避免冲突
+    copy_data = task.get("copy") or {}
+    copy_segments = copy_data.get("segments") or []
+    copy_debug = copy_data.get("_debug")
+
     return render_template("copywriting_detail.html",
                            task=task, inputs=inputs, task_id=task_id,
+                           copy_data=copy_data, copy_segments=copy_segments,
+                           copy_debug=copy_debug,
                            default_prompt_en=DEFAULT_SYSTEM_PROMPT_EN,
                            default_prompt_zh=DEFAULT_SYSTEM_PROMPT_ZH,
                            models=models, current_provider=current_provider)
