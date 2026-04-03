@@ -33,13 +33,13 @@
     fileInput.addEventListener("change", () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
   }
 
-  bootVoices();
-  renderStepPreviews({});
-  bootInitialTask();
-
   let _voicesCache = [];
   let _selectedVoiceId = null;
   let _playingAudio = null;
+
+  bootVoices();
+  renderStepPreviews({});
+  bootInitialTask();
 
   async function bootVoices() {
     try {
