@@ -3,10 +3,14 @@
 
 提供音色列表查询、基础 CRUD 和 ElevenLabs Voice Library 导入。
 """
+import logging
+
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 
 from pipeline.voice_library import get_voice_library
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("voice", __name__, url_prefix="/api/voices")
 
@@ -14,9 +18,13 @@ bp = Blueprint("voice", __name__, url_prefix="/api/voices")
 @bp.route("", methods=["GET"])
 @login_required
 def list_voices():
-    lib = get_voice_library()
-    lib.ensure_defaults(current_user.id)
-    return jsonify({"voices": lib.list_voices(current_user.id)})
+    try:
+        lib = get_voice_library()
+        lib.ensure_defaults(current_user.id)
+        return jsonify({"voices": lib.list_voices(current_user.id)})
+    except Exception:
+        log.exception("list_voices failed for user %s", current_user.id)
+        return jsonify({"error": "音色列表加载失败"}), 500
 
 
 @bp.route("", methods=["POST"])

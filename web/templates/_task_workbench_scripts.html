@@ -44,6 +44,11 @@
   async function bootVoices() {
     try {
       const res = await fetch("/api/voices");
+      if (!res.ok) {
+        console.error("bootVoices: HTTP", res.status, res.statusText);
+        document.getElementById("voiceList").innerHTML = '<div class="voice-list-empty">音色列表加载失败 (HTTP ' + res.status + ')</div>';
+        return;
+      }
       const data = await res.json();
       _voicesCache = data.voices || [];
       // Auto-select user's default voice (or first voice) if nothing selected yet
@@ -53,7 +58,8 @@
       }
       renderVoiceList();
       applyTaskConfigToForm();
-    } catch {
+    } catch (err) {
+      console.error("bootVoices error:", err);
       document.getElementById("voiceList").innerHTML = '<div class="voice-list-empty">音色列表加载失败</div>';
     }
   }
