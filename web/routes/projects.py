@@ -15,7 +15,8 @@ def index():
            FROM projects WHERE user_id = %s AND deleted_at IS NULL ORDER BY created_at DESC""",
         (current_user.id,),
     )
-    return render_template("projects.html", projects=rows)
+    from datetime import datetime
+    return render_template("projects.html", projects=rows, now=datetime.now())
 
 
 @bp.route("/projects/<task_id>")

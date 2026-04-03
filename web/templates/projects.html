@@ -72,6 +72,26 @@
 .badge-uploaded { background: #dbeafe; color: #2563eb; }
 .badge-error { background: #fee2e2; color: #dc2626; }
 .empty { text-align: center; padding: 80px 0; color: #9ca3af; }
+.expire-notice {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1.5px solid #f59e0b;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; color: #92400e; font-weight: 500;
+}
+.expire-notice .icon { font-size: 20px; flex-shrink: 0; }
+.expire-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-left: 6px;
+}
+.expire-tag.urgent { background: #fee2e2; color: #dc2626; }
+.expire-tag.normal { background: #fef3c7; color: #b45309; }
 .card-menu-btn {
   position: absolute; top: 10px; right: 10px;
   width: 32px; height: 32px;
@@ -138,6 +158,10 @@
     <a href="{{ url_for('task.upload_page') }}" class="btn btn-primary">+ 新建项目</a>
   </div>
 </div>
+<div class="expire-notice">
+  <span class="icon">⚠️</span>
+  <span>项目文件仅保留 <strong>24 小时</strong>，到期后将自动清理，请及时导出或下载所需内容。</span>
+</div>
 {% if projects %}
 <!-- Grid View -->
 <div class="grid active" id="gridView">
@@ -157,6 +181,16 @@
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
         </div>
+        {% if p.expires_at %}
+        {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+        {% if hours_left <= 0 %}
+        <span class="expire-tag urgent">已过期</span>
+        {% elif hours_left <= 6 %}
+        <span class="expire-tag urgent">剩余 {{ hours_left }}h</span>
+        {% else %}
+        <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+        {% endif %}
+        {% endif %}
       </div>
     </a>
     <button class="card-menu-btn" onclick="toggleMenu(event,'menu-{{ p.id }}')">⋯</button>
@@ -184,6 +218,16 @@
         <div class="list-meta">
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+          {% if p.expires_at %}
+          {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+          {% if hours_left <= 0 %}
+          <span class="expire-tag urgent">已过期</span>
+          {% elif hours_left <= 6 %}
+          <span class="expire-tag urgent">剩余 {{ hours_left }}h</span>
+          {% else %}
+          <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+          {% endif %}
+          {% endif %}
         </div>
       </div>
     </a>
