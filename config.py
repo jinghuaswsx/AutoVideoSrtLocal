@@ -67,6 +67,11 @@ if DOUBAO_LLM_API_KEY and not os.environ.get("DOUBAO_LLM_API_KEY"):
 DOUBAO_LLM_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DOUBAO_LLM_MODEL = _env("DOUBAO_LLM_MODEL", "doubao-seed-2-0-pro-260215")
 
+# Seedance 视频生成（默认复用火山引擎 ARK 同一个 key）
+SEEDANCE_API_KEY = _env("SEEDANCE_API_KEY") or DOUBAO_LLM_API_KEY
+if SEEDANCE_API_KEY and not os.environ.get("SEEDANCE_API_KEY"):
+    os.environ["SEEDANCE_API_KEY"] = SEEDANCE_API_KEY
+
 # ElevenLabs
 ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
