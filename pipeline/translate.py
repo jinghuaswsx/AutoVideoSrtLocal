@@ -88,9 +88,7 @@ def generate_localized_translation(
 ) -> dict:
     client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
-    if provider == "doubao":
-        extra_body["response_format"] = {"type": "json_object"}
-    else:
+    if provider != "doubao":
         extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
     if provider == "openrouter":
         extra_body["plugins"] = [{"id": "response-healing"}]
@@ -105,7 +103,7 @@ def generate_localized_translation(
         ),
         temperature=0.2,
         max_tokens=4096,
-        extra_body=extra_body,
+        **( {"extra_body": extra_body} if extra_body else {}),
     )
     payload = _parse_json_content(response.choices[0].message.content)
     return validate_localized_translation(payload)
@@ -120,9 +118,7 @@ def generate_tts_script(
 ) -> dict:
     client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
-    if provider == "doubao":
-        extra_body["response_format"] = {"type": "json_object"}
-    else:
+    if provider != "doubao":
         extra_body["response_format"] = TTS_SCRIPT_RESPONSE_FORMAT
     if provider == "openrouter":
         extra_body["plugins"] = [{"id": "response-healing"}]
@@ -132,7 +128,7 @@ def generate_tts_script(
         messages=build_tts_script_messages(localized_translation),
         temperature=0.2,
         max_tokens=4096,
-        extra_body=extra_body,
+        **( {"extra_body": extra_body} if extra_body else {}),
     )
     payload = _parse_json_content(response.choices[0].message.content)
     return validate_tts_script(payload)
