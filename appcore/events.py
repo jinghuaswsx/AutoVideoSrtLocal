@@ -16,6 +16,16 @@ EVT_CAPCUT_READY = "capcut_ready"
 EVT_PIPELINE_DONE = "pipeline_done"
 EVT_PIPELINE_ERROR = "pipeline_error"
 
+# ── 文案创作事件 ──────────────────────────────────────
+EVT_CW_STEP_UPDATE = "cw_step_update"
+EVT_CW_KEYFRAMES_READY = "cw_keyframes_ready"
+EVT_CW_COPY_READY = "cw_copy_ready"
+EVT_CW_SEGMENT_REWRITTEN = "cw_segment_rewritten"
+EVT_CW_TTS_READY = "cw_tts_ready"
+EVT_CW_COMPOSE_READY = "cw_compose_ready"
+EVT_CW_DONE = "cw_done"
+EVT_CW_ERROR = "cw_error"
+
 
 @dataclass
 class Event:
