@@ -28,6 +28,7 @@ from web.routes.admin_usage import bp as admin_usage_bp, user_usage_bp
 from web.routes.tos_upload import bp as tos_upload_bp
 from web.routes.prompt import bp as prompt_bp
 from web.routes.text_translate import bp as text_translate_bp
+from web.routes.video_creation import bp as video_creation_bp
 
 
 def create_app() -> Flask:
@@ -53,6 +54,7 @@ def create_app() -> Flask:
     from web.routes.copywriting import bp as copywriting_bp
     app.register_blueprint(copywriting_bp)
     app.register_blueprint(text_translate_bp)
+    app.register_blueprint(video_creation_bp)
 
     # WebSocket 事件
     @socketio.on("join_task")

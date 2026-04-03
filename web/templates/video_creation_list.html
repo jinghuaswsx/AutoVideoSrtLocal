@@ -1,0 +1,131 @@
+{% extends "layout.html" %}
+{% block title %}视频创作 — AutoVideoSrt{% endblock %}
+{% block page_title %}视频创作{% endblock %}
+{% block extra_style %}
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
+.vc-empty { text-align: center; padding: 80px 20px; color: #9ca3af; }
+.vc-empty-icon { font-size: 48px; margin-bottom: 16px; }
+.vc-empty-text { font-size: 15px; margin-bottom: 24px; }
+
+/* 上传对话框 */
+.vc-upload-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
+.vc-upload-overlay.show { display: flex; }
+.vc-upload-modal { background: var(--bg-card); border-radius: 16px; padding: 28px; width: 480px; max-width: 90vw; }
+.vc-upload-modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.vc-upload-field { margin-bottom: 16px; }
+.vc-upload-label { font-size: 13px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
+.vc-upload-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
+.vc-upload-input:focus { outline: none; border-color: var(--primary-color); }
+.vc-upload-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+.vc-upload-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* 项目卡片 */
+.vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.vc-card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; transition: border-color .2s, box-shadow .2s; display: flex; flex-direction: column; }
+.vc-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 16px rgba(59,130,246,0.15); }
+.vc-card-thumb { width: 100%; padding-top: 56.25%; position: relative; background: var(--bg-body); }
+.vc-card-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.vc-card-thumb .vc-card-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #d1d5db; }
+.vc-card-info { padding: 14px; flex: 1; }
+.vc-card-name { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vc-card-meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; }
+.vc-card-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.vc-card-status.done { background: rgba(22,163,74,0.15); color: #22c55e; }
+.vc-card-status.uploaded { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.vc-card-status.running { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.vc-card-status.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>视频创作</h1>
+  <button class="btn btn-primary" onclick="showUpload()">+ 新建项目</button>
+</div>
+
+{% if projects %}
+<div class="vc-grid">
+  {% for p in projects %}
+  <a href="/video-creation/{{ p.id }}" class="vc-card">
+    <div class="vc-card-thumb">
+      {% if p.thumbnail_path %}
+        <img src="/api/video-creation/{{ p.id }}/keyframe/0" alt="" onerror="this.style.display='none'">
+      {% endif %}
+      <div class="vc-card-placeholder">🎥</div>
+    </div>
+    <div class="vc-card-info">
+      <div class="vc-card-name">{{ p.display_name or p.original_filename }}</div>
+      <div class="vc-card-meta">
+        <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+        <span class="vc-card-status {{ p.status }}">
+          {% if p.status == 'done' %}已完成{% elif p.status == 'uploaded' %}待生成{% elif p.status == 'running' %}生成中{% elif p.status == 'error' %}失败{% else %}{{ p.status }}{% endif %}
+        </span>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="vc-empty">
+  <div class="vc-empty-icon">🎥</div>
+  <div class="vc-empty-text">还没有视频创作项目，上传参考视频开始</div>
+</div>
+{% endif %}
+
+<!-- 上传弹窗 -->
+<div class="vc-upload-overlay" id="uploadOverlay">
+  <div class="vc-upload-modal">
+    <h3>新建视频创作</h3>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="vc-upload-field">
+        <div class="vc-upload-label">参考视频（必填）</div>
+        <input type="file" name="video" accept="video/*" class="vc-upload-input" required>
+      </div>
+      <div class="vc-upload-field">
+        <div class="vc-upload-label">参考图片（可选）</div>
+        <input type="file" name="ref_image" accept="image/*" class="vc-upload-input">
+        <div class="vc-upload-hint">如果有产品图片可以上传，会作为生成参考</div>
+      </div>
+      <div class="vc-upload-field">
+        <div class="vc-upload-label">产品信息（可选）</div>
+        <textarea name="product_info" class="vc-upload-input" rows="3" placeholder="产品名称、卖点、目标受众等..."></textarea>
+      </div>
+      <div class="vc-upload-actions">
+        <button type="button" class="btn btn-ghost" onclick="hideUpload()">取消</button>
+        <button type="submit" class="btn btn-primary" id="uploadBtn">上传并开始</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showUpload() { document.getElementById('uploadOverlay').classList.add('show'); }
+function hideUpload() { document.getElementById('uploadOverlay').classList.remove('show'); }
+
+document.getElementById('uploadOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) hideUpload();
+});
+
+document.getElementById('uploadForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true; btn.textContent = '上传中...';
+
+  const formData = new FormData(e.target);
+  try {
+    const res = await fetch('/api/video-creation/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Upload failed');
+    }
+    const data = await res.json();
+    location.href = '/video-creation/' + data.id;
+  } catch (e) {
+    alert('上传失败: ' + e.message);
+    btn.disabled = false; btn.textContent = '上传并开始';
+  }
+});
+</script>
+{% endblock %}
