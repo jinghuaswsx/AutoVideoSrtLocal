@@ -11,14 +11,16 @@ VARIANT_LABELS = {
 }
 
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video commerce copywriter.
-Return valid JSON only.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
 Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
 
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video e-commerce copywriter.
-Return valid JSON only.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
@@ -31,7 +33,8 @@ Put the CTA where it feels most natural, usually in the middle or near the end.
 You may reorder emphasis to improve hook performance, but you must preserve the original selling points."""
 
 TTS_SCRIPT_SYSTEM_PROMPT = """You are preparing text for ElevenLabs narration and subtitle display.
-Return valid JSON only.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "...", "blocks": [{"index": 0, "text": "...", "sentence_indices": [0], "source_segment_indices": [0, 1]}, ...], "subtitle_chunks": [{"index": 0, "text": "...", "block_indices": [0], "sentence_indices": [0], "source_segment_indices": [0, 1]}, ...]}
 Use the localized English as the only wording source.
 blocks optimize speaking rhythm.
 subtitle_chunks optimize on-screen reading without changing wording relative to full_text.
@@ -404,32 +407,41 @@ def build_tts_segments(tts_script: dict, script_segments: list[dict]) -> list[di
     return result
 
 
-def validate_localized_translation(payload: dict) -> dict:
+def validate_localized_translation(payload) -> dict:
+    # 兼容模型直接返回 list（如豆包）
+    if isinstance(payload, list):
+        payload = {"sentences": payload, "full_text": ""}
     sentences = _sanitize_text_items(payload.get("sentences") or [], "text")
     full_text = _sanitize_model_text(payload.get("full_text") or "")
-    if not full_text or not sentences:
-        raise ValueError("localized_translation requires full_text and sentences")
+    if not sentences:
+        raise ValueError("localized_translation requires sentences")
 
     for sentence in sentences:
         indices = sentence.get("source_segment_indices")
         if not isinstance(indices, list) or not indices:
             raise ValueError("localized_translation sentence missing source_segment_indices")
 
+    # full_text 缺失或不一致时，从 sentences 自动拼接
     concat = _concat_items(sentences, "text")
-    if concat != full_text:
+    if not full_text or concat != full_text:
         full_text = concat
 
     return {"full_text": full_text, "sentences": sentences}
 
 
-def validate_tts_script(payload: dict) -> dict:
+def validate_tts_script(payload) -> dict:
+    # 兼容模型直接返回 list（如豆包）
+    if isinstance(payload, list):
+        payload = {"blocks": payload, "full_text": ""}
     blocks = _sanitize_text_items(payload.get("blocks") or [], "text")
     full_text = _sanitize_model_text(payload.get("full_text") or "")
-    if not full_text or not blocks:
-        raise ValueError("tts_script requires full_text and blocks")
+    if not blocks:
+        raise ValueError("tts_script requires blocks")
 
-    if _concat_items(blocks, "text") != full_text:
-        raise ValueError("tts_script blocks do not match full_text")
+    # full_text 缺失或不一致时，从 blocks 自动拼接
+    concat = _concat_items(blocks, "text")
+    if not full_text or concat != full_text:
+        full_text = concat
 
     subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=10)
     if not subtitle_chunks:
@@ -448,14 +460,16 @@ def validate_tts_script(payload: dict) -> dict:
 
 
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
-仅返回合法 JSON。
+仅返回合法 JSON。返回格式必须是如下结构的 JSON 对象：
+{"full_text": "所有句子用空格拼接", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
 不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。"""
 
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
-仅返回合法 JSON。
+仅返回合法 JSON。返回格式必须是如下结构的 JSON 对象：
+{"full_text": "所有句子用空格拼接", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
