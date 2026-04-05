@@ -5,9 +5,12 @@
   - 每行最多 42 字符，不截断单词
   - 最多 2 行，尽量均衡；较长行放第一行
 """
+import logging
 import os
 import re
 from typing import List, Dict
+
+log = logging.getLogger(__name__)
 
 
 def format_timestamp(seconds: float) -> str:
@@ -114,9 +117,11 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
     # 文案超出两行容量：顺序填词，第一行满了填第二行，超出丢弃
     lines = ["", ""]
     current_line = 0
+    truncated = False
 
     for word in words:
         if current_line >= 2:
+            truncated = True
             break
         line = lines[current_line]
         candidate = word if not line else line + " " + word
@@ -126,6 +131,9 @@ def wrap_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
             current_line += 1
             if current_line < 2:
                 lines[current_line] = word
+
+    if truncated:
+        log.warning("字幕文本被截断（超出 %d 字符 × 2 行）: %s...", max_chars, text[:80])
 
     line1, line2 = lines[0], lines[1]
     if line2:

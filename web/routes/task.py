@@ -241,6 +241,10 @@ def upload():
     if not file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
+    from web.upload_util import validate_video_extension
+    if not validate_video_extension(file.filename):
+        return jsonify({"error": "不支持的视频格式"}), 400
+
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
@@ -623,7 +627,7 @@ def download(task_id, file_type):
 @login_required
 def deploy_capcut(task_id):
     task = store.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None

@@ -34,7 +34,13 @@ from web.routes.video_review import bp as video_review_bp
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
+    secret_key = os.getenv("FLASK_SECRET_KEY", "")
+    if not secret_key:
+        raise RuntimeError(
+            "FLASK_SECRET_KEY 环境变量未设置。"
+            "请设置一个安全的随机密钥，不要使用默认值。"
+        )
+    app.config["SECRET_KEY"] = secret_key
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
 
     # 初始化扩展

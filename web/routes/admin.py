@@ -26,7 +26,12 @@ def users():
                 flash(f"用户 '{username}' 创建成功")
                 return redirect(url_for("admin.users"))
         elif action == "toggle_active":
-            user_id = int(request.form.get("user_id"))
+            try:
+                user_id = int(request.form.get("user_id"))
+            except (TypeError, ValueError):
+                error = "无效的用户 ID"
+                all_users = list_users()
+                return render_template("admin_users.html", users=all_users, error=error), 400
             active = request.form.get("active") == "1"
             set_active(user_id, active)
             return redirect(url_for("admin.users"))

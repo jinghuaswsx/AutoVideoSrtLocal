@@ -101,7 +101,7 @@ DB_HOST = _env("DB_HOST", "127.0.0.1")
 DB_PORT = int(_env("DB_PORT", "3306"))
 DB_NAME = _env("DB_NAME", "auto_video")
 DB_USER = _env("DB_USER", "root")
-DB_PASSWORD = _env("DB_PASSWORD", "wylf1109")
+DB_PASSWORD = _env("DB_PASSWORD")
 
 
 def validate_runtime_config(required_keys=None):

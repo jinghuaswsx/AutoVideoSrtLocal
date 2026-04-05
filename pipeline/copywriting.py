@@ -149,8 +149,14 @@ COPYWRITING_RESPONSE_FORMAT = {
 
 # ── 辅助函数 ──────────────────────────────────────────
 
+_MAX_BASE64_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+
+
 def _image_to_base64_url(image_path: str) -> str:
     """将本地图片转为 base64 data URL。"""
+    file_size = os.path.getsize(image_path)
+    if file_size > _MAX_BASE64_FILE_SIZE:
+        raise ValueError(f"文件过大（{file_size / 1024 / 1024:.1f}MB），base64 编码上限为 50MB")
     with open(image_path, "rb") as f:
         data = base64.b64encode(f.read()).decode()
     ext = os.path.splitext(image_path)[1].lower()
@@ -161,6 +167,9 @@ def _image_to_base64_url(image_path: str) -> str:
 
 def _video_to_base64_url(video_path: str) -> str:
     """将本地视频转为 base64 data URL。"""
+    file_size = os.path.getsize(video_path)
+    if file_size > _MAX_BASE64_FILE_SIZE:
+        raise ValueError(f"文件过大（{file_size / 1024 / 1024:.1f}MB），base64 编码上限为 50MB")
     with open(video_path, "rb") as f:
         data = base64.b64encode(f.read()).decode()
     ext = os.path.splitext(video_path)[1].lower()

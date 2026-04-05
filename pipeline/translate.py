@@ -71,6 +71,8 @@ Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}]""
 
 
 def _parse_json_content(raw: str):
+    if raw is None:
+        raise TypeError("LLM 返回内容为 None")
     content = raw.strip()
     if content.startswith("```"):
         content = content.split("```")[1]

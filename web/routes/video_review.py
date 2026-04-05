@@ -67,6 +67,10 @@ def upload():
     if not file or not file.filename:
         return jsonify(error="请上传视频"), 400
 
+    from web.upload_util import validate_video_extension
+    if not validate_video_extension(file.filename):
+        return jsonify(error="不支持的视频格式"), 400
+
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
