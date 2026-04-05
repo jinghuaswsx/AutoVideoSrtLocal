@@ -1,21 +1,24 @@
 import os
 import subprocess
+import threading
 from typing import List, Dict
 
 from elevenlabs.client import ElevenLabs
 from config import ELEVENLABS_API_KEY
 from pipeline.voice_library import get_voice_library
 
-_client: ElevenLabs = None
+_client: ElevenLabs | None = None
+_client_lock = threading.Lock()
 
 
 def _get_client(api_key: str | None = None) -> ElevenLabs:
     global _client
     if api_key:
         return ElevenLabs(api_key=api_key)
-    if _client is None:
-        _client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-    return _client
+    with _client_lock:
+        if _client is None:
+            _client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+        return _client
 
 
 def load_voices(user_id: int) -> List[Dict]:

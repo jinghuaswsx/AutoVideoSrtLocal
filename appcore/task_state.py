@@ -6,12 +6,17 @@ MVP: in-process dict. Can be replaced with Redis later without touching callers.
 from __future__ import annotations
 
 import json
+import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 # VARIANT_LABELS import removed — single-line pipeline
 
 _tasks: dict = {}
+_lock = threading.Lock()
 
 
 def _empty_variant_state(label: str) -> dict:
@@ -50,7 +55,7 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
              expires_at.strftime("%Y-%m-%d %H:%M:%S")),
         )
     except Exception:
-        pass  # DB errors never break pipeline
+        log.warning("[task_state] DB upsert 失败 task_id=%s", task_id, exc_info=True)
 
 
 def _sync_task_to_db(task_id: str) -> None:
@@ -69,7 +74,7 @@ def _sync_task_to_db(task_id: str) -> None:
             (state_json, task.get("status", "uploaded"), task_id),
         )
     except Exception:
-        pass
+        log.warning("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
 
 
 def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None,
@@ -129,7 +134,8 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
     }
     if user_id is not None:
         task["_user_id"] = user_id
-    _tasks[task_id] = task
+    with _lock:
+        _tasks[task_id] = task
     if user_id is not None:
         _db_upsert(task_id, user_id, task, original_filename)
     return task
@@ -155,7 +161,7 @@ def get(task_id: str) -> Optional[dict]:
             _tasks[task_id] = task
             return task
     except Exception:
-        pass
+        log.warning("[task_state] DB 回退读取失败 task_id=%s", task_id, exc_info=True)
     return None
 
 
@@ -164,9 +170,11 @@ def get_all() -> dict:
 
 
 def update(task_id: str, **kwargs):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.update(kwargs)
     if task:
-        task.update(kwargs)
         _sync_task_to_db(task_id)
 
 

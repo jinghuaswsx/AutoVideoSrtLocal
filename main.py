@@ -21,6 +21,8 @@ from web.extensions import socketio
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+validate_runtime_config()
+
 app = create_app()
 
 from appcore.scheduler import get_scheduler
@@ -28,7 +30,6 @@ _scheduler = get_scheduler()
 _scheduler.start()
 
 if __name__ == "__main__":
-    validate_runtime_config()
     print("AutoVideoSrt 启动中...")
     print("访问 http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)
