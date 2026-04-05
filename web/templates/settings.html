@@ -2,16 +2,16 @@
 {% block title %}API 配置 - AutoVideoSrt{% endblock %}
 {% block page_title %}API 配置{% endblock %}
 {% block extra_style %}
-.settings-card { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 24px; margin-bottom: 16px; }
-.settings-card h2 { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 4px; }
-.settings-card .step-desc { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+.settings-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 24px; margin-bottom: 16px; }
+.settings-card h2 { font-size: 15px; font-weight: 700; color: var(--text-main, #111827); margin-bottom: 4px; }
+.settings-card .step-desc { font-size: 13px; color: var(--text-muted, #6b7280); margin-bottom: 16px; }
 .service-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 6px; margin-bottom: 10px; }
 .service-tag.blue { background: #f0f4ff; color: #4361ee; }
 .service-tag.orange { background: #fff3e0; color: #e65100; }
 .service-tag.green { background: #e8f5e9; color: #2e7d32; }
-label { display: block; color: #6b7280; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
-input[type=text], input[type=password], select { width: 100%; background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 10px; color: #111827; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
-input[type=text]:focus, input[type=password]:focus, select:focus { border-color: #7c6fe0; background: #fff; }
+label { display: block; color: var(--text-muted, #6b7280); font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
+input[type=text], input[type=password], select { width: 100%; background: var(--bg-input, #f9fafb); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 10px; color: var(--text-main, #111827); padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
+input[type=text]:focus, input[type=password]:focus, select:focus { border-color: #7c6fe0; background: var(--bg-card, #fff); }
 .save-btn { margin-top: 24px; }
 .success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
 .hint { color: #9ca3af; font-size: 12px; margin-top: 4px; }
