@@ -67,14 +67,26 @@ def create_app() -> Flask:
     # WebSocket 事件
     @socketio.on("join_task")
     def on_join(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
         task_id = data.get("task_id")
         if task_id:
-            join_room(task_id)
+            from web import store
+            task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
 
     @socketio.on("join_copywriting_task")
     def on_join_copywriting(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
         task_id = data.get("task_id")
         if task_id:
-            join_room(task_id)
+            from web import store
+            task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
 
     return app
