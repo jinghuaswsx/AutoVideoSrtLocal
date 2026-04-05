@@ -10,11 +10,14 @@ ASR 模块：使用豆包大模型录音文件识别 v3 接口
 注意：豆包 v3 接口只接受音频 URL，不接受 base64。
 调用前需确保 audio_url 可被火山引擎服务端访问到。
 """
+import logging
 import uuid
 import time
 import requests
 from typing import List, Dict
 from config import VOLC_API_KEY, VOLC_RESOURCE_ID, VOLC_ASR_SUBMIT_URL, VOLC_ASR_QUERY_URL
+
+log = logging.getLogger(__name__)
 
 # 轮询配置
 POLL_INTERVAL_SEC = 3
@@ -36,14 +39,19 @@ def transcribe(audio_url: str, volc_api_key: str | None = None) -> List[Dict]:
     request_id = str(uuid.uuid4())
     api_key = volc_api_key or VOLC_API_KEY
 
+    log.info("[ASR] 开始识别，request_id=%s, audio_url=%s", request_id, audio_url[:200])
+
     # Step 1: 提交任务
     _submit(audio_url, request_id, api_key)
+    log.info("[ASR] 任务已提交，开始轮询")
 
     # Step 2: 轮询结果
     result = _poll(request_id, api_key)
 
     # Step 3: 解析
-    return _parse(result)
+    segments = _parse(result)
+    log.info("[ASR] 识别完成，共 %d 个片段", len(segments))
+    return segments
 
 
 def transcribe_local_audio(local_audio_path: str, prefix: str, volc_api_key: str | None = None) -> List[Dict]:
@@ -57,7 +65,7 @@ def transcribe_local_audio(local_audio_path: str, prefix: str, volc_api_key: str
         try:
             delete_file(object_key)
         except Exception:
-            pass
+            log.warning("[ASR] 清理临时音频文件失败: %s", object_key, exc_info=True)
 
 
 def _build_headers(request_id: str, api_key: str | None = None) -> dict:
@@ -95,6 +103,7 @@ def _submit(audio_url: str, request_id: str, api_key: str | None = None):
 
     status_code = resp.headers.get("X-Api-Status-Code", "")
     message = resp.headers.get("X-Api-Message", "")
+    log.debug("[ASR] 提交响应: status=%s, message=%s", status_code, message)
 
     if status_code != "20000000":
         raise RuntimeError(
@@ -124,6 +133,7 @@ def _poll(request_id: str, api_key: str | None = None) -> dict:
 
         if status_code in ("20000001", "20000002"):
             # 处理中 / 队列中，继续等待
+            log.debug("[ASR] 轮询 #%d: status=%s (处理中), 等待 %ds", attempt + 1, status_code, POLL_INTERVAL_SEC)
             time.sleep(POLL_INTERVAL_SEC)
             continue
 

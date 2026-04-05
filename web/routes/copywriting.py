@@ -237,7 +237,7 @@ def preview(task_id: str):
     from pipeline.copywriting import preview_request
 
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     data = request.get_json(silent=True) or {}
@@ -303,7 +303,7 @@ def preview(task_id: str):
 def generate(task_id: str):
     """触发文案生成（首次或重新生成）。"""
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     # 可选：前端传入 prompt_id 和 provider
@@ -333,7 +333,9 @@ def rewrite_segment(task_id: str):
         return jsonify(error="缺少 index"), 400
 
     task = task_state.get(task_id)
-    if not task or not task.get("copy"):
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify(error="任务不存在"), 404
+    if not task.get("copy"):
         return jsonify(error="文案未生成"), 400
 
     segments = task["copy"].get("segments", [])
@@ -399,7 +401,7 @@ def save_segments(task_id: str):
         return jsonify(error="缺少 segments"), 400
 
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     copy_data = task.get("copy", {})
@@ -430,7 +432,7 @@ def fix_step(task_id: str):
 def start_tts(task_id: str):
     """触发 TTS + 合成。"""
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     # 可选：前端传入 voice_id
@@ -452,7 +454,7 @@ def start_tts(task_id: str):
 def download(task_id: str, file_type: str):
     """下载产物。"""
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     if file_type == "copy":
@@ -481,7 +483,7 @@ def download(task_id: str, file_type: str):
 def get_keyframe(task_id: str, index: int):
     """获取关键帧图片。"""
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     keyframes = task.get("keyframes", [])
@@ -496,7 +498,7 @@ def get_keyframe(task_id: str, index: int):
 def get_artifact(task_id: str, name: str):
     """获取中间产物（音频预览等）。"""
     task = task_state.get(task_id)
-    if not task:
+    if not task or task.get("_user_id") != current_user.id:
         return jsonify(error="任务不存在"), 404
 
     if name == "video_source":

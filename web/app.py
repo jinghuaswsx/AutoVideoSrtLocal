@@ -33,6 +33,7 @@ from web.routes.prompt import bp as prompt_bp
 from web.routes.text_translate import bp as text_translate_bp
 from web.routes.video_creation import bp as video_creation_bp
 from web.routes.video_review import bp as video_review_bp
+from web.routes.copywriting import bp as copywriting_bp
 
 
 def create_app() -> Flask:
@@ -68,7 +69,6 @@ def create_app() -> Flask:
     app.register_blueprint(tos_upload_bp)
     app.register_blueprint(voice_bp)
     app.register_blueprint(prompt_bp)
-    from web.routes.copywriting import bp as copywriting_bp
     app.register_blueprint(copywriting_bp)
     app.register_blueprint(text_translate_bp)
     app.register_blueprint(video_creation_bp)
