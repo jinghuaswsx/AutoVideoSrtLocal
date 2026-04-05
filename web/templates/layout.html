@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}AutoVideoSrt{% endblock %}</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
@@ -368,6 +369,28 @@
         updateBtnIcon();
       });
     }
+  </script>
+  <script>
+    // 全局 CSRF token：自动附加到所有 fetch POST/PUT/PATCH/DELETE 请求
+    (function() {
+      var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      if (!csrfMeta) return;
+      var csrfToken = csrfMeta.getAttribute('content');
+      var _origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        opts = opts || {};
+        var method = (opts.method || 'GET').toUpperCase();
+        if (['POST','PUT','PATCH','DELETE'].indexOf(method) >= 0) {
+          opts.headers = opts.headers || {};
+          if (opts.headers instanceof Headers) {
+            if (!opts.headers.has('X-CSRFToken')) opts.headers.set('X-CSRFToken', csrfToken);
+          } else {
+            if (!opts.headers['X-CSRFToken']) opts.headers['X-CSRFToken'] = csrfToken;
+          }
+        }
+        return _origFetch.call(this, url, opts);
+      };
+    })();
   </script>
   {% block scripts %}{% endblock %}
 </body>

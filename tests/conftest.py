@@ -20,6 +20,7 @@ def _base_env(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-elevenlabs-key")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("WTF_CSRF_ENABLED", "0")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("VOICES_FILE", str(ROOT / "voices" / "voices.json"))

@@ -147,6 +147,7 @@
       {% if messages %}<div class="error">{{ messages[0] }}</div>{% endif %}
     {% endwith %}
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <input type="text" name="username" placeholder="用户名" autofocus required>
       </div>

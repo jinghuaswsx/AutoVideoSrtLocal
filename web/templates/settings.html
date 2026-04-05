@@ -23,6 +23,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
 {% endwith %}
 <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   {# ── 第一步：语音识别 ── #}
   <div class="settings-card">

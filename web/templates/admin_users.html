@@ -27,6 +27,7 @@ input:focus, select:focus { border-color: #7c6fe0; background: #fff; }
     {% if messages %}<p class="success-msg">{{ messages[0] }}</p>{% endif %}
   {% endwith %}
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="create">
     <div class="form-row">
       <div><label>用户名</label><input type="text" name="username" required></div>
@@ -55,6 +56,7 @@ input:focus, select:focus { border-color: #7c6fe0; background: #fff; }
       <td>{{ u.created_at }}</td>
       <td>
         <form method="post" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="toggle_active">
           <input type="hidden" name="user_id" value="{{ u.id }}">
           <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">

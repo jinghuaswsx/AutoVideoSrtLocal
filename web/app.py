@@ -15,9 +15,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask
 from flask_socketio import join_room
+from flask_wtf.csrf import CSRFProtect
 
 from web.extensions import socketio
 from web.auth import login_manager
+
+csrf = CSRFProtect()
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
 from web.routes.auth import bp as auth_bp
@@ -43,8 +46,15 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = secret_key
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
 
+    # CSRF 保护（测试环境可通过 WTF_CSRF_ENABLED=0 关闭）
+    if os.getenv("WTF_CSRF_ENABLED", "1") not in ("0", "false", "no"):
+        app.config["WTF_CSRF_ENABLED"] = True
+    else:
+        app.config["WTF_CSRF_ENABLED"] = False
+
     # 初始化扩展
     login_manager.init_app(app)
+    csrf.init_app(app)
     socketio.init_app(app)
 
     # 注册蓝图
