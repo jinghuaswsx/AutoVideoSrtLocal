@@ -37,3 +37,17 @@ example.mp4
 
 # Stray empty file
 AutoVideoSrt
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Node (not used by this project)
+package.json
+package-lock.json
+
+# Media & screenshots
+*.mp4
+*.png
+
+# Test notes
+testuser.md
