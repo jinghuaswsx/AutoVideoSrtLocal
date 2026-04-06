@@ -127,6 +127,8 @@ def _resolve_translate_provider(user_id: int | None) -> str:
 
 
 class PipelineRunner:
+    project_type: str = "translation"
+
     def __init__(self, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
         self.user_id = user_id
@@ -173,7 +175,7 @@ class PipelineRunner:
                     return
         except Exception as exc:
             task_state.update(task_id, status="error", error=str(exc))
-            task_state.set_expires_at(task_id, "translation")
+            task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
@@ -529,7 +531,7 @@ class PipelineRunner:
         archive_url = f"/api/tasks/{task_id}/download/capcut?variant=normal"
 
         task_state.update(task_id, variants=variants, exports=exports, status="done")
-        task_state.set_expires_at(task_id, "translation")
+        task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact(manifest_text, archive_url=archive_url))
         self._set_step(task_id, "export", "done", "CapCut 项目已导出")
         self._emit(task_id, EVT_CAPCUT_READY, {"variants": ["normal"]})

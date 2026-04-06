@@ -32,6 +32,8 @@ from web.preview_artifacts import (
 class DeTranslateRunner(PipelineRunner):
     """German-specific pipeline runner."""
 
+    project_type: str = "de_translate"
+
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
