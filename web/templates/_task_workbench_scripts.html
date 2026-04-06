@@ -6,10 +6,12 @@
     taskId: {{ task_id|tojson }},
     initialTask: {{ initial_task|tojson }},
     allowUpload: {{ 'true' if allow_upload else 'false' }},
-    detailUrlTemplate: {{ url_for('projects.detail', task_id='__TASK_ID__')|tojson }},
+    detailUrlTemplate: {{ (url_for_detail|default(url_for('projects.detail', task_id='__TASK_ID__')))|tojson }},
+    apiBase: {{ (api_base|default('/api/tasks'))|tojson }},
   };
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
+  function _apiUrl(path) { return `${TASK_WORKBENCH_CONFIG.apiBase}/${taskId}${path || ''}`; }
   let currentTask = TASK_WORKBENCH_CONFIG.initialTask;
   const _userTranslatePref = {{ (translate_pref or 'openrouter')|tojson }};
   let refreshTimer = null;
@@ -336,7 +338,7 @@
     socket.emit("join_task", { task_id: taskId });
 
     try {
-      const response = await fetch(`/api/tasks/${taskId}/start`, {
+      const response = await fetch(_apiUrl('/start'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -403,7 +405,7 @@
 
   async function refreshTaskState() {
     if (!taskId) return;
-    const res = await fetch(`/api/tasks/${taskId}`);
+    const res = await fetch(_apiUrl());
     if (!res.ok) return;
     currentTask = await res.json();
     renderTaskHero();
@@ -617,7 +619,7 @@
 
   document.getElementById("confirmAlignment").addEventListener("click", async () => {
     const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
-    await fetch(`/api/tasks/${taskId}/alignment`, {
+    await fetch(_apiUrl('/alignment'), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ break_after: breakAfter }),
@@ -641,14 +643,14 @@
   }
 
   document.getElementById("confirmTranslate").addEventListener("click", async () => {
-    const res = await fetch(`/api/tasks/${taskId}`);
+    const res = await fetch(_apiUrl());
     currentTask = await res.json();
     const originalSegments = currentTask.segments || currentTask.script_segments || [];
     const segments = [...document.querySelectorAll(".segment-translated")].map((textarea, index) => ({
       ...(originalSegments[index] || {}),
       translated: textarea.value,
     }));
-    await fetch(`/api/tasks/${taskId}/segments`, {
+    await fetch(_apiUrl('/segments'), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segments }),
@@ -726,7 +728,7 @@
       if (!confirm(`从「${stepName}」步骤重新开始？前面已完成的结果保留不变。`)) return;
       btn.disabled = true;
       btn.textContent = "启动中…";
-      const res = await fetch(`/api/tasks/${taskId}/resume`, {
+      const res = await fetch(_apiUrl('/resume'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ start_step: step }),
@@ -746,10 +748,10 @@
   function renderResultPanelFromTask() {
     if (!currentTask) return;
     const downloads = {};
-    if (currentTask.result?.hard_video) downloads.hard = `/api/tasks/${taskId}/download/hard`;
-    if (currentTask.result?.soft_video) downloads.soft = `/api/tasks/${taskId}/download/soft`;
-    if (currentTask.srt_path) downloads.srt = `/api/tasks/${taskId}/download/srt`;
-    if (currentTask.exports?.capcut_archive) downloads.capcut = `/api/tasks/${taskId}/download/capcut`;
+    if (currentTask.result?.hard_video) downloads.hard = _apiUrl('/download/hard');
+    if (currentTask.result?.soft_video) downloads.soft = _apiUrl('/download/soft');
+    if (currentTask.srt_path) downloads.srt = _apiUrl('/download/srt');
+    if (currentTask.exports?.capcut_archive) downloads.capcut = _apiUrl('/download/capcut');
     renderDownloads(downloads);
     updateHeroDownloadBar(downloads);
   }
@@ -850,7 +852,7 @@
   }
 
   function artifactUrl(name, variantKey = null) {
-    const url = new URL(`/api/tasks/${taskId}/artifact/${encodeURIComponent(name)}`, window.location.origin);
+    const url = new URL(_apiUrl(`/artifact/${encodeURIComponent(name)}`), window.location.origin);
     if (variantKey) url.searchParams.set("variant", variantKey);
     return url.pathname + url.search;
   }
@@ -1014,7 +1016,7 @@
     try {
       // 预选模式：首次翻译，调用 start-translate
       if (currentTask && (currentTask._translate_pre_select || !currentTask.localized_translation)) {
-        const res = await fetch(`/api/tasks/${taskId}/start-translate`, {
+        const res = await fetch(_apiUrl('/start-translate'), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText, model_provider: modelProvider }),
@@ -1028,7 +1030,7 @@
         return;
       }
       // 重新翻译模式
-      const res = await fetch(`/api/tasks/${taskId}/retranslate`, {
+      const res = await fetch(_apiUrl('/retranslate'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt_id: _selectedPromptId, prompt_text: promptText, model_provider: modelProvider }),
@@ -1076,7 +1078,7 @@
 
   async function selectTranslation(index) {
     if (!taskId) return;
-    await fetch(`/api/tasks/${taskId}/select-translation`, {
+    await fetch(_apiUrl('/select-translation'), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ index }),
