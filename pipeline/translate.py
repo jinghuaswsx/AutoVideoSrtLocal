@@ -119,17 +119,22 @@ def generate_tts_script(
     provider: str = "openrouter",
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
+    messages_builder=None,
+    response_format_override=None,
+    validator=None,
 ) -> dict:
     client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
+    rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
     if provider != "doubao":
-        extra_body["response_format"] = TTS_SCRIPT_RESPONSE_FORMAT
+        extra_body["response_format"] = rf
     if provider == "openrouter":
         extra_body["plugins"] = [{"id": "response-healing"}]
 
+    builder = messages_builder or build_tts_script_messages
     response = client.chat.completions.create(
         model=model,
-        messages=build_tts_script_messages(localized_translation),
+        messages=builder(localized_translation),
         temperature=0.2,
         max_tokens=4096,
         **( {"extra_body": extra_body} if extra_body else {}),
@@ -138,7 +143,8 @@ def generate_tts_script(
     log.info("tts_script raw response (provider=%s): %s", provider, raw_content[:2000])
     payload = parse_json_content(raw_content)
     log.info("tts_script parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
-    result = validate_tts_script(payload)
+    validate_fn = validator or validate_tts_script
+    result = validate_fn(payload)
     # 提取 token 用量
     usage = getattr(response, "usage", None)
     if usage:
