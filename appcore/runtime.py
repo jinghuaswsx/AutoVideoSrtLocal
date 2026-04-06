@@ -6,9 +6,12 @@ Uses EventBus to publish status events consumed by any adapter (web, desktop).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
+
+log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
@@ -73,7 +76,7 @@ def _upload_artifacts_to_tos(task: dict, task_id: str) -> None:
             import appcore.task_state as _ts
             _ts.update(task_id, tos_uploads=tos_uploads)
     except Exception:
-        pass  # TOS upload never blocks pipeline completion
+        log.warning("[runtime] TOS artifact upload failed for task %s", task_id, exc_info=True)
 
 
 def _save_json(task_dir: str, filename: str, data) -> None:

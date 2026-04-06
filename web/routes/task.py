@@ -323,8 +323,13 @@ def _send_with_range(path: str):
             end = int(ranges[1]) if ranges[1] else file_size - 1
         except (ValueError, IndexError):
             start, end = 0, file_size - 1
+        start = max(0, start)
         end = min(end, file_size - 1)
-        status = 206
+        if start > end:
+            start, end = 0, file_size - 1
+            status = 200
+        else:
+            status = 206
 
     length = end - start + 1
 

@@ -134,3 +134,65 @@ class TestSubtitleTruncationWarning:
         truncation_warnings = [r for r in caplog.records
                                if "truncat" in r.message.lower() or "截断" in r.message]
         assert len(truncation_warnings) == 0
+
+
+# ── 5. HTTP Range 请求健壮性 ──
+
+class TestRangeRequest:
+    """task._send_with_range 应安全处理异常 Range 头。"""
+
+    @pytest.fixture
+    def client_with_file(self, monkeypatch, tmp_path):
+        """创建带测试文件的 client。"""
+        fake_user = {"id": 1, "username": "test", "role": "admin", "is_active": 1}
+        monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
+
+        # 创建测试文件
+        test_file = tmp_path / "test.mp3"
+        test_file.write_bytes(b"x" * 1000)
+
+        from web.app import create_app
+        app = create_app()
+        c = app.test_client()
+        with c.session_transaction() as sess:
+            sess["_user_id"] = "1"
+            sess["_fresh"] = True
+
+        fake_task = {
+            "_user_id": 1,
+            "task_dir": str(tmp_path),
+            "preview_files": {"audio_extract": str(test_file)},
+        }
+        monkeypatch.setattr("web.routes.task.store.get", lambda tid: fake_task)
+        return c
+
+    def test_valid_range_returns_206(self, client_with_file):
+        resp = client_with_file.get(
+            "/api/tasks/test-id/artifact/audio_extract",
+            headers={"Range": "bytes=0-99"},
+        )
+        assert resp.status_code == 206
+        assert resp.content_length == 100
+
+    def test_inverted_range_returns_200(self, client_with_file):
+        """start > end 应降级为完整 200 响应。"""
+        resp = client_with_file.get(
+            "/api/tasks/test-id/artifact/audio_extract",
+            headers={"Range": "bytes=999-0"},
+        )
+        assert resp.status_code == 200
+        assert resp.content_length == 1000
+
+    def test_out_of_bounds_range_clamped(self, client_with_file):
+        """超出文件大小的 end 应被夹紧。"""
+        resp = client_with_file.get(
+            "/api/tasks/test-id/artifact/audio_extract",
+            headers={"Range": "bytes=0-99999"},
+        )
+        assert resp.status_code == 206
+        assert resp.content_length == 1000
+
+    def test_no_range_returns_200(self, client_with_file):
+        resp = client_with_file.get("/api/tasks/test-id/artifact/audio_extract")
+        assert resp.status_code == 200
+        assert resp.content_length == 1000
