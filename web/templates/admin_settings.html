@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+{% block title %}系统设置 — AutoVideoSrt{% endblock %}
+{% block page_title %}系统设置{% endblock %}
+{% block extra_style %}
+.settings-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 24px; max-width: 600px; }
+.settings-card h2 { font-size: 16px; font-weight: 700; color: var(--text-main, #111827); margin-bottom: 20px; }
+.field-group { margin-bottom: 16px; }
+.field-group label { display: block; color: var(--text-muted, #6b7280); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.field-row { display: flex; align-items: center; gap: 8px; }
+.field-row input { width: 100px; background: var(--bg-input, #f9fafb); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 8px; color: var(--text-main, #111827); padding: 8px 10px; font-size: 14px; font-family: inherit; outline: none; text-align: center; }
+.field-row input:focus { border-color: #7c6fe0; background: var(--bg-card, #fff); }
+.field-row .unit { color: var(--text-muted, #6b7280); font-size: 13px; }
+.field-hint { color: var(--text-muted, #9ca3af); font-size: 12px; margin-top: 4px; }
+.section-divider { border-top: 1px solid var(--border-main, #e5e7eb); margin: 20px 0; }
+.success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
+{% endblock %}
+{% block content %}
+<div class="settings-card">
+  <h2>项目保留周期</h2>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}<p class="success-msg">{{ messages[0] }}</p>{% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="field-group">
+      <label>全局默认</label>
+      <div class="field-row">
+        <input type="number" name="retention_default_days" min="1" step="1"
+               value="{{ (current.get('default', 168) / 24) | int }}">
+        <span class="unit">天</span>
+      </div>
+      <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算</div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <p style="color:var(--text-muted,#6b7280);font-size:13px;margin-bottom:16px;">按模块覆盖（留空表示使用全局默认）</p>
+
+    {% for ptype, label in project_types.items() %}
+    <div class="field-group">
+      <label>{{ label }}</label>
+      <div class="field-row">
+        <input type="number" name="retention_{{ ptype }}_days" min="1" step="1"
+               value="{% if current.get(ptype) is not none %}{{ (current[ptype] / 24) | int }}{% endif %}"
+               placeholder="默认">
+        <span class="unit">天</span>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="section-divider"></div>
+
+    <button type="submit" style="background:var(--primary-gradient,#3b82f6);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;">
+      保存
+    </button>
+  </form>
+</div>
+{% endblock %}

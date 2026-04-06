@@ -323,6 +323,9 @@
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
       </a>
+      <a href="{{ url_for('admin.settings') }}" {% if request.endpoint == 'admin.settings' %}class="active"{% endif %}>
+        <span class="nav-icon">⚙️</span> 系统设置
+      </a>
       {% endif %}
     </nav>
     <div class="sidebar-footer">
