@@ -179,65 +179,81 @@ def update(task_id: str, **kwargs):
 
 
 def update_variant(task_id: str, variant: str, **kwargs):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            variants = task.setdefault("variants", {})
+            variant_state = dict(variants.get(variant, _empty_variant_state(variant)))
+            variant_state.update(kwargs)
+            variants[variant] = variant_state
     if task:
-        variants = task.setdefault("variants", {})
-        variant_state = dict(variants.get(variant, _empty_variant_state(variant)))
-        variant_state.update(kwargs)
-        variants[variant] = variant_state
         _sync_task_to_db(task_id)
 
 
 def set_step(task_id: str, step: str, status: str):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["steps"][step] = status
     if task:
-        task["steps"][step] = status
         _sync_task_to_db(task_id)
 
 
 def set_step_message(task_id: str, step: str, message: str):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.setdefault("step_messages", {})[step] = message
     if task:
-        task.setdefault("step_messages", {})[step] = message
         _sync_task_to_db(task_id)
 
 
 def set_current_review_step(task_id: str, step: str):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["current_review_step"] = step
     if task:
-        task["current_review_step"] = step
         _sync_task_to_db(task_id)
 
 
 def set_artifact(task_id: str, step: str, payload: dict):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.setdefault("artifacts", {})[step] = payload
     if task:
-        task.setdefault("artifacts", {})[step] = payload
         _sync_task_to_db(task_id)
 
 
 def set_preview_file(task_id: str, name: str, path: str):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.setdefault("preview_files", {})[name] = path
     if task:
-        task.setdefault("preview_files", {})[name] = path
         _sync_task_to_db(task_id)
 
 
 def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            variants = task.setdefault("variants", {})
+            variant_state = variants.setdefault(variant, _empty_variant_state(variant))
+            variant_state.setdefault("artifacts", {})[step] = payload
     if task:
-        variants = task.setdefault("variants", {})
-        variant_state = variants.setdefault(variant, _empty_variant_state(variant))
-        variant_state.setdefault("artifacts", {})[step] = payload
         _sync_task_to_db(task_id)
 
 
 def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            variants = task.setdefault("variants", {})
+            variant_state = variants.setdefault(variant, _empty_variant_state(variant))
+            variant_state.setdefault("preview_files", {})[name] = path
     if task:
-        variants = task.setdefault("variants", {})
-        variant_state = variants.setdefault(variant, _empty_variant_state(variant))
-        variant_state.setdefault("preview_files", {})[name] = path
         _sync_task_to_db(task_id)
 
 
@@ -279,29 +295,33 @@ def _localized_translation_from_segments(task: dict, segments: list) -> dict:
 
 
 def confirm_segments(task_id: str, segments: list):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["segments"] = segments
+            if not task.get("script_segments"):
+                task["script_segments"] = segments
+            task["localized_translation"] = _localized_translation_from_segments(task, segments)
+            variants = task.setdefault("variants", {})
+            if "normal" in variants:
+                variants["normal"]["localized_translation"] = task["localized_translation"]
+            task["_segments_confirmed"] = True
     if task:
-        task["segments"] = segments
-        if not task.get("script_segments"):
-            task["script_segments"] = segments
-        task["localized_translation"] = _localized_translation_from_segments(task, segments)
-        variants = task.setdefault("variants", {})
-        if "normal" in variants:
-            variants["normal"]["localized_translation"] = task["localized_translation"]
-        task["_segments_confirmed"] = True
         _sync_task_to_db(task_id)
 
 
 def confirm_alignment(task_id: str, break_after: list, script_segments: list):
-    task = _tasks.get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["alignment"] = {
+                "break_after": break_after,
+                "script_segments": script_segments,
+            }
+            task["script_segments"] = script_segments
+            task["segments"] = script_segments
+            task["_alignment_confirmed"] = True
     if task:
-        task["alignment"] = {
-            "break_after": break_after,
-            "script_segments": script_segments,
-        }
-        task["script_segments"] = script_segments
-        task["segments"] = script_segments
-        task["_alignment_confirmed"] = True
         _sync_task_to_db(task_id)
 
 
@@ -335,35 +355,44 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
         "_user_id": user_id,
         "display_name": "",
     }
-    _tasks[task_id] = task
+    with _lock:
+        _tasks[task_id] = task
     _sync_task_to_db(task_id)
     return task
 
 
 def set_keyframes(task_id: str, keyframes: list[str]) -> None:
     """设置关键帧路径列表。"""
-    task = get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["keyframes"] = keyframes
     if task:
-        task["keyframes"] = keyframes
         _sync_task_to_db(task_id)
 
 
 def set_copy(task_id: str, copy_data: dict) -> None:
     """设置生成的文案数据，并追加到历史。"""
-    task = get(task_id)
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task["copy"] = copy_data
+            task.setdefault("copy_history", []).append(copy_data)
     if task:
-        task["copy"] = copy_data
-        task.setdefault("copy_history", []).append(copy_data)
         _sync_task_to_db(task_id)
 
 
 def update_copy_segment(task_id: str, index: int, segment: dict) -> None:
     """更新文案中的某一段。"""
-    task = get(task_id)
-    if task and task.get("copy") and 0 <= index < len(task["copy"].get("segments", [])):
-        task["copy"]["segments"][index] = segment
-        # 重建 full_text
-        task["copy"]["full_text"] = " ".join(
-            s["text"] for s in task["copy"]["segments"]
-        )
+    with _lock:
+        task = _tasks.get(task_id)
+        if task and task.get("copy") and 0 <= index < len(task["copy"].get("segments", [])):
+            task["copy"]["segments"][index] = segment
+            task["copy"]["full_text"] = " ".join(
+                s["text"] for s in task["copy"]["segments"]
+            )
+            _needs_sync = True
+        else:
+            _needs_sync = False
+    if _needs_sync:
         _sync_task_to_db(task_id)

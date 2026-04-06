@@ -99,3 +99,100 @@ def test_set_variant_preview_file_stores_path():
     ts.create("t1", "/v.mp4", "/d")
     ts.set_variant_preview_file("t1", "hook_cta", "tts_audio", "/task/t1/hook_tts.wav")
     assert ts.get("t1")["variants"]["hook_cta"]["preview_files"]["tts_audio"] == "/task/t1/hook_tts.wav"
+
+
+# ── 并发安全测试 ──────────────────────────────────────
+
+import threading
+
+
+def test_concurrent_set_step_no_exception():
+    """10 线程并发调用 set_step 不抛异常、不丢数据。"""
+    ts.create("tc1", "/v.mp4", "/d")
+    errors = []
+    steps = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+
+    def worker(step, status):
+        try:
+            for _ in range(50):
+                ts.set_step("tc1", step, status)
+                ts.set_step_message("tc1", step, f"msg-{status}")
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(steps[i % len(steps)], f"s{i}")) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"并发 set_step 出错: {errors}"
+    task = ts.get("tc1")
+    # 所有 step 键仍然存在
+    for s in steps:
+        assert s in task["steps"]
+
+
+def test_concurrent_create_copywriting_no_data_loss():
+    """并发 create_copywriting 不丢失任务。"""
+    errors = []
+    ids = [f"cw_{i}" for i in range(20)]
+
+    def worker(tid):
+        try:
+            ts.create_copywriting(tid, "/v.mp4", f"/d/{tid}", "test.mp4", user_id=1)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(tid,)) for tid in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"并发 create_copywriting 出错: {errors}"
+    for tid in ids:
+        assert ts.get(tid) is not None, f"任务 {tid} 丢失"
+
+
+def test_concurrent_update_variant_no_exception():
+    """并发 update_variant 不抛异常。"""
+    ts.create("tv1", "/v.mp4", "/d")
+    errors = []
+
+    def worker(i):
+        try:
+            for _ in range(50):
+                ts.update_variant("tv1", "normal", **{f"key_{i}": f"val_{i}"})
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"并发 update_variant 出错: {errors}"
+
+
+def test_concurrent_confirm_segments_no_exception():
+    """并发 confirm_segments 不抛异常。"""
+    ts.create("ts1", "/v.mp4", "/d")
+    errors = []
+
+    def worker(i):
+        try:
+            ts.confirm_segments("ts1", [{"index": 0, "translated": f"Hello {i}"}])
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"并发 confirm_segments 出错: {errors}"
+    task = ts.get("ts1")
+    assert task["_segments_confirmed"] is True

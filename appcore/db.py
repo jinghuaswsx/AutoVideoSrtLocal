@@ -1,6 +1,7 @@
 """MySQL connection pool. All other appcore modules import from here."""
 from __future__ import annotations
 import json
+import threading
 from typing import Any
 
 import pymysql
@@ -10,24 +11,28 @@ from dbutils.pooled_db import PooledDB
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
 _pool: PooledDB | None = None
+_pool_lock = threading.Lock()
 
 
 def _get_pool() -> PooledDB:
     global _pool
-    if _pool is None:
-        _pool = PooledDB(
-            creator=pymysql,
-            maxconnections=10,
-            mincached=2,
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME,
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=True,
-        )
+    if _pool is not None:
+        return _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = PooledDB(
+                creator=pymysql,
+                maxconnections=10,
+                mincached=2,
+                host=DB_HOST,
+                port=DB_PORT,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                database=DB_NAME,
+                charset="utf8mb4",
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=True,
+            )
     return _pool
 
 
