@@ -710,15 +710,15 @@ RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle"
 @login_required
 def resume_from_step(task_id):
     """从指定步骤重新开始流水线，该步骤之前已完成的结果保留不动。"""
-    task = store.get(task_id)
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
-
     row = db_query_one(
         "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
         (task_id, current_user.id),
     )
     if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = store.get(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}

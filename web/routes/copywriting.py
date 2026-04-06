@@ -210,6 +210,10 @@ def upload():
 @login_required
 def update_inputs(task_id: str):
     """更新商品信息。"""
+    task = task_state.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify(error="任务不存在"), 404
+
     data = request.get_json()
     if not data:
         return jsonify(error="缺少数据"), 400
@@ -419,6 +423,9 @@ def save_segments(task_id: str):
     return jsonify(ok=True)
 
 
+ALLOWED_FIX_STATUSES = {"pending"}
+
+
 @bp.route("/api/copywriting/<task_id>/fix-step", methods=["POST"])
 @login_required
 def fix_step(task_id: str):
@@ -429,8 +436,11 @@ def fix_step(task_id: str):
     data = request.get_json(silent=True) or {}
     step = data.get("step")
     status = data.get("status")
-    if step and status and step in task.get("steps", {}):
-        task_state.set_step(task_id, step, status)
+    if not step or not status or step not in task.get("steps", {}):
+        return jsonify(error="无效的步骤参数"), 400
+    if status not in ALLOWED_FIX_STATUSES:
+        return jsonify(error="不允许设置该状态"), 400
+    task_state.set_step(task_id, step, status)
     return jsonify(ok=True)
 
 

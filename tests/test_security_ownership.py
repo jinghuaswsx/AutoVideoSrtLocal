@@ -95,3 +95,109 @@ class TestAdminUserIdValidation:
                                  data={"action": "toggle_active", "user_id": "42", "active": "1"},
                                  follow_redirects=False)
         assert resp.status_code == 302  # redirect to users page
+
+
+class TestCopywritingInputsOwnership:
+    """copywriting update_inputs 应校验任务归属。"""
+
+    def test_update_inputs_wrong_user_returns_404(self, user1_client, monkeypatch):
+        """user_id=1 不能修改 user_id=2 的 copywriting 商品信息。"""
+        import appcore.task_state as ts
+        ts._tasks["cw-other"] = {"id": "cw-other", "_user_id": 2, "type": "copywriting"}
+        monkeypatch.setattr("web.routes.copywriting.task_state", ts)
+
+        resp = user1_client.put("/api/copywriting/cw-other/inputs",
+                                json={"product_title": "hacked"})
+        assert resp.status_code == 404
+        ts._tasks.pop("cw-other", None)
+
+    def test_update_inputs_own_task_succeeds(self, user1_client, monkeypatch):
+        """user_id=1 可以修改自己的 copywriting 商品信息。"""
+        import appcore.task_state as ts
+        ts._tasks["cw-mine"] = {"id": "cw-mine", "_user_id": 1, "type": "copywriting"}
+        monkeypatch.setattr("web.routes.copywriting.task_state", ts)
+        # mock DB
+        monkeypatch.setattr("web.routes.copywriting.get_connection",
+                            lambda: _FakeConn())
+
+        resp = user1_client.put("/api/copywriting/cw-mine/inputs",
+                                json={"product_title": "legit"})
+        assert resp.status_code == 200
+        ts._tasks.pop("cw-mine", None)
+
+
+class TestFixStepRestriction:
+    """copywriting fix_step 应限制可设置的状态值。"""
+
+    def test_fix_step_rejects_done_status(self, user1_client, monkeypatch):
+        """不允许前端将步骤设为 done。"""
+        import appcore.task_state as ts
+        ts._tasks["cw-fs"] = {
+            "id": "cw-fs", "_user_id": 1, "type": "copywriting",
+            "steps": {"keyframe": "running"},
+        }
+        monkeypatch.setattr("web.routes.copywriting.task_state", ts)
+
+        resp = user1_client.post("/api/copywriting/cw-fs/fix-step",
+                                 json={"step": "keyframe", "status": "done"})
+        assert resp.status_code == 400
+        ts._tasks.pop("cw-fs", None)
+
+    def test_fix_step_allows_pending(self, user1_client, monkeypatch):
+        """允许将步骤重置为 pending。"""
+        import appcore.task_state as ts
+        ts._tasks["cw-fs2"] = {
+            "id": "cw-fs2", "_user_id": 1, "type": "copywriting",
+            "steps": {"keyframe": "error"},
+        }
+        monkeypatch.setattr("web.routes.copywriting.task_state", ts)
+
+        resp = user1_client.post("/api/copywriting/cw-fs2/fix-step",
+                                 json={"step": "keyframe", "status": "pending"})
+        assert resp.status_code == 200
+        ts._tasks.pop("cw-fs2", None)
+
+
+class TestResumeOwnership:
+    """task resume_from_step 应先验证归属。"""
+
+    def test_resume_wrong_user_returns_404(self, user1_client, monkeypatch):
+        """user_id=1 不能 resume user_id=2 的任务。"""
+        # DB 查询返回空（不属于 user1）
+        monkeypatch.setattr("web.routes.task.db_query_one", lambda *a, **kw: None)
+        import appcore.task_state as ts
+        ts._tasks["other-task"] = {"id": "other-task", "_user_id": 2, "status": "error"}
+        monkeypatch.setattr("web.routes.task.store.get", lambda tid: ts._tasks.get(tid))
+
+        resp = user1_client.post("/api/tasks/other-task/resume",
+                                 json={"start_step": "translate"})
+        assert resp.status_code == 404
+        ts._tasks.pop("other-task", None)
+
+
+# ── 辅助 ──
+
+class _FakeConn:
+    """最小化的假数据库连接，用于 update_inputs 测试。"""
+    def cursor(self):
+        return _FakeCursor()
+    def commit(self):
+        pass
+    def close(self):
+        pass
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        pass
+
+class _FakeCursor:
+    def execute(self, *args, **kwargs):
+        pass
+    def fetchone(self):
+        return None
+    def fetchall(self):
+        return []
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        pass
