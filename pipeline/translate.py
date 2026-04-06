@@ -56,20 +56,6 @@ def get_model_display_name(provider: str, user_id: int | None = None) -> str:
     return model
 
 
-SYSTEM_PROMPT = """You are an expert copywriter specializing in TikTok e-commerce advertising for the US market.
-
-Your task is to translate Chinese short video scripts into English copy that:
-1. Sounds completely native, written by an American creator, not translated
-2. Matches the energy and style of the original
-3. Uses natural spoken American English
-4. Adapts cultural references into US TikTok equivalents
-5. Maintains persuasive selling power
-6. Keeps the same sentence count and rhythm as the original for audio and video sync
-
-Output only a valid JSON array.
-Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}]"""
-
-
 def parse_json_content(raw: str):
     if raw is None:
         raise TypeError("LLM 返回内容为 None")
@@ -165,44 +151,3 @@ def generate_tts_script(
     return result
 
 
-def translate_segments(
-    segments: List[Dict],
-    *,
-    provider: str = "openrouter",
-    user_id: int | None = None,
-    openrouter_api_key: str | None = None,
-) -> List[Dict]:
-    if not segments:
-        return segments
-
-    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-
-    items = [{"index": i, "text": seg["text"]} for i, seg in enumerate(segments)]
-    user_prompt = f"""Translate these Chinese TikTok ad script segments to native American English.
-Each segment is one spoken sentence or phrase. Keep the same count and order.
-
-Segments:
-{json.dumps(items, ensure_ascii=False, indent=2)}
-
-Remember: output only the JSON array."""
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.7,
-        max_tokens=4096,
-    )
-
-    translations = parse_json_content(response.choices[0].message.content)
-    translation_map = {item["index"]: item["translated"] for item in translations}
-
-    result = []
-    for i, seg in enumerate(segments):
-        seg_copy = dict(seg)
-        seg_copy["translated"] = translation_map.get(i, seg["text"])
-        result.append(seg_copy)
-
-    return result
