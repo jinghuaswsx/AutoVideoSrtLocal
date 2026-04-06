@@ -94,3 +94,80 @@ class TestVideoCreationUploadValidation:
                            data={"video": _make_file(f"malicious{ext}")},
                            content_type="multipart/form-data")
         assert resp.status_code == 400
+
+
+# ── copywriting upload (/api/copywriting/upload) ──
+
+class TestCopywritingUploadValidation:
+    """copywriting 上传端点应校验视频扩展名。"""
+
+    @pytest.mark.parametrize("ext", REJECTED_EXTS)
+    def test_rejects_non_video_extensions(self, client, ext):
+        resp = client.post("/api/copywriting/upload",
+                           data={"video": _make_file(f"malicious{ext}")},
+                           content_type="multipart/form-data")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+
+# ── 图片扩展名校验 (单元测试) ──
+
+class TestImageExtensionValidation:
+    """web.upload_util.validate_image_extension 单元测试。"""
+
+    def test_accepts_jpg(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("photo.jpg") is True
+
+    def test_accepts_png(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("photo.png") is True
+
+    def test_accepts_webp(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("photo.webp") is True
+
+    def test_rejects_exe(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("malware.exe") is False
+
+    def test_rejects_php(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("shell.php") is False
+
+    def test_rejects_empty(self):
+        from web.upload_util import validate_image_extension
+        assert validate_image_extension("") is False
+
+
+# ── 文件名清洗 (单元测试) ──
+
+class TestSecureFilename:
+    """web.upload_util.secure_filename_component 单元测试。"""
+
+    def test_strips_path_traversal(self):
+        from web.upload_util import secure_filename_component
+        result = secure_filename_component("../../etc/passwd")
+        assert "/" not in result
+        assert ".." not in result or result.startswith("_")
+
+    def test_preserves_normal_name(self):
+        from web.upload_util import secure_filename_component
+        assert secure_filename_component("photo.jpg") == "photo.jpg"
+
+    def test_truncates_long_name(self):
+        from web.upload_util import secure_filename_component
+        long_name = "a" * 200 + ".jpg"
+        result = secure_filename_component(long_name)
+        assert len(result) <= 100
+
+    def test_replaces_special_chars(self):
+        from web.upload_util import secure_filename_component
+        result = secure_filename_component("file name (1).jpg")
+        assert " " not in result
+        assert "(" not in result
+
+    def test_empty_returns_unnamed(self):
+        from web.upload_util import secure_filename_component
+        assert secure_filename_component("") == "unnamed"

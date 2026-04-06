@@ -113,6 +113,10 @@ def upload():
     if not file or not file.filename:
         return jsonify(error="请上传视频文件"), 400
 
+    from web.upload_util import validate_video_extension
+    if not validate_video_extension(file.filename):
+        return jsonify(error="不支持的视频格式"), 400
+
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
@@ -175,6 +179,9 @@ def upload():
     # 处理商品主图上传
     product_image = request.files.get("product_image")
     if product_image and product_image.filename:
+        from web.upload_util import validate_image_extension
+        if not validate_image_extension(product_image.filename):
+            return jsonify(error="不支持的图片格式"), 400
         img_path = os.path.join(task_dir, "product_image.jpg")
         product_image.save(img_path)
         conn = get_connection()

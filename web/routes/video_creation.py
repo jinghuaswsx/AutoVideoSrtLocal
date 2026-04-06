@@ -105,7 +105,9 @@ def upload():
     ref_image_path = None
     ref_image = request.files.get("ref_image")
     if ref_image and ref_image.filename:
-        ref_image_path = os.path.join(task_dir, f"ref_{ref_image.filename}")
+        from web.upload_util import secure_filename_component
+        safe_name = secure_filename_component(ref_image.filename)
+        ref_image_path = os.path.join(task_dir, f"ref_{safe_name}")
         ref_image.save(ref_image_path)
 
     display_name = os.path.splitext(video_filename)[0]
