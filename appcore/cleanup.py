@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 
 
 def run_cleanup() -> None:
+    # ── 清理已过期的项目 ──
     rows = query(
         "SELECT id, task_dir, user_id, state_json FROM projects "
         "WHERE expires_at < NOW() AND deleted_at IS NULL"
@@ -29,6 +30,27 @@ def run_cleanup() -> None:
             log.info("Cleaned up expired project %s", task_id)
         except Exception as e:
             log.error("Cleanup failed for %s: %s", task_id, e)
+
+    # ── 僵尸项目兜底清理 ──
+    zombie_rows = query(
+        "SELECT id, task_dir, user_id, state_json FROM projects "
+        "WHERE expires_at IS NULL "
+        "AND status NOT IN ('uploaded', 'running') "
+        "AND created_at < NOW() - INTERVAL 30 DAY "
+        "AND deleted_at IS NULL"
+    )
+    for row in zombie_rows:
+        task_id = row["id"]
+        try:
+            delete_task_storage(row)
+            execute(
+                "UPDATE projects SET deleted_at = NOW(), status = 'expired' WHERE id = %s",
+                (task_id,),
+            )
+            log.info("Cleaned up zombie project %s", task_id)
+        except Exception as e:
+            log.error("Zombie cleanup failed for %s: %s", task_id, e)
+
     try:
         delete_stale_upload_objects()
     except Exception as e:

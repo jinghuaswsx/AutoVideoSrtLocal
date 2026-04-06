@@ -31,6 +31,8 @@ def test_run_cleanup_deletes_stale_orphan_upload_objects(monkeypatch):
     def fake_query(sql: str, args: tuple = ()):
         if "expires_at < NOW()" in sql:
             return []
+        if "expires_at IS NULL" in sql:
+            return []
         if "SELECT id FROM projects WHERE id IN" in sql:
             assert sorted(args) == ["task-claimed", "task-orphan"]
             return [{"id": "task-claimed"}]
@@ -46,3 +48,37 @@ def test_run_cleanup_deletes_stale_orphan_upload_objects(monkeypatch):
     cleanup.run_cleanup()
 
     assert deleted == ["uploads/1/task-orphan/demo.mp4"]
+
+
+def test_run_cleanup_handles_zombie_projects(monkeypatch):
+    """expires_at IS NULL 且非运行中且超过 30 天的项目应被清理"""
+    expired_rows = []
+    zombie_rows = [
+        {
+            "id": "zombie-task",
+            "task_dir": "",
+            "user_id": 1,
+            "state_json": "{}",
+        }
+    ]
+    updated = []
+
+    def fake_query(sql, args=()):
+        if "expires_at < NOW()" in sql:
+            return expired_rows
+        if "expires_at IS NULL" in sql:
+            return zombie_rows
+        if "SELECT id FROM projects WHERE id IN" in sql:
+            return []
+        return []
+
+    def fake_execute(sql, args=()):
+        updated.append(args)
+
+    monkeypatch.setattr(cleanup, "query", fake_query)
+    monkeypatch.setattr(cleanup, "execute", fake_execute)
+    monkeypatch.setattr(cleanup.tos_clients, "is_tos_configured", lambda: False)
+
+    cleanup.run_cleanup()
+
+    assert any("zombie-task" in str(a) for a in updated)
