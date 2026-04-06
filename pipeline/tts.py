@@ -33,15 +33,25 @@ def get_voice_by_id(voice_id: int, user_id: int) -> Dict | None:
     return get_voice_library().get_voice(voice_id, user_id)
 
 
-def generate_segment_audio(text: str, voice_id: str, output_path: str, elevenlabs_api_key: str | None = None) -> str:
+def generate_segment_audio(
+    text: str,
+    voice_id: str,
+    output_path: str,
+    elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
+) -> str:
     """生成单段音频，返回文件路径（mp3）"""
     client = _get_client(api_key=elevenlabs_api_key)
-    audio = client.text_to_speech.convert(
+    kwargs = dict(
         text=text,
         voice_id=voice_id,
-        model_id="eleven_turbo_v2_5",
+        model_id=model_id,
         output_format="mp3_44100_128",
     )
+    if language_code:
+        kwargs["language_code"] = language_code
+    audio = client.text_to_speech.convert(**kwargs)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
         for chunk in audio:
@@ -55,6 +65,8 @@ def generate_full_audio(
     output_dir: str,
     variant: str | None = None,
     elevenlabs_api_key: str | None = None,
+    model_id: str = "eleven_turbo_v2_5",
+    language_code: str | None = None,
 ) -> Dict:
     """
     为所有翻译段落生成音频并拼接成完整音轨
@@ -73,7 +85,8 @@ def generate_full_audio(
             text = seg.get("tts_text") or seg.get("translated") or seg.get("text", "")
             seg_path = os.path.join(seg_dir, f"seg_{i:04d}.mp3")
 
-            generate_segment_audio(text, voice_id, seg_path, elevenlabs_api_key=elevenlabs_api_key)
+            generate_segment_audio(text, voice_id, seg_path, elevenlabs_api_key=elevenlabs_api_key,
+                                   model_id=model_id, language_code=language_code)
             duration = _get_audio_duration(seg_path)
 
             seg_copy = dict(seg)
