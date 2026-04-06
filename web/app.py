@@ -34,6 +34,7 @@ from web.routes.text_translate import bp as text_translate_bp
 from web.routes.video_creation import bp as video_creation_bp
 from web.routes.video_review import bp as video_review_bp
 from web.routes.copywriting import bp as copywriting_bp
+from web.routes.de_translate import bp as de_translate_bp
 
 
 def create_app() -> Flask:
@@ -73,6 +74,7 @@ def create_app() -> Flask:
     app.register_blueprint(text_translate_bp)
     app.register_blueprint(video_creation_bp)
     app.register_blueprint(video_review_bp)
+    app.register_blueprint(de_translate_bp)
 
     # WebSocket 事件
     @socketio.on("join_task")
@@ -89,6 +91,18 @@ def create_app() -> Flask:
 
     @socketio.on("join_copywriting_task")
     def on_join_copywriting(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = data.get("task_id")
+        if task_id:
+            from web import store
+            task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
+
+    @socketio.on("join_de_translate_task")
+    def on_join_de_translate(data):
         from flask_login import current_user
         if not current_user.is_authenticated:
             return
