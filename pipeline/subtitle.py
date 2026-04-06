@@ -205,3 +205,19 @@ def save_srt(content: str, output_path: str) -> str:
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
     return output_path
+
+
+def apply_french_punctuation(text: str) -> str:
+    """Apply French punctuation spacing rules.
+
+    - Non-breaking space (U+00A0) before ? ! : ;
+    - « text » with non-breaking spaces inside guillemets
+    - Normalize existing spaces around these punctuation marks
+    """
+    nbsp = "\u00A0"
+    # Normalize: remove any existing spaces before high punctuation, then add NBSP
+    text = re.sub(r'\s*([?!;:])', rf'{nbsp}\1', text)
+    # Guillemets: « word » with NBSP inside
+    text = re.sub(r'«\s*', f'«{nbsp}', text)
+    text = re.sub(r'\s*»', f'{nbsp}»', text)
+    return text

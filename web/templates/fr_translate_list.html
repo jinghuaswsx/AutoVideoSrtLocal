@@ -1,0 +1,113 @@
+{% extends "layout.html" %}
+{% block title %}视频翻译（法语） - AutoVideoSrt{% endblock %}
+{% block page_title %}视频翻译（法语）{% endblock %}
+{% block extra_style %}
+<style>
+  .upload-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 24px; }
+  .upload-form label { font-size: 13px; font-weight: 600; margin-bottom: 4px; display: block; }
+  .upload-form select, .upload-form input[type="file"] {
+    padding: 8px 12px; border: 1px solid var(--border-main); border-radius: 8px;
+    background: var(--bg-card); color: var(--text-main); font-size: 14px;
+  }
+  .upload-form button {
+    padding: 8px 20px; border: none; border-radius: 8px;
+    background: var(--primary-gradient); color: #fff; font-weight: 600;
+    cursor: pointer; font-size: 14px;
+  }
+  .upload-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .project-card {
+    background: var(--bg-card); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-main); transition: box-shadow 0.15s;
+    text-decoration: none; color: inherit; display: block;
+  }
+  .project-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .project-thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #e5e7eb; display: block; }
+  .project-info { padding: 12px 14px; }
+  .project-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .project-meta { font-size: 12px; color: #9ca3af; }
+  .project-status { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .project-status.done { background: #dcfce7; color: #16a34a; }
+  .project-status.error { background: #fee2e2; color: #dc2626; }
+  .project-status.running { background: #dbeafe; color: #2563eb; }
+  .empty-state { text-align: center; padding: 60px 20px; color: #9ca3af; }
+</style>
+{% endblock %}
+{% block content %}
+<p class="page-subtitle">上传中文或英文视频，一键翻译为法语本地化视频。</p>
+
+<form class="upload-form card" id="uploadForm" enctype="multipart/form-data">
+  <div>
+    <label for="sourceLanguage">源语言</label>
+    <select id="sourceLanguage" name="source_language">
+      <option value="zh" selected>中文</option>
+      <option value="en">英文</option>
+    </select>
+  </div>
+  <div>
+    <label for="videoFile">选择视频</label>
+    <input type="file" id="videoFile" name="video" accept="video/*" required />
+  </div>
+  <button type="submit" id="uploadBtn">上传并创建任务</button>
+</form>
+
+{% if projects %}
+<div class="project-grid">
+  {% for p in projects %}
+  <a class="project-card" href="/fr-translate/{{ p.id }}">
+    {% if p.thumbnail_path %}
+    <img class="project-thumb" src="/api/tasks/{{ p.id }}/thumbnail" alt="" />
+    {% else %}
+    <div class="project-thumb" style="display:flex;align-items:center;justify-content:center;font-size:32px;">🇫🇷</div>
+    {% endif %}
+    <div class="project-info">
+      <div class="project-name">{{ p.display_name or p.original_filename or p.id }}</div>
+      <div class="project-meta">
+        <span class="project-status {{ p.status or '' }}">{{ p.status or 'uploaded' }}</span>
+        · {{ p.created_at.strftime('%m/%d %H:%M') if p.created_at else '' }}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <p style="font-size:32px;margin-bottom:12px;">🇫🇷</p>
+  <p>还没有法语翻译项目，上传视频开始吧。</p>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('uploadBtn');
+  const fileInput = document.getElementById('videoFile');
+  const langSelect = document.getElementById('sourceLanguage');
+  if (!fileInput.files[0]) return;
+
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  const formData = new FormData();
+  formData.append('video', fileInput.files[0]);
+  formData.append('source_language', langSelect.value);
+
+  try {
+    const res = await fetch('/api/fr-translate/start', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '上传失败');
+    window.location.href = '/fr-translate/' + data.task_id;
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+    btn.textContent = '上传并创建任务';
+  }
+});
+</script>
+{% endblock %}
