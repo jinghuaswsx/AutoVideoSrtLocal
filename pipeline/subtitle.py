@@ -34,8 +34,9 @@ def _strip_terminal_punctuation(text: str) -> str:
     return re.sub(r"[,.!?;:]+$", "", text.strip()).strip()
 
 
-def _choose_balanced_split(words: List[str]) -> int:
-    weak_boundary_words = {"and", "or", "to", "of", "for", "with", "the", "a", "an"}
+def _choose_balanced_split(words: List[str], weak_boundary_words: set | None = None) -> int:
+    if weak_boundary_words is None:
+        weak_boundary_words = {"and", "or", "to", "of", "for", "with", "the", "a", "an"}
     best_index = max(1, len(words) // 2)
     best_score = None
 
@@ -58,13 +59,13 @@ def _choose_balanced_split(words: List[str]) -> int:
     return best_index
 
 
-def format_subtitle_chunk_text(text: str) -> str:
+def format_subtitle_chunk_text(text: str, weak_boundary_words: set | None = None) -> str:
     cleaned = capitalize_sentence(_strip_terminal_punctuation(text))
     words = cleaned.split()
     if len(words) <= 5:
         return cleaned
 
-    split_index = _choose_balanced_split(words)
+    split_index = _choose_balanced_split(words, weak_boundary_words=weak_boundary_words)
     line1 = " ".join(words[:split_index]).strip()
     line2 = " ".join(words[split_index:]).strip()
     if not line1 or not line2:
@@ -185,14 +186,14 @@ def build_srt_from_manifest(manifest: Dict) -> str:
     return "\n".join(srt_lines)
 
 
-def build_srt_from_chunks(chunks: List[Dict]) -> str:
+def build_srt_from_chunks(chunks: List[Dict], weak_boundary_words: set | None = None) -> str:
     srt_lines = []
     for i, chunk in enumerate(chunks, 1):
         srt_lines.append(str(i))
         srt_lines.append(
             f"{format_timestamp(float(chunk['start_time']))} --> {format_timestamp(float(chunk['end_time']))}"
         )
-        srt_lines.append(format_subtitle_chunk_text(chunk["text"]))
+        srt_lines.append(format_subtitle_chunk_text(chunk["text"], weak_boundary_words=weak_boundary_words))
         srt_lines.append("")
 
     return "\n".join(srt_lines)
