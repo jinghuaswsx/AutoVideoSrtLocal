@@ -24,7 +24,7 @@ from pipeline.localization import (
 )
 
 
-def _resolve_provider_config(
+def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
     api_key_override: str | None = None,
@@ -52,7 +52,7 @@ def _resolve_provider_config(
 
 def get_model_display_name(provider: str, user_id: int | None = None) -> str:
     """Return the model ID string for logging/display."""
-    _, model = _resolve_provider_config(provider, user_id)
+    _, model = resolve_provider_config(provider, user_id)
     return model
 
 
@@ -70,7 +70,7 @@ Output only a valid JSON array.
 Format: [{"index": 0, "translated": "..."}, {"index": 1, "translated": "..."}]"""
 
 
-def _parse_json_content(raw: str):
+def parse_json_content(raw: str):
     if raw is None:
         raise TypeError("LLM 返回内容为 None")
     content = raw.strip()
@@ -91,7 +91,7 @@ def generate_localized_translation(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
-    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
     if provider != "doubao":
         extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
@@ -112,7 +112,7 @@ def generate_localized_translation(
     )
     raw_content = response.choices[0].message.content
     log.info("localized_translation raw response (provider=%s): %s", provider, raw_content[:2000])
-    payload = _parse_json_content(raw_content)
+    payload = parse_json_content(raw_content)
     log.info("localized_translation parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     result = validate_localized_translation(payload)
     # 提取 token 用量
@@ -134,7 +134,7 @@ def generate_tts_script(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
-    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
     if provider != "doubao":
         extra_body["response_format"] = TTS_SCRIPT_RESPONSE_FORMAT
@@ -150,7 +150,7 @@ def generate_tts_script(
     )
     raw_content = response.choices[0].message.content
     log.info("tts_script raw response (provider=%s): %s", provider, raw_content[:2000])
-    payload = _parse_json_content(raw_content)
+    payload = parse_json_content(raw_content)
     log.info("tts_script parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     result = validate_tts_script(payload)
     # 提取 token 用量
@@ -175,7 +175,7 @@ def translate_segments(
     if not segments:
         return segments
 
-    client, model = _resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
 
     items = [{"index": i, "text": seg["text"]} for i, seg in enumerate(segments)]
     user_prompt = f"""Translate these Chinese TikTok ad script segments to native American English.
@@ -196,7 +196,7 @@ Remember: output only the JSON array."""
         max_tokens=4096,
     )
 
-    translations = _parse_json_content(response.choices[0].message.content)
+    translations = parse_json_content(response.choices[0].message.content)
     translation_map = {item["index"]: item["translated"] for item in translations}
 
     result = []

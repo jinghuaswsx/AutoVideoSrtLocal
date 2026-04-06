@@ -445,7 +445,7 @@ def generate_copy(
     Returns:
         dict: {segments, full_text, tone, target_duration}
     """
-    from pipeline.translate import _resolve_provider_config
+    from pipeline.translate import resolve_provider_config
 
     # doubao 多模态走 Ark SDK，不需要 OpenAI client
     is_doubao = provider == "doubao"
@@ -453,7 +453,7 @@ def generate_copy(
         model = _resolve_model_only(provider, user_id=user_id)
         client = None
     else:
-        client, model = _resolve_provider_config(provider, user_id=user_id)
+        client, model = resolve_provider_config(provider, user_id=user_id)
     if model_override:
         model = model_override
 
@@ -704,9 +704,9 @@ def rewrite_segment(
     Returns:
         dict: {label, text, duration_hint}
     """
-    from pipeline.translate import _resolve_provider_config
+    from pipeline.translate import resolve_provider_config
 
-    client, model = _resolve_provider_config(provider, user_id=user_id)
+    client, model = resolve_provider_config(provider, user_id=user_id)
 
     template = REWRITE_SEGMENT_PROMPT_ZH if language == "zh" else REWRITE_SEGMENT_PROMPT_EN
     if not user_instruction:

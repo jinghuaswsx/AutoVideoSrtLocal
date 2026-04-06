@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
-from pipeline.translate import _resolve_provider_config, _parse_json_content, get_model_display_name
+from pipeline.translate import resolve_provider_config, parse_json_content, get_model_display_name
 
 log = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ def translate(task_id: str):
     system_prompt = _build_translate_prompt(source_lang, target_lang, custom_prompt)
 
     try:
-        client, model = _resolve_provider_config(provider, current_user.id)
+        client, model = resolve_provider_config(provider, current_user.id)
 
         items = [{"index": s["index"], "text": s["text"]} for s in script_segments]
         user_content = (
@@ -187,7 +187,7 @@ def translate(task_id: str):
 
         raw = response.choices[0].message.content
         log.info("text_translate raw (provider=%s): %s", provider, raw[:1000])
-        payload = _parse_json_content(raw)
+        payload = parse_json_content(raw)
 
         # 兼容 list 返回
         if isinstance(payload, list):

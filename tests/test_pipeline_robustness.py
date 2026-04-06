@@ -50,32 +50,32 @@ class TestBase64SizeLimit:
 # ── 2. LLM 返回 None 防护 ──
 
 class TestLLMNoneGuard:
-    """translate._parse_json_content 和 generate_localized_translation 处理 None。"""
+    """translate.parse_json_content 和 generate_localized_translation 处理 None。"""
 
-    def test_parse_json_content_none_input(self):
+    def testparse_json_content_none_input(self):
         """None 输入不应抛 AttributeError。"""
-        from pipeline.translate import _parse_json_content
+        from pipeline.translate import parse_json_content
         with pytest.raises((json.JSONDecodeError, TypeError, ValueError)):
-            _parse_json_content(None)
+            parse_json_content(None)
 
-    def test_parse_json_content_empty_string(self):
+    def testparse_json_content_empty_string(self):
         """空字符串应抛合理的异常。"""
-        from pipeline.translate import _parse_json_content
+        from pipeline.translate import parse_json_content
         with pytest.raises((json.JSONDecodeError, ValueError)):
-            _parse_json_content("")
+            parse_json_content("")
 
-    def test_parse_json_content_valid_json(self):
+    def testparse_json_content_valid_json(self):
         """正常 JSON 应正确解析。"""
-        from pipeline.translate import _parse_json_content
-        result = _parse_json_content('[{"index": 0, "translated": "hello"}]')
+        from pipeline.translate import parse_json_content
+        result = parse_json_content('[{"index": 0, "translated": "hello"}]')
         assert isinstance(result, list)
         assert result[0]["translated"] == "hello"
 
-    def test_parse_json_content_markdown_wrapped(self):
+    def testparse_json_content_markdown_wrapped(self):
         """markdown 包裹的 JSON 应正确解析。"""
-        from pipeline.translate import _parse_json_content
+        from pipeline.translate import parse_json_content
         raw = '```json\n[{"index": 0, "translated": "hello"}]\n```'
-        result = _parse_json_content(raw)
+        result = parse_json_content(raw)
         assert isinstance(result, list)
 
 

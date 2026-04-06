@@ -5,7 +5,6 @@
 不包含任何业务执行逻辑，执行逻辑在 services/pipeline_runner.py。
 """
 import os
-import subprocess
 import uuid
 from datetime import datetime, timezone
 
@@ -35,19 +34,7 @@ from appcore.db import query_one as db_query_one, execute as db_execute, query a
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
 
-def _extract_thumbnail(video_path: str, task_dir: str) -> str | None:
-    """Extract first frame as JPEG. Returns path or None on failure."""
-    try:
-        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vframes", "1", "-f", "image2", thumb_path],
-            capture_output=True, timeout=15,
-        )
-        if os.path.exists(thumb_path):
-            return thumb_path
-    except Exception:
-        pass
-    return None
+from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
 
 def _parse_bool(value) -> bool:

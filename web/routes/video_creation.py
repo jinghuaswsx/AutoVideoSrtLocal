@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
 import uuid
 
 import eventlet
@@ -33,18 +32,11 @@ def _emit_to_task(task_id: str, event: str, payload: dict):
     socketio.emit(event, payload, room=task_id)
 
 
+from pipeline.ffutil import extract_thumbnail
+
+
 def _extract_thumbnail(video_path: str, output_dir: str) -> str | None:
-    """从视频抽第一帧作为缩略图。"""
-    thumb_path = os.path.join(output_dir, "thumbnail.jpg")
-    try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vframes", "1",
-             "-vf", "scale=360:-2", thumb_path],
-            capture_output=True, timeout=30,
-        )
-        return thumb_path if os.path.exists(thumb_path) else None
-    except Exception:
-        return None
+    return extract_thumbnail(video_path, output_dir, scale="360:-2")
 
 
 # ── 页面路由 ──
@@ -308,8 +300,17 @@ def get_result_video(task_id: str):
 @bp.route("/api/video-creation/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
+    row = db_query_one(
+        "SELECT task_dir, state_json FROM projects "
+        "WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify(error="not found"), 404
+    from appcore import cleanup
+    cleanup.delete_task_storage(row)
     db_execute(
-        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND type = 'video_creation'",
+        "UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
     )
     return jsonify({"status": "ok"})

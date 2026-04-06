@@ -66,13 +66,13 @@ def detail_page(task_id: str):
         conn.close()
 
     from pipeline.copywriting import DEFAULT_SYSTEM_PROMPT_EN, DEFAULT_SYSTEM_PROMPT_ZH
-    from pipeline.translate import _resolve_provider_config
+    from pipeline.translate import resolve_provider_config
 
     # 构建模型列表: (value, label, provider, model_id)
     # value 格式: provider:model_id (provider 和 model 用冒号分隔)
     models = []
     try:
-        _, or_model = _resolve_provider_config("openrouter", user_id=current_user.id)
+        _, or_model = resolve_provider_config("openrouter", user_id=current_user.id)
         models.append((f"openrouter:{or_model}", f"OpenRouter ({or_model})"))
     except Exception:
         models.append(("openrouter:", "OpenRouter (Claude)"))
@@ -80,7 +80,7 @@ def detail_page(task_id: str):
     models.append(("openrouter:google/gemini-3-flash-preview", "Gemini 3 Flash Preview (支持视频)"))
     models.append(("openrouter:google/gemini-2.5-flash", "Gemini 2.5 Flash (支持视频)"))
     try:
-        _, db_model = _resolve_provider_config("doubao", user_id=current_user.id)
+        _, db_model = resolve_provider_config("doubao", user_id=current_user.id)
         models.append((f"doubao:{db_model}", f"豆包 ({db_model})"))
     except Exception:
         models.append(("doubao:", "豆包 (Doubao)"))
@@ -565,18 +565,7 @@ def get_artifact(task_id: str, name: str):
 
 # ── 辅助函数 ──────────────────────────────────────────
 
-def _extract_thumbnail(video_path: str, task_dir: str) -> str | None:
-    """抽取视频第一帧作为缩略图。"""
-    import subprocess
-    thumb_path = os.path.join(task_dir, "thumbnail.jpg")
-    try:
-        subprocess.run([
-            "ffmpeg", "-y", "-i", video_path,
-            "-vframes", "1", "-q:v", "5", thumb_path,
-        ], capture_output=True, check=True)
-        return thumb_path if os.path.exists(thumb_path) else None
-    except Exception:
-        return None
+from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
 
 def _subscribe_socketio(bus: EventBus, socketio):
