@@ -40,10 +40,9 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
     try:
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
-        expires_at = datetime.now() + timedelta(hours=48)
         db_execute(
             """INSERT INTO projects (id, user_id, original_filename, status, task_dir, state_json, expires_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               VALUES (%s, %s, %s, %s, %s, %s, NULL)
                ON DUPLICATE KEY UPDATE
                  status = VALUES(status),
                  state_json = VALUES(state_json),
@@ -51,8 +50,7 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
             (task_id, user_id, original_filename,
              task.get("status", "uploaded"),
              task.get("task_dir", ""),
-             state_json,
-             expires_at.strftime("%Y-%m-%d %H:%M:%S")),
+             state_json),
         )
     except Exception:
         log.warning("[task_state] DB upsert 失败 task_id=%s", task_id, exc_info=True)
@@ -75,6 +73,22 @@ def _sync_task_to_db(task_id: str) -> None:
         )
     except Exception:
         log.warning("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
+
+
+def set_expires_at(task_id: str, project_type: str) -> None:
+    """项目完成时，根据配置计算并写入 expires_at。"""
+    try:
+        from appcore.db import execute as db_execute
+        from appcore.settings import get_retention_hours
+
+        hours = get_retention_hours(project_type)
+        expires_at = datetime.now() + timedelta(hours=hours)
+        db_execute(
+            "UPDATE projects SET expires_at = %s WHERE id = %s",
+            (expires_at.strftime("%Y-%m-%d %H:%M:%S"), task_id),
+        )
+    except Exception:
+        log.warning("[task_state] set_expires_at 失败 task_id=%s", task_id, exc_info=True)
 
 
 def create(task_id: str, video_path: str, task_dir: str, original_filename: str | None = None,
