@@ -58,6 +58,7 @@ class CopywritingRunner:
         except Exception:
             log.exception("[CW] 文案管线异常: %s", task_id)
             task_state.update(task_id, status="error")
+            task_state.set_expires_at(task_id, "copywriting")
             self._emit(task_id, EVT_CW_ERROR, {"message": "抽帧失败"})
 
     def generate_copy(self, task_id: str):
@@ -79,10 +80,12 @@ class CopywritingRunner:
             self._step_tts(task_id)
             self._step_compose(task_id)
             task_state.update(task_id, status="done")
+            task_state.set_expires_at(task_id, "copywriting")
             self._emit(task_id, EVT_CW_DONE, {})
         except Exception:
             log.exception("TTS/合成异常: %s", task_id)
             task_state.update(task_id, status="error")
+            task_state.set_expires_at(task_id, "copywriting")
             self._emit(task_id, EVT_CW_ERROR, {"message": "TTS/合成失败"})
 
     # ── 管线步骤 ─────────────────────────────────────
