@@ -12,7 +12,7 @@ bp = Blueprint("projects", __name__)
 def index():
     rows = query(
         """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
-           FROM projects WHERE user_id = %s AND deleted_at IS NULL ORDER BY created_at DESC""",
+           FROM projects WHERE user_id = %s AND type = 'translation' AND deleted_at IS NULL ORDER BY created_at DESC""",
         (current_user.id,),
     )
     from datetime import datetime
