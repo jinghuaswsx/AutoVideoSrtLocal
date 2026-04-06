@@ -32,9 +32,15 @@ CREATE TABLE IF NOT EXISTS projects (
     task_dir         VARCHAR(512),
     state_json       LONGTEXT,
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at       DATETIME NOT NULL,
+    expires_at       DATETIME,
     deleted_at       DATETIME,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    `key`      VARCHAR(100) PRIMARY KEY,
+    `value`    TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS usage_logs (
