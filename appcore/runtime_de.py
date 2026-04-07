@@ -34,6 +34,20 @@ class DeTranslateRunner(PipelineRunner):
 
     project_type: str = "de_translate"
 
+    def _step_asr(self, task_id: str, task_dir: str) -> None:
+        super()._step_asr(task_id, task_dir)
+        # Auto-detect source language from ASR text
+        task = task_state.get(task_id)
+        if not task.get("source_language"):
+            from pipeline.language_detect import detect_language
+            asr_text = " ".join(
+                u.get("text", "") for u in task.get("utterances", []) if u.get("text")
+            )
+            detected = detect_language(asr_text)
+            task_state.update(task_id, source_language=detected)
+            lang_label = "中文" if detected == "zh" else "英文"
+            log.info("Auto-detected source language: %s (%s) for task %s", detected, lang_label, task_id)
+
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]

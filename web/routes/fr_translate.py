@@ -87,7 +87,7 @@ def detail(task_id: str):
 @bp.route("/api/fr-translate/start", methods=["POST"])
 @login_required
 def upload_and_start():
-    """上传视频 + 选择源语言，创建法语翻译任务。"""
+    """上传视频，创建法语翻译任务。源语言将在 ASR 后自动检测。"""
     if "video" not in request.files:
         return jsonify({"error": "No video file"}), 400
     file = request.files["video"]
@@ -97,10 +97,6 @@ def upload_and_start():
     from web.upload_util import validate_video_extension
     if not validate_video_extension(file.filename):
         return jsonify({"error": "不支持的视频格式"}), 400
-
-    source_language = request.form.get("source_language", "zh")
-    if source_language not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -116,12 +112,11 @@ def upload_and_start():
                  original_filename=os.path.basename(file.filename),
                  user_id=user_id)
 
-    # Set project type to fr_translate
     db_execute("UPDATE projects SET type = 'fr_translate' WHERE id = %s", (task_id,))
 
     display_name = _resolve_name_conflict(user_id, _default_display_name(os.path.basename(file.filename)))
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-    store.update(task_id, display_name=display_name, source_language=source_language)
+    store.update(task_id, display_name=display_name)
 
     thumb = _extract_thumbnail(video_path, task_dir)
     if thumb:
@@ -256,6 +251,36 @@ def download(task_id, file_type):
     if not path or not os.path.exists(path):
         return jsonify({"error": "File not found"}), 404
     return send_file(os.path.abspath(path), as_attachment=True)
+
+
+@bp.route("/api/fr-translate/<task_id>", methods=["DELETE"])
+@login_required
+def delete(task_id):
+    """软删除法语翻译任务。"""
+    row = db_query_one(
+        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = store.get(task_id) or {}
+    from web.services import cleanup
+    cleanup_payload = dict(task)
+    cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
+    cleanup_payload["state_json"] = row.get("state_json") or ""
+    cleanup_payload["tos_keys"] = cleanup.collect_task_tos_keys(cleanup_payload)
+    try:
+        cleanup.delete_task_storage(cleanup_payload)
+    except Exception:
+        pass
+
+    db_execute(
+        "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
+        (task_id,),
+    )
+    store.update(task_id, status="deleted")
+    return jsonify({"status": "ok"})
 
 
 @bp.route("/api/fr-translate/<task_id>/artifact/<name>")
