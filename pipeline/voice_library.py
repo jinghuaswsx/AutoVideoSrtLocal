@@ -28,37 +28,41 @@ _DEFAULT_VOICES = {
     ],
     "de": [
         {
-            "name": "German Male",
+            "name": "Marcus",
             "gender": "male",
             "elevenlabs_voice_id": "vGWWh1bodhwwi4yHd6qZ",
-            "description": "德语男声，适合产品展示类视频",
-            "style_tags": ["german", "male"],
+            "description": "德语男声，标志性魅力音色，适合产品展示类视频",
+            "style_tags": ["iconic", "charming", "german"],
+            "preview_url": "https://storage.googleapis.com/eleven-public-prod/database/workspace/9d5daecd4210450281f8157fe899598f/voices/vGWWh1bodhwwi4yHd6qZ/AYWXonxIZlUhcxjlSp1l.mp3",
             "is_default": True,
         },
         {
-            "name": "German Female",
+            "name": "Emilia",
             "gender": "female",
             "elevenlabs_voice_id": "N8RXoLEWQWUCCrT8uDK7",
-            "description": "德语女声，适合生活类视频",
-            "style_tags": ["german", "female"],
+            "description": "德语女声，积极温暖，适合生活类视频",
+            "style_tags": ["positive", "thoughtful", "german"],
+            "preview_url": "https://storage.googleapis.com/eleven-public-prod/database/workspace/631bf5a20c2d45ffacc1311eb5dec41f/voices/N8RXoLEWQWUCCrT8uDK7/dLj63di7zBNH8XeVNQaH.mp3",
             "is_default": True,
         },
     ],
     "fr": [
         {
-            "name": "French Male",
+            "name": "Martin",
             "gender": "male",
             "elevenlabs_voice_id": "D7dkYvH17OKLgp4SLulf",
-            "description": "法语男声，适合旁白和叙述",
-            "style_tags": ["french", "male"],
+            "description": "法语男声，精致有活力，适合旁白和叙述",
+            "style_tags": ["polished", "energetic", "french"],
+            "preview_url": "https://storage.googleapis.com/eleven-public-prod/custom/voices/D7dkYvH17OKLgp4SLulf/Fi93KkolvadvCJVGsgqE.mp3",
             "is_default": True,
         },
         {
-            "name": "French Female",
+            "name": "Aida",
             "gender": "female",
             "elevenlabs_voice_id": "QttbagfgqUCm9K0VgUyT",
-            "description": "法语女声，适合叙述类视频",
-            "style_tags": ["french", "female"],
+            "description": "法语女声，有感染力且自然，适合叙述类视频",
+            "style_tags": ["engaging", "convincing", "french"],
+            "preview_url": "https://storage.googleapis.com/eleven-public-prod/database/workspace/f5cf7717b1b243c68376b06b4096e065/voices/QttbagfgqUCm9K0VgUyT/OpZVlI6efCIAg4ueP9yr.mp3",
             "is_default": True,
         },
     ],
@@ -77,11 +81,13 @@ class VoiceLibrary:
         for voice in _DEFAULT_VOICES.get(language, []):
             db_execute(
                 """INSERT INTO user_voices
-                   (user_id, name, gender, elevenlabs_voice_id, language, description, style_tags, is_default, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'manual')
-                   ON DUPLICATE KEY UPDATE name=VALUES(name)""",
+                   (user_id, name, gender, elevenlabs_voice_id, language, description,
+                    style_tags, preview_url, is_default, source)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'manual')
+                   ON DUPLICATE KEY UPDATE name=VALUES(name), preview_url=VALUES(preview_url)""",
                 (user_id, voice["name"], voice["gender"], voice["elevenlabs_voice_id"],
-                 language, voice["description"], json.dumps(voice["style_tags"]), voice["is_default"]),
+                 language, voice["description"], json.dumps(voice["style_tags"]),
+                 voice.get("preview_url", ""), voice["is_default"]),
             )
 
     def list_voices(self, user_id: int, language: str = "en") -> List[Dict]:
