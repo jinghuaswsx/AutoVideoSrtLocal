@@ -47,8 +47,8 @@ MAX_CHARS_PER_LINE = 42
 # ── 法语 TTS 配置 ──────────────────────────────────────
 TTS_MODEL_ID = "eleven_multilingual_v2"
 TTS_LANGUAGE_CODE = "fr"
-DEFAULT_MALE_VOICE_ID = "Xb7hH8MSUJpSbSDYk0k2"      # Antoine
-DEFAULT_FEMALE_VOICE_ID = "cgSgspJ2msm6clMCkdW9"    # Jeanne
+DEFAULT_MALE_VOICE_ID = "D7dkYvH17OKLgp4SLulf"
+DEFAULT_FEMALE_VOICE_ID = "QttbagfgqUCm9K0VgUyT"
 
 # ── 翻译系统提示 ──────────────────────────────────────
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a French short-video e-commerce content creator.

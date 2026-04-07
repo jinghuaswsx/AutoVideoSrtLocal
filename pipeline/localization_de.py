@@ -47,8 +47,8 @@ MAX_CHARS_PER_LINE = 38
 # ── 德语 TTS 配置 ──────────────────────────────────────
 TTS_MODEL_ID = "eleven_multilingual_v2"
 TTS_LANGUAGE_CODE = "de"
-DEFAULT_MALE_VOICE_ID = "eEmoQJhC4SAEQpCINUov"      # Toby
-DEFAULT_FEMALE_VOICE_ID = "ViKqgJNeCiWZlYgHiAOO"    # Annika
+DEFAULT_MALE_VOICE_ID = "vGWWh1bodhwwi4yHd6qZ"
+DEFAULT_FEMALE_VOICE_ID = "N8RXoLEWQWUCCrT8uDK7"
 
 # ── 翻译系统提示 ──────────────────────────────────────
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a German short-video e-commerce content creator.
