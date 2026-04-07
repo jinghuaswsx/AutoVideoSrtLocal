@@ -16,7 +16,7 @@ from appcore.events import (
     EVT_CW_TTS_READY, EVT_CW_COMPOSE_READY, EVT_CW_DONE, EVT_CW_ERROR,
 )
 from appcore import task_state
-from appcore.api_keys import resolve_key, resolve_extra
+from appcore.api_keys import get_translate_provider_preference, resolve_key
 from appcore.db import get_conn as get_connection
 
 log = logging.getLogger(__name__)
@@ -243,13 +243,7 @@ class CopywritingRunner:
 
     def _resolve_provider(self) -> str:
         """解析用户偏好的 LLM provider。"""
-        try:
-            extra = resolve_extra(self._user_id, "translate_preference")
-            if extra and extra.get("provider"):
-                return extra["provider"]
-        except Exception:
-            pass
-        return "openrouter"
+        return get_translate_provider_preference(self._user_id)
 
     def _load_user_prompt(self, task_id: str, language: str) -> str | None:
         """加载用户选择的文案提示词，返回 None 则用默认。"""

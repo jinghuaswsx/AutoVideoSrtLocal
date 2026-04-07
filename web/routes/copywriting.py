@@ -357,14 +357,9 @@ def rewrite_segment(task_id: str):
     from pipeline.copywriting import rewrite_segment as _rewrite
 
     # 解析 provider
-    provider = "openrouter"
-    try:
-        from appcore.api_keys import resolve_extra
-        extra = resolve_extra(current_user.id, "translate_preference")
-        if extra and extra.get("provider"):
-            provider = extra["provider"]
-    except Exception:
-        pass
+    from appcore.api_keys import get_translate_provider_preference
+
+    provider = get_translate_provider_preference(current_user.id)
 
     language = "en"
     conn = get_connection()

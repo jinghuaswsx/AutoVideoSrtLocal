@@ -13,6 +13,7 @@ import uuid
 log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
+from appcore.api_keys import resolve_asr_key
 from appcore.events import (
     EVT_ENGLISH_ASR_RESULT,
     EVT_SUBTITLE_READY,
@@ -21,7 +22,7 @@ from appcore.events import (
     EventBus,
 )
 from appcore.runtime import PipelineRunner, _build_review_segments, _save_json, _resolve_translate_provider
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_asr_artifact,
     build_subtitle_artifact,
     build_translate_artifact,
@@ -202,13 +203,12 @@ class FrTranslateRunner(PipelineRunner):
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         self._set_step(task_id, "subtitle", "running", "正在根据法语音频校正字幕...")
-        from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio
         from pipeline.localization_fr import WEAK_STARTERS_FR
         from pipeline.subtitle import build_srt_from_chunks, save_srt, apply_french_punctuation
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        volc_api_key = resolve_asr_key(self.user_id)
 
         variant = "normal"
         variants = dict(task.get("variants", {}))

@@ -1,51 +1,25 @@
-# Server Info
+# Server Runbook
 
-Updated: 2026-04-01
+Updated: 2026-04-06
 
-Internal use only. This file records the production server access information for AutoVideoSrt.
+This document is a deployment runbook only.
 
-## SSH Info
+Do not store production passwords, private keys, live IPs, access tokens, or direct login commands in this repository.
+Retrieve operational secrets from the approved team vault or secret manager before connecting to production.
 
-| Item | Value |
-| --- | --- |
-| SSH alias | `openclaw-noobird` |
-| Server IP | `14.103.220.208` |
-| SSH user | `root` |
-| SSH port | `22` |
-| SSH key file | `C:\Users\admin\.ssh\openclaw-noobird.pem` |
-| SSH password | `wylf1109@` |
+## Deployment Checklist
 
-## Production
+1. Open the approved credentials source and retrieve the current SSH target, user, and key material.
+2. Connect to the production host with least-privilege credentials.
+3. Change into the deploy directory for AutoVideoSrt.
+4. Pull the intended revision or deploy the prepared artifact.
+5. Restart the managed service.
+6. Verify health checks, logs, and the externally configured reverse proxy.
 
-| Item | Value |
-| --- | --- |
-| Deploy directory | `/opt/autovideosrt` |
-| systemd service | `autovideosrt.service` |
-| App listen port | `8888` |
-| nginx external mapping | Not configured. External access goes directly to app port `8888`. |
-| Public URL | `http://14.103.220.208:8888` |
-| Gunicorn entry | `main:app` |
-| Gunicorn worker | `eventlet`, 1 worker, timeout 300s |
-| venv path | `/opt/autovideosrt/venv` |
+## Required Production Controls
 
-## Deploy Steps
-
-```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208
-cd /opt/autovideosrt
-git pull
-systemctl restart autovideosrt
-systemctl status autovideosrt --no-pager
-```
-
-或者直接一行（本地执行）：
-
-```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208 "cd /opt/autovideosrt && git pull && systemctl restart autovideosrt"
-```
-
-## Notes
-
-1. 本项目和 `ad_kaogujia_web` 部署在同一台服务器，互不干扰。
-2. 没有配置 nginx 反向代理，直接通过 8888 端口对外。
-3. 代码仓库：`https://github.com/jinghuaswsx/AutoVideoSrt`
+- Run the application behind a reverse proxy with TLS enabled.
+- Avoid exposing the app process directly to the public internet.
+- Run the service as a dedicated non-root user.
+- Rotate credentials immediately if they were ever committed to source control.
+- Keep host-specific details in the secure operations system, not in Git.

@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from flask import Blueprint, render_template, abort, redirect
 from flask_login import login_required, current_user
+from appcore import tos_clients
 from appcore.db import query, query_one
 
 bp = Blueprint("projects", __name__)
@@ -49,21 +50,26 @@ def detail(task_id: str):
 @login_required
 def download_tos(task_id: str, tos_key: str):
     row = query_one(
-        "SELECT id, deleted_at FROM projects WHERE id = %s AND user_id = %s",
+        "SELECT id, deleted_at, state_json FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
     )
     if not row:
         abort(404)
     if row.get("deleted_at"):
         abort(410)
+
+    state = {}
+    if row.get("state_json"):
+        try:
+            state = json.loads(row["state_json"])
+        except Exception:
+            state = {}
+
+    if tos_key not in set(tos_clients.collect_task_tos_keys(state)):
+        abort(404)
+
     try:
-        import tos as tos_sdk
-        import config
-        client = tos_sdk.TosClientV2(
-            ak=config.TOS_ACCESS_KEY, sk=config.TOS_SECRET_KEY,
-            endpoint=config.TOS_ENDPOINT, region=config.TOS_REGION,
-        )
-        signed_url = client.pre_signed_url("GET", config.TOS_BUCKET, tos_key, expires=3600).signed_url
+        signed_url = tos_clients.generate_signed_download_url(tos_key, expires=3600)
         return redirect(signed_url)
     except Exception:
         abort(404)

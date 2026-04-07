@@ -14,7 +14,11 @@ from datetime import datetime
 log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
-from appcore.api_keys import resolve_jianying_project_root
+from appcore.api_keys import (
+    get_translate_provider_preference,
+    resolve_asr_key,
+    resolve_jianying_project_root,
+)
 from appcore import tos_clients
 from appcore.events import (
     EVT_ALIGNMENT_READY,
@@ -30,7 +34,7 @@ from appcore.events import (
     Event,
     EventBus,
 )
-from web.preview_artifacts import (
+from appcore.preview_artifacts import (
     build_alignment_artifact,
     build_asr_artifact,
     build_compose_artifact,
@@ -119,11 +123,7 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
 
 def _resolve_translate_provider(user_id: int | None) -> str:
     """Return the user's preferred translate provider, default 'openrouter'."""
-    from appcore.api_keys import get_key
-    if user_id is None:
-        return "openrouter"
-    pref = get_key(user_id, "translate_pref")
-    return pref if pref in ("openrouter", "doubao") else "openrouter"
+    return get_translate_provider_preference(user_id)
 
 
 class PipelineRunner:
@@ -192,11 +192,10 @@ class PipelineRunner:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
         self._set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
-        from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe
         from pipeline.storage import delete_file, upload_file
 
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        volc_api_key = resolve_asr_key(self.user_id)
         tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
         audio_url = upload_file(audio_path, tos_key)
         self._set_step(task_id, "asr", "running", "正在识别中文语音...")
@@ -406,10 +405,9 @@ class PipelineRunner:
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
-        from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio
 
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        volc_api_key = resolve_asr_key(self.user_id)
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 

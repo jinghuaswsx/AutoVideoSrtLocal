@@ -4,6 +4,8 @@ All pipeline steps are mocked — runtime logic only.
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import appcore.task_state as task_state
@@ -100,3 +102,23 @@ def test_no_flask_or_socketio_imports():
         builtins.__import__ = real_import
 
     assert not forbidden, f"appcore.runtime imported forbidden modules: {forbidden}"
+
+
+def test_runtime_modules_do_not_import_web_modules():
+    module_paths = [
+        Path("appcore/runtime.py"),
+        Path("appcore/runtime_fr.py"),
+        Path("appcore/runtime_de.py"),
+    ]
+
+    for module_path in module_paths:
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        forbidden = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                forbidden.extend(alias.name for alias in node.names if alias.name.startswith("web"))
+            elif isinstance(node, ast.ImportFrom):
+                if (node.module or "").startswith("web"):
+                    forbidden.append(node.module or "")
+
+        assert not forbidden, f"{module_path} imported forbidden web modules: {forbidden}"

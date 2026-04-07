@@ -19,6 +19,7 @@ from config import (
     UPLOAD_DIR,
 )
 from web import store
+from web.upload_util import validate_video_extension
 
 bp = Blueprint("tos_upload", __name__, url_prefix="/api/tos-upload")
 
@@ -59,6 +60,8 @@ def bootstrap_upload():
     original_filename = os.path.basename((body.get("original_filename") or body.get("filename") or "").strip())
     if not original_filename:
         return jsonify({"error": "original_filename required"}), 400
+    if not validate_video_extension(original_filename):
+        return jsonify({"error": "Unsupported video file type"}), 400
 
     task_id = str(uuid.uuid4())
     object_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
@@ -88,6 +91,8 @@ def complete_upload():
 
     if not task_id or not original_filename or not object_key:
         return jsonify({"error": "task_id, original_filename and object_key required"}), 400
+    if not validate_video_extension(original_filename):
+        return jsonify({"error": "Unsupported video file type"}), 400
 
     expected_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
     if object_key != expected_key:

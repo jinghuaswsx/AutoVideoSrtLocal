@@ -4,6 +4,8 @@ import os
 from appcore.db import query_one, execute, query
 
 DEFAULT_JIANYING_PROJECT_ROOT = r"C:\Users\admin\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft"
+VALID_TRANSLATE_PROVIDERS = {"openrouter", "doubao"}
+ASR_SERVICE_NAMES = ("doubao_asr", "volc")
 
 
 def set_key(user_id: int, service: str, key_value: str, extra: dict | None = None) -> None:
@@ -31,6 +33,16 @@ def resolve_key(user_id: int | None, service: str, env_var: str) -> str | None:
         if user_key:
             return user_key
     return os.environ.get(env_var)
+
+
+def resolve_asr_key(user_id: int | None) -> str | None:
+    """Return the current ASR key, honoring the new and legacy service names."""
+    if user_id is not None:
+        for service in ASR_SERVICE_NAMES:
+            user_key = get_key(user_id, service)
+            if user_key:
+                return user_key
+    return os.environ.get("VOLC_API_KEY")
 
 
 def resolve_extra(user_id: int | None, service: str) -> dict:
@@ -70,3 +82,21 @@ def resolve_jianying_project_root(user_id: int | None) -> str:
     extra = resolve_extra(user_id, "jianying")
     project_root = (extra.get("project_root") or "").strip() if isinstance(extra, dict) else ""
     return project_root or DEFAULT_JIANYING_PROJECT_ROOT
+
+
+def get_translate_provider_preference(user_id: int | None) -> str:
+    """Return the saved translate provider, with backward-compatible fallbacks."""
+    if user_id is None:
+        return "openrouter"
+
+    for service in ("translate_pref", "translate_preference"):
+        pref = (get_key(user_id, service) or "").strip()
+        if pref in VALID_TRANSLATE_PROVIDERS:
+            return pref
+
+    legacy_extra = resolve_extra(user_id, "translate_preference")
+    legacy_provider = (legacy_extra.get("provider") or "").strip() if isinstance(legacy_extra, dict) else ""
+    if legacy_provider in VALID_TRANSLATE_PROVIDERS:
+        return legacy_provider
+
+    return "openrouter"

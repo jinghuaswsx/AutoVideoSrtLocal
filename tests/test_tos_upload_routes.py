@@ -26,6 +26,16 @@ def test_tos_upload_bootstrap_returns_signed_put_payload(authed_client_no_db, mo
     assert payload["max_object_age_seconds"] == 7200
 
 
+def test_tos_upload_bootstrap_rejects_non_video_extension(authed_client_no_db):
+    response = authed_client_no_db.post(
+        "/api/tos-upload/bootstrap",
+        json={"original_filename": "demo.exe", "file_size": 12345, "content_type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 400
+    assert "error" in response.get_json()
+
+
 def test_tos_upload_complete_creates_task_from_tos_object(tmp_path, authed_client_no_db, monkeypatch):
     captured_updates = []
 
@@ -60,3 +70,21 @@ def test_tos_upload_complete_creates_task_from_tos_object(tmp_path, authed_clien
     assert task["video_path"].endswith("task-from-tos.mp4")
     assert task["display_name"] == "demo"
     assert any("UPDATE projects SET display_name" in sql for sql, _ in captured_updates)
+
+
+def test_tos_upload_complete_rejects_non_video_extension(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.tos_upload.tos_clients.object_exists", lambda object_key: True)
+
+    response = authed_client_no_db.post(
+        "/api/tos-upload/complete",
+        json={
+            "task_id": "task-invalid-ext",
+            "object_key": "uploads/1/task-invalid-ext/demo.exe",
+            "original_filename": "demo.exe",
+            "file_size": 4321,
+            "content_type": "application/octet-stream",
+        },
+    )
+
+    assert response.status_code == 400
+    assert store.get("task-invalid-ext") is None

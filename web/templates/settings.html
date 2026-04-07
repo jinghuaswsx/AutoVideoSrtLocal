@@ -32,7 +32,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <span class="service-tag blue">豆包 ASR</span>
     <label>API Key</label>
     <input type="password" name="doubao_asr_key" placeholder="留空则保持当前配置"
-           value="{{ keys.get('doubao_asr', {}).get('key_value', '') }}">
+           value="">
     <label>App ID</label>
     <input type="text" name="doubao_asr_app_id" placeholder="可选"
            value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('app_id', '') }}">
@@ -57,7 +57,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <span class="service-tag blue">Claude Sonnet · via OpenRouter</span>
     <label>API Key</label>
     <input type="password" name="openrouter_key" placeholder="留空则保持当前配置"
-           value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
+           value="">
     <label>请求 URL</label>
     <input type="text" name="openrouter_base_url" placeholder="https://openrouter.ai/api/v1"
            value="{{ keys.get('openrouter', {}).get('extra', {}).get('base_url', '') }}">
@@ -69,7 +69,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <span class="service-tag orange">豆包 2.0 Pro · via 火山引擎 ARK</span>
     <label>API Key</label>
     <input type="password" name="doubao_llm_key" placeholder="留空则保持当前配置"
-           value="{{ keys.get('doubao_llm', {}).get('key_value', '') }}">
+           value="">
     <label>请求 URL</label>
     <input type="text" name="doubao_llm_base_url" placeholder="https://ark.cn-beijing.volces.com/api/v3"
            value="{{ keys.get('doubao_llm', {}).get('extra', {}).get('base_url', '') }}">
@@ -85,7 +85,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <span class="service-tag green">ElevenLabs</span>
     <label>API Key</label>
     <input type="password" name="elevenlabs_key" placeholder="留空则保持当前配置"
-           value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
+           value="">
   </div>
 
   {# ── 第四步：导出 ── #}

@@ -165,6 +165,51 @@ def test_settings_page_contains_default_jianying_project_root(authed_client_no_d
     assert DEFAULT_JIANYING_PROJECT_ROOT in body
 
 
+def test_settings_page_does_not_render_saved_secret_values(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.settings.get_all",
+        lambda user_id: {
+            "openrouter": {"key_value": "sk-live-secret", "extra": {}},
+            "elevenlabs": {"key_value": "el-live-secret", "extra": {}},
+        },
+    )
+
+    response = authed_client_no_db.get("/settings")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "sk-live-secret" not in body
+    assert "el-live-secret" not in body
+
+
+def test_settings_page_preserves_saved_secret_when_form_leaves_key_blank(authed_client_no_db, monkeypatch):
+    captured = []
+
+    def fake_set_key(user_id, service, key_value, extra=None):
+        captured.append((user_id, service, key_value, extra))
+
+    monkeypatch.setattr(
+        "web.routes.settings.get_all",
+        lambda user_id: {
+            "openrouter": {"key_value": "saved-secret", "extra": {"base_url": "https://old.example.com"}},
+        },
+    )
+    monkeypatch.setattr("web.routes.settings.set_key", fake_set_key)
+
+    response = authed_client_no_db.post(
+        "/settings",
+        data={
+            "translate_pref": "openrouter",
+            "openrouter_key": "",
+            "openrouter_base_url": "https://new.example.com",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert (1, "openrouter", "saved-secret", {"base_url": "https://new.example.com"}) in captured
+
+
 def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, monkeypatch):
     custom_root = r"D:\JianyingDrafts"
     captured = []
@@ -183,6 +228,63 @@ def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, m
 
     assert response.status_code == 200
     assert (1, "jianying", "", {"project_root": custom_root}) in captured
+
+
+def test_project_tos_download_rejects_object_key_not_owned_by_task(authed_client_no_db, monkeypatch):
+    row = {
+        "id": "task-download-tos-route",
+        "deleted_at": None,
+        "state_json": json.dumps(
+            {
+                "source_tos_key": "uploads/1/task-download-tos-route/source.mp4",
+                "tos_uploads": {
+                    "normal:soft_video": {
+                        "tos_key": "artifacts/1/task-download-tos-route/normal/example_soft.mp4",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+    }
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get(
+        "/projects/task-download-tos-route/download/tos/artifacts/1/other-task/normal/other.mp4"
+    )
+
+    assert response.status_code == 404
+
+
+def test_project_tos_download_signs_task_owned_object_key(authed_client_no_db, monkeypatch):
+    row = {
+        "id": "task-download-tos-route",
+        "deleted_at": None,
+        "state_json": json.dumps(
+            {
+                "source_tos_key": "uploads/1/task-download-tos-route/source.mp4",
+                "tos_uploads": {
+                    "normal:soft_video": {
+                        "tos_key": "artifacts/1/task-download-tos-route/normal/example_soft.mp4",
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+    }
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr(
+        "web.routes.projects.tos_clients.generate_signed_download_url",
+        lambda object_key, expires=None: f"https://signed.example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.get(
+        "/projects/task-download-tos-route/download/tos/artifacts/1/task-download-tos-route/normal/example_soft.mp4"
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == (
+        "https://signed.example.com/artifacts/1/task-download-tos-route/normal/example_soft.mp4"
+    )
 
 
 def test_task_detail_returns_artifacts_structure(authed_client_no_db):
