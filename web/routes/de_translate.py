@@ -146,39 +146,48 @@ def start(task_id):
     return jsonify({"status": "started", "task": updated_task})
 
 
-@bp.route("/api/de-translate/<task_id>/confirm-alignment", methods=["POST"])
+@bp.route("/api/de-translate/<task_id>/alignment", methods=["PUT"])
 @login_required
-def confirm_alignment(task_id):
+def update_alignment(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
-    segments_data = body.get("segments")
-    if segments_data:
-        utterances = task.get("utterances", [])
-        scene_cuts = task.get("scene_cuts", [])
-        script_segments = build_script_segments(utterances, segments_data, scene_cuts=scene_cuts)
-        store.update(task_id, script_segments=script_segments, segments=script_segments)
+    break_after = body.get("break_after")
+    if not isinstance(break_after, list):
+        return jsonify({"error": "break_after required"}), 400
 
-    store.confirm_alignment(task_id)
-    de_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
-    return jsonify({"status": "ok"})
+    # Save source_language if provided (user may override auto-detection)
+    source_language = body.get("source_language")
+    if source_language in ("zh", "en"):
+        store.update(task_id, source_language=source_language)
+
+    from web.preview_artifacts import build_alignment_artifact
+    script_segments = build_script_segments(task.get("utterances", []), break_after)
+    store.confirm_alignment(task_id, break_after, script_segments)
+    store.set_artifact(
+        task_id, "alignment",
+        build_alignment_artifact(task.get("scene_cuts", []), script_segments, break_after),
+    )
+    store.set_current_review_step(task_id, "")
+    store.set_step(task_id, "alignment", "done")
+    store.set_step_message(task_id, "alignment", "分段确认完成")
+
+    if task.get("interactive_review"):
+        store.set_current_review_step(task_id, "translate")
+        store.set_step(task_id, "translate", "waiting")
+        store.set_step_message(task_id, "translate", "请选择翻译模型和提示词")
+        store.update(task_id, _translate_pre_select=True)
+    else:
+        de_pipeline_runner.resume(task_id, "translate", user_id=current_user.id)
+    return jsonify({"status": "ok", "script_segments": script_segments})
 
 
-@bp.route("/api/de-translate/<task_id>/confirm-segments", methods=["POST"])
+@bp.route("/api/de-translate/<task_id>/segments", methods=["PUT"])
 @login_required
-def confirm_segments(task_id):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
-        return jsonify({"error": "Task not found"}), 404
-    store.confirm_segments(task_id)
-    return jsonify({"status": "ok"})
-
-
-@bp.route("/api/de-translate/<task_id>/confirm-translate", methods=["POST"])
-@login_required
-def confirm_translate(task_id):
+def update_segments(task_id):
+    """用户确认/编辑德语翻译结果。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404

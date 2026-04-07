@@ -186,6 +186,14 @@
     <div>
       <h3>分段确认</h3>
       <p class="review-hint">勾选「断开」控制翻译分段，右侧实时预览分段结果。</p>
+      <div class="source-lang-row" id="sourceLangRow" style="display:none;margin-top:8px;">
+        <label style="font-size:13px;font-weight:600;margin-right:8px;">源语言</label>
+        <select id="sourceLangSelect" style="padding:4px 10px;border:1px solid var(--border-main);border-radius:6px;background:var(--bg-card);color:var(--text-main);font-size:13px;">
+          <option value="zh">中文</option>
+          <option value="en">英文</option>
+        </select>
+        <span id="sourceLangDetected" style="font-size:12px;color:#9ca3af;margin-left:8px;"></span>
+      </div>
     </div>
     <div class="review-panel-actions">
       <button class="btn btn-primary btn-sm" id="confirmAlignment">确认分段并继续</button>

@@ -592,6 +592,21 @@
       _selectedVoiceId = recommended_voice_id;
       renderVoiceList();
     }
+    // Show source language selector for non-English translation modules
+    const langRow = document.getElementById("sourceLangRow");
+    const langSelect = document.getElementById("sourceLangSelect");
+    const langDetected = document.getElementById("sourceLangDetected");
+    if (langRow && TASK_WORKBENCH_CONFIG.apiBase !== '/api/tasks') {
+      langRow.style.display = "";
+      const detected = currentTask && currentTask.source_language;
+      if (detected) {
+        langSelect.value = detected;
+        langDetected.textContent = "(自动检测)";
+      } else {
+        langSelect.value = "zh";
+        langDetected.textContent = "";
+      }
+    }
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
     updateAlignmentPreview();
@@ -619,10 +634,17 @@
 
   document.getElementById("confirmAlignment").addEventListener("click", async () => {
     const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
+    const payload = { break_after: breakAfter };
+    // Include source_language if the selector is visible
+    const langSelect = document.getElementById("sourceLangSelect");
+    const langRow = document.getElementById("sourceLangRow");
+    if (langRow && langRow.style.display !== "none" && langSelect) {
+      payload.source_language = langSelect.value;
+    }
     await fetch(_apiUrl('/alignment'), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ break_after: breakAfter }),
+      body: JSON.stringify(payload),
     });
     closePanel("alignmentReview");
     if (currentTask) currentTask.current_review_step = "";
