@@ -8,6 +8,7 @@
     allowUpload: {{ 'true' if allow_upload else 'false' }},
     detailUrlTemplate: {{ (url_for_detail|default(url_for('projects.detail', task_id='__TASK_ID__')))|tojson }},
     apiBase: {{ (api_base|default('/api/tasks'))|tojson }},
+    voiceLanguage: {{ (voice_language|default('en'))|tojson }},
   };
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
@@ -47,7 +48,7 @@
 
   async function bootVoices() {
     try {
-      const res = await fetch("/api/voices");
+      const res = await fetch("/api/voices?language=" + encodeURIComponent(TASK_WORKBENCH_CONFIG.voiceLanguage));
       if (!res.ok) {
         console.error("bootVoices: HTTP", res.status, res.statusText);
         document.getElementById("voiceList").innerHTML = '<div class="voice-list-empty">音色列表加载失败 (HTTP ' + res.status + ')</div>';
@@ -155,7 +156,7 @@
     const submitBtn = document.getElementById("importVoiceSubmit");
     submitBtn.disabled = true;
     submitBtn.textContent = "导入中...";
-    const body = { source };
+    const body = { source, language: TASK_WORKBENCH_CONFIG.voiceLanguage };
     const name = document.getElementById("importVoiceName").value.trim();
     const gender = document.getElementById("importVoiceGender").value;
     if (name) body.name = name;

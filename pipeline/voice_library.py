@@ -7,45 +7,87 @@ from typing import Dict, List, Optional
 
 from appcore.db import query as db_query, execute as db_execute, query_one as db_query_one
 
-_DEFAULT_VOICES = [
-    {
-        "name": "Adam",
-        "gender": "male",
-        "elevenlabs_voice_id": "pNInz6obpgDQGcFmaJgB",
-        "description": "美式男声，自然有力，适合卖货展示类视频",
-        "style_tags": ["energetic", "trustworthy", "casual"],
-        "is_default": True,
-    },
-    {
-        "name": "Rachel",
-        "gender": "female",
-        "elevenlabs_voice_id": "21m00Tcm4TlvDq8ikWAM",
-        "description": "美式女声，亲切自然，适合美妆护肤生活类视频",
-        "style_tags": ["warm", "friendly", "expressive"],
-        "is_default": True,
-    },
-]
+_DEFAULT_VOICES = {
+    "en": [
+        {
+            "name": "Adam",
+            "gender": "male",
+            "elevenlabs_voice_id": "pNInz6obpgDQGcFmaJgB",
+            "description": "美式男声，自然有力，适合卖货展示类视频",
+            "style_tags": ["energetic", "trustworthy", "casual"],
+            "is_default": True,
+        },
+        {
+            "name": "Rachel",
+            "gender": "female",
+            "elevenlabs_voice_id": "21m00Tcm4TlvDq8ikWAM",
+            "description": "美式女声，亲切自然，适合美妆护肤生活类视频",
+            "style_tags": ["warm", "friendly", "expressive"],
+            "is_default": True,
+        },
+    ],
+    "de": [
+        {
+            "name": "Toby",
+            "gender": "male",
+            "elevenlabs_voice_id": "eEmoQJhC4SAEQpCINUov",
+            "description": "德语男声，友好自信，适合产品展示类视频",
+            "style_tags": ["friendly", "confident", "german"],
+            "is_default": True,
+        },
+        {
+            "name": "Annika",
+            "gender": "female",
+            "elevenlabs_voice_id": "ViKqgJNeCiWZlYgHiAOO",
+            "description": "德语女声，平静自信，适合生活类视频",
+            "style_tags": ["calm", "confident", "german"],
+            "is_default": True,
+        },
+    ],
+    "fr": [
+        {
+            "name": "Antoine",
+            "gender": "male",
+            "elevenlabs_voice_id": "Xb7hH8MSUJpSbSDYk0k2",
+            "description": "法语男声，年轻巴黎口音，适合旁白和叙述",
+            "style_tags": ["young", "parisian", "french"],
+            "is_default": True,
+        },
+        {
+            "name": "Jeanne",
+            "gender": "female",
+            "elevenlabs_voice_id": "cgSgspJ2msm6clMCkdW9",
+            "description": "法语女声，专业温暖，适合叙述类视频",
+            "style_tags": ["professional", "warm", "french"],
+            "is_default": True,
+        },
+    ],
+}
 
 
 class VoiceLibrary:
-    def ensure_defaults(self, user_id: int) -> None:
-        """Insert default voices for a user if they have none."""
-        existing = db_query("SELECT id FROM user_voices WHERE user_id = %s LIMIT 1", (user_id,))
+    def ensure_defaults(self, user_id: int, language: str = "en") -> None:
+        """Insert default voices for a user+language if they have none."""
+        existing = db_query(
+            "SELECT id FROM user_voices WHERE user_id = %s AND language = %s LIMIT 1",
+            (user_id, language),
+        )
         if existing:
             return
-        for voice in _DEFAULT_VOICES:
+        for voice in _DEFAULT_VOICES.get(language, []):
             db_execute(
                 """INSERT INTO user_voices
-                   (user_id, name, gender, elevenlabs_voice_id, description, style_tags, is_default, source)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'manual')""",
+                   (user_id, name, gender, elevenlabs_voice_id, language, description, style_tags, is_default, source)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'manual')
+                   ON DUPLICATE KEY UPDATE name=VALUES(name)""",
                 (user_id, voice["name"], voice["gender"], voice["elevenlabs_voice_id"],
-                 voice["description"], json.dumps(voice["style_tags"]), voice["is_default"]),
+                 language, voice["description"], json.dumps(voice["style_tags"]), voice["is_default"]),
             )
 
-    def list_voices(self, user_id: int) -> List[Dict]:
+    def list_voices(self, user_id: int, language: str = "en") -> List[Dict]:
         rows = db_query(
-            "SELECT * FROM user_voices WHERE user_id = %s ORDER BY is_default DESC, created_at",
-            (user_id,),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s ORDER BY is_default DESC, created_at",
+            (user_id, language),
         )
         return [_row_to_voice(r) for r in rows]
 
@@ -63,22 +105,22 @@ class VoiceLibrary:
         )
         return _row_to_voice(row) if row else None
 
-    def get_default_voice(self, user_id: int, gender: str = "male") -> Optional[Dict]:
+    def get_default_voice(self, user_id: int, gender: str = "male", language: str = "en") -> Optional[Dict]:
         row = db_query_one(
-            "SELECT * FROM user_voices WHERE user_id = %s AND gender = %s AND is_default = TRUE LIMIT 1",
-            (user_id, gender),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s AND gender = %s AND is_default = TRUE LIMIT 1",
+            (user_id, language, gender),
         )
         if row:
             return _row_to_voice(row)
         row = db_query_one(
-            "SELECT * FROM user_voices WHERE user_id = %s AND gender = %s LIMIT 1",
-            (user_id, gender),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s AND gender = %s LIMIT 1",
+            (user_id, language, gender),
         )
         if row:
             return _row_to_voice(row)
         row = db_query_one(
-            "SELECT * FROM user_voices WHERE user_id = %s LIMIT 1",
-            (user_id,),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s LIMIT 1",
+            (user_id, language),
         )
         return _row_to_voice(row) if row else None
 
@@ -93,12 +135,13 @@ class VoiceLibrary:
         if not elevenlabs_voice_id:
             raise ValueError("elevenlabs_voice_id is required")
 
+        language = payload.get("language", "en")
         row_id = db_execute(
             """INSERT INTO user_voices
-               (user_id, name, gender, elevenlabs_voice_id, description, style_tags,
+               (user_id, name, gender, elevenlabs_voice_id, language, description, style_tags,
                 preview_url, source, labels, is_default)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (user_id, name, gender, elevenlabs_voice_id,
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (user_id, name, gender, elevenlabs_voice_id, language,
              (payload.get("description") or "").strip(),
              json.dumps(payload.get("style_tags") or []),
              (payload.get("preview_url") or "").strip(),
@@ -111,7 +154,7 @@ class VoiceLibrary:
     def update_voice(self, voice_id: int, user_id: int, payload: Dict) -> Dict:
         sets = []
         args = []
-        for col in ("name", "gender", "description", "preview_url", "source"):
+        for col in ("name", "gender", "description", "preview_url", "source", "language"):
             if col in payload:
                 sets.append(f"{col} = %s")
                 args.append(payload[col])
@@ -131,22 +174,29 @@ class VoiceLibrary:
         return self.get_voice(voice_id, user_id)
 
     def set_default_voice(self, voice_id: int, user_id: int) -> Optional[Dict]:
-        """Set a single voice as the user's default, clearing all others."""
-        db_execute("UPDATE user_voices SET is_default = FALSE WHERE user_id = %s", (user_id,))
+        """Set a single voice as the user's default within its language, clearing others."""
+        voice = self.get_voice(voice_id, user_id)
+        if not voice:
+            return None
+        lang = voice.get("language", "en")
+        db_execute(
+            "UPDATE user_voices SET is_default = FALSE WHERE user_id = %s AND language = %s",
+            (user_id, lang),
+        )
         db_execute("UPDATE user_voices SET is_default = TRUE WHERE id = %s AND user_id = %s", (voice_id, user_id))
         return self.get_voice(voice_id, user_id)
 
-    def get_user_default_voice(self, user_id: int) -> Optional[Dict]:
-        """Get the user's single default voice, or fall back to the first voice."""
+    def get_user_default_voice(self, user_id: int, language: str = "en") -> Optional[Dict]:
+        """Get the user's single default voice for a language, or fall back to the first voice."""
         row = db_query_one(
-            "SELECT * FROM user_voices WHERE user_id = %s AND is_default = TRUE LIMIT 1",
-            (user_id,),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s AND is_default = TRUE LIMIT 1",
+            (user_id, language),
         )
         if row:
             return _row_to_voice(row)
         row = db_query_one(
-            "SELECT * FROM user_voices WHERE user_id = %s ORDER BY created_at LIMIT 1",
-            (user_id,),
+            "SELECT * FROM user_voices WHERE user_id = %s AND language = %s ORDER BY created_at LIMIT 1",
+            (user_id, language),
         )
         return _row_to_voice(row) if row else None
 

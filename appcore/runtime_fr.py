@@ -145,11 +145,15 @@ class FrTranslateRunner(PipelineRunner):
         if task.get("voice_id"):
             voice = get_voice_by_id(task["voice_id"], self.user_id)
         if not voice:
+            from pipeline.voice_library import get_voice_library
             gender = task.get("voice_gender", "male")
-            fr_voice_id = DEFAULT_MALE_VOICE_ID if gender == "male" else DEFAULT_FEMALE_VOICE_ID
+            lib = get_voice_library()
+            lib.ensure_defaults(self.user_id, language="fr")
+            voice = lib.get_default_voice(self.user_id, gender=gender, language="fr")
+        if not voice:
             voice = {
                 "id": None,
-                "elevenlabs_voice_id": fr_voice_id,
+                "elevenlabs_voice_id": DEFAULT_MALE_VOICE_ID if gender == "male" else DEFAULT_FEMALE_VOICE_ID,
                 "name": "Antoine" if gender == "male" else "Jeanne",
             }
 

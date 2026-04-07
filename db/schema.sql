@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS user_voices (
     name VARCHAR(100) NOT NULL,
     gender ENUM('male','female') NOT NULL,
     elevenlabs_voice_id VARCHAR(50) NOT NULL,
+    language VARCHAR(10) NOT NULL DEFAULT 'en',
     description TEXT,
     style_tags JSON DEFAULT NULL,
     preview_url VARCHAR(500) DEFAULT '',
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS user_voices (
     labels JSON DEFAULT NULL,
     is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_user_voice (user_id, elevenlabs_voice_id)
+    UNIQUE KEY uq_user_voice (user_id, elevenlabs_voice_id, language)
 );
 
 CREATE TABLE IF NOT EXISTS user_prompts (

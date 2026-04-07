@@ -19,9 +19,10 @@ bp = Blueprint("voice", __name__, url_prefix="/api/voices")
 @login_required
 def list_voices():
     try:
+        language = request.args.get("language", "en")
         lib = get_voice_library()
-        lib.ensure_defaults(current_user.id)
-        return jsonify({"voices": lib.list_voices(current_user.id)})
+        lib.ensure_defaults(current_user.id, language=language)
+        return jsonify({"voices": lib.list_voices(current_user.id, language=language)})
     except Exception:
         log.exception("list_voices failed for user %s", current_user.id)
         return jsonify({"error": "音色列表加载失败"}), 500
@@ -85,7 +86,7 @@ def import_voice():
 
     overrides = {}
     for key in ("name", "gender", "description", "style_tags",
-                "is_default"):
+                "is_default", "language"):
         if key in body:
             overrides[key] = body[key]
 
