@@ -165,12 +165,13 @@ class DeTranslateRunner(PipelineRunner):
         localized_translation = variant_state.get("localized_translation", {})
         video_duration = get_video_duration(task["video_path"])
 
+        from functools import partial
         tts_script = generate_tts_script(
             localized_translation,
             provider=provider,
             user_id=self.user_id,
             messages_builder=build_de_tts_messages,
-            validator=validate_tts_script,
+            validator=partial(validate_tts_script, max_words=14),
         )
         tts_segments = build_tts_segments(tts_script, task.get("script_segments", []))
         result = generate_full_audio(

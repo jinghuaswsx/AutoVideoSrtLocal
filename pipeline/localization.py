@@ -429,7 +429,7 @@ def validate_localized_translation(payload) -> dict:
     return {"full_text": full_text, "sentences": sentences}
 
 
-def validate_tts_script(payload) -> dict:
+def validate_tts_script(payload, max_words: int = 10) -> dict:
     # 兼容模型直接返回 list（如豆包）
     if isinstance(payload, list):
         payload = {"blocks": payload, "full_text": ""}
@@ -443,14 +443,14 @@ def validate_tts_script(payload) -> dict:
     if not full_text or concat != full_text:
         full_text = concat
 
-    subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=10)
+    subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=max_words)
     if not subtitle_chunks:
         raise ValueError("tts_script could not rebuild subtitle_chunks from blocks")
     if _subtitle_word_signature(_concat_items(subtitle_chunks, "text")) != _subtitle_word_signature(full_text):
         raise ValueError("tts_script subtitle_chunks do not match full_text")
     for chunk in subtitle_chunks:
-        if _subtitle_word_count(chunk["text"]) > 10:
-            raise ValueError("tts_script subtitle_chunks must be 10 words or fewer")
+        if _subtitle_word_count(chunk["text"]) > max_words:
+            raise ValueError(f"tts_script subtitle_chunks must be {max_words} words or fewer")
 
     return {
         "full_text": full_text,

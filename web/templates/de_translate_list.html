@@ -297,21 +297,26 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   var fileInput = document.getElementById('videoFile');
   if (!fileInput.files[0]) return;
 
+  var file = fileInput.files[0];
+  var sizeMB = (file.size / 1024 / 1024).toFixed(1);
   btn.disabled = true;
-  btn.textContent = '上传中...';
+  btn.textContent = '上传中 (' + sizeMB + ' MB)...';
 
-  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  var csrfToken = csrfMeta ? csrfMeta.content : '';
   var formData = new FormData();
-  formData.append('video', fileInput.files[0]);
+  formData.append('video', file);
 
   try {
     var res = await fetch('/api/de-translate/start', {
       method: 'POST',
-      headers: { 'X-CSRFToken': csrfToken },
+      headers: csrfToken ? { 'X-CSRFToken': csrfToken } : {},
       body: formData,
     });
-    var data = await res.json();
-    if (!res.ok) throw new Error(data.error || '上传失败');
+    var text = await res.text();
+    var data;
+    try { data = JSON.parse(text); } catch(_) { throw new Error('服务器返回异常: ' + text.substring(0, 200)); }
+    if (!res.ok) throw new Error(data.error || '上传失败 (HTTP ' + res.status + ')');
     window.location.href = '/de-translate/' + data.task_id;
   } catch (err) {
     alert(err.message);
