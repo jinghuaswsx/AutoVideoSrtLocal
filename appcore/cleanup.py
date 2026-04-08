@@ -51,6 +51,12 @@ def run_cleanup() -> None:
         except Exception as e:
             log.error("Zombie cleanup failed for %s: %s", task_id, e)
 
+    # ── 清理 uploads 目录中的孤儿文件 ──
+    try:
+        _cleanup_orphan_uploads()
+    except Exception as e:
+        log.error("Orphan upload file cleanup failed: %s", e)
+
     try:
         delete_stale_upload_objects()
     except Exception as e:
@@ -61,6 +67,17 @@ def delete_task_storage(task_or_row: dict) -> None:
     task_dir = (task_or_row.get("task_dir") or "").strip()
     if task_dir and os.path.isdir(task_dir):
         shutil.rmtree(task_dir, ignore_errors=True)
+
+    # 清理 uploads 目录中的原始视频文件
+    state = _load_task_state(task_or_row)
+    video_path = state.get("video_path") or task_or_row.get("video_path") or ""
+    if video_path and os.path.isfile(video_path):
+        try:
+            os.remove(video_path)
+            log.info("Deleted upload file: %s", video_path)
+        except Exception:
+            pass
+
     tos_keys = task_or_row.get("tos_keys") or collect_task_tos_keys(task_or_row)
     for tos_key in tos_keys:
         try:
@@ -161,3 +178,26 @@ def _load_active_task_ids(task_ids: set[str]) -> set[str]:
         tuple(sorted(task_ids)),
     )
     return {row["id"] for row in rows if row.get("id")}
+
+
+def _cleanup_orphan_uploads() -> None:
+    """Remove upload files whose project has been deleted or doesn't exist."""
+    from config import UPLOAD_DIR
+    if not UPLOAD_DIR or not os.path.isdir(UPLOAD_DIR):
+        return
+
+    alive_rows = query("SELECT id FROM projects WHERE deleted_at IS NULL")
+    alive_ids = {r["id"] for r in alive_rows}
+
+    for filename in os.listdir(UPLOAD_DIR):
+        task_id = os.path.splitext(filename)[0]
+        if task_id in alive_ids:
+            continue
+        fpath = os.path.join(UPLOAD_DIR, filename)
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            os.remove(fpath)
+            log.info("Deleted orphan upload: %s", filename)
+        except Exception:
+            pass
