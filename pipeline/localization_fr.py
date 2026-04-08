@@ -70,7 +70,7 @@ STYLE & TONE:
 
 STRUCTURE:
 - The first sentence must be a strong hook that identifies a relatable problem or grabs attention.
-- End with a clear but elegant CTA if the source has one, or add a subtle one like "Lien dans la bio" or "A decouvrir" if appropriate.
+- Do NOT add any CTA (Call to Action) at the end. No "Lien dans la bio", no "A decouvrir", no "Commandez maintenant". The video will have a separate universal CTA clip appended later.
 
 FORMATTING:
 - French punctuation: add a non-breaking space (U+00A0) before ? ! : ; in the output.

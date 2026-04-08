@@ -69,7 +69,7 @@ STYLE & TONE:
 
 STRUCTURE:
 - The first sentence must be a strong hook that identifies a relatable problem or grabs attention.
-- End with a clear but non-pushy CTA if the source has one, or add a subtle one like "Link in der Bio" or "Schau mal rein" if appropriate.
+- Do NOT add any CTA (Call to Action) at the end. No "Link in der Bio", no "Schau mal rein", no "Jetzt bestellen". The video will have a separate universal CTA clip appended later.
 
 FORMATTING:
 - Capitalize all nouns as required by German grammar.
