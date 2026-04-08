@@ -92,8 +92,8 @@ class FrTranslateRunner(PipelineRunner):
             segments=review_segments,
             _segments_confirmed=not requires_confirmation,
         )
-        task_state.set_artifact(task_id, "asr", build_asr_artifact(task.get("utterances", []), source_full_text))
-        task_state.set_artifact(task_id, "translate", build_translate_artifact(source_full_text, localized_translation))
+        task_state.set_artifact(task_id, "asr", build_asr_artifact(task.get("utterances", []), source_full_text, source_language=source_language))
+        task_state.set_artifact(task_id, "translate", build_translate_artifact(source_full_text, localized_translation, source_language=source_language, target_language="fr"))
 
         _save_json(task_dir, "source_full_text.json", {"full_text": source_full_text})
         _save_json(task_dir, "localized_translation.json", localized_translation)
@@ -270,7 +270,7 @@ class FrTranslateRunner(PipelineRunner):
             corrected_subtitle={"chunks": corrected_chunks, "srt_content": srt_content},
             srt_path=srt_path,
         )
-        task_state.set_artifact(task_id, "subtitle", build_subtitle_artifact(fr_asr_result, corrected_chunks, srt_content))
+        task_state.set_artifact(task_id, "subtitle", build_subtitle_artifact(fr_asr_result, corrected_chunks, srt_content, target_language="fr"))
 
         _save_json(task_dir, "fr_asr_result.normal.json", fr_asr_result)
         _save_json(task_dir, "corrected_subtitle.normal.json", {"chunks": corrected_chunks, "srt_content": srt_content})

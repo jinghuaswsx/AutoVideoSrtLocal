@@ -13,6 +13,13 @@ def action_item(label: str, url: str, method: str = "POST") -> dict:
     return {"type": "action", "label": label, "url": url, "method": method}
 
 
+_LANG_LABELS = {"zh": "中文", "en": "英文", "de": "德文", "fr": "法文"}
+
+
+def _lang(code: str) -> str:
+    return _LANG_LABELS.get(code, code)
+
+
 def build_variant_compare_artifact(title: str, variants: dict) -> dict:
     return {
         "title": title,
@@ -28,13 +35,14 @@ def build_extract_artifact() -> dict:
     }
 
 
-def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "") -> dict:
+def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "", source_language: str = "zh") -> dict:
+    sl = _lang(source_language)
     left = {
         "type": "utterances",
-        "label": "中文识别分段",
+        "label": f"{sl}识别分段",
         "utterances": utterances or [],
     }
-    right = text_item("整段中文", source_full_text_zh)
+    right = text_item(f"整段{sl}", source_full_text_zh)
     if source_full_text_zh:
         return {"title": "语音识别", "items": [{"type": "side_by_side", "left": left, "right": right}]}
     return {"title": "语音识别", "items": [left]}
@@ -58,7 +66,9 @@ def build_alignment_artifact(
     }
 
 
-def build_translate_artifact(source_or_segments, localized_translation: dict | None = None) -> dict:
+def build_translate_artifact(source_or_segments, localized_translation: dict | None = None,
+                             source_language: str = "zh", target_language: str = "en") -> dict:
+    sl, tl = _lang(source_language), _lang(target_language)
     if localized_translation is None and isinstance(source_or_segments, list):
         return {
             "title": "翻译本土化",
@@ -79,12 +89,12 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
             {
                 "type": "side_by_side",
                 "show_retranslate": True,
-                "left": text_item("整段中文", str(source_or_segments or "")),
-                "right": text_item("整段本土化英文", translation.get("full_text", "")),
+                "left": text_item(f"整段{sl}", str(source_or_segments or "")),
+                "right": text_item(f"整段本土化{tl}", translation.get("full_text", "")),
             },
             {
                 "type": "sentences",
-                "label": "英文句子映射",
+                "label": f"{tl}句子映射",
                 "sentences": translation.get("sentences", []),
             },
         ],
@@ -137,11 +147,13 @@ def build_subtitle_artifact(
     asr_or_srt,
     corrected_chunks: list[dict] | None = None,
     srt_content: str | None = None,
+    target_language: str = "en",
 ) -> dict:
+    tl = _lang(target_language)
     if corrected_chunks is None and isinstance(asr_or_srt, str):
         return {
             "title": "字幕生成",
-            "items": [text_item("英文字幕 SRT", asr_or_srt)],
+            "items": [text_item(f"{tl}字幕 SRT", asr_or_srt)],
         }
 
     asr_result = asr_or_srt or {}
@@ -150,16 +162,16 @@ def build_subtitle_artifact(
         "items": [
             {
                 "type": "utterances",
-                "label": "英文 ASR",
+                "label": f"{tl} ASR",
                 "utterances": asr_result.get("utterances", []),
             },
-            text_item("英文 ASR 全文", asr_result.get("full_text", "")),
+            text_item(f"{tl} ASR 全文", asr_result.get("full_text", "")),
             {
                 "type": "subtitle_chunks",
                 "label": "校正后字幕块",
                 "chunks": corrected_chunks or [],
             },
-            text_item("最终英文 SRT", srt_content or ""),
+            text_item(f"最终{tl} SRT", srt_content or ""),
         ],
     }
 
