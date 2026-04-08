@@ -46,11 +46,16 @@
   renderStepPreviews({});
   bootInitialTask();
 
-  // Source language manual override — save to backend when user changes
+  // Source language toggle — save to backend when user clicks
   (function() {
-    const sel = document.getElementById("sourceLangMainSelect");
-    if (!sel) return;
-    sel.addEventListener("change", async function() {
+    const toggle = document.getElementById("sourceLangToggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", async function(e) {
+      const btn = e.target.closest(".sl-btn");
+      if (!btn || btn.classList.contains("sl-active")) return;
+      const lang = btn.dataset.lang;
+      toggle.querySelectorAll(".sl-btn").forEach(b => b.classList.remove("sl-active"));
+      btn.classList.add("sl-active");
       const hint = document.getElementById("sourceLangMainHint");
       if (hint) hint.textContent = "(手动选择)";
       if (!taskId) return;
@@ -58,7 +63,7 @@
         await fetch(_apiUrl('/source-language'), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_language: sel.value }),
+          body: JSON.stringify({ source_language: lang }),
         });
       } catch (e) { console.error("save source_language failed:", e); }
     });
@@ -230,12 +235,14 @@
   }
 
   function _syncSourceLangPanel() {
-    const sel = document.getElementById("sourceLangMainSelect");
+    const toggle = document.getElementById("sourceLangToggle");
     const hint = document.getElementById("sourceLangMainHint");
-    if (!sel) return;
+    if (!toggle) return;
     const lang = currentTask && currentTask.source_language;
     if (lang) {
-      sel.value = lang;
+      toggle.querySelectorAll(".sl-btn").forEach(b => {
+        b.classList.toggle("sl-active", b.dataset.lang === lang);
+      });
       hint.textContent = "(自动检测)";
     }
   }
