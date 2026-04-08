@@ -46,6 +46,24 @@
   renderStepPreviews({});
   bootInitialTask();
 
+  // Source language manual override — save to backend when user changes
+  (function() {
+    const sel = document.getElementById("sourceLangMainSelect");
+    if (!sel) return;
+    sel.addEventListener("change", async function() {
+      const hint = document.getElementById("sourceLangMainHint");
+      if (hint) hint.textContent = "(手动选择)";
+      if (!taskId) return;
+      try {
+        await fetch(_apiUrl('/source-language'), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_language: sel.value }),
+        });
+      } catch (e) { console.error("save source_language failed:", e); }
+    });
+  })();
+
   async function bootVoices() {
     try {
       const res = await fetch("/api/voices?language=" + encodeURIComponent(TASK_WORKBENCH_CONFIG.voiceLanguage));
@@ -202,6 +220,24 @@
     document.getElementById("pipelineCard").classList.remove("hidden");
     const hero = document.getElementById("taskHero");
     if (hero) hero.classList.remove("hidden");
+    // Show source language panel for non-English translation modules
+    const slPanel = document.getElementById("sourceLangPanel");
+    if (slPanel && TASK_WORKBENCH_CONFIG.apiBase !== '/api/tasks') {
+      slPanel.style.display = "";
+      slPanel.classList.remove("hidden");
+      _syncSourceLangPanel();
+    }
+  }
+
+  function _syncSourceLangPanel() {
+    const sel = document.getElementById("sourceLangMainSelect");
+    const hint = document.getElementById("sourceLangMainHint");
+    if (!sel) return;
+    const lang = currentTask && currentTask.source_language;
+    if (lang) {
+      sel.value = lang;
+      hint.textContent = "(自动检测)";
+    }
   }
 
   function setStartButtonBusy(isBusy, label = START_BUTTON_DEFAULT_LABEL) {
@@ -413,6 +449,7 @@
     applyTaskConfigToForm();
     renderTaskState();
     restoreReviewState();
+    _syncSourceLangPanel();
   }
 
   function scheduleRefreshTaskState(delay = 120) {
@@ -593,21 +630,6 @@
       _selectedVoiceId = recommended_voice_id;
       renderVoiceList();
     }
-    // Show source language selector for non-English translation modules
-    const langRow = document.getElementById("sourceLangRow");
-    const langSelect = document.getElementById("sourceLangSelect");
-    const langDetected = document.getElementById("sourceLangDetected");
-    if (langRow && TASK_WORKBENCH_CONFIG.apiBase !== '/api/tasks') {
-      langRow.style.display = "";
-      const detected = currentTask && currentTask.source_language;
-      if (detected) {
-        langSelect.value = detected;
-        langDetected.textContent = "(自动检测)";
-      } else {
-        langSelect.value = "zh";
-        langDetected.textContent = "";
-      }
-    }
     document.getElementById("alignmentReview").classList.remove("hidden");
     document.getElementById("translateReview").classList.add("hidden");
     updateAlignmentPreview();
@@ -636,12 +658,6 @@
   document.getElementById("confirmAlignment").addEventListener("click", async () => {
     const breakAfter = [...document.querySelectorAll(".break-after")].map(item => item.checked);
     const payload = { break_after: breakAfter };
-    // Include source_language if the selector is visible
-    const langSelect = document.getElementById("sourceLangSelect");
-    const langRow = document.getElementById("sourceLangRow");
-    if (langRow && langRow.style.display !== "none" && langSelect) {
-      payload.source_language = langSelect.value;
-    }
     await fetch(_apiUrl('/alignment'), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

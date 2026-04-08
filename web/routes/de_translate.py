@@ -125,6 +125,15 @@ def upload_and_start():
     return jsonify({"task_id": task_id}), 201
 
 
+@bp.route("/api/de-translate/<task_id>", methods=["GET"])
+@login_required
+def get_task(task_id):
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify(task)
+
+
 @bp.route("/api/de-translate/<task_id>/start", methods=["POST"])
 @login_required
 def start(task_id):
@@ -144,6 +153,20 @@ def start(task_id):
     de_pipeline_runner.start(task_id, user_id=current_user.id)
     updated_task = store.get(task_id) or task
     return jsonify({"status": "started", "task": updated_task})
+
+
+@bp.route("/api/de-translate/<task_id>/source-language", methods=["PUT"])
+@login_required
+def update_source_language(task_id):
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+    body = request.get_json(silent=True) or {}
+    lang = body.get("source_language")
+    if lang not in ("zh", "en"):
+        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
+    store.update(task_id, source_language=lang)
+    return jsonify({"status": "ok"})
 
 
 @bp.route("/api/de-translate/<task_id>/alignment", methods=["PUT"])
@@ -226,17 +249,31 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-@bp.route("/api/de-translate/<task_id>/resume/<step>", methods=["POST"])
+RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+
+
+@bp.route("/api/de-translate/<task_id>/resume", methods=["POST"])
 @login_required
-def resume(task_id, step):
+def resume(task_id):
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
-    allowed = {"extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"}
-    if step not in allowed:
-        return jsonify({"error": f"Invalid step: {step}"}), 400
-    de_pipeline_runner.resume(task_id, step, user_id=current_user.id)
-    return jsonify({"status": "resumed"})
+    body = request.get_json(silent=True) or {}
+    start_step = body.get("start_step", "")
+    if start_step not in RESUMABLE_STEPS:
+        return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
+
+    started = False
+    for s in RESUMABLE_STEPS:
+        if s == start_step:
+            started = True
+        if started:
+            store.set_step(task_id, s, "pending")
+            store.set_step_message(task_id, s, "等待中...")
+
+    store.update(task_id, status="running", current_review_step="")
+    de_pipeline_runner.resume(task_id, start_step, user_id=current_user.id)
+    return jsonify({"status": "started", "start_step": start_step})
 
 
 @bp.route("/api/de-translate/<task_id>/download/<file_type>")
