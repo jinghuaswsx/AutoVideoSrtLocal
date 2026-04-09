@@ -208,16 +208,27 @@ def save_srt(content: str, output_path: str) -> str:
 
 
 def apply_french_punctuation(text: str) -> str:
-    """Apply French punctuation spacing rules.
+    """Apply French punctuation spacing rules to SRT content.
 
+    Only modifies subtitle text lines — timestamp and sequence-number lines
+    are left untouched so ffmpeg can parse the SRT correctly.
+
+    Rules applied to text lines:
     - Non-breaking space (U+00A0) before ? ! : ;
     - « text » with non-breaking spaces inside guillemets
-    - Normalize existing spaces around these punctuation marks
     """
     nbsp = "\u00A0"
-    # Normalize: remove any existing spaces before high punctuation, then add NBSP
-    text = re.sub(r'\s*([?!;:])', rf'{nbsp}\1', text)
-    # Guillemets: « word » with NBSP inside
-    text = re.sub(r'«\s*', f'«{nbsp}', text)
-    text = re.sub(r'\s*»', f'{nbsp}»', text)
-    return text
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip empty lines, sequence numbers, and timestamp lines
+        if not stripped or stripped.isdigit() or "-->" in stripped:
+            result.append(line)
+            continue
+        # Apply French punctuation rules only to subtitle text lines
+        line = re.sub(r'\s*([?!;:])', rf'{nbsp}\1', line)
+        line = re.sub(r'«\s*', f'«{nbsp}', line)
+        line = re.sub(r'\s*»', f'{nbsp}»', line)
+        result.append(line)
+    return "\n".join(result)

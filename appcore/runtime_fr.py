@@ -32,6 +32,8 @@ from web.preview_artifacts import (
 class FrTranslateRunner(PipelineRunner):
     """French-specific pipeline runner."""
 
+    project_type: str = "fr_translate"
+
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         super()._step_asr(task_id, task_dir)
         # Auto-detect source language from ASR text
