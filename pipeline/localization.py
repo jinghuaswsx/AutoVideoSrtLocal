@@ -161,13 +161,14 @@ def _concat_items(items: list[dict], key: str) -> str:
 
 def _sanitize_model_text(text: str) -> str:
     cleaned = (text or "").strip()
-    cleaned = cleaned.replace("’", "'").replace("‘", "'")
+    # Preserve curly apostrophes (French élision: l’homme, c’est)
     cleaned = cleaned.replace("“", '"').replace("”", '"')
     cleaned = re.sub(r"[–—―]", ", ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"\s+([,.!?])", r"\1", cleaned)
+    # Collapse whitespace but preserve non-breaking spaces (U+00A0, U+202F)
+    cleaned = re.sub(r"[^\S\u00a0\u202f]+", " ", cleaned)
+    cleaned = re.sub(r"[^\S\u00a0\u202f]+([,.!?])", r"\1", cleaned)
     cleaned = re.sub(r",\s*,+", ", ", cleaned)
-    cleaned = re.sub(r"\s*,\s*", ", ", cleaned)
+    cleaned = re.sub(r"[^\S\u00a0\u202f]*,[^\S\u00a0\u202f]*", ", ", cleaned)
     return cleaned.strip()
 
 
