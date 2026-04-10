@@ -63,6 +63,47 @@ def get_retention_hours(project_type: str) -> int:
     return _HARDCODE_DEFAULT_HOURS
 
 
+def adjust_expires_for_type(project_type: str, old_hours: int, new_hours: int) -> int:
+    """保留期变更时，同步调整该类型所有未过期项目的 expires_at。返回受影响行数。"""
+    if old_hours == new_hours:
+        return 0
+    delta = new_hours - old_hours
+    from appcore.db import execute as db_execute
+    return db_execute(
+        "UPDATE projects SET expires_at = DATE_ADD(expires_at, INTERVAL %s HOUR) "
+        "WHERE type = %s AND deleted_at IS NULL AND expires_at IS NOT NULL AND expires_at > NOW()",
+        (delta, project_type),
+    )
+
+
+def adjust_expires_for_default(old_hours: int, new_hours: int) -> int:
+    """全局默认保留期变更时，调整所有【没有模块覆盖】的未过期项目的 expires_at。"""
+    if old_hours == new_hours:
+        return 0
+    delta = new_hours - old_hours
+    # 找出哪些模块有独立覆盖
+    overridden = set()
+    for ptype in PROJECT_TYPE_LABELS:
+        if get_setting(f"retention_{ptype}_hours"):
+            overridden.add(ptype)
+
+    from appcore.db import execute as db_execute
+    if overridden:
+        placeholders = ",".join(["%s"] * len(overridden))
+        return db_execute(
+            f"UPDATE projects SET expires_at = DATE_ADD(expires_at, INTERVAL %s HOUR) "
+            f"WHERE type NOT IN ({placeholders}) "
+            f"AND deleted_at IS NULL AND expires_at IS NOT NULL AND expires_at > NOW()",
+            (delta, *overridden),
+        )
+    else:
+        return db_execute(
+            "UPDATE projects SET expires_at = DATE_ADD(expires_at, INTERVAL %s HOUR) "
+            "WHERE deleted_at IS NULL AND expires_at IS NOT NULL AND expires_at > NOW()",
+            (delta,),
+        )
+
+
 def get_all_retention_settings() -> dict:
     """返回 {'default': 168, 'copywriting': 48, ...}，无覆盖的模块不出现。"""
     rows = _query(

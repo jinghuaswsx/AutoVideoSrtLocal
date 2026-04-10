@@ -5,7 +5,10 @@ from appcore.users import list_users, create_user, set_active, get_by_username
 from appcore.settings import (
     PROJECT_TYPE_LABELS,
     get_all_retention_settings,
+    get_retention_hours,
     set_setting,
+    adjust_expires_for_type,
+    adjust_expires_for_default,
 )
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -49,6 +52,12 @@ def users():
 @admin_required
 def settings():
     if request.method == "POST":
+        from appcore.db import execute as db_execute
+
+        # ── 记住旧值，用于计算 delta ──
+        old_default = get_retention_hours("__nonexistent__")  # 纯全局默认
+        old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
+
         # 保存全局默认值
         default_days = request.form.get("retention_default_days", "").strip()
         if default_days:
@@ -71,16 +80,29 @@ def settings():
                     if hours > 0:
                         set_setting(key, str(hours))
                     else:
-                        from appcore.db import execute as db_execute
                         db_execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
                 except (ValueError, TypeError):
                     pass
             else:
                 # 留空 = 删除覆盖，回退到全局默认
-                from appcore.db import execute as db_execute
                 db_execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
 
-        flash("保留周期设置已保存")
+        # ── 同步调整已有项目的 expires_at ──
+        adjusted = 0
+        for ptype in PROJECT_TYPE_LABELS:
+            new_hours = get_retention_hours(ptype)
+            if new_hours != old_per_type[ptype]:
+                adjusted += adjust_expires_for_type(ptype, old_per_type[ptype], new_hours)
+
+        # 全局默认变更：调整没有模块覆盖的项目
+        new_default = get_retention_hours("__nonexistent__")
+        if new_default != old_default:
+            adjusted += adjust_expires_for_default(old_default, new_default)
+
+        if adjusted:
+            flash(f"保留周期设置已保存，已同步调整 {adjusted} 个项目的过期时间")
+        else:
+            flash("保留周期设置已保存")
         return redirect(url_for("admin.settings"))
 
     current = get_all_retention_settings()
