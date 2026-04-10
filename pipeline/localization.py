@@ -182,11 +182,11 @@ def _sanitize_text_items(items: list[dict], text_key: str) -> list[dict]:
 
 
 def _subtitle_word_count(text: str) -> int:
-    return len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text))
+    return len(re.findall(r"\w+(?:[-']\w+)*", text))
 
 
 def _subtitle_word_signature(text: str) -> list[str]:
-    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text)]
+    return [token.lower() for token in re.findall(r"\w+(?:[-']\w+)*", text)]
 
 
 def _strip_terminal_punctuation(text: str) -> str:
