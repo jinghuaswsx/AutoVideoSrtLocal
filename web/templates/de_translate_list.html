@@ -106,6 +106,12 @@
 .card-menu button.danger { color: var(--text-btn-danger); }
 .card-menu button.danger:hover { background: var(--bg-btn-danger); color: var(--text-btn-danger); }
 .list-item .card-menu { top: 40px; right: 0; }
+.expire-notice {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
+  padding: 12px 18px; margin-bottom: 18px; font-size: 14px; color: #795548;
+}
+.expire-notice .icon { font-size: 20px; flex-shrink: 0; }
 
 /* ── Upload modal ── */
 .modal-overlay {
@@ -142,6 +148,10 @@
   </div>
 </div>
 
+<div class="expire-notice">
+  <span class="icon">⚠️</span>
+  <span>项目文件仅保留 <strong>{% if retention_hours >= 24 %}{{ (retention_hours / 24)|int }} 天{% else %}{{ retention_hours }} 小时{% endif %}</strong>，到期后将自动清理，请及时导出或下载所需内容。</span>
+</div>
 {% if projects %}
 <!-- Grid View -->
 <div class="grid active" id="gridView">

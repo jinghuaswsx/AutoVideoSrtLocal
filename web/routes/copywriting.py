@@ -13,6 +13,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore import task_state
+from appcore.settings import get_retention_hours
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
 from appcore.db import get_conn as get_connection
@@ -42,7 +43,8 @@ def list_page():
     finally:
         conn.close()
     from datetime import datetime
-    return render_template("copywriting_list.html", projects=projects, now=datetime.now())
+    return render_template("copywriting_list.html", projects=projects, now=datetime.now(),
+                           retention_hours=get_retention_hours("copywriting"))
 
 
 @bp.route("/copywriting/<task_id>")
@@ -152,9 +154,10 @@ def upload():
                 "thumbnail_path, status, task_dir, state_json, "
                 "created_at, expires_at) "
                 "VALUES (%s, %s, 'copywriting', %s, %s, %s, 'uploaded', %s, %s, "
-                "NOW(), DATE_ADD(NOW(), INTERVAL 48 HOUR))",
+                "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
                 (task_id, current_user.id, video_filename, display_name,
-                 thumbnail_path, task_dir, json.dumps(task, ensure_ascii=False)),
+                 thumbnail_path, task_dir, json.dumps(task, ensure_ascii=False),
+                 get_retention_hours("copywriting")),
             )
 
             # 保存商品信息

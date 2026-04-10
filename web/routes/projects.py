@@ -3,6 +3,7 @@ import json
 from flask import Blueprint, render_template, abort, redirect
 from flask_login import login_required, current_user
 from appcore.db import query, query_one
+from appcore.settings import get_retention_hours
 
 bp = Blueprint("projects", __name__)
 
@@ -16,7 +17,8 @@ def index():
         (current_user.id,),
     )
     from datetime import datetime
-    return render_template("projects.html", projects=rows, now=datetime.now())
+    return render_template("projects.html", projects=rows, now=datetime.now(),
+                           retention_hours=get_retention_hours("translation"))
 
 
 @bp.route("/projects/<task_id>")

@@ -11,6 +11,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore.api_keys import resolve_key
+from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute, get_conn
 from appcore.events import EventBus, Event
 from config import UPLOAD_DIR, OUTPUT_DIR
@@ -129,9 +130,10 @@ def upload():
         "(id, user_id, type, original_filename, display_name, thumbnail_path, "
         "status, task_dir, state_json, created_at, expires_at) "
         "VALUES (%s, %s, 'video_creation', %s, %s, %s, 'uploaded', %s, %s, "
-        "NOW(), DATE_ADD(NOW(), INTERVAL 48 HOUR))",
+        "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
         (task_id, current_user.id, video_filename, display_name,
-         thumbnail_path, task_dir, json.dumps(state, ensure_ascii=False)),
+         thumbnail_path, task_dir, json.dumps(state, ensure_ascii=False),
+         get_retention_hours("video_creation")),
     )
 
     # 异步抽帧

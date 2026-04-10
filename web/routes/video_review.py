@@ -11,6 +11,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.settings import get_retention_hours
 from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.video_review import get_review_prompts, save_review_prompts
 from web.extensions import socketio
@@ -97,9 +98,10 @@ def upload():
         "(id, user_id, type, original_filename, display_name, "
         "status, task_dir, state_json, created_at, expires_at) "
         "VALUES (%s, %s, 'video_review', %s, %s, 'uploaded', %s, %s, "
-        "NOW(), DATE_ADD(NOW(), INTERVAL 48 HOUR))",
+        "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
         (task_id, current_user.id, video_filename, display_name,
-         task_dir, json.dumps(state, ensure_ascii=False)),
+         task_dir, json.dumps(state, ensure_ascii=False),
+         get_retention_hours("video_review")),
     )
 
     return jsonify({"id": task_id}), 201

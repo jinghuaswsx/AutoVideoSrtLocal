@@ -54,7 +54,9 @@ def index():
            ORDER BY created_at DESC""",
         (current_user.id,),
     )
-    return render_template("fr_translate_list.html", projects=rows, now=datetime.now())
+    from appcore.settings import get_retention_hours
+    return render_template("fr_translate_list.html", projects=rows, now=datetime.now(),
+                           retention_hours=get_retention_hours("fr_translate"))
 
 
 @bp.route("/fr-translate/<task_id>")
