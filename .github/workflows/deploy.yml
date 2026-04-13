@@ -1,0 +1,36 @@
+name: Deploy to Production
+
+# 触发条件：
+#   1. master 分支收到 push（包括 PR 合并）
+#   2. 手动从 Actions 页面点 "Run workflow"
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH 拉代码并重启服务
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH 到生产服务器执行 deploy/setup.sh
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # 如果 SSH_PRIVATE_KEY 没配置，会回退用密码
+          password: ${{ secrets.SSH_PASSWORD }}
+          script_stop: true
+          command_timeout: 15m
+          script: |
+            set -e
+            cd /opt/autovideosrt
+            git fetch --all
+            git reset --hard origin/master
+            bash deploy/setup.sh
