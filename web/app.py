@@ -10,6 +10,7 @@ Flask 应用工厂
 """
 import os
 import sys
+from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -19,6 +20,10 @@ from flask_wtf.csrf import CSRFProtect
 
 from web.extensions import socketio
 from web.auth import login_manager
+
+
+# 登录 session 有效期：1 个月
+SESSION_LIFETIME = timedelta(days=30)
 
 csrf = CSRFProtect()
 from web.routes.task import bp as task_bp
@@ -49,6 +54,13 @@ def create_app() -> Flask:
         )
     app.config["SECRET_KEY"] = secret_key
     app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
+
+    # 登录会话有效期 1 个月，并允许同一账号多地同时登录
+    app.config["PERMANENT_SESSION_LIFETIME"] = SESSION_LIFETIME
+    app.config["REMEMBER_COOKIE_DURATION"] = SESSION_LIFETIME
+    # 关闭 Flask-Login 的 session protection，避免不同 IP/User-Agent 时
+    # 把已登录用户挤下线，从而支持多地同时在线
+    login_manager.session_protection = None
 
     # CSRF 保护（测试环境可通过 WTF_CSRF_ENABLED=0 关闭）
     if os.getenv("WTF_CSRF_ENABLED", "1") not in ("0", "false", "no"):
