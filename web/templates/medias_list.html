@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% block title %}素材管理 - AutoVideoSrt{% endblock %}
+{% block page_title %}素材管理{% endblock %}
+{% block extra_style %}
+<link rel="stylesheet" href="{{ url_for('static', filename='medias.css') }}">
+{% endblock %}
+{% block content %}
+<div class="medias-wrap">
+  {% if not tos_ready %}
+  <div class="medias-banner">素材上传需要先配置 TOS_MEDIA_BUCKET，请联系管理员。</div>
+  {% endif %}
+
+  <div class="medias-toolbar">
+    <input id="kw" class="medias-input" placeholder="关键词：产品名/色号人">
+    <label class="medias-check"><input type="checkbox" id="archived"> 已归档</label>
+    {% if is_admin %}
+    <label class="medias-check"><input type="checkbox" id="scopeAll"> 查看全部</label>
+    {% endif %}
+    <button class="btn btn-ghost" id="searchBtn">搜索</button>
+    <span style="flex:1"></span>
+    <button class="btn btn-primary" id="createBtn">+ 添加产品素材</button>
+  </div>
+
+  <table class="medias-table">
+    <thead>
+      <tr>
+        <th>ID</th><th>产品名称</th><th>素材数</th><th>来源</th>
+        <th>创建时间</th><th>修改时间</th><th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="pager" class="medias-pager"></div>
+</div>
+
+{% include "_medias_edit_modal.html" %}
+
+<script>
+  window.MEDIAS_TOS_READY = {{ 'true' if tos_ready else 'false' }};
+  window.MEDIAS_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+</script>
+<script src="{{ url_for('static', filename='medias.js') }}"></script>
+{% endblock %}
