@@ -56,3 +56,4 @@ package-lock.json
 # Test notes
 testuser.md
 .omc/project-memory.json
+.omc/state/
