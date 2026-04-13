@@ -1,0 +1,266 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from flask import Blueprint, render_template, request, jsonify, abort, send_file
+from flask_login import login_required, current_user
+
+from appcore import medias, tos_clients
+from appcore.db import execute as db_execute
+from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
+from pipeline.ffutil import extract_thumbnail, get_media_duration
+
+bp = Blueprint("medias", __name__, url_prefix="/medias")
+
+THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
+
+
+def _is_admin() -> bool:
+    return getattr(current_user, "role", "") == "admin"
+
+
+def _can_access_product(product: dict | None, write: bool = False) -> bool:
+    if not product:
+        return False
+    if product["user_id"] == current_user.id:
+        return True
+    if _is_admin() and not write:
+        return True
+    return False
+
+
+def _serialize_product(p: dict, items_count: int | None = None) -> dict:
+    return {
+        "id": p["id"],
+        "name": p["name"],
+        "color_people": p.get("color_people"),
+        "source": p.get("source"),
+        "archived": bool(p.get("archived")),
+        "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
+        "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
+        "items_count": items_count,
+    }
+
+
+def _serialize_item(it: dict) -> dict:
+    return {
+        "id": it["id"],
+        "filename": it["filename"],
+        "display_name": it.get("display_name") or it["filename"],
+        "object_key": it["object_key"],
+        "thumbnail_url": f"/medias/thumb/{it['id']}" if it.get("thumbnail_path") else None,
+        "duration_seconds": it.get("duration_seconds"),
+        "file_size": it.get("file_size"),
+        "created_at": it["created_at"].isoformat() if it.get("created_at") else None,
+    }
+
+
+# ---------- 页面 ----------
+
+@bp.route("/")
+@login_required
+def index():
+    return render_template(
+        "medias_list.html",
+        tos_ready=tos_clients.is_media_bucket_configured(),
+        is_admin=_is_admin(),
+    )
+
+
+# ---------- 产品 API ----------
+
+@bp.route("/api/products", methods=["GET"])
+@login_required
+def api_list_products():
+    keyword = (request.args.get("keyword") or "").strip()
+    archived = request.args.get("archived") in ("1", "true", "yes")
+    scope_all = request.args.get("scope") == "all" and _is_admin()
+    page = max(1, int(request.args.get("page") or 1))
+    limit = 20
+    offset = (page - 1) * limit
+
+    user_id = None if scope_all else current_user.id
+    rows, total = medias.list_products(user_id, keyword=keyword, archived=archived,
+                                        offset=offset, limit=limit)
+    counts = medias.count_items_by_product([r["id"] for r in rows])
+    data = [_serialize_product(r, counts.get(r["id"], 0)) for r in rows]
+    return jsonify({"items": data, "total": total, "page": page, "page_size": limit})
+
+
+@bp.route("/api/products", methods=["POST"])
+@login_required
+def api_create_product():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    pid = medias.create_product(
+        current_user.id, name,
+        color_people=(body.get("color_people") or None),
+        source=(body.get("source") or None),
+    )
+    return jsonify({"id": pid}), 201
+
+
+@bp.route("/api/products/<int:pid>", methods=["GET"])
+@login_required
+def api_get_product(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    return jsonify({
+        "product": _serialize_product(p, None),
+        "copywritings": medias.list_copywritings(pid),
+        "items": [_serialize_item(i) for i in medias.list_items(pid)],
+    })
+
+
+@bp.route("/api/products/<int:pid>", methods=["PUT"])
+@login_required
+def api_update_product(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    medias.update_product(
+        pid,
+        name=body.get("name") or p["name"],
+        color_people=body.get("color_people"),
+        source=body.get("source"),
+    )
+    if isinstance(body.get("copywritings"), list):
+        medias.replace_copywritings(pid, body["copywritings"])
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/products/<int:pid>", methods=["DELETE"])
+@login_required
+def api_delete_product(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    medias.soft_delete_product(pid)
+    return jsonify({"ok": True})
+
+
+# ---------- 素材上传 ----------
+
+@bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
+@login_required
+def api_item_bootstrap(pid: int):
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    filename = os.path.basename((body.get("filename") or "").strip())
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+    object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    return jsonify({
+        "object_key": object_key,
+        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "bucket": TOS_MEDIA_BUCKET,
+        "region": TOS_REGION,
+        "endpoint": TOS_PUBLIC_ENDPOINT,
+        "expires_in": TOS_SIGNED_URL_EXPIRES,
+    })
+
+
+@bp.route("/api/products/<int:pid>/items/complete", methods=["POST"])
+@login_required
+def api_item_complete(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    object_key = (body.get("object_key") or "").strip()
+    filename = (body.get("filename") or "").strip()
+    file_size = int(body.get("file_size") or 0)
+    if not object_key or not filename:
+        return jsonify({"error": "object_key and filename required"}), 400
+    if not tos_clients.media_object_exists(object_key):
+        return jsonify({"error": "对象不存在"}), 400
+
+    item_id = medias.create_item(
+        pid, current_user.id, filename, object_key,
+        file_size=file_size or None,
+    )
+
+    # 抽缩略图（失败不阻断入库）
+    try:
+        THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        product_dir = THUMB_DIR / str(pid)
+        product_dir.mkdir(exist_ok=True)
+        tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
+        tos_clients.download_media_file(object_key, str(tmp_video))
+        duration = get_media_duration(str(tmp_video))
+        thumb = extract_thumbnail(str(tmp_video), str(product_dir), scale="360:-1")
+        if thumb:
+            final = product_dir / f"{item_id}.jpg"
+            os.replace(thumb, final)
+            db_execute(
+                "UPDATE media_items SET thumbnail_path=%s, duration_seconds=%s WHERE id=%s",
+                (str(final.relative_to(OUTPUT_DIR)).replace("\\", "/"),
+                 duration or None, item_id),
+            )
+        try:
+            tmp_video.unlink()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return jsonify({"id": item_id}), 201
+
+
+@bp.route("/api/items/<int:item_id>", methods=["DELETE"])
+@login_required
+def api_delete_item(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p, write=True):
+        abort(404)
+    medias.soft_delete_item(item_id)
+    try:
+        tos_clients.delete_media_object(it["object_key"])
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+
+# ---------- 缩略图代理 ----------
+
+@bp.route("/thumb/<int:item_id>")
+@login_required
+def thumb(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    if not it.get("thumbnail_path"):
+        abort(404)
+    full = Path(OUTPUT_DIR) / it["thumbnail_path"]
+    if not full.exists():
+        abort(404)
+    return send_file(str(full), mimetype="image/jpeg")
+
+
+# ---------- 签名下载（播放） ----------
+
+@bp.route("/api/items/<int:item_id>/play_url")
+@login_required
+def api_play_url(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    url = tos_clients.generate_signed_media_download_url(it["object_key"])
+    return jsonify({"url": url})
