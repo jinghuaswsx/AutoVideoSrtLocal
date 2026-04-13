@@ -1,0 +1,51 @@
+-- db/migrations/2026_04_13_add_medias_tables.sql
+CREATE TABLE IF NOT EXISTS media_products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  color_people VARCHAR(64) DEFAULT NULL,
+  source VARCHAR(64) DEFAULT NULL,
+  importance TINYINT DEFAULT NULL,
+  trend_score TINYINT DEFAULT NULL,
+  selling_points TEXT DEFAULT NULL,
+  archived TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME DEFAULT NULL,
+  KEY idx_user_deleted (user_id, deleted_at),
+  KEY idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS media_copywritings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  product_id INT NOT NULL,
+  idx INT NOT NULL DEFAULT 1,
+  title VARCHAR(500) DEFAULT NULL,
+  body TEXT DEFAULT NULL,
+  description VARCHAR(500) DEFAULT NULL,
+  ad_carrier VARCHAR(255) DEFAULT NULL,
+  ad_copy TEXT DEFAULT NULL,
+  ad_keywords VARCHAR(500) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_product_idx (product_id, idx)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS media_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  product_id INT NOT NULL,
+  user_id INT NOT NULL,
+  filename VARCHAR(500) NOT NULL,
+  display_name VARCHAR(255) DEFAULT NULL,
+  object_key VARCHAR(500) NOT NULL,
+  file_url VARCHAR(1000) DEFAULT NULL,
+  thumbnail_path VARCHAR(500) DEFAULT NULL,
+  duration_seconds FLOAT DEFAULT NULL,
+  file_size BIGINT DEFAULT NULL,
+  play_count INT NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME DEFAULT NULL,
+  KEY idx_product_deleted (product_id, deleted_at),
+  KEY idx_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
