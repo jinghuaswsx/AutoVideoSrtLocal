@@ -36,6 +36,7 @@ from web.routes.video_review import bp as video_review_bp
 from web.routes.copywriting import bp as copywriting_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
+from web.routes.medias import bp as medias_bp
 
 
 def create_app() -> Flask:
@@ -77,6 +78,7 @@ def create_app() -> Flask:
     app.register_blueprint(video_review_bp)
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
+    app.register_blueprint(medias_bp)
 
     # WebSocket 事件
     @socketio.on("join_task")

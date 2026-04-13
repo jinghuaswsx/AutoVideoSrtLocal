@@ -1,0 +1,39 @@
+<div class="medias-modal-mask" id="editMask" style="display:none">
+  <div class="medias-modal">
+    <div class="medias-modal-head">
+      <span id="modalTitle">编辑素材</span>
+      <button class="medias-modal-close" id="modalClose">×</button>
+    </div>
+    <div class="medias-modal-body">
+      <label class="medias-label">产品名称 *</label>
+      <input id="mName" class="medias-input">
+
+      <div class="medias-row">
+        <div class="medias-col">
+          <label class="medias-label">色号人</label>
+          <input id="mColor" class="medias-input">
+        </div>
+        <div class="medias-col">
+          <label class="medias-label">来源</label>
+          <input id="mSource" class="medias-input">
+        </div>
+      </div>
+
+      <label class="medias-label">文案</label>
+      <div id="cwList" class="medias-cw-list"></div>
+      <button class="btn btn-ghost btn-sm" id="cwAddBtn">+ 添加文案条目</button>
+
+      <label class="medias-label" style="margin-top:18px">视频素材</label>
+      <div id="itemsGrid" class="medias-items-grid"></div>
+      <div id="uploadArea">
+        <input type="file" id="fileInput" multiple accept="video/*" style="display:none">
+        <button class="btn btn-ghost" id="uploadBtn">+ 上传更多素材</button>
+        <div id="uploadProgress" class="medias-upload-progress"></div>
+      </div>
+    </div>
+    <div class="medias-modal-foot">
+      <button class="btn btn-ghost" id="cancelBtn">取消</button>
+      <button class="btn btn-primary" id="saveBtn">保存</button>
+    </div>
+  </div>
+</div>
