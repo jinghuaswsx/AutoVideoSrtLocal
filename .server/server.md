@@ -12,7 +12,7 @@ Internal use only. This file records the production server access information fo
 | Server IP | `14.103.220.208` |
 | SSH user | `root` |
 | SSH port | `22` |
-| SSH key file | `C:\Users\admin\.ssh\openclaw-noobird.pem` |
+| SSH key file | `.server/openclaw-noobird.pem`（仓库内，已 .gitignore） |
 | SSH password | `wylf1109@` |
 
 ## Production
@@ -30,18 +30,19 @@ Internal use only. This file records the production server access information fo
 
 ## Deploy Steps
 
+推荐：一键发布脚本（本地或云端 Claude Code 环境通用）
+
 ```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208
-cd /opt/autovideosrt
-git pull
-systemctl restart autovideosrt
-systemctl status autovideosrt --no-pager
+bash deploy/publish.sh "可选的 commit message"
 ```
 
-或者直接一行（本地执行）：
+脚本会自动：本地 commit+push → 远端 git pull → systemctl restart → 健康检查。
+
+手动方式（调试用）：
 
 ```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208 "cd /opt/autovideosrt && git pull && systemctl restart autovideosrt"
+ssh -i .server/openclaw-noobird.pem root@14.103.220.208 \
+  "cd /opt/autovideosrt && git pull && systemctl restart autovideosrt"
 ```
 
 ## Notes
