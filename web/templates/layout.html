@@ -315,6 +315,9 @@
       <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
         <span class="nav-icon">📦</span> 素材管理
       </a>
+      <a href="/prompt-library" {% if request.path.startswith('/prompt-library') %}class="active"{% endif %}>
+        <span class="nav-icon">✨</span> 提示词典
+      </a>
       <a href="{{ url_for('settings.index') }}" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
         <span class="nav-icon">⚙️</span> API 配置
       </a>
