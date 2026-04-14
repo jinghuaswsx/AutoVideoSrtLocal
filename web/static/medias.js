@@ -2,6 +2,10 @@
   const state = { page: 1, current: null };
   const $ = (id) => document.getElementById(id);
 
+  function icon(name, size = 14) {
+    return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
+  }
+
   async function fetchJSON(url, opts) {
     const res = await fetch(url, opts);
     if (!res.ok) throw new Error(await res.text());
@@ -11,13 +15,15 @@
   function fmtDate(s) {
     if (!s) return '';
     const d = new Date(s);
-    return d.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   function escapeHtml(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // ---------- List ----------
   async function loadList() {
     const kw = $('kw').value.trim();
     const archived = $('archived').checked;
@@ -26,34 +32,103 @@
     if (kw) params.set('keyword', kw);
     if (archived) params.set('archived', '1');
     if (scopeAll) params.set('scope', 'all');
-    const data = await fetchJSON('/medias/api/products?' + params);
-    renderRows(data.items);
-    renderPager(data.total, data.page, data.page_size);
+    renderSkeleton();
+    try {
+      const data = await fetchJSON('/medias/api/products?' + params);
+      renderGrid(data.items);
+      renderPager(data.total, data.page, data.page_size);
+      const pill = $('totalPill');
+      if (pill) pill.textContent = `共 ${data.total} 个产品`;
+    } catch (e) {
+      $('grid').innerHTML = `
+        <div class="oc-state">
+          <div class="icon">${icon('alert', 28)}</div>
+          <p class="title">加载失败</p>
+          <p class="desc">${escapeHtml(e.message || '请稍后重试')}</p>
+          <button class="oc-btn ghost" onclick="location.reload()">刷新页面</button>
+        </div>`;
+    }
   }
 
-  function renderRows(items) {
-    const tb = $('tbody');
-    tb.innerHTML = items.map(p => `
-      <tr>
-        <td>${p.id}</td>
-        <td><div>${escapeHtml(p.name)}</div><div style="color:#9ca3af;font-size:12px">色号人: ${escapeHtml(p.color_people || '-')}</div></td>
-        <td><span class="medias-count">${p.items_count || 0}</span></td>
-        <td>${p.source ? `<span class="medias-pill">${escapeHtml(p.source)}</span>` : '-'}</td>
-        <td>${fmtDate(p.created_at)}</td>
-        <td>${fmtDate(p.updated_at)}</td>
-        <td>
-          <button class="btn btn-ghost btn-sm" data-edit="${p.id}">编辑</button>
-          <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626" data-del="${p.id}">删除</button>
-        </td>
-      </tr>
-    `).join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af">暂无产品</td></tr>';
-    tb.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEdit(+b.dataset.edit)));
-    tb.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteProduct(+b.dataset.del)));
+  function renderSkeleton() {
+    $('grid').innerHTML = Array.from({ length: 8 }, () => '<div class="oc-skel"></div>').join('');
   }
+
+  function renderGrid(items) {
+    const grid = $('grid');
+    if (!items || !items.length) {
+      grid.innerHTML = `
+        <div class="oc-state">
+          <div class="icon">${icon('package', 28)}</div>
+          <p class="title">还没有产品素材</p>
+          <p class="desc">创建你的第一个产品素材库，统一管理文案与视频资源</p>
+          <button class="oc-btn primary" id="emptyCreate">
+            ${icon('plus', 14)}<span>添加产品素材</span>
+          </button>
+        </div>`;
+      const ec = $('emptyCreate');
+      if (ec) ec.addEventListener('click', () => $('createBtn').click());
+      return;
+    }
+    grid.innerHTML = items.map(cardHTML).join('');
+    grid.querySelectorAll('[data-pid]').forEach(el => {
+      const pid = +el.dataset.pid;
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.menu-btn') || e.target.closest('.oc-menu-pop')) return;
+        openEdit(pid);
+      });
+    });
+    grid.querySelectorAll('.menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAllMenus();
+        const pop = btn.nextElementSibling;
+        if (pop) pop.classList.add('open');
+      });
+    });
+    grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); closeAllMenus(); openEdit(+b.dataset.edit); }));
+    grid.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); closeAllMenus(); deleteProduct(+b.dataset.del); }));
+  }
+
+  function cardHTML(p) {
+    const cover = p.cover_thumbnail_url
+      ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
+      : `<div class="cover-ph">${icon('film', 32)}</div>`;
+    const tags = [];
+    if (p.source) tags.push(`<span class="oc-tag on-cover">${escapeHtml(p.source)}</span>`);
+    tags.push(`<span class="oc-tag on-cover">${icon('film', 11)} ${p.items_count || 0}</span>`);
+
+    return `
+      <article class="oc-card" data-pid="${p.id}" tabindex="0">
+        <div class="cover">
+          ${cover}
+          <div class="cover-tags">${tags.join('')}</div>
+          <button class="menu-btn" type="button" aria-label="更多操作">${icon('more', 16)}</button>
+          <div class="oc-menu-pop">
+            <button data-edit="${p.id}">${icon('edit', 14)}<span>编辑</span></button>
+            <button class="danger" data-del="${p.id}">${icon('trash', 14)}<span>删除</span></button>
+          </div>
+        </div>
+        <div class="info">
+          <div class="name">${escapeHtml(p.name)}</div>
+          <div class="color">${p.color_people ? escapeHtml(p.color_people) : '未设置色号 / 代言人'}</div>
+          <div class="meta">
+            <span>${fmtDate(p.created_at)}</span>
+            <span>#${p.id}</span>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll('.oc-menu-pop.open').forEach(m => m.classList.remove('open'));
+  }
+  document.addEventListener('click', closeAllMenus);
 
   function renderPager(total, page, pageSize) {
     const pages = Math.max(1, Math.ceil(total / pageSize));
     const p = $('pager');
+    if (pages <= 1) { p.innerHTML = ''; return; }
     let html = '';
     for (let i = 1; i <= pages; i++) {
       html += `<button class="${i === page ? 'active' : ''}" data-page="${i}">${i}</button>`;
@@ -65,22 +140,36 @@
   }
 
   async function deleteProduct(pid) {
-    if (!confirm('确认删除该产品及其所有素材？')) return;
+    if (!confirm('确认删除该产品及其所有素材？此操作不可恢复。')) return;
     await fetch('/medias/api/products/' + pid, { method: 'DELETE' });
     loadList();
   }
 
+  // ---------- Modal ----------
+  function showModal() { $('editMask').hidden = false; }
+  function hideModal() { $('editMask').hidden = true; state.current = null; }
+
+  function switchTab(name) {
+    document.querySelectorAll('.oc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.oc-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  }
+
   async function openEdit(pid) {
-    const data = await fetchJSON('/medias/api/products/' + pid);
-    state.current = data;
-    $('modalTitle').textContent = '编辑素材';
-    $('mName').value = data.product.name || '';
-    $('mColor').value = data.product.color_people || '';
-    $('mSource').value = data.product.source || '';
-    renderCopywritings(data.copywritings);
-    renderItems(data.items);
-    $('uploadProgress').innerHTML = '';
-    $('editMask').style.display = 'flex';
+    try {
+      const data = await fetchJSON('/medias/api/products/' + pid);
+      state.current = data;
+      $('modalTitle').textContent = '编辑产品素材';
+      $('mName').value = data.product.name || '';
+      $('mColor').value = data.product.color_people || '';
+      $('mSource').value = data.product.source || '';
+      renderCopywritings(data.copywritings);
+      renderItems(data.items);
+      $('uploadProgress').innerHTML = '';
+      switchTab('basic');
+      showModal();
+    } catch (e) {
+      alert('加载失败：' + (e.message || e));
+    }
   }
 
   function openCreate() {
@@ -90,70 +179,92 @@
     renderCopywritings([]);
     renderItems([]);
     $('uploadProgress').innerHTML = '';
-    $('editMask').style.display = 'flex';
+    switchTab('basic');
+    showModal();
+    setTimeout(() => $('mName').focus(), 80);
   }
 
-  function closeModal() { $('editMask').style.display = 'none'; state.current = null; }
-
+  // ---------- Copywritings ----------
   function renderCopywritings(list) {
     const box = $('cwList');
     box.innerHTML = '';
     list.forEach((c, i) => box.appendChild(cwCard(c, i + 1)));
+    updateCwBadge();
+  }
+
+  function updateCwBadge() {
+    $('cwBadge').textContent = document.querySelectorAll('.oc-cw').length;
   }
 
   function cwCard(c, idx) {
     const d = document.createElement('div');
-    d.className = 'medias-cw-card';
+    d.className = 'oc-cw';
     d.innerHTML = `
-      <div class="medias-cw-index">#${idx}</div>
-      <button class="medias-cw-remove" type="button">×</button>
-      <input data-field="title" placeholder="标题" value="${escapeHtml(c.title || '')}">
-      <textarea data-field="body" placeholder="正文">${escapeHtml(c.body || '')}</textarea>
-      <input data-field="description" placeholder="描述" value="${escapeHtml(c.description || '')}">
-      <input data-field="ad_carrier" placeholder="广告媒体库" value="${escapeHtml(c.ad_carrier || '')}">
-      <textarea data-field="ad_copy" placeholder="广告文案">${escapeHtml(c.ad_copy || '')}</textarea>
-      <input data-field="ad_keywords" placeholder="广告词" value="${escapeHtml(c.ad_keywords || '')}">
+      <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
+      <div class="idx">#${idx}</div>
+      <div class="stack">
+        <input class="oc-input" data-field="title" placeholder="标题">
+        <textarea class="oc-textarea" data-field="body" placeholder="正文"></textarea>
+        <input class="oc-input" data-field="description" placeholder="描述">
+        <input class="oc-input" data-field="ad_carrier" placeholder="广告媒体库">
+        <textarea class="oc-textarea" data-field="ad_copy" placeholder="广告文案"></textarea>
+        <input class="oc-input" data-field="ad_keywords" placeholder="广告词">
+      </div>
     `;
-    d.querySelector('.medias-cw-remove').addEventListener('click', () => { d.remove(); reindexCw(); });
+    d.querySelector('[data-field="title"]').value = c.title || '';
+    d.querySelector('[data-field="body"]').value = c.body || '';
+    d.querySelector('[data-field="description"]').value = c.description || '';
+    d.querySelector('[data-field="ad_carrier"]').value = c.ad_carrier || '';
+    d.querySelector('[data-field="ad_copy"]').value = c.ad_copy || '';
+    d.querySelector('[data-field="ad_keywords"]').value = c.ad_keywords || '';
+    d.querySelector('.rm').addEventListener('click', () => { d.remove(); reindexCw(); });
     return d;
   }
 
   function reindexCw() {
-    [...document.querySelectorAll('.medias-cw-card .medias-cw-index')].forEach((e, i) => e.textContent = '#' + (i + 1));
+    [...document.querySelectorAll('.oc-cw .idx')].forEach((e, i) => e.textContent = '#' + (i + 1));
+    updateCwBadge();
   }
 
   function collectCopywritings() {
-    return [...document.querySelectorAll('.medias-cw-card')].map(card => {
+    return [...document.querySelectorAll('.oc-cw')].map(card => {
       const o = {};
       card.querySelectorAll('[data-field]').forEach(el => { o[el.dataset.field] = el.value || null; });
       return o;
     });
   }
 
+  // ---------- Items ----------
   function renderItems(items) {
     const g = $('itemsGrid');
     g.innerHTML = items.map(it => `
-      <div class="medias-item-card" data-item="${it.id}">
-        ${it.thumbnail_url ? `<img src="${it.thumbnail_url}">` : `<div style="aspect-ratio:16/9;background:#1f2937;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px">视频</div>`}
-        <div class="medias-item-name">${escapeHtml(it.display_name || it.filename)}</div>
-        <button class="medias-item-remove" type="button" title="删除">×</button>
+      <div class="oc-item" data-item="${it.id}">
+        <div class="thumb">
+          ${it.thumbnail_url
+            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
+            : `<div class="thumb-ph">${icon('film', 20)}</div>`}
+          <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
+        </div>
+        <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
       </div>
     `).join('');
     g.querySelectorAll('[data-item]').forEach(card => {
-      card.querySelector('.medias-item-remove').addEventListener('click', () => removeItem(+card.dataset.item, card));
+      card.querySelector('.rm').addEventListener('click', () => removeItem(+card.dataset.item, card));
     });
+    $('itemsBadge').textContent = items.length;
   }
 
   async function removeItem(itemId, card) {
     if (!confirm('确认删除该素材？')) return;
     await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
     card.remove();
+    $('itemsBadge').textContent = document.querySelectorAll('.oc-item').length;
   }
 
   async function ensureProductIdForUpload() {
     if (state.current && state.current.product && state.current.product.id) return state.current.product.id;
     const name = $('mName').value.trim();
-    if (!name) { alert('请先填写产品名称'); return null; }
+    if (!name) { alert('请先填写产品名称'); switchTab('basic'); $('mName').focus(); return null; }
     const res = await fetchJSON('/medias/api/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -163,7 +274,7 @@
     });
     const full = await fetchJSON('/medias/api/products/' + res.id);
     state.current = full;
-    $('modalTitle').textContent = '编辑素材';
+    $('modalTitle').textContent = '编辑产品素材';
     return res.id;
   }
 
@@ -173,7 +284,12 @@
     if (!pid) return;
     const box = $('uploadProgress');
     for (const f of files) {
-      const row = document.createElement('div'); row.textContent = `${f.name} · 上传中…`; box.appendChild(row);
+      const row = document.createElement('div');
+      row.className = 'oc-upload-row';
+      row.innerHTML = `
+        <span class="fname">${escapeHtml(f.name)}</span>
+        <span>上传中…</span>`;
+      box.appendChild(row);
       try {
         const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -185,9 +301,11 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ object_key: boot.object_key, filename: f.name, file_size: f.size }),
         });
-        row.textContent = `${f.name} · 完成`;
+        row.className = 'oc-upload-row ok';
+        row.innerHTML = `<span class="fname">${escapeHtml(f.name)}</span><span>完成</span>`;
       } catch (e) {
-        row.textContent = `${f.name} · 失败：${e.message}`;
+        row.className = 'oc-upload-row err';
+        row.innerHTML = `<span class="fname">${escapeHtml(f.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
       }
     }
     const full = await fetchJSON('/medias/api/products/' + pid);
@@ -198,7 +316,7 @@
 
   async function save() {
     const name = $('mName').value.trim();
-    if (!name) { alert('产品名称必填'); return; }
+    if (!name) { alert('产品名称必填'); switchTab('basic'); $('mName').focus(); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
     await fetchJSON('/medias/api/products/' + pid, {
@@ -208,28 +326,55 @@
         copywritings: collectCopywritings(),
       }),
     });
-    closeModal();
+    hideModal();
     loadList();
   }
 
+  // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
     $('searchBtn').addEventListener('click', () => { state.page = 1; loadList(); });
     $('kw').addEventListener('keydown', (e) => { if (e.key === 'Enter') { state.page = 1; loadList(); } });
-    $('archived').addEventListener('change', () => { state.page = 1; loadList(); });
-    if ($('scopeAll')) $('scopeAll').addEventListener('change', () => { state.page = 1; loadList(); });
+
+    const syncChip = (chipId, inputId) => {
+      const chip = $(chipId), inp = $(inputId);
+      if (!chip || !inp) return;
+      const sync = () => chip.classList.toggle('on', inp.checked);
+      inp.addEventListener('change', () => { sync(); state.page = 1; loadList(); });
+      sync();
+    };
+    syncChip('chipArchived', 'archived');
+    syncChip('chipScope', 'scopeAll');
+
     $('createBtn').addEventListener('click', openCreate);
-    $('modalClose').addEventListener('click', closeModal);
-    $('cancelBtn').addEventListener('click', closeModal);
+    $('modalClose').addEventListener('click', hideModal);
+    $('cancelBtn').addEventListener('click', hideModal);
     $('saveBtn').addEventListener('click', save);
+    $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
+
+    document.querySelectorAll('.oc-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
     $('cwAddBtn').addEventListener('click', () => {
       $('cwList').appendChild(cwCard({}, $('cwList').children.length + 1));
+      updateCwBadge();
     });
-    $('uploadBtn').addEventListener('click', () => $('fileInput').click());
+
+    const dz = $('dropzone');
+    dz.addEventListener('click', () => $('fileInput').click());
+    dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+    dz.addEventListener('drop', (e) => {
+      e.preventDefault(); dz.classList.remove('drag');
+      const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
+      if (files.length) uploadFiles(files);
+    });
     $('fileInput').addEventListener('change', (e) => {
       const files = [...e.target.files];
       e.target.value = '';
       if (files.length) uploadFiles(files);
     });
+
     loadList();
   });
 })();

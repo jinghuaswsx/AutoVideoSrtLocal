@@ -2,35 +2,298 @@
 {% block title %}素材管理 - AutoVideoSrt{% endblock %}
 {% block page_title %}素材管理{% endblock %}
 {% block extra_style %}
-<link rel="stylesheet" href="{{ url_for('static', filename='medias.css') }}">
+/* ────────── Ocean Blue tokens (page-scoped) ────────── */
+.oc {
+  --oc-bg:            oklch(99%  0.004 230);
+  --oc-bg-subtle:     oklch(97%  0.006 230);
+  --oc-bg-muted:      oklch(94%  0.010 230);
+  --oc-border:        oklch(91%  0.012 230);
+  --oc-border-strong: oklch(84%  0.015 230);
+  --oc-fg:            oklch(22%  0.020 235);
+  --oc-fg-muted:      oklch(48%  0.018 230);
+  --oc-fg-subtle:     oklch(62%  0.015 230);
+  --oc-accent:        oklch(56%  0.16  230);
+  --oc-accent-hover:  oklch(50%  0.17  230);
+  --oc-accent-subtle: oklch(94%  0.04  225);
+  --oc-accent-ring:   oklch(56%  0.16  230 / 0.22);
+  --oc-cyan:          oklch(62%  0.13  215);
+  --oc-cyan-subtle:   oklch(94%  0.04  215);
+  --oc-warning-bg:    oklch(96%  0.05  85);
+  --oc-warning-fg:    oklch(42%  0.10  60);
+  --oc-success-bg:    oklch(95%  0.04  165);
+  --oc-success-fg:    oklch(38%  0.09  165);
+  --oc-danger:        oklch(58%  0.18  25);
+  --oc-danger-bg:     oklch(96%  0.04  25);
+  --oc-danger-fg:     oklch(42%  0.14  25);
+
+  --oc-r-sm: 4px;  --oc-r: 6px;    --oc-r-md: 8px;
+  --oc-r-lg: 12px; --oc-r-xl: 16px;
+  --oc-sp-1: 4px;  --oc-sp-2: 8px;  --oc-sp-3: 12px;
+  --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
+  --oc-sp-7: 32px; --oc-sp-8: 40px; --oc-sp-9: 56px;
+
+  --oc-shadow-sm: 0 1px 3px 0 oklch(22% 0.02 235 / 0.06),
+                  0 1px 2px 0 oklch(22% 0.02 235 / 0.04);
+  --oc-shadow:    0 4px 8px -2px oklch(22% 0.02 235 / 0.08),
+                  0 2px 4px -2px oklch(22% 0.02 235 / 0.05);
+  --oc-shadow-lg: 0 12px 24px -4px oklch(22% 0.02 235 / 0.10),
+                  0 4px 8px -2px oklch(22% 0.02 235 / 0.06);
+
+  --oc-ease:     cubic-bezier(0.32, 0.72, 0, 1);
+  --oc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --oc-dur-fast: 120ms;
+  --oc-dur:      180ms;
+  --oc-dur-slow: 280ms;
+
+  font-family: "Inter Tight", "Geist", -apple-system, BlinkMacSystemFont,
+               "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  color: var(--oc-fg);
+}
+[data-theme='dark'] .oc {
+  --oc-bg:            oklch(16%  0.020 235);
+  --oc-bg-subtle:     oklch(19%  0.022 235);
+  --oc-bg-muted:      oklch(24%  0.025 235);
+  --oc-border:        oklch(28%  0.030 235);
+  --oc-border-strong: oklch(36%  0.035 235);
+  --oc-fg:            oklch(95%  0.010 225);
+  --oc-fg-muted:      oklch(72%  0.018 230);
+  --oc-fg-subtle:     oklch(58%  0.020 230);
+  --oc-accent-subtle: oklch(30%  0.080 230);
+  --oc-warning-bg:    oklch(30%  0.08  70);
+  --oc-warning-fg:    oklch(88%  0.12  85);
+  --oc-success-bg:    oklch(28%  0.06  165);
+  --oc-success-fg:    oklch(82%  0.12  165);
+  --oc-danger-bg:     oklch(30%  0.10  25);
+  --oc-danger-fg:     oklch(80%  0.15  25);
+}
+
+.oc, .oc * { box-sizing: border-box; }
+.oc svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+.oc [hidden] { display: none !important; }
+
+/* ────────── Page header ────────── */
+.oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-header .title { font-size:22px; font-weight:600; line-height:1.3; letter-spacing:-0.2px; margin:0 0 var(--oc-sp-1); }
+.oc-header .subtitle { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; color:var(--oc-fg-muted); }
+.oc-header .count { display:inline-flex; align-items:center; padding:2px 10px; border-radius:var(--oc-r-full,9999px); background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* ────────── Buttons ────────── */
+.oc-btn { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 14px; border-radius:var(--oc-r); border:1px solid transparent; font-family:inherit; font-size:13px; font-weight:500; cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease); white-space:nowrap; }
+.oc-btn:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-btn.primary { background:var(--oc-accent); color:#fff; }
+.oc-btn.primary:hover { background:var(--oc-accent-hover); }
+.oc-btn.ghost { background:var(--oc-bg); color:var(--oc-fg); border-color:var(--oc-border-strong); }
+.oc-btn.ghost:hover { background:var(--oc-bg-muted); border-color:var(--oc-border-strong); }
+.oc-btn.text { background:transparent; color:var(--oc-fg-muted); border-color:transparent; height:28px; padding:0 10px; }
+.oc-btn.text:hover { background:var(--oc-bg-muted); color:var(--oc-fg); }
+.oc-btn.sm { height:28px; font-size:12px; padding:0 10px; }
+.oc-btn.danger { background:var(--oc-danger); color:#fff; }
+.oc-btn.danger:hover { filter:brightness(0.92); }
+
+/* ────────── Banner ────────── */
+.oc-banner { display:flex; align-items:center; gap:var(--oc-sp-3); padding:var(--oc-sp-3) var(--oc-sp-4); border-radius:var(--oc-r-md); background:var(--oc-warning-bg); color:var(--oc-warning-fg); font-size:13px; line-height:1.5; margin-bottom:var(--oc-sp-5); }
+.oc-banner strong { font-weight:600; }
+
+/* ────────── Toolbar ────────── */
+.oc-toolbar { display:flex; align-items:center; gap:var(--oc-sp-3); padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-search { position:relative; flex:1; min-width:240px; max-width:420px; }
+.oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
+.oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
+.oc-search input::placeholder { color:var(--oc-fg-subtle); }
+.oc-search input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+
+.oc-chip { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r-full,9999px); background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:500; cursor:pointer; user-select:none; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
+.oc-chip input { display:none; }
+.oc-chip:hover { color:var(--oc-fg); border-color:var(--oc-border-strong); background:var(--oc-bg-muted); }
+.oc-chip.on { background:var(--oc-accent-subtle); color:var(--oc-accent); border-color:var(--oc-accent); }
+.oc-chip .check { opacity:0; width:14px; height:14px; }
+.oc-chip.on .check { opacity:1; }
+
+.oc-spacer { flex:1; }
+
+/* ────────── Card grid ────────── */
+.oc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(264px, 1fr)); gap:var(--oc-sp-4); }
+.oc-card { position:relative; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; cursor:pointer; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
+.oc-card:hover { border-color:var(--oc-border-strong); box-shadow:var(--oc-shadow-sm); }
+.oc-card .cover { position:relative; aspect-ratio:16/9; background:var(--oc-bg-muted); overflow:hidden; }
+.oc-card .cover img { width:100%; height:100%; object-fit:cover; display:block; }
+.oc-card .cover-ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, var(--oc-accent-subtle), var(--oc-cyan-subtle)); color:var(--oc-accent); }
+.oc-card .cover-tags { position:absolute; left:var(--oc-sp-2); bottom:var(--oc-sp-2); display:flex; gap:var(--oc-sp-2); flex-wrap:wrap; max-width:calc(100% - var(--oc-sp-7)); }
+.oc-tag { display:inline-flex; align-items:center; gap:4px; height:22px; padding:0 8px; border-radius:var(--oc-r-md); font-size:11px; font-weight:500; background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+.oc-tag.source { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.oc-tag.count  { background:var(--oc-accent-subtle); color:var(--oc-accent); font-variant-numeric:tabular-nums; }
+.oc-tag.on-cover { background:oklch(22% 0.02 235 / 0.72); color:#fff; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+
+.oc-card .menu-btn { position:absolute; top:var(--oc-sp-2); right:var(--oc-sp-2); width:28px; height:28px; display:flex; align-items:center; justify-content:center; border:none; border-radius:var(--oc-r); background:oklch(22% 0.02 235 / 0.55); color:#fff; cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease); z-index:2; }
+.oc-card .menu-btn:hover { background:oklch(22% 0.02 235 / 0.8); }
+
+.oc-card .info { padding:var(--oc-sp-4); display:flex; flex-direction:column; gap:var(--oc-sp-1); flex:1; }
+.oc-card .name { font-size:14px; font-weight:600; color:var(--oc-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4; }
+.oc-card .color { font-size:12px; color:var(--oc-fg-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.oc-card .meta { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--oc-fg-subtle); margin-top:var(--oc-sp-2); font-variant-numeric:tabular-nums; }
+
+.oc-menu-pop { position:absolute; top:42px; right:var(--oc-sp-2); min-width:132px; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); box-shadow:var(--oc-shadow-lg); padding:var(--oc-sp-1); z-index:10; opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity var(--oc-dur) var(--oc-ease-out), transform var(--oc-dur) var(--oc-ease-out); }
+.oc-menu-pop.open { opacity:1; transform:translateY(0); pointer-events:auto; }
+.oc-menu-pop button { display:flex; align-items:center; gap:var(--oc-sp-2); width:100%; height:32px; padding:0 10px; background:none; border:none; border-radius:var(--oc-r); color:var(--oc-fg); font-size:13px; font-family:inherit; cursor:pointer; text-align:left; transition:background var(--oc-dur-fast) var(--oc-ease); }
+.oc-menu-pop button:hover { background:var(--oc-bg-muted); }
+.oc-menu-pop button.danger { color:var(--oc-danger-fg); }
+.oc-menu-pop button.danger:hover { background:var(--oc-danger-bg); }
+
+/* ────────── Skeleton ────────── */
+.oc-skel { aspect-ratio:1/1.12; border-radius:var(--oc-r-lg); background:linear-gradient(90deg, var(--oc-bg-subtle) 0%, var(--oc-bg-muted) 50%, var(--oc-bg-subtle) 100%); background-size:200% 100%; animation:oc-shimmer 1.4s linear infinite; }
+@keyframes oc-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+/* ────────── Empty / Error ────────── */
+.oc-state { grid-column:1/-1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:var(--oc-sp-9) var(--oc-sp-5); background:var(--oc-bg); border:1px dashed var(--oc-border-strong); border-radius:var(--oc-r-lg); text-align:center; color:var(--oc-fg-muted); }
+.oc-state .icon { width:64px; height:64px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; margin-bottom:var(--oc-sp-4); }
+.oc-state .title { font-size:15px; font-weight:600; color:var(--oc-fg); margin:0 0 var(--oc-sp-2); }
+.oc-state .desc { font-size:13px; margin:0 0 var(--oc-sp-5); max-width:360px; line-height:1.55; }
+
+/* ────────── Pager ────────── */
+.oc-pager { display:flex; justify-content:center; gap:var(--oc-sp-1); padding:var(--oc-sp-6) 0 var(--oc-sp-2); }
+.oc-pager button { min-width:32px; height:32px; padding:0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; font-variant-numeric:tabular-nums; cursor:pointer; transition:all var(--oc-dur-fast) var(--oc-ease); }
+.oc-pager button:hover { border-color:var(--oc-accent); color:var(--oc-accent); }
+.oc-pager button.active { background:var(--oc-accent); border-color:var(--oc-accent); color:#fff; }
+
+/* ────────── Modal ────────── */
+.oc-modal-mask { position:fixed; inset:0; background:oklch(22% 0.02 235 / 0.48); display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-5); z-index:200; animation:oc-fade var(--oc-dur) var(--oc-ease-out); }
+@keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
+.oc-modal { width:860px; max-width:100%; max-height:90vh; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-xl); overflow:hidden; box-shadow:var(--oc-shadow-lg); animation:oc-rise var(--oc-dur-slow) var(--oc-ease); }
+@keyframes oc-rise { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+.oc-modal-head { display:flex; align-items:center; justify-content:space-between; padding:var(--oc-sp-4) var(--oc-sp-5); border-bottom:1px solid var(--oc-border); }
+.oc-modal-head h3 { font-size:15px; font-weight:600; margin:0; }
+.oc-icon-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border:none; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease); }
+.oc-icon-btn:hover { background:var(--oc-bg-muted); color:var(--oc-fg); }
+
+.oc-tabs { display:flex; gap:var(--oc-sp-1); padding:0 var(--oc-sp-5); border-bottom:1px solid var(--oc-border); }
+.oc-tab { height:40px; padding:0 14px; background:none; border:none; color:var(--oc-fg-muted); font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color var(--oc-dur-fast) var(--oc-ease); display:inline-flex; align-items:center; gap:var(--oc-sp-2); }
+.oc-tab:hover { color:var(--oc-fg); }
+.oc-tab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
+.oc-tab .badge { min-width:18px; height:18px; padding:0 6px; border-radius:9px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-size:11px; display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums; }
+.oc-tab.active .badge { background:var(--oc-accent-subtle); color:var(--oc-accent); }
+
+.oc-modal-body { padding:var(--oc-sp-5); overflow-y:auto; flex:1; }
+.oc-panel { display:none; }
+.oc-panel.active { display:block; }
+
+.oc-field { display:flex; flex-direction:column; gap:var(--oc-sp-2); margin-bottom:var(--oc-sp-4); }
+.oc-field:last-child { margin-bottom:0; }
+.oc-label { font-size:12px; font-weight:500; color:var(--oc-fg-muted); line-height:1; }
+.oc-label .req { color:var(--oc-danger); margin-left:3px; }
+.oc-input, .oc-textarea { width:100%; height:32px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
+.oc-textarea { min-height:72px; padding:var(--oc-sp-2) var(--oc-sp-3); resize:vertical; line-height:1.55; }
+.oc-input::placeholder, .oc-textarea::placeholder { color:var(--oc-fg-subtle); }
+.oc-input:focus, .oc-textarea:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-row { display:grid; grid-template-columns:1fr 1fr; gap:var(--oc-sp-4); }
+
+/* Copywriting cards */
+.oc-cw-list { display:flex; flex-direction:column; gap:var(--oc-sp-3); }
+.oc-cw { position:relative; padding:var(--oc-sp-4); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); }
+.oc-cw .idx { font-size:11px; font-weight:600; color:var(--oc-accent); margin-bottom:var(--oc-sp-3); font-variant-numeric:tabular-nums; }
+.oc-cw .rm { position:absolute; top:var(--oc-sp-2); right:var(--oc-sp-2); }
+.oc-cw .stack { display:flex; flex-direction:column; gap:var(--oc-sp-2); }
+.oc-add-btn { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-2); width:100%; height:36px; margin-top:var(--oc-sp-3); background:transparent; color:var(--oc-fg-muted); border:1px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); font-size:13px; font-family:inherit; cursor:pointer; transition:all var(--oc-dur-fast) var(--oc-ease); }
+.oc-add-btn:hover { border-color:var(--oc-accent); color:var(--oc-accent); background:var(--oc-accent-subtle); }
+
+/* Dropzone */
+.oc-dropzone { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); padding:var(--oc-sp-7) var(--oc-sp-5); border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); color:var(--oc-fg-muted); cursor:pointer; text-align:center; transition:all var(--oc-dur-fast) var(--oc-ease); margin-bottom:var(--oc-sp-4); }
+.oc-dropzone:hover, .oc-dropzone.drag { border-color:var(--oc-accent); background:var(--oc-accent-subtle); color:var(--oc-accent); }
+.oc-dropzone .dz-icon { width:36px; height:36px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; }
+.oc-dropzone .dz-title { font-size:14px; font-weight:500; color:var(--oc-fg); }
+.oc-dropzone .dz-hint { font-size:12px; color:var(--oc-fg-subtle); }
+
+.oc-upload-list { display:flex; flex-direction:column; gap:var(--oc-sp-1); margin-bottom:var(--oc-sp-4); }
+.oc-upload-row { display:flex; align-items:center; gap:var(--oc-sp-2); padding:var(--oc-sp-2) var(--oc-sp-3); border-radius:var(--oc-r); font-size:12px; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); }
+.oc-upload-row .fname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); }
+.oc-upload-row.ok { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.oc-upload-row.err { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+
+.oc-items-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:var(--oc-sp-3); }
+.oc-item { position:relative; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); transition:border-color var(--oc-dur-fast) var(--oc-ease); }
+.oc-item:hover { border-color:var(--oc-border-strong); }
+.oc-item .thumb { aspect-ratio:16/9; background:var(--oc-bg-muted); position:relative; display:block; }
+.oc-item .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.oc-item .thumb-ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg, var(--oc-accent-subtle), var(--oc-cyan-subtle)); color:var(--oc-accent); }
+.oc-item .name { font-size:12px; padding:var(--oc-sp-2) var(--oc-sp-3); color:var(--oc-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.oc-item .rm { position:absolute; top:var(--oc-sp-1); right:var(--oc-sp-1); width:22px; height:22px; display:flex; align-items:center; justify-content:center; border:none; border-radius:var(--oc-r); background:oklch(22% 0.02 235 / 0.72); color:#fff; cursor:pointer; opacity:0; transition:opacity var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }
+.oc-item:hover .rm { opacity:1; }
+.oc-item .rm:hover { background:var(--oc-danger); }
+
+.oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 {% endblock %}
+
 {% block content %}
-<div class="medias-wrap">
+<div class="oc">
+  <!-- SVG sprite（Lucide 线性图标） -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="ic-plus"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></symbol>
+      <symbol id="ic-close"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="ic-more"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+      <symbol id="ic-check"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="ic-edit"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></symbol>
+      <symbol id="ic-trash"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></symbol>
+      <symbol id="ic-film"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></symbol>
+      <symbol id="ic-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.27 6.96 8.73 5.05 8.73-5.05"/><path d="M12 22.08V12"/></symbol>
+      <symbol id="ic-upload"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+      <symbol id="ic-alert"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+      <symbol id="ic-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
+      <symbol id="ic-users"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- Page header -->
+  <header class="oc-header">
+    <div>
+      <h1 class="title">素材管理</h1>
+      <div class="subtitle">
+        <span>集中管理产品素材库，关联文案与视频资源</span>
+        <span class="count" id="totalPill">—</span>
+      </div>
+    </div>
+    <button class="oc-btn primary" id="createBtn">
+      <svg width="16" height="16"><use href="#ic-plus"/></svg>
+      <span>添加产品素材</span>
+    </button>
+  </header>
+
   {% if not tos_ready %}
-  <div class="medias-banner">素材上传需要先配置 TOS_MEDIA_BUCKET，请联系管理员。</div>
+  <div class="oc-banner">
+    <svg width="18" height="18"><use href="#ic-alert"/></svg>
+    <span>素材上传需要先配置 <strong>TOS_MEDIA_BUCKET</strong>，请联系管理员。</span>
+  </div>
   {% endif %}
 
-  <div class="medias-toolbar">
-    <input id="kw" class="medias-input" placeholder="关键词：产品名/色号人">
-    <label class="medias-check"><input type="checkbox" id="archived"> 已归档</label>
+  <!-- Toolbar -->
+  <div class="oc-toolbar">
+    <div class="oc-search">
+      <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
+      <input id="kw" placeholder="搜索产品名 / 色号 / 代言人…">
+    </div>
+    <label class="oc-chip" id="chipArchived">
+      <svg class="check" width="12" height="12"><use href="#ic-check"/></svg>
+      <input type="checkbox" id="archived">
+      <span>已归档</span>
+    </label>
     {% if is_admin %}
-    <label class="medias-check"><input type="checkbox" id="scopeAll"> 查看全部</label>
+    <label class="oc-chip" id="chipScope">
+      <svg class="check" width="12" height="12"><use href="#ic-check"/></svg>
+      <input type="checkbox" id="scopeAll">
+      <span>查看全部</span>
+    </label>
     {% endif %}
-    <button class="btn btn-ghost" id="searchBtn">搜索</button>
-    <span style="flex:1"></span>
-    <button class="btn btn-primary" id="createBtn">+ 添加产品素材</button>
+    <span class="oc-spacer"></span>
+    <button class="oc-btn ghost" id="searchBtn">
+      <svg width="14" height="14"><use href="#ic-search"/></svg>
+      <span>搜索</span>
+    </button>
   </div>
 
-  <table class="medias-table">
-    <thead>
-      <tr>
-        <th>ID</th><th>产品名称</th><th>素材数</th><th>来源</th>
-        <th>创建时间</th><th>修改时间</th><th>操作</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-  <div id="pager" class="medias-pager"></div>
+  <!-- Grid -->
+  <div class="oc-grid" id="grid"></div>
+  <div class="oc-pager" id="pager"></div>
 </div>
 
 {% include "_medias_edit_modal.html" %}

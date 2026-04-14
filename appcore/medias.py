@@ -133,3 +133,18 @@ def count_items_by_product(product_ids: list[int]) -> dict[int, int]:
         tuple(product_ids),
     )
     return {int(r["product_id"]): int(r["c"]) for r in rows}
+
+
+def first_thumb_item_by_product(product_ids: list[int]) -> dict[int, int]:
+    """每个产品下最早一张有缩略图的素材 id。"""
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, MIN(id) AS item_id FROM media_items "
+        f"WHERE product_id IN ({placeholders}) AND deleted_at IS NULL "
+        f"  AND thumbnail_path IS NOT NULL AND thumbnail_path <> '' "
+        f"GROUP BY product_id",
+        tuple(product_ids),
+    )
+    return {int(r["product_id"]): int(r["item_id"]) for r in rows}

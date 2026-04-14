@@ -29,7 +29,8 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
     return False
 
 
-def _serialize_product(p: dict, items_count: int | None = None) -> dict:
+def _serialize_product(p: dict, items_count: int | None = None,
+                       cover_item_id: int | None = None) -> dict:
     return {
         "id": p["id"],
         "name": p["name"],
@@ -39,6 +40,7 @@ def _serialize_product(p: dict, items_count: int | None = None) -> dict:
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
         "items_count": items_count,
+        "cover_thumbnail_url": f"/medias/thumb/{cover_item_id}" if cover_item_id else None,
     }
 
 
@@ -82,8 +84,10 @@ def api_list_products():
     user_id = None if scope_all else current_user.id
     rows, total = medias.list_products(user_id, keyword=keyword, archived=archived,
                                         offset=offset, limit=limit)
-    counts = medias.count_items_by_product([r["id"] for r in rows])
-    data = [_serialize_product(r, counts.get(r["id"], 0)) for r in rows]
+    pids = [r["id"] for r in rows]
+    counts = medias.count_items_by_product(pids)
+    covers = medias.first_thumb_item_by_product(pids)
+    data = [_serialize_product(r, counts.get(r["id"], 0), covers.get(r["id"])) for r in rows]
     return jsonify({"items": data, "total": total, "page": page, "page_size": limit})
 
 

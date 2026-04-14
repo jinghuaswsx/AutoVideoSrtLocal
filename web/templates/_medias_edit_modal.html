@@ -1,39 +1,71 @@
-<div class="medias-modal-mask" id="editMask" style="display:none">
-  <div class="medias-modal">
-    <div class="medias-modal-head">
-      <span id="modalTitle">编辑素材</span>
-      <button class="medias-modal-close" id="modalClose">×</button>
+<div class="oc-modal-mask oc" id="editMask" hidden>
+  <div class="oc-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="oc-modal-head">
+      <h3 id="modalTitle">编辑产品素材</h3>
+      <button class="oc-icon-btn" id="modalClose" title="关闭" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
     </div>
-    <div class="medias-modal-body">
-      <label class="medias-label">产品名称 *</label>
-      <input id="mName" class="medias-input">
 
-      <div class="medias-row">
-        <div class="medias-col">
-          <label class="medias-label">色号人</label>
-          <input id="mColor" class="medias-input">
-        </div>
-        <div class="medias-col">
-          <label class="medias-label">来源</label>
-          <input id="mSource" class="medias-input">
-        </div>
-      </div>
-
-      <label class="medias-label">文案</label>
-      <div id="cwList" class="medias-cw-list"></div>
-      <button class="btn btn-ghost btn-sm" id="cwAddBtn">+ 添加文案条目</button>
-
-      <label class="medias-label" style="margin-top:18px">视频素材</label>
-      <div id="itemsGrid" class="medias-items-grid"></div>
-      <div id="uploadArea">
-        <input type="file" id="fileInput" multiple accept="video/*" style="display:none">
-        <button class="btn btn-ghost" id="uploadBtn">+ 上传更多素材</button>
-        <div id="uploadProgress" class="medias-upload-progress"></div>
-      </div>
+    <div class="oc-tabs" role="tablist">
+      <button class="oc-tab active" data-tab="basic" role="tab">基本信息</button>
+      <button class="oc-tab" data-tab="cw" role="tab">
+        <span>文案</span>
+        <span class="badge" id="cwBadge">0</span>
+      </button>
+      <button class="oc-tab" data-tab="items" role="tab">
+        <span>视频素材</span>
+        <span class="badge" id="itemsBadge">0</span>
+      </button>
     </div>
-    <div class="medias-modal-foot">
-      <button class="btn btn-ghost" id="cancelBtn">取消</button>
-      <button class="btn btn-primary" id="saveBtn">保存</button>
+
+    <div class="oc-modal-body">
+      <!-- 基本信息 -->
+      <section class="oc-panel active" data-panel="basic">
+        <div class="oc-field">
+          <label class="oc-label" for="mName">产品名称<span class="req">*</span></label>
+          <input id="mName" class="oc-input" maxlength="120" placeholder="例如：兰蔻小黑瓶精华">
+        </div>
+        <div class="oc-row">
+          <div class="oc-field" style="margin-bottom:0">
+            <label class="oc-label" for="mColor">色号 / 代言人</label>
+            <input id="mColor" class="oc-input" maxlength="80" placeholder="例如：#01 粉调裸色">
+          </div>
+          <div class="oc-field" style="margin-bottom:0">
+            <label class="oc-label" for="mSource">来源</label>
+            <input id="mSource" class="oc-input" maxlength="80" placeholder="例如：品牌官网 / 达人拍摄">
+          </div>
+        </div>
+      </section>
+
+      <!-- 文案 -->
+      <section class="oc-panel" data-panel="cw">
+        <div id="cwList" class="oc-cw-list"></div>
+        <button class="oc-add-btn" type="button" id="cwAddBtn">
+          <svg width="14" height="14"><use href="#ic-plus"/></svg>
+          <span>添加文案条目</span>
+        </button>
+      </section>
+
+      <!-- 视频素材 -->
+      <section class="oc-panel" data-panel="items">
+        <div class="oc-dropzone" id="dropzone" tabindex="0" role="button" aria-label="上传视频素材">
+          <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+          <div class="dz-title">点击或拖拽上传视频素材</div>
+          <div class="dz-hint">支持 mp4 / mov / webm / mkv，可多选</div>
+          <input type="file" id="fileInput" multiple accept="video/*" hidden>
+        </div>
+        <div id="uploadProgress" class="oc-upload-list"></div>
+        <div id="itemsGrid" class="oc-items-grid"></div>
+      </section>
+    </div>
+
+    <div class="oc-modal-foot">
+      <button class="oc-btn ghost" id="cancelBtn">取消</button>
+      <button class="oc-btn primary" id="saveBtn">
+        <svg width="14" height="14"><use href="#ic-check"/></svg>
+        <span>保存</span>
+      </button>
     </div>
   </div>
 </div>
