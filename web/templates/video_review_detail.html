@@ -257,7 +257,10 @@ loadPrompts();
 
 // ── Socket.IO ──
 const socket = io();
-socket.emit('join_task', {task_id: TASK_ID});
+// (re)connect 时重新加入 task room，防止断线后错过事件
+const _joinVrRoom = () => { if (TASK_ID) socket.emit('join_task', {task_id: TASK_ID}); };
+_joinVrRoom();
+socket.on('connect', _joinVrRoom);
 
 socket.on('vr_step_update', data => {
   if (data.message) {

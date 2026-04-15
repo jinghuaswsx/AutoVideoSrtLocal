@@ -412,6 +412,15 @@
     }
   });
 
+  // socket 断线重连后必须重新加入 task room：flask_socketio 的 room 基于 sid，
+  // 重连后 sid 变化会导致原 room 失效，step_update / pipeline_done 等事件全部丢失。
+  // 同时触发一次 state 刷新，补齐断线期间错过的状态变化。
+  socket.on("connect", () => {
+    if (!taskId) return;
+    socket.emit("join_task", { task_id: taskId });
+    scheduleRefreshTaskState(200);
+  });
+
   socket.on("step_update", ({ step, status, message }) => {
     if (!taskId) return;
     if (currentTask) {

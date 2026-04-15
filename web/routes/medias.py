@@ -236,9 +236,7 @@ def api_update_product(pid: int):
     if not medias.has_english_cover(pid):
         return jsonify({"error": "必须先上传英文（EN）产品主图才能保存"}), 400
 
-    items = medias.list_items(pid)
-    if not items:
-        return jsonify({"error": "至少需要 1 条视频素材"}), 400
+    # 允许先创建/保存产品基础信息，视频素材可在编辑弹窗后续补充，不做硬校验
 
     update_fields = {"name": name, "product_code": product_code}
     medias.update_product(pid, **update_fields)

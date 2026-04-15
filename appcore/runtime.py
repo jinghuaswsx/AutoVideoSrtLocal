@@ -526,13 +526,13 @@ class PipelineRunner:
             return
 
         try:
-            score_result = video_score.score_video(hard_video, user_id=self.user_id)
+            score_result = video_score.score_video(hard_video, user_id=self.user_id, project_id=task_id)
         except Exception as e:
             score_err = str(e)
             log.warning("video_score 失败：%s", e)
 
         try:
-            csk_result = video_csk.analyze_video(hard_video, user_id=self.user_id)
+            csk_result = video_csk.analyze_video(hard_video, user_id=self.user_id, project_id=task_id)
         except Exception as e:
             csk_err = str(e)
             log.warning("video_csk 失败：%s", e)

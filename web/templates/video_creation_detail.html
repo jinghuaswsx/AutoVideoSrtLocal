@@ -281,7 +281,10 @@ const TASK_ID = '{{ task_id }}';
 
 // ── Socket.IO ──
 const socket = io();
-socket.emit('join_task', {task_id: TASK_ID});
+// (re)connect 时重新加入 task room，防止断线后错过事件
+const _joinVcRoom = () => { if (TASK_ID) socket.emit('join_task', {task_id: TASK_ID}); };
+_joinVcRoom();
+socket.on('connect', _joinVcRoom);
 
 socket.on('vc_step_update', data => {
   updateStep(data.step, data.status, data.message || '');

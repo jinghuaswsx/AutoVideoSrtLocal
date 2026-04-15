@@ -48,7 +48,8 @@ SYSTEM_PROMPT = f"""你是资深的美国短视频带货（TikTok / IG Reels / Y
 USER_PROMPT = "请按系统指令评估这个成品带货视频（已内嵌硬字幕），返回纯 JSON。"
 
 
-def score_video(video_path: str | Path, *, user_id: int | None = None) -> dict:
+def score_video(video_path: str | Path, *, user_id: int | None = None,
+                project_id: str | None = None) -> dict:
     """对硬字幕视频打分，返回：
     {total, summary, dimensions:[{key,name,weight,score,comment}], suggestions, model, scored_at}
     """
@@ -63,6 +64,7 @@ def score_video(video_path: str | Path, *, user_id: int | None = None) -> dict:
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
+        project_id=project_id,
         service="gemini_video_analysis",
         default_model=SCORE_MODEL,
     )

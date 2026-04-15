@@ -364,6 +364,73 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 /* ────────── Edit 详情 Modal ────────── */
 /* 编辑弹窗：直接跟随视口，4K 屏上才够用；max-width 让 .oc-modal 继承的 100% 兜底 */
 .oc-modal-wide { width:95vw; max-width:none; }
+
+/* ────────── 窄弹窗（添加产品素材用）——居中占屏 50% ────────── */
+.oc-modal-narrow { width:50vw; max-width:50vw; min-width:480px; }
+@media (max-width: 960px) { .oc-modal-narrow { width:90vw; max-width:90vw; min-width:0; } }
+.oc-center-body .oc-field > .oc-input,
+.oc-center-body .oc-field > .oc-textarea { width:100%; }
+.oc-center-body .oc-url-row { display:flex; gap:var(--oc-sp-2); justify-content:center; align-items:center; }
+.oc-center-body .oc-url-row .oc-input { flex:1; min-width:0; }
+.oc-center-body .oc-cover-square-480 { margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-cover-actions { justify-content:center; align-items:center; }
+.oc-center-body .oc-section-title { justify-content:center; text-align:center; }
+.oc-modal-foot-center { justify-content:center !important; }
+
+/* ────────── 新增素材大框（视频封面 + 视频源 + 提交按钮） ────────── */
+.oc-new-item {
+  border:1.5px dashed var(--oc-border-strong);
+  border-radius:var(--oc-r-lg);
+  padding:var(--oc-sp-5);
+  background:var(--oc-bg-subtle);
+  display:flex; flex-direction:column; gap:var(--oc-sp-4);
+  margin-top:var(--oc-sp-4);
+}
+.oc-new-item-title {
+  font-size:13px; font-weight:700; color:var(--oc-fg);
+  padding-bottom:var(--oc-sp-2); border-bottom:1px dashed var(--oc-border);
+}
+.oc-new-item-body {
+  display:grid; grid-template-columns:260px 1fr; gap:var(--oc-sp-5); align-items:start;
+}
+@media (max-width: 720px) {
+  .oc-new-item-body { grid-template-columns:1fr; }
+}
+.oc-new-item-col { display:flex; flex-direction:column; gap:var(--oc-sp-2); min-width:0; }
+.oc-new-item-label { font-size:12px; font-weight:600; color:var(--oc-fg); }
+.oc-new-item-label .req { color:var(--oc-danger); margin-left:2px; }
+.oc-new-item-footer {
+  display:flex; justify-content:center; padding-top:var(--oc-sp-2);
+  border-top:1px dashed var(--oc-border);
+}
+
+/* 视频源选择盒（类 9:16 但比例更自由：高度固定） */
+.oc-video-pick {
+  position:relative; width:100%; min-height:220px;
+  border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md);
+  background:var(--oc-bg); overflow:hidden; cursor:pointer;
+  transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-video-pick:hover, .oc-video-pick.drag { border-color:var(--oc-accent); background:var(--oc-accent-subtle); }
+.oc-video-pick .cover-dz { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); color:var(--oc-fg-muted); text-align:center; padding:var(--oc-sp-4); }
+.oc-video-pick .cover-dz .dz-icon { width:36px; height:36px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; }
+.oc-video-pick .cover-dz .dz-title { font-size:14px; font-weight:500; color:var(--oc-fg); }
+.oc-video-pick .cover-dz .dz-hint { font-size:12px; color:var(--oc-fg-subtle); }
+
+.oc-video-filled {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:var(--oc-sp-2); padding:var(--oc-sp-4);
+  background:var(--oc-bg-muted);
+}
+.oc-video-filled-icon { color:var(--oc-accent); }
+.oc-video-filled-name {
+  font-size:13px; font-weight:600; color:var(--oc-fg);
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.oc-video-filled-size { font-size:12px; color:var(--oc-fg-muted); font-variant-numeric:tabular-nums; }
+
+/* 添加弹窗的文案单 textarea */
+.oc-cw-body { min-height:120px; }
 .oc-cover-row { display:flex; gap:var(--oc-sp-5); align-items:flex-start; }
 .oc-cover-actions { display:flex; flex-direction:column; gap:var(--oc-sp-2); align-items:flex-start; padding-top:var(--oc-sp-2); }
 .oc-cover-square { position:relative; width:270px; height:480px; max-width:100%; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); overflow:hidden; transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }

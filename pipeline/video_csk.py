@@ -102,7 +102,8 @@ You MUST output the result as a valid JSON object using the following schema:
 }"""
 
 
-def analyze_video(video_path: str | Path, *, user_id: int | None = None) -> dict:
+def analyze_video(video_path: str | Path, *, user_id: int | None = None,
+                  project_id: str | None = None) -> dict:
     """对视频做 CSK 深度分析。返回 {video_analysis, keyframes, model, analyzed_at}。"""
     p = Path(video_path)
     if not p.is_file():
@@ -114,6 +115,7 @@ def analyze_video(video_path: str | Path, *, user_id: int | None = None) -> dict
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
+        project_id=project_id,
         service="gemini_video_analysis",
         default_model=CSK_MODEL,
     )

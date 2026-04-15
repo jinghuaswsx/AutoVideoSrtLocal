@@ -3,7 +3,14 @@
 <script>
 const TASK_ID = "{{ task_id }}";
 const socket = io();
-socket.emit("join_copywriting_task", { task_id: TASK_ID });
+
+// 每次 (re)connect 都要重新加入 task room：flask_socketio 的 room 基于 sid，
+// 长任务中 socket 断线重连后 sid 变化，不重新 join 会错过所有后续事件
+function _joinCopywritingRoom() {
+    if (TASK_ID) socket.emit("join_copywriting_task", { task_id: TASK_ID });
+}
+_joinCopywritingRoom();
+socket.on("connect", _joinCopywritingRoom);
 
 let currentSegments = {{ copy_segments | tojson if copy_segments else '[]' }};
 let rewriteIndex = -1;

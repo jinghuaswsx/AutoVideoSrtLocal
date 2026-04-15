@@ -215,9 +215,11 @@
   }
 
   // ---- Item cover (add modal, pending) ----
+  // 注：添加弹窗已不再有 itemCover 区块，节点可能不存在；做 null 守卫。
   function setItemCover(url) {
     const dz = $('itemCoverDropzone');
     const img = $('itemCoverImg');
+    if (!dz || !img) return;
     const replace = $('itemCoverReplace');
     const clear = $('itemCoverClear');
     if (url) {
@@ -410,11 +412,9 @@
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return; }
     if (!state.current || !state.current.product || !state.current.product.cover_object_key) {
-      alert('请上传封面图'); return;
+      alert('请上传商品主图'); return;
     }
-    if (!document.querySelectorAll('.oc-item').length) {
-      alert('请至少上传 1 条视频素材'); return;
-    }
+    // 视频素材不再是添加阶段的强制项，进入"编辑"弹窗可继续补充
     const pid = state.current.product.id;
     try {
       await fetchJSON('/medias/api/products/' + pid, {
@@ -435,47 +435,31 @@
   }
 
   // ---------- Copywritings ----------
+  // 添加弹窗：文案改为单 textarea。保留函数名/调用签名，内部改为读写 #cwBody；
+  // 老数据若有多条则按空行拼接展示。
   function renderCopywritings(list) {
-    const box = $('cwList');
-    box.innerHTML = '';
-    list.forEach((c, i) => box.appendChild(cwCard(c, i + 1)));
-    updateCwBadge();
-  }
-
-  function updateCwBadge() {
-    $('cwBadge').textContent = document.querySelectorAll('.oc-cw').length;
-  }
-
-  function cwCard(c, idx) {
-    const d = document.createElement('div');
-    d.className = 'oc-cw';
-    d.innerHTML = `
-      <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
-      <div class="idx">#${idx}</div>
-      <div class="stack">
-        <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
-      </div>
-    `;
-    d.querySelector('[data-field="body"]').value = c.body || '';
-    d.querySelector('.rm').addEventListener('click', () => { d.remove(); reindexCw(); });
-    return d;
-  }
-
-  function reindexCw() {
-    [...document.querySelectorAll('.oc-cw .idx')].forEach((e, i) => e.textContent = '#' + (i + 1));
-    updateCwBadge();
+    const box = $('cwBody');
+    if (!box) return;
+    const parts = (list || [])
+      .map(c => (c && c.body ? String(c.body).trim() : ''))
+      .filter(Boolean);
+    box.value = parts.join('\n\n');
   }
 
   function collectCopywritings() {
-    return [...document.querySelectorAll('.oc-cw')].map(card => {
-      const o = {};
-      card.querySelectorAll('[data-field]').forEach(el => { o[el.dataset.field] = el.value || null; });
-      return o;
-    });
+    const el = $('cwBody');
+    const text = el ? (el.value || '').trim() : '';
+    return text ? [{ body: text }] : [];
   }
 
   // ========== Edit Detail Modal ==========
-  const edState = { current: null, activeLang: 'en', productData: null };
+  const edState = {
+    current: null, activeLang: 'en', productData: null,
+    // 新增素材提交大框 - 待上传的视频封面图 TOS object_key
+    pendingItemCover: null,
+    // 新增素材提交大框 - 待提交的视频 File 对象
+    pendingVideoFile: null,
+  };
 
   function edShow() { $('edMask').hidden = false; }
   function edHide() {
@@ -483,6 +467,7 @@
     edState.current = null;
     edState.activeLang = 'en';
     edState.productData = null;
+    edResetNewItemForm();
   }
 
   async function openEditDetail(pid) {
@@ -495,6 +480,7 @@
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
       $('edUploadProgress').innerHTML = '';
+      edResetNewItemForm();
       edShow();
       edRenderLangTabs();
       edRenderActiveLangView();
@@ -541,6 +527,8 @@
     // 切换前保存当前语种文案到 productData（从 DOM 读取）
     edFlushCopywritings();
     edState.activeLang = lang;
+    // 切语言时重置"新增素材"大框的待上传状态
+    edResetNewItemForm();
     edRenderLangTabs();
     edRenderActiveLangView();
   }
@@ -759,16 +747,120 @@
     edState.productData.copywritings = arr;
   }
 
-  async function edUploadVideo(file) {
+  // ---------- 新增素材大框（封面+视频+提交） ----------
+
+  function _fmtFileSize(n) {
+    if (!n && n !== 0) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function edSetItemCover(url) {
+    const box = $('edItemCoverBox');
+    if (!box) return;
+    const dz = $('edItemCoverDropzone');
+    const img = $('edItemCoverImg');
+    const replace = $('edItemCoverReplace');
+    const clear = $('edItemCoverClear');
+    if (url) {
+      img.src = url; img.hidden = false; dz.hidden = true;
+      if (replace) replace.hidden = false;
+      if (clear) clear.hidden = false;
+    } else {
+      img.removeAttribute('src'); img.hidden = true; dz.hidden = false;
+      if (replace) replace.hidden = true;
+      if (clear) clear.hidden = true;
+    }
+  }
+
+  function edSetPickedVideo(file) {
+    edState.pendingVideoFile = file || null;
+    const empty = $('edVideoPickEmpty');
+    const filled = $('edVideoPickFilled');
+    if (!empty || !filled) return;
+    if (file) {
+      empty.hidden = true;
+      filled.hidden = false;
+      $('edVideoPickName').textContent = file.name;
+      $('edVideoPickSize').textContent = _fmtFileSize(file.size);
+    } else {
+      empty.hidden = false;
+      filled.hidden = true;
+      $('edVideoPickName').textContent = '';
+      $('edVideoPickSize').textContent = '';
+    }
+  }
+
+  function edResetNewItemForm() {
+    edState.pendingItemCover = null;
+    edState.pendingVideoFile = null;
+    edSetItemCover(null);
+    edSetPickedVideo(null);
+    const url = $('edItemCoverUrl'); if (url) url.value = '';
+  }
+
+  async function edUploadItemCover(file) {
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
-    if (!pid) return;
+    if (!pid) { alert('产品数据未加载'); return; }
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/item-cover/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      edState.pendingItemCover = boot.object_key;
+      edSetItemCover(URL.createObjectURL(file));
+    } catch (e) {
+      alert('视频封面上传失败：' + (e.message || ''));
+    }
+  }
+
+  async function edImportItemCoverFromUrl() {
+    const url = ($('edItemCoverUrl').value || '').trim();
+    if (!url) { alert('请粘贴图片 URL'); return; }
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid) { alert('产品数据未加载'); return; }
+    try {
+      const done = await fetchJSON(`/medias/api/products/${pid}/item-cover/from-url`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      edState.pendingItemCover = done.object_key;
+      edSetItemCover(url);
+      $('edItemCoverUrl').value = '';
+    } catch (e) {
+      alert('从 URL 导入失败：' + (e.message || ''));
+    }
+  }
+
+  async function edSubmitNewItem() {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!edState.pendingItemCover) {
+      alert('请先上传视频封面图');
+      $('edItemCoverDropzone') && $('edItemCoverDropzone').focus();
+      return;
+    }
+    if (!edState.pendingVideoFile) {
+      alert('请先选择视频源文件');
+      $('edVideoPickBox') && $('edVideoPickBox').focus();
+      return;
+    }
+    const file = edState.pendingVideoFile;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid) { alert('产品数据未加载'); return; }
     const lang = edState.activeLang;
     const box = $('edUploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
     row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>上传中…</span>`;
     box.appendChild(row);
+    const submitBtn = $('edItemSubmitBtn');
+    if (submitBtn) submitBtn.disabled = true;
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -778,20 +870,31 @@
       if (!putRes.ok) throw new Error('TOS 上传失败');
       await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size, lang }),
+        body: JSON.stringify({
+          object_key: boot.object_key,
+          filename: file.name,
+          file_size: file.size,
+          cover_object_key: edState.pendingItemCover,
+          lang,
+        }),
       });
       row.className = 'oc-upload-row ok';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>完成</span>`;
+      edResetNewItemForm();
     } catch (e) {
       row.className = 'oc-upload-row err';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
-    const full = await fetchJSON('/medias/api/products/' + pid);
-    edState.current = full;
-    edState.productData = full;
-    edRenderLangTabs();
-    edRenderActiveLangView();
-    loadList();
+    try {
+      const full = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = full;
+      edState.productData = full;
+      edRenderLangTabs();
+      edRenderActiveLangView();
+      loadList();
+    } catch {}
   }
 
   function edRenderCopywritings(list) {
@@ -1032,41 +1135,47 @@
     });
 
     // 视频封面图（add modal, 等待 /items/complete 时带过去）
+    // 注：添加弹窗新版已移除这块 UI，节点不存在时直接跳过绑定。
     const icdz = $('itemCoverDropzone');
-    icdz.addEventListener('click', () => $('itemCoverInput').click());
-    icdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('itemCoverInput').click(); } });
-    icdz.addEventListener('dragover', (e) => { e.preventDefault(); icdz.classList.add('drag'); });
-    icdz.addEventListener('dragleave', () => icdz.classList.remove('drag'));
-    icdz.addEventListener('drop', (e) => {
-      e.preventDefault(); icdz.classList.remove('drag');
-      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
-      if (f) uploadItemCover(f);
-    });
-    $('itemCoverReplace').addEventListener('click', () => $('itemCoverInput').click());
-    $('itemCoverClear').addEventListener('click', clearItemCover);
-    $('itemCoverInput').addEventListener('change', (e) => {
+    if (icdz) {
+      icdz.addEventListener('click', () => $('itemCoverInput').click());
+      icdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('itemCoverInput').click(); } });
+      icdz.addEventListener('dragover', (e) => { e.preventDefault(); icdz.classList.add('drag'); });
+      icdz.addEventListener('dragleave', () => icdz.classList.remove('drag'));
+      icdz.addEventListener('drop', (e) => {
+        e.preventDefault(); icdz.classList.remove('drag');
+        const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+        if (f) uploadItemCover(f);
+      });
+      icdz.addEventListener('paste', (e) => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+        if (item) { e.preventDefault(); uploadItemCover(item.getAsFile()); }
+      });
+    }
+    $('itemCoverReplace') && $('itemCoverReplace').addEventListener('click', () => $('itemCoverInput').click());
+    $('itemCoverClear') && $('itemCoverClear').addEventListener('click', clearItemCover);
+    $('itemCoverInput') && $('itemCoverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
       if (f) uploadItemCover(f);
     });
-    $('itemCoverFromUrlBtn').addEventListener('click', importItemCoverFromUrl);
-    $('itemCoverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); importItemCoverFromUrl(); } });
-    icdz.addEventListener('paste', (e) => {
-      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-      if (item) { e.preventDefault(); uploadItemCover(item.getAsFile()); }
-    });
+    $('itemCoverFromUrlBtn') && $('itemCoverFromUrlBtn').addEventListener('click', importItemCoverFromUrl);
+    $('itemCoverUrl') && $('itemCoverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); importItemCoverFromUrl(); } });
 
+    // 添加弹窗的视频拖拽上传区：模板也已隐藏；仅在节点存在时绑定，避免影响事件链后续注册
     const dz = $('dropzone');
-    dz.addEventListener('click', () => $('fileInput').click());
-    dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
-    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
-    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-    dz.addEventListener('drop', (e) => {
-      e.preventDefault(); dz.classList.remove('drag');
-      const file = [...(e.dataTransfer.files || [])]
-        .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
-      if (file) uploadVideo(file);
-    });
-    $('fileInput').addEventListener('change', (e) => {
+    if (dz) {
+      dz.addEventListener('click', () => $('fileInput').click());
+      dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('drag');
+        const file = [...(e.dataTransfer.files || [])]
+          .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
+        if (file) uploadVideo(file);
+      });
+    }
+    $('fileInput') && $('fileInput').addEventListener('change', (e) => {
       const file = e.target.files[0]; e.target.value = '';
       if (file) uploadVideo(file);
     });
@@ -1086,21 +1195,66 @@
 
     // 编辑弹窗封面事件由 edRenderCoverBlock() 动态绑定，此处不再静态绑定
 
-    const edVdz = $('edVideoDropzone');
-    edVdz.addEventListener('click', () => $('edVideoInput').click());
-    edVdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edVideoInput').click(); } });
-    edVdz.addEventListener('dragover', (e) => { e.preventDefault(); edVdz.classList.add('drag'); });
-    edVdz.addEventListener('dragleave', () => edVdz.classList.remove('drag'));
-    edVdz.addEventListener('drop', (e) => {
-      e.preventDefault(); edVdz.classList.remove('drag');
-      const file = [...(e.dataTransfer.files || [])]
-        .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
-      if (file) edUploadVideo(file);
+    // ===== 新增素材大框：视频封面图 =====
+    const edIcDz = $('edItemCoverDropzone');
+    if (edIcDz) {
+      edIcDz.addEventListener('click', () => $('edItemCoverInput').click());
+      edIcDz.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edItemCoverInput').click(); }
+      });
+      edIcDz.addEventListener('dragover', (e) => { e.preventDefault(); edIcDz.classList.add('drag'); });
+      edIcDz.addEventListener('dragleave', () => edIcDz.classList.remove('drag'));
+      edIcDz.addEventListener('drop', (e) => {
+        e.preventDefault(); edIcDz.classList.remove('drag');
+        const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+        if (f) edUploadItemCover(f);
+      });
+    }
+    $('edItemCoverReplace') && $('edItemCoverReplace').addEventListener('click', () => $('edItemCoverInput').click());
+    $('edItemCoverClear') && $('edItemCoverClear').addEventListener('click', () => {
+      edState.pendingItemCover = null;
+      edSetItemCover(null);
     });
-    $('edVideoInput').addEventListener('change', (e) => {
+    $('edItemCoverInput') && $('edItemCoverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
-      if (f) edUploadVideo(f);
+      if (f) edUploadItemCover(f);
     });
+    $('edItemCoverFromUrlBtn') && $('edItemCoverFromUrlBtn').addEventListener('click', edImportItemCoverFromUrl);
+    $('edItemCoverUrl') && $('edItemCoverUrl').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); edImportItemCoverFromUrl(); }
+    });
+
+    // ===== 新增素材大框：视频源（只选不传） =====
+    const edVpBox = $('edVideoPickBox');
+    if (edVpBox) {
+      edVpBox.addEventListener('click', (e) => {
+        // 点 "清空" 按钮时不触发 file picker
+        if (e.target && e.target.closest('#edVideoPickClear')) return;
+        $('edVideoInput').click();
+      });
+      edVpBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edVideoInput').click(); }
+      });
+      edVpBox.addEventListener('dragover', (e) => { e.preventDefault(); edVpBox.classList.add('drag'); });
+      edVpBox.addEventListener('dragleave', () => edVpBox.classList.remove('drag'));
+      edVpBox.addEventListener('drop', (e) => {
+        e.preventDefault(); edVpBox.classList.remove('drag');
+        const file = [...(e.dataTransfer.files || [])]
+          .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
+        if (file) edSetPickedVideo(file);
+      });
+    }
+    $('edVideoInput') && $('edVideoInput').addEventListener('change', (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (f) edSetPickedVideo(f);
+    });
+    $('edVideoPickClear') && $('edVideoPickClear').addEventListener('click', (e) => {
+      e.stopPropagation();
+      edSetPickedVideo(null);
+    });
+
+    // ===== 新增素材大框：提交按钮 =====
+    $('edItemSubmitBtn') && $('edItemSubmitBtn').addEventListener('click', edSubmitNewItem);
 
     loadList();
   });

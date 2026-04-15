@@ -171,6 +171,51 @@ def _is_retryable(exc: Exception) -> bool:
     return isinstance(exc, genai_errors.ServerError)
 
 
+def _extract_gemini_tokens(resp: Any) -> tuple[int | None, int | None]:
+    """从 Gemini SDK 响应里取 prompt / output token 数，取不到就返回 (None, None)。"""
+    meta = getattr(resp, "usage_metadata", None)
+    if not meta:
+        return None, None
+    # google-genai SDK 的字段名：prompt_token_count / candidates_token_count
+    prompt = getattr(meta, "prompt_token_count", None)
+    output = getattr(meta, "candidates_token_count", None)
+    try:
+        return (int(prompt) if prompt is not None else None,
+                int(output) if output is not None else None)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _log_gemini_usage(
+    *, user_id: int | None, project_id: str | None, service: str,
+    model_id: str, success: bool, resp: Any = None, error: Exception | None = None,
+) -> None:
+    """统一把 Gemini 调用写入 usage_logs。模型名用具体的 model_id（如 gemini-3.1-pro-preview）。
+
+    只在 user_id 存在时写；对任何异常都吞掉，不影响主流程。
+    """
+    if user_id is None:
+        return
+    try:
+        from appcore.usage_log import record as _record
+        input_tokens, output_tokens = (None, None)
+        if resp is not None:
+            input_tokens, output_tokens = _extract_gemini_tokens(resp)
+        extra: dict[str, Any] = {"service_source": service}
+        if error is not None:
+            extra["error"] = str(error)[:500]
+        _record(
+            user_id, project_id, service,
+            model_name=model_id,
+            success=success,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            extra_data=extra or None,
+        )
+    except Exception:  # 永不冒泡
+        logger.debug("Gemini usage_log 记录失败", exc_info=True)
+
+
 def generate(
     prompt: str,
     *,
@@ -182,13 +227,15 @@ def generate(
     max_output_tokens: int | None = None,
     max_retries: int = 3,
     user_id: int | None = None,
+    project_id: str | None = None,
     service: str = "gemini",
     default_model: str | None = None,
 ) -> str | Any:
     """一次性生成。传 response_schema 时返回解析后的 JSON（dict/list）。
 
     media: 视频或图片路径，可传单个或列表。视频或大文件会走 Files API。
-    user_id: 传入后优先读该用户在系统配置里保存的 key / model。
+    user_id: 传入后优先读该用户在系统配置里保存的 key / model；同时用于 usage_log。
+    project_id: 传入后会记录到 usage_log（可选）。
     service: 配置来源服务名（默认 "gemini"，视频分析可传 "gemini_video_analysis"）。
     default_model: 该业务的默认模型（当 service 未配 model_id 时使用）。
     """
@@ -212,6 +259,10 @@ def generate(
             resp = client.models.generate_content(
                 model=model_id, contents=contents, config=cfg,
             )
+            _log_gemini_usage(
+                user_id=user_id, project_id=project_id, service=service,
+                model_id=model_id, success=True, resp=resp,
+            )
             if response_schema is not None:
                 parsed = getattr(resp, "parsed", None)
                 if parsed is not None:
@@ -228,6 +279,10 @@ def generate(
                 time.sleep(delay)
                 continue
             break
+    _log_gemini_usage(
+        user_id=user_id, project_id=project_id, service=service,
+        model_id=model_id, success=False, error=last_err,
+    )
     raise GeminiError(f"Gemini 调用失败：{last_err}") from last_err
 
 
@@ -240,6 +295,7 @@ def generate_stream(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     user_id: int | None = None,
+    project_id: str | None = None,
     service: str = "gemini",
     default_model: str | None = None,
 ) -> Generator[str, None, None]:
@@ -257,14 +313,24 @@ def generate_stream(
         response_schema=None,
         max_output_tokens=max_output_tokens,
     )
+    last_chunk: Any = None
     try:
         for chunk in client.models.generate_content_stream(
             model=model_id, contents=contents, config=cfg,
         ):
+            last_chunk = chunk
             if chunk.text:
                 yield chunk.text
     except Exception as e:
+        _log_gemini_usage(
+            user_id=user_id, project_id=project_id, service=service,
+            model_id=model_id, success=False, error=e,
+        )
         raise GeminiError(f"Gemini 流式调用失败：{e}") from e
+    _log_gemini_usage(
+        user_id=user_id, project_id=project_id, service=service,
+        model_id=model_id, success=True, resp=last_chunk,
+    )
 
 
 def is_configured(user_id: int | None = None) -> bool:

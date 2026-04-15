@@ -20,6 +20,7 @@ tr:hover td { background: var(--bg-input, #f9fafb); }
 .svc-badge.asr { background: #dbeafe; color: #1d4ed8; }
 .svc-badge.llm { background: #ede9fe; color: #6d28d9; }
 .svc-badge.tts { background: #fef3c7; color: #92400e; }
+.svc-badge.ai { background: #ccfbf1; color: #0f766e; }
 .svc-badge.other { background: #f3f4f6; color: #374151; }
 .token-num { font-variant-numeric: tabular-nums; }
 {% endblock %}
@@ -84,6 +85,8 @@ tr:hover td { background: var(--bg-input, #f9fafb); }
           <span class="svc-badge asr">{{ svc }}</span>
           {% elif 'elevenlabs' in svc or 'tts' in svc %}
           <span class="svc-badge tts">{{ svc }}</span>
+          {% elif 'gemini' in svc %}
+          <span class="svc-badge ai">{{ svc }}</span>
           {% elif 'openrouter' in svc or 'doubao' in svc or 'copywriting' in svc %}
           <span class="svc-badge llm">{{ svc }}</span>
           {% else %}
