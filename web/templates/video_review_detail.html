@@ -151,9 +151,8 @@
       </div>
     </div>
 
-    <button class="vr-gen-btn" id="reviewBtn" onclick="doReview()"
-            {% if state.get('steps', {}).get('review') == 'running' %}disabled{% endif %}>
-      {% if state.get('steps', {}).get('review') == 'running' %}评估中...{% else %}开始评估{% endif %}
+    <button class="vr-gen-btn" id="reviewBtn" onclick="doReview()">
+      {% if state.get('steps', {}).get('review') == 'running' %}重新开始评估（上次可能因重启中断）{% elif state.get('result') %}重新评估{% else %}开始评估{% endif %}
     </button>
   </div>
 
@@ -164,7 +163,7 @@
 
       <div id="statsArea"></div>
 
-      <div class="vr-loading" id="loadingArea" {% if state.get('steps', {}).get('review') == 'running' %}style="display:block"{% endif %}>
+      <div class="vr-loading" id="loadingArea">
         <div class="vr-spinner"></div>
         <div class="vr-loading-text" id="loadingText">正在分析视频，预计需要 30-60 秒...</div>
       </div>
@@ -172,7 +171,9 @@
       <div id="resultArea">
         {% if state.get('result') %}
         <div id="resultContent"></div>
-        {% elif not state.get('steps', {}).get('review') == 'running' %}
+        {% elif state.get('steps', {}).get('review') == 'running' %}
+        <div class="vr-result-empty">上次评估可能已被服务重启中断，请点击左侧「重新开始评估」重试。</div>
+        {% else %}
         <div class="vr-result-empty">上传视频后点击「开始评估」获取 AI 评分报告</div>
         {% endif %}
       </div>
