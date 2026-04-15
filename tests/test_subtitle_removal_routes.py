@@ -477,3 +477,50 @@ def test_subtitle_removal_submit_rejects_non_ready_task_and_does_not_restart_run
     saved = store.get("sr-submit-blocked")
     assert saved["status"] == "running"
     assert saved["provider_task_id"] == "provider-task-existing"
+
+
+def test_subtitle_removal_submit_rejects_when_task_lock_is_held_and_does_not_restart_runner(
+    authed_client_no_db, monkeypatch
+):
+    import web.routes.subtitle_removal as subtitle_removal
+
+    store.create_subtitle_removal(
+        "sr-submit-locked",
+        "uploads/source-locked.mp4",
+        "output/sr-submit-locked",
+        original_filename="source-locked.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-locked",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append(task_id),
+    )
+
+    lock = subtitle_removal._get_submit_lock("sr-submit-locked")
+    assert lock.acquire(blocking=False)
+    try:
+        response = authed_client_no_db.post(
+            "/api/subtitle-removal/sr-submit-locked/submit",
+            json={"remove_mode": "full"},
+        )
+    finally:
+        lock.release()
+
+    assert response.status_code == 409
+    assert started == []
+    saved = store.get("sr-submit-locked")
+    assert saved["status"] == "ready"
+    assert saved["provider_task_id"] == ""

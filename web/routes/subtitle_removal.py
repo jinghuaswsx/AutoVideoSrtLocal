@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import uuid
 
 import config
@@ -17,6 +18,8 @@ from web.services import subtitle_removal_runner
 from web.upload_util import validate_video_extension
 
 bp = Blueprint("subtitle_removal", __name__)
+_submit_locks: dict[str, threading.Lock] = {}
+_submit_locks_guard = threading.Lock()
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -92,6 +95,56 @@ def _to_position_payload(selection_box: dict) -> dict:
         "w": selection_box["x2"] - selection_box["x1"],
         "h": selection_box["y2"] - selection_box["y1"],
     }
+
+
+def _get_submit_lock(task_id: str) -> threading.Lock:
+    with _submit_locks_guard:
+        lock = _submit_locks.get(task_id)
+        if lock is None:
+            lock = threading.Lock()
+            _submit_locks[task_id] = lock
+        return lock
+
+
+def _submit_locked(task_id: str, task: dict, body: dict):
+    mode = (body.get("remove_mode") or "").strip().lower()
+    selection_box = body.get("selection_box")
+    media_info = task.get("media_info") or {}
+
+    if mode not in {"full", "box"}:
+        return jsonify({"error": "remove_mode must be full or box"}), 400
+
+    try:
+        duration = float(media_info.get("duration") or 0.0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid media duration"}), 400
+    if duration > config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS:
+        return jsonify({"error": "video duration exceeds provider limit"}), 400
+
+    try:
+        normalized = _normalize_selection_box(mode, selection_box, media_info)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    store.update(
+        task_id,
+        status="queued",
+        remove_mode=mode,
+        selection_box=normalized,
+        position_payload=_to_position_payload(normalized),
+        provider_task_id="",
+        provider_status="queued",
+        provider_emsg="",
+        provider_result_url="",
+        result_video_path="",
+        result_tos_key="",
+        result_object_info={},
+        error="",
+    )
+    store.set_step(task_id, "submit", "queued")
+    store.set_step_message(task_id, "submit", "绛夊緟鍚庡彴鎻愪氦鍘诲瓧骞曚换鍔?")
+    subtitle_removal_runner.start(task_id, user_id=current_user.id)
+    return jsonify({"task_id": task_id, "status": "queued"}), 202
 
 
 def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
@@ -279,10 +332,19 @@ def complete_upload():
 @bp.route("/api/subtitle-removal/<task_id>/submit", methods=["POST"])
 @login_required
 def submit(task_id: str):
-    task = _get_owned_task(task_id)
-    if (task.get("status") or "").strip() != "ready":
-        return jsonify({"error": "task is not ready for submit"}), 409
-    body = request.get_json(silent=True) or {}
+    lock = _get_submit_lock(task_id)
+    if not lock.acquire(blocking=False):
+        return jsonify({"error": "submit already in progress"}), 409
+
+    try:
+        task = _get_owned_task(task_id)
+        if (task.get("status") or "").strip() != "ready":
+            return jsonify({"error": "task is not ready for submit"}), 409
+
+        body = request.get_json(silent=True) or {}
+        return _submit_locked(task_id, task, body)
+    finally:
+        lock.release()
     mode = (body.get("remove_mode") or "").strip().lower()
     selection_box = body.get("selection_box")
     media_info = task.get("media_info") or {}
