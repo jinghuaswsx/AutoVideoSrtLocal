@@ -62,6 +62,16 @@ def _box_bounds(box: dict | None, media_info: dict) -> dict:
     return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
 
 
+def _should_resume_existing_upload(task: dict) -> bool:
+    steps = task.get("steps") or {}
+    result_video_path = (task.get("result_video_path") or "").strip()
+    return (
+        (steps.get("download_result") or "").strip().lower() == "done"
+        and (steps.get("upload_result") or "").strip().lower() in {"pending", "running"}
+        and bool(result_video_path)
+    )
+
+
 class SubtitleRemovalRuntime:
     def __init__(self, bus: EventBus, user_id: int | None = None):
         self._bus = bus
@@ -86,6 +96,9 @@ class SubtitleRemovalRuntime:
             return
         try:
             task_state.update(task_id, status="running", error="")
+            if _should_resume_existing_upload(task):
+                self._upload_existing_result(task_id)
+                return
             if not task.get("provider_task_id"):
                 self._submit(task_id)
             self._poll_until_terminal(task_id)
@@ -101,6 +114,39 @@ class SubtitleRemovalRuntime:
             task_state.set_step(task_id, "poll", "error")
             task_state.set_expires_at(task_id, "subtitle_removal")
             self._emit(task_id, EVT_SR_ERROR, {"message": str(exc)})
+
+    def _upload_existing_result(self, task_id: str) -> None:
+        task = task_state.get(task_id)
+        if not task:
+            raise RuntimeError("subtitle removal task not found")
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
+        result_path = (task.get("result_video_path") or "").strip()
+        if not result_path or not os.path.exists(result_path):
+            raise RuntimeError("subtitle removal result_video_path is missing")
+
+        self._set_step(task_id, "upload_result", "running", "姝ｅ湪涓婁紶缁撴灉鍒癟OS")
+        user_id = self._user_id if self._user_id is not None else task.get("_user_id")
+        result_key = tos_clients.build_artifact_object_key(user_id, task_id, "subtitle_removal", os.path.basename(result_path))
+        try:
+            tos_clients.upload_file(result_path, result_key)
+        except Exception as exc:
+            self._set_step(task_id, "upload_result", "error", f"涓婁紶缁撴灉鍒癟OS澶辫触: {exc}")
+            raise
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
+        task_state.update(
+            task_id,
+            status="done",
+            provider_status="success",
+            result_tos_key=result_key,
+            result_object_info={
+                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "result_url": "",
+            },
+        )
+        self._set_step(task_id, "upload_result", "done", "缁撴灉宸插洖浼犲埌TOS")
+        self._emit(task_id, EVT_SR_DONE, {"task_id": task_id, "result_tos_key": result_key})
 
     def _submit(self, task_id: str) -> None:
         task = task_state.get(task_id)

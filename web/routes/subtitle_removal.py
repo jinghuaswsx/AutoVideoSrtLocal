@@ -10,7 +10,6 @@ import config
 from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import cleanup
 from appcore import task_state
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
@@ -23,6 +22,8 @@ from web.upload_util import validate_video_extension
 bp = Blueprint("subtitle_removal", __name__)
 _submit_locks: dict[str, threading.Lock] = {}
 _submit_locks_guard = threading.Lock()
+_upload_bootstrap_reservations: dict[str, dict] = {}
+_upload_bootstrap_guard = threading.Lock()
 _INFLIGHT_STEP_STATUSES = {
     "submit": {"queued", "running"},
     "poll": {"queued", "running"},
@@ -115,6 +116,42 @@ def _get_submit_lock(task_id: str) -> threading.Lock:
             lock = threading.Lock()
             _submit_locks[task_id] = lock
         return lock
+
+
+def _reserve_upload_bootstrap(task_id: str, user_id: int, original_filename: str, object_key: str) -> None:
+    with _upload_bootstrap_guard:
+        _upload_bootstrap_reservations[task_id] = {
+            "task_id": task_id,
+            "user_id": user_id,
+            "original_filename": original_filename,
+            "object_key": object_key,
+        }
+
+
+def _consume_upload_bootstrap(task_id: str) -> dict | None:
+    with _upload_bootstrap_guard:
+        return _upload_bootstrap_reservations.get(task_id)
+
+
+def _release_upload_bootstrap(task_id: str) -> None:
+    with _upload_bootstrap_guard:
+        _upload_bootstrap_reservations.pop(task_id, None)
+
+
+def _cleanup_result_artifacts(task: dict) -> None:
+    result_video_path = (task.get("result_video_path") or "").strip()
+    if result_video_path and os.path.isfile(result_video_path):
+        try:
+            os.remove(result_video_path)
+        except Exception:
+            pass
+
+    result_tos_key = (task.get("result_tos_key") or "").strip()
+    if result_tos_key:
+        try:
+            tos_clients.delete_object(result_tos_key)
+        except Exception:
+            pass
 
 
 def _task_needs_resume(task: dict) -> bool:
@@ -347,6 +384,7 @@ def bootstrap_upload():
 
     task_id = str(uuid.uuid4())
     object_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    _reserve_upload_bootstrap(task_id, current_user.id, original_filename, object_key)
     return jsonify(
         {
             "task_id": task_id,
@@ -379,6 +417,13 @@ def complete_upload():
         return jsonify({"error": "object_key mismatch"}), 400
     if not tos_clients.object_exists(object_key):
         return jsonify({"error": "Uploaded object not found"}), 400
+    reservation = _consume_upload_bootstrap(task_id)
+    if not reservation:
+        return jsonify({"error": "bootstrap reservation required"}), 403
+    if reservation.get("user_id") != current_user.id:
+        return jsonify({"error": "bootstrap reservation owned by another user"}), 403
+    if reservation.get("original_filename") != original_filename or reservation.get("object_key") != object_key:
+        return jsonify({"error": "bootstrap reservation mismatch"}), 403
 
     ext = os.path.splitext(original_filename)[1].lower()
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -444,6 +489,7 @@ def complete_upload():
     store.set_step(task_id, "prepare", "done")
     store.set_step_message(task_id, "prepare", "首帧提取和媒体信息解析已完成")
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+    _release_upload_bootstrap(task_id)
     return jsonify({"task_id": task_id}), 201
 
 
@@ -528,6 +574,7 @@ def resubmit(task_id: str):
         task = _get_owned_task(task_id)
         if (task.get("status") or "").strip() in {"queued", "running"}:
             return jsonify({"error": "task is already running"}), 409
+        _cleanup_result_artifacts(task)
         body = request.get_json(silent=True) or {}
         return _submit_locked(task_id, task, body)
     finally:
@@ -538,11 +585,7 @@ def resubmit(task_id: str):
 @login_required
 def delete_task(task_id: str):
     task = _get_owned_task(task_id)
-    for object_key in cleanup.collect_task_tos_keys(task):
-        try:
-            tos_clients.delete_object(object_key)
-        except Exception:
-            pass
+    _cleanup_result_artifacts(task)
     db_execute("UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s", (task_id, current_user.id))
     store.update(task_id, status="deleted", deleted_at=datetime.now().isoformat(timespec="seconds"))
     return ("", 204)

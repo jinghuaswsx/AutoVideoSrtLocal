@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+import web.routes.subtitle_removal as subtitle_removal
 from web import store
+
+
+@pytest.fixture(autouse=True)
+def clear_upload_bootstrap_reservations():
+    subtitle_removal._upload_bootstrap_reservations.clear()
+    yield
+    subtitle_removal._upload_bootstrap_reservations.clear()
 
 
 def _mock_subtitle_removal_upload_env(tmp_path, monkeypatch, *, probe_media_info=None, thumbnail_path=None):
@@ -74,6 +84,52 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert task["steps"]["prepare"] == "done"
     assert task["thumbnail_path"].endswith("thumbnail.jpg")
     assert task["media_info"]["resolution"] == "720x1280"
+
+
+def test_subtitle_removal_complete_upload_rejects_unreserved_task_id(tmp_path, authed_client_no_db, monkeypatch):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    task_id = "sr-unreserved"
+    object_key = f"uploads/1/{task_id}/source.mp4"
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": task_id,
+            "original_filename": "source.mp4",
+            "object_key": object_key,
+            "content_type": "video/mp4",
+            "file_size": 2048,
+        },
+    )
+
+    assert response.status_code == 403
+    assert store.get(task_id) is None
+
+
+def test_subtitle_removal_complete_upload_rejects_foreign_reserved_task_id(tmp_path, authed_client_no_db, monkeypatch):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    task_id = "sr-foreign-reserved"
+    object_key = f"uploads/1/{task_id}/source.mp4"
+    subtitle_removal._upload_bootstrap_reservations[task_id] = {
+        "task_id": task_id,
+        "user_id": 2,
+        "original_filename": "source.mp4",
+        "object_key": object_key,
+    }
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": task_id,
+            "original_filename": "source.mp4",
+            "object_key": object_key,
+            "content_type": "video/mp4",
+            "file_size": 2048,
+        },
+    )
+
+    assert response.status_code == 403
+    assert store.get(task_id) is None
 
 
 def test_subtitle_removal_bootstrap_rejects_invalid_video_extension(authed_client_no_db, monkeypatch):
@@ -566,7 +622,9 @@ def test_subtitle_removal_download_result_redirects_to_tos_when_local_file_missi
     assert response.headers["Location"] == "https://tos.example/result.cleaned.mp4"
 
 
-def test_subtitle_removal_resubmit_clears_previous_provider_state(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_client_no_db, monkeypatch, tmp_path):
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"result-video")
     task = store.create_subtitle_removal(
         "sr-resubmit",
         "uploads/source.mp4",
@@ -591,9 +649,12 @@ def test_subtitle_removal_resubmit_clears_previous_provider_state(authed_client_
         provider_status="failed",
         provider_result_url="https://provider.example/result.mp4",
         result_tos_key="artifacts/1/sr-resubmit/subtitle_removal/result.cleaned.mp4",
+        result_video_path=str(result_path),
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
     started = {}
+    deleted = []
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
         lambda task_id, user_id=None: started.setdefault("task_id", task_id),
@@ -606,6 +667,8 @@ def test_subtitle_removal_resubmit_clears_previous_provider_state(authed_client_
 
     assert response.status_code == 202
     assert started["task_id"] == "sr-resubmit"
+    assert deleted == ["artifacts/1/sr-resubmit/subtitle_removal/result.cleaned.mp4"]
+    assert not result_path.exists()
     saved = store.get("sr-resubmit")
     assert saved["provider_task_id"] == ""
     assert saved["provider_status"] == "queued"
@@ -662,7 +725,11 @@ def test_subtitle_removal_resume_poll_rejects_duplicate_runner_start(authed_clie
     assert started == []
 
 
-def test_subtitle_removal_delete_soft_deletes_project_and_cleans_tos_keys(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_delete_soft_deletes_project_and_cleans_result_artifacts_only(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"result-video")
     task = store.create_subtitle_removal(
         "sr-delete",
         "uploads/source.mp4",
@@ -674,6 +741,7 @@ def test_subtitle_removal_delete_soft_deletes_project_and_cleans_tos_keys(authed
         "sr-delete",
         source_tos_key="uploads/1/sr-delete/source.mp4",
         result_tos_key="artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4",
+        result_video_path=str(result_path),
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
     deleted = []
@@ -683,7 +751,5 @@ def test_subtitle_removal_delete_soft_deletes_project_and_cleans_tos_keys(authed
     response = authed_client_no_db.delete("/api/subtitle-removal/sr-delete")
 
     assert response.status_code == 204
-    assert deleted == [
-        "uploads/1/sr-delete/source.mp4",
-        "artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4",
-    ]
+    assert deleted == ["artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4"]
+    assert not result_path.exists()
