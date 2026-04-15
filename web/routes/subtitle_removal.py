@@ -117,12 +117,27 @@ def _get_submit_lock(task_id: str) -> threading.Lock:
         return lock
 
 
-def _task_has_inflight_step(task: dict) -> bool:
+def _task_needs_resume(task: dict) -> bool:
     steps = task.get("steps") or {}
-    for step_name, allowed_statuses in _INFLIGHT_STEP_STATUSES.items():
-        step_status = (steps.get(step_name) or "").strip().lower()
-        if step_status in allowed_statuses:
-            return True
+    submit_status = (steps.get("submit") or "").strip().lower()
+    poll_status = (steps.get("poll") or "").strip().lower()
+    download_status = (steps.get("download_result") or "").strip().lower()
+    upload_status = (steps.get("upload_result") or "").strip().lower()
+    provider_task_id = (task.get("provider_task_id") or "").strip()
+    result_video_path = (task.get("result_video_path") or "").strip()
+
+    if submit_status in _INFLIGHT_STEP_STATUSES["submit"]:
+        return True
+    if poll_status in _INFLIGHT_STEP_STATUSES["poll"]:
+        return True
+    if submit_status == "done" and poll_status == "pending" and provider_task_id:
+        return True
+    if download_status in _INFLIGHT_STEP_STATUSES["download_result"]:
+        return True
+    if download_status == "done" and upload_status == "pending" and result_video_path:
+        return True
+    if upload_status in _INFLIGHT_STEP_STATUSES["upload_result"]:
+        return True
     return False
 
 
@@ -168,7 +183,7 @@ def resume_inflight_tasks() -> list[str]:
         task_status = (task.get("status") or row_status).strip().lower()
         if task_status in {"deleted", "done", "error"} or task.get("deleted_at"):
             continue
-        if not _task_has_inflight_step(task):
+        if not _task_needs_resume(task):
             continue
         try:
             task.setdefault("_user_id", row.get("user_id"))

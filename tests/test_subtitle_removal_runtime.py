@@ -224,3 +224,73 @@ def test_resume_inflight_tasks_skips_non_inflight_rows(monkeypatch):
     assert result == []
     assert started == []
     assert subtitle_removal.task_state.get("sr-finished") is None
+
+
+def test_resume_inflight_tasks_recovers_after_submit_before_poll(monkeypatch):
+    import web.routes.subtitle_removal as subtitle_removal
+
+    started = []
+
+    monkeypatch.setattr(
+        subtitle_removal,
+        "db_query",
+        lambda sql, args=(): [{
+            "id": "sr-submit-window",
+            "user_id": 1,
+            "state_json": '{"id":"sr-submit-window","type":"subtitle_removal","status":"running","provider_task_id":"provider-task-1","steps":{"prepare":"done","submit":"done","poll":"pending","download_result":"pending","upload_result":"pending"}}',
+            "status": "running",
+        }] if "FROM projects" in sql else [],
+    )
+    monkeypatch.setattr(
+        subtitle_removal,
+        "subtitle_removal_runner",
+        type(
+            "Runner",
+            (),
+            {
+                "is_running": lambda self, task_id: False,
+                "start": lambda self, task_id, user_id=None: started.append((task_id, user_id)) or True,
+            },
+        )(),
+    )
+
+    result = subtitle_removal.resume_inflight_tasks()
+
+    assert result == ["sr-submit-window"]
+    assert started == [("sr-submit-window", 1)]
+    assert subtitle_removal.task_state.get("sr-submit-window")["provider_task_id"] == "provider-task-1"
+
+
+def test_resume_inflight_tasks_recovers_after_download_before_upload(monkeypatch):
+    import web.routes.subtitle_removal as subtitle_removal
+
+    started = []
+
+    monkeypatch.setattr(
+        subtitle_removal,
+        "db_query",
+        lambda sql, args=(): [{
+            "id": "sr-download-window",
+            "user_id": 1,
+            "state_json": '{"id":"sr-download-window","type":"subtitle_removal","status":"running","result_video_path":"/tmp/result.cleaned.mp4","steps":{"prepare":"done","submit":"done","poll":"done","download_result":"done","upload_result":"pending"}}',
+            "status": "running",
+        }] if "FROM projects" in sql else [],
+    )
+    monkeypatch.setattr(
+        subtitle_removal,
+        "subtitle_removal_runner",
+        type(
+            "Runner",
+            (),
+            {
+                "is_running": lambda self, task_id: False,
+                "start": lambda self, task_id, user_id=None: started.append((task_id, user_id)) or True,
+            },
+        )(),
+    )
+
+    result = subtitle_removal.resume_inflight_tasks()
+
+    assert result == ["sr-download-window"]
+    assert started == [("sr-download-window", 1)]
+    assert subtitle_removal.task_state.get("sr-download-window")["result_video_path"] == "/tmp/result.cleaned.mp4"
