@@ -255,8 +255,11 @@
 
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 
+/* ────────── List wrapper ────────── */
+.oc-list { display:block; width:100%; }
+
 /* ────────── Table（列表） ────────── */
-.oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; }
+.oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
 .oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
 .oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
@@ -375,8 +378,8 @@
     </button>
   </div>
 
-  <!-- Grid -->
-  <div class="oc-grid" id="grid"></div>
+  <!-- List -->
+  <div class="oc-list" id="grid"></div>
   <div class="oc-pager" id="pager"></div>
 </div>
 
