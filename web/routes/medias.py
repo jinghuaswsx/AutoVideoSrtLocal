@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
+import requests
 from flask import Blueprint, render_template, request, jsonify, abort, send_file
 from flask_login import login_required, current_user
 
@@ -11,6 +13,41 @@ from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 
 import re
+
+_ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+_MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
+
+
+def _download_image_to_tos(url: str, pid: int, prefix: str) -> tuple[str, bytes, str] | tuple[None, None, str]:
+    """从 URL 抓图并上传到 TOS media bucket。返回 (object_key, content, ext) 或失败时 (None, None, error_msg)。"""
+    if not url:
+        return None, None, "url required"
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return None, None, "仅支持 http/https 链接"
+    try:
+        resp = requests.get(url, timeout=20, stream=True,
+                            headers={"User-Agent": "Mozilla/5.0 AutoVideoSrt-Importer"})
+        resp.raise_for_status()
+        ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
+        if not ct.startswith("image/"):
+            return None, None, f"非图片类型: {ct}"
+        data = b""
+        for chunk in resp.iter_content(chunk_size=64 * 1024):
+            data += chunk
+            if len(data) > _MAX_IMAGE_BYTES:
+                return None, None, "图片过大（>15MB）"
+    except requests.RequestException as e:
+        return None, None, f"下载失败: {e}"
+
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(ct, ".jpg")
+    name_from_url = os.path.basename(parsed.path or "") or "from_url"
+    filename = f"{prefix}_{name_from_url}"
+    if not filename.endswith(ext):
+        filename += ext
+    object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    tos_clients.upload_media_object(object_key, data, content_type=ct)
+    return object_key, data, ext
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 
@@ -287,6 +324,85 @@ def api_item_complete(pid: int):
         pass
 
     return jsonify({"id": item_id}), 201
+
+
+@bp.route("/api/products/<int:pid>/cover/from-url", methods=["POST"])
+@login_required
+def api_cover_from_url(pid: int):
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    object_key, data, err_or_ext = _download_image_to_tos(
+        (body.get("url") or "").strip(), pid, "cover",
+    )
+    if object_key is None:
+        return jsonify({"error": err_or_ext}), 400
+    old_key = p.get("cover_object_key")
+    if old_key and old_key != object_key:
+        try:
+            tos_clients.delete_media_object(old_key)
+        except Exception:
+            pass
+    medias.update_product(pid, cover_object_key=object_key)
+    try:
+        product_dir = THUMB_DIR / str(pid)
+        product_dir.mkdir(parents=True, exist_ok=True)
+        (product_dir / f"cover{err_or_ext}").write_bytes(data)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}", "object_key": object_key})
+
+
+@bp.route("/api/products/<int:pid>/item-cover/from-url", methods=["POST"])
+@login_required
+def api_item_cover_from_url(pid: int):
+    """为尚未创建的 item 预上传一张 URL 图片，返回 object_key。"""
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    object_key, _data, err_or_ext = _download_image_to_tos(
+        (body.get("url") or "").strip(), pid, "item_cover",
+    )
+    if object_key is None:
+        return jsonify({"error": err_or_ext}), 400
+    return jsonify({"ok": True, "object_key": object_key})
+
+
+@bp.route("/api/items/<int:item_id>/cover/from-url", methods=["POST"])
+@login_required
+def api_item_cover_set_from_url(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    object_key, data, err_or_ext = _download_image_to_tos(
+        (body.get("url") or "").strip(), it["product_id"], "item_cover",
+    )
+    if object_key is None:
+        return jsonify({"error": err_or_ext}), 400
+    old = it.get("cover_object_key")
+    if old and old != object_key:
+        try:
+            tos_clients.delete_media_object(old)
+        except Exception:
+            pass
+    medias.update_item_cover(item_id, object_key)
+    try:
+        product_dir = THUMB_DIR / str(it["product_id"])
+        product_dir.mkdir(parents=True, exist_ok=True)
+        (product_dir / f"item_cover_{item_id}{err_or_ext}").write_bytes(data)
+    except Exception:
+        pass
+    return jsonify({"ok": True, "cover_url": f"/medias/item-cover/{item_id}", "object_key": object_key})
 
 
 @bp.route("/api/products/<int:pid>/item-cover/bootstrap", methods=["POST"])

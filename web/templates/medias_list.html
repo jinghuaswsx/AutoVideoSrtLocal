@@ -273,6 +273,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-image-pair { display:flex; gap:var(--oc-sp-6); align-items:flex-start; flex-wrap:wrap; }
 .oc-image-col { display:flex; flex-direction:column; gap:var(--oc-sp-2); }
 
+/* 封面 URL 粘贴 + 从 URL 导入 */
+.oc-url-row { display:flex; gap:var(--oc-sp-2); align-items:center; }
+.oc-url-row .oc-input { height:28px; font-size:12px; padding:0 10px; }
+.oc-input.sm { height:28px; font-size:12px; padding:0 10px; }
+.oc-cover-actions { display:flex; flex-direction:column; gap:var(--oc-sp-2); align-items:stretch; padding-top:var(--oc-sp-2); min-width:220px; }
+
 .oc-section { display:flex; flex-direction:column; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-6); }
 .oc-section:last-child { margin-bottom:0; }
 .oc-section-title { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; font-weight:600; color:var(--oc-fg); }

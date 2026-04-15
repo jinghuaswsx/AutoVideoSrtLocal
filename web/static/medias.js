@@ -205,6 +205,42 @@
     }
   }
 
+  async function importCoverFromUrl() {
+    const url = $('coverUrl').value.trim();
+    if (!url) { alert('请粘贴图片 URL'); return; }
+    const pid = await ensureProductIdForUpload();
+    if (!pid) return;
+    try {
+      const done = await fetchJSON(`/medias/api/products/${pid}/cover/from-url`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      state.current.product.cover_object_key = done.object_key;
+      setCover(done.cover_url + `?_=${Date.now()}`);
+      $('coverUrl').value = '';
+    } catch (e) {
+      alert('从 URL 导入失败：' + (e.message || ''));
+    }
+  }
+
+  async function importItemCoverFromUrl() {
+    const url = $('itemCoverUrl').value.trim();
+    if (!url) { alert('请粘贴图片 URL'); return; }
+    const pid = await ensureProductIdForUpload();
+    if (!pid) return;
+    try {
+      const done = await fetchJSON(`/medias/api/products/${pid}/item-cover/from-url`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      state.pendingItemCover = done.object_key;
+      setItemCover(url);  // 先展示原 URL 预览
+      $('itemCoverUrl').value = '';
+    } catch (e) {
+      alert('从 URL 导入失败：' + (e.message || ''));
+    }
+  }
+
   async function uploadItemCover(file) {
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
@@ -466,6 +502,25 @@
     }
   }
 
+  async function edImportCoverFromUrl() {
+    const url = $('edCoverUrl').value.trim();
+    if (!url) { alert('请粘贴图片 URL'); return; }
+    const pid = edState.current && edState.current.product && edState.current.product.id;
+    if (!pid) return;
+    try {
+      const done = await fetchJSON(`/medias/api/products/${pid}/cover/from-url`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      edState.current.product.cover_object_key = done.object_key;
+      edState.clearCover = false;
+      edSetCover(done.cover_url + `?_=${Date.now()}`);
+      $('edCoverUrl').value = '';
+    } catch (e) {
+      alert('从 URL 导入失败：' + (e.message || ''));
+    }
+  }
+
   function edClearCover() {
     edState.clearCover = true;
     if (edState.current && edState.current.product) edState.current.product.cover_object_key = null;
@@ -681,6 +736,15 @@
       if (f) uploadCover(f);
     });
 
+    $('coverFromUrlBtn').addEventListener('click', importCoverFromUrl);
+    $('coverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); importCoverFromUrl(); } });
+
+    // 粘贴图片到 产品主图 dropzone
+    cdz.addEventListener('paste', (e) => {
+      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+      if (item) { e.preventDefault(); uploadCover(item.getAsFile()); }
+    });
+
     // 视频封面图（add modal, 等待 /items/complete 时带过去）
     const icdz = $('itemCoverDropzone');
     icdz.addEventListener('click', () => $('itemCoverInput').click());
@@ -697,6 +761,12 @@
     $('itemCoverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
       if (f) uploadItemCover(f);
+    });
+    $('itemCoverFromUrlBtn').addEventListener('click', importItemCoverFromUrl);
+    $('itemCoverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); importItemCoverFromUrl(); } });
+    icdz.addEventListener('paste', (e) => {
+      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+      if (item) { e.preventDefault(); uploadItemCover(item.getAsFile()); }
     });
 
     const dz = $('dropzone');
@@ -742,6 +812,12 @@
     $('edCoverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
       if (f) edUploadCover(f);
+    });
+    $('edCoverFromUrlBtn').addEventListener('click', edImportCoverFromUrl);
+    $('edCoverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); edImportCoverFromUrl(); } });
+    edCdz.addEventListener('paste', (e) => {
+      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+      if (item) { e.preventDefault(); edUploadCover(item.getAsFile()); }
     });
 
     const edVdz = $('edVideoDropzone');
