@@ -527,6 +527,11 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   margin-right:0;
 }
 .oc-edit-form #edCwList { width:100%; }
+.oc-edit-form #edItemsGrid {
+  grid-template-columns:repeat(auto-fill, 208px);
+  justify-content:flex-start;
+  gap:var(--oc-sp-4);
+}
 .oc-edit-form .oc-add-btn { align-self:flex-start; margin-left:0; margin-right:0; }
 .oc-edit-new-item { max-width:none; margin:0; }
 .oc-edit-video-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }

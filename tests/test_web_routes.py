@@ -775,3 +775,13 @@ def test_medias_page_centers_new_item_submit_button_in_edit_modal(authed_client_
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert '.oc-edit-form .oc-new-item-footer { justify-content:center; }' in body
+
+
+def test_medias_page_shrinks_edit_modal_video_cards_to_eighty_percent(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '.oc-edit-form #edItemsGrid {' in body
+    assert 'grid-template-columns:repeat(auto-fill, 208px);' in body
+    assert 'justify-content:flex-start;' in body
