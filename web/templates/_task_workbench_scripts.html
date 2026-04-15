@@ -1,6 +1,6 @@
 <script>
   const socket = io();
-  const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"];
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
   const TASK_WORKBENCH_CONFIG = {
     taskId: {{ task_id|tojson }},
@@ -296,6 +296,7 @@
       tts: "语音生成",
       subtitle: "字幕生成",
       compose: "视频合成",
+      analysis: "AI 视频分析",
       export: "CapCut 导出",
     }[step] || step;
   }
@@ -535,12 +536,119 @@
         previewEl.innerHTML = renderVariantCompareArtifact(artifact);
         return;
       }
+      if (artifact.layout === "analysis") {
+        previewEl.innerHTML = renderAnalysisArtifact(artifact);
+        return;
+      }
       if (!artifact.items || !artifact.items.length) {
         previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
         return;
       }
       previewEl.innerHTML = artifact.items.map(item => renderPreviewItem(item)).join("");
     });
+  }
+
+  function renderAnalysisArtifact(artifact) {
+    const scoreBlock = renderScoreResult(artifact.score, artifact.score_error);
+    const cskBlock = renderCskResult(artifact.csk, artifact.csk_error);
+    const sp = artifact.score_prompt || "";
+    const cp = artifact.csk_prompt || "";
+    return `
+      <div class="analysis-row">
+        <div class="analysis-card">
+          <div class="analysis-head"><span class="analysis-tag">视频评分</span><span class="analysis-sub">美国短视频带货要素 · Gemini 3.1 Pro</span></div>
+          <div class="analysis-split">
+            <div class="analysis-left">${scoreBlock}</div>
+            <div class="analysis-right">
+              <div class="analysis-prompt-label">提示词</div>
+              <pre class="analysis-prompt">${escapeHtml(sp)}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="analysis-row">
+        <div class="analysis-card">
+          <div class="analysis-head"><span class="analysis-tag analysis-tag--csk">CSK 视频分析</span><span class="analysis-sub">产品特征锁定 + 3 关键帧 · Gemini 3.1 Pro</span></div>
+          <div class="analysis-split">
+            <div class="analysis-left">${cskBlock}</div>
+            <div class="analysis-right">
+              <div class="analysis-prompt-label">提示词</div>
+              <pre class="analysis-prompt">${escapeHtml(cp)}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderScoreResult(score, errMsg) {
+    if (errMsg && !score) {
+      return `<div class="analysis-error">评分失败：${escapeHtml(errMsg)}</div>`;
+    }
+    if (!score) return `<div class="analysis-placeholder">等待评分结果</div>`;
+    const total = score.total ?? 0;
+    const level = total >= 85 ? "top" : total >= 70 ? "good" : total >= 50 ? "mid" : "low";
+    const dims = (score.dimensions || []).map(d => {
+      const pct = d.weight ? Math.round((d.score / d.weight) * 100) : 0;
+      return `
+        <div class="score-row">
+          <div class="score-row-head">
+            <span class="score-dim-name">${escapeHtml(d.name)}</span>
+            <span class="score-dim-val">${d.score}/${d.weight}</span>
+          </div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%"></div></div>
+          <div class="score-dim-comment">${escapeHtml(d.comment || "")}</div>
+        </div>
+      `;
+    }).join("");
+    const suggestions = (score.suggestions || []).map(s => `<li>${escapeHtml(s)}</li>`).join("");
+    return `
+      <div class="score-total score-total--${level}">
+        <div class="score-total-num">${total}<span class="score-total-max">/100</span></div>
+        <div class="score-total-summary">${escapeHtml(score.summary || "")}</div>
+      </div>
+      <div class="score-dims">${dims}</div>
+      ${suggestions ? `<div class="score-suggestions"><div class="score-sub-title">改进建议</div><ol>${suggestions}</ol></div>` : ""}
+    `;
+  }
+
+  function renderCskResult(csk, errMsg) {
+    if (errMsg && !csk) {
+      return `<div class="analysis-error">分析失败：${escapeHtml(errMsg)}</div>`;
+    }
+    if (!csk) return `<div class="analysis-placeholder">等待分析结果</div>`;
+    const va = csk.video_analysis || {};
+    const pf = va.product_features || {};
+    const videoText = (va.video_text || []).map(t => `<li>${escapeHtml(t)}</li>`).join("");
+    const kfs = (csk.keyframes || []).map(kf => `
+      <div class="csk-kf">
+        <div class="csk-kf-head"><span class="csk-kf-ts">${escapeHtml(kf.timestamp || "")}</span><span class="csk-kf-type">${escapeHtml(kf.type || "")}</span></div>
+        <div class="csk-kf-reason">${escapeHtml(kf.reason || "")}</div>
+      </div>
+    `).join("");
+    return `
+      <div class="csk-section">
+        <div class="csk-sub-title">内容概括</div>
+        <p class="csk-text">${escapeHtml(va.summary || "")}</p>
+      </div>
+      <div class="csk-section">
+        <div class="csk-sub-title">详细描述</div>
+        <p class="csk-text">${escapeHtml(va.detailed_description || "")}</p>
+      </div>
+      <div class="csk-section csk-grid-2">
+        <div>
+          <div class="csk-sub-title">颜色</div>
+          <p class="csk-text">${escapeHtml(pf.color_desc || "—")}</p>
+        </div>
+        <div>
+          <div class="csk-sub-title">材质</div>
+          <p class="csk-text">${escapeHtml(pf.material_desc || "—")}</p>
+        </div>
+      </div>
+      ${videoText ? `<div class="csk-section"><div class="csk-sub-title">画面文字</div><ul class="csk-list">${videoText}</ul></div>` : ""}
+      ${va.voiceover ? `<div class="csk-section"><div class="csk-sub-title">配音转写</div><p class="csk-text">${escapeHtml(va.voiceover)}</p></div>` : ""}
+      ${kfs ? `<div class="csk-section"><div class="csk-sub-title">关键帧（3 帧）</div>${kfs}</div>` : ""}
+    `;
   }
 
   function renderVariantCompareArtifact(artifact) {

@@ -32,6 +32,7 @@ from appcore.events import (
 )
 from web.preview_artifacts import (
     build_alignment_artifact,
+    build_analysis_artifact,
     build_asr_artifact,
     build_compose_artifact,
     build_export_artifact,
@@ -159,6 +160,7 @@ class PipelineRunner:
             ("tts", lambda: self._step_tts(task_id, task_dir)),
             ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
             ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
+            ("analysis", lambda: self._step_analysis(task_id)),
             ("export", lambda: self._step_export(task_id, video_path, task_dir)),
         ]
 
@@ -488,6 +490,60 @@ class PipelineRunner:
             task_state.set_preview_file(task_id, "hard_video", result["hard_video"])
         task_state.set_artifact(task_id, "compose", build_compose_artifact())
         self._set_step(task_id, "compose", "done", "视频合成完成")
+
+    def _step_analysis(self, task_id: str) -> None:
+        """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
+        from pipeline import video_csk, video_score
+
+        self._set_step(task_id, "analysis", "running", "AI 分析中（评分 + CSK）...")
+        task = task_state.get(task_id) or {}
+        variants = task.get("variants") or {}
+        variant_state = variants.get("normal") or {}
+        hard_video = (variant_state.get("result") or {}).get("hard_video")
+
+        score_result = None
+        csk_result = None
+        score_err = ""
+        csk_err = ""
+
+        if not hard_video or not os.path.isfile(hard_video):
+            self._set_step(task_id, "analysis", "done", "未找到硬字幕视频，跳过 AI 分析")
+            task_state.set_artifact(task_id, "analysis", build_analysis_artifact(
+                None, None,
+                score_prompt=video_score.SYSTEM_PROMPT,
+                csk_prompt=video_csk.CSK_PROMPT,
+                score_error="未找到硬字幕视频",
+                csk_error="未找到硬字幕视频",
+            ))
+            return
+
+        try:
+            score_result = video_score.score_video(hard_video, user_id=self.user_id)
+        except Exception as e:
+            score_err = str(e)
+            log.warning("video_score 失败：%s", e)
+
+        try:
+            csk_result = video_csk.analyze_video(hard_video, user_id=self.user_id)
+        except Exception as e:
+            csk_err = str(e)
+            log.warning("video_csk 失败：%s", e)
+
+        task_state.set_artifact(task_id, "analysis", build_analysis_artifact(
+            score_result, csk_result,
+            score_prompt=video_score.SYSTEM_PROMPT,
+            csk_prompt=video_csk.CSK_PROMPT,
+            score_error=score_err,
+            csk_error=csk_err,
+        ))
+
+        if score_err and csk_err:
+            self._set_step(task_id, "analysis", "done", "AI 分析失败（评分与 CSK 均未成功）")
+        elif score_err or csk_err:
+            self._set_step(task_id, "analysis", "done", "AI 分析部分完成")
+        else:
+            total = (score_result or {}).get("total", 0)
+            self._set_step(task_id, "analysis", "done", f"AI 分析完成，评分 {total}/100")
 
     def _step_export(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)

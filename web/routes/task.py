@@ -695,7 +695,7 @@ def delete_task(task_id):
     return jsonify({"status": "ok"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"]
 
 
 @bp.route("/<task_id>/resume", methods=["POST"])
