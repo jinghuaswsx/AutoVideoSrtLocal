@@ -635,7 +635,17 @@
       if (f) edUploadCover(f);
     });
 
-    $('edVideoAddBtn').addEventListener('click', () => $('edVideoInput').click());
+    const edVdz = $('edVideoDropzone');
+    edVdz.addEventListener('click', () => $('edVideoInput').click());
+    edVdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edVideoInput').click(); } });
+    edVdz.addEventListener('dragover', (e) => { e.preventDefault(); edVdz.classList.add('drag'); });
+    edVdz.addEventListener('dragleave', () => edVdz.classList.remove('drag'));
+    edVdz.addEventListener('drop', (e) => {
+      e.preventDefault(); edVdz.classList.remove('drag');
+      const file = [...(e.dataTransfer.files || [])]
+        .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
+      if (file) edUploadVideo(file);
+    });
     $('edVideoInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
       if (f) edUploadVideo(f);
