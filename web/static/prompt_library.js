@@ -206,13 +206,16 @@
     // 转换按钮：仅 admin 可点；条件 = 源有 + 目标空；两个都有则整列隐藏
     const zh2en = $('zh2enBtn'), en2zh = $('en2zhBtn');
     const col = $('convertCol');
+    const wrap = $('viewBilingual');
     if (!isAdmin || (hasZh && hasEn)) {
       col.style.display = 'none';
       zh2en.hidden = true; en2zh.hidden = true;
+      wrap.classList.add('no-convert');
     } else {
       col.style.display = '';
       zh2en.hidden = !(hasZh && !hasEn);
       en2zh.hidden = !(hasEn && !hasZh);
+      wrap.classList.remove('no-convert');
     }
 
     $('copyZhBtn').onclick = () => copyToClipboard(p.content_zh || '');

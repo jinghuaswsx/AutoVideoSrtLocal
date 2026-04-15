@@ -158,8 +158,8 @@
 .oc-kv dd { color:var(--oc-fg); margin:0; }
 
 /* bilingual 两列视图 */
-.oc-bilingual { display:grid; grid-template-columns:1fr auto 1fr; gap:var(--oc-sp-3); align-items:stretch; }
-.oc-bilingual.edit { grid-template-columns:1fr 1fr; }
+.oc-bilingual { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:var(--oc-sp-3); align-items:stretch; }
+.oc-bilingual.edit, .oc-bilingual.no-convert { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
 .oc-pane { display:flex; flex-direction:column; min-width:0; }
 .oc-pane .head { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-2); padding:0 var(--oc-sp-1) var(--oc-sp-2); }
 .oc-pane .head .lang { display:inline-flex; align-items:center; gap:var(--oc-sp-2); font-size:12px; font-weight:600; color:var(--oc-fg-muted); }
