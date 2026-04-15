@@ -1,16 +1,66 @@
 """素材管理 DAO：产品/文案/素材三张表的增删改查。"""
 from __future__ import annotations
+import re
 from typing import Any
 from appcore.db import query, query_one, execute
 
 
 # ---------- 语种 ----------
 
+_LANG_CODE_RE = re.compile(r"^[a-z0-9-]{2,8}$")
+
+
+def normalize_language_code(code: str) -> str:
+    normalized = (code or "").strip().lower()
+    if not _LANG_CODE_RE.match(normalized):
+        raise ValueError("语言编码格式不合法")
+    return normalized
+
+
+def get_language(code: str) -> dict | None:
+    return query_one(
+        "SELECT code, name_zh, sort_order, enabled FROM media_languages WHERE code=%s",
+        (code,),
+    )
+
+
 def list_languages() -> list[dict]:
     return query(
         "SELECT code, name_zh, sort_order, enabled FROM media_languages "
         "WHERE enabled=1 ORDER BY sort_order ASC, code ASC"
     )
+
+
+def get_language_usage(code: str) -> dict:
+    item_row = query_one(
+        "SELECT COUNT(*) AS c FROM media_items WHERE lang=%s AND deleted_at IS NULL",
+        (code,),
+    ) or {}
+    copy_row = query_one(
+        "SELECT COUNT(*) AS c FROM media_copywritings WHERE lang=%s",
+        (code,),
+    ) or {}
+    cover_row = query_one(
+        "SELECT COUNT(*) AS c FROM media_product_covers WHERE lang=%s",
+        (code,),
+    ) or {}
+    items_count = int(item_row.get("c") or 0)
+    copy_count = int(copy_row.get("c") or 0)
+    cover_count = int(cover_row.get("c") or 0)
+    return {
+        "items_count": items_count,
+        "copy_count": copy_count,
+        "cover_count": cover_count,
+        "in_use": any((items_count, copy_count, cover_count)),
+    }
+
+
+def list_languages_for_admin() -> list[dict]:
+    rows = query(
+        "SELECT code, name_zh, sort_order, enabled FROM media_languages "
+        "ORDER BY sort_order ASC, code ASC"
+    )
+    return [{**row, **get_language_usage(row["code"])} for row in rows]
 
 
 def is_valid_language(code: str) -> bool:
@@ -21,6 +71,48 @@ def is_valid_language(code: str) -> bool:
         (code,),
     )
     return bool(row)
+
+
+def create_language(code: str, name_zh: str, sort_order: int, enabled: bool) -> None:
+    normalized = normalize_language_code(code)
+    if get_language(normalized):
+        raise ValueError("语言编码已存在")
+    display_name = (name_zh or "").strip()
+    if not display_name:
+        raise ValueError("语言名称不能为空")
+    execute(
+        "INSERT INTO media_languages (code, name_zh, sort_order, enabled) "
+        "VALUES (%s,%s,%s,%s)",
+        (normalized, display_name, int(sort_order), 1 if enabled else 0),
+    )
+
+
+def validate_language_update(code: str, enabled: bool | None = None) -> None:
+    normalized = normalize_language_code(code)
+    if normalized == "en" and enabled is False:
+        raise ValueError("默认语种 en 不能停用")
+
+
+def update_language(code: str, name_zh: str, sort_order: int, enabled: bool) -> None:
+    normalized = normalize_language_code(code)
+    validate_language_update(normalized, enabled=enabled)
+    display_name = (name_zh or "").strip()
+    if not display_name:
+        raise ValueError("语言名称不能为空")
+    execute(
+        "UPDATE media_languages SET name_zh=%s, sort_order=%s, enabled=%s WHERE code=%s",
+        (display_name, int(sort_order), 1 if enabled else 0, normalized),
+    )
+
+
+def delete_language(code: str) -> None:
+    normalized = normalize_language_code(code)
+    if normalized == "en":
+        raise ValueError("默认语种 en 不能删除")
+    usage = get_language_usage(normalized)
+    if usage["in_use"]:
+        raise ValueError("该语种已有关联数据，只能停用")
+    execute("DELETE FROM media_languages WHERE code=%s", (normalized,))
 
 
 # ---------- 产品 ----------

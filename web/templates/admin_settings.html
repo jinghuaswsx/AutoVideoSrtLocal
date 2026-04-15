@@ -1,61 +1,145 @@
 {% extends "layout.html" %}
-{% block title %}系统设置 — AutoVideoSrt{% endblock %}
+{% block title %}系统设置 - AutoVideoSrt{% endblock %}
 {% block page_title %}系统设置{% endblock %}
 {% block extra_style %}
-.settings-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 24px; max-width: 600px; }
-.settings-card h2 { font-size: 16px; font-weight: 700; color: var(--text-main, #111827); margin-bottom: 20px; }
-.field-group { margin-bottom: 16px; }
-.field-group label { display: block; color: var(--text-muted, #6b7280); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.field-row { display: flex; align-items: center; gap: 8px; }
-.field-row input { width: 100px; background: var(--bg-input, #f9fafb); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 8px; color: var(--text-main, #111827); padding: 8px 10px; font-size: 14px; font-family: inherit; outline: none; text-align: center; }
-.field-row input:focus { border-color: #7c6fe0; background: var(--bg-card, #fff); }
-.field-row .unit { color: var(--text-muted, #6b7280); font-size: 13px; }
-.field-hint { color: var(--text-muted, #9ca3af); font-size: 12px; margin-top: 4px; }
-.section-divider { border-top: 1px solid var(--border-main, #e5e7eb); margin: 20px 0; }
-.success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
+.settings-stack { display:flex; flex-direction:column; gap:24px; max-width:1120px; }
+.settings-card { background:var(--bg-card,#fff); border:1.5px solid var(--border-main,#e5e7eb); border-radius:14px; padding:24px; max-width:none; }
+.settings-card.narrow { max-width:600px; }
+.settings-card h2 { font-size:16px; font-weight:700; color:var(--text-main,#111827); margin:0; }
+.settings-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.field-group { margin-bottom:16px; }
+.field-group label { display:block; color:var(--text-user-badge,#374151); font-size:13px; font-weight:600; margin-bottom:6px; }
+.field-row { display:flex; align-items:center; gap:8px; }
+.field-row input,
+.media-language-table input[type="text"],
+.media-language-table input[type="number"] {
+  width:100px; background:#f8fbff; border:1.5px solid var(--border-main,#e5e7eb);
+  border-radius:8px; color:var(--text-main,#111827); padding:8px 10px; font-size:14px;
+  font-family:inherit; outline:none; transition:border-color .12s, box-shadow .12s, background-color .12s;
+}
+.media-language-table input[type="text"] { width:100%; min-width:150px; }
+.field-row input:focus,
+.media-language-table input[type="text"]:focus,
+.media-language-table input[type="number"]:focus {
+  border-color:var(--primary-color,#3b82f6);
+  box-shadow:0 0 0 3px rgba(59,130,246,0.14);
+  background:var(--bg-card,#fff);
+}
+.field-row .unit { color:#6b7280; font-size:13px; }
+.field-hint { color:#6b7280; font-size:12px; margin-top:4px; }
+.section-divider { border-top:1px solid var(--border-main,#e5e7eb); margin:20px 0; }
+.success-msg { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:13px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
+.settings-save-btn {
+  background:var(--primary-gradient,#3b82f6); color:#fff; border:none; border-radius:8px; padding:10px 24px;
+  font-size:14px; font-weight:600; cursor:pointer;
+}
+.settings-save-btn:hover { opacity:0.94; }
+.media-language-table-wrap { border:1px solid var(--border-main,#e5e7eb); border-radius:12px; overflow:auto; background:#fbfdff; }
+.media-language-table { width:100%; min-width:780px; border-collapse:collapse; }
+.media-language-table thead th {
+  text-align:left; font-size:12px; font-weight:700; letter-spacing:0.02em; color:#475569;
+  background:#f4f8fc; padding:12px 14px; border-bottom:1px solid var(--border-main,#e5e7eb);
+}
+.media-language-table tbody td { padding:14px; border-bottom:1px solid #edf2f7; vertical-align:top; }
+.media-language-table tbody tr:last-child td { border-bottom:none; }
+.media-language-code {
+  display:inline-flex; align-items:center; min-height:34px; padding:0 10px; border-radius:999px;
+  background:#e8f1ff; color:#1d4ed8; font-size:12px; font-weight:700; letter-spacing:0.04em;
+}
+.media-language-code.is-default { background:#dbeafe; color:#1e40af; }
+.media-language-name-cell { min-width:180px; }
+.media-language-sort-cell input { width:88px; }
+.media-language-enabled { display:flex; align-items:center; gap:8px; min-height:34px; color:#475569; font-size:13px; }
+.media-language-enabled input { width:16px; height:16px; accent-color:var(--primary-color,#3b82f6); }
+.media-language-usage { min-width:180px; font-size:12px; line-height:1.6; color:#64748b; }
+.media-language-usage strong { color:var(--text-main,#111827); }
+.media-language-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.media-language-actions .btn { border-radius:8px; padding:7px 12px; font-weight:600; }
+.media-language-actions .btn[disabled] { opacity:0.55; cursor:not-allowed; box-shadow:none; }
+.media-language-row-error { margin-top:8px; font-size:12px; color:#b91c1c; }
+.media-language-muted { color:#64748b; font-size:12px; }
+@media (max-width: 768px) {
+  .settings-card { padding:20px; }
+  .settings-card-head { flex-direction:column; align-items:stretch; }
+}
 {% endblock %}
 {% block content %}
-<div class="settings-card">
-  <h2>项目保留周期</h2>
+<div class="settings-stack">
+  <div class="settings-card narrow">
+    <h2>项目保留周期</h2>
 
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}<p class="success-msg">{{ messages[0] }}</p>{% endif %}
-  {% endwith %}
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}<p class="success-msg">{{ messages[0] }}</p>{% endif %}
+    {% endwith %}
 
-  <form method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <div class="field-group">
-      <label>全局默认</label>
-      <div class="field-row">
-        <input type="number" name="retention_default_days" min="1" step="1"
-               value="{{ (current.get('default', 168) / 24) | int }}">
-        <span class="unit">天</span>
+      <div class="field-group">
+        <label>全局默认</label>
+        <div class="field-row">
+          <input type="number" name="retention_default_days" min="1" step="1"
+                 value="{{ (current.get('default', 168) / 24) | int }}">
+          <span class="unit">天</span>
+        </div>
+        <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算</div>
       </div>
-      <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算</div>
+
+      <div class="section-divider"></div>
+
+      <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">按模块覆盖，留空表示使用全局默认。</p>
+
+      {% for ptype, label in project_types.items() %}
+      <div class="field-group">
+        <label>{{ label }}</label>
+        <div class="field-row">
+          <input type="number" name="retention_{{ ptype }}_days" min="1" step="1"
+                 value="{% if current.get(ptype) is not none %}{{ (current[ptype] / 24) | int }}{% endif %}"
+                 placeholder="默认">
+          <span class="unit">天</span>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="section-divider"></div>
+
+      <button type="submit" class="settings-save-btn">保存</button>
+    </form>
+  </div>
+
+  <div class="settings-card" id="mediaLanguagesCard">
+    <div class="settings-card-head">
+      <div>
+        <h2>素材语种配置</h2>
+        <p class="field-hint">这里维护素材页和后续模块共用的小语种。编码创建后只读，`EN` 不能停用或删除。</p>
+      </div>
+      <button type="button" class="btn btn-ghost" id="addMediaLanguageBtn">新增语种</button>
     </div>
 
-    <div class="section-divider"></div>
+    <div id="mediaLanguagesFlash" class="success-msg" hidden></div>
 
-    <p style="color:var(--text-muted,#6b7280);font-size:13px;margin-bottom:16px;">按模块覆盖（留空表示使用全局默认）</p>
-
-    {% for ptype, label in project_types.items() %}
-    <div class="field-group">
-      <label>{{ label }}</label>
-      <div class="field-row">
-        <input type="number" name="retention_{{ ptype }}_days" min="1" step="1"
-               value="{% if current.get(ptype) is not none %}{{ (current[ptype] / 24) | int }}{% endif %}"
-               placeholder="默认">
-        <span class="unit">天</span>
-      </div>
+    <div class="media-language-table-wrap">
+      <table class="media-language-table">
+        <thead>
+          <tr>
+            <th>语言编码</th>
+            <th>语言名称</th>
+            <th>排序</th>
+            <th>启用</th>
+            <th>使用情况</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="mediaLanguagesTableBody"></tbody>
+      </table>
     </div>
-    {% endfor %}
-
-    <div class="section-divider"></div>
-
-    <button type="submit" style="background:var(--primary-gradient,#3b82f6);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;">
-      保存
-    </button>
-  </form>
+  </div>
 </div>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script>
+    window.ADMIN_MEDIA_LANGUAGES_BOOTSTRAP = {{ media_languages|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='admin_settings.js') }}"></script>
 {% endblock %}
