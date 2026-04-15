@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{% block title %}字幕移除{% endblock %}
+{% block page_title %}字幕移除{% endblock %}
+{% block content %}
+<div class="sr-shell">
+  <div class="sr-hero">
+    <h1>字幕移除</h1>
+    <p>先上传视频，再进入首帧选区，完成去字幕任务的配置。</p>
+  </div>
+  <form class="sr-upload-card" method="post" enctype="multipart/form-data">
+    <input type="file" id="subtitleRemovalFile" name="video" hidden>
+    <label class="btn btn-primary" for="subtitleRemovalFile">选择视频文件</label>
+    <button type="button" class="btn btn-ghost">上传并继续</button>
+  </form>
+</div>
+{% include "_subtitle_removal_styles.html" %}
+{% include "_subtitle_removal_scripts.html" %}
+{% endblock %}

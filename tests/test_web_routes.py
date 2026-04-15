@@ -154,6 +154,48 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
     assert "\"current_review_step\": \"alignment\"" in body.lower()
 
 
+def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
+    def fake_create_subtitle_removal(task_id, video_path, task_dir, original_filename=None, user_id=None):
+        task = store.create(task_id, video_path, task_dir, original_filename=original_filename, user_id=user_id)
+        store.update(task_id, type="subtitle_removal")
+        return task
+
+    monkeypatch.setattr(store, "create_subtitle_removal", fake_create_subtitle_removal, raising=False)
+    task = store.create_subtitle_removal("sr-page", "uploads/sr-page.mp4", "output/sr-page", original_filename="demo.mp4", user_id=1)
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    upload_response = authed_client_no_db.get("/subtitle-removal")
+    detail_response = authed_client_no_db.get("/subtitle-removal/sr-page")
+
+    assert upload_response.status_code == 200
+    assert "字幕移除" in upload_response.get_data(as_text=True)
+    assert detail_response.status_code == 200
+    detail_body = detail_response.get_data(as_text=True)
+    assert "全屏去除" in detail_body
+    assert "框选去除" in detail_body
+    assert "join_subtitle_removal_task" in detail_body
+
+
+def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'href="/subtitle-removal"' in body
+    assert '<span class="nav-icon">🧽</span>' in body
+
+
 def test_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
 

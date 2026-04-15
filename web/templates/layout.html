@@ -312,6 +312,9 @@
       <a href="/video-review" {% if request.path.startswith('/video-review') %}class="active"{% endif %}>
         <span class="nav-icon">📊</span> 视频评分
       </a>
+      <a href="{{ url_for('subtitle_removal.upload_page') }}" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
+        <span class="nav-icon">🧽</span> 字幕移除
+      </a>
       <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
         <span class="nav-icon">📦</span> 素材管理
       </a>
