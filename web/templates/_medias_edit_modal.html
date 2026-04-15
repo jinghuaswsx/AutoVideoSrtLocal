@@ -58,16 +58,22 @@
       <span id="cwBadge" hidden>0</span>
       <button id="cwAddBtn" type="button" hidden></button>
 
-      <!-- 视频素材：新建时还没有产品，用户保存后才能上传素材，此处给出提示 -->
-      <div class="oc-hint" style="text-align:center;margin-top:var(--oc-sp-2)">
-        保存后进入「编辑」可以继续上传视频素材。
-      </div>
-
-      <!-- 隐藏元素：保留 JS 中引用的 id，防止模板切回的脏状态 -->
-      <div id="itemsGrid" hidden></div>
-      <div id="uploadProgress" hidden></div>
-      <div id="dropzone" hidden><input type="file" id="fileInput" accept="video/*" hidden></div>
-      <span id="itemsBadge" hidden>0</span>
+      <!-- 视频素材 -->
+      <section class="oc-section">
+        <div class="oc-section-title">
+          <span>视频素材</span>
+          <span class="optional">(可选，保存前就能上传)</span>
+          <span class="oc-badge" id="itemsBadge" style="margin-left:auto">0</span>
+        </div>
+        <div id="dropzone" class="oc-dropzone" tabindex="0" role="button" aria-label="上传视频素材">
+          <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+          <div class="dz-title">点击或拖拽上传视频</div>
+          <div class="dz-hint">支持 MP4 / MOV / WebM</div>
+          <input type="file" id="fileInput" accept="video/*" multiple hidden>
+        </div>
+        <div id="uploadProgress"></div>
+        <div id="itemsGrid" class="oc-items-grid" style="grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4); margin-top:var(--oc-sp-3)"></div>
+      </section>
 
     </div>
 
