@@ -718,3 +718,15 @@ def test_medias_put_product_requires_cover_and_items(logged_in_client):
         assert "主图" in rv2.get_json()["error"]
     finally:
         db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
+
+
+def test_medias_page_contains_aligned_create_modal_layout(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "width:min(1120px, calc(100vw - 48px));" in body
+    assert "oc-add-form" in body
+    assert "oc-add-hero-grid" in body
+    assert "oc-add-main-grid" in body
+    assert "oc-add-video-grid" in body

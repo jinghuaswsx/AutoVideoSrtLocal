@@ -365,9 +365,9 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 /* 编辑弹窗：直接跟随视口，4K 屏上才够用；max-width 让 .oc-modal 继承的 100% 兜底 */
 .oc-modal-wide { width:95vw; max-width:none; }
 
-/* ────────── 窄弹窗（添加产品素材用）——居中占屏 50% ────────── */
-.oc-modal-narrow { width:50vw; max-width:50vw; min-width:480px; }
-@media (max-width: 960px) { .oc-modal-narrow { width:90vw; max-width:90vw; min-width:0; } }
+/* ────────── 添加产品素材弹窗：宽度随内容与视口自适应 ────────── */
+.oc-modal-narrow { width:min(1120px, calc(100vw - 48px)); max-width:100%; }
+@media (max-width: 960px) { .oc-modal-narrow { width:min(1120px, calc(100vw - 24px)); } }
 .oc-center-body .oc-field > .oc-input,
 .oc-center-body .oc-field > .oc-textarea { width:100%; }
 .oc-center-body .oc-url-row { display:flex; gap:var(--oc-sp-2); justify-content:center; align-items:center; }
@@ -391,6 +391,78 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 .oc-center-body .oc-en-cover-warn { max-width:720px; margin-left:auto; margin-right:auto; text-align:center; }
 
 .oc-modal-foot-center { justify-content:center !important; }
+
+/* ────────── 添加产品素材弹窗：分区对齐布局 ────────── */
+.oc-add-form { display:flex; flex-direction:column; gap:var(--oc-sp-5); }
+.oc-add-form .oc-section { margin-bottom:0; }
+.oc-section-card {
+  padding:var(--oc-sp-5);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-lg);
+  background:var(--oc-bg);
+  box-shadow:var(--oc-shadow-sm);
+}
+.oc-add-form .oc-section-title { justify-content:flex-start; text-align:left; }
+.oc-add-form .oc-field { margin-bottom:0; }
+.oc-add-form .oc-label { color:var(--oc-fg); font-weight:600; }
+.oc-add-form .oc-hint { margin-top:0; }
+.oc-add-form .oc-url-row { align-items:center; }
+.oc-add-form .oc-url-row .oc-input { flex:1; min-width:0; }
+.oc-add-form .oc-cover-actions { min-width:0; align-items:flex-start; padding-top:0; }
+.oc-add-hero-grid,
+.oc-add-main-grid,
+.oc-add-video-grid {
+  display:grid;
+  gap:var(--oc-sp-5);
+  align-items:start;
+}
+.oc-add-hero-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-add-main-grid { grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); }
+.oc-add-video-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-add-panel { height:100%; }
+.oc-add-cover-stack,
+.oc-add-video-col {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-3);
+  align-items:flex-start;
+}
+.oc-add-form .oc-cover-square-480 {
+  width:min(220px, 100%);
+  height:auto;
+  aspect-ratio:1 / 1;
+  margin:0;
+}
+.oc-add-form .oc-cover-9-16 {
+  width:min(280px, 100%);
+  height:auto;
+  aspect-ratio:9 / 16;
+  margin:0;
+}
+.oc-add-video-dropzone {
+  width:min(280px, 100%);
+  min-height:498px;
+  margin-bottom:0;
+  padding:var(--oc-sp-5);
+}
+.oc-add-form .oc-cw-body {
+  min-height:100%;
+  height:100%;
+  max-height:none;
+}
+.oc-add-main-grid .oc-add-panel:last-child .oc-cw-body { min-height:280px; }
+.oc-add-modal-foot { justify-content:flex-end !important; }
+@media (max-width: 900px) {
+  .oc-add-main-grid,
+  .oc-add-video-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 640px) {
+  .oc-add-hero-grid { grid-template-columns:1fr; }
+  .oc-section-card { padding:var(--oc-sp-4); }
+  .oc-add-video-dropzone { width:100%; min-height:320px; }
+  .oc-add-form .oc-cover-square-480,
+  .oc-add-form .oc-cover-9-16 { width:100%; }
+}
 
 /* ────────── 新增素材大框（视频封面 + 视频源 + 提交按钮） ────────── */
 .oc-new-item {
