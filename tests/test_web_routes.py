@@ -737,6 +737,7 @@ def test_medias_page_contains_aligned_edit_modal_layout(authed_client_no_db):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
+    assert '<div class="oc-modal oc-modal-narrow oc-modal-edit"' in body
     assert "oc-edit-form" in body
     assert "oc-edit-hero-grid" in body
     assert "oc-edit-main-grid" in body
