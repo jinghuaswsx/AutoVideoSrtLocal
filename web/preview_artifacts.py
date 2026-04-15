@@ -187,7 +187,8 @@ def build_compose_artifact() -> dict:
 
 def build_analysis_artifact(score: dict | None, csk: dict | None,
                             score_prompt: str = "", csk_prompt: str = "",
-                            score_error: str = "", csk_error: str = "") -> dict:
+                            score_error: str = "", csk_error: str = "",
+                            model_label: str = "") -> dict:
     """AI 视频分析产物（评分 + CSK 深度分析）。前端按 layout='analysis' 自定义渲染。"""
     return {
         "title": "AI 视频分析",
@@ -198,6 +199,7 @@ def build_analysis_artifact(score: dict | None, csk: dict | None,
         "csk_prompt": csk_prompt,
         "score_error": score_error,
         "csk_error": csk_error,
+        "model_label": model_label,
     }
 
 

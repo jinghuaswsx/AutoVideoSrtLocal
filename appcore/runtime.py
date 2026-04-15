@@ -494,12 +494,19 @@ class PipelineRunner:
     def _step_analysis(self, task_id: str) -> None:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
         from pipeline import video_csk, video_score
+        from appcore.gemini import resolve_config, model_display_name
 
         self._set_step(task_id, "analysis", "running", "AI 分析中（评分 + CSK）...")
         task = task_state.get(task_id) or {}
         variants = task.get("variants") or {}
         variant_state = variants.get("normal") or {}
         hard_video = (variant_state.get("result") or {}).get("hard_video")
+
+        _, resolved_model = resolve_config(
+            self.user_id, service="gemini_video_analysis",
+            default_model=video_score.SCORE_MODEL,
+        )
+        model_label = model_display_name(resolved_model)
 
         score_result = None
         csk_result = None
@@ -514,6 +521,7 @@ class PipelineRunner:
                 csk_prompt=video_csk.CSK_PROMPT,
                 score_error="未找到硬字幕视频",
                 csk_error="未找到硬字幕视频",
+                model_label=model_label,
             ))
             return
 
@@ -535,6 +543,7 @@ class PipelineRunner:
             csk_prompt=video_csk.CSK_PROMPT,
             score_error=score_err,
             csk_error=csk_err,
+            model_label=model_label,
         ))
 
         if score_err and csk_err:

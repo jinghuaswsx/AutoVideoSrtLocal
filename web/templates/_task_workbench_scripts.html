@@ -553,10 +553,11 @@
     const cskBlock = renderCskResult(artifact.csk, artifact.csk_error);
     const sp = artifact.score_prompt || "";
     const cp = artifact.csk_prompt || "";
+    const modelLabel = escapeHtml(artifact.model_label || "Gemini 3.1 Pro");
     return `
       <div class="analysis-row">
         <div class="analysis-card">
-          <div class="analysis-head"><span class="analysis-tag">视频评分</span><span class="analysis-sub">美国短视频带货要素 · Gemini 3.1 Pro</span></div>
+          <div class="analysis-head"><span class="analysis-tag">视频评分</span><span class="analysis-sub">美国短视频带货要素 · ${modelLabel}</span></div>
           <div class="analysis-split">
             <div class="analysis-left">${scoreBlock}</div>
             <div class="analysis-right">
@@ -568,7 +569,7 @@
       </div>
       <div class="analysis-row">
         <div class="analysis-card">
-          <div class="analysis-head"><span class="analysis-tag analysis-tag--csk">CSK 视频分析</span><span class="analysis-sub">产品特征锁定 + 3 关键帧 · Gemini 3.1 Pro</span></div>
+          <div class="analysis-head"><span class="analysis-tag analysis-tag--csk">CSK 视频分析</span><span class="analysis-sub">产品特征锁定 + 3 关键帧 · ${modelLabel}</span></div>
           <div class="analysis-split">
             <div class="analysis-left">${cskBlock}</div>
             <div class="analysis-right">

@@ -33,16 +33,20 @@ class GeminiError(RuntimeError):
 
 _clients: dict[str, genai.Client] = {}
 
-# 支持视频分析的 Gemini 模型（仅 2.x 及以上）
+# 支持视频分析的 Gemini 3 系列模型
 VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro Preview"),
-    ("gemini-3.1-flash-preview",      "Gemini 3.1 Flash Preview"),
-    ("gemini-3-pro-preview",          "Gemini 3 Pro Preview"),
-    ("gemini-3-flash-preview",        "Gemini 3 Flash Preview"),
-    ("gemini-2.5-pro",                "Gemini 2.5 Pro"),
-    ("gemini-2.5-flash",              "Gemini 2.5 Flash"),
-    ("gemini-2.0-flash",              "Gemini 2.0 Flash"),
+    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro"),
+    ("gemini-3-flash-preview",        "Gemini 3 Flash"),
+    ("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash-Lite"),
 ]
+
+
+def model_display_name(model_id: str) -> str:
+    """根据 model_id 返回可展示的名称；找不到时回退原始 id。"""
+    for mid, label in VIDEO_CAPABLE_MODELS:
+        if mid == model_id:
+            return label
+    return model_id or ""
 
 
 def resolve_config(user_id: int | None = None, service: str = "gemini",

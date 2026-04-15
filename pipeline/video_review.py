@@ -1,24 +1,19 @@
 """pipeline/video_review.py
-AI 视频评估：通过 Gemini（via OpenRouter）分析视频质量并给出评分报告。
+AI 视频评估：通过 Gemini 官方 API 分析视频质量并给出评分报告。
 """
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import os
 
-from openai import OpenAI
+from appcore import gemini as gemini_api
 
 log = logging.getLogger(__name__)
 
-# 可选模型
-GEMINI_MODELS = [
-    ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
-    ("google/gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite"),
-    ("google/gemini-2.5-pro", "Gemini 2.5 Pro"),
-]
-DEFAULT_MODEL = "google/gemini-2.5-flash"
+# 可选模型：复用全局 VIDEO_CAPABLE_MODELS（Gemini 3 系列）
+GEMINI_MODELS = gemini_api.VIDEO_CAPABLE_MODELS
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
 
 DEFAULT_PROMPT_EN = """You are a senior US short-video e-commerce operations expert and video quality reviewer.
 You will receive a short video intended for the US market. Please evaluate it comprehensively using the framework below.
@@ -197,28 +192,6 @@ def save_review_prompts(prompt_en: str, prompt_zh: str) -> None:
         )
 
 
-def _get_client(user_id: int | None = None, api_key: str | None = None) -> OpenAI:
-    """获取 OpenRouter 客户端。"""
-    from appcore.api_keys import resolve_extra, resolve_key
-    from config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL
-
-    key = api_key or (
-        resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") if user_id else OPENROUTER_API_KEY
-    )
-    extra = resolve_extra(user_id, "openrouter") if user_id else {}
-    base_url = extra.get("base_url") or OPENROUTER_BASE_URL
-    return OpenAI(api_key=key, base_url=base_url)
-
-
-def _encode_video(video_path: str) -> str:
-    """将视频文件编码为 base64 data URI。"""
-    with open(video_path, "rb") as f:
-        data = base64.b64encode(f.read()).decode("ascii")
-    ext = os.path.splitext(video_path)[1].lower().lstrip(".")
-    mime = {"mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime"}.get(ext, "video/mp4")
-    return f"data:{mime};base64,{data}"
-
-
 def review_video(
     video_path: str,
     *,
@@ -229,66 +202,37 @@ def review_video(
 ) -> dict:
     """分析视频并返回评估结果 JSON。
 
-    Args:
-        video_path: 本地视频文件路径
-        user_id: 用户 ID（用于获取 API Key）
-        model: Gemini 模型 ID
-        custom_prompt: 可选的自定义提示词（追加到系统提示后面）
-        prompt_lang: 提示词语言 "en" 或 "zh"
-
-    Returns:
-        评估结果 dict
+    通过 Gemini 官方 API（appcore.gemini）执行，复用 gemini_video_analysis
+    服务的 key/model 配置；model 参数用作默认值（用户未在配置页覆盖时生效）。
     """
-    client = _get_client(user_id=user_id)
-    video_data_uri = _encode_video(video_path)
-
     prompts = get_review_prompts()
     system = prompts.get(prompt_lang) or prompts.get("en") or DEFAULT_PROMPT_EN
     if custom_prompt:
         system += f"\n\nAdditional requirements:\n{custom_prompt}"
 
     file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-    log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)", model, video_path, file_size_mb)
-
-    messages = [
-        {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "请评估这段视频，返回 JSON 格式的评估报告。"},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": video_data_uri},
-                },
-            ],
-        },
-    ]
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0.3,
-        max_tokens=4096,
+    _, resolved_model = gemini_api.resolve_config(
+        user_id, service="gemini_video_analysis", default_model=model,
     )
+    log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)",
+             resolved_model, video_path, file_size_mb)
 
-    raw = response.choices[0].message.content or ""
+    raw = gemini_api.generate(
+        prompt="请评估这段视频，返回 JSON 格式的评估报告。",
+        system=system,
+        media=video_path,
+        user_id=user_id,
+        service="gemini_video_analysis",
+        default_model=model,
+        temperature=0.3,
+        max_output_tokens=4096,
+    )
     log.info("[VideoReview] 原始响应长度: %d", len(raw))
 
-    # 提取 token 用量
-    usage = {}
-    if response.usage:
-        usage = {
-            "prompt_tokens": response.usage.prompt_tokens or 0,
-            "completion_tokens": response.usage.completion_tokens or 0,
-            "total_tokens": response.usage.total_tokens or 0,
-        }
-        log.info("[VideoReview] Token 用量: %s", usage)
-
-    # 解析 JSON
     result = _parse_json_response(raw)
     result["_raw"] = raw
-    result["_model"] = model
-    result["_usage"] = usage
+    result["_model"] = resolved_model
+    result["_usage"] = {}
     return result
 
 
