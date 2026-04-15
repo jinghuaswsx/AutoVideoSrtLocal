@@ -152,7 +152,7 @@
     </div>
 
     <button class="vr-gen-btn" id="reviewBtn" onclick="doReview()">
-      {% if state.get('steps', {}).get('review') == 'running' %}重新开始评估（上次可能因重启中断）{% elif state.get('result') %}重新评估{% else %}开始评估{% endif %}
+      {% if state.get('steps', {}).get('review') == 'running' %}评估中...{% elif state.get('steps', {}).get('review') == 'error' %}重新评估{% elif state.get('result') %}重新评估{% else %}开始评估{% endif %}
     </button>
   </div>
 
@@ -163,7 +163,7 @@
 
       <div id="statsArea"></div>
 
-      <div class="vr-loading" id="loadingArea">
+      <div class="vr-loading" id="loadingArea" {% if state.get('steps', {}).get('review') == 'running' %}style="display:block"{% endif %}>
         <div class="vr-spinner"></div>
         <div class="vr-loading-text" id="loadingText">正在分析视频，预计需要 30-60 秒...</div>
       </div>
@@ -171,8 +171,8 @@
       <div id="resultArea">
         {% if state.get('result') %}
         <div id="resultContent"></div>
-        {% elif state.get('steps', {}).get('review') == 'running' %}
-        <div class="vr-result-empty">上次评估可能已被服务重启中断，请点击左侧「重新开始评估」重试。</div>
+        {% elif state.get('steps', {}).get('review') == 'error' %}
+        <div class="vr-result-empty" style="color:#dc2626;">上次评估失败：{{ state.get('error', '未知错误') }}。请点击左侧「重新评估」重试。</div>
         {% else %}
         <div class="vr-result-empty">上传视频后点击「开始评估」获取 AI 评分报告</div>
         {% endif %}
@@ -270,6 +270,7 @@ socket.on('vr_step_update', data => {
 });
 
 socket.on('vr_done', data => {
+  _clearVrWatchdog();
   document.getElementById('loadingArea').style.display = 'none';
   document.getElementById('reviewBtn').disabled = false;
   document.getElementById('reviewBtn').textContent = '重新评估';
@@ -278,13 +279,38 @@ socket.on('vr_done', data => {
 });
 
 socket.on('vr_error', data => {
+  _clearVrWatchdog();
   document.getElementById('loadingArea').style.display = 'none';
   document.getElementById('reviewBtn').disabled = false;
-  document.getElementById('reviewBtn').textContent = '开始评估';
+  document.getElementById('reviewBtn').textContent = '重新评估';
   alert('评估失败: ' + (data.message || '未知错误'));
 });
 
 // ── 评估 ──
+let _vrWatchdog = null;
+function _armVrWatchdog() {
+  if (_vrWatchdog) clearTimeout(_vrWatchdog);
+  // 5 分钟兜底：任何事件都没回来就把按钮恢复可点
+  _vrWatchdog = setTimeout(() => {
+    const btn = document.getElementById('reviewBtn');
+    document.getElementById('loadingArea').style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = '重新评估';
+    const r = document.getElementById('resultArea');
+    if (!document.getElementById('resultContent')) {
+      r.innerHTML = '<div class="vr-result-empty" style="color:#dc2626;">评估超时（5 分钟未返回），可能是服务重启或 Gemini 超时中断，请重试。</div>';
+    }
+  }, 5 * 60 * 1000);
+}
+function _clearVrWatchdog() {
+  if (_vrWatchdog) { clearTimeout(_vrWatchdog); _vrWatchdog = null; }
+}
+
+// 页面载入时若后端状态仍为 running，启动 watchdog（不 disable 按钮）
+{% if state.get('steps', {}).get('review') == 'running' %}
+window.addEventListener('DOMContentLoaded', () => _armVrWatchdog());
+{% endif %}
+
 async function doReview() {
   const btn = document.getElementById('reviewBtn');
   btn.disabled = true;
@@ -294,6 +320,7 @@ async function doReview() {
   document.getElementById('statsArea').innerHTML = '';
 
   try {
+    _armVrWatchdog();
     const res = await fetch(`/api/video-review/${TASK_ID}/review`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},

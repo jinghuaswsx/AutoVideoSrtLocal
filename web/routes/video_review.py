@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import uuid
 
 import eventlet
@@ -24,6 +25,30 @@ bp = Blueprint("video_review", __name__)
 EVT_VR_STEP = "vr_step_update"
 EVT_VR_DONE = "vr_done"
 EVT_VR_ERROR = "vr_error"
+
+# 超过多少秒仍停留在 running 视为僵尸任务（服务重启 / worker 崩溃等）。
+# 正常 Gemini Pro 视频评估 < 3 分钟，给 5 分钟冗余。
+VR_STALE_SECONDS = 300
+
+
+def _reset_if_stale(task_id: str, state: dict) -> dict:
+    """若 review 已 running 超过 VR_STALE_SECONDS 仍无结果，自动置为 error。"""
+    if state.get("steps", {}).get("review") != "running":
+        return state
+    started_at = state.get("review_started_at") or 0
+    if started_at and (time.time() - started_at) < VR_STALE_SECONDS:
+        return state
+    state.setdefault("steps", {})["review"] = "error"
+    state["error"] = "评估已超过 5 分钟未完成，可能因服务重启/Gemini 超时中断，请重试"
+    state.pop("review_started_at", None)
+    _update_state(task_id, {
+        "steps.review": "error",
+        "error": state["error"],
+        "review_started_at": None,
+    })
+    db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
+    log.warning("[VR] 任务 %s 停留 running 过久，已自动标记为 error", task_id)
+    return state
 
 
 def _emit_to_task(task_id: str, event: str, payload: dict):
@@ -55,6 +80,7 @@ def detail_page(task_id: str):
     if not row:
         return "Not Found", 404
     state = json.loads(row.get("state_json") or "{}")
+    state = _reset_if_stale(task_id, state)
     return render_template("video_review_detail.html", project=row, state=state, task_id=task_id)
 
 
@@ -139,6 +165,8 @@ def start_review(task_id: str):
         "custom_prompt": custom_prompt,
         "prompt_lang": prompt_lang,
         "steps.review": "running",
+        "review_started_at": int(time.time()),
+        "error": None,
     })
     db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
 
@@ -187,6 +215,8 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
             "stats": stats,
             "raw_response": raw,
             "steps.review": "done",
+            "review_started_at": None,
+            "error": None,
         })
         db_execute("UPDATE projects SET status = 'done' WHERE id = %s", (task_id,))
 
@@ -194,7 +224,11 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
 
     except Exception as e:
         log.exception("[VR] 视频评估失败: %s", task_id)
-        _update_state(task_id, {"steps.review": "error"})
+        _update_state(task_id, {
+            "steps.review": "error",
+            "review_started_at": None,
+            "error": str(e),
+        })
         db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
         _emit_to_task(task_id, EVT_VR_ERROR, {"message": f"评估失败: {e}"})
 
