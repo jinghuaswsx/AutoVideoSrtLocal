@@ -261,56 +261,6 @@ def api_item_complete(pid: int):
     return jsonify({"id": item_id}), 201
 
 
-@bp.route("/api/products/<int:pid>/cover/upload", methods=["POST"])
-@login_required
-def api_cover_upload(pid: int):
-    """单次 multipart 上传封面：浏览器 → Flask → TOS，避免浏览器直连 TOS 的 CORS 问题。"""
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
-    p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
-        abort(404)
-    f = request.files.get("file")
-    if not f:
-        return jsonify({"error": "file required"}), 400
-    filename = os.path.basename(f.filename or "cover.jpg")
-    data = f.read()
-    if not data:
-        return jsonify({"error": "空文件"}), 400
-    content_type = f.mimetype or "image/jpeg"
-    if not content_type.startswith("image/"):
-        return jsonify({"error": "仅支持图片"}), 400
-
-    object_key = tos_clients.build_media_object_key(
-        current_user.id, pid, f"cover_{filename}",
-    )
-    tos_clients.upload_media_object(object_key, data, content_type=content_type)
-
-    old_key = p.get("cover_object_key")
-    if old_key and old_key != object_key:
-        try:
-            tos_clients.delete_media_object(old_key)
-        except Exception:
-            pass
-
-    medias.update_product(pid, cover_object_key=object_key)
-
-    # 写本地缓存供代理路由直出
-    try:
-        product_dir = THUMB_DIR / str(pid)
-        product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(object_key).suffix or ".jpg"
-        (product_dir / f"cover{ext}").write_bytes(data)
-    except Exception:
-        pass
-
-    return jsonify({
-        "ok": True,
-        "cover_url": f"/medias/cover/{pid}",
-        "object_key": object_key,
-    })
-
-
 @bp.route("/api/products/<int:pid>/cover/bootstrap", methods=["POST"])
 @login_required
 def api_cover_bootstrap(pid: int):

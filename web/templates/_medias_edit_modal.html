@@ -24,22 +24,37 @@
         </div>
       </section>
 
-      <!-- 封面图 -->
-      <section class="oc-section">
-        <div class="oc-section-title">封面图<span class="req">*</span></div>
-        <div class="oc-cover-wrap">
-          <div id="coverDropzone" class="oc-cover-dropzone" tabindex="0" role="button" aria-label="上传封面图" hidden>
-            <div class="dz-icon"><svg width="16" height="16"><use href="#ic-upload"/></svg></div>
-            <div class="dz-title">点击或拖拽上传封面图</div>
-            <div class="dz-hint">JPG / PNG / WebP</div>
-          </div>
-          <div id="coverPreview" class="oc-cover-preview" hidden>
-            <img id="coverImg" alt="封面">
-            <div class="actions">
-              <button type="button" class="oc-btn ghost sm" id="coverReplace">更换</button>
+      <!-- 封面 + 文案（左右各占一半） -->
+      <section class="oc-section oc-split">
+        <!-- 左：封面图 -->
+        <div class="oc-split-col">
+          <div class="oc-section-title">封面图<span class="req">*</span></div>
+          <div id="coverBox" class="oc-cover-box">
+            <div id="coverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传封面图">
+              <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+              <div class="dz-title">点击或拖拽上传封面图</div>
+              <div class="dz-hint">建议 9:16 / 1080×1920，JPG / PNG / WebP</div>
+            </div>
+            <img id="coverImg" alt="封面" hidden>
+            <div class="actions" id="coverActions" hidden>
+              <button type="button" class="oc-btn ghost sm" id="coverReplace">更换封面</button>
             </div>
           </div>
           <input type="file" id="coverInput" accept="image/*" hidden>
+        </div>
+
+        <!-- 右：文案 -->
+        <div class="oc-split-col">
+          <div class="oc-section-title">
+            <span>文案</span>
+            <span class="optional">(可选)</span>
+            <span class="count" id="cwBadge">0</span>
+          </div>
+          <div id="cwList" class="oc-cw-list oc-cw-list--fill"></div>
+          <button class="oc-add-btn" type="button" id="cwAddBtn">
+            <svg width="14" height="14"><use href="#ic-plus"/></svg>
+            <span>添加文案条目</span>
+          </button>
         </div>
       </section>
 
@@ -57,20 +72,6 @@
         </div>
         <div id="uploadProgress" class="oc-upload-list"></div>
         <div id="itemsGrid" class="oc-items-grid"></div>
-      </section>
-
-      <!-- 文案 -->
-      <section class="oc-section">
-        <div class="oc-section-title">
-          <span>文案</span>
-          <span class="optional">(可选)</span>
-          <span class="count" id="cwBadge">0</span>
-        </div>
-        <div id="cwList" class="oc-cw-list"></div>
-        <button class="oc-add-btn" type="button" id="cwAddBtn">
-          <svg width="14" height="14"><use href="#ic-plus"/></svg>
-          <span>添加文案条目</span>
-        </button>
       </section>
 
     </div>

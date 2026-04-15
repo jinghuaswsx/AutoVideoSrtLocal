@@ -247,10 +247,3 @@ def download_media_file(object_key: str, local_path: str) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     get_server_client().get_object_to_file(config.TOS_MEDIA_BUCKET, object_key, str(destination))
     return str(destination)
-
-
-def upload_media_object(object_key: str, data: bytes, content_type: str | None = None) -> None:
-    get_server_client().put_object(
-        config.TOS_MEDIA_BUCKET, object_key,
-        content=data, content_type=content_type,
-    )
