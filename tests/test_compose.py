@@ -25,9 +25,6 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
     assert "Alignment=2,MarginV=50" in vf
 
 
-from pipeline.compose import _compute_font_size, _compute_margin_v
-
-
 def test_compute_font_size_medium_at_1080p():
     assert _compute_font_size(1080, "medium") == 14
 
