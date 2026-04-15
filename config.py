@@ -77,6 +77,22 @@ if SEEDANCE_API_KEY and not os.environ.get("SEEDANCE_API_KEY"):
 ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
+# Google Gemini (AI Studio)
+def _resolve_gemini_key() -> str:
+    key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
+    if key:
+        return key
+    key_file = BASE_DIR / "google_api_key"
+    if key_file.exists():
+        try:
+            return key_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+    return ""
+
+GEMINI_API_KEY = _resolve_gemini_key()
+GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
+
 # 路径
 OUTPUT_DIR = _path("OUTPUT_DIR", "output")
 UPLOAD_DIR = _path("UPLOAD_DIR", "uploads")

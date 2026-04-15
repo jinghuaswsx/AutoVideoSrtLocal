@@ -8,6 +8,7 @@ bp = Blueprint("settings", __name__)
 SERVICES = [
     ("doubao_asr", "豆包 ASR", ["key_value", "app_id", "cluster"]),
     ("openrouter", "OpenRouter", ["key_value", "base_url", "model_id"]),
+    ("gemini", "Google Gemini", ["key_value", "model_id"]),
     ("doubao_llm", "豆包翻译", ["key_value", "base_url", "model_id"]),
     ("elevenlabs", "ElevenLabs", ["key_value"]),
 ]

@@ -76,6 +76,15 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            value="{{ keys.get('openrouter', {}).get('extra', {}).get('model_id', '') }}">
 
     <hr class="divider">
+    <span class="service-tag blue">Google Gemini · AI Studio</span>
+    <label>API Key</label>
+    <input type="password" name="gemini_key" placeholder="留空则保持当前配置"
+           value="{{ keys.get('gemini', {}).get('key_value', '') }}">
+    <label>模型 ID</label>
+    <input type="text" name="gemini_model_id" placeholder="gemini-3.1-flash-lite-preview"
+           value="{{ keys.get('gemini', {}).get('extra', {}).get('model_id', '') }}">
+
+    <hr class="divider">
     <span class="service-tag orange">豆包 2.0 Pro · via 火山引擎 ARK</span>
     <label>API Key</label>
     <input type="password" name="doubao_llm_key" placeholder="留空则保持当前配置"
