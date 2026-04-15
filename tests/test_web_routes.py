@@ -671,7 +671,7 @@ def test_medias_create_product_rejects_bad_slug(logged_in_client):
 def test_medias_create_product_rejects_duplicate_slug(logged_in_client):
     from appcore.db import execute as db_execute
     code = "dup-slug-test"
-    db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+    db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
     try:
         rv1 = logged_in_client.post(
             "/medias/api/products",
@@ -684,13 +684,13 @@ def test_medias_create_product_rejects_duplicate_slug(logged_in_client):
         )
         assert rv2.status_code == 409
     finally:
-        db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+        db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
 
 
 def test_medias_put_product_requires_cover_and_items(logged_in_client):
     from appcore.db import execute as db_execute
     code = "save-guard-test"
-    db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+    db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
     rv = logged_in_client.post(
         "/medias/api/products",
         json={"name": "t", "product_code": code},
@@ -703,6 +703,6 @@ def test_medias_put_product_requires_cover_and_items(logged_in_client):
             json={"name": "t", "product_code": code},
         )
         assert rv2.status_code == 400
-        assert "封面图" in rv2.get_json()["error"]
+        assert "主图" in rv2.get_json()["error"]
     finally:
-        db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+        db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))

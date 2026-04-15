@@ -1,6 +1,10 @@
 import pytest
 from appcore import medias
-from appcore.db import query_one
+from appcore.db import query_one, execute as db_execute
+
+
+def _hard_delete_by_code(code: str) -> None:
+    db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
 
 
 @pytest.fixture
@@ -73,39 +77,45 @@ def test_update_product(user_id):
 
 
 def test_create_product_with_code_and_cover(user_id):
+    code = "abc-product-01"
+    _hard_delete_by_code(code)
     pid = medias.create_product(
         user_id, "带编码的产品",
-        product_code="abc-product-01",
+        product_code=code,
         cover_object_key="covers/1/x.jpg",
     )
     try:
         p = medias.get_product(pid)
-        assert p["product_code"] == "abc-product-01"
+        assert p["product_code"] == code
         assert p["cover_object_key"] == "covers/1/x.jpg"
     finally:
-        medias.soft_delete_product(pid)
+        _hard_delete_by_code(code)
 
 
 def test_update_product_sets_code_and_cover(user_id):
+    code = "updated-slug"
+    _hard_delete_by_code(code)
     pid = medias.create_product(user_id, "待更新产品")
     try:
         medias.update_product(
             pid,
-            product_code="updated-slug",
+            product_code=code,
             cover_object_key="covers/1/new.jpg",
         )
         p = medias.get_product(pid)
-        assert p["product_code"] == "updated-slug"
+        assert p["product_code"] == code
         assert p["cover_object_key"] == "covers/1/new.jpg"
     finally:
-        medias.soft_delete_product(pid)
+        _hard_delete_by_code(code)
 
 
 def test_get_product_by_code(user_id):
-    pid = medias.create_product(user_id, "可查编码", product_code="query-code-1")
+    code = "query-code-1"
+    _hard_delete_by_code(code)
+    pid = medias.create_product(user_id, "可查编码", product_code=code)
     try:
-        p = medias.get_product_by_code("query-code-1")
+        p = medias.get_product_by_code(code)
         assert p and p["id"] == pid
         assert medias.get_product_by_code("nope-xxxx") is None
     finally:
-        medias.soft_delete_product(pid)
+        _hard_delete_by_code(code)
