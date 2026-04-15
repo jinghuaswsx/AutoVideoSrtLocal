@@ -23,7 +23,11 @@ def _default_display_name(original_filename: str) -> str:
 
 def _get_owned_task(task_id: str) -> dict:
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if (
+        not task
+        or task.get("_user_id") != current_user.id
+        or task.get("type") != "subtitle_removal"
+    ):
         abort(404)
     return task
 
@@ -112,6 +116,14 @@ def complete_upload():
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+    object_head = tos_clients.head_object(object_key)
+    object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
+    source_object_info = {
+        "file_size": object_size,
+        "content_type": content_type,
+        "original_filename": original_filename,
+    }
+
     tos_clients.download_file(object_key, video_path)
     store.create_subtitle_removal(
         task_id,
@@ -120,10 +132,13 @@ def complete_upload():
         original_filename=original_filename,
         user_id=current_user.id,
     )
+    store.update(
+        task_id,
+        source_tos_key=object_key,
+        source_object_info=source_object_info,
+    )
 
     media_info = dict(probe_media_info(video_path) or {})
-    object_head = tos_clients.head_object(object_key)
-    object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
     media_info["file_size_mb"] = round(object_size / (1024 * 1024), 2) if object_size else 0.0
     thumbnail_path = extract_thumbnail(video_path, task_dir) or ""
 
@@ -141,12 +156,6 @@ def complete_upload():
         status="ready",
         display_name=display_name,
         thumbnail_path=thumbnail_path,
-        source_tos_key=object_key,
-        source_object_info={
-            "file_size": object_size,
-            "content_type": content_type,
-            "original_filename": original_filename,
-        },
         media_info=media_info,
     )
     store.set_step(task_id, "prepare", "done")

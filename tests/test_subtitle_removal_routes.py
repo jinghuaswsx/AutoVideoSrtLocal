@@ -118,6 +118,9 @@ def test_subtitle_removal_complete_upload_rejects_probe_failure(tmp_path, authed
     task = store.get(payload["task_id"])
     assert task["status"] != "ready"
     assert task["steps"]["prepare"] == "pending"
+    assert task["source_tos_key"] == payload["object_key"]
+    assert task["source_object_info"]["file_size"] == 2048
+    assert task["source_object_info"]["content_type"] == "video/mp4"
 
 
 def test_subtitle_removal_complete_upload_rejects_thumbnail_failure(tmp_path, authed_client_no_db, monkeypatch):
@@ -183,6 +186,23 @@ def test_subtitle_removal_source_artifact_returns_404_for_other_users_task(tmp_p
         str(tmp_path / "task"),
         original_filename="video.mp4",
         user_id=2,
+    )
+    store.update(task["id"], thumbnail_path=str(thumbnail))
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source")
+
+    assert response.status_code == 404
+
+
+def test_subtitle_removal_source_artifact_returns_404_for_non_subtitle_removal_task(tmp_path, authed_client_no_db):
+    thumbnail = tmp_path / "thumbnail.jpg"
+    thumbnail.write_bytes(b"jpg")
+    task = store.create(
+        "plain-task-artifact",
+        str(tmp_path / "video.mp4"),
+        str(tmp_path / "task"),
+        original_filename="video.mp4",
+        user_id=1,
     )
     store.update(task["id"], thumbnail_path=str(thumbnail))
 
