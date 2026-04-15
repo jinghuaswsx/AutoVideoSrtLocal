@@ -25,6 +25,16 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+  {# ── 导出目录设置 ── #}
+  <div class="settings-card">
+    <h2>导出目录设置</h2>
+    <p class="step-desc">导出到剪映项目</p>
+    <label>剪映项目根目录</label>
+    <input type="text" name="jianying_project_root"
+           value="{{ jianying_project_root }}">
+    <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
+  </div>
+
   {# ── 第一步：语音识别 ── #}
   <div class="settings-card">
     <h2>第一步：语音识别</h2>
@@ -88,16 +98,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
   </div>
 
-  {# ── 第四步：导出 ── #}
-  <div class="settings-card">
-    <h2>第四步：导出</h2>
-    <p class="step-desc">导出到剪映项目</p>
-    <label>剪映项目根目录</label>
-    <input type="text" name="jianying_project_root"
-           value="{{ jianying_project_root }}">
-    <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
-  </div>
-
-  <button class="btn btn-primary save-btn" type="submit">保存配置</button>
+<button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>
 {% endblock %}
