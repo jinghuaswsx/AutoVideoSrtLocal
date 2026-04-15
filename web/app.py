@@ -18,6 +18,7 @@ from flask import Flask
 from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
+from appcore import task_state
 from web.extensions import socketio
 from web.auth import login_manager
 
@@ -152,8 +153,8 @@ def create_app() -> Flask:
             return
         task_id = data.get("task_id")
         if task_id:
-            from web import store
-            task = store.get(task_id)
+            # subtitle_removal joins should work even when the process memory is cold.
+            task = task_state.get(task_id)
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
 

@@ -3,6 +3,7 @@ import json
 
 from web import store
 from web.app import create_app
+from web.extensions import socketio
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
 
 
@@ -181,7 +182,9 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     assert upload_response.status_code == 200
     upload_body = upload_response.get_data(as_text=True)
     assert "字幕移除" in upload_body
-    assert "if (!taskId) return;" in upload_body
+    assert "type=\"file\"" not in upload_body
+    assert "subtitleRemovalFile" not in upload_body
+    assert "sr-upload-placeholder" in upload_body
     assert detail_response.status_code == 200
     detail_body = detail_response.get_data(as_text=True)
     assert "全屏去除" in detail_body
@@ -189,6 +192,52 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     assert "join_subtitle_removal_task" in detail_body
     assert 'socket.on("connect", joinFn);' in detail_body
     assert "连接任务房间" not in detail_body
+
+
+def test_subtitle_removal_detail_shell_is_read_only(authed_client_no_db, monkeypatch):
+    task = store.create("sr-readonly", "uploads/sr-readonly.mp4", "output/sr-readonly", original_filename="demo.mp4", user_id=1)
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-readonly")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "disabled" in body
+    assert "sr-mode-readonly" in body
+
+
+def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):
+    joined_rooms = []
+
+    monkeypatch.setattr("web.app.join_room", lambda room: joined_rooms.append(room))
+    monkeypatch.setattr("web.store.get", lambda task_id: None)
+    monkeypatch.setattr(
+        "appcore.db.query_one",
+        lambda sql, args: {
+            "state_json": json.dumps({"id": "sr-db", "type": "subtitle_removal"}, ensure_ascii=False),
+            "user_id": 1,
+            "display_name": "",
+            "original_filename": "demo.mp4",
+        },
+    )
+
+    sio_client = socketio.test_client(authed_client_no_db.application, flask_test_client=authed_client_no_db)
+    try:
+        sio_client.emit("join_subtitle_removal_task", {"task_id": "sr-db"})
+        assert joined_rooms == ["sr-db"]
+    finally:
+        sio_client.disconnect()
 
 
 def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):

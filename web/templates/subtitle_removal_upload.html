@@ -5,14 +5,16 @@
 <div class="sr-shell">
   <div class="sr-hero">
     <h1>字幕移除</h1>
-    <p>先上传视频，再进入首帧选区，完成去字幕任务的配置。</p>
+    <p>当前只保留页面壳，上传和提交流程尚未接通。</p>
   </div>
-  <form class="sr-upload-card" method="post" enctype="multipart/form-data">
-    <input type="file" id="subtitleRemovalFile" name="video" hidden>
-    <label class="btn btn-primary" for="subtitleRemovalFile">选择视频文件</label>
-    <button type="button" class="btn btn-ghost" disabled>上传流程开发中</button>
-  </form>
-  <div class="sr-hint">当前仅提供字幕移除页面外壳，上传和后续配置还未接通。</div>
+  <div class="sr-upload-card sr-upload-placeholder">
+    <div>
+      <div class="sr-upload-placeholder-title">上传入口未接通</div>
+      <div class="sr-hint">这里后续会放文件选择和提交流程，目前仅作为静态外壳展示。</div>
+    </div>
+    <button type="button" class="btn btn-primary" disabled>暂不支持文件选择</button>
+  </div>
+  <div class="sr-hint">当前仅提供字幕移除页面外壳，功能接入完成前不会打开文件选择器。</div>
 </div>
 {% include "_subtitle_removal_styles.html" %}
 {% include "_subtitle_removal_scripts.html" %}

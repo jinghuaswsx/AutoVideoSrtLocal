@@ -15,9 +15,10 @@
     </section>
     <section class="sr-card">
       <h2>去除方式</h2>
-      <div class="sr-card-body sr-radio-group">
-        <label><input type="radio" name="mode" value="full" checked> 全屏去除</label>
-        <label><input type="radio" name="mode" value="box"> 框选去除</label>
+      <div class="sr-card-body sr-radio-group sr-mode-readonly" aria-disabled="true">
+        <label><input type="radio" name="mode" value="full" checked disabled> 全屏去除</label>
+        <label><input type="radio" name="mode" value="box" disabled> 框选去除</label>
+        <div class="sr-hint">模式仅供展示，暂未开放切换。</div>
       </div>
     </section>
     <section class="sr-card">
