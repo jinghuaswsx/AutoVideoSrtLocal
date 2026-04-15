@@ -76,6 +76,17 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert task["media_info"]["resolution"] == "720x1280"
 
 
+def test_subtitle_removal_bootstrap_rejects_invalid_video_extension(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.is_tos_configured", lambda: True)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "notes.txt"},
+    )
+
+    assert response.status_code == 400
+
+
 def test_subtitle_removal_complete_upload_rejects_invalid_file_size(tmp_path, authed_client_no_db, monkeypatch):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
@@ -93,6 +104,23 @@ def test_subtitle_removal_complete_upload_rejects_invalid_file_size(tmp_path, au
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "file_size must be an integer"
+
+
+def test_subtitle_removal_complete_upload_rejects_invalid_video_extension(tmp_path, authed_client_no_db, monkeypatch):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": "bad-ext-task",
+            "original_filename": "notes.txt",
+            "object_key": "uploads/1/bad-ext-task/notes.txt",
+            "content_type": "text/plain",
+            "file_size": 128,
+        },
+    )
+
+    assert response.status_code == 400
 
 
 def test_subtitle_removal_complete_upload_rejects_probe_failure(tmp_path, authed_client_no_db, monkeypatch):
