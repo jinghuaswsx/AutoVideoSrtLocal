@@ -704,7 +704,7 @@
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
-      await fetch(`/medias/api/products/${pid}/cover?lang=${lang}`, { method: 'DELETE' });
+      await fetchJSON(`/medias/api/products/${pid}/cover?lang=${lang}`, { method: 'DELETE' });
       const fresh = await fetchJSON('/medias/api/products/' + pid);
       edState.current = fresh;
       edState.productData = fresh;
@@ -747,7 +747,7 @@
     let arr = Array.isArray(raw) ? raw : [];
     // 移除当前语种旧数据，写入新数据
     arr = arr.filter(c => c.lang !== lang);
-    arr = arr.concat(items.filter(i => i.body));
+    arr = arr.concat(items);
     edState.productData.copywritings = arr;
   }
 
@@ -941,10 +941,10 @@
 
     const pid = edState.productData.product.id;
 
-    // 将 copywritings array 转为 dict {lang: [{body},...]}
-    const rawList = Array.isArray(edState.productData.copywritings)
+    // 将 copywritings array 转为 dict {lang: [{body},...]}，保存前过滤空 body
+    const rawList = (Array.isArray(edState.productData.copywritings)
       ? edState.productData.copywritings
-      : [];
+      : []).filter(c => (c.body || '').trim());
     const cwDict = {};
     rawList.forEach(c => {
       if (!c.lang || !c.body) return;
