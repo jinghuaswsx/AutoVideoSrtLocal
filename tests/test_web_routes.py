@@ -741,3 +741,16 @@ def test_medias_page_contains_aligned_edit_modal_layout(authed_client_no_db):
     assert "oc-edit-hero-grid" in body
     assert "oc-edit-main-grid" in body
     assert "oc-edit-video-grid" in body
+
+
+def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '<span>文案<span class="req">*</span></span>' in body
+    assert '<span>文案<span class="optional">可选</span></span>' not in body
+    assert '没有可以留空' not in body
+
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    assert 'copywritings: { en: cw }' in medias_js

@@ -430,7 +430,7 @@
         body: JSON.stringify({
           name, product_code: code,
           cover_object_key: state.current.product.cover_object_key,
-          copywritings: cw,
+          copywritings: { en: cw },
         }),
       });
       hideModal();
