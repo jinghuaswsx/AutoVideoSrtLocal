@@ -1,4 +1,4 @@
-"""提示词典 Blueprint。管理员维护，普通用户只读 + 复制使用。"""
+"""提示词典 Blueprint。管理员维护，普通用户只读 + 复制使用。支持中/英双语。"""
 from __future__ import annotations
 
 import json
@@ -32,13 +32,19 @@ def _serialize(p: dict) -> dict:
         "id": p["id"],
         "name": p["name"],
         "description": p.get("description"),
-        "content": p.get("content"),
+        "content_zh": p.get("content_zh"),
+        "content_en": p.get("content_en"),
         "created_by": p.get("created_by"),
         "created_by_name": p.get("created_by_name"),
         "updated_by_name": p.get("updated_by_name"),
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
     }
+
+
+def _norm(s):
+    s = (s or "").strip()
+    return s or None
 
 
 # ---------- 页面 ----------
@@ -81,15 +87,20 @@ def api_get(item_id: int):
 def api_create():
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
-    content = (body.get("content") or "").strip()
-    description = (body.get("description") or "").strip() or None
+    content_zh = _norm(body.get("content_zh"))
+    content_en = _norm(body.get("content_en"))
+    description = _norm(body.get("description"))
     if not name:
         return jsonify({"error": "名称必填"}), 400
-    if not content:
-        return jsonify({"error": "提示词正文必填"}), 400
+    if not content_zh and not content_en:
+        return jsonify({"error": "中文或英文版本至少填一个"}), 400
     if len(name) > 255:
         return jsonify({"error": "名称过长（≤255）"}), 400
-    pid = prompt_library.create_item(current_user.id, name, content, description)
+    pid = prompt_library.create_item(
+        current_user.id, name,
+        content_zh=content_zh, content_en=content_en,
+        description=description,
+    )
     return jsonify({"id": pid}), 201
 
 
@@ -102,15 +113,17 @@ def api_update(item_id: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
-    content = (body.get("content") or "").strip()
-    description = (body.get("description") or "").strip() or None
+    content_zh = _norm(body.get("content_zh"))
+    content_en = _norm(body.get("content_en"))
+    description = _norm(body.get("description"))
     if not name:
         return jsonify({"error": "名称必填"}), 400
-    if not content:
-        return jsonify({"error": "提示词正文必填"}), 400
+    if not content_zh and not content_en:
+        return jsonify({"error": "中文或英文版本至少填一个"}), 400
     prompt_library.update_item(
         item_id, current_user.id,
-        name=name, content=content, description=description,
+        name=name, content_zh=content_zh, content_en=content_en,
+        description=description,
     )
     return jsonify({"ok": True})
 
@@ -125,16 +138,16 @@ def api_delete(item_id: int):
     return jsonify({"ok": True})
 
 
-# ---------- AI 生成 ----------
+# ---------- AI 生成（手写辅助） ----------
 
-_SYSTEM_PROMPT = """你是一位专业的 Prompt Engineer。根据用户的需求描述，为他们创作一个高质量的 system prompt（提示词）。
+_GEN_SYSTEM_PROMPT = """你是一位专业的 Prompt Engineer。根据用户的需求描述，创作一个高质量的中文 system prompt。
 
 要求：
 1. 直接输出 JSON，不要任何前缀、解释、markdown 代码围栏。
 2. JSON 结构：{"name": "...", "description": "...", "content": "..."}
-3. `name`：为该提示词取一个简洁的中文名（≤20 字，可作为词典索引）。
+3. `name`：为该提示词取一个简洁的中文名（≤20 字）。
 4. `description`：一句话（≤80 字）概括该提示词的用途。
-5. `content`：完整可直接使用的 system prompt（中文为主，允许中英混排）。要覆盖角色、任务、约束、输出格式等要素，结构清晰，尽量避免冗余废话。"""
+5. `content`：完整可直接使用的中文 system prompt。要覆盖角色、任务、约束、输出格式等要素，结构清晰。"""
 
 
 @bp.route("/api/generate", methods=["POST"])
@@ -154,7 +167,7 @@ def api_generate():
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": _GEN_SYSTEM_PROMPT},
                 {"role": "user", "content": requirement},
             ],
             temperature=0.4,
@@ -183,3 +196,70 @@ def api_generate():
         "description": (data.get("description") or "").strip()[:500],
         "content": (data.get("content") or "").strip(),
     })
+
+
+# ---------- 中英互译 ----------
+
+_TRANSLATE_SYSTEM = {
+    "zh2en": (
+        "You are a professional translator specialized in translating Chinese system prompts "
+        "into English. Preserve the original structure, formatting (markdown, lists, code blocks, "
+        "JSON schema hints), placeholders (e.g. {variable}), and semantics. "
+        "Output ONLY the translated English text, without any wrapping, preface, or commentary."
+    ),
+    "en2zh": (
+        "你是一位专业的翻译，专门把英文 system prompt 翻译成中文。"
+        "保留原文的结构、格式（markdown、列表、代码块、JSON 片段）、占位符（如 {variable}）和语义。"
+        "只输出翻译后的中文文本，不要任何前缀、解释或 markdown 代码围栏。"
+    ),
+}
+
+
+@bp.route("/api/items/<int:item_id>/translate", methods=["POST"])
+@login_required
+@admin_required
+def api_translate(item_id: int):
+    p = prompt_library.get_item(item_id)
+    if not p:
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    direction = (body.get("direction") or "").strip()  # 'zh2en' or 'en2zh'
+    if direction not in _TRANSLATE_SYSTEM:
+        return jsonify({"error": "direction 必须为 zh2en 或 en2zh"}), 400
+
+    src = (p.get("content_zh") if direction == "zh2en" else p.get("content_en")) or ""
+    if not src.strip():
+        return jsonify({"error": "源语言版本为空，无法翻译"}), 400
+
+    from pipeline.translate import resolve_provider_config
+    client, model = resolve_provider_config("openrouter", user_id=current_user.id)
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _TRANSLATE_SYSTEM[direction]},
+                {"role": "user", "content": src},
+            ],
+            temperature=0.2,
+            max_tokens=4096,
+        )
+        translated = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        log.exception("提示词翻译失败")
+        return jsonify({"error": f"翻译失败：{e}"}), 502
+
+    # 去掉可能的 markdown 围栏
+    if translated.startswith("```"):
+        parts = translated.split("```")
+        if len(parts) >= 2:
+            translated = parts[1]
+            if translated.startswith(("text\n", "plaintext\n")):
+                translated = translated.split("\n", 1)[1] if "\n" in translated else ""
+            translated = translated.strip()
+
+    if not translated:
+        return jsonify({"error": "模型返回为空，请重试"}), 502
+
+    target_lang = "en" if direction == "zh2en" else "zh"
+    prompt_library.set_translation(item_id, current_user.id, target_lang, translated)
+    return jsonify({"lang": target_lang, "content": translated})

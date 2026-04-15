@@ -122,6 +122,7 @@
 @keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
 .oc-modal { width:720px; max-width:100%; max-height:90vh; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-xl); overflow:hidden; box-shadow:var(--oc-shadow-lg); animation:oc-rise var(--oc-dur-slow) var(--oc-ease); }
 .oc-modal.wide { width:900px; }
+.oc-modal.xl { width:1100px; }
 @keyframes oc-rise { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
 .oc-modal-head { display:flex; align-items:center; justify-content:space-between; padding:var(--oc-sp-4) var(--oc-sp-5); border-bottom:1px solid var(--oc-border); }
 .oc-modal-head h3 { font-size:15px; font-weight:600; margin:0; }
@@ -155,6 +156,33 @@
 .oc-kv { display:grid; grid-template-columns:auto 1fr; gap:var(--oc-sp-2) var(--oc-sp-4); font-size:12px; margin-bottom:var(--oc-sp-4); }
 .oc-kv dt { color:var(--oc-fg-subtle); }
 .oc-kv dd { color:var(--oc-fg); margin:0; }
+
+/* bilingual 两列视图 */
+.oc-bilingual { display:grid; grid-template-columns:1fr auto 1fr; gap:var(--oc-sp-3); align-items:stretch; }
+.oc-bilingual.edit { grid-template-columns:1fr 1fr; }
+.oc-pane { display:flex; flex-direction:column; min-width:0; }
+.oc-pane .head { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-2); padding:0 var(--oc-sp-1) var(--oc-sp-2); }
+.oc-pane .head .lang { display:inline-flex; align-items:center; gap:var(--oc-sp-2); font-size:12px; font-weight:600; color:var(--oc-fg-muted); }
+.oc-pane .head .lang .badge { display:inline-flex; align-items:center; height:20px; padding:0 8px; border-radius:9999px; background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:11px; font-weight:600; letter-spacing:0.3px; }
+.oc-pane .head .lang .badge.en { background:var(--oc-cyan-subtle); color:var(--oc-cyan); }
+.oc-pane .body { flex:1; min-height:280px; }
+.oc-pane .body.preview { border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); padding:var(--oc-sp-4); font-family:var(--font-mono, ui-monospace, Consolas, monospace); font-size:12.5px; line-height:1.7; color:var(--oc-fg); white-space:pre-wrap; word-wrap:break-word; max-height:55vh; overflow-y:auto; }
+.oc-pane .body.preview.empty { display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); font-family:inherit; background:repeating-linear-gradient(45deg, var(--oc-bg-subtle), var(--oc-bg-subtle) 10px, var(--oc-bg-muted) 10px, var(--oc-bg-muted) 11px); min-height:280px; text-align:center; }
+.oc-pane .body.preview.empty p { margin:0; font-size:13px; }
+.oc-pane .body.preview.empty small { display:block; margin-top:var(--oc-sp-2); font-size:11px; opacity:0.7; }
+
+.oc-convert-col { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); padding:0 var(--oc-sp-1); min-width:44px; }
+.oc-convert-col .divider { flex:1; width:1px; background:var(--oc-border); }
+.oc-convert-btn { display:inline-flex; align-items:center; justify-content:center; gap:var(--oc-sp-1); min-width:88px; height:32px; padding:0 12px; background:var(--oc-bg); color:var(--oc-fg); border:1px solid var(--oc-border-strong); border-radius:9999px; font-size:12px; font-family:inherit; cursor:pointer; transition:all var(--oc-dur-fast) var(--oc-ease); white-space:nowrap; }
+.oc-convert-btn:hover:not(:disabled) { border-color:var(--oc-accent); color:var(--oc-accent); background:var(--oc-accent-subtle); }
+.oc-convert-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.oc-convert-btn.busy { pointer-events:none; opacity:0.6; }
+
+@media (max-width: 900px) {
+  .oc-bilingual, .oc-bilingual.edit { grid-template-columns:1fr; }
+  .oc-convert-col { flex-direction:row; min-width:0; padding:var(--oc-sp-2) 0; }
+  .oc-convert-col .divider { height:1px; width:auto; }
+}
 {% endblock %}
 
 {% block content %}
@@ -228,8 +256,20 @@
         <input id="pDesc" class="oc-input" maxlength="500" placeholder="例如：根据产品卖点快速写出 3 条小红书风格种草短文">
       </div>
       <div class="oc-field">
-        <label class="oc-label" for="pContent">提示词正文<span class="req">*</span></label>
-        <textarea id="pContent" class="oc-textarea lg" placeholder="直接粘贴 system prompt 正文…"></textarea>
+        <label class="oc-label">
+          <span>提示词正文<span class="req">*</span></span>
+          <span class="hint">中文 / 英文至少填一个；两个都填最佳</span>
+        </label>
+        <div class="oc-bilingual edit">
+          <div class="oc-pane">
+            <div class="head"><span class="lang"><span class="badge">中</span> 中文版本</span></div>
+            <textarea id="pContentZh" class="oc-textarea lg body" placeholder="粘贴中文版 system prompt…"></textarea>
+          </div>
+          <div class="oc-pane">
+            <div class="head"><span class="lang"><span class="badge en">EN</span> English version</span></div>
+            <textarea id="pContentEn" class="oc-textarea lg body" placeholder="Paste the English system prompt…"></textarea>
+          </div>
+        </div>
       </div>
 
       <details class="oc-ai-details">
@@ -262,7 +302,7 @@
 
 <!-- 详情弹窗（所有用户） -->
 <div class="oc-modal-mask oc" id="viewMask" hidden>
-  <div class="oc-modal wide" role="dialog" aria-modal="true">
+  <div class="oc-modal xl" role="dialog" aria-modal="true">
     <div class="oc-modal-head">
       <h3 id="viewTitle">提示词详情</h3>
       <button class="oc-icon-btn" id="viewClose" aria-label="关闭"><svg width="16" height="16"><use href="#ic-close"/></svg></button>
@@ -270,14 +310,38 @@
     <div class="oc-modal-body">
       <p id="viewDesc" style="font-size:13px; color:var(--oc-fg-muted); margin:0 0 var(--oc-sp-3); line-height:1.6;"></p>
       <dl class="oc-kv" id="viewMeta"></dl>
-      <div class="oc-content-preview" id="viewContent"></div>
+
+      <div class="oc-bilingual" id="viewBilingual">
+        <div class="oc-pane">
+          <div class="head">
+            <span class="lang"><span class="badge">中</span> 中文版本</span>
+            <button class="oc-icon-btn" id="copyZhBtn" title="复制中文" aria-label="复制中文版"><svg width="14" height="14"><use href="#ic-copy"/></svg></button>
+          </div>
+          <div class="body preview" id="viewContentZh"></div>
+        </div>
+
+        <div class="oc-convert-col" id="convertCol">
+          <div class="divider"></div>
+          <button class="oc-convert-btn" id="zh2enBtn" hidden>
+            <span>中 →&nbsp;EN</span>
+          </button>
+          <button class="oc-convert-btn" id="en2zhBtn" hidden>
+            <span>EN →&nbsp;中</span>
+          </button>
+          <div class="divider"></div>
+        </div>
+
+        <div class="oc-pane">
+          <div class="head">
+            <span class="lang"><span class="badge en">EN</span> English version</span>
+            <button class="oc-icon-btn" id="copyEnBtn" title="Copy English" aria-label="复制英文版"><svg width="14" height="14"><use href="#ic-copy"/></svg></button>
+          </div>
+          <div class="body preview" id="viewContentEn"></div>
+        </div>
+      </div>
     </div>
     <div class="oc-modal-foot">
       <button class="oc-btn ghost" id="viewCloseBtn">关闭</button>
-      <button class="oc-btn primary" id="viewCopyBtn">
-        <svg width="14" height="14"><use href="#ic-copy"/></svg>
-        <span>复制全文</span>
-      </button>
     </div>
   </div>
 </div>

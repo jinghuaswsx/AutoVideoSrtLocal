@@ -1,5 +1,5 @@
 (function() {
-  const state = { page: 1, editId: null };
+  const state = { page: 1, editId: null, current: null };
   const $ = (id) => document.getElementById(id);
   const isAdmin = !!window.PL_IS_ADMIN;
 
@@ -38,6 +38,7 @@
   }
 
   async function copyToClipboard(text) {
+    if (!text) { toast('内容为空', 'err'); return; }
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
@@ -90,7 +91,7 @@
         <div class="oc-state">
           <div class="icon">${icon('book', 28)}</div>
           <p class="title">${isAdmin ? '还没有提示词' : '暂无提示词'}</p>
-          <p class="desc">${isAdmin ? '从 AI 生成开始，或手动录入一条常用提示词' : '请联系管理员录入常用提示词'}</p>
+          <p class="desc">${isAdmin ? '录入你的第一条常用提示词' : '请联系管理员录入常用提示词'}</p>
           ${cta}
         </div>`;
       const ec = $('emptyCreate');
@@ -105,11 +106,10 @@
         openView(pid);
       });
     });
-    grid.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async (e) => {
+    grid.querySelectorAll('[data-copy-zh]').forEach(b => b.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const pid = +b.dataset.copy;
-      const full = await fetchJSON('/prompt-library/api/items/' + pid);
-      copyToClipboard(full.content || '');
+      const full = await fetchJSON('/prompt-library/api/items/' + b.dataset.copyZh);
+      copyToClipboard(full.content_zh || full.content_en || '');
     }));
     grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation(); openEdit(+b.dataset.edit);
@@ -119,9 +119,17 @@
     }));
   }
 
+  function langBadges(p) {
+    const out = [];
+    if (p.content_zh) out.push('<span class="lang-dot zh" title="已有中文版">中</span>');
+    if (p.content_en) out.push('<span class="lang-dot en" title="已有英文版">EN</span>');
+    return out.join('');
+  }
+
   function cardHTML(p) {
     const desc = p.description ? escapeHtml(p.description) : '<span style="color:var(--oc-fg-subtle)">无描述</span>';
     const author = p.updated_by_name || p.created_by_name || '—';
+    const badges = langBadges(p);
     const adminActions = isAdmin ? `
       <button class="oc-icon-btn" data-stop data-edit="${p.id}" title="编辑">${icon('edit', 14)}</button>
       <button class="oc-icon-btn danger" data-stop data-del="${p.id}" data-name="${escapeHtml(p.name)}" title="删除">${icon('trash', 14)}</button>
@@ -130,12 +138,13 @@
       <article class="oc-card" data-pid="${p.id}" tabindex="0">
         <div class="top">
           <div class="name">${escapeHtml(p.name)}</div>
+          <div class="lang-badges">${badges}</div>
         </div>
         <div class="desc">${desc}</div>
         <div class="meta">
           <span class="left">${icon('user', 11)} ${escapeHtml(author)} · ${icon('clock', 11)} ${fmtDate(p.updated_at)}</span>
           <span class="actions">
-            <button class="oc-icon-btn" data-stop data-copy="${p.id}" title="复制全文">${icon('copy', 14)}</button>
+            <button class="oc-icon-btn" data-stop data-copy-zh="${p.id}" title="复制">${icon('copy', 14)}</button>
             ${adminActions}
           </span>
         </div>
@@ -160,6 +169,7 @@
   async function openView(id) {
     try {
       const p = await fetchJSON('/prompt-library/api/items/' + id);
+      state.current = p;
       $('viewTitle').textContent = p.name || '提示词详情';
       $('viewDesc').textContent = p.description || '';
       const meta = [
@@ -169,14 +179,72 @@
         ['更新时间', fmtDate(p.updated_at)],
       ];
       $('viewMeta').innerHTML = meta.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`).join('');
-      $('viewContent').textContent = p.content || '';
-      $('viewCopyBtn').onclick = () => copyToClipboard(p.content || '');
+      renderViewPanes(p);
       $('viewMask').hidden = false;
     } catch (e) {
       toast('加载失败：' + (e.message || e), 'err');
     }
   }
-  function closeView() { $('viewMask').hidden = true; }
+
+  function renderViewPanes(p) {
+    const zhBox = $('viewContentZh');
+    const enBox = $('viewContentEn');
+    if (p.content_zh) {
+      zhBox.classList.remove('empty'); zhBox.textContent = p.content_zh;
+    } else {
+      zhBox.classList.add('empty');
+      zhBox.innerHTML = `<div><p>暂无中文版本</p><small>${isAdmin && p.content_en ? '点击中间按钮用 EN →&nbsp;中 生成' : isAdmin ? '编辑中录入' : '请等待管理员补齐'}</small></div>`;
+    }
+    if (p.content_en) {
+      enBox.classList.remove('empty'); enBox.textContent = p.content_en;
+    } else {
+      enBox.classList.add('empty');
+      enBox.innerHTML = `<div><p>No English version yet</p><small>${isAdmin && p.content_zh ? '点击中间按钮用 中 →&nbsp;EN 生成' : isAdmin ? '编辑中录入' : '请等待管理员补齐'}</small></div>`;
+    }
+
+    const hasZh = !!p.content_zh, hasEn = !!p.content_en;
+    // 转换按钮：仅 admin 可点；条件 = 源有 + 目标空；两个都有则整列隐藏
+    const zh2en = $('zh2enBtn'), en2zh = $('en2zhBtn');
+    const col = $('convertCol');
+    if (!isAdmin || (hasZh && hasEn)) {
+      col.style.display = 'none';
+      zh2en.hidden = true; en2zh.hidden = true;
+    } else {
+      col.style.display = '';
+      zh2en.hidden = !(hasZh && !hasEn);
+      en2zh.hidden = !(hasEn && !hasZh);
+    }
+
+    $('copyZhBtn').onclick = () => copyToClipboard(p.content_zh || '');
+    $('copyEnBtn').onclick = () => copyToClipboard(p.content_en || '');
+  }
+
+  async function translate(direction) {
+    if (!state.current) return;
+    const btn = direction === 'zh2en' ? $('zh2enBtn') : $('en2zhBtn');
+    const origHTML = btn.innerHTML;
+    btn.classList.add('busy');
+    btn.innerHTML = `${icon('loader', 12)}<span>${direction === 'zh2en' ? '翻译中…' : '翻译中…'}</span>`;
+    btn.firstChild.style.animation = 'spin 1s linear infinite';
+    try {
+      const r = await fetchJSON(`/prompt-library/api/items/${state.current.id}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+      });
+      if (r.lang === 'en') state.current.content_en = r.content;
+      else state.current.content_zh = r.content;
+      renderViewPanes(state.current);
+      toast('已生成', 'ok');
+      loadList();
+    } catch (e) {
+      btn.classList.remove('busy');
+      btn.innerHTML = origHTML;
+      toast('翻译失败：' + (e.message || e), 'err');
+    }
+  }
+
+  function closeView() { $('viewMask').hidden = true; state.current = null; }
 
   // ---------- Create / Edit ----------
   function openCreate() {
@@ -185,9 +253,10 @@
     $('aiReq').value = '';
     $('pName').value = '';
     $('pDesc').value = '';
-    $('pContent').value = '';
+    $('pContentZh').value = '';
+    $('pContentEn').value = '';
     $('editMask').hidden = false;
-    setTimeout(() => $('aiReq').focus(), 60);
+    setTimeout(() => $('pName').focus(), 60);
   }
 
   async function openEdit(id) {
@@ -198,7 +267,8 @@
       $('aiReq').value = '';
       $('pName').value = p.name || '';
       $('pDesc').value = p.description || '';
-      $('pContent').value = p.content || '';
+      $('pContentZh').value = p.content_zh || '';
+      $('pContentEn').value = p.content_en || '';
       $('editMask').hidden = false;
       setTimeout(() => $('pName').focus(), 60);
     } catch (e) {
@@ -211,11 +281,14 @@
   async function saveEdit() {
     const name = $('pName').value.trim();
     const description = $('pDesc').value.trim();
-    const content = $('pContent').value.trim();
+    const content_zh = $('pContentZh').value.trim();
+    const content_en = $('pContentEn').value.trim();
     if (!name) { toast('请填写名称', 'err'); $('pName').focus(); return; }
-    if (!content) { toast('请填写提示词正文', 'err'); $('pContent').focus(); return; }
+    if (!content_zh && !content_en) {
+      toast('中文或英文至少填一个', 'err'); $('pContentZh').focus(); return;
+    }
 
-    const payload = { name, description, content };
+    const payload = { name, description, content_zh, content_en };
     try {
       if (state.editId) {
         await fetchJSON('/prompt-library/api/items/' + state.editId, {
@@ -257,15 +330,15 @@
       });
       if (data.name && !$('pName').value.trim()) $('pName').value = data.name;
       if (data.description && !$('pDesc').value.trim()) $('pDesc').value = data.description;
-      if (data.content) $('pContent').value = data.content;
-      toast('已填入下方字段');
+      if (data.content) $('pContentZh').value = data.content;
+      toast('已填入中文版，可在保存后再用详情页的 中→EN 生成英文版');
     } catch (e) {
       toast('生成失败：' + (e.message || e), 'err');
     } finally {
       btn.disabled = false;
       iconEl.innerHTML = '<use href="#ic-sparkles"/>';
       iconEl.style.animation = '';
-      textEl.textContent = '生成';
+      textEl.textContent = '生成并回填';
     }
   }
 
@@ -283,7 +356,13 @@
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
     const styleEl = document.createElement('style');
-    styleEl.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+    styleEl.textContent = `
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .lang-badges { display:inline-flex; gap:4px; flex-shrink:0; }
+      .lang-dot { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:18px; padding:0 6px; border-radius:9999px; font-size:10px; font-weight:700; letter-spacing:0.3px; }
+      .lang-dot.zh { background:var(--oc-accent-subtle); color:var(--oc-accent); }
+      .lang-dot.en { background:var(--oc-cyan-subtle); color:var(--oc-cyan); }
+    `;
     document.head.appendChild(styleEl);
 
     $('searchBtn').addEventListener('click', () => { state.page = 1; loadList(); });
@@ -297,6 +376,9 @@
       $('editSave').addEventListener('click', saveEdit);
       $('aiGenBtn').addEventListener('click', generateAI);
       $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') closeEdit(); });
+
+      $('zh2enBtn').addEventListener('click', () => translate('zh2en'));
+      $('en2zhBtn').addEventListener('click', () => translate('en2zh'));
     }
 
     $('viewClose').addEventListener('click', closeView);
