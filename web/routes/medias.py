@@ -10,6 +10,19 @@ from appcore.db import execute as db_execute
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 
+import re
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+
+
+def _validate_product_code(code: str) -> tuple[bool, str | None]:
+    if not code:
+        return False, "产品 ID 必填"
+    if not _SLUG_RE.match(code):
+        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-64，且首尾不能是连字符"
+    return True, None
+
+
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
@@ -104,10 +117,16 @@ def api_create_product():
     name = (body.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name required"}), 400
+    product_code = (body.get("product_code") or "").strip().lower() or None
+    if product_code is not None:
+        ok, err = _validate_product_code(product_code)
+        if not ok:
+            return jsonify({"error": err}), 400
+        if medias.get_product_by_code(product_code):
+            return jsonify({"error": "产品 ID 已被占用"}), 409
     pid = medias.create_product(
         current_user.id, name,
-        color_people=(body.get("color_people") or None),
-        source=(body.get("source") or None),
+        product_code=product_code,
     )
     return jsonify({"id": pid}), 201
 
@@ -132,12 +151,28 @@ def api_update_product(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
-    medias.update_product(
-        pid,
-        name=body.get("name") or p["name"],
-        color_people=body.get("color_people"),
-        source=body.get("source"),
-    )
+
+    name = (body.get("name") or "").strip() or p["name"]
+    product_code = (body.get("product_code") or "").strip().lower()
+    ok, err = _validate_product_code(product_code)
+    if not ok:
+        return jsonify({"error": err}), 400
+    exist = medias.get_product_by_code(product_code)
+    if exist and exist["id"] != pid:
+        return jsonify({"error": "产品 ID 已被占用"}), 409
+
+    if not p.get("cover_object_key") and not body.get("cover_object_key"):
+        return jsonify({"error": "封面图必填"}), 400
+
+    items = medias.list_items(pid)
+    if not items:
+        return jsonify({"error": "至少需要 1 条视频素材"}), 400
+
+    update_fields = {"name": name, "product_code": product_code}
+    if body.get("cover_object_key"):
+        update_fields["cover_object_key"] = body["cover_object_key"]
+    medias.update_product(pid, **update_fields)
+
     if isinstance(body.get("copywritings"), list):
         medias.replace_copywritings(pid, body["copywritings"])
     return jsonify({"ok": True})
