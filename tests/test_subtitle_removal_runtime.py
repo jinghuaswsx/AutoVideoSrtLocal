@@ -56,3 +56,38 @@ def test_runtime_success_downloads_and_uploads_result(monkeypatch, tmp_path):
     assert saved["status"] == "done"
     assert saved["provider_task_id"] == "provider-task-1"
     assert saved["result_tos_key"].endswith("result.cleaned.mp4")
+
+
+def test_download_result_file_streams_content_to_disk(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import _download_result_file
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size=8192):
+            captured["chunk_size"] = chunk_size
+            yield b"hello "
+            yield b"world"
+
+        @property
+        def content(self):
+            raise AssertionError("response.content should not be used")
+
+    def fake_get(url, timeout=None, stream=None):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        captured["stream"] = stream
+        return FakeResponse()
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.requests.get", fake_get)
+
+    result_path = _download_result_file("https://provider.example/result.mp4", str(tmp_path / "result.cleaned.mp4"))
+
+    assert result_path.endswith("result.cleaned.mp4")
+    assert captured["url"] == "https://provider.example/result.mp4"
+    assert captured["timeout"] == 120
+    assert captured["stream"] is True
+    assert (tmp_path / "result.cleaned.mp4").read_bytes() == b"hello world"

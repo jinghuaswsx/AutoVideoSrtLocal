@@ -17,11 +17,14 @@ log = logging.getLogger(__name__)
 
 
 def _download_result_file(url: str, local_path: str) -> str:
-    response = requests.get(url, timeout=120)
+    response = requests.get(url, timeout=120, stream=True)
     response.raise_for_status()
     path = Path(local_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(response.content)
+    with path.open("wb") as fh:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                fh.write(chunk)
     return str(path)
 
 

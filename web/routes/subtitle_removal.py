@@ -280,6 +280,8 @@ def complete_upload():
 @login_required
 def submit(task_id: str):
     task = _get_owned_task(task_id)
+    if (task.get("status") or "").strip() != "ready":
+        return jsonify({"error": "task is not ready for submit"}), 409
     body = request.get_json(silent=True) or {}
     mode = (body.get("remove_mode") or "").strip().lower()
     selection_box = body.get("selection_box")
