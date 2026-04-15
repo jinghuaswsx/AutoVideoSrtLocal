@@ -9,6 +9,12 @@
 
     <div class="oc-modal-body">
 
+      <!-- 语种 Tabs -->
+      <div id="edLangTabs" class="oc-lang-tabs"></div>
+      <div id="edEnCoverWarn" class="oc-en-cover-warn" hidden>
+        必须先上传英文（EN）产品主图才能保存。
+      </div>
+
       <!-- 基本信息 -->
       <section class="oc-section">
         <div class="oc-row">
@@ -23,38 +29,41 @@
         </div>
       </section>
 
-      <!-- 产品主图 -->
-      <section class="oc-section">
+      <!-- 产品主图（JS 将按 activeLang 重渲染 edCoverBlock 内容） -->
+      <section class="oc-section" id="edCoverSection">
         <div class="oc-section-title">
           <span>产品主图</span>
-          <span class="optional">(可选)</span>
+          <span id="edCoverSectionHint" class="optional">(EN 必填，其他语种可选)</span>
         </div>
-        <div class="oc-cover-row">
-          <div id="edCoverBox" class="oc-cover-square-480">
-            <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
-              <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
-              <div class="dz-title">点击或拖拽上传</div>
-              <div class="dz-hint">JPG / PNG / WebP</div>
+        <div id="edCoverBlock">
+          <!-- 初始静态结构，openEditDetail 后由 renderCoverBlock() 替换 -->
+          <div class="oc-cover-row">
+            <div id="edCoverBox" class="oc-cover-square-480">
+              <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
+                <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                <div class="dz-title">点击或拖拽上传</div>
+                <div class="dz-hint">JPG / PNG / WebP</div>
+              </div>
+              <img id="edCoverImg" alt="主图" hidden>
             </div>
-            <img id="edCoverImg" alt="主图" hidden>
-          </div>
-          <div class="oc-cover-actions">
-            <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
-            <button type="button" class="oc-btn text sm" id="edCoverClear">清空主图</button>
-            <div class="oc-url-row" style="margin-top:var(--oc-sp-2)">
-              <input type="url" id="edCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
-              <button type="button" class="oc-btn ghost sm" id="edCoverFromUrlBtn">从 URL 导入</button>
+            <div class="oc-cover-actions">
+              <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
+              <button type="button" class="oc-btn text sm" id="edCoverClear">清空主图</button>
+              <div class="oc-url-row" style="margin-top:var(--oc-sp-2)">
+                <input type="url" id="edCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
+                <button type="button" class="oc-btn ghost sm" id="edCoverFromUrlBtn">从 URL 导入</button>
+              </div>
+              <input type="file" id="edCoverInput" accept="image/*" hidden>
             </div>
-            <input type="file" id="edCoverInput" accept="image/*" hidden>
           </div>
         </div>
       </section>
 
-      <!-- 文案 -->
-      <section class="oc-section">
+      <!-- 文案（JS 按 activeLang 过滤渲染） -->
+      <section class="oc-section" id="edCwSection">
         <div class="oc-section-title">
           <span>文案</span>
-          <span class="optional">(可选)</span>
+          <span class="optional" id="edCwLangLabel"></span>
           <span class="count" id="edCwBadge">0</span>
         </div>
         <div id="edCwList" class="oc-cw-grid"></div>
@@ -64,10 +73,11 @@
         </button>
       </section>
 
-      <!-- 视频素材 -->
-      <section class="oc-section">
+      <!-- 视频素材（JS 按 activeLang 过滤渲染） -->
+      <section class="oc-section" id="edItemsSection">
         <div class="oc-section-title">
-          <span>视频素材<span class="req">*</span></span>
+          <span>视频素材</span>
+          <span class="optional" id="edItemsLangLabel"></span>
           <span class="count" id="edItemsBadge">0</span>
         </div>
         <div class="oc-dropzone" id="edVideoDropzone" tabindex="0" role="button" aria-label="上传视频素材">
@@ -77,7 +87,7 @@
           <input type="file" id="edVideoInput" accept="video/*" hidden>
         </div>
         <div id="edUploadProgress" class="oc-upload-list"></div>
-        <div id="edItemsGrid" class="oc-items-grid"></div>
+        <div id="edItemsGrid" class="oc-items-grid" style="grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4)"></div>
       </section>
 
     </div>

@@ -382,6 +382,39 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   .oc-cover-square { width:100%; height:auto; aspect-ratio:9/16; }
   .oc-table { font-size:12px; }
 }
+
+/* ────────── 编辑弹窗：语种 Tab 栏 ────────── */
+.oc-lang-tabs {
+  display:flex; gap:4px; padding:var(--oc-sp-2) 0;
+  border-bottom:1px solid var(--oc-border);
+  margin-bottom:var(--oc-sp-4); flex-wrap:wrap;
+}
+.oc-lang-tab {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 14px; border-radius:var(--oc-r-md);
+  font-size:13px; font-weight:600;
+  background:var(--oc-bg-subtle); color:var(--oc-fg);
+  border:1px solid var(--oc-border); cursor:pointer;
+  transition:all var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-lang-tab:hover { background:var(--oc-bg-muted); }
+.oc-lang-tab.active { background:oklch(38% 0.085 230); color:#fff; border-color:transparent; }
+.oc-lang-tab .badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:18px; height:18px; padding:0 5px;
+  border-radius:9999px; font-size:11px; font-weight:700;
+  background:var(--oc-danger); color:#fff;
+}
+.oc-lang-tab .badge.has { background:var(--oc-success-fg); }
+.oc-lang-tab.active .badge { background:rgba(255,255,255,0.25); color:#fff; }
+
+/* EN 主图缺失警示 */
+.oc-en-cover-warn {
+  background:var(--oc-danger-bg); color:var(--oc-danger-fg);
+  padding:var(--oc-sp-3) var(--oc-sp-4); border-radius:var(--oc-r-md);
+  margin-bottom:var(--oc-sp-4); font-size:13px; font-weight:500;
+}
+.oc-cover-fallback-hint { font-size:11px; color:var(--oc-fg-subtle); margin-top:4px; }
 {% endblock %}
 
 {% block content %}

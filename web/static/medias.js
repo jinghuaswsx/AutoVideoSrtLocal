@@ -467,88 +467,300 @@
   }
 
   // ========== Edit Detail Modal ==========
-  const edState = { current: null, clearCover: false };
+  const edState = { current: null, activeLang: 'en', productData: null };
 
   function edShow() { $('edMask').hidden = false; }
-  function edHide() { $('edMask').hidden = true; edState.current = null; edState.clearCover = false; }
+  function edHide() {
+    $('edMask').hidden = true;
+    edState.current = null;
+    edState.activeLang = 'en';
+    edState.productData = null;
+  }
 
   async function openEditDetail(pid) {
     try {
+      await ensureLanguages();
       const data = await fetchJSON('/medias/api/products/' + pid);
       edState.current = data;
-      edState.clearCover = false;
+      edState.productData = data;
+      edState.activeLang = 'en';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
-      edSetCover(data.product.cover_object_key ? `/medias/cover/${pid}?_=${Date.now()}` : null);
-      edRenderCopywritings(data.copywritings);
-      edRenderItems(data.items);
       $('edUploadProgress').innerHTML = '';
       edShow();
+      edRenderLangTabs();
+      edRenderActiveLangView();
     } catch (e) {
       alert('加载失败：' + (e.message || e));
     }
   }
 
-  function edSetCover(url) {
+  // --- 语种 tallies（用于 badge） ---
+  function edLangTallies(lang) {
+    const d = edState.productData;
+    if (!d) return { items: 0, copy: 0, cover: false };
+    const items = (d.items || []).filter(it => it.lang === lang).length;
+    const copyList = d.copywritings;
+    let copy = 0;
+    if (Array.isArray(copyList)) {
+      copy = copyList.filter(c => c.lang === lang).length;
+    } else if (copyList && typeof copyList === 'object') {
+      copy = (copyList[lang] || []).length;
+    }
+    const cover = !!(d.covers && d.covers[lang]);
+    return { items, copy, cover };
+  }
+
+  function edRenderLangTabs() {
+    const box = $('edLangTabs');
+    if (!box) return;
+    box.innerHTML = LANGUAGES.map(l => {
+      const t = edLangTallies(l.code);
+      const isEn = l.code === 'en';
+      // badge: en 无 cover 显示红色！；其他语种有内容显示绿色
+      let badgeHtml = '';
+      if (isEn && !t.cover) {
+        badgeHtml = `<span class="badge">!</span>`;
+      } else if (t.items > 0 || t.cover) {
+        badgeHtml = `<span class="badge has">${t.items}</span>`;
+      }
+      const active = edState.activeLang === l.code ? ' active' : '';
+      return `<button class="oc-lang-tab${active}" data-lang="${escapeHtml(l.code)}" title="${escapeHtml(l.name_zh || l.code)}">`
+           + `${l.code.toUpperCase()}${badgeHtml}`
+           + `</button>`;
+    }).join('');
+    box.querySelectorAll('[data-lang]').forEach(btn => {
+      btn.addEventListener('click', () => edSwitchLang(btn.dataset.lang));
+    });
+  }
+
+  function edSwitchLang(lang) {
+    // 切换前保存当前语种文案到 productData（从 DOM 读取）
+    edFlushCopywritings();
+    edState.activeLang = lang;
+    edRenderLangTabs();
+    edRenderActiveLangView();
+  }
+
+  function edRenderActiveLangView() {
+    const lang = edState.activeLang;
+    // 更新语种标签提示
+    const cwLabel = $('edCwLangLabel');
+    const itemsLabel = $('edItemsLangLabel');
+    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    if (cwLabel) cwLabel.textContent = `(${langName})`;
+    if (itemsLabel) itemsLabel.textContent = `(${langName})`;
+
+    edRenderCoverBlock(lang);
+    edRenderItemsBlock(lang);
+    edRenderCopyBlock(lang);
+
+    // EN 主图校验 + 保存按钮
+    const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
+    const warn = $('edEnCoverWarn');
+    if (warn) warn.hidden = hasEn;
+    const saveBtn = $('edSaveBtn');
+    if (saveBtn) {
+      saveBtn.disabled = !hasEn;
+      saveBtn.title = hasEn ? '' : '必须先上传英文主图';
+    }
+  }
+
+  // --- 主图块（按语种渲染） ---
+  function edRenderCoverBlock(lang) {
+    const block = $('edCoverBlock');
+    if (!block) return;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    const covers = (edState.productData && edState.productData.covers) || {};
+    const hasKey = !!covers[lang];
+    const coverUrl = hasKey ? `/medias/cover/${pid}?lang=${lang}&_=${Date.now()}` : null;
+    const isEn = lang === 'en';
+    const deleteBtn = isEn ? '' :
+      `<button type="button" class="oc-btn text sm" id="edCoverDeleteBtn" style="color:var(--oc-danger-fg)">删除此语种主图</button>`;
+    const fallbackHint = !isEn && !hasKey
+      ? `<p class="oc-cover-fallback-hint">未上传时将展示 EN 主图</p>`
+      : '';
+
+    block.innerHTML = `
+      <div class="oc-cover-row">
+        <div id="edCoverBox" class="oc-cover-square-480">
+          <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
+            <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+            <div class="dz-title">点击或拖拽上传</div>
+            <div class="dz-hint">JPG / PNG / WebP</div>
+          </div>
+          <img id="edCoverImg" alt="主图" ${coverUrl ? `src="${escapeHtml(coverUrl)}"` : 'hidden'}>
+        </div>
+        <div class="oc-cover-actions">
+          <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
+          ${deleteBtn}
+          <div class="oc-url-row" style="margin-top:var(--oc-sp-2)">
+            <input type="url" id="edCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
+            <button type="button" class="oc-btn ghost sm" id="edCoverFromUrlBtn">从 URL 导入</button>
+          </div>
+          <input type="file" id="edCoverInput" accept="image/*" hidden>
+          ${fallbackHint}
+        </div>
+      </div>`;
+
+    // 同步显示状态
+    if (coverUrl) {
+      const dz = $('edCoverDropzone');
+      if (dz) dz.hidden = true;
+    }
+
+    // 重新绑定事件
+    const coverDropzone = $('edCoverDropzone');
+    const coverInput = $('edCoverInput');
+    const coverReplace = $('edCoverReplace');
+    const coverFromUrl = $('edCoverFromUrlBtn');
+    const coverDelete = $('edCoverDeleteBtn');
+
+    if (coverDropzone) {
+      coverDropzone.addEventListener('click', () => coverInput && coverInput.click());
+      coverDropzone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); coverInput && coverInput.click(); } });
+      coverDropzone.addEventListener('dragover', (e) => { e.preventDefault(); coverDropzone.classList.add('drag'); });
+      coverDropzone.addEventListener('dragleave', () => coverDropzone.classList.remove('drag'));
+      coverDropzone.addEventListener('drop', (e) => {
+        e.preventDefault(); coverDropzone.classList.remove('drag');
+        const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+        if (f) edUploadCover(f, lang);
+      });
+      coverDropzone.addEventListener('paste', (e) => {
+        const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+        if (item) { e.preventDefault(); edUploadCover(item.getAsFile(), lang); }
+      });
+    }
+    if (coverReplace) coverReplace.addEventListener('click', () => coverInput && coverInput.click());
+    if (coverInput) {
+      coverInput.addEventListener('change', (e) => {
+        const f = e.target.files[0]; e.target.value = '';
+        if (f) edUploadCover(f, lang);
+      });
+    }
+    if (coverFromUrl) coverFromUrl.addEventListener('click', () => edImportCoverFromUrl(lang));
+    const urlInput = $('edCoverUrl');
+    if (urlInput) urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); edImportCoverFromUrl(lang); } });
+    if (coverDelete) coverDelete.addEventListener('click', () => edDeleteCover(lang));
+  }
+
+  function edSetCoverUI(url) {
     const dz = $('edCoverDropzone');
     const img = $('edCoverImg');
+    if (!dz || !img) return;
     if (url) { img.src = url; img.hidden = false; dz.hidden = true; }
     else { img.removeAttribute('src'); img.hidden = true; dz.hidden = false; }
   }
 
-  async function edUploadCover(file) {
+  async function edUploadCover(file, lang) {
+    lang = lang || edState.activeLang;
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
-    const pid = edState.current && edState.current.product && edState.current.product.id;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/cover/bootstrap`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name }),
+        body: JSON.stringify({ filename: file.name, lang }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
       if (!putRes.ok) throw new Error('TOS 上传失败');
-      const done = await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
+      await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ object_key: boot.object_key }),
+        body: JSON.stringify({ object_key: boot.object_key, lang }),
       });
-      edState.current.product.cover_object_key = boot.object_key;
-      edState.clearCover = false;
-      edSetCover(done.cover_url + `?_=${Date.now()}`);
+      // 重拉数据刷新视图
+      const fresh = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = fresh;
+      edState.productData = fresh;
+      edRenderLangTabs();
+      edRenderActiveLangView();
     } catch (e) {
       alert('封面上传失败：' + (e.message || ''));
     }
   }
 
-  async function edImportCoverFromUrl() {
-    const url = $('edCoverUrl').value.trim();
+  async function edImportCoverFromUrl(lang) {
+    lang = lang || edState.activeLang;
+    const urlInput = $('edCoverUrl');
+    const url = urlInput ? urlInput.value.trim() : '';
     if (!url) { alert('请粘贴图片 URL'); return; }
-    const pid = edState.current && edState.current.product && edState.current.product.id;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
-      const done = await fetchJSON(`/medias/api/products/${pid}/cover/from-url`, {
+      await fetchJSON(`/medias/api/products/${pid}/cover/from-url`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, lang }),
       });
-      edState.current.product.cover_object_key = done.object_key;
-      edState.clearCover = false;
-      edSetCover(done.cover_url + `?_=${Date.now()}`);
-      $('edCoverUrl').value = '';
+      if (urlInput) urlInput.value = '';
+      const fresh = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = fresh;
+      edState.productData = fresh;
+      edRenderLangTabs();
+      edRenderActiveLangView();
     } catch (e) {
       alert('从 URL 导入失败：' + (e.message || ''));
     }
   }
 
-  function edClearCover() {
-    edState.clearCover = true;
-    if (edState.current && edState.current.product) edState.current.product.cover_object_key = null;
-    edSetCover(null);
+  async function edDeleteCover(lang) {
+    if (lang === 'en') { alert('EN 主图不可删除'); return; }
+    if (!confirm(`确认删除 ${lang.toUpperCase()} 语种主图？`)) return;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid) return;
+    try {
+      await fetch(`/medias/api/products/${pid}/cover?lang=${lang}`, { method: 'DELETE' });
+      const fresh = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = fresh;
+      edState.productData = fresh;
+      edRenderLangTabs();
+      edRenderActiveLangView();
+    } catch (e) {
+      alert('删除失败：' + (e.message || ''));
+    }
+  }
+
+  // --- 视频素材块（按 activeLang 过滤） ---
+  function edRenderItemsBlock(lang) {
+    const allItems = (edState.productData && edState.productData.items) || [];
+    const filtered = allItems.filter(it => it.lang === lang);
+    edRenderItems(filtered);
+  }
+
+  // --- 文案块（按 activeLang 过滤） ---
+  function edRenderCopyBlock(lang) {
+    const raw = (edState.productData && edState.productData.copywritings) || [];
+    let list = [];
+    if (Array.isArray(raw)) {
+      list = raw.filter(c => c.lang === lang);
+    } else if (raw && typeof raw === 'object') {
+      list = (raw[lang] || []);
+    }
+    edRenderCopywritings(list);
+  }
+
+  // 切换语种前把当前 DOM 文案写回 productData
+  function edFlushCopywritings() {
+    const lang = edState.activeLang;
+    const items = [...$('edCwList').children].map(card => ({
+      lang,
+      body: card.querySelector('[data-field="body"]').value || null,
+    }));
+    // 确保 productData.copywritings 是 array 格式（按 lang 存储）
+    if (!edState.productData) return;
+    const raw = edState.productData.copywritings || [];
+    let arr = Array.isArray(raw) ? raw : [];
+    // 移除当前语种旧数据，写入新数据
+    arr = arr.filter(c => c.lang !== lang);
+    arr = arr.concat(items.filter(i => i.body));
+    edState.productData.copywritings = arr;
   }
 
   async function edUploadVideo(file) {
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
-    const pid = edState.current && edState.current.product && edState.current.product.id;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
+    const lang = edState.activeLang;
     const box = $('edUploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
@@ -563,7 +775,7 @@
       if (!putRes.ok) throw new Error('TOS 上传失败');
       await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size }),
+        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size, lang }),
       });
       row.className = 'oc-upload-row ok';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>完成</span>`;
@@ -573,7 +785,9 @@
     }
     const full = await fetchJSON('/medias/api/products/' + pid);
     edState.current = full;
-    edRenderItems(full.items);
+    edState.productData = full;
+    edRenderLangTabs();
+    edRenderActiveLangView();
     loadList();
   }
 
@@ -679,7 +893,7 @@
 
   async function edUploadItemCover(itemId, file) {
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
-    const pid = edState.current && edState.current.product && edState.current.product.id;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/item-cover/bootstrap`, {
@@ -694,7 +908,9 @@
       });
       const full = await fetchJSON('/medias/api/products/' + pid);
       edState.current = full;
-      edRenderItems(full.items);
+      edState.productData = full;
+      edRenderLangTabs();
+      edRenderActiveLangView();
     } catch (e) {
       alert('视频封面上传失败：' + (e.message || ''));
     }
@@ -705,10 +921,13 @@
     await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
     card.remove();
     $('edItemsBadge').textContent = $('edItemsGrid').children.length;
-    const pid = edState.current && edState.current.product && edState.current.product.id;
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (pid) {
       const full = await fetchJSON('/medias/api/products/' + pid);
       edState.current = full;
+      edState.productData = full;
+      edRenderLangTabs();
+      edRenderActiveLangView();
     }
   }
 
@@ -717,16 +936,32 @@
     const code = $('edCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('edName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('edCode').focus(); return; }
-    if (!$('edItemsGrid').children.length) { alert('请至少保留 1 条视频素材'); return; }
-    const pid = edState.current.product.id;
+
+    // EN 主图硬校验
+    const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
+    if (!hasEn) { alert('必须先上传英文（EN）产品主图才能保存'); return; }
+
+    // 保存前 flush 当前语种文案
+    edFlushCopywritings();
+
+    const pid = edState.productData.product.id;
+
+    // 将 copywritings array 转为 dict {lang: [{body},...]}
+    const rawList = Array.isArray(edState.productData.copywritings)
+      ? edState.productData.copywritings
+      : [];
+    const cwDict = {};
+    rawList.forEach(c => {
+      if (!c.lang || !c.body) return;
+      if (!cwDict[c.lang]) cwDict[c.lang] = [];
+      cwDict[c.lang].push({ body: c.body });
+    });
+
     const payload = {
-      name, product_code: code,
-      copywritings: edCollectCopywritings(),
+      name,
+      product_code: code,
+      copywritings: cwDict,
     };
-    // 显式传 cover_object_key：清空时为 null；有值时传对象 key；未变更时传原值
-    payload.cover_object_key = edState.clearCover
-      ? null
-      : (edState.current.product.cover_object_key || null);
     try {
       await fetchJSON('/medias/api/products/' + pid, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -840,33 +1075,13 @@
     $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('edMask').hidden) edHide(); });
 
+    // edCwAddBtn：按当前 activeLang 添加文案条目
     $('edCwAddBtn').addEventListener('click', () => {
-      $('edCwList').appendChild(edCwCard({}, $('edCwList').children.length + 1));
+      $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
       $('edCwBadge').textContent = $('edCwList').children.length;
     });
 
-    const edCdz = $('edCoverDropzone');
-    edCdz.addEventListener('click', () => $('edCoverInput').click());
-    edCdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edCoverInput').click(); } });
-    edCdz.addEventListener('dragover', (e) => { e.preventDefault(); edCdz.classList.add('drag'); });
-    edCdz.addEventListener('dragleave', () => edCdz.classList.remove('drag'));
-    edCdz.addEventListener('drop', (e) => {
-      e.preventDefault(); edCdz.classList.remove('drag');
-      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
-      if (f) edUploadCover(f);
-    });
-    $('edCoverReplace').addEventListener('click', () => $('edCoverInput').click());
-    $('edCoverClear').addEventListener('click', edClearCover);
-    $('edCoverInput').addEventListener('change', (e) => {
-      const f = e.target.files[0]; e.target.value = '';
-      if (f) edUploadCover(f);
-    });
-    $('edCoverFromUrlBtn').addEventListener('click', edImportCoverFromUrl);
-    $('edCoverUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); edImportCoverFromUrl(); } });
-    edCdz.addEventListener('paste', (e) => {
-      const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
-      if (item) { e.preventDefault(); edUploadCover(item.getAsFile()); }
-    });
+    // 编辑弹窗封面事件由 edRenderCoverBlock() 动态绑定，此处不再静态绑定
 
     const edVdz = $('edVideoDropzone');
     edVdz.addEventListener('click', () => $('edVideoInput').click());
