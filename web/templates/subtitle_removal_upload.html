@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block title %}字幕移除{% endblock %}
+{% block page_title %}字幕移除{% endblock %}
+{% block extra_style %}
+{% include "_subtitle_removal_styles.html" %}
+{% endblock %}
+{% block content %}
+<section class="sr-page-shell">
+  <div class="sr-hero-card">
+    <div class="sr-hero-copy">
+      <span class="sr-eyebrow">Subtitle Removal</span>
+      <h1 class="sr-page-title">上传视频，直接进入去字幕任务</h1>
+      <p class="sr-page-subtitle">
+        先直传源视频到对象存储，再自动完成任务初始化。上传完成后会跳转到详情页，继续全屏去除或框选去除。
+      </p>
+      <div class="sr-feature-row">
+        <span class="sr-feature-pill">直传上传</span>
+        <span class="sr-feature-pill">首帧框选</span>
+        <span class="sr-feature-pill">刷新可回填</span>
+      </div>
+    </div>
+    <div class="sr-hero-panel">
+      <div class="sr-panel-label">上传流程</div>
+      <ol class="sr-flow-list">
+        <li>选择待处理视频</li>
+        <li>调用 bootstrap 获取签名地址</li>
+        <li>浏览器直传到 TOS</li>
+        <li>调用 complete 完成建档并跳详情页</li>
+      </ol>
+    </div>
+  </div>
+
+  <section class="sr-upload-card">
+    <div
+      class="sr-upload-dropzone"
+      id="srUploadDropzone"
+      role="button"
+      tabindex="0"
+      aria-controls="srUploadInput"
+      aria-describedby="srUploadHint"
+    >
+      <input type="file" id="srUploadInput" accept="video/*">
+      <div class="sr-upload-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <path d="M7 9l5-5 5 5"></path>
+          <path d="M12 4v12"></path>
+        </svg>
+      </div>
+      <h2 class="sr-upload-title">上传待处理视频</h2>
+      <p class="sr-upload-hint" id="srUploadHint">支持常见视频格式。上传成功后会自动跳转到详情页，不再停留在占位状态。</p>
+      <div class="sr-upload-actions">
+        <button type="button" class="btn sr-btn-primary" id="srPickVideoButton">选择视频并上传</button>
+        <div class="sr-upload-meta" id="srUploadMeta">建议先用 1 个短视频验证流程。</div>
+      </div>
+      <div class="sr-progress sr-hidden" id="srUploadProgressPanel" aria-live="polite">
+        <div class="sr-progress-bar">
+          <div class="sr-progress-bar__fill" id="srUploadProgress"></div>
+        </div>
+        <div class="sr-progress-row">
+          <span id="srUploadProgressLabel">等待上传…</span>
+          <span id="srUploadPercent">0%</span>
+        </div>
+      </div>
+    </div>
+    <div class="sr-inline-error sr-hidden" id="srUploadError"></div>
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}
+{% include "_subtitle_removal_scripts.html" %}
+{% endblock %}

@@ -73,6 +73,36 @@ def test_index_page_uses_tos_direct_upload_bootstrap(authed_client_no_db):
     assert 'xhr.open("PUT", bootstrap.upload_url, true)' in body
 
 
+def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "subtitle_removal_upload.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'id="srUploadInput"' in template
+    assert 'type="file"' in template
+    assert 'accept="video/*"' in template
+    assert 'id="srPickVideoButton"' in template
+    assert 'disabled' not in template
+    assert "/api/subtitle-removal/upload/bootstrap" in scripts
+    assert "/api/subtitle-removal/upload/complete" in scripts
+    assert 'xhr.open("PUT", bootstrap.upload_url, true)' in scripts
+    assert "window.location.href = `/subtitle-removal/${data.task_id}`;" in scripts
+
+
+def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert "function normalizeSelectionBox(selectionBox, positionPayload)" in scripts
+    assert 'typeof selectionBox.x1 === "number"' in scripts
+    assert 'typeof positionPayload.l === "number"' in scripts
+    assert "x2: x1 + width" in scripts
+    assert "y2: y1 + height" in scripts
+    assert "task.selection_box = normalizedSelection;" in scripts
+    assert "task.position_payload = normalizedSelection ? {" in scripts
+    assert "selection_box: normalizedSelection || undefined" in scripts
+
+
 def test_index_page_uses_simple_start_button_loading_state(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 
