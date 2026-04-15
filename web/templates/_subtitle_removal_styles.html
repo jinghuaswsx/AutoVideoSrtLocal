@@ -1,11 +1,21 @@
 <style>
-  .sr-shell { display: grid; gap: 16px; }
-  .sr-hero, .sr-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; }
-  .sr-hero h1, .sr-card h2 { margin: 0 0 8px; }
-  .sr-hero p { margin: 0; color: #4b5563; }
+  .sr-shell { display: grid; gap: 16px; color: var(--text-main); }
+  .sr-hero, .sr-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-main);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .sr-hero h1, .sr-card h2 { margin: 0 0 8px; color: var(--text-main); }
+  .sr-hero p { margin: 0; color: var(--text-main); opacity: 0.72; }
   .sr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .sr-card-body { min-height: 72px; }
+  .sr-card-body { min-height: 72px; color: var(--text-main); }
   .sr-radio-group { display: grid; gap: 10px; }
+  .sr-muted, .sr-hint { color: var(--text-main); opacity: 0.68; }
+  .sr-hint { font-size: 13px; line-height: 1.55; }
+  .sr-upload-card, .sr-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .sr-actions .btn[disabled],
+  .sr-upload-card .btn[disabled] { cursor: not-allowed; opacity: 0.6; box-shadow: none; }
   @media (max-width: 768px) {
     .sr-grid { grid-template-columns: 1fr; }
   }

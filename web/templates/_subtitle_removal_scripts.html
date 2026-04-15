@@ -1,13 +1,13 @@
 <script>
   (function () {
     if (typeof window === "undefined" || !window.io) return;
+    var taskId = {{ task_id | default('') | tojson }};
+    if (!taskId) return;
     var socket = window.io();
-    socket.emit("join_subtitle_removal_task", {task_id: "{{ task_id | default('') }}"});
-    var joinBtn = document.getElementById("join-subtitle-removal-task");
-    if (joinBtn) {
-      joinBtn.addEventListener("click", function () {
-        socket.emit("join_subtitle_removal_task", {task_id: "{{ task_id | default('') }}"});
-      });
-    }
+    var joinFn = function () {
+      socket.emit("join_subtitle_removal_task", { task_id: taskId });
+    };
+    joinFn();
+    socket.on("connect", joinFn);
   })();
 </script>

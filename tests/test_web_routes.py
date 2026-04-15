@@ -179,12 +179,16 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     detail_response = authed_client_no_db.get("/subtitle-removal/sr-page")
 
     assert upload_response.status_code == 200
-    assert "字幕移除" in upload_response.get_data(as_text=True)
+    upload_body = upload_response.get_data(as_text=True)
+    assert "字幕移除" in upload_body
+    assert "if (!taskId) return;" in upload_body
     assert detail_response.status_code == 200
     detail_body = detail_response.get_data(as_text=True)
     assert "全屏去除" in detail_body
     assert "框选去除" in detail_body
     assert "join_subtitle_removal_task" in detail_body
+    assert 'socket.on("connect", joinFn);' in detail_body
+    assert "连接任务房间" not in detail_body
 
 
 def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
