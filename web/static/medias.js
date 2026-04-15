@@ -140,7 +140,7 @@
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
         <td class="name"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
-        <td class="mono ellipsis" title="${escapeHtml(p.product_code || '')}">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
+        <td class="mono ellipsis" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
