@@ -1,4 +1,4 @@
-"""视频创作模块 Flask 蓝图：上传参考视频 → Seedance 生成新视频。"""
+"""视频创作模块 Flask 蓝图：Seedance 2.0 — 文案+视频+图片+音频 → 生成新视频。"""
 from __future__ import annotations
 
 import json
@@ -12,10 +12,8 @@ from flask_login import login_required, current_user
 
 from appcore.api_keys import resolve_key
 from appcore.settings import get_retention_hours
-from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute, get_conn
-from appcore.events import EventBus, Event
+from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from config import UPLOAD_DIR, OUTPUT_DIR
-from pipeline.keyframe import extract_keyframes
 from pipeline.storage import upload_file as tos_upload
 from web.extensions import socketio
 
@@ -73,53 +71,98 @@ def detail_page(task_id: str):
 @bp.route("/api/video-creation/upload", methods=["POST"])
 @login_required
 def upload():
-    """上传参考视频（必填）+ 可选参考图片/产品信息，创建项目。"""
-    file = request.files.get("video")
-    if not file or not file.filename:
-        return jsonify(error="请上传参考视频"), 400
+    """接收 prompt + 可选视频/图片/音频，创建 Seedance 2.0 项目。"""
+    prompt = (request.form.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify(error="请输入文案"), 400
+    if len(prompt) > 2000:
+        return jsonify(error="文案不能超过 2000 字"), 400
 
-    from web.upload_util import validate_video_extension
-    if not validate_video_extension(file.filename):
-        return jsonify(error="不支持的视频格式"), 400
+    # 图片（0-9）
+    images = request.files.getlist("images")
+    images = [f for f in images if f and f.filename]
+    if len(images) > 9:
+        return jsonify(error="图片最多 9 张"), 400
+
+    # 视频（0-1）
+    video_file = request.files.get("video")
+    if video_file and not video_file.filename:
+        video_file = None
+
+    # 音频（0-1）
+    audio_file = request.files.get("audio")
+    if audio_file and not audio_file.filename:
+        audio_file = None
+
+    # 配置
+    ratio = request.form.get("ratio", "9:16")
+    duration = int(request.form.get("duration", 5))
+    generate_audio = request.form.get("generate_audio", "true").lower() not in ("false", "0", "off")
+    watermark = request.form.get("watermark", "false").lower() in ("true", "1", "on")
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
 
+    from web.upload_util import secure_filename_component, validate_video_extension, validate_image_extension
+
     # 保存视频
-    video_filename = file.filename
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{video_filename}")
-    file.save(video_path)
+    video_path = None
+    video_filename = None
+    if video_file:
+        if not validate_video_extension(video_file.filename):
+            return jsonify(error="不支持的视频格式"), 400
+        video_filename = video_file.filename
+        video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{secure_filename_component(video_filename)}")
+        video_file.save(video_path)
 
-    # 缩略图
-    thumbnail_path = _extract_thumbnail(video_path, task_dir)
+    # 保存图片
+    image_paths = []
+    for idx, img in enumerate(images):
+        if not validate_image_extension(img.filename):
+            return jsonify(error=f"图片 {img.filename} 格式不支持"), 400
+        safe_name = secure_filename_component(img.filename)
+        img_path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
+        img.save(img_path)
+        image_paths.append(img_path)
 
-    # 可选：参考图片
-    ref_image_path = None
-    ref_image = request.files.get("ref_image")
-    if ref_image and ref_image.filename:
-        from web.upload_util import secure_filename_component
-        safe_name = secure_filename_component(ref_image.filename)
-        ref_image_path = os.path.join(task_dir, f"ref_{safe_name}")
-        ref_image.save(ref_image_path)
+    # 保存音频
+    audio_path = None
+    if audio_file:
+        safe_name = secure_filename_component(audio_file.filename)
+        audio_path = os.path.join(UPLOAD_DIR, f"{task_id}_audio_{safe_name}")
+        audio_file.save(audio_path)
 
-    display_name = os.path.splitext(video_filename)[0]
+    # 缩略图：优先视频首帧，其次第一张图片
+    thumbnail_path = None
+    if video_path and os.path.exists(video_path):
+        thumbnail_path = _extract_thumbnail(video_path, task_dir)
+    elif image_paths:
+        thumbnail_path = image_paths[0]
 
-    # 构建初始状态
+    # display_name
+    if video_filename:
+        display_name = os.path.splitext(video_filename)[0]
+    else:
+        display_name = prompt[:30].replace("\n", " ").replace("\r", "")
+
+    original_filename = video_filename or (images[0].filename if images else "")
+
     state = {
-        "video_path": video_path,
         "task_dir": task_dir,
-        "original_filename": video_filename,
         "display_name": display_name,
-        "ref_image_path": ref_image_path,
-        "product_info": request.form.get("product_info", ""),
-        "keyframes": [],
+        "prompt": prompt,
+        "video_path": video_path,
+        "image_paths": image_paths,
+        "audio_path": audio_path,
+        "ratio": ratio,
+        "duration": duration,
+        "generate_audio": generate_audio,
+        "watermark": watermark,
         "steps": {
-            "keyframe": "pending",
+            "upload": "done",
             "generate": "pending",
         },
-        "prompt": "",
-        "duration": 5,
         "seedance_task_id": None,
         "result_video_url": None,
         "result_video_path": None,
@@ -131,130 +174,87 @@ def upload():
         "status, task_dir, state_json, created_at, expires_at) "
         "VALUES (%s, %s, 'video_creation', %s, %s, %s, 'uploaded', %s, %s, "
         "NOW(), DATE_ADD(NOW(), INTERVAL %s HOUR))",
-        (task_id, current_user.id, video_filename, display_name,
+        (task_id, current_user.id, original_filename, display_name,
          thumbnail_path, task_dir, json.dumps(state, ensure_ascii=False),
          get_retention_hours("video_creation")),
     )
 
-    # 异步抽帧
-    eventlet.spawn(_do_keyframe, task_id, video_path, task_dir)
-
-    return jsonify({"id": task_id}), 201
-
-
-def _do_keyframe(task_id: str, video_path: str, task_dir: str):
-    """异步抽取关键帧。"""
-    try:
-        _update_state(task_id, {"steps.keyframe": "running"})
-        _emit_to_task(task_id, EVT_VC_STEP, {"step": "keyframe", "status": "running"})
-
-        frames_dir = os.path.join(task_dir, "keyframes")
-        keyframes = extract_keyframes(video_path, frames_dir, max_frames=6)
-
-        _update_state(task_id, {"keyframes": keyframes, "steps.keyframe": "done"})
-        _emit_to_task(task_id, EVT_VC_STEP, {
-            "step": "keyframe", "status": "done",
-            "keyframes": [os.path.basename(f) for f in keyframes],
-        })
-    except Exception as e:
-        log.exception("[VC] 抽帧失败: %s", task_id)
-        _update_state(task_id, {"steps.keyframe": "error"})
-        _emit_to_task(task_id, EVT_VC_ERROR, {"message": f"抽帧失败: {e}"})
-
-
-@bp.route("/api/video-creation/<task_id>/generate", methods=["POST"])
-@login_required
-def generate(task_id: str):
-    """发起 Seedance 视频生成。"""
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
-    if not row:
-        return jsonify(error="not found"), 404
-
-    state = json.loads(row.get("state_json") or "{}")
-
-    body = request.get_json(silent=True) or {}
-    prompt = (body.get("prompt") or "").strip()
-    duration = int(body.get("duration", 5))
-    keyframe_index = body.get("keyframe_index", 0)  # 用哪一帧作为参考图
-
-    if not prompt:
-        return jsonify(error="请输入提示词"), 400
-
-    # 获取 API Key
+    # 异步生成
     api_key = resolve_key(current_user.id, "seedance", "SEEDANCE_API_KEY")
     if not api_key:
         return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
 
-    # 准备参考图片 URL
-    image_url = None
-    # 优先用用户上传的参考图
-    if state.get("ref_image_path") and os.path.exists(state["ref_image_path"]):
-        image_url = tos_upload(state["ref_image_path"], expires=3600)
-    # 否则用关键帧
-    elif state.get("keyframes") and keyframe_index < len(state["keyframes"]):
-        kf_path = state["keyframes"][keyframe_index]
-        if os.path.exists(kf_path):
-            image_url = tos_upload(kf_path, expires=3600)
+    eventlet.spawn(_do_generate_v2, task_id, api_key, state)
 
-    # 更新状态
-    _update_state(task_id, {
-        "prompt": prompt,
-        "duration": duration,
-        "steps.generate": "running",
-    })
-    db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
-
-    # 异步生成
-    eventlet.spawn(_do_generate, task_id, api_key, prompt, image_url, duration, state.get("task_dir", ""))
-
-    return jsonify({"status": "started"})
+    return jsonify({"id": task_id}), 201
 
 
-def _do_generate(task_id: str, api_key: str, prompt: str, image_url: str | None,
-                 duration: int, task_dir: str):
-    """异步执行 Seedance 视频生成。"""
-    from pipeline.seedance import generate_video
+def _do_generate_v2(task_id: str, api_key: str, state: dict):
+    """异步执行 Seedance 2.0 视频生成。"""
+    from pipeline.seedance import generate_video_v2
+
+    task_dir = state.get("task_dir", "")
 
     try:
-        _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": "已提交生成任务..."})
+        _update_state(task_id, {"steps.generate": "running"})
+        db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
+        _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": "上传素材到云存储..."})
+
+        # 上传本地文件到 TOS 获取公网 URL
+        video_url = None
+        if state.get("video_path") and os.path.exists(state["video_path"]):
+            video_url = tos_upload(state["video_path"], expires=86400)
+
+        image_urls = []
+        for img_path in (state.get("image_paths") or []):
+            if os.path.exists(img_path):
+                image_urls.append(tos_upload(img_path, expires=86400))
+
+        audio_url = None
+        if state.get("audio_path") and os.path.exists(state["audio_path"]):
+            audio_url = tos_upload(state["audio_path"], expires=86400)
+
+        _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": "已提交生成任务，等待结果..."})
 
         def on_progress(status, message):
             _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": message})
 
-        result = generate_video(
+        result = generate_video_v2(
             api_key=api_key,
-            prompt=prompt,
-            image_url=image_url,
-            duration=duration,
+            prompt=state["prompt"],
+            video_url=video_url,
+            image_urls=image_urls or None,
+            audio_url=audio_url,
+            ratio=state.get("ratio", "9:16"),
+            duration=state.get("duration", 5),
+            generate_audio=state.get("generate_audio", True),
+            watermark=state.get("watermark", False),
             on_progress=on_progress,
         )
 
-        video_url = result.get("video_url", "")
+        video_result_url = result.get("video_url", "")
         seedance_task_id = result.get("task_id", "")
 
-        # 下载视频到本地
+        # 下载生成的视频到本地
         local_video_path = None
-        if video_url:
+        if video_result_url:
             import requests as req
             local_video_path = os.path.join(task_dir, "generated_video.mp4")
-            resp = req.get(video_url, timeout=120)
+            resp = req.get(video_result_url, timeout=120)
             resp.raise_for_status()
             with open(local_video_path, "wb") as f:
                 f.write(resp.content)
 
         _update_state(task_id, {
             "seedance_task_id": seedance_task_id,
-            "result_video_url": video_url,
+            "result_video_url": video_result_url,
             "result_video_path": local_video_path,
             "steps.generate": "done",
         })
         db_execute("UPDATE projects SET status = 'done' WHERE id = %s", (task_id,))
 
         _emit_to_task(task_id, EVT_VC_DONE, {
-            "video_url": video_url,
+            "video_url": video_result_url,
             "local_path": os.path.basename(local_video_path) if local_video_path else None,
         })
 
@@ -263,23 +263,6 @@ def _do_generate(task_id: str, api_key: str, prompt: str, image_url: str | None,
         _update_state(task_id, {"steps.generate": "error"})
         db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
         _emit_to_task(task_id, EVT_VC_ERROR, {"message": f"视频生成失败: {e}"})
-
-
-@bp.route("/api/video-creation/<task_id>/keyframe/<int:index>")
-@login_required
-def get_keyframe(task_id: str, index: int):
-    """获取关键帧图片。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation'",
-        (task_id, current_user.id),
-    )
-    if not row:
-        return "Not Found", 404
-    state = json.loads(row.get("state_json") or "{}")
-    keyframes = state.get("keyframes", [])
-    if index >= len(keyframes):
-        return "Not Found", 404
-    return send_file(keyframes[index])
 
 
 @bp.route("/api/video-creation/<task_id>/result-video")
@@ -297,6 +280,39 @@ def get_result_video(task_id: str):
     if not path or not os.path.exists(path):
         return "Not Found", 404
     return send_file(path, as_attachment=True, download_name="generated_video.mp4")
+
+
+@bp.route("/api/video-creation/<task_id>/asset/<kind>/<int:idx>")
+@login_required
+def get_asset(task_id: str, kind: str, idx: int):
+    """获取任务素材文件（kind = video / image / audio，idx 对 image 为 0-8，其余为 0）。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation'",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return "Not Found", 404
+    state = json.loads(row.get("state_json") or "{}")
+
+    if kind == "video":
+        if idx != 0:
+            return "Not Found", 404
+        path = state.get("video_path")
+    elif kind == "image":
+        paths = state.get("image_paths", [])
+        if idx >= len(paths):
+            return "Not Found", 404
+        path = paths[idx]
+    elif kind == "audio":
+        if idx != 0:
+            return "Not Found", 404
+        path = state.get("audio_path")
+    else:
+        return "Not Found", 404
+
+    if not path or not os.path.exists(path):
+        return "Not Found", 404
+    return send_file(path)
 
 
 @bp.route("/api/video-creation/<task_id>", methods=["DELETE"])
@@ -321,7 +337,7 @@ def delete(task_id: str):
 # ── 工具函数 ──
 
 def _update_state(task_id: str, updates: dict):
-    """更新 state_json 中的字段，支持点号路径（如 steps.keyframe）。"""
+    """更新 state_json 中的字段，支持点号路径（如 steps.generate）。"""
     row = db_query_one("SELECT state_json FROM projects WHERE id = %s", (task_id,))
     if not row:
         return

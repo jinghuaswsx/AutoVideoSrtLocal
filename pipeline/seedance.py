@@ -200,3 +200,137 @@ def generate_video(
     result = poll_video_task(api_key, task_id, on_progress=on_progress)
     result["task_id"] = task_id
     return result
+
+
+# ── Seedance 2.0 ──
+
+DEFAULT_MODEL_V2 = "doubao-seedance-2-0-260128"
+
+
+def create_video_task_v2(
+    api_key: str,
+    prompt: str,
+    video_url: str | None = None,
+    image_urls: list[str] | None = None,
+    audio_url: str | None = None,
+    ratio: str = "9:16",
+    duration: int = 5,
+    generate_audio: bool = True,
+    watermark: bool = False,
+    model: str = DEFAULT_MODEL_V2,
+) -> str:
+    """提交 Seedance 2.0 视频生成任务，返回 task_id。
+
+    Args:
+        api_key: 火山方舟 API Key
+        prompt: 文案（最多 2000 字）
+        video_url: 参考视频公网 URL（最多 1 个）
+        image_urls: 参考图片公网 URL 列表（最多 9 个）
+        audio_url: 参考音频公网 URL（最多 1 个）
+        ratio: 视频比例，如 "9:16" / "16:9" / "1:1"
+        duration: 视频时长（秒）
+        generate_audio: 是否生成音频
+        watermark: 是否加水印
+        model: 模型 ID
+
+    Returns:
+        task_id 字符串
+
+    Raises:
+        ValueError: prompt 超 2000 字或 image_urls 超 9 个
+    """
+    if len(prompt) > 2000:
+        raise ValueError(f"文案不能超过 2000 字（当前 {len(prompt)} 字）")
+    if image_urls and len(image_urls) > 9:
+        raise ValueError(f"图片最多 9 张（当前 {len(image_urls)} 张）")
+
+    content: list[dict] = [{"type": "text", "text": prompt.strip()}]
+
+    if video_url:
+        content.append({
+            "type": "video_url",
+            "video_url": {"url": video_url},
+            "role": "reference_video",
+        })
+
+    for url in (image_urls or []):
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": url},
+            "role": "reference_image",
+        })
+
+    if audio_url:
+        content.append({
+            "type": "audio_url",
+            "audio_url": {"url": audio_url},
+            "role": "reference_audio",
+        })
+
+    payload = {
+        "model": model,
+        "content": content,
+        "generate_audio": generate_audio,
+        "ratio": ratio,
+        "duration": duration,
+        "watermark": watermark,
+    }
+
+    log.info(
+        "[Seedance2] 提交任务: model=%s, prompt=%s, images=%d, has_video=%s, has_audio=%s",
+        model, prompt[:80], len(image_urls or []), bool(video_url), bool(audio_url),
+    )
+
+    resp = requests.post(
+        f"{API_BASE}/contents/generations/tasks",
+        json=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    task_id = data.get("id") or data.get("task_id")
+    if not task_id:
+        raise RuntimeError(f"Seedance 2.0 未返回 task_id: {data}")
+
+    log.info("[Seedance2] 任务已提交: task_id=%s", task_id)
+    return task_id
+
+
+def generate_video_v2(
+    api_key: str,
+    prompt: str,
+    video_url: str | None = None,
+    image_urls: list[str] | None = None,
+    audio_url: str | None = None,
+    ratio: str = "9:16",
+    duration: int = 5,
+    generate_audio: bool = True,
+    watermark: bool = False,
+    model: str = DEFAULT_MODEL_V2,
+    on_progress: callable = None,
+) -> dict:
+    """Seedance 2.0 一站式调用：提交任务 + 轮询等待 + 返回结果。
+
+    Returns:
+        dict: {"task_id": "...", "video_url": "...", "raw": {...}}
+    """
+    task_id = create_video_task_v2(
+        api_key=api_key,
+        prompt=prompt,
+        video_url=video_url,
+        image_urls=image_urls,
+        audio_url=audio_url,
+        ratio=ratio,
+        duration=duration,
+        generate_audio=generate_audio,
+        watermark=watermark,
+        model=model,
+    )
+    result = poll_video_task(api_key, task_id, on_progress=on_progress)
+    result["task_id"] = task_id
+    return result

@@ -12,47 +12,40 @@
 .vc-card { background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 14px; padding: 20px; min-width: 0; overflow: hidden; }
 .vc-card-title { font-size: 15px; font-weight: 700; color: var(--text-main); margin-bottom: 14px; }
 
-/* 关键帧 */
-.vc-keyframes { display: flex; gap: 8px; flex-wrap: wrap; }
-.vc-kf { width: 100px; height: 56px; border-radius: 8px; overflow: hidden; border: 2px solid var(--border-main); cursor: pointer; transition: border-color .15s; position: relative; flex-shrink: 0; }
-.vc-kf.selected { border-color: var(--primary-color); box-shadow: 0 0 8px rgba(59,130,246,0.3); }
-.vc-kf img { width: 100%; height: 100%; object-fit: cover; }
-.vc-kf-badge { position: absolute; top: 2px; right: 2px; background: var(--primary-color); color: #fff; font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 700; }
-.vc-kf-loading { color: #9ca3af; font-size: 13px; padding: 20px; }
+/* 素材展示 */
+.vc-assets { display: flex; flex-direction: column; gap: 14px; }
+.vc-asset-section { }
+.vc-asset-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
 
-/* 提示词 */
-.vc-prompt { width: 100%; min-height: 120px; padding: 14px; border: 1.5px solid var(--border-main); border-radius: 10px; font-size: 14px; line-height: 1.7; resize: vertical; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
-.vc-prompt:focus { outline: none; border-color: var(--primary-color); }
+/* 视频素材 */
+.vc-asset-video { width: 100%; max-height: 200px; border-radius: 10px; background: #000; display: block; }
 
-/* 配置 */
-.vc-config { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
-.vc-config-item { flex: 1; min-width: 120px; }
-.vc-config-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
-.vc-select { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border-main); border-radius: 8px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
+/* 图片列表 */
+.vc-asset-images { display: flex; gap: 8px; flex-wrap: wrap; }
+.vc-asset-img { width: 80px; height: 80px; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border-main); flex-shrink: 0; }
+.vc-asset-img img { width: 100%; height: 100%; object-fit: cover; }
 
-/* 产品信息（只读展示） */
-.vc-product-info { font-size: 13px; color: #9ca3af; line-height: 1.6; white-space: pre-wrap; word-break: break-word; padding: 10px 14px; background: var(--bg-body); border-radius: 8px; }
+/* 音频 */
+.vc-asset-audio { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-body); border-radius: 8px; font-size: 13px; color: var(--text-main); }
+.vc-asset-audio-icon { font-size: 20px; }
 
-/* 生成按钮 */
-.vc-gen-btn { width: 100%; padding: 12px; border: none; border-radius: 10px; background: var(--primary-gradient); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .2s; }
-.vc-gen-btn:hover { opacity: 0.9; box-shadow: 0 4px 16px rgba(59,130,246,0.3); }
-.vc-gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 文案 */
+.vc-prompt-text { font-size: 13px; color: var(--text-main); line-height: 1.7; white-space: pre-wrap; word-break: break-word; padding: 12px 14px; background: var(--bg-body); border-radius: 8px; max-height: 180px; overflow-y: auto; }
 
-/* 结果区 */
-.vc-result-empty { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 14px; }
-.vc-result-video { width: 100%; border-radius: 10px; background: #000; }
-.vc-result-actions { display: flex; gap: 10px; margin-top: 14px; }
+/* 配置摘要 */
+.vc-config-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.vc-config-badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--bg-body); border: 1.5px solid var(--border-main); color: var(--text-main); font-weight: 600; }
 
 /* 步骤状态 */
 .vc-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .vc-step { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; background: var(--bg-body); }
 .vc-step-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-.vc-step-icon.pending { background: var(--bg-body); color: #9ca3af; }
+.vc-step-icon.pending { background: var(--bg-body); color: #9ca3af; border: 1.5px solid var(--border-main); }
 .vc-step-icon.running { background: rgba(59,130,246,0.2); color: #3b82f6; }
 .vc-step-icon.done { background: rgba(22,163,74,0.2); color: #22c55e; }
 .vc-step-icon.error { background: rgba(239,68,68,0.15); color: #ef4444; }
 .vc-step-name { font-size: 13px; font-weight: 600; color: var(--text-main); }
-.vc-step-msg { font-size: 12px; color: #9ca3af; margin-left: auto; }
+.vc-step-msg { font-size: 12px; color: #9ca3af; margin-left: auto; max-width: 220px; text-align: right; }
 
 /* Loading */
 .vc-loading { text-align: center; padding: 40px; display: none; }
@@ -61,88 +54,112 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 .vc-loading-text { margin-top: 12px; font-size: 13px; color: #9ca3af; }
 
-/* 警告 */
-.vc-warning { background: rgba(245,158,11,0.1); border: 1.5px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #d97706; margin-bottom: 12px; line-height: 1.5; }
+/* 结果区 */
+.vc-result-empty { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 14px; }
+.vc-result-video { width: 100%; border-radius: 10px; background: #000; }
+.vc-result-actions { display: flex; gap: 10px; margin-top: 14px; }
 {% endblock %}
 
 {% block content %}
 <a href="/video-creation" class="vc-back">&larr; 返回列表</a>
 
 <div class="vc-layout">
-  <!-- 左侧：配置 -->
+  <!-- 左侧：输入素材 + 配置摘要 -->
   <div class="vc-left">
-    <!-- 参考视频信息 -->
+
+    <!-- 素材卡 -->
     <div class="vc-card">
-      <div class="vc-card-title">参考视频: {{ state.get('original_filename', '') }}</div>
+      <div class="vc-card-title">输入素材</div>
+      <div class="vc-assets">
 
-      <div class="vc-card-title" style="font-size:13px; margin-top:12px;">关键帧（选择一帧作为参考图）</div>
-      <div class="vc-keyframes" id="keyframesArea">
-        {% if state.get('keyframes') %}
-          {% for kf in state.get('keyframes', []) %}
-          <div class="vc-kf {% if loop.index0 == 0 %}selected{% endif %}" onclick="selectKeyframe({{ loop.index0 }})" data-index="{{ loop.index0 }}">
-            <img src="/api/video-creation/{{ task_id }}/keyframe/{{ loop.index0 }}" alt="">
-            {% if loop.index0 == 0 %}<div class="vc-kf-badge">参考</div>{% endif %}
-          </div>
-          {% endfor %}
-        {% elif state.get('steps', {}).get('keyframe') == 'running' %}
-          <div class="vc-kf-loading">正在抽取关键帧...</div>
-        {% else %}
-          <div class="vc-kf-loading">等待关键帧抽取</div>
+        {% if state.get('video_path') %}
+        <div class="vc-asset-section">
+          <div class="vc-asset-label">参考视频</div>
+          <video class="vc-asset-video" controls preload="metadata">
+            <source src="/api/video-creation/{{ task_id }}/asset/video/0" type="video/mp4">
+          </video>
+        </div>
         {% endif %}
-      </div>
 
-      {% if state.get('product_info') %}
-      <div class="vc-card-title" style="font-size:13px; margin-top:16px;">产品信息</div>
-      <div class="vc-product-info">{{ state.get('product_info', '') }}</div>
-      {% endif %}
+        {% if state.get('image_paths') %}
+        <div class="vc-asset-section">
+          <div class="vc-asset-label">参考图片（{{ state.get('image_paths')|length }} 张）</div>
+          <div class="vc-asset-images">
+            {% for i in range(state.get('image_paths', [])|length) %}
+            <div class="vc-asset-img">
+              <img src="/api/video-creation/{{ task_id }}/asset/image/{{ i }}" alt="" loading="lazy">
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if state.get('audio_path') %}
+        <div class="vc-asset-section">
+          <div class="vc-asset-label">参考音频</div>
+          <div class="vc-asset-audio">
+            <span class="vc-asset-audio-icon">&#127925;</span>
+            <span>已上传音频</span>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if not state.get('video_path') and not state.get('image_paths') and not state.get('audio_path') %}
+        <div style="font-size:13px; color:#9ca3af;">仅使用文案生成</div>
+        {% endif %}
+
+      </div>
     </div>
 
-    <!-- 提示词 + 配置 -->
+    <!-- 文案 -->
+    <div class="vc-card">
+      <div class="vc-card-title">文案</div>
+      <div class="vc-prompt-text">{{ state.get('prompt', '') }}</div>
+    </div>
+
+    <!-- 配置摘要 -->
     <div class="vc-card">
       <div class="vc-card-title">生成配置</div>
-      <div class="vc-warning">
-        Seedance 视频生成接口费用较高，请确认提示词后再点击生成。5 秒视频约消耗 0.5 元。
-      </div>
-      <textarea class="vc-prompt" id="promptInput" placeholder="描述你想要生成的视频效果...&#10;&#10;例如：无人机以极快速度穿越复杂障碍，带来沉浸式飞行体验">{{ state.get('prompt', '') }}</textarea>
-      <div class="vc-config">
-        <div class="vc-config-item">
-          <div class="vc-config-label">视频时长</div>
-          <select class="vc-select" id="durationSelect">
-            <option value="5" {% if state.get('duration', 5) == 5 %}selected{% endif %}>5 秒</option>
-            <option value="10" {% if state.get('duration') == 10 %}selected{% endif %}>10 秒</option>
-          </select>
-        </div>
+      <div class="vc-config-summary">
+        <span class="vc-config-badge">比例 {{ state.get('ratio', '9:16') }}</span>
+        <span class="vc-config-badge">时长 {{ state.get('duration', 5) }}s</span>
+        {% if state.get('generate_audio') %}
+        <span class="vc-config-badge">生成音频</span>
+        {% endif %}
+        {% if state.get('watermark') %}
+        <span class="vc-config-badge">含水印</span>
+        {% endif %}
       </div>
     </div>
 
-    <button class="vc-gen-btn" id="generateBtn" onclick="doGenerate()"
-            {% if state.get('steps', {}).get('generate') == 'running' %}disabled{% endif %}>
-      {% if state.get('steps', {}).get('generate') == 'running' %}生成中...{% else %}开始生成{% endif %}
-    </button>
   </div>
 
-  <!-- 右侧：结果 -->
+  <!-- 右侧：进度 + 结果 -->
   <div class="vc-right">
     <div class="vc-card" style="flex:1;">
       <div class="vc-card-title">处理进度</div>
       <div class="vc-steps" id="stepsArea">
-        <div class="vc-step" id="step-keyframe">
-          <div class="vc-step-icon {{ state.get('steps', {}).get('keyframe', 'pending') }}">
-            {% if state.get('steps', {}).get('keyframe') == 'done' %}✓{% elif state.get('steps', {}).get('keyframe') == 'running' %}⟳{% elif state.get('steps', {}).get('keyframe') == 'error' %}✕{% else %}1{% endif %}
+        <div class="vc-step" id="step-upload">
+          <div class="vc-step-icon {{ state.get('steps', {}).get('upload', 'done') }}">
+            {% if state.get('steps', {}).get('upload', 'done') == 'done' %}&#10003;{% else %}1{% endif %}
           </div>
-          <div class="vc-step-name">关键帧抽取</div>
-          <div class="vc-step-msg" id="step-keyframe-msg"></div>
+          <div class="vc-step-name">上传素材</div>
+          <div class="vc-step-msg" id="step-upload-msg">{{ '已完成' if state.get('steps', {}).get('upload', 'done') == 'done' else '' }}</div>
         </div>
         <div class="vc-step" id="step-generate">
           <div class="vc-step-icon {{ state.get('steps', {}).get('generate', 'pending') }}">
-            {% if state.get('steps', {}).get('generate') == 'done' %}✓{% elif state.get('steps', {}).get('generate') == 'running' %}⟳{% elif state.get('steps', {}).get('generate') == 'error' %}✕{% else %}2{% endif %}
+            {% set gs = state.get('steps', {}).get('generate', 'pending') %}
+            {% if gs == 'done' %}&#10003;{% elif gs == 'running' %}&#8635;{% elif gs == 'error' %}&#10005;{% else %}2{% endif %}
           </div>
           <div class="vc-step-name">视频生成</div>
-          <div class="vc-step-msg" id="step-generate-msg"></div>
+          <div class="vc-step-msg" id="step-generate-msg">
+            {% if state.get('steps', {}).get('generate') == 'done' %}生成完成{% elif state.get('steps', {}).get('generate') == 'running' %}生成中...{% elif state.get('steps', {}).get('generate') == 'error' %}生成失败{% endif %}
+          </div>
         </div>
       </div>
 
-      <div class="vc-loading" id="loadingArea" {% if state.get('steps', {}).get('generate') == 'running' %}style="display:block"{% endif %}>
+      <div class="vc-loading" id="loadingArea"
+        {% if state.get('steps', {}).get('generate') == 'running' %}style="display:block"{% endif %}>
         <div class="vc-spinner"></div>
         <div class="vc-loading-text" id="loadingText">正在生成视频，预计需要 1-5 分钟...</div>
       </div>
@@ -155,8 +172,8 @@
         <div class="vc-result-actions">
           <a href="/api/video-creation/{{ task_id }}/result-video" class="btn btn-primary" download>下载视频</a>
         </div>
-        {% elif not state.get('steps', {}).get('generate') == 'running' %}
-        <div class="vc-result-empty">配置提示词后点击「开始生成」</div>
+        {% elif state.get('steps', {}).get('generate') != 'running' and state.get('steps', {}).get('generate') != 'done' %}
+        <div class="vc-result-empty">正在等待生成任务启动...</div>
         {% endif %}
       </div>
     </div>
@@ -167,7 +184,6 @@
 {% block scripts %}
 <script>
 const TASK_ID = '{{ task_id }}';
-let selectedKeyframe = 0;
 
 // ── Socket.IO ──
 const socket = io();
@@ -175,21 +191,21 @@ socket.emit('join_task', {task_id: TASK_ID});
 
 socket.on('vc_step_update', data => {
   updateStep(data.step, data.status, data.message || '');
-  if (data.step === 'keyframe' && data.status === 'done') {
-    // 刷新页面获取关键帧
-    location.reload();
+  if (data.status === 'running') {
+    document.getElementById('loadingArea').style.display = 'block';
+    if (data.message) {
+      document.getElementById('loadingText').textContent = data.message;
+    }
   }
 });
 
 socket.on('vc_done', data => {
   document.getElementById('loadingArea').style.display = 'none';
-  document.getElementById('generateBtn').disabled = false;
-  document.getElementById('generateBtn').textContent = '开始生成';
   updateStep('generate', 'done', '生成完成');
 
   let html = '';
   if (data.video_url || data.local_path) {
-    html += `<video class="vc-result-video" controls autoplay>
+    html = `<video class="vc-result-video" controls autoplay>
       <source src="/api/video-creation/${TASK_ID}/result-video" type="video/mp4">
     </video>
     <div class="vc-result-actions">
@@ -201,8 +217,6 @@ socket.on('vc_done', data => {
 
 socket.on('vc_error', data => {
   document.getElementById('loadingArea').style.display = 'none';
-  document.getElementById('generateBtn').disabled = false;
-  document.getElementById('generateBtn').textContent = '开始生成';
   updateStep('generate', 'error', data.message || '生成失败');
   alert('错误: ' + (data.message || '视频生成失败'));
 });
@@ -213,64 +227,10 @@ function updateStep(step, status, message) {
   const icon = el.querySelector('.vc-step-icon');
   const msg = el.querySelector('.vc-step-msg');
   icon.className = 'vc-step-icon ' + status;
-  if (status === 'done') icon.textContent = '✓';
-  else if (status === 'running') icon.textContent = '⟳';
-  else if (status === 'error') icon.textContent = '✕';
+  if (status === 'done') icon.innerHTML = '&#10003;';
+  else if (status === 'running') icon.innerHTML = '&#8635;';
+  else if (status === 'error') icon.innerHTML = '&#10005;';
   if (msg) msg.textContent = message || '';
-}
-
-// ── 关键帧选择 ──
-function selectKeyframe(index) {
-  selectedKeyframe = index;
-  document.querySelectorAll('.vc-kf').forEach(el => {
-    const i = parseInt(el.dataset.index);
-    el.classList.toggle('selected', i === index);
-    const badge = el.querySelector('.vc-kf-badge');
-    if (badge) badge.remove();
-    if (i === index) {
-      const b = document.createElement('div');
-      b.className = 'vc-kf-badge';
-      b.textContent = '参考';
-      el.appendChild(b);
-    }
-  });
-}
-
-// ── 生成 ──
-async function doGenerate() {
-  const prompt = document.getElementById('promptInput').value.trim();
-  if (!prompt) { alert('请输入提示词'); return; }
-
-  if (!confirm('Seedance 视频生成费用较高，确定开始生成？')) return;
-
-  const btn = document.getElementById('generateBtn');
-  btn.disabled = true;
-  btn.textContent = '生成中...';
-  document.getElementById('loadingArea').style.display = 'block';
-  document.getElementById('resultArea').innerHTML = '';
-  updateStep('generate', 'running', '提交中...');
-
-  try {
-    const res = await fetch(`/api/video-creation/${TASK_ID}/generate`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        prompt,
-        duration: parseInt(document.getElementById('durationSelect').value),
-        keyframe_index: selectedKeyframe,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${res.status}`);
-    }
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = '开始生成';
-    document.getElementById('loadingArea').style.display = 'none';
-    updateStep('generate', 'error', e.message);
-    alert('提交失败: ' + e.message);
-  }
 }
 </script>
 {% endblock %}

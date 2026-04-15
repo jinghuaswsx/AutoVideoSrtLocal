@@ -11,14 +11,34 @@
 /* 上传对话框 */
 .vc-upload-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
 .vc-upload-overlay.show { display: flex; }
-.vc-upload-modal { background: var(--bg-card); border-radius: 16px; padding: 28px; width: 640px; max-width: 92vw; max-height: 85vh; overflow-y: auto; }
+.vc-upload-modal { background: var(--bg-card); border-radius: 16px; padding: 28px; width: 660px; max-width: 92vw; max-height: 90vh; overflow-y: auto; }
 .vc-upload-modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
 .vc-upload-field { margin-bottom: 16px; }
-.vc-upload-label { font-size: 13px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; }
-.vc-upload-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; }
+.vc-upload-label { font-size: 13px; font-weight: 600; color: #9ca3af; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.vc-upload-label .required { color: #ef4444; }
+.vc-upload-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-main); border-radius: 10px; font-size: 13px; background: var(--bg-body); color: var(--text-main); font-family: inherit; box-sizing: border-box; }
 .vc-upload-input:focus { outline: none; border-color: var(--primary-color); }
 .vc-upload-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 .vc-upload-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* 字数计数器 */
+.vc-char-counter { font-size: 11px; color: #9ca3af; text-align: right; margin-top: 4px; }
+.vc-char-counter.over { color: #ef4444; }
+
+/* 图片缩略图网格 */
+.vc-thumb-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.vc-thumb-item { width: 64px; height: 64px; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border-main); flex-shrink: 0; position: relative; }
+.vc-thumb-item img { width: 100%; height: 100%; object-fit: cover; }
+.vc-img-warning { font-size: 12px; color: #ef4444; margin-top: 4px; display: none; }
+
+/* 配置行 */
+.vc-config-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.vc-config-row .vc-upload-field { flex: 1; min-width: 120px; margin-bottom: 0; }
+
+/* 复选框组 */
+.vc-check-row { display: flex; gap: 20px; flex-wrap: wrap; }
+.vc-check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-main); cursor: pointer; }
+.vc-check-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer; }
 
 /* 项目卡片 */
 .vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
@@ -49,7 +69,7 @@
   <a href="/video-creation/{{ p.id }}" class="vc-card">
     <div class="vc-card-thumb">
       {% if p.thumbnail_path %}
-        <img src="/api/video-creation/{{ p.id }}/keyframe/0" alt="" onerror="this.style.display='none'">
+        <img src="/api/video-creation/{{ p.id }}/asset/image/0" alt="" onerror="this.style.display='none'">
       {% endif %}
       <div class="vc-card-placeholder">🎥</div>
     </div>
@@ -68,31 +88,82 @@
 {% else %}
 <div class="vc-empty">
   <div class="vc-empty-icon">🎥</div>
-  <div class="vc-empty-text">还没有视频创作项目，上传参考视频开始</div>
+  <div class="vc-empty-text">还没有视频创作项目，点击「新建项目」开始</div>
 </div>
 {% endif %}
 
-<!-- 上传弹窗 -->
+<!-- 新建项目弹窗 -->
 <div class="vc-upload-overlay" id="uploadOverlay">
   <div class="vc-upload-modal">
     <h3>新建视频创作</h3>
     <form id="uploadForm" enctype="multipart/form-data">
+
+      <!-- 文案 -->
       <div class="vc-upload-field">
-        <div class="vc-upload-label">参考视频（必填）</div>
-        <input type="file" name="video" accept="video/*" class="vc-upload-input" required>
+        <div class="vc-upload-label">文案 <span class="required">*</span></div>
+        <textarea name="prompt" id="promptInput" class="vc-upload-input" rows="5"
+          placeholder="描述视频内容、风格、情绪、镜头运动等...（最多 2000 字）" required></textarea>
+        <div class="vc-char-counter" id="charCounter">0 / 2000</div>
       </div>
+
+      <!-- 参考视频（可选，单个） -->
       <div class="vc-upload-field">
-        <div class="vc-upload-label">参考图片（可选）</div>
-        <input type="file" name="ref_image" accept="image/*" class="vc-upload-input">
-        <div class="vc-upload-hint">如果有产品图片可以上传，会作为生成参考</div>
+        <div class="vc-upload-label">参考视频（可选，最多 1 个）</div>
+        <input type="file" name="video" id="videoInput" accept="video/*" class="vc-upload-input">
+        <div class="vc-upload-hint">提供参考视频可帮助 AI 理解风格和运动方式</div>
       </div>
+
+      <!-- 参考图片（可选，最多 9 张） -->
       <div class="vc-upload-field">
-        <div class="vc-upload-label">产品信息（可选）</div>
-        <textarea name="product_info" class="vc-upload-input" rows="3" placeholder="产品名称、卖点、目标受众等..."></textarea>
+        <div class="vc-upload-label">参考图片（可选，最多 9 张）</div>
+        <input type="file" name="images" id="imagesInput" accept="image/*" multiple class="vc-upload-input">
+        <div class="vc-img-warning" id="imgWarning">最多 9 张，请删减后重新选择</div>
+        <div class="vc-thumb-grid" id="thumbGrid"></div>
       </div>
+
+      <!-- 参考音频（可选，单个） -->
+      <div class="vc-upload-field">
+        <div class="vc-upload-label">参考音频（可选，最多 1 个）</div>
+        <input type="file" name="audio" id="audioInput" accept="audio/*" class="vc-upload-input">
+        <div class="vc-upload-hint">提供音频可作为背景音乐或声音参考</div>
+      </div>
+
+      <!-- 视频配置 -->
+      <div class="vc-upload-field">
+        <div class="vc-upload-label">视频配置</div>
+        <div class="vc-config-row">
+          <div class="vc-upload-field">
+            <div class="vc-upload-label">比例</div>
+            <select name="ratio" class="vc-upload-input">
+              <option value="9:16" selected>9:16（竖版）</option>
+              <option value="16:9">16:9（横版）</option>
+              <option value="1:1">1:1（方形）</option>
+            </select>
+          </div>
+          <div class="vc-upload-field">
+            <div class="vc-upload-label">时长（秒）</div>
+            <input type="number" name="duration" class="vc-upload-input" value="5" min="3" max="12">
+          </div>
+        </div>
+      </div>
+
+      <!-- 复选框 -->
+      <div class="vc-upload-field">
+        <div class="vc-check-row">
+          <label class="vc-check-item">
+            <input type="checkbox" name="generate_audio" value="true" checked>
+            生成音频
+          </label>
+          <label class="vc-check-item">
+            <input type="checkbox" name="watermark" value="true">
+            加水印
+          </label>
+        </div>
+      </div>
+
       <div class="vc-upload-actions">
         <button type="button" class="btn btn-ghost" onclick="hideUpload()">取消</button>
-        <button type="submit" class="btn btn-primary" id="uploadBtn">上传并开始</button>
+        <button type="submit" class="btn btn-primary" id="uploadBtn">提交生成</button>
       </div>
     </form>
   </div>
@@ -102,18 +173,78 @@
 {% block scripts %}
 <script>
 function showUpload() { document.getElementById('uploadOverlay').classList.add('show'); }
-function hideUpload() { document.getElementById('uploadOverlay').classList.remove('show'); }
+function hideUpload() {
+  document.getElementById('uploadOverlay').classList.remove('show');
+  document.getElementById('uploadForm').reset();
+  document.getElementById('thumbGrid').innerHTML = '';
+  document.getElementById('imgWarning').style.display = 'none';
+  document.getElementById('charCounter').textContent = '0 / 2000';
+  document.getElementById('charCounter').classList.remove('over');
+}
 
 document.getElementById('uploadOverlay').addEventListener('click', e => {
   if (e.target === e.currentTarget) hideUpload();
 });
 
+// 字数计数器
+document.getElementById('promptInput').addEventListener('input', function() {
+  const len = this.value.length;
+  const counter = document.getElementById('charCounter');
+  counter.textContent = len + ' / 2000';
+  counter.classList.toggle('over', len > 2000);
+});
+
+// 图片缩略图预览
+document.getElementById('imagesInput').addEventListener('change', function() {
+  const files = Array.from(this.files);
+  const warning = document.getElementById('imgWarning');
+  const grid = document.getElementById('thumbGrid');
+  grid.innerHTML = '';
+
+  if (files.length > 9) {
+    warning.style.display = 'block';
+  } else {
+    warning.style.display = 'none';
+  }
+
+  const show = files.slice(0, 9);
+  show.forEach(file => {
+    const div = document.createElement('div');
+    div.className = 'vc-thumb-item';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    div.appendChild(img);
+    grid.appendChild(div);
+  });
+});
+
+// 表单提交
 document.getElementById('uploadForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const btn = document.getElementById('uploadBtn');
-  btn.disabled = true; btn.textContent = '上传中...';
 
+  const prompt = document.getElementById('promptInput').value.trim();
+  if (!prompt) { alert('请输入文案'); return; }
+  if (prompt.length > 2000) { alert('文案不能超过 2000 字'); return; }
+
+  const imagesInput = document.getElementById('imagesInput');
+  if (imagesInput.files.length > 9) { alert('图片最多 9 张，请重新选择'); return; }
+
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  // 处理 generate_audio / watermark checkbox
   const formData = new FormData(e.target);
+
+  // checkbox 未勾选时 FormData 不含该字段，需要手动设置 false
+  if (!e.target.querySelector('[name=generate_audio]').checked) {
+    formData.set('generate_audio', 'false');
+  }
+  if (!e.target.querySelector('[name=watermark]').checked) {
+    formData.set('watermark', 'false');
+  }
+
   try {
     const res = await fetch('/api/video-creation/upload', { method: 'POST', body: formData });
     if (!res.ok) {
@@ -122,9 +253,10 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
     }
     const data = await res.json();
     location.href = '/video-creation/' + data.id;
-  } catch (e) {
-    alert('上传失败: ' + e.message);
-    btn.disabled = false; btn.textContent = '上传并开始';
+  } catch (err) {
+    alert('提交失败: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = '提交生成';
   }
 });
 </script>
