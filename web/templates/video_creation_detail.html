@@ -356,7 +356,6 @@ async function addAsset(kind, input) {
 }
 
 async function doRegenerate() {
-  if (!confirm('确认重新生成？将消耗新的 Seedance 配额。')) return;
   const btn = document.getElementById('regenBtn');
   if (btn) { btn.disabled = true; btn.textContent = '提交中...'; }
   try {
