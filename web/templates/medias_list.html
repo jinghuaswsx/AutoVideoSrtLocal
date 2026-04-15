@@ -373,8 +373,23 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 .oc-center-body .oc-url-row { display:flex; gap:var(--oc-sp-2); justify-content:center; align-items:center; }
 .oc-center-body .oc-url-row .oc-input { flex:1; min-width:0; }
 .oc-center-body .oc-cover-square-480 { margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-cover-9-16 { margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-video-pick { margin-left:auto; margin-right:auto; }
 .oc-center-body .oc-cover-actions { justify-content:center; align-items:center; }
 .oc-center-body .oc-section-title { justify-content:center; text-align:center; }
+
+/* 编辑弹窗里 .oc-center-body 作用于 .oc-modal-wide（95vw）时，约束表单控件最大宽度并居中 */
+.oc-center-body .oc-field { max-width:520px; margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-row { justify-content:center; }
+.oc-center-body .oc-items-grid { justify-content:center; }
+.oc-center-body .oc-new-item { max-width:720px; margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-lang-tabs { justify-content:center; }
+.oc-center-body .oc-cw-grid,
+.oc-center-body .oc-cw-list { max-width:720px; margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-add-btn { max-width:720px; margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-upload-list { max-width:720px; margin-left:auto; margin-right:auto; }
+.oc-center-body .oc-en-cover-warn { max-width:720px; margin-left:auto; margin-right:auto; text-align:center; }
+
 .oc-modal-foot-center { justify-content:center !important; }
 
 /* ────────── 新增素材大框（视频封面 + 视频源 + 提交按钮） ────────── */
@@ -391,12 +406,16 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   padding-bottom:var(--oc-sp-2); border-bottom:1px dashed var(--oc-border);
 }
 .oc-new-item-body {
-  display:grid; grid-template-columns:260px 1fr; gap:var(--oc-sp-5); align-items:start;
+  display:grid; grid-template-columns:270px 270px; gap:var(--oc-sp-5);
+  align-items:start; justify-content:center;
 }
 @media (max-width: 720px) {
   .oc-new-item-body { grid-template-columns:1fr; }
 }
-.oc-new-item-col { display:flex; flex-direction:column; gap:var(--oc-sp-2); min-width:0; }
+.oc-new-item-col { display:flex; flex-direction:column; gap:var(--oc-sp-2); min-width:0; align-items:center; }
+.oc-new-item-col .oc-cover-9-16,
+.oc-new-item-col .oc-video-pick { align-self:center; }
+.oc-new-item-col .oc-url-row { width:100%; }
 .oc-new-item-label { font-size:12px; font-weight:600; color:var(--oc-fg); }
 .oc-new-item-label .req { color:var(--oc-danger); margin-left:2px; }
 .oc-new-item-footer {
@@ -406,7 +425,8 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 
 /* 视频源选择盒（类 9:16 但比例更自由：高度固定） */
 .oc-video-pick {
-  position:relative; width:100%; min-height:220px;
+  /* 与 .oc-cover-9-16 同宽同高（270×480 / 9:16），两个盒子在新素材大框里视觉对齐 */
+  position:relative; width:270px; height:480px; max-width:100%;
   border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md);
   background:var(--oc-bg); overflow:hidden; cursor:pointer;
   transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease);
