@@ -898,3 +898,98 @@ def test_medias_page_shrinks_edit_modal_video_cards_to_eighty_percent(authed_cli
     assert '.oc-edit-form #edItemsGrid {' in body
     assert 'grid-template-columns:repeat(auto-fill, 208px);' in body
     assert 'justify-content:flex-start;' in body
+
+
+def test_video_creation_detail_recovers_orphan_running_task(authed_client_no_db, monkeypatch):
+    import web.routes.video_creation as video_creation_routes
+
+    calls = []
+    row = {
+        "id": "vc-orphan",
+        "user_id": 1,
+        "type": "video_creation",
+        "state_json": json.dumps({"steps": {"generate": "error"}, "error": "任务因服务重启中断"}, ensure_ascii=False),
+    }
+
+    monkeypatch.setattr(
+        video_creation_routes,
+        "recover_project_if_needed",
+        lambda task_id, project_type: calls.append((task_id, project_type)),
+        raising=False,
+    )
+    monkeypatch.setattr(video_creation_routes, "db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/video-creation/vc-orphan")
+
+    assert response.status_code == 200
+    assert calls == [("vc-orphan", "video_creation")]
+    assert "生成失败" in response.get_data(as_text=True)
+
+
+def test_video_creation_regenerate_recovers_stale_running_before_restart(authed_client_no_db, monkeypatch):
+    import web.routes.video_creation as video_creation_routes
+
+    state = {
+        "task_dir": "output/vc-regenerate",
+        "prompt": "demo",
+        "steps": {"generate": "running"},
+        "result_video_url": None,
+        "result_video_path": None,
+        "seedance_task_id": None,
+    }
+    row = {"state_json": json.dumps(state, ensure_ascii=False)}
+    updates = []
+    spawned = []
+
+    def fake_recover(task_id, project_type):
+        payload = json.loads(row["state_json"])
+        payload["steps"]["generate"] = "error"
+        row["state_json"] = json.dumps(payload, ensure_ascii=False)
+
+    monkeypatch.setattr(video_creation_routes, "recover_project_if_needed", fake_recover, raising=False)
+    monkeypatch.setattr(video_creation_routes, "db_query_one", lambda sql, args: row)
+    monkeypatch.setattr(video_creation_routes, "db_execute", lambda sql, args=(): updates.append((sql, args)))
+    monkeypatch.setattr(video_creation_routes, "resolve_key", lambda *args, **kwargs: "seedance-key")
+    monkeypatch.setattr(video_creation_routes.eventlet, "spawn", lambda fn, *args: spawned.append((fn.__name__, args)))
+
+    response = authed_client_no_db.post("/api/video-creation/vc-regenerate/regenerate")
+
+    assert response.status_code == 200
+    assert updates
+    assert spawned and spawned[0][0] == "_run_generate_with_tracking"
+
+
+def test_task_api_get_recovers_interrupted_pipeline_before_return(authed_client_no_db, monkeypatch):
+    import web.routes.task as task_routes
+
+    store.create("task-orphan", "video.mp4", "output/task-orphan", user_id=1)
+    store.update(
+        "task-orphan",
+        status="running",
+        current_review_step="translate",
+        steps={
+            "extract": "done",
+            "asr": "done",
+            "alignment": "done",
+            "translate": "running",
+            "tts": "pending",
+            "subtitle": "pending",
+            "compose": "pending",
+            "export": "pending",
+        },
+    )
+
+    def fake_recover(task_id):
+        store.set_step(task_id, "translate", "error")
+        store.set_step_message(task_id, "translate", "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。")
+        store.update(task_id, status="error", current_review_step="")
+
+    monkeypatch.setattr(task_routes, "recover_task_if_needed", fake_recover, raising=False)
+
+    response = authed_client_no_db.get("/api/tasks/task-orphan")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "error"
+    assert payload["steps"]["translate"] == "error"
+    assert payload["current_review_step"] == ""

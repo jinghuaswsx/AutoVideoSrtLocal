@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from web import store
 from web.services import fr_pipeline_runner
@@ -49,6 +50,7 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
 @bp.route("/fr-translate")
 @login_required
 def index():
+    recover_all_interrupted_tasks()
     rows = db_query(
         """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
            FROM projects WHERE user_id = %s AND type = 'fr_translate' AND deleted_at IS NULL
@@ -63,6 +65,7 @@ def index():
 @bp.route("/fr-translate/<task_id>")
 @login_required
 def detail(task_id: str):
+    recover_project_if_needed(task_id, "fr_translate")
     row = db_query_one(
         "SELECT * FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
@@ -131,6 +134,7 @@ def upload_and_start():
 @bp.route("/api/fr-translate/<task_id>", methods=["GET"])
 @login_required
 def get_task(task_id):
+    recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
@@ -140,6 +144,7 @@ def get_task(task_id):
 @bp.route("/api/fr-translate/<task_id>/start", methods=["POST"])
 @login_required
 def start(task_id):
+    recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
@@ -258,6 +263,7 @@ RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle"
 @bp.route("/api/fr-translate/<task_id>/resume", methods=["POST"])
 @login_required
 def resume(task_id):
+    recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
