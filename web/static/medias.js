@@ -94,17 +94,27 @@
       return;
     }
     grid.innerHTML = `
-      <table class="oc-table">
+      <table class="oc-table" style="table-layout:fixed;">
+        <colgroup>
+          <col style="width:48px">
+          <col style="width:128px">
+          <col>
+          <col style="width:200px">
+          <col style="width:64px">
+          <col style="width:240px">
+          <col style="width:120px">
+          <col style="width:88px">
+        </colgroup>
         <thead>
           <tr>
-            <th style="width:56px">ID</th>
-            <th style="width:136px">主图</th>
+            <th>ID</th>
+            <th>主图</th>
             <th>产品名称</th>
-            <th style="width:200px">产品 ID</th>
-            <th style="width:72px">素材数</th>
-            <th style="width:236px">语种覆盖</th>
-            <th style="width:140px">修改时间</th>
-            <th style="width:96px">操作</th>
+            <th>产品 ID</th>
+            <th>素材数</th>
+            <th>语种覆盖</th>
+            <th>修改时间</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -129,8 +139,8 @@
       <tr class="oc-row${warn}" data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
-        <td class="name"><a href="#" data-pid="${p.id}">${escapeHtml(p.name)}</a></td>
-        <td class="mono">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
+        <td class="name"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
+        <td class="mono ellipsis" title="${escapeHtml(p.product_code || '')}">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
