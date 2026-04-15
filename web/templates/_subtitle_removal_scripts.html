@@ -19,6 +19,10 @@
     var stateResolution = document.getElementById("srStateResolution");
     var stateSelection = document.getElementById("srStateSelection");
     var stateHint = document.getElementById("srStateHint");
+    var resultPanel = document.getElementById("srResultPanel");
+    var resumeButton = document.getElementById("srResumeSubtitleRemoval");
+    var resubmitButton = document.getElementById("srResubmitSubtitleRemoval");
+    var deleteButton = document.getElementById("srDeleteSubtitleRemoval");
     var submitButton = document.getElementById("srSubmitSubtitleRemoval");
     var modeInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='remove_mode']"));
     var radioTiles = Array.prototype.slice.call(document.querySelectorAll(".sr-radio-tile"));
@@ -49,6 +53,18 @@
 
     function getMediaInfo() {
       return bootstrap.media_info || {};
+    }
+
+    function escapeHtml(text) {
+      return String(text || "").replace(/[&<>"']/g, function (ch) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[ch];
+      });
     }
 
     function getContainedImageRect(container, mediaInfo) {
@@ -150,6 +166,84 @@
       stateSelection.textContent = text;
     }
 
+    function getCurrentSelectionPayload() {
+      return selectionState.box || bootstrap.selection_box || null;
+    }
+
+    function getActionPayload() {
+      var payload = {
+        remove_mode: selectionState.mode,
+      };
+      if (selectionState.mode === "box") {
+        var box = getCurrentSelectionPayload();
+        if (box) {
+          payload.selection_box = box;
+        }
+      }
+      return payload;
+    }
+
+    function postJson(url, payload) {
+      return fetch(url, {
+        method: "POST",
+        headers: payload ? { "Content-Type": "application/json" } : {},
+        body: payload ? JSON.stringify(payload) : null,
+      }).then(function (response) {
+        if (!response.ok) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            throw new Error(data.error || "operation failed");
+          });
+        }
+        return response.status === 204 ? null : response.json().catch(function () { return null; });
+      });
+    }
+
+    function renderResultPanel(state) {
+      if (!resultPanel) {
+        return;
+      }
+      var taskStatus = (state && state.status) || "";
+      var providerTaskId = (state && state.provider_task_id) || "";
+      var resultTosKey = (state && state.result_tos_key) || "";
+      var previewUrl = (state && state.result_artifact_url) || "";
+      var downloadUrl = (state && state.result_download_url) || "";
+      var providerStatus = (state && state.provider_status) || "";
+      var providerMessage = (state && state.provider_emsg) || "";
+      var html = "";
+
+      if (taskStatus === "done" && resultTosKey) {
+        html = [
+          '<div class="sr-result-preview">',
+          '<video class="sr-result-video" controls playsinline src="' + previewUrl + '"></video>',
+          '</div>',
+          '<div class="sr-result-copy">',
+          '<div class="sr-hint">处理完成后可直接预览或下载。</div>',
+          '<div class="sr-action-row">',
+          '<a class="btn btn-primary" href="' + downloadUrl + '">下载结果</a>',
+          '</div>',
+          '</div>',
+        ].join("");
+      } else {
+        html = [
+          '<div class="sr-result-empty">',
+          '<div class="sr-selection-empty-title">' + escapeHtml(providerTaskId ? "任务仍在处理中" : "暂无处理结果") + '</div>',
+          '<div class="sr-hint">' + escapeHtml(providerMessage || providerStatus || "提交后会在这里显示预览和下载入口。") + '</div>',
+          '</div>',
+        ].join("");
+      }
+
+      resultPanel.innerHTML = html;
+      if (resumeButton) {
+        resumeButton.hidden = !(providerTaskId && taskStatus !== "done");
+      }
+      if (resubmitButton) {
+        resubmitButton.hidden = taskStatus === "deleted";
+      }
+      if (deleteButton) {
+        deleteButton.hidden = taskStatus === "deleted";
+      }
+    }
+
     function renderSubtitleRemovalState(state) {
       if (!state) {
         return;
@@ -195,6 +289,7 @@
           updateSelectionBoxDisplay(selectionBoxToOverlayRect(state.selection_box, imageRect, state.media_info || getMediaInfo()));
         }
       }
+      renderResultPanel(state);
     }
 
     function syncMode(nextMode) {
@@ -342,10 +437,59 @@
 
     if (submitButton) {
       submitButton.addEventListener("click", function () {
-        window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
-          remove_mode: selectionState.mode,
-          selection_box: selectionState.box,
-        });
+        var url = taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/submit" : "";
+        postJson(url, getActionPayload())
+          .then(function () {
+            return refreshSubtitleRemovalState();
+          })
+          .catch(function (error) {
+            window.alert(error.message || "提交失败");
+          });
+      });
+    }
+
+    if (resumeButton) {
+      resumeButton.addEventListener("click", function () {
+        var url = (bootstrap.resume_poll_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/resume-poll" : ""));
+        postJson(url, null)
+          .then(function () {
+            return refreshSubtitleRemovalState();
+          })
+          .catch(function (error) {
+            window.alert(error.message || "继续轮询失败");
+          });
+      });
+    }
+
+    if (resubmitButton) {
+      resubmitButton.addEventListener("click", function () {
+        var url = (bootstrap.resubmit_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/resubmit" : ""));
+        postJson(url, getActionPayload())
+          .then(function () {
+            return refreshSubtitleRemovalState();
+          })
+          .catch(function (error) {
+            window.alert(error.message || "重提失败");
+          });
+      });
+    }
+
+    if (deleteButton) {
+      deleteButton.addEventListener("click", function () {
+        if (!window.confirm("确认删除这个去字幕任务吗？")) {
+          return;
+        }
+        var url = (bootstrap.delete_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) : ""));
+        fetch(url, { method: "DELETE" })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("删除失败");
+            }
+            window.location.href = "/subtitle-removal";
+          })
+          .catch(function (error) {
+            window.alert(error.message || "删除失败");
+          });
       });
     }
 

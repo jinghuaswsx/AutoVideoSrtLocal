@@ -524,3 +524,143 @@ def test_subtitle_removal_submit_rejects_when_task_lock_is_held_and_does_not_res
     saved = store.get("sr-submit-locked")
     assert saved["status"] == "ready"
     assert saved["provider_task_id"] == ""
+
+
+def test_subtitle_removal_result_artifact_serves_local_result_file(tmp_path, authed_client_no_db):
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"result-video")
+    task = store.create_subtitle_removal(
+        "sr-result-artifact",
+        "uploads/source.mp4",
+        "output/sr-result-artifact",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update("sr-result-artifact", status="done", result_video_path=str(result_path))
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-result-artifact/artifact/result")
+
+    assert response.status_code == 200
+    assert response.data == b"result-video"
+
+
+def test_subtitle_removal_download_result_redirects_to_tos_when_local_file_missing(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-download",
+        "uploads/source.mp4",
+        "output/sr-download",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-download",
+        status="done",
+        result_tos_key="artifacts/1/sr-download/subtitle_removal/result.cleaned.mp4",
+        result_video_path="",
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.generate_signed_download_url", lambda key, expires=None: "https://tos.example/result.cleaned.mp4")
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-download/download/result")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "https://tos.example/result.cleaned.mp4"
+
+
+def test_subtitle_removal_resubmit_clears_previous_provider_state(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-resubmit",
+        "uploads/source.mp4",
+        "output/sr-resubmit",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-resubmit",
+        status="error",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+        remove_mode="box",
+        selection_box={"x1": 0, "y1": 1000, "x2": 720, "y2": 1180},
+        position_payload={"l": 0, "t": 1000, "w": 720, "h": 180},
+        provider_task_id="provider-task-1",
+        provider_status="failed",
+        provider_result_url="https://provider.example/result.mp4",
+        result_tos_key="artifacts/1/sr-resubmit/subtitle_removal/result.cleaned.mp4",
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.setdefault("task_id", task_id),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-resubmit/resubmit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    assert started["task_id"] == "sr-resubmit"
+    saved = store.get("sr-resubmit")
+    assert saved["provider_task_id"] == ""
+    assert saved["provider_status"] == "queued"
+    assert saved["provider_result_url"] == ""
+    assert saved["result_tos_key"] == ""
+    assert saved["result_video_path"] == ""
+    assert saved["remove_mode"] == "full"
+    assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
+    assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-resume",
+        "uploads/source.mp4",
+        "output/sr-resume",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update("sr-resume", status="running", provider_task_id="provider-task-1")
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.setdefault("task_id", task_id),
+    )
+
+    response = authed_client_no_db.post("/api/subtitle-removal/sr-resume/resume-poll")
+
+    assert response.status_code == 202
+    assert started["task_id"] == "sr-resume"
+
+
+def test_subtitle_removal_delete_soft_deletes_project_and_cleans_tos_keys(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-delete",
+        "uploads/source.mp4",
+        "output/sr-delete",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-delete",
+        source_tos_key="uploads/1/sr-delete/source.mp4",
+        result_tos_key="artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4",
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    deleted = []
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
+    monkeypatch.setattr("web.routes.subtitle_removal.db_execute", lambda *args, **kwargs: None)
+
+    response = authed_client_no_db.delete("/api/subtitle-removal/sr-delete")
+
+    assert response.status_code == 204
+    assert deleted == [
+        "uploads/1/sr-delete/source.mp4",
+        "artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4",
+    ]

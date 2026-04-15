@@ -6,9 +6,10 @@ import threading
 import uuid
 
 import config
-from flask import Blueprint, render_template, abort, jsonify, request, send_file, url_for
+from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
+from appcore import cleanup
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query_one as db_query_one
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -33,6 +34,7 @@ def _get_owned_task(task_id: str) -> dict:
         not task
         or task.get("_user_id") != current_user.id
         or task.get("type") != "subtitle_removal"
+        or (task.get("status") or "").strip() == "deleted"
     ):
         abort(404)
     return task
@@ -126,6 +128,23 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    next_steps = dict(task.get("steps") or {})
+    next_steps.update(
+        {
+            "prepare": "done",
+            "submit": "queued",
+            "poll": "pending",
+            "download_result": "pending",
+            "upload_result": "pending",
+        }
+    )
+    next_messages = dict(task.get("step_messages") or {})
+    next_messages.setdefault("prepare", "棣栧抚鎻愬彇鍜屽獟浣撲俊鎭В鏋愬凡瀹屾垚")
+    next_messages["submit"] = "等待后台提交去字幕任务"
+    next_messages["poll"] = ""
+    next_messages["download_result"] = ""
+    next_messages["upload_result"] = ""
+
     store.update(
         task_id,
         status="queued",
@@ -136,10 +155,15 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         provider_status="queued",
         provider_emsg="",
         provider_result_url="",
+        provider_raw={},
+        poll_attempts=0,
+        last_polled_at=None,
         result_video_path="",
         result_tos_key="",
         result_object_info={},
         error="",
+        steps=next_steps,
+        step_messages=next_messages,
     )
     store.set_step(task_id, "submit", "queued")
     store.set_step_message(task_id, "submit", "绛夊緟鍚庡彴鎻愪氦鍘诲瓧骞曚换鍔?")
@@ -172,6 +196,11 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "source_tos_key": task.get("source_tos_key") or "",
         "source_object_info": dict(task.get("source_object_info") or {}),
         "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=task_id) if thumbnail_path else "",
+        "result_artifact_url": url_for("subtitle_removal.get_result_artifact", task_id=task_id),
+        "result_download_url": url_for("subtitle_removal.download_result", task_id=task_id),
+        "resume_poll_url": url_for("subtitle_removal.resume_poll", task_id=task_id),
+        "resubmit_url": url_for("subtitle_removal.resubmit", task_id=task_id),
+        "delete_url": url_for("subtitle_removal.delete_task", task_id=task_id),
         "detail_url": url_for("subtitle_removal.detail_page", task_id=task_id),
         "state_api_url": url_for("subtitle_removal.get_state", task_id=task_id),
     }
@@ -355,3 +384,74 @@ def get_source_artifact(task_id: str):
     if not thumbnail_path or not os.path.exists(thumbnail_path):
         abort(404)
     return send_file(thumbnail_path, mimetype="image/jpeg")
+
+
+def _result_response(task: dict, *, as_attachment: bool = False):
+    result_video_path = (task.get("result_video_path") or "").strip()
+    if result_video_path and os.path.exists(result_video_path):
+        if as_attachment:
+            download_name = f"{(task.get('display_name') or task.get('original_filename') or task.get('id') or 'subtitle-removal').strip()}.cleaned.mp4"
+            return send_file(result_video_path, as_attachment=True, download_name=download_name)
+        return send_file(result_video_path, mimetype="video/mp4")
+
+    result_tos_key = (task.get("result_tos_key") or "").strip()
+    if result_tos_key:
+        return redirect(tos_clients.generate_signed_download_url(result_tos_key))
+    abort(404)
+
+
+@bp.route("/api/subtitle-removal/<task_id>/artifact/result", methods=["GET"])
+@login_required
+def get_result_artifact(task_id: str):
+    task = _get_owned_task(task_id)
+    return _result_response(task, as_attachment=False)
+
+
+@bp.route("/api/subtitle-removal/<task_id>/download/result", methods=["GET"])
+@login_required
+def download_result(task_id: str):
+    task = _get_owned_task(task_id)
+    return _result_response(task, as_attachment=True)
+
+
+@bp.route("/api/subtitle-removal/<task_id>/resume-poll", methods=["POST"])
+@login_required
+def resume_poll(task_id: str):
+    task = _get_owned_task(task_id)
+    if (task.get("status") or "").strip() == "done":
+        return jsonify({"error": "task is already finished"}), 409
+    if not (task.get("provider_task_id") or "").strip():
+        return jsonify({"error": "provider_task_id required"}), 400
+    subtitle_removal_runner.start(task_id, user_id=current_user.id)
+    return jsonify({"task_id": task_id, "status": "queued"}), 202
+
+
+@bp.route("/api/subtitle-removal/<task_id>/resubmit", methods=["POST"])
+@login_required
+def resubmit(task_id: str):
+    lock = _get_submit_lock(task_id)
+    if not lock.acquire(blocking=False):
+        return jsonify({"error": "submit already in progress"}), 409
+
+    try:
+        task = _get_owned_task(task_id)
+        if (task.get("status") or "").strip() in {"queued", "running"}:
+            return jsonify({"error": "task is already running"}), 409
+        body = request.get_json(silent=True) or {}
+        return _submit_locked(task_id, task, body)
+    finally:
+        lock.release()
+
+
+@bp.route("/api/subtitle-removal/<task_id>", methods=["DELETE"])
+@login_required
+def delete_task(task_id: str):
+    task = _get_owned_task(task_id)
+    for object_key in cleanup.collect_task_tos_keys(task):
+        try:
+            tos_clients.delete_object(object_key)
+        except Exception:
+            pass
+    db_execute("UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s", (task_id, current_user.id))
+    store.update(task_id, status="deleted")
+    return ("", 204)
