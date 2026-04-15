@@ -60,7 +60,7 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
     where.append("archived=%s")
     args.append(1 if archived else 0)
     if keyword:
-        where.append("(name LIKE %s OR color_people LIKE %s)")
+        where.append("(name LIKE %s OR product_code LIKE %s)")
         like = f"%{keyword}%"
         args.extend([like, like])
     where_sql = " AND ".join(where)
