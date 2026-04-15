@@ -316,6 +316,7 @@
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name, product_code: code,
+          cover_object_key: state.current.product.cover_object_key,
           copywritings: collectCopywritings(),
         }),
       });
