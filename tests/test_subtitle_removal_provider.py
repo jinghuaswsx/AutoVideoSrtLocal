@@ -98,3 +98,106 @@ def test_subtitle_removal_provider_requires_token(monkeypatch):
             video_name="demo",
             source_url="https://tos.example/source.mp4",
         )
+
+
+def test_subtitle_removal_provider_rejects_blank_url(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "   ")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="SUBTITLE_REMOVAL_PROVIDER_URL"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/source.mp4",
+        )
+
+
+def test_subtitle_removal_provider_wraps_request_exceptions(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+
+    def fake_post(*args, **kwargs):
+        raise provider.requests.RequestException("network down")
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="network down"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/source.mp4",
+        )
+
+
+def test_subtitle_removal_provider_wraps_invalid_json(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            raise ValueError("no json")
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="no json"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/source.mp4",
+        )
+
+
+def test_subtitle_removal_provider_rejects_nonzero_code(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 1, "msg": "failed"}
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="failed"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/source.mp4",
+        )
+
+
+def test_subtitle_removal_provider_rejects_empty_progress_data(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": []}
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="missing data"):
+        provider.query_progress("provider-task-1")

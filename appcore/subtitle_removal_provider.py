@@ -9,6 +9,13 @@ class SubtitleRemovalProviderError(RuntimeError):
     pass
 
 
+def _provider_url() -> str:
+    url = (config.SUBTITLE_REMOVAL_PROVIDER_URL or "").strip()
+    if not url:
+        raise SubtitleRemovalProviderError("SUBTITLE_REMOVAL_PROVIDER_URL is not configured")
+    return url
+
+
 def _headers() -> dict[str, str]:
     token = (config.SUBTITLE_REMOVAL_PROVIDER_TOKEN or "").strip()
     if not token:
@@ -17,14 +24,19 @@ def _headers() -> dict[str, str]:
 
 
 def _post(payload: dict) -> dict:
-    response = requests.post(
-        config.SUBTITLE_REMOVAL_PROVIDER_URL,
-        headers=_headers(),
-        json=payload,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.post(
+            _provider_url(),
+            headers=_headers(),
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        raise SubtitleRemovalProviderError(str(exc) or "subtitle removal provider request failed") from exc
+    except ValueError as exc:
+        raise SubtitleRemovalProviderError(str(exc) or "subtitle removal provider returned invalid JSON") from exc
     if not isinstance(data, dict):
         raise SubtitleRemovalProviderError("subtitle removal provider returned invalid payload")
     if data.get("code") != 0:
