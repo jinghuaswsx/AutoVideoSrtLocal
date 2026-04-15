@@ -28,6 +28,16 @@ def _get_owned_task(task_id: str) -> dict:
     return task
 
 
+def _media_info_is_ready(media_info: dict | None) -> bool:
+    info = media_info or {}
+    return bool(
+        int(info.get("width") or 0) > 0
+        and int(info.get("height") or 0) > 0
+        and float(info.get("duration") or 0.0) > 0
+        and (info.get("resolution") or "").strip()
+    )
+
+
 @bp.route("/subtitle-removal")
 @login_required
 def upload_page():
@@ -82,7 +92,10 @@ def complete_upload():
     original_filename = os.path.basename((body.get("original_filename") or "").strip())
     object_key = (body.get("object_key") or "").strip()
     content_type = (body.get("content_type") or "").strip()
-    file_size = int(body.get("file_size") or 0)
+    try:
+        file_size = int(body.get("file_size") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "file_size must be an integer"}), 400
 
     if not task_id or not original_filename or not object_key:
         return jsonify({"error": "task_id, original_filename and object_key required"}), 400
@@ -113,6 +126,14 @@ def complete_upload():
     object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
     media_info["file_size_mb"] = round(object_size / (1024 * 1024), 2) if object_size else 0.0
     thumbnail_path = extract_thumbnail(video_path, task_dir) or ""
+
+    if not _media_info_is_ready(media_info):
+        store.update(task_id, error="media probe failed", media_info=media_info)
+        return jsonify({"error": "Unable to read uploaded media info"}), 422
+    if not thumbnail_path or not os.path.exists(thumbnail_path):
+        store.update(task_id, error="thumbnail extraction failed", media_info=media_info)
+        return jsonify({"error": "Unable to extract first frame thumbnail"}), 422
+
     display_name = _default_display_name(original_filename)
 
     store.update(

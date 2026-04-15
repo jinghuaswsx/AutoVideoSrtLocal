@@ -1,4 +1,7 @@
 """Tests for appcore/task_state.py"""
+import sys
+import types
+
 import pytest
 import appcore.task_state as ts
 
@@ -53,6 +56,25 @@ def test_create_subtitle_removal_initializes_expected_shape():
     assert task["remove_mode"] == ""
     assert task["selection_box"] is None
     assert task["result_tos_key"] == ""
+
+
+def test_create_subtitle_removal_persists_project_type_in_db_upsert(monkeypatch):
+    captured = []
+    fake_db = types.SimpleNamespace(execute=lambda sql, args: captured.append((sql, args)))
+    monkeypatch.setitem(sys.modules, "appcore.db", fake_db)
+
+    ts.create_subtitle_removal(
+        "sr-db-type",
+        "uploads/source.mp4",
+        "output/sr-db-type",
+        original_filename="source.mp4",
+        user_id=9,
+    )
+
+    assert captured
+    sql, args = captured[0]
+    assert "type" in sql
+    assert "subtitle_removal" in args
 
 
 def test_get_returns_task():
