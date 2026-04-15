@@ -1,7 +1,6 @@
 <script>
   (function () {
     var bootstrap = window.subtitleRemovalBootstrap || {};
-    var uploadPage = document.querySelector("[data-subtitle-removal-page='upload']");
     var page = document.querySelector("[data-subtitle-removal-page='detail']");
     var uploadInput = document.getElementById("srUploadInput");
     var uploadButton = document.getElementById("srPickVideoButton");
@@ -195,7 +194,7 @@
     }
 
     function initUploadPage() {
-      if (!uploadPage || !uploadInput || !uploadButton || !uploadDropzone) {
+      if (!uploadInput || !uploadButton || !uploadDropzone) {
         return;
       }
       uploadButton.addEventListener("click", function (event) {

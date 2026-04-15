@@ -82,11 +82,13 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert 'type="file"' in template
     assert 'accept="video/*"' in template
     assert 'id="srPickVideoButton"' in template
+    assert 'data-subtitle-removal-page="upload"' in template
     assert 'disabled' not in template
     assert "/api/subtitle-removal/upload/bootstrap" in scripts
     assert "/api/subtitle-removal/upload/complete" in scripts
     assert 'xhr.open("PUT", bootstrapData.upload_url, true)' in scripts
     assert "window.location.href = `/subtitle-removal/${data.task_id}`;" in scripts
+    assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
