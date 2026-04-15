@@ -38,6 +38,36 @@ def _extract_thumbnail(video_path: str, output_dir: str) -> str | None:
     return extract_thumbnail(video_path, output_dir, scale="360:-2")
 
 
+# Seedance 2.0 单图像素上限 36_000_000（3840×9375 左右）
+_SEEDANCE_IMG_MAX_PIXELS = 36_000_000
+
+
+def _shrink_image_if_oversize(path: str) -> str:
+    """图像超过 Seedance 允许的最大像素数时，就地缩到上限内；返回最终路径。"""
+    try:
+        from PIL import Image
+    except ImportError:
+        return path
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            total = w * h
+            if total <= _SEEDANCE_IMG_MAX_PIXELS:
+                return path
+            ratio = (_SEEDANCE_IMG_MAX_PIXELS / total) ** 0.5
+            new_w = max(1, int(w * ratio))
+            new_h = max(1, int(h * ratio))
+            im2 = im.convert("RGB") if im.mode in ("RGBA", "P", "LA") else im
+            im2 = im2.resize((new_w, new_h), Image.LANCZOS)
+            ext = os.path.splitext(path)[1].lower()
+            save_kwargs = {"quality": 92} if ext in (".jpg", ".jpeg") else {}
+            im2.save(path, **save_kwargs)
+            log.info("[VC] 图像缩放: %s %dx%d -> %dx%d", path, w, h, new_w, new_h)
+    except Exception as e:
+        log.warning("[VC] 图像缩放失败，保持原图: %s (%s)", path, e)
+    return path
+
+
 # ── 页面路由 ──
 
 @bp.route("/video-creation")
@@ -208,6 +238,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         image_urls = []
         for img_path in (state.get("image_paths") or []):
             if os.path.exists(img_path):
+                _shrink_image_if_oversize(img_path)
                 image_urls.append(tos_upload(img_path, expires=86400))
 
         audio_url = None
