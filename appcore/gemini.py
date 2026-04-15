@@ -93,7 +93,24 @@ def _guess_mime(path: Path) -> str:
 
 
 def _upload_and_wait(client: genai.Client, path: Path) -> genai_types.File:
-    f = client.files.upload(file=str(path))
+    # google-genai SDK 会把文件名塞到 HTTP header；中文/非 ASCII 会触发
+    # UnicodeEncodeError（httpx headers 要求 ASCII）。为稳妥，总是拷贝到
+    # 一个 ASCII 安全的临时文件再上传。
+    import hashlib
+    import shutil
+    import tempfile
+
+    safe_name = hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16] + (path.suffix or ".bin")
+    tmp_path = Path(tempfile.gettempdir()) / f"gemini_upload_{safe_name}"
+    try:
+        shutil.copy2(path, tmp_path)
+        f = client.files.upload(file=str(tmp_path))
+    finally:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+
     deadline = time.time() + _FILE_ACTIVE_TIMEOUT
     while f.state and f.state.name == "PROCESSING":
         if time.time() > deadline:
