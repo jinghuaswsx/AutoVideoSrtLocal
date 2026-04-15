@@ -200,17 +200,14 @@
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
     try {
-      const boot = await fetchJSON(`/medias/api/products/${pid}/cover/bootstrap`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name }),
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      const res = await fetch(`/medias/api/products/${pid}/cover/upload`, {
+        method: 'POST', body: fd,
       });
-      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
-      const done = await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ object_key: boot.object_key }),
-      });
-      state.current.product.cover_object_key = boot.object_key;
+      if (!res.ok) throw new Error(await res.text());
+      const done = await res.json();
+      state.current.product.cover_object_key = done.object_key;
       setCover(done.cover_url + `?_=${Date.now()}`);
     } catch (e) {
       alert('封面上传失败：' + (e.message || ''));
