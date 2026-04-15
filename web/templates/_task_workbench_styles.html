@@ -239,3 +239,72 @@ video.media-player { max-height: 320px; }
 .translation-result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .translation-result-label { font-size: 12px; color: #6b7280; font-weight: 600; }
 .translation-result-text { font-size: 13px; color: var(--text-main); line-height: 1.6; white-space: pre-wrap; }
+
+/* ============ AI 视频分析 ============ */
+.analysis-row { margin-bottom: 14px; }
+.analysis-card {
+  background: var(--bg-body); border: 1.5px solid var(--border-main);
+  border-radius: 12px; padding: 14px 16px;
+}
+.analysis-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.analysis-tag {
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  background: rgba(59,130,246,0.12); color: #1d4ed8;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.03em;
+}
+.analysis-tag--csk { background: rgba(13,148,136,0.12); color: #0f766e; }
+.analysis-sub { font-size: 12px; color: #6b7280; }
+.analysis-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .analysis-split { grid-template-columns: 1fr; } }
+.analysis-left, .analysis-right {
+  min-width: 0; background: var(--bg-page, #f8fafc);
+  border: 1px solid var(--border-main); border-radius: 10px; padding: 12px;
+}
+.analysis-prompt-label { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+.analysis-prompt {
+  margin: 0; font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px; line-height: 1.5; color: var(--text-main);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 480px; overflow: auto;
+}
+.analysis-placeholder, .analysis-error { padding: 20px 10px; text-align: center; color: #9ca3af; font-size: 13px; }
+.analysis-error { color: #dc2626; }
+
+.score-total {
+  padding: 12px; border-radius: 10px; margin-bottom: 12px;
+  background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);
+}
+.score-total--top  { background: rgba(22,163,74,0.10); border-color: rgba(22,163,74,0.28); }
+.score-total--good { background: rgba(59,130,246,0.10); border-color: rgba(59,130,246,0.28); }
+.score-total--mid  { background: rgba(234,179,8,0.10);  border-color: rgba(234,179,8,0.30); }
+.score-total--low  { background: rgba(220,38,38,0.08);  border-color: rgba(220,38,38,0.28); }
+.score-total-num { font-size: 32px; font-weight: 800; line-height: 1; color: var(--text-main); }
+.score-total-num .score-total-max { font-size: 14px; color: #9ca3af; font-weight: 600; margin-left: 4px; }
+.score-total-summary { margin-top: 6px; font-size: 13px; color: var(--text-main); line-height: 1.5; }
+
+.score-dims { display: flex; flex-direction: column; gap: 10px; }
+.score-row-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.score-dim-name { font-size: 13px; font-weight: 600; color: var(--text-main); }
+.score-dim-val  { font-size: 12px; color: #6b7280; font-family: ui-monospace, Consolas, monospace; }
+.score-bar { height: 6px; background: rgba(0,0,0,0.06); border-radius: 999px; overflow: hidden; }
+.score-bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #0ea5e9); transition: width .4s; }
+.score-dim-comment { margin-top: 4px; font-size: 12px; color: #6b7280; line-height: 1.5; }
+.score-suggestions { margin-top: 14px; }
+.score-sub-title, .csk-sub-title { font-size: 12px; font-weight: 700; color: #6b7280; letter-spacing: .04em; margin-bottom: 6px; }
+.score-suggestions ol { padding-left: 20px; margin: 0; }
+.score-suggestions li { font-size: 13px; color: var(--text-main); line-height: 1.6; margin-bottom: 4px; }
+
+.csk-section { margin-bottom: 12px; }
+.csk-section:last-child { margin-bottom: 0; }
+.csk-text { margin: 0; font-size: 13px; color: var(--text-main); line-height: 1.6; white-space: pre-wrap; }
+.csk-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.csk-list { margin: 0; padding-left: 18px; }
+.csk-list li { font-size: 13px; color: var(--text-main); line-height: 1.6; }
+.csk-kf {
+  padding: 8px 10px; margin-bottom: 6px; background: var(--bg-body);
+  border: 1px solid var(--border-main); border-radius: 8px;
+}
+.csk-kf-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.csk-kf-ts { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700; color: #1d4ed8; }
+.csk-kf-type { font-size: 11px; color: #6b7280; }
+.csk-kf-reason { font-size: 12px; color: var(--text-main); line-height: 1.5; }

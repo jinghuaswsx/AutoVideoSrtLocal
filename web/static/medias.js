@@ -94,17 +94,16 @@
       return;
     }
     grid.innerHTML = `
-      <table class="oc-table">
+      <table class="oc-table oc-table-fixed">
         <colgroup>
           <col style="width:56px">
-          <col style="width:220px">
+          <col style="width:130px">
           <col>
-          <col style="width:180px">
-          <col style="width:80px">
-          <col style="width:260px">
+          <col style="width:170px">
+          <col style="width:72px">
+          <col style="width:240px">
           <col style="width:140px">
-          <col style="width:140px">
-          <col style="width:110px">
+          <col style="width:96px">
         </colgroup>
         <thead>
           <tr>
@@ -114,7 +113,6 @@
             <th>产品 ID</th>
             <th>素材数</th>
             <th>语种覆盖</th>
-            <th>创建时间</th>
             <th>修改时间</th>
             <th>操作</th>
           </tr>
@@ -145,7 +143,6 @@
         <td class="mono">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
-        <td class="muted">${fmtDate(p.created_at)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
           <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
