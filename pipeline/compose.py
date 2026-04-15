@@ -7,6 +7,24 @@
 import os
 import subprocess
 
+_FONT_SIZE_BASE: dict[str, int] = {"small": 11, "medium": 14, "large": 18}
+
+
+def _fonts_dir() -> str:
+    """返回项目 fonts/ 目录的绝对路径。"""
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
+
+
+def _compute_font_size(video_height: int, preset: str) -> int:
+    """根据视频高度和预设档位计算自适应字号（ASS pt）。"""
+    base = _FONT_SIZE_BASE.get(preset, _FONT_SIZE_BASE["medium"])
+    return round(video_height / 1080 * base)
+
+
+def _compute_margin_v(video_height: int, position_y: float) -> int:
+    """将「距顶百分比」转换为 ffmpeg ASS MarginV（距底像素）。"""
+    return round(video_height * (1.0 - position_y))
+
 
 def compose_video(
     video_path: str,
