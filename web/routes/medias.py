@@ -20,7 +20,7 @@ _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
     """返回 (lang, error)。lang 校验不通过返回 (None, error msg)。"""
-    lang = (body.get("lang") or default or "en").strip().lower()
+    lang = (body.get("lang") or default).strip().lower()
     if not medias.is_valid_language(lang):
         return None, f"不支持的语种: {lang}"
     return lang, None
@@ -90,8 +90,10 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
                        items_filenames: list[str] | None = None,
-                       lang_coverage: dict | None = None) -> dict:
-    covers = medias.get_product_covers(p["id"])
+                       lang_coverage: dict | None = None,
+                       covers: dict[str, str] | None = None) -> dict:
+    if covers is None:
+        covers = medias.get_product_covers(p["id"])
     has_en_cover = "en" in covers
     cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
         f"/medias/thumb/{cover_item_id}" if cover_item_id else None
@@ -162,14 +164,16 @@ def api_list_products():
                                         offset=offset, limit=limit)
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
-    covers = medias.first_thumb_item_by_product(pids)
+    thumb_covers = medias.first_thumb_item_by_product(pids)
     filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
     coverage = medias.lang_coverage_by_product(pids)
+    covers_map = medias.get_product_covers_batch(pids)
     data = [
         _serialize_product(
-            r, counts.get(r["id"], 0), covers.get(r["id"]),
+            r, counts.get(r["id"], 0), thumb_covers.get(r["id"]),
             items_filenames=filenames.get(r["id"], []),
             lang_coverage=coverage.get(r["id"], {}),
+            covers=covers_map.get(r["id"], {}),
         )
         for r in rows
     ]
@@ -203,9 +207,10 @@ def api_get_product(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
+    covers = medias.get_product_covers(pid)
     return jsonify({
-        "product": _serialize_product(p, None),
-        "covers": medias.get_product_covers(pid),
+        "product": _serialize_product(p, None, covers=covers),
+        "covers": covers,
         "copywritings": medias.list_copywritings(pid),
         "items": [_serialize_item(i) for i in medias.list_items(pid)],
     })

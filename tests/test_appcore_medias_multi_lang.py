@@ -92,3 +92,20 @@ def test_lang_coverage_map(user_id):
         assert cov["fr"]["items"] == 0
     finally:
         medias.soft_delete_product(pid)
+
+
+def test_get_product_covers_batch(user_id):
+    pid1 = medias.create_product(user_id, "batch-covers-1")
+    pid2 = medias.create_product(user_id, "batch-covers-2")
+    try:
+        medias.set_product_cover(pid1, "en", "k/p1_en.jpg")
+        medias.set_product_cover(pid1, "de", "k/p1_de.jpg")
+        medias.set_product_cover(pid2, "en", "k/p2_en.jpg")
+        m = medias.get_product_covers_batch([pid1, pid2])
+        assert m[pid1] == {"en": "k/p1_en.jpg", "de": "k/p1_de.jpg"}
+        assert m[pid2] == {"en": "k/p2_en.jpg"}
+        # 空参数
+        assert medias.get_product_covers_batch([]) == {}
+    finally:
+        medias.soft_delete_product(pid1)
+        medias.soft_delete_product(pid2)

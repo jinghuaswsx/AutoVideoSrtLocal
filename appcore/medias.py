@@ -266,6 +266,22 @@ def has_english_cover(product_id: int) -> bool:
     return bool(row)
 
 
+def get_product_covers_batch(product_ids: list[int]) -> dict[int, dict[str, str]]:
+    """批量返回 { product_id: {lang: object_key} }。"""
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, lang, object_key FROM media_product_covers "
+        f"WHERE product_id IN ({placeholders})",
+        tuple(product_ids),
+    )
+    out: dict[int, dict[str, str]] = {pid: {} for pid in product_ids}
+    for r in rows:
+        out[int(r["product_id"])][r["lang"]] = r["object_key"]
+    return out
+
+
 # ---------- 覆盖度统计 ----------
 
 def lang_coverage_by_product(product_ids: list[int]) -> dict[int, dict[str, dict]]:
