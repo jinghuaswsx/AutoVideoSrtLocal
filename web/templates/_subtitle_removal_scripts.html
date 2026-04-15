@@ -1,13 +1,355 @@
 <script>
   (function () {
-    if (typeof window === "undefined" || !window.io) return;
-    var taskId = {{ task_id | default('') | tojson }};
-    if (!taskId) return;
-    var socket = window.io();
-    var joinFn = function () {
-      socket.emit("join_subtitle_removal_task", { task_id: taskId });
+    var bootstrap = window.subtitleRemovalBootstrap || {};
+    var page = document.querySelector("[data-subtitle-removal-page='detail']");
+    if (!page) {
+      return;
+    }
+
+    var taskId = page.getAttribute("data-task-id") || bootstrap.id || "";
+    var apiUrl = bootstrap.state_api_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) : "");
+    var selectionOverlay = document.getElementById("srSelectionOverlay");
+    var selectionImage = document.getElementById("srSelectionImage");
+    var selectionBoxEl = document.getElementById("srSelectionBox");
+    var selectionEmpty = document.getElementById("srSelectionEmpty");
+    var selectionCoords = document.getElementById("srSelectionCoords");
+    var stateStatus = document.getElementById("srStateStatus");
+    var stateMode = document.getElementById("srStateMode");
+    var stateModeText = document.getElementById("srStateModeText");
+    var stateResolution = document.getElementById("srStateResolution");
+    var stateSelection = document.getElementById("srStateSelection");
+    var stateHint = document.getElementById("srStateHint");
+    var submitButton = document.getElementById("srSubmitSubtitleRemoval");
+    var modeInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='remove_mode']"));
+    var radioTiles = Array.prototype.slice.call(document.querySelectorAll(".sr-radio-tile"));
+
+    var selectionState = {
+      mode: bootstrap.remove_mode || "full",
+      box: bootstrap.selection_box || null,
+      dragging: false,
+      start: null,
+      current: null,
     };
-    joinFn();
-    socket.on("connect", joinFn);
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getMediaInfo() {
+      return bootstrap.media_info || {};
+    }
+
+    function getContainedImageRect(container, mediaInfo) {
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!width || !height || !container) {
+        return null;
+      }
+      var containerWidth = container.clientWidth;
+      var containerHeight = container.clientHeight;
+      if (!containerWidth || !containerHeight) {
+        return null;
+      }
+      var scale = Math.min(containerWidth / width, containerHeight / height);
+      var renderedWidth = width * scale;
+      var renderedHeight = height * scale;
+      return {
+        left: (containerWidth - renderedWidth) / 2,
+        top: (containerHeight - renderedHeight) / 2,
+        width: renderedWidth,
+        height: renderedHeight,
+      };
+    }
+
+    function selectionBoxToOverlayRect(selectionBox, imageRect, mediaInfo) {
+      if (!selectionBox || !imageRect) {
+        return null;
+      }
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!width || !height) {
+        return null;
+      }
+      var scaleX = imageRect.width / width;
+      var scaleY = imageRect.height / height;
+      return {
+        left: imageRect.left + selectionBox.l * scaleX,
+        top: imageRect.top + selectionBox.t * scaleY,
+        width: selectionBox.w * scaleX,
+        height: selectionBox.h * scaleY,
+      };
+    }
+
+    function computeSelectionBox(selection, imageRect, mediaInfo) {
+      var width = Number(mediaInfo.width) || 0;
+      var height = Number(mediaInfo.height) || 0;
+      if (!selection || !imageRect || !width || !height) {
+        return null;
+      }
+
+      var left = clamp(Math.min(selection.startX, selection.endX), imageRect.left, imageRect.left + imageRect.width);
+      var top = clamp(Math.min(selection.startY, selection.endY), imageRect.top, imageRect.top + imageRect.height);
+      var right = clamp(Math.max(selection.startX, selection.endX), imageRect.left, imageRect.left + imageRect.width);
+      var bottom = clamp(Math.max(selection.startY, selection.endY), imageRect.top, imageRect.top + imageRect.height);
+      var boxWidth = Math.max(0, right - left);
+      var boxHeight = Math.max(0, bottom - top);
+
+      if (!boxWidth || !boxHeight) {
+        return null;
+      }
+
+      var scaleX = width / imageRect.width;
+      var scaleY = height / imageRect.height;
+      var normalizedLeft = Math.round((left - imageRect.left) * scaleX);
+      var normalizedTop = Math.round((top - imageRect.top) * scaleY);
+      var normalizedWidth = Math.round(boxWidth * scaleX);
+      var normalizedHeight = Math.round(boxHeight * scaleY);
+      var x2 = normalizedLeft + normalizedWidth;
+      var y2 = normalizedTop + normalizedHeight;
+      return {
+        l: normalizedLeft,
+        t: normalizedTop,
+        w: normalizedWidth,
+        h: normalizedHeight,
+        x1: normalizedLeft,
+        y1: normalizedTop,
+        x2: x2,
+        y2: y2,
+      };
+    }
+
+    function updateSelectionBoxDisplay(rect) {
+      if (!selectionBoxEl) {
+        return;
+      }
+      if (!rect) {
+        selectionBoxEl.hidden = true;
+        selectionCoords.textContent = "未选择区域";
+        stateSelection.textContent = "未选择区域";
+        return;
+      }
+      selectionBoxEl.hidden = false;
+      selectionBoxEl.style.left = rect.left + "px";
+      selectionBoxEl.style.top = rect.top + "px";
+      selectionBoxEl.style.width = rect.width + "px";
+      selectionBoxEl.style.height = rect.height + "px";
+      var text = "l:" + (selectionState.box ? selectionState.box.l : 0) + " t:" + (selectionState.box ? selectionState.box.t : 0) + " w:" + (selectionState.box ? selectionState.box.w : 0) + " h:" + (selectionState.box ? selectionState.box.h : 0);
+      selectionCoords.textContent = text;
+      stateSelection.textContent = text;
+    }
+
+    function renderSubtitleRemovalState(state) {
+      if (!state) {
+        return;
+      }
+      bootstrap = Object.assign({}, bootstrap, state);
+      if (stateStatus && state.status) {
+        stateStatus.textContent = state.status;
+      }
+      var mode = state.remove_mode || selectionState.mode || "full";
+      selectionState.mode = mode;
+      if (stateMode) {
+        stateMode.textContent = mode === "box" ? "框选去除" : "全屏去除";
+      }
+      if (stateModeText) {
+        stateModeText.textContent = mode === "box" ? "框选去除" : "全屏去除";
+      }
+      if (stateResolution) {
+        stateResolution.textContent = (state.media_info && state.media_info.resolution) || "未读取";
+      }
+      if (stateHint) {
+        stateHint.textContent = mode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
+      }
+      if (selectionImage && state.thumbnail_url) {
+        selectionImage.src = state.thumbnail_url;
+        selectionImage.hidden = false;
+      }
+      if (selectionEmpty) {
+        selectionEmpty.hidden = !!state.thumbnail_url;
+      }
+      if (state.remove_mode) {
+        modeInputs.forEach(function (input) {
+          input.checked = input.value === state.remove_mode;
+        });
+        radioTiles.forEach(function (tile) {
+          var input = tile.querySelector("input[name='remove_mode']");
+          tile.classList.toggle("is-active", !!input && input.checked);
+        });
+      }
+      if (state.selection_box) {
+        selectionState.box = state.selection_box;
+        var imageRect = getContainedImageRect(selectionOverlay, state.media_info || getMediaInfo());
+        if (imageRect) {
+          updateSelectionBoxDisplay(selectionBoxToOverlayRect(state.selection_box, imageRect, state.media_info || getMediaInfo()));
+        }
+      }
+    }
+
+    function syncMode(nextMode) {
+      selectionState.mode = nextMode;
+      modeInputs.forEach(function (input) {
+        input.checked = input.value === nextMode;
+      });
+      radioTiles.forEach(function (tile) {
+        var input = tile.querySelector("input[name='remove_mode']");
+        tile.classList.toggle("is-active", !!input && input.checked);
+      });
+      if (stateMode) {
+        stateMode.textContent = nextMode === "box" ? "框选去除" : "全屏去除";
+      }
+      if (stateModeText) {
+        stateModeText.textContent = nextMode === "box" ? "框选去除" : "全屏去除";
+      }
+      if (stateHint) {
+        stateHint.textContent = nextMode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
+      }
+    }
+
+    function refreshSubtitleRemovalState() {
+      if (!apiUrl) {
+        return Promise.resolve(null);
+      }
+      return fetch(apiUrl, { credentials: "same-origin" })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("refresh failed");
+          }
+          return response.json();
+        })
+        .then(function (state) {
+          renderSubtitleRemovalState(state);
+          return state;
+        })
+        .catch(function () {
+          return null;
+        });
+    }
+
+    function getPointerPosition(event) {
+      var rect = selectionOverlay.getBoundingClientRect();
+      return {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+    }
+
+    function updateDragSelection(event) {
+      if (!selectionState.dragging) {
+        return;
+      }
+      var pointer = getPointerPosition(event);
+      selectionState.current = pointer;
+      var mediaInfo = getMediaInfo();
+      var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
+      if (!imageRect) {
+        return;
+      }
+      var box = computeSelectionBox(
+        {
+          startX: selectionState.start.x,
+          startY: selectionState.start.y,
+          endX: pointer.x,
+          endY: pointer.y,
+        },
+        imageRect,
+        mediaInfo
+      );
+      selectionState.box = box;
+      if (box) {
+        updateSelectionBoxDisplay(selectionBoxToOverlayRect(box, imageRect, mediaInfo));
+      }
+    }
+
+    function finishDragSelection() {
+      if (!selectionState.dragging) {
+        return;
+      }
+      selectionState.dragging = false;
+      var mediaInfo = getMediaInfo();
+      var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
+      if (!imageRect || !selectionState.box) {
+        updateSelectionBoxDisplay(null);
+        return;
+      }
+      updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, mediaInfo));
+      window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
+        remove_mode: selectionState.mode,
+        selection_box: selectionState.box,
+      });
+    }
+
+    if (selectionOverlay) {
+      selectionOverlay.addEventListener("pointerdown", function (event) {
+        if (selectionState.mode !== "box") {
+          return;
+        }
+        var mediaInfo = getMediaInfo();
+        var imageRect = getContainedImageRect(selectionOverlay, mediaInfo);
+        if (!imageRect) {
+          return;
+        }
+        var pointer = getPointerPosition(event);
+        selectionState.dragging = true;
+        selectionState.start = pointer;
+        selectionState.current = pointer;
+        selectionState.box = null;
+        selectionBoxEl.hidden = false;
+        selectionBoxEl.style.left = pointer.x + "px";
+        selectionBoxEl.style.top = pointer.y + "px";
+        selectionBoxEl.style.width = "0px";
+        selectionBoxEl.style.height = "0px";
+        event.preventDefault();
+      });
+
+      selectionOverlay.addEventListener("pointermove", updateDragSelection);
+      selectionOverlay.addEventListener("pointerup", finishDragSelection);
+      selectionOverlay.addEventListener("pointercancel", finishDragSelection);
+      selectionOverlay.addEventListener("pointerleave", function () {
+        if (selectionState.dragging) {
+          finishDragSelection();
+        }
+      });
+    }
+
+    modeInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
+        syncMode(input.value);
+      });
+    });
+
+    if (submitButton) {
+      submitButton.addEventListener("click", function () {
+        window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
+          remove_mode: selectionState.mode,
+          selection_box: selectionState.box,
+        });
+      });
+    }
+
+    window.computeSelectionBox = computeSelectionBox;
+    window.renderSubtitleRemovalState = renderSubtitleRemovalState;
+    window.refreshSubtitleRemovalState = refreshSubtitleRemovalState;
+    window.subtitleRemovalState = Object.assign({}, bootstrap, {
+      remove_mode: selectionState.mode,
+      selection_box: selectionState.box,
+    });
+
+    if (window.io && taskId) {
+      var socket = window.io();
+      var joinFn = function () {
+        socket.emit("join_subtitle_removal_task", { task_id: taskId });
+      };
+      joinFn();
+      socket.on("connect", joinFn);
+    }
+
+    renderSubtitleRemovalState(bootstrap);
+    syncMode(selectionState.mode);
+    updateSelectionBoxDisplay(
+      selectionState.box && selectionOverlay
+        ? selectionBoxToOverlayRect(selectionState.box, getContainedImageRect(selectionOverlay, getMediaInfo()), getMediaInfo())
+        : null
+    );
+    refreshSubtitleRemovalState();
   })();
 </script>

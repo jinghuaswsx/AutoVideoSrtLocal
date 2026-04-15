@@ -5,35 +5,102 @@
 <script>
   window.subtitleRemovalBootstrap = {{ state | tojson }};
 </script>
-<div class="sr-shell">
-  <div class="sr-grid">
-    <section class="sr-card">
-      <h2>源视频</h2>
-      <div class="sr-card-body">
-        <div>{{ project.original_filename or task_id }}</div>
+<div class="sr-shell sr-detail-page" data-subtitle-removal-page="detail" data-task-id="{{ task_id }}">
+  <header class="sr-hero">
+    <div class="sr-hero-copy">
+      <p class="sr-kicker">字幕移除</p>
+      <h1>首帧框选</h1>
+      <p>上传后先在视频首帧上选择字幕区域，再提交去字幕任务。</p>
+    </div>
+    <div class="sr-status-chip" data-role="sr-status-chip">{{ state.status or project.status or 'uploaded' }}</div>
+  </header>
+
+  <div class="sr-grid sr-grid-detail">
+    <section class="sr-card sr-source-card">
+      <div class="sr-card-head">
+        <div>
+          <h2>首帧预览</h2>
+          <div class="sr-card-subtitle">{{ project.original_filename or task_id }}</div>
+        </div>
+        <div class="sr-card-meta" id="srStateModeText">{{ '框选去除' if state.remove_mode == 'box' else '全屏去除' }}</div>
+      </div>
+
+      <div class="sr-selection-stage" data-role="selection-stage">
+        <div class="sr-selection-viewport">
+          <img
+            id="srSelectionImage"
+            class="sr-selection-image"
+            src="{{ state.thumbnail_url or '' }}"
+            alt="首帧预览"
+            {% if not state.thumbnail_url %}hidden{% endif %}
+          >
+          <div id="srSelectionOverlay" class="sr-selection-overlay" aria-label="字幕区域选择层"></div>
+          <div id="srSelectionBox" class="sr-selection-box" hidden></div>
+          <div id="srSelectionEmpty" class="sr-selection-empty"{% if state.thumbnail_url %}hidden{% endif %}>
+            <div class="sr-selection-empty-title">首帧图暂未就绪</div>
+            <div class="sr-hint">完成上传后会在这里显示可框选的字幕区域。</div>
+          </div>
+        </div>
+        <div class="sr-selection-footer">
+          <div id="srSelectionHint" class="sr-hint">选择“框选去除”后，可直接在首帧图上拖拽字幕区域。</div>
+          <div id="srSelectionCoords" class="sr-selection-coords">未选择区域</div>
+        </div>
       </div>
     </section>
-    <section class="sr-card">
-      <h2>去除方式</h2>
-      <div class="sr-card-body sr-radio-group sr-mode-readonly" aria-disabled="true">
-        <label><input type="radio" name="mode" value="full" checked disabled> 全屏去除</label>
-        <label><input type="radio" name="mode" value="box" disabled> 框选去除</label>
-        <div class="sr-hint">模式仅供展示，暂未开放切换。</div>
+
+    <section class="sr-card sr-control-card">
+      <div class="sr-card-head">
+        <div>
+          <h2>去除方式</h2>
+          <div class="sr-card-subtitle">先选模式，再决定是否框选区域</div>
+        </div>
+      </div>
+
+      <div class="sr-mode-select">
+        <label class="sr-radio-tile is-active">
+          <input type="radio" name="remove_mode" value="full" checked>
+          <span class="sr-radio-title">全屏去除</span>
+          <span class="sr-radio-desc">直接按整帧提交，不需要框选。</span>
+        </label>
+        <label class="sr-radio-tile">
+          <input type="radio" name="remove_mode" value="box">
+          <span class="sr-radio-title">框选去除</span>
+          <span class="sr-radio-desc">先在首帧图上拖拽字幕区域，再提交。</span>
+        </label>
+      </div>
+
+      <div class="sr-action-row">
+        <button id="srSubmitSubtitleRemoval" type="button" class="btn btn-primary">提交去字幕任务</button>
+        <span class="sr-hint">Task 4 再接入真实提交逻辑。</span>
+      </div>
+
+      <div class="sr-status-panel">
+        <div class="sr-status-item">
+          <span class="sr-status-label">任务状态</span>
+          <strong id="srStateStatus">{{ state.status or project.status or 'uploaded' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">当前模式</span>
+          <strong id="srStateMode">{{ '框选去除' if state.remove_mode == 'box' else '全屏去除' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">视频分辨率</span>
+          <strong id="srStateResolution">{{ state.media_info.resolution or '未读取' }}</strong>
+        </div>
+      </div>
+
+      <div class="sr-detail-summary">
+        <div>
+          <span class="sr-status-label">首帧选择</span>
+          <strong id="srStateSelection">未选择区域</strong>
+        </div>
+        <div>
+          <span class="sr-status-label">识别说明</span>
+          <strong id="srStateHint">请先选择全屏或框选模式</strong>
+        </div>
       </div>
     </section>
-    <section class="sr-card">
-      <h2>任务状态</h2>
-      <div class="sr-card-body">{{ project.status or 'uploaded' }}</div>
-    </section>
-    <section class="sr-card">
-      <h2>处理结果</h2>
-      <div class="sr-card-body sr-muted">等待字幕移除流程接通后展示结果</div>
-    </section>
   </div>
-  <div class="sr-actions">
-    <button type="button" class="btn btn-primary" disabled>提交流程开发中</button>
-  </div>
-  <div class="sr-hint">当前仅展示任务壳，提交和实时联动还未接通。</div>
 </div>
 {% include "_subtitle_removal_styles.html" %}
 {% include "_subtitle_removal_scripts.html" %}

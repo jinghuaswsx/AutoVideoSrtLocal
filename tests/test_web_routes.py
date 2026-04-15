@@ -217,6 +217,44 @@ def test_subtitle_removal_detail_shell_is_read_only(authed_client_no_db, monkeyp
     assert "sr-mode-readonly" in body
 
 
+def test_subtitle_removal_detail_shell_exposes_selection_stage_hooks(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal("sr-selection", "uploads/sr-selection.mp4", "output/sr-selection", original_filename="demo.mp4", user_id=1)
+    store.update(
+        task["id"],
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+        remove_mode="box",
+        selection_box={"l": 0, "t": 0, "w": 720, "h": 1280},
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "ready",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-selection")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "srSelectionOverlay" in body
+    assert "computeSelectionBox" in body
+    assert "提交去字幕任务" in body
+    assert "全屏去除" in body
+    assert "框选去除" in body
+
+
 def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):
     joined_rooms = []
 

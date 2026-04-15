@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 
-from flask import Blueprint, render_template, abort, jsonify, request, send_file
+from flask import Blueprint, render_template, abort, jsonify, request, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import tos_clients
@@ -43,6 +43,37 @@ def _media_info_is_ready(media_info: dict | None) -> bool:
     )
 
 
+def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
+    task_id = task_id or task.get("id") or ""
+    thumbnail_path = (task.get("thumbnail_path") or "").strip()
+    payload = {
+        "id": task_id,
+        "type": task.get("type") or "subtitle_removal",
+        "status": task.get("status") or "uploaded",
+        "original_filename": task.get("original_filename") or "",
+        "display_name": task.get("display_name") or "",
+        "remove_mode": task.get("remove_mode") or "",
+        "selection_box": task.get("selection_box"),
+        "position_payload": task.get("position_payload"),
+        "media_info": dict(task.get("media_info") or {}),
+        "steps": dict(task.get("steps") or {}),
+        "step_messages": dict(task.get("step_messages") or {}),
+        "error": task.get("error") or "",
+        "provider_task_id": task.get("provider_task_id") or "",
+        "provider_status": task.get("provider_status") or "",
+        "provider_emsg": task.get("provider_emsg") or "",
+        "provider_result_url": task.get("provider_result_url") or "",
+        "result_tos_key": task.get("result_tos_key") or "",
+        "result_video_path": task.get("result_video_path") or "",
+        "source_tos_key": task.get("source_tos_key") or "",
+        "source_object_info": dict(task.get("source_object_info") or {}),
+        "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=task_id) if thumbnail_path else "",
+        "detail_url": url_for("subtitle_removal.detail_page", task_id=task_id),
+        "state_api_url": url_for("subtitle_removal.get_state", task_id=task_id),
+    }
+    return payload
+
+
 @bp.route("/subtitle-removal")
 @login_required
 def upload_page():
@@ -64,7 +95,19 @@ def detail_page(task_id: str):
             state = json.loads(row["state_json"])
         except Exception:
             state = {}
-    return render_template("subtitle_removal_detail.html", project=row, state=state, task_id=task_id)
+    return render_template(
+        "subtitle_removal_detail.html",
+        project=row,
+        state=_subtitle_removal_state_payload(state, task_id),
+        task_id=task_id,
+    )
+
+
+@bp.route("/api/subtitle-removal/<task_id>", methods=["GET"])
+@login_required
+def get_state(task_id: str):
+    task = _get_owned_task(task_id)
+    return jsonify(_subtitle_removal_state_payload(task, task_id))
 
 
 @bp.route("/api/subtitle-removal/upload/bootstrap", methods=["POST"])

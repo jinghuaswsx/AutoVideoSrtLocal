@@ -299,3 +299,32 @@ def test_subtitle_removal_source_artifact_returns_404_for_non_subtitle_removal_t
     response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source")
 
     assert response.status_code == 404
+
+
+def test_state_api_returns_detail_payload(authed_client_no_db):
+    task = store.create_subtitle_removal(
+        "sr-state-api",
+        "uploads/sr-state-api.mp4",
+        "output/sr-state-api",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        remove_mode="full",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["id"] == task["id"]
+    assert payload["remove_mode"] == "full"
+    assert payload["media_info"]["resolution"] == "720x1280"
