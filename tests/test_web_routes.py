@@ -656,3 +656,53 @@ def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, 
     payload = response.get_json()
     assert payload["deployed_project_dir"].endswith("capcut_hook_cta")
     assert store.get("task-deploy-variant")["variants"]["hook_cta"]["exports"]["jianying_project_dir"].endswith("capcut_hook_cta")
+
+
+def test_medias_create_product_rejects_bad_slug(logged_in_client):
+    rv = logged_in_client.post(
+        "/medias/api/products",
+        json={"name": "slug-guard", "product_code": "Bad_Slug"},
+    )
+    assert rv.status_code == 400
+    body = rv.get_json()
+    assert "产品 ID" in body["error"]
+
+
+def test_medias_create_product_rejects_duplicate_slug(logged_in_client):
+    from appcore.db import execute as db_execute
+    code = "dup-slug-test"
+    db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+    try:
+        rv1 = logged_in_client.post(
+            "/medias/api/products",
+            json={"name": "t1", "product_code": code},
+        )
+        assert rv1.status_code == 201
+        rv2 = logged_in_client.post(
+            "/medias/api/products",
+            json={"name": "t2", "product_code": code},
+        )
+        assert rv2.status_code == 409
+    finally:
+        db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+
+
+def test_medias_put_product_requires_cover_and_items(logged_in_client):
+    from appcore.db import execute as db_execute
+    code = "save-guard-test"
+    db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))
+    rv = logged_in_client.post(
+        "/medias/api/products",
+        json={"name": "t", "product_code": code},
+    )
+    assert rv.status_code == 201
+    pid = rv.get_json()["id"]
+    try:
+        rv2 = logged_in_client.put(
+            f"/medias/api/products/{pid}",
+            json={"name": "t", "product_code": code},
+        )
+        assert rv2.status_code == 400
+        assert "封面图" in rv2.get_json()["error"]
+    finally:
+        db_execute("UPDATE media_products SET deleted_at=NOW() WHERE product_code=%s", (code,))

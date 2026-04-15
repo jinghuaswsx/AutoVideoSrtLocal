@@ -220,6 +220,26 @@
 .oc-item:hover .rm { opacity:1; }
 .oc-item .rm:hover { background:var(--oc-danger); }
 
+/* Cover image */
+.oc-cover-wrap { display:flex; gap:var(--oc-sp-3); align-items:flex-start; }
+.oc-cover-dropzone { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); width:260px; height:148px; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); color:var(--oc-fg-muted); cursor:pointer; text-align:center; transition:all var(--oc-dur-fast) var(--oc-ease); }
+.oc-cover-dropzone:hover, .oc-cover-dropzone.drag { border-color:var(--oc-accent); background:var(--oc-accent-subtle); color:var(--oc-accent); }
+.oc-cover-dropzone .dz-icon { width:32px; height:32px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; }
+.oc-cover-preview { position:relative; width:260px; height:148px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg-muted); }
+.oc-cover-preview img { width:100%; height:100%; object-fit:cover; display:block; }
+.oc-cover-preview .actions { position:absolute; inset:auto 0 0 0; display:flex; gap:var(--oc-sp-2); padding:var(--oc-sp-2); background:linear-gradient(to top, oklch(22% 0.02 235 / 0.72), transparent); opacity:0; transition:opacity var(--oc-dur-fast) var(--oc-ease); }
+.oc-cover-preview:hover .actions { opacity:1; }
+.oc-cover-preview .actions .oc-btn { height:26px; font-size:12px; padding:0 10px; }
+
+.oc-section { display:flex; flex-direction:column; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-6); }
+.oc-section:last-child { margin-bottom:0; }
+.oc-section-title { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; font-weight:600; color:var(--oc-fg); }
+.oc-section-title .req { color:var(--oc-danger); }
+.oc-section-title .count { min-width:18px; height:18px; padding:0 6px; border-radius:9px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-size:11px; display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums; }
+.oc-section-title .optional { color:var(--oc-fg-subtle); font-weight:400; font-size:12px; margin-left:var(--oc-sp-1); }
+
+.oc-hint { font-size:11px; color:var(--oc-fg-subtle); margin-top:-4px; }
+
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 {% endblock %}
 

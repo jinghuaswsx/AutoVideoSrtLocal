@@ -70,3 +70,42 @@ def test_update_product(user_id):
         assert p["archived"] == 1
     finally:
         medias.soft_delete_product(pid)
+
+
+def test_create_product_with_code_and_cover(user_id):
+    pid = medias.create_product(
+        user_id, "带编码的产品",
+        product_code="abc-product-01",
+        cover_object_key="covers/1/x.jpg",
+    )
+    try:
+        p = medias.get_product(pid)
+        assert p["product_code"] == "abc-product-01"
+        assert p["cover_object_key"] == "covers/1/x.jpg"
+    finally:
+        medias.soft_delete_product(pid)
+
+
+def test_update_product_sets_code_and_cover(user_id):
+    pid = medias.create_product(user_id, "待更新产品")
+    try:
+        medias.update_product(
+            pid,
+            product_code="updated-slug",
+            cover_object_key="covers/1/new.jpg",
+        )
+        p = medias.get_product(pid)
+        assert p["product_code"] == "updated-slug"
+        assert p["cover_object_key"] == "covers/1/new.jpg"
+    finally:
+        medias.soft_delete_product(pid)
+
+
+def test_get_product_by_code(user_id):
+    pid = medias.create_product(user_id, "可查编码", product_code="query-code-1")
+    try:
+        p = medias.get_product_by_code("query-code-1")
+        assert p and p["id"] == pid
+        assert medias.get_product_by_code("nope-xxxx") is None
+    finally:
+        medias.soft_delete_product(pid)

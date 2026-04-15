@@ -10,6 +10,19 @@ from appcore.db import execute as db_execute
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 
+import re
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+
+
+def _validate_product_code(code: str) -> tuple[bool, str | None]:
+    if not code:
+        return False, "产品 ID 必填"
+    if not _SLUG_RE.match(code):
+        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-64，且首尾不能是连字符"
+    return True, None
+
+
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
@@ -31,16 +44,23 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
 
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None) -> dict:
+    cover_url = None
+    if p.get("cover_object_key"):
+        cover_url = f"/medias/cover/{p['id']}"
+    elif cover_item_id:
+        cover_url = f"/medias/thumb/{cover_item_id}"
     return {
         "id": p["id"],
         "name": p["name"],
+        "product_code": p.get("product_code"),
+        "cover_object_key": p.get("cover_object_key"),
         "color_people": p.get("color_people"),
         "source": p.get("source"),
         "archived": bool(p.get("archived")),
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
         "items_count": items_count,
-        "cover_thumbnail_url": f"/medias/thumb/{cover_item_id}" if cover_item_id else None,
+        "cover_thumbnail_url": cover_url,
     }
 
 
@@ -98,10 +118,16 @@ def api_create_product():
     name = (body.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name required"}), 400
+    product_code = (body.get("product_code") or "").strip().lower() or None
+    if product_code is not None:
+        ok, err = _validate_product_code(product_code)
+        if not ok:
+            return jsonify({"error": err}), 400
+        if medias.get_product_by_code(product_code):
+            return jsonify({"error": "产品 ID 已被占用"}), 409
     pid = medias.create_product(
         current_user.id, name,
-        color_people=(body.get("color_people") or None),
-        source=(body.get("source") or None),
+        product_code=product_code,
     )
     return jsonify({"id": pid}), 201
 
@@ -126,12 +152,28 @@ def api_update_product(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
-    medias.update_product(
-        pid,
-        name=body.get("name") or p["name"],
-        color_people=body.get("color_people"),
-        source=body.get("source"),
-    )
+
+    name = (body.get("name") or "").strip() or p["name"]
+    product_code = (body.get("product_code") or "").strip().lower()
+    ok, err = _validate_product_code(product_code)
+    if not ok:
+        return jsonify({"error": err}), 400
+    exist = medias.get_product_by_code(product_code)
+    if exist and exist["id"] != pid:
+        return jsonify({"error": "产品 ID 已被占用"}), 409
+
+    if not p.get("cover_object_key") and not body.get("cover_object_key"):
+        return jsonify({"error": "封面图必填"}), 400
+
+    items = medias.list_items(pid)
+    if not items:
+        return jsonify({"error": "至少需要 1 条视频素材"}), 400
+
+    update_fields = {"name": name, "product_code": product_code}
+    if body.get("cover_object_key"):
+        update_fields["cover_object_key"] = body["cover_object_key"]
+    medias.update_product(pid, **update_fields)
+
     if isinstance(body.get("copywritings"), list):
         medias.replace_copywritings(pid, body["copywritings"])
     return jsonify({"ok": True})
@@ -219,6 +261,62 @@ def api_item_complete(pid: int):
     return jsonify({"id": item_id}), 201
 
 
+@bp.route("/api/products/<int:pid>/cover/bootstrap", methods=["POST"])
+@login_required
+def api_cover_bootstrap(pid: int):
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    filename = os.path.basename((body.get("filename") or "cover.jpg").strip())
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+    object_key = tos_clients.build_media_object_key(
+        current_user.id, pid, f"cover_{filename}",
+    )
+    return jsonify({
+        "object_key": object_key,
+        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "expires_in": TOS_SIGNED_URL_EXPIRES,
+    })
+
+
+@bp.route("/api/products/<int:pid>/cover/complete", methods=["POST"])
+@login_required
+def api_cover_complete(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    object_key = (body.get("object_key") or "").strip()
+    if not object_key:
+        return jsonify({"error": "object_key required"}), 400
+    if not tos_clients.media_object_exists(object_key):
+        return jsonify({"error": "对象不存在"}), 400
+
+    old_key = p.get("cover_object_key")
+    if old_key and old_key != object_key:
+        try:
+            tos_clients.delete_media_object(old_key)
+        except Exception:
+            pass
+
+    medias.update_product(pid, cover_object_key=object_key)
+
+    try:
+        product_dir = THUMB_DIR / str(pid)
+        product_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(object_key).suffix or ".jpg"
+        local = product_dir / f"cover{ext}"
+        tos_clients.download_media_file(object_key, str(local))
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}"})
+
+
 @bp.route("/api/items/<int:item_id>", methods=["DELETE"])
 @login_required
 def api_delete_item(item_id: int):
@@ -253,6 +351,31 @@ def thumb(item_id: int):
     if not full.exists():
         abort(404)
     return send_file(str(full), mimetype="image/jpeg")
+
+
+@bp.route("/cover/<int:pid>")
+@login_required
+def cover(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    if not p.get("cover_object_key"):
+        abort(404)
+    product_dir = THUMB_DIR / str(pid)
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        f = product_dir / f"cover{ext}"
+        if f.exists():
+            mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
+            return send_file(str(f), mimetype=mime)
+    try:
+        product_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(p["cover_object_key"]).suffix or ".jpg"
+        local = product_dir / f"cover{ext}"
+        tos_clients.download_media_file(p["cover_object_key"], str(local))
+        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
+        return send_file(str(local), mimetype=mime)
+    except Exception:
+        abort(404)
 
 
 # ---------- 签名下载（播放） ----------
