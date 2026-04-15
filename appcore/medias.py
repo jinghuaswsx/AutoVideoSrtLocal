@@ -7,10 +7,13 @@ from appcore.db import query, query_one, execute
 # ---------- 产品 ----------
 
 def create_product(user_id: int, name: str, color_people: str | None = None,
-                   source: str | None = None) -> int:
+                   source: str | None = None, product_code: str | None = None,
+                   cover_object_key: str | None = None) -> int:
     return execute(
-        "INSERT INTO media_products (user_id, name, color_people, source) VALUES (%s,%s,%s,%s)",
-        (user_id, name, color_people, source),
+        "INSERT INTO media_products "
+        "(user_id, name, product_code, color_people, source, cover_object_key) "
+        "VALUES (%s,%s,%s,%s,%s,%s)",
+        (user_id, name, product_code, color_people, source, cover_object_key),
     )
 
 
@@ -18,6 +21,13 @@ def get_product(product_id: int) -> dict | None:
     return query_one(
         "SELECT * FROM media_products WHERE id=%s AND deleted_at IS NULL",
         (product_id,),
+    )
+
+
+def get_product_by_code(code: str) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_products WHERE product_code=%s AND deleted_at IS NULL",
+        (code,),
     )
 
 
@@ -49,7 +59,8 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
 
 def update_product(product_id: int, **fields) -> int:
     allowed = {"name", "color_people", "source", "archived",
-               "importance", "trend_score", "selling_points"}
+               "importance", "trend_score", "selling_points",
+               "product_code", "cover_object_key"}
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
