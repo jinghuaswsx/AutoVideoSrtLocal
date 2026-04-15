@@ -131,12 +131,12 @@
 
   function rowHTML(p) {
     const count = p.items_count || 0;
-    const warn = !p.has_en_cover ? ' oc-row-warn' : '';
+    const warnCls = !p.has_en_cover ? ' class="oc-row-warn"' : '';
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     return `
-      <tr class="oc-row${warn}" data-pid="${p.id}">
+      <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
         <td class="name"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>

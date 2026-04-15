@@ -1,6 +1,6 @@
 """快速截图验证 /medias/ 布局"""
-import sys
 from playwright.sync_api import sync_playwright
+import json
 
 URL = "http://14.103.220.208:8888"
 
@@ -15,29 +15,28 @@ with sync_playwright() as p:
     page.wait_for_url(lambda u: "/login" not in u, timeout=10000)
     page.goto(URL + "/medias/", wait_until="networkidle")
     page.wait_for_selector("#grid table, #grid .oc-state", timeout=10000)
-    page.screenshot(path="_tmp_medias.png", full_page=True)
+    # Only screenshot the visible area around table
+    page.screenshot(path="_tmp_medias.png", clip={"x": 0, "y": 0, "width": 1440, "height": 700})
 
-    # collect layout info
     info = page.evaluate("""() => {
-      const grid = document.getElementById('grid');
-      const table = grid && grid.querySelector('table');
-      const g = grid && window.getComputedStyle(grid);
-      const t = table && table.getBoundingClientRect();
-      const ths = table ? Array.from(table.querySelectorAll('thead th')).map(h => ({text: h.textContent.trim(), w: h.getBoundingClientRect().width})) : [];
-      const firstRow = table && table.querySelector('tbody tr');
-      const rowHeight = firstRow ? firstRow.getBoundingClientRect().height : null;
+      const tr = document.querySelector('#grid tbody tr');
+      if (!tr) return null;
+      const tds = Array.from(tr.querySelectorAll('td')).map((td, i) => {
+        const cs = window.getComputedStyle(td);
+        return {
+          i,
+          w: Math.round(td.getBoundingClientRect().width),
+          h: Math.round(td.getBoundingClientRect().height),
+          wordBreak: cs.wordBreak,
+          overflow: cs.overflow,
+          whiteSpace: cs.whiteSpace,
+          text: (td.textContent || '').trim().substring(0, 40),
+        };
+      });
       return {
-        grid_display: g && g.display,
-        grid_width: grid && grid.getBoundingClientRect().width,
-        table_width: t && t.width,
-        table_height: t && t.height,
-        viewport: {w: window.innerWidth, h: window.innerHeight},
-        thead: ths,
-        row_height: rowHeight,
+        trHeight: Math.round(tr.getBoundingClientRect().height),
+        tds,
       };
     }""")
-    print("LAYOUT INFO:")
-    import json
     print(json.dumps(info, ensure_ascii=False, indent=2))
     browser.close()
-print("screenshot saved to _tmp_medias.png")
