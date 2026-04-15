@@ -345,44 +345,6 @@ def submit(task_id: str):
         return _submit_locked(task_id, task, body)
     finally:
         lock.release()
-    mode = (body.get("remove_mode") or "").strip().lower()
-    selection_box = body.get("selection_box")
-    media_info = task.get("media_info") or {}
-
-    if mode not in {"full", "box"}:
-        return jsonify({"error": "remove_mode must be full or box"}), 400
-
-    try:
-        duration = float(media_info.get("duration") or 0.0)
-    except (TypeError, ValueError):
-        return jsonify({"error": "invalid media duration"}), 400
-    if duration > config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS:
-        return jsonify({"error": "video duration exceeds provider limit"}), 400
-
-    try:
-        normalized = _normalize_selection_box(mode, selection_box, media_info)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    store.update(
-        task_id,
-        status="queued",
-        remove_mode=mode,
-        selection_box=normalized,
-        position_payload=_to_position_payload(normalized),
-        provider_task_id="",
-        provider_status="queued",
-        provider_emsg="",
-        provider_result_url="",
-        result_video_path="",
-        result_tos_key="",
-        result_object_info={},
-        error="",
-    )
-    store.set_step(task_id, "submit", "queued")
-    store.set_step_message(task_id, "submit", "等待后台提交去字幕任务")
-    subtitle_removal_runner.start(task_id, user_id=current_user.id)
-    return jsonify({"task_id": task_id, "status": "queued"}), 202
 
 
 @bp.route("/api/subtitle-removal/<task_id>/artifact/source", methods=["GET"])
