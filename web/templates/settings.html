@@ -85,6 +85,22 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            value="{{ keys.get('gemini', {}).get('extra', {}).get('model_id', '') }}">
 
     <hr class="divider">
+    <span class="service-tag blue">Gemini 视频分析（评分 + CSK）</span>
+    <p class="hint">用于视频合成后的 AI 评分与 CSK 深度分析。留空则回落到上方 Gemini 通用配置。</p>
+    <label>API Key</label>
+    <input type="password" name="gemini_video_analysis_key" placeholder="留空则使用上方 Gemini 通用 Key"
+           value="{{ keys.get('gemini_video_analysis', {}).get('key_value', '') }}">
+    <label>模型</label>
+    {% set gva_model = keys.get('gemini_video_analysis', {}).get('extra', {}).get('model_id', '') %}
+    <select name="gemini_video_analysis_model_id">
+      <option value="" {{ 'selected' if not gva_model }}>默认（gemini-3.1-pro-preview）</option>
+      {% for mid, mlabel in video_analysis_models %}
+      <option value="{{ mid }}" {{ 'selected' if gva_model == mid }}>{{ mlabel }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">仅列出 Gemini 2.x 及以上、支持视频输入的模型。</p>
+
+    <hr class="divider">
     <span class="service-tag orange">豆包 2.0 Pro · via 火山引擎 ARK</span>
     <label>API Key</label>
     <input type="password" name="doubao_llm_key" placeholder="留空则保持当前配置"

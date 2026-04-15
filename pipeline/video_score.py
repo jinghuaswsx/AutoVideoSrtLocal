@@ -59,11 +59,12 @@ def score_video(video_path: str | Path, *, user_id: int | None = None) -> dict:
     raw = gemini.generate(
         USER_PROMPT,
         system=SYSTEM_PROMPT,
-        model=SCORE_MODEL,
         media=p,
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
+        service="gemini_video_analysis",
+        default_model=SCORE_MODEL,
     )
     if isinstance(raw, dict):
         data = raw

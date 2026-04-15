@@ -33,17 +33,39 @@ class GeminiError(RuntimeError):
 
 _clients: dict[str, genai.Client] = {}
 
+# 支持视频分析的 Gemini 模型（仅 2.x 及以上）
+VIDEO_CAPABLE_MODELS: list[tuple[str, str]] = [
+    ("gemini-3.1-pro-preview",        "Gemini 3.1 Pro Preview"),
+    ("gemini-3.1-flash-preview",      "Gemini 3.1 Flash Preview"),
+    ("gemini-3-pro-preview",          "Gemini 3 Pro Preview"),
+    ("gemini-3-flash-preview",        "Gemini 3 Flash Preview"),
+    ("gemini-2.5-pro",                "Gemini 2.5 Pro"),
+    ("gemini-2.5-flash",              "Gemini 2.5 Flash"),
+    ("gemini-2.0-flash",              "Gemini 2.0 Flash"),
+]
 
-def resolve_config(user_id: int | None = None) -> tuple[str, str]:
-    """返回 (api_key, model_id)。优先用户配置 → 环境变量 → google_api_key 文件。"""
-    key = None
+
+def resolve_config(user_id: int | None = None, service: str = "gemini",
+                   default_model: str | None = None) -> tuple[str, str]:
+    """返回 (api_key, model_id)。
+
+    key 解析顺序：该 service 的用户配置 → 默认 "gemini" service 的用户配置
+                → 环境变量 → google_api_key 文件。
+    model 解析顺序：该 service 配置的 model_id → default_model 参数 → GEMINI_MODEL。
+    """
+    key = ""
     if user_id is not None:
-        key = resolve_key(user_id, "gemini", "GEMINI_API_KEY")
-    key = (key or "").strip() or GEMINI_API_KEY
-    model = GEMINI_MODEL
+        key = (resolve_key(user_id, service, "GEMINI_API_KEY") or "").strip()
+        if not key and service != "gemini":
+            key = (resolve_key(user_id, "gemini", "GEMINI_API_KEY") or "").strip()
+    key = key or GEMINI_API_KEY
+
+    model = default_model or GEMINI_MODEL
     if user_id is not None:
-        extra = resolve_extra(user_id, "gemini") or {}
-        model = (extra.get("model_id") or "").strip() or model
+        extra = resolve_extra(user_id, service) or {}
+        chosen = (extra.get("model_id") or "").strip()
+        if chosen:
+            model = chosen
     return key, model
 
 
@@ -139,17 +161,21 @@ def generate(
     max_output_tokens: int | None = None,
     max_retries: int = 3,
     user_id: int | None = None,
+    service: str = "gemini",
+    default_model: str | None = None,
 ) -> str | Any:
     """一次性生成。传 response_schema 时返回解析后的 JSON（dict/list）。
 
     media: 视频或图片路径，可传单个或列表。视频或大文件会走 Files API。
     user_id: 传入后优先读该用户在系统配置里保存的 key / model。
+    service: 配置来源服务名（默认 "gemini"，视频分析可传 "gemini_video_analysis"）。
+    default_model: 该业务的默认模型（当 service 未配 model_id 时使用）。
     """
-    api_key, default_model = resolve_config(user_id)
+    api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
     if not api_key:
         raise GeminiError("GEMINI_API_KEY 未配置（可在系统配置页设置，或设环境变量，或写入 google_api_key 文件）")
     client = _get_client(api_key)
-    model_id = model or default_model
+    model_id = model or resolved_model
     media_list = [media] if isinstance(media, (str, Path)) else list(media) if media else None
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(
@@ -193,13 +219,15 @@ def generate_stream(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     user_id: int | None = None,
+    service: str = "gemini",
+    default_model: str | None = None,
 ) -> Generator[str, None, None]:
     """流式生成，yield 文本片段。不支持 response_schema。"""
-    api_key, default_model = resolve_config(user_id)
+    api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
     if not api_key:
         raise GeminiError("GEMINI_API_KEY 未配置")
     client = _get_client(api_key)
-    model_id = model or default_model
+    model_id = model or resolved_model
     media_list = [media] if isinstance(media, (str, Path)) else list(media) if media else None
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(

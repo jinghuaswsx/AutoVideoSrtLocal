@@ -110,11 +110,12 @@ def analyze_video(video_path: str | Path, *, user_id: int | None = None) -> dict
 
     raw = gemini.generate(
         CSK_PROMPT,
-        model=CSK_MODEL,
         media=p,
         temperature=0.2,
         max_output_tokens=4096,
         user_id=user_id,
+        service="gemini_video_analysis",
+        default_model=CSK_MODEL,
     )
     data = raw if isinstance(raw, dict) else parse_json_response(raw)
 

@@ -2,6 +2,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT, get_all, set_key
+from appcore.gemini import VIDEO_CAPABLE_MODELS
 
 bp = Blueprint("settings", __name__)
 
@@ -9,6 +10,7 @@ SERVICES = [
     ("doubao_asr", "豆包 ASR", ["key_value", "app_id", "cluster"]),
     ("openrouter", "OpenRouter", ["key_value", "base_url", "model_id"]),
     ("gemini", "Google Gemini", ["key_value", "model_id"]),
+    ("gemini_video_analysis", "Gemini 视频分析", ["key_value", "model_id"]),
     ("doubao_llm", "豆包翻译", ["key_value", "base_url", "model_id"]),
     ("elevenlabs", "ElevenLabs", ["key_value"]),
 ]
@@ -51,4 +53,5 @@ def index():
         jianying_project_root=jianying_project_root,
         default_jianying_project_root=DEFAULT_JIANYING_PROJECT_ROOT,
         translate_pref=translate_pref,
+        video_analysis_models=VIDEO_CAPABLE_MODELS,
     )
