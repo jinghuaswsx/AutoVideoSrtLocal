@@ -4,6 +4,25 @@ from typing import Any
 from appcore.db import query, query_one, execute
 
 
+# ---------- 语种 ----------
+
+def list_languages() -> list[dict]:
+    return query(
+        "SELECT code, name_zh, sort_order, enabled FROM media_languages "
+        "WHERE enabled=1 ORDER BY sort_order ASC, code ASC"
+    )
+
+
+def is_valid_language(code: str) -> bool:
+    if not code:
+        return False
+    row = query_one(
+        "SELECT 1 AS ok FROM media_languages WHERE code=%s AND enabled=1",
+        (code,),
+    )
+    return bool(row)
+
+
 # ---------- 产品 ----------
 
 def create_product(user_id: int, name: str, color_people: str | None = None,
@@ -77,22 +96,32 @@ def soft_delete_product(product_id: int) -> int:
 
 # ---------- 文案 ----------
 
-def list_copywritings(product_id: int) -> list[dict]:
+def list_copywritings(product_id: int, lang: str | None = None) -> list[dict]:
+    if lang:
+        return query(
+            "SELECT * FROM media_copywritings "
+            "WHERE product_id=%s AND lang=%s ORDER BY idx ASC, id ASC",
+            (product_id, lang),
+        )
     return query(
-        "SELECT * FROM media_copywritings WHERE product_id=%s ORDER BY idx ASC, id ASC",
+        "SELECT * FROM media_copywritings WHERE product_id=%s "
+        "ORDER BY lang ASC, idx ASC, id ASC",
         (product_id,),
     )
 
 
-def replace_copywritings(product_id: int, items: list[dict]) -> None:
-    """整体替换：删除所有旧文案，插入新列表。"""
-    execute("DELETE FROM media_copywritings WHERE product_id=%s", (product_id,))
+def replace_copywritings(product_id: int, items: list[dict], lang: str = "en") -> None:
+    """整体替换某语种的文案列表。"""
+    execute(
+        "DELETE FROM media_copywritings WHERE product_id=%s AND lang=%s",
+        (product_id, lang),
+    )
     for idx, item in enumerate(items, start=1):
         execute(
             "INSERT INTO media_copywritings "
-            "(product_id, idx, title, body, description, ad_carrier, ad_copy, ad_keywords) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (product_id, idx,
+            "(product_id, lang, idx, title, body, description, ad_carrier, ad_copy, ad_keywords) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (product_id, lang, idx,
              item.get("title"), item.get("body"), item.get("description"),
              item.get("ad_carrier"), item.get("ad_copy"), item.get("ad_keywords")),
         )
@@ -104,13 +133,14 @@ def create_item(product_id: int, user_id: int, filename: str, object_key: str,
                 display_name: str | None = None, file_url: str | None = None,
                 thumbnail_path: str | None = None, duration_seconds: float | None = None,
                 file_size: int | None = None,
-                cover_object_key: str | None = None) -> int:
+                cover_object_key: str | None = None,
+                lang: str = "en") -> int:
     return execute(
         "INSERT INTO media_items "
-        "(product_id, user_id, filename, display_name, object_key, file_url, "
+        "(product_id, lang, user_id, filename, display_name, object_key, file_url, "
         " thumbnail_path, cover_object_key, duration_seconds, file_size) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-        (product_id, user_id, filename, display_name or filename, object_key,
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (product_id, lang, user_id, filename, display_name or filename, object_key,
          file_url, thumbnail_path, cover_object_key, duration_seconds, file_size),
     )
 
@@ -122,7 +152,14 @@ def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
     )
 
 
-def list_items(product_id: int) -> list[dict]:
+def list_items(product_id: int, lang: str | None = None) -> list[dict]:
+    if lang:
+        return query(
+            "SELECT * FROM media_items "
+            "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+            "ORDER BY sort_order ASC, id ASC",
+            (product_id, lang),
+        )
     return query(
         "SELECT * FROM media_items WHERE product_id=%s AND deleted_at IS NULL "
         "ORDER BY sort_order ASC, id ASC",
@@ -186,4 +223,93 @@ def list_item_filenames_by_product(product_ids: list[int], limit_per: int = 5) -
         bucket = out.setdefault(pid, [])
         if len(bucket) < limit_per:
             bucket.append(r.get("display_name") or r["filename"])
+    return out
+
+
+# ---------- 产品主图（per-lang） ----------
+
+def set_product_cover(product_id: int, lang: str, object_key: str) -> None:
+    execute(
+        "INSERT INTO media_product_covers (product_id, lang, object_key) "
+        "VALUES (%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE object_key=VALUES(object_key)",
+        (product_id, lang, object_key),
+    )
+
+
+def delete_product_cover(product_id: int, lang: str) -> int:
+    return execute(
+        "DELETE FROM media_product_covers WHERE product_id=%s AND lang=%s",
+        (product_id, lang),
+    )
+
+
+def get_product_covers(product_id: int) -> dict[str, str]:
+    rows = query(
+        "SELECT lang, object_key FROM media_product_covers WHERE product_id=%s",
+        (product_id,),
+    )
+    return {r["lang"]: r["object_key"] for r in rows}
+
+
+def resolve_cover(product_id: int, lang: str) -> str | None:
+    """返回该语种主图；缺失时回退到 en；都没有返回 None。"""
+    covers = get_product_covers(product_id)
+    return covers.get(lang) or covers.get("en")
+
+
+def has_english_cover(product_id: int) -> bool:
+    row = query_one(
+        "SELECT 1 AS ok FROM media_product_covers WHERE product_id=%s AND lang='en'",
+        (product_id,),
+    )
+    return bool(row)
+
+
+# ---------- 覆盖度统计 ----------
+
+def lang_coverage_by_product(product_ids: list[int]) -> dict[int, dict[str, dict]]:
+    """返回 { pid: { lang: {items, copy, cover} } }，仅包含启用语种。"""
+    if not product_ids:
+        return {}
+    langs = [l["code"] for l in list_languages()]
+    placeholders = ",".join(["%s"] * len(product_ids))
+
+    item_rows = query(
+        f"SELECT product_id, lang, COUNT(*) AS c FROM media_items "
+        f"WHERE product_id IN ({placeholders}) AND deleted_at IS NULL "
+        f"GROUP BY product_id, lang",
+        tuple(product_ids),
+    )
+    copy_rows = query(
+        f"SELECT product_id, lang, COUNT(*) AS c FROM media_copywritings "
+        f"WHERE product_id IN ({placeholders}) "
+        f"GROUP BY product_id, lang",
+        tuple(product_ids),
+    )
+    cover_rows = query(
+        f"SELECT product_id, lang FROM media_product_covers "
+        f"WHERE product_id IN ({placeholders})",
+        tuple(product_ids),
+    )
+
+    out: dict[int, dict[str, dict]] = {
+        pid: {lang: {"items": 0, "copy": 0, "cover": False} for lang in langs}
+        for pid in product_ids
+    }
+    for r in item_rows:
+        pid = int(r["product_id"])
+        lang = r["lang"]
+        if pid in out and lang in out[pid]:
+            out[pid][lang]["items"] = int(r["c"])
+    for r in copy_rows:
+        pid = int(r["product_id"])
+        lang = r["lang"]
+        if pid in out and lang in out[pid]:
+            out[pid][lang]["copy"] = int(r["c"])
+    for r in cover_rows:
+        pid = int(r["product_id"])
+        lang = r["lang"]
+        if pid in out and lang in out[pid]:
+            out[pid][lang]["cover"] = True
     return out
