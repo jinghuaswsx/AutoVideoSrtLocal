@@ -43,7 +43,8 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
 
 
 def _serialize_product(p: dict, items_count: int | None = None,
-                       cover_item_id: int | None = None) -> dict:
+                       cover_item_id: int | None = None,
+                       items_filenames: list[str] | None = None) -> dict:
     cover_url = None
     if p.get("cover_object_key"):
         cover_url = f"/medias/cover/{p['id']}"
@@ -60,6 +61,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
         "items_count": items_count,
+        "items_filenames": items_filenames or [],
         "cover_thumbnail_url": cover_url,
     }
 
@@ -107,7 +109,12 @@ def api_list_products():
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
     covers = medias.first_thumb_item_by_product(pids)
-    data = [_serialize_product(r, counts.get(r["id"], 0), covers.get(r["id"])) for r in rows]
+    filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
+    data = [
+        _serialize_product(r, counts.get(r["id"], 0), covers.get(r["id"]),
+                           items_filenames=filenames.get(r["id"], []))
+        for r in rows
+    ]
     return jsonify({"items": data, "total": total, "page": page, "page_size": limit})
 
 
@@ -162,16 +169,14 @@ def api_update_product(pid: int):
     if exist and exist["id"] != pid:
         return jsonify({"error": "产品 ID 已被占用"}), 409
 
-    if not p.get("cover_object_key") and not body.get("cover_object_key"):
-        return jsonify({"error": "封面图必填"}), 400
-
     items = medias.list_items(pid)
     if not items:
         return jsonify({"error": "至少需要 1 条视频素材"}), 400
 
     update_fields = {"name": name, "product_code": product_code}
-    if body.get("cover_object_key"):
-        update_fields["cover_object_key"] = body["cover_object_key"]
+    # 显式传入 cover_object_key（包括 null 清空）才更新，否则保持原值
+    if "cover_object_key" in body:
+        update_fields["cover_object_key"] = body["cover_object_key"] or None
     medias.update_product(pid, **update_fields)
 
     if isinstance(body.get("copywritings"), list):

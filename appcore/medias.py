@@ -159,3 +159,23 @@ def first_thumb_item_by_product(product_ids: list[int]) -> dict[int, int]:
         tuple(product_ids),
     )
     return {int(r["product_id"]): int(r["item_id"]) for r in rows}
+
+
+def list_item_filenames_by_product(product_ids: list[int], limit_per: int = 5) -> dict[int, list[str]]:
+    """每个产品下前 limit_per 条素材文件名（用于列表行展示）。"""
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, filename, display_name FROM media_items "
+        f"WHERE product_id IN ({placeholders}) AND deleted_at IS NULL "
+        f"ORDER BY product_id, sort_order ASC, id ASC",
+        tuple(product_ids),
+    )
+    out: dict[int, list[str]] = {}
+    for r in rows:
+        pid = int(r["product_id"])
+        bucket = out.setdefault(pid, [])
+        if len(bucket) < limit_per:
+            bucket.append(r.get("display_name") or r["filename"])
+    return out
