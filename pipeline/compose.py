@@ -4,10 +4,15 @@
 2. 保留完整英文 TTS 音轨，不拉伸不压缩
 3. 输出软字幕版（mp4 + srt）和硬字幕版（烧录）
 """
+import logging
 import os
+import re
 import subprocess
 
+logger = logging.getLogger(__name__)
+
 _FONT_SIZE_BASE: dict[str, int] = {"small": 11, "medium": 14, "large": 18}
+_VALID_FONT_NAME = re.compile(r'^[A-Za-z0-9 \-_]+$')
 
 
 def _fonts_dir() -> str:
@@ -168,6 +173,8 @@ def _compose_hard(
 
 
 def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, margin_v: int) -> str:
+    if not _VALID_FONT_NAME.match(font_name):
+        font_name = "Impact"
     fonts_dir = _escape_subtitle_filter_path(_fonts_dir())
     escaped_path = _escape_subtitle_filter_path(srt_path)
     return (
@@ -194,9 +201,17 @@ def _get_video_height(video_path: str) -> int:
         video_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning(
+            "ffprobe 获取视频高度失败（returncode=%d），使用默认 1080p: %s",
+            result.returncode,
+            result.stderr.strip(),
+        )
+        return 1080
     try:
         return int(result.stdout.strip())
-    except ValueError:
+    except (ValueError, TypeError):
+        logger.warning("ffprobe 返回了无法解析的高度值 %r，使用默认 1080p", result.stdout)
         return 1080
 
 
