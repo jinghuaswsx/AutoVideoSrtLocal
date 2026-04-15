@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from pipeline.compose import _compose_hard, _compute_font_size, _compute_margin_v
+from pipeline.compose import _compose_hard, _compute_font_size, _compute_margin_v, _build_subtitle_filter
 
 
 def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatch, tmp_path):
@@ -8,7 +8,9 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
 
     def fake_run(cmd, capture_output=True, text=True):
         captured["cmd"] = cmd
-        return SimpleNamespace(returncode=0, stderr="")
+        if cmd and "ffprobe" in cmd[0]:
+            return SimpleNamespace(returncode=0, stdout="1080\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("pipeline.compose.subprocess.run", fake_run)
 
@@ -16,13 +18,14 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
     output_path = str(tmp_path / "video_hard.mp4")
     windows_srt_path = r"G:\Code\AutoVideoSrt\output\task\subtitle.srt"
 
-    _compose_hard(video_path, windows_srt_path, "bottom", output_path)
+    _compose_hard(video_path, windows_srt_path, output_path)
 
     vf = captured["cmd"][captured["cmd"].index("-vf") + 1]
-    assert vf.startswith(
-        "subtitles=filename='G\\:/Code/AutoVideoSrt/output/task/subtitle.srt':force_style='"
-    )
-    assert "Alignment=2,MarginV=50" in vf
+    assert "G\\:/Code/AutoVideoSrt/output/task/subtitle.srt" in vf
+    assert "FontName=Impact" in vf
+    assert "FontSize=14" in vf    # medium preset at 1080p
+    assert "MarginV=346" in vf    # round(1080*(1-0.68))
+    assert "Alignment=2" in vf
 
 
 def test_compute_font_size_medium_at_1080p():
@@ -61,3 +64,24 @@ def test_compute_margin_v_bottom():
 def test_compute_margin_v_top():
     # position_y=0.1 → margin_v = round(1080*0.9) = 972
     assert _compute_margin_v(1080, 0.1) == 972
+
+
+def test_build_subtitle_filter_includes_font_name():
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
+    assert "FontName=Anton" in vf
+
+
+def test_build_subtitle_filter_includes_font_size():
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 18, 50)
+    assert "FontSize=18" in vf
+
+
+def test_build_subtitle_filter_includes_margin_v():
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    assert "MarginV=346" in vf
+    assert "Alignment=2" in vf
+
+
+def test_build_subtitle_filter_includes_fontsdir():
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
+    assert "fontsdir=" in vf

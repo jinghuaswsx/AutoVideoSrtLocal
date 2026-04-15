@@ -31,9 +31,12 @@ def compose_video(
     tts_audio_path: str,
     srt_path: str,
     output_dir: str,
-    subtitle_position: str = "bottom",
+    subtitle_position: str = "bottom",   # 保留供 CapCut 模块使用
     timeline_manifest: dict | None = None,
     variant: str | None = None,
+    font_name: str = "Impact",
+    font_size_preset: str = "medium",
+    subtitle_position_y: float = 0.68,
 ) -> dict:
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -49,7 +52,12 @@ def compose_video(
         video_duration = _get_duration(video_path)
         _compose_soft_legacy(video_path, tts_audio_path, min(tts_duration, video_duration), soft_output)
 
-    _compose_hard(soft_output, srt_path, subtitle_position, hard_output)
+    _compose_hard(
+        soft_output, srt_path, hard_output,
+        font_name=font_name,
+        font_size_preset=font_size_preset,
+        subtitle_position_y=subtitle_position_y,
+    )
 
     return {
         "soft_video": soft_output,
@@ -131,8 +139,18 @@ def _compose_soft_legacy(video_path: str, audio_path: str, duration: float, outp
         raise RuntimeError(f"软字幕版合成失败: {result.stderr}")
 
 
-def _compose_hard(video_path: str, srt_path: str, position: str, output_path: str):
-    vf = _build_subtitle_filter(srt_path, position)
+def _compose_hard(
+    video_path: str,
+    srt_path: str,
+    output_path: str,
+    font_name: str = "Impact",
+    font_size_preset: str = "medium",
+    subtitle_position_y: float = 0.68,
+) -> None:
+    video_height = _get_video_height(video_path)
+    font_size_pt = _compute_font_size(video_height, font_size_preset)
+    margin_v = _compute_margin_v(video_height, subtitle_position_y)
+    vf = _build_subtitle_filter(srt_path, font_name, font_size_pt, margin_v)
 
     cmd = [
         "ffmpeg", "-y",
@@ -149,24 +167,37 @@ def _compose_hard(video_path: str, srt_path: str, position: str, output_path: st
         raise RuntimeError(f"硬字幕版合成失败: {result.stderr}")
 
 
-def _build_subtitle_filter(srt_path: str, position: str) -> str:
-    position_map = {
-        "bottom": "Alignment=2,MarginV=50",
-        "middle": "Alignment=5",
-        "top": "Alignment=8,MarginV=50",
-    }
-    style_override = position_map.get(position, position_map["bottom"])
+def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, margin_v: int) -> str:
+    fonts_dir = _escape_subtitle_filter_path(_fonts_dir())
     escaped_path = _escape_subtitle_filter_path(srt_path)
     return (
-        "subtitles="
-        f"filename='{escaped_path}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&HFFFFFF,"
-        f"OutlineColour=&H000000,Outline=2,Bold=1,{style_override}'"
+        f"subtitles=filename='{escaped_path}'"
+        f":fontsdir='{fonts_dir}'"
+        f":force_style='FontName={font_name},FontSize={font_size_pt},"
+        f"PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,"
+        f"Alignment=2,MarginV={margin_v}'"
     )
 
 
 def _escape_subtitle_filter_path(srt_path: str) -> str:
     normalized = srt_path.replace("\\", "/")
     return normalized.replace(":", "\\:")
+
+
+def _get_video_height(video_path: str) -> int:
+    """读取视频流高度；读取失败时返回 1080 作为安全默认值。"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=height",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return 1080
 
 
 def _get_duration(path: str) -> float:
