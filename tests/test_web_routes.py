@@ -730,3 +730,14 @@ def test_medias_page_contains_aligned_create_modal_layout(authed_client_no_db):
     assert "oc-add-hero-grid" in body
     assert "oc-add-main-grid" in body
     assert "oc-add-video-grid" in body
+
+
+def test_medias_page_contains_aligned_edit_modal_layout(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "oc-edit-form" in body
+    assert "oc-edit-hero-grid" in body
+    assert "oc-edit-main-grid" in body
+    assert "oc-edit-video-grid" in body

@@ -7,7 +7,7 @@
       </button>
     </div>
 
-    <div class="oc-modal-body oc-center-body">
+    <div class="oc-modal-body oc-edit-form">
 
       <!-- 语种 Tabs -->
       <div id="edLangTabs" class="oc-lang-tabs"></div>
@@ -15,63 +15,67 @@
         必须先上传英文（EN）产品主图才能保存。
       </div>
 
-      <!-- 基本信息：产品名称 / 产品 ID 上下堆叠 -->
-      <section class="oc-section">
-        <div class="oc-field">
-          <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
-          <input id="edName" class="oc-input" maxlength="120">
-        </div>
-        <div class="oc-field" style="margin-bottom:0">
-          <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
-          <input id="edCode" class="oc-input" maxlength="64" autocomplete="off">
-        </div>
-      </section>
-
-      <!-- 产品主图（JS 将按 activeLang 重渲染 edCoverBlock 内容） -->
-      <section class="oc-section" id="edCoverSection">
-        <div class="oc-section-title">
-          <span>产品主图</span>
-          <span id="edCoverSectionHint" class="optional">(EN 必填，其他语种可选)</span>
-        </div>
-        <div id="edCoverBlock">
-          <!-- 初始静态结构，openEditDetail 后由 renderCoverBlock() 替换 -->
-          <div class="oc-cover-row">
-            <div id="edCoverBox" class="oc-cover-square-480">
-              <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
-                <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
-                <div class="dz-title">点击或拖拽上传</div>
-                <div class="dz-hint">JPG / PNG / WebP</div>
-              </div>
-              <img id="edCoverImg" alt="主图" hidden>
-            </div>
-            <div class="oc-cover-actions">
-              <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
-              <div class="oc-url-row" style="margin-top:var(--oc-sp-2)">
-                <input type="url" id="edCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
-                <button type="button" class="oc-btn ghost sm" id="edCoverFromUrlBtn">从 URL 导入</button>
-              </div>
-              <input type="file" id="edCoverInput" accept="image/*" hidden>
-            </div>
+      <section class="oc-section oc-section-card">
+        <div class="oc-section-title">必要信息<span class="req">*</span></div>
+        <div class="oc-edit-hero-grid">
+          <div class="oc-field">
+            <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
+            <input id="edName" class="oc-input" maxlength="120">
+          </div>
+          <div class="oc-field">
+            <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
+            <input id="edCode" class="oc-input" maxlength="64" autocomplete="off">
           </div>
         </div>
       </section>
 
-      <!-- 文案（JS 按 activeLang 过滤渲染） -->
-      <section class="oc-section" id="edCwSection">
-        <div class="oc-section-title">
-          <span>文案</span>
-          <span class="optional" id="edCwLangLabel"></span>
-          <span class="count" id="edCwBadge">0</span>
-        </div>
-        <div id="edCwList" class="oc-cw-grid"></div>
-        <button class="oc-add-btn" type="button" id="edCwAddBtn">
-          <svg width="14" height="14"><use href="#ic-plus"/></svg>
-          <span>添加文案条目</span>
-        </button>
-      </section>
+      <div class="oc-edit-main-grid">
+        <!-- 产品主图（JS 将按 activeLang 重渲染 edCoverBlock 内容） -->
+        <section class="oc-section oc-section-card oc-edit-cover-panel" id="edCoverSection">
+          <div class="oc-section-title">
+            <span>产品主图</span>
+            <span id="edCoverSectionHint" class="optional">(EN 必填，其他语种可选)</span>
+          </div>
+          <div id="edCoverBlock">
+            <!-- 初始静态结构，openEditDetail 后由 renderCoverBlock() 替换 -->
+            <div class="oc-cover-row">
+              <div id="edCoverBox" class="oc-cover-square-480">
+                <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
+                  <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                  <div class="dz-title">点击或拖拽上传</div>
+                  <div class="dz-hint">JPG / PNG / WebP</div>
+                </div>
+                <img id="edCoverImg" alt="主图" hidden>
+              </div>
+              <div class="oc-cover-actions">
+                <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
+                <div class="oc-url-row" style="margin-top:var(--oc-sp-2)">
+                  <input type="url" id="edCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
+                  <button type="button" class="oc-btn ghost sm" id="edCoverFromUrlBtn">从 URL 导入</button>
+                </div>
+                <input type="file" id="edCoverInput" accept="image/*" hidden>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 文案（JS 按 activeLang 过滤渲染） -->
+        <section class="oc-section oc-section-card oc-edit-copy-panel" id="edCwSection">
+          <div class="oc-section-title">
+            <span>文案</span>
+            <span class="optional" id="edCwLangLabel"></span>
+            <span class="count" id="edCwBadge">0</span>
+          </div>
+          <div id="edCwList" class="oc-cw-grid"></div>
+          <button class="oc-add-btn" type="button" id="edCwAddBtn">
+            <svg width="14" height="14"><use href="#ic-plus"/></svg>
+            <span>添加文案条目</span>
+          </button>
+        </section>
+      </div>
 
       <!-- 视频素材（JS 按 activeLang 过滤渲染） -->
-      <section class="oc-section" id="edItemsSection">
+      <section class="oc-section oc-section-card" id="edItemsSection">
         <div class="oc-section-title">
           <span>视频素材</span>
           <span class="optional" id="edItemsLangLabel"></span>
@@ -82,9 +86,9 @@
         <div id="edItemsGrid" class="oc-items-grid" style="grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4)"></div>
 
         <!-- 新增素材大框：视频封面图 + 视频源 + 提交按钮（两者都有才能提交） -->
-        <div class="oc-new-item" id="edNewItemBox">
+        <div class="oc-new-item oc-edit-new-item" id="edNewItemBox">
           <div class="oc-new-item-title">新增素材</div>
-          <div class="oc-new-item-body">
+          <div class="oc-new-item-body oc-edit-video-grid">
             <!-- 左：视频封面图 -->
             <div class="oc-new-item-col">
               <div class="oc-new-item-label">视频封面图<span class="req">*</span></div>
@@ -144,7 +148,7 @@
 
     </div>
 
-    <div class="oc-modal-foot oc-modal-foot-center">
+    <div class="oc-modal-foot oc-edit-modal-foot">
       <button class="oc-btn ghost" id="edCancelBtn">取消</button>
       <button class="oc-btn primary" id="edSaveBtn">
         <svg width="14" height="14"><use href="#ic-check"/></svg>

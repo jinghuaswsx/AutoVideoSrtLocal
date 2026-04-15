@@ -464,6 +464,94 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   .oc-add-form .oc-cover-9-16 { width:100%; }
 }
 
+/* ────────── 编辑产品素材弹窗：对齐式分区布局 ────────── */
+.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-5); }
+.oc-edit-form .oc-section { margin-bottom:0; }
+.oc-edit-form .oc-section-title { justify-content:flex-start; text-align:left; }
+.oc-edit-form .oc-label { color:var(--oc-fg); font-weight:600; }
+.oc-edit-form .oc-field { margin-bottom:0; }
+.oc-edit-form .oc-hint { margin-top:0; }
+.oc-edit-form .oc-lang-tabs { justify-content:flex-start; }
+.oc-edit-hero-grid,
+.oc-edit-main-grid,
+.oc-edit-video-grid {
+  display:grid;
+  gap:var(--oc-sp-5);
+  align-items:start;
+}
+.oc-edit-hero-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-edit-main-grid { grid-template-columns:minmax(280px, 360px) minmax(0, 1fr); }
+.oc-edit-cover-panel,
+.oc-edit-copy-panel { height:100%; }
+.oc-edit-form .oc-cover-row {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-3);
+  align-items:flex-start;
+}
+.oc-edit-form .oc-cover-square-480 {
+  width:min(220px, 100%);
+  height:auto;
+  aspect-ratio:1 / 1;
+}
+.oc-edit-form .oc-cover-actions {
+  min-width:0;
+  width:100%;
+  max-width:340px;
+  align-items:flex-start;
+  padding-top:0;
+}
+.oc-edit-form .oc-url-row {
+  display:flex;
+  gap:var(--oc-sp-2);
+  align-items:center;
+  width:100%;
+}
+.oc-edit-form .oc-url-row .oc-input { flex:1; min-width:0; }
+.oc-edit-form #edCwList,
+.oc-edit-form #edItemsGrid,
+.oc-edit-form #edUploadProgress {
+  max-width:none;
+  margin-left:0;
+  margin-right:0;
+}
+.oc-edit-form #edCwList { width:100%; }
+.oc-edit-form .oc-add-btn { align-self:flex-start; margin-left:0; margin-right:0; }
+.oc-edit-new-item { max-width:none; margin:0; }
+.oc-edit-video-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+.oc-edit-form .oc-new-item-col { align-items:flex-start; }
+.oc-edit-form .oc-cover-9-16,
+.oc-edit-form .oc-video-pick {
+  width:min(280px, 100%);
+  max-width:100%;
+  margin:0;
+}
+.oc-edit-form .oc-cover-9-16 {
+  height:auto;
+  aspect-ratio:9 / 16;
+}
+.oc-edit-form .oc-video-pick {
+  height:auto;
+  min-height:498px;
+  aspect-ratio:9 / 16;
+}
+.oc-edit-form .oc-new-item-col .oc-url-row { width:100%; }
+.oc-edit-form .oc-new-item-footer { justify-content:flex-end; }
+.oc-edit-modal-foot { justify-content:flex-end !important; }
+@media (max-width: 980px) {
+  .oc-edit-main-grid,
+  .oc-edit-video-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 640px) {
+  .oc-edit-hero-grid { grid-template-columns:1fr; }
+  .oc-edit-form .oc-cover-square-480,
+  .oc-edit-form .oc-cover-9-16,
+  .oc-edit-form .oc-video-pick {
+    width:100%;
+  }
+  .oc-edit-form .oc-video-pick { min-height:320px; }
+}
+
 /* ────────── 新增素材大框（视频封面 + 视频源 + 提交按钮） ────────── */
 .oc-new-item {
   border:1.5px dashed var(--oc-border-strong);
