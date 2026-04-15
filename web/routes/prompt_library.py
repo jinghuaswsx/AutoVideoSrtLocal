@@ -215,22 +215,12 @@ _TRANSLATE_SYSTEM = {
 }
 
 
-@bp.route("/api/items/<int:item_id>/translate", methods=["POST"])
-@login_required
-@admin_required
-def api_translate(item_id: int):
-    p = prompt_library.get_item(item_id)
-    if not p:
-        abort(404)
-    body = request.get_json(silent=True) or {}
-    direction = (body.get("direction") or "").strip()  # 'zh2en' or 'en2zh'
+def _do_translate(direction: str, src: str) -> tuple[str | None, str | None]:
+    """返回 (translated, error_msg)。"""
     if direction not in _TRANSLATE_SYSTEM:
-        return jsonify({"error": "direction 必须为 zh2en 或 en2zh"}), 400
-
-    src = (p.get("content_zh") if direction == "zh2en" else p.get("content_en")) or ""
-    if not src.strip():
-        return jsonify({"error": "源语言版本为空，无法翻译"}), 400
-
+        return None, "direction 必须为 zh2en 或 en2zh"
+    if not (src or "").strip():
+        return None, "源语言版本为空，无法翻译"
     from pipeline.translate import resolve_provider_config
     client, model = resolve_provider_config("openrouter", user_id=current_user.id)
     try:
@@ -246,9 +236,7 @@ def api_translate(item_id: int):
         translated = (resp.choices[0].message.content or "").strip()
     except Exception as e:
         log.exception("提示词翻译失败")
-        return jsonify({"error": f"翻译失败：{e}"}), 502
-
-    # 去掉可能的 markdown 围栏
+        return None, f"翻译失败：{e}"
     if translated.startswith("```"):
         parts = translated.split("```")
         if len(parts) >= 2:
@@ -256,10 +244,39 @@ def api_translate(item_id: int):
             if translated.startswith(("text\n", "plaintext\n")):
                 translated = translated.split("\n", 1)[1] if "\n" in translated else ""
             translated = translated.strip()
-
     if not translated:
-        return jsonify({"error": "模型返回为空，请重试"}), 502
+        return None, "模型返回为空，请重试"
+    return translated, None
 
+
+@bp.route("/api/items/<int:item_id>/translate", methods=["POST"])
+@login_required
+@admin_required
+def api_translate(item_id: int):
+    p = prompt_library.get_item(item_id)
+    if not p:
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    direction = (body.get("direction") or "").strip()
+    src = (p.get("content_zh") if direction == "zh2en" else p.get("content_en")) or ""
+    translated, err = _do_translate(direction, src)
+    if err:
+        return jsonify({"error": err}), 400 if "direction" in err or "源语言" in err else 502
     target_lang = "en" if direction == "zh2en" else "zh"
     prompt_library.set_translation(item_id, current_user.id, target_lang, translated)
+    return jsonify({"lang": target_lang, "content": translated})
+
+
+@bp.route("/api/translate-text", methods=["POST"])
+@login_required
+@admin_required
+def api_translate_text():
+    """不绑定任何已有 item，直接翻译传入的 text（供新建/编辑弹窗现场翻译使用）。"""
+    body = request.get_json(silent=True) or {}
+    direction = (body.get("direction") or "").strip()
+    text = body.get("text") or ""
+    translated, err = _do_translate(direction, text)
+    if err:
+        return jsonify({"error": err}), 400 if "direction" in err or "源语言" in err else 502
+    target_lang = "en" if direction == "zh2en" else "zh"
     return jsonify({"lang": target_lang, "content": translated})

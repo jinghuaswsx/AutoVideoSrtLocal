@@ -159,7 +159,9 @@
 
 /* bilingual 两列视图 */
 .oc-bilingual { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); gap:var(--oc-sp-3); align-items:stretch; }
-.oc-bilingual.edit, .oc-bilingual.no-convert { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+.oc-bilingual.edit { grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); }
+.oc-bilingual.no-convert { grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+.oc-bilingual .pl-translate-btn { align-self:center; }
 .oc-pane { display:flex; flex-direction:column; min-width:0; }
 .oc-pane .head { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-2); padding:0 var(--oc-sp-1) var(--oc-sp-2); }
 .oc-pane .head .lang { display:inline-flex; align-items:center; gap:var(--oc-sp-2); font-size:12px; font-weight:600; color:var(--oc-fg-muted); }
@@ -264,6 +266,12 @@
           <div class="oc-pane">
             <div class="head"><span class="lang"><span class="badge">中</span> 中文版本</span></div>
             <textarea id="pContentZh" class="oc-textarea lg body" placeholder="粘贴中文版 system prompt…"></textarea>
+          </div>
+          <div class="pl-translate-btn">
+            <button type="button" class="oc-btn ghost sm" id="pTranslateBtn" title="从有内容的一侧翻译到空的一侧">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              <span>翻译</span>
+            </button>
           </div>
           <div class="oc-pane">
             <div class="head"><span class="lang"><span class="badge en">EN</span> English version</span></div>

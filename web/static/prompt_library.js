@@ -247,6 +247,36 @@
     }
   }
 
+  async function translateInEdit() {
+    const zh = $('pContentZh').value.trim();
+    const en = $('pContentEn').value.trim();
+    if (!zh && !en) { toast('请先在任一侧填写内容', 'err'); return; }
+    // 有空填空；两侧都有内容时默认从中翻到英
+    const direction = en && !zh ? 'en2zh' : 'zh2en';
+    const src = direction === 'zh2en' ? zh : en;
+    const btn = $('pTranslateBtn');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `${icon('loader', 12)}<span>翻译中…</span>`;
+    const svg = btn.querySelector('svg');
+    if (svg) svg.style.animation = 'spin 1s linear infinite';
+    try {
+      const r = await fetchJSON('/prompt-library/api/translate-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction, text: src }),
+      });
+      const target = r.lang === 'en' ? 'pContentEn' : 'pContentZh';
+      $(target).value = r.content;
+      toast('已生成', 'ok');
+    } catch (e) {
+      toast('翻译失败：' + (e.message || e), 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  }
+
   function closeView() { $('viewMask').hidden = true; state.current = null; }
 
   // ---------- Create / Edit ----------
@@ -382,6 +412,7 @@
 
       $('zh2enBtn').addEventListener('click', () => translate('zh2en'));
       $('en2zhBtn').addEventListener('click', () => translate('en2zh'));
+      $('pTranslateBtn').addEventListener('click', translateInEdit);
     }
 
     $('viewClose').addEventListener('click', closeView);
