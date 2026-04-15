@@ -809,23 +809,21 @@
     bar.classList.toggle("hidden", !hasDone);
     document.getElementById("heroCapcutBtn").classList.toggle("hidden", !downloads.capcut);
     document.getElementById("heroHardBtn").classList.toggle("hidden", !downloads.hard);
-    document.getElementById("heroSoftBtn").classList.toggle("hidden", !downloads.soft);
     // store urls for heroDownload()
     bar.dataset.capcut = downloads.capcut || "";
     bar.dataset.hard = downloads.hard || "";
-    bar.dataset.soft = downloads.soft || "";
   }
 
   function heroDownload(key) {
     const bar = document.getElementById("heroDownloadBar");
     const url = bar?.dataset[key];
-    if (url) dlFile(url, key === "capcut" ? "CapCut工程包" : key === "hard" ? "硬字幕视频" : "软字幕视频");
+    if (url) dlFile(url, key === "capcut" ? "CapCut工程包" : "硬字幕视频");
   }
 
   function renderDownloads(downloads) {
     const grid = document.getElementById("downloadGrid");
     grid.innerHTML = "";
-    [["hard", "硬字幕视频"], ["soft", "软字幕视频"], ["srt", "字幕文件 .srt"], ["capcut", "CapCut 工程包"]].forEach(([key, label]) => {
+    [["hard", "硬字幕视频"], ["srt", "字幕文件 .srt"], ["capcut", "CapCut 工程包"]].forEach(([key, label]) => {
       if (!downloads[key]) return;
       const link = document.createElement("a");
       link.href = "#";
