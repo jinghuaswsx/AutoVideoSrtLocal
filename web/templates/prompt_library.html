@@ -81,17 +81,26 @@
 .oc-hint { font-size:12px; color:var(--oc-fg-subtle); }
 .oc-spacer { flex:1; }
 
-/* grid */
-.oc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:var(--oc-sp-4); }
-.oc-card { position:relative; display:flex; flex-direction:column; padding:var(--oc-sp-5); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); cursor:pointer; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); min-height:160px; }
-.oc-card:hover { border-color:var(--oc-border-strong); box-shadow:var(--oc-shadow-sm); }
-.oc-card .top { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-2); margin-bottom:var(--oc-sp-2); }
-.oc-card .name { font-size:15px; font-weight:600; color:var(--oc-fg); line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-.oc-card .desc { font-size:13px; color:var(--oc-fg-muted); line-height:1.55; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; flex:1; }
-.oc-card .meta { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-2); margin-top:var(--oc-sp-4); padding-top:var(--oc-sp-3); border-top:1px dashed var(--oc-border); font-size:11px; color:var(--oc-fg-subtle); font-variant-numeric:tabular-nums; }
-.oc-card .meta .left { display:inline-flex; align-items:center; gap:var(--oc-sp-2); }
-.oc-card .actions { display:flex; gap:var(--oc-sp-1); align-items:center; }
-.oc-icon-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid transparent; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease); }
+/* list (table) */
+.oc-grid { display:block; }
+.oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; table-layout:fixed; }
+.oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); overflow:hidden; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
+.oc-table tbody tr { cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease); }
+.oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
+.oc-table tbody tr:last-child td { border-bottom:none; }
+.oc-table td.name { font-weight:600; color:var(--oc-fg); line-height:1.4; }
+.oc-table td.name .nm { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis; word-break:break-word; }
+.oc-table td.desc-cell { color:var(--oc-fg-muted); line-height:1.55; }
+.oc-table td.desc-cell .ds { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis; word-break:break-word; }
+.oc-table td.content-cell { color:var(--oc-fg); line-height:1.55; }
+.oc-table td.content-cell .ct-wrap { display:flex; align-items:flex-start; gap:var(--oc-sp-2); }
+.oc-table td.content-cell .ct { flex:1; min-width:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis; word-break:break-word; white-space:pre-wrap; font-size:12px; color:var(--oc-fg-muted); }
+.oc-table td.content-cell .ct.empty { color:var(--oc-fg-subtle); font-style:italic; }
+.oc-table td.meta-cell { color:var(--oc-fg-subtle); font-size:12px; font-variant-numeric:tabular-nums; }
+.oc-table td.meta-cell .mline { display:inline-flex; align-items:center; gap:4px; }
+.oc-table td.actions { white-space:nowrap; text-align:right; }
+.oc-icon-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid transparent; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease); vertical-align:middle; }
 .oc-icon-btn:hover { background:var(--oc-bg-muted); color:var(--oc-fg); }
 .oc-icon-btn.danger:hover { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
 

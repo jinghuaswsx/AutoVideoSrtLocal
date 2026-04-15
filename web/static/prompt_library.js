@@ -78,7 +78,9 @@
   }
 
   function renderSkeleton() {
-    $('grid').innerHTML = Array.from({ length: 6 }, () => '<div class="oc-skel"></div>').join('');
+    $('grid').innerHTML = Array.from({ length: 6 },
+      () => '<div class="oc-skel" style="height:52px;margin-bottom:4px;border-radius:var(--oc-r)"></div>'
+    ).join('');
   }
 
   function renderGrid(items) {
@@ -98,8 +100,31 @@
       if (ec) ec.addEventListener('click', () => openCreate());
       return;
     }
-    grid.innerHTML = items.map(cardHTML).join('');
-    grid.querySelectorAll('[data-pid]').forEach(el => {
+    grid.innerHTML = `
+      <table class="oc-table">
+        <colgroup>
+          <col style="width:220px">
+          <col style="width:220px">
+          <col>
+          <col style="width:80px">
+          <col style="width:160px">
+          <col style="width:140px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>描述</th>
+            <th>提示词</th>
+            <th>语种</th>
+            <th>更新</th>
+            <th style="text-align:right">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(rowHTML).join('')}
+        </tbody>
+      </table>`;
+    grid.querySelectorAll('tr[data-pid]').forEach(el => {
       const pid = +el.dataset.pid;
       el.addEventListener('click', (e) => {
         if (e.target.closest('[data-stop]')) return;
@@ -108,8 +133,7 @@
     });
     grid.querySelectorAll('[data-copy-zh]').forEach(b => b.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const full = await fetchJSON('/prompt-library/api/items/' + b.dataset.copyZh);
-      copyToClipboard(full.content_zh || full.content_en || '');
+      copyToClipboard(b.dataset.content || '');
     }));
     grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', (e) => {
       e.stopPropagation(); openEdit(+b.dataset.edit);
@@ -123,11 +147,17 @@
     const out = [];
     if (p.content_zh) out.push('<span class="lang-dot zh" title="已有中文版">中</span>');
     if (p.content_en) out.push('<span class="lang-dot en" title="已有英文版">EN</span>');
-    return out.join('');
+    return out.join('') || '<span style="color:var(--oc-fg-subtle);font-size:11px">—</span>';
   }
 
-  function cardHTML(p) {
-    const desc = p.description ? escapeHtml(p.description) : '<span style="color:var(--oc-fg-subtle)">无描述</span>';
+  function rowHTML(p) {
+    const descHtml = p.description
+      ? escapeHtml(p.description)
+      : '<span style="color:var(--oc-fg-subtle)">无描述</span>';
+    const content = p.content_zh || p.content_en || '';
+    const contentEsc = escapeHtml(content);
+    const contentCls = content ? 'ct' : 'ct empty';
+    const contentDisplay = content ? contentEsc : '无内容';
     const author = p.updated_by_name || p.created_by_name || '—';
     const badges = langBadges(p);
     const adminActions = isAdmin ? `
@@ -135,20 +165,24 @@
       <button class="oc-icon-btn danger" data-stop data-del="${p.id}" data-name="${escapeHtml(p.name)}" title="删除">${icon('trash', 14)}</button>
     ` : '';
     return `
-      <article class="oc-card" data-pid="${p.id}" tabindex="0">
-        <div class="top">
-          <div class="name">${escapeHtml(p.name)}</div>
-          <div class="lang-badges">${badges}</div>
-        </div>
-        <div class="desc">${desc}</div>
-        <div class="meta">
-          <span class="left">${icon('user', 11)} ${escapeHtml(author)} · ${icon('clock', 11)} ${fmtDate(p.updated_at)}</span>
-          <span class="actions">
-            <button class="oc-icon-btn" data-stop data-copy-zh="${p.id}" title="复制">${icon('copy', 14)}</button>
-            ${adminActions}
-          </span>
-        </div>
-      </article>`;
+      <tr data-pid="${p.id}" tabindex="0">
+        <td class="name"><div class="nm">${escapeHtml(p.name)}</div></td>
+        <td class="desc-cell"><div class="ds">${descHtml}</div></td>
+        <td class="content-cell">
+          <div class="ct-wrap">
+            <div class="${contentCls}">${contentDisplay}</div>
+            <button class="oc-icon-btn" data-stop data-copy-zh="${p.id}" data-content="${contentEsc}" title="复制提示词">${icon('copy', 14)}</button>
+          </div>
+        </td>
+        <td>${badges}</td>
+        <td class="meta-cell">
+          <div class="mline">${icon('user', 11)} ${escapeHtml(author)}</div>
+          <div class="mline">${icon('clock', 11)} ${fmtDate(p.updated_at)}</div>
+        </td>
+        <td class="actions">
+          ${adminActions}
+        </td>
+      </tr>`;
   }
 
   function renderPager(total, page, pageSize) {
