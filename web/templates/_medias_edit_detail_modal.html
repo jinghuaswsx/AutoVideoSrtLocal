@@ -7,7 +7,7 @@
       </button>
     </div>
 
-    <div class="oc-modal-body">
+    <div class="oc-modal-body oc-center-body">
 
       <!-- 语种 Tabs -->
       <div id="edLangTabs" class="oc-lang-tabs"></div>
@@ -15,17 +15,15 @@
         必须先上传英文（EN）产品主图才能保存。
       </div>
 
-      <!-- 基本信息 -->
+      <!-- 基本信息：产品名称 / 产品 ID 上下堆叠 -->
       <section class="oc-section">
-        <div class="oc-row">
-          <div class="oc-field" style="margin-bottom:0">
-            <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
-            <input id="edName" class="oc-input" maxlength="120">
-          </div>
-          <div class="oc-field" style="margin-bottom:0">
-            <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
-            <input id="edCode" class="oc-input" maxlength="64" autocomplete="off">
-          </div>
+        <div class="oc-field">
+          <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
+          <input id="edName" class="oc-input" maxlength="120">
+        </div>
+        <div class="oc-field" style="margin-bottom:0">
+          <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
+          <input id="edCode" class="oc-input" maxlength="64" autocomplete="off">
         </div>
       </section>
 
@@ -146,7 +144,7 @@
 
     </div>
 
-    <div class="oc-modal-foot">
+    <div class="oc-modal-foot oc-modal-foot-center">
       <button class="oc-btn ghost" id="edCancelBtn">取消</button>
       <button class="oc-btn primary" id="edSaveBtn">
         <svg width="14" height="14"><use href="#ic-check"/></svg>
