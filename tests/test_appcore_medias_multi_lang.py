@@ -23,6 +23,70 @@ def test_is_valid_language():
     assert medias.is_valid_language("xx") is False
 
 
+def test_list_languages_for_admin_includes_disabled_and_usage(monkeypatch):
+    monkeypatch.setattr(
+        medias,
+        "query",
+        lambda sql, args=(): [
+            {"code": "en", "name_zh": "英语", "sort_order": 1, "enabled": 1},
+            {"code": "pt", "name_zh": "葡萄牙语", "sort_order": 7, "enabled": 0},
+        ] if "FROM media_languages" in sql else [],
+    )
+    monkeypatch.setattr(
+        medias,
+        "get_language_usage",
+        lambda code: {
+            "items_count": 0 if code == "en" else 2,
+            "copy_count": 0,
+            "cover_count": 0,
+            "in_use": code == "pt",
+        },
+    )
+
+    langs = medias.list_languages_for_admin()
+
+    assert [item["code"] for item in langs] == ["en", "pt"]
+    assert langs[0]["enabled"] == 1
+    assert langs[1]["enabled"] == 0
+    assert langs[1]["items_count"] == 2
+    assert langs[1]["in_use"] is True
+
+
+def test_normalize_language_code_lowercases_and_validates():
+    assert medias.normalize_language_code(" PT-BR ") == "pt-br"
+    with pytest.raises(ValueError, match="格式不合法"):
+        medias.normalize_language_code("中文")
+
+
+def test_create_language_rejects_duplicate_code(monkeypatch):
+    monkeypatch.setattr(
+        medias,
+        "query_one",
+        lambda sql, args=(): {"code": "pt"} if args == ("pt",) else None,
+    )
+
+    with pytest.raises(ValueError, match="已存在"):
+        medias.create_language("PT", "葡萄牙语", 7, True)
+
+
+def test_validate_language_update_rejects_disabling_en():
+    with pytest.raises(ValueError, match="不能停用"):
+        medias.validate_language_update("en", enabled=False)
+
+
+def test_delete_language_rejects_default_and_in_use(monkeypatch):
+    with pytest.raises(ValueError, match="不能删除"):
+        medias.delete_language("en")
+
+    monkeypatch.setattr(
+        medias,
+        "get_language_usage",
+        lambda code: {"items_count": 1, "copy_count": 0, "cover_count": 0, "in_use": True},
+    )
+    with pytest.raises(ValueError, match="只能停用"):
+        medias.delete_language("de")
+
+
 def test_create_item_with_lang(user_id):
     pid = medias.create_product(user_id, "多语素材测试")
     try:

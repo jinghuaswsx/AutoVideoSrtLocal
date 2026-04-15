@@ -1,6 +1,7 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required
 from web.auth import admin_required
+from appcore import medias
 from appcore.users import list_users, create_user, set_active, get_by_username
 from appcore.settings import (
     PROJECT_TYPE_LABELS,
@@ -110,4 +111,57 @@ def settings():
         "admin_settings.html",
         project_types=PROJECT_TYPE_LABELS,
         current=current,
+        media_languages=medias.list_languages_for_admin(),
     )
+
+
+@bp.route("/api/media-languages", methods=["GET"])
+@login_required
+@admin_required
+def api_media_languages():
+    return jsonify({"items": medias.list_languages_for_admin()})
+
+
+@bp.route("/api/media-languages", methods=["POST"])
+@login_required
+@admin_required
+def api_create_media_language():
+    body = request.get_json(silent=True) or {}
+    try:
+        medias.create_language(
+            body.get("code", ""),
+            body.get("name_zh", ""),
+            body.get("sort_order", 0),
+            bool(body.get("enabled", True)),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True}), 201
+
+
+@bp.route("/api/media-languages/<code>", methods=["PUT"])
+@login_required
+@admin_required
+def api_update_media_language(code: str):
+    body = request.get_json(silent=True) or {}
+    try:
+        medias.update_language(
+            code,
+            body.get("name_zh", ""),
+            body.get("sort_order", 0),
+            bool(body.get("enabled", True)),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/media-languages/<code>", methods=["DELETE"])
+@login_required
+@admin_required
+def api_delete_media_language(code: str):
+    try:
+        medias.delete_language(code)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})

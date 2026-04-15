@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from types import SimpleNamespace
 
 from web import store
 from web.app import create_app
@@ -183,6 +184,118 @@ def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, m
 
     assert response.status_code == 200
     assert (1, "jianying", "", {"project_root": custom_root}) in captured
+
+
+def test_admin_media_languages_api_lists_all_rows(authed_client_no_db, monkeypatch):
+    import web.routes.admin as admin_routes
+
+    monkeypatch.setattr(
+        admin_routes,
+        "medias",
+        SimpleNamespace(list_languages_for_admin=lambda: [
+            {
+                "code": "en",
+                "name_zh": "英语",
+                "sort_order": 1,
+                "enabled": 1,
+                "items_count": 0,
+                "copy_count": 0,
+                "cover_count": 0,
+                "in_use": False,
+            },
+            {
+                "code": "pt",
+                "name_zh": "葡萄牙语",
+                "sort_order": 7,
+                "enabled": 0,
+                "items_count": 2,
+                "copy_count": 0,
+                "cover_count": 0,
+                "in_use": True,
+            },
+        ]),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/admin/api/media-languages")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert [item["code"] for item in payload["items"]] == ["en", "pt"]
+    assert payload["items"][1]["in_use"] is True
+
+
+def test_admin_media_languages_api_rejects_deleting_in_use_language(authed_client_no_db, monkeypatch):
+    import web.routes.admin as admin_routes
+
+    monkeypatch.setattr(
+        admin_routes,
+        "medias",
+        SimpleNamespace(
+            delete_language=lambda code: (_ for _ in ()).throw(ValueError("该语种已有关联数据，只能停用")),
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.delete("/admin/api/media-languages/de")
+
+    assert response.status_code == 400
+    assert "只能停用" in response.get_json()["error"]
+
+
+def test_admin_settings_page_contains_media_languages_config(authed_client_no_db, monkeypatch):
+    import web.routes.admin as admin_routes
+
+    monkeypatch.setattr(admin_routes, "get_all_retention_settings", lambda: {"default": 168})
+    monkeypatch.setattr(
+        admin_routes,
+        "medias",
+        SimpleNamespace(
+            list_languages_for_admin=lambda: [
+                {
+                    "code": "en",
+                    "name_zh": "英语",
+                    "sort_order": 1,
+                    "enabled": 1,
+                    "items_count": 0,
+                    "copy_count": 0,
+                    "cover_count": 0,
+                    "in_use": False,
+                }
+            ]
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/admin/settings")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "素材语种配置" in body
+    assert 'id="mediaLanguagesCard"' in body
+    assert 'id="mediaLanguagesTableBody"' in body
+    assert "admin_settings.js" in body
+
+
+def test_medias_languages_api_returns_enabled_languages_only(authed_client_no_db, monkeypatch):
+    import web.routes.medias as medias_routes
+
+    monkeypatch.setattr(
+        medias_routes,
+        "medias",
+        SimpleNamespace(
+            list_languages=lambda: [
+                {"code": "en", "name_zh": "英语", "sort_order": 1, "enabled": 1},
+                {"code": "pt", "name_zh": "葡萄牙语", "sort_order": 7, "enabled": 1},
+            ]
+        ),
+        raising=False,
+    )
+
+    response = authed_client_no_db.get("/medias/api/languages")
+
+    assert response.status_code == 200
+    assert [item["code"] for item in response.get_json()["items"]] == ["en", "pt"]
 
 
 def test_task_detail_returns_artifacts_structure(authed_client_no_db):
