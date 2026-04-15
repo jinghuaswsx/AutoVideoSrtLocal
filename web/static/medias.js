@@ -94,27 +94,17 @@
       return;
     }
     grid.innerHTML = `
-      <table class="oc-table oc-table-fixed">
-        <colgroup>
-          <col style="width:56px">
-          <col style="width:130px">
-          <col>
-          <col style="width:170px">
-          <col style="width:72px">
-          <col style="width:240px">
-          <col style="width:140px">
-          <col style="width:96px">
-        </colgroup>
+      <table class="oc-table">
         <thead>
           <tr>
-            <th>ID</th>
-            <th>主图</th>
+            <th style="width:56px">ID</th>
+            <th style="width:136px">主图</th>
             <th>产品名称</th>
-            <th>产品 ID</th>
-            <th>素材数</th>
-            <th>语种覆盖</th>
-            <th>修改时间</th>
-            <th>操作</th>
+            <th style="width:200px">产品 ID</th>
+            <th style="width:72px">素材数</th>
+            <th style="width:236px">语种覆盖</th>
+            <th style="width:140px">修改时间</th>
+            <th style="width:96px">操作</th>
           </tr>
         </thead>
         <tbody>
