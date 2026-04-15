@@ -98,12 +98,12 @@
         <colgroup>
           <col style="width:48px">
           <col style="width:128px">
-          <col style="min-width:180px">
           <col style="width:240px">
-          <col style="width:80px">
-          <col style="width:232px">
-          <col style="width:132px">
-          <col style="width:96px">
+          <col style="width:240px">
+          <col style="width:72px">
+          <col style="width:220px">
+          <col style="width:128px">
+          <col style="width:88px">
         </colgroup>
         <thead>
           <tr>
