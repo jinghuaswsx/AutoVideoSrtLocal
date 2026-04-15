@@ -12,6 +12,12 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
+from appcore.task_recovery import (
+    recover_all_interrupted_tasks,
+    recover_project_if_needed,
+    register_active_task,
+    unregister_active_task,
+)
 from appcore.settings import get_retention_hours
 from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.video_review import get_review_prompts, save_review_prompts
@@ -60,6 +66,7 @@ def _emit_to_task(task_id: str, event: str, payload: dict):
 @bp.route("/video-review")
 @login_required
 def list_page():
+    recover_all_interrupted_tasks()
     rows = db_query(
         "SELECT id, display_name, original_filename, thumbnail_path, status, created_at "
         "FROM projects "
@@ -73,6 +80,7 @@ def list_page():
 @bp.route("/video-review/<task_id>")
 @login_required
 def detail_page(task_id: str):
+    recover_project_if_needed(task_id, "video_review")
     row = db_query_one(
         "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_review' AND deleted_at IS NULL",
         (task_id, current_user.id),
@@ -170,7 +178,8 @@ def start_review(task_id: str):
     })
     db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
 
-    eventlet.spawn(_do_review, task_id, video_path, model, custom_prompt, current_user.id, prompt_lang)
+    register_active_task("video_review", task_id)
+    eventlet.spawn(_run_review_with_tracking, task_id, video_path, model, custom_prompt, current_user.id, prompt_lang)
 
     return jsonify({"status": "started"})
 
@@ -231,6 +240,15 @@ def _do_review(task_id: str, video_path: str, model: str, custom_prompt: str,
         })
         db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
         _emit_to_task(task_id, EVT_VR_ERROR, {"message": f"评估失败: {e}"})
+
+
+def _run_review_with_tracking(task_id: str, video_path: str, model: str, custom_prompt: str,
+                              user_id: int, prompt_lang: str = "en"):
+    register_active_task("video_review", task_id)
+    try:
+        return _do_review(task_id, video_path, model, custom_prompt, user_id, prompt_lang)
+    finally:
+        unregister_active_task("video_review", task_id)
 
 
 @bp.route("/api/video-review/<task_id>/video")

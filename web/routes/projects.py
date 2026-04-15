@@ -3,6 +3,7 @@ import json
 from flask import Blueprint, render_template, abort, redirect
 from flask_login import login_required, current_user
 from appcore.db import query, query_one
+from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from appcore.settings import get_retention_hours
 
 bp = Blueprint("projects", __name__)
@@ -11,6 +12,7 @@ bp = Blueprint("projects", __name__)
 @bp.route("/")
 @login_required
 def index():
+    recover_all_interrupted_tasks()
     rows = query(
         """SELECT id, original_filename, display_name, thumbnail_path, status, created_at, expires_at, deleted_at
            FROM projects WHERE user_id = %s AND type = 'translation' AND deleted_at IS NULL ORDER BY created_at DESC""",
@@ -24,6 +26,7 @@ def index():
 @bp.route("/projects/<task_id>")
 @login_required
 def detail(task_id: str):
+    recover_project_if_needed(task_id, "translation")
     row = query_one(
         "SELECT * FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),

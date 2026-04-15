@@ -11,6 +11,12 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore.api_keys import resolve_key
+from appcore.task_recovery import (
+    recover_all_interrupted_tasks,
+    recover_project_if_needed,
+    register_active_task,
+    unregister_active_task,
+)
 from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from config import UPLOAD_DIR, OUTPUT_DIR
@@ -73,6 +79,7 @@ def _shrink_image_if_oversize(path: str) -> str:
 @bp.route("/video-creation")
 @login_required
 def list_page():
+    recover_all_interrupted_tasks()
     rows = db_query(
         "SELECT id, display_name, original_filename, thumbnail_path, status, created_at "
         "FROM projects "
@@ -86,6 +93,7 @@ def list_page():
 @bp.route("/video-creation/<task_id>")
 @login_required
 def detail_page(task_id: str):
+    recover_project_if_needed(task_id, "video_creation")
     row = db_query_one(
         "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
         (task_id, current_user.id),
@@ -214,7 +222,8 @@ def upload():
     if not api_key:
         return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
 
-    eventlet.spawn(_do_generate_v2, task_id, api_key, state)
+    register_active_task("video_creation", task_id)
+    eventlet.spawn(_run_generate_with_tracking, task_id, api_key, state)
 
     return jsonify({"id": task_id}), 201
 
@@ -296,6 +305,14 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         _emit_to_task(task_id, EVT_VC_ERROR, {"message": f"视频生成失败: {e}"})
 
 
+def _run_generate_with_tracking(task_id: str, api_key: str, state: dict):
+    register_active_task("video_creation", task_id)
+    try:
+        return _do_generate_v2(task_id, api_key, state)
+    finally:
+        unregister_active_task("video_creation", task_id)
+
+
 @bp.route("/api/video-creation/<task_id>/result-video")
 @login_required
 def get_result_video(task_id: str):
@@ -350,6 +367,8 @@ def get_asset(task_id: str, kind: str, idx: int):
 @login_required
 def delete_asset(task_id: str, kind: str, idx: int):
     """删除某项素材。kind = video / image / audio。仅当 steps.generate != running 时允许。"""
+    recover_project_if_needed(task_id, "video_creation")
+    recover_project_if_needed(task_id, "video_creation")
     row = db_query_one(
         "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
         (task_id, current_user.id),
@@ -409,6 +428,7 @@ def delete_asset(task_id: str, kind: str, idx: int):
 @bp.route("/api/video-creation/<task_id>/asset/<kind>", methods=["POST"])
 @login_required
 def add_asset(task_id: str, kind: str):
+    recover_project_if_needed(task_id, "video_creation")
     """追加素材。kind = video / image / audio。multipart: files['file']。"""
     row = db_query_one(
         "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
@@ -468,6 +488,7 @@ def add_asset(task_id: str, kind: str):
 @bp.route("/api/video-creation/<task_id>/regenerate", methods=["POST"])
 @login_required
 def regenerate(task_id: str):
+    recover_project_if_needed(task_id, "video_creation")
     """重新触发 Seedance 生成。仅当状态不是 running 时允许。"""
     row = db_query_one(
         "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
@@ -493,7 +514,8 @@ def regenerate(task_id: str):
         (json.dumps(state, ensure_ascii=False), task_id),
     )
 
-    eventlet.spawn(_do_generate_v2, task_id, api_key, state)
+    register_active_task("video_creation", task_id)
+    eventlet.spawn(_run_generate_with_tracking, task_id, api_key, state)
     return jsonify({"status": "ok"})
 
 
