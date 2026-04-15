@@ -149,9 +149,17 @@
   function showModal() { $('editMask').hidden = false; }
   function hideModal() { $('editMask').hidden = true; state.current = null; }
 
-  function switchTab(name) {
-    document.querySelectorAll('.oc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-    document.querySelectorAll('.oc-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  function openCreate() {
+    state.current = { product: null, copywritings: [], items: [] };
+    $('modalTitle').textContent = '添加产品素材';
+    $('mName').value = '';
+    $('mCode').value = '';
+    setCover(null);
+    renderCopywritings([]);
+    renderItems([]);
+    $('uploadProgress').innerHTML = '';
+    showModal();
+    setTimeout(() => $('mName').focus(), 80);
   }
 
   async function openEdit(pid) {
@@ -160,28 +168,164 @@
       state.current = data;
       $('modalTitle').textContent = '编辑产品素材';
       $('mName').value = data.product.name || '';
-      $('mColor').value = data.product.color_people || '';
-      $('mSource').value = data.product.source || '';
+      $('mCode').value = data.product.product_code || '';
+      setCover(data.product.cover_object_key ? `/medias/cover/${pid}?_=${Date.now()}` : null);
       renderCopywritings(data.copywritings);
       renderItems(data.items);
       $('uploadProgress').innerHTML = '';
-      switchTab('basic');
       showModal();
     } catch (e) {
       alert('加载失败：' + (e.message || e));
     }
   }
 
-  function openCreate() {
-    state.current = { product: null, copywritings: [], items: [] };
-    $('modalTitle').textContent = '添加产品素材';
-    $('mName').value = ''; $('mColor').value = ''; $('mSource').value = '';
-    renderCopywritings([]);
-    renderItems([]);
-    $('uploadProgress').innerHTML = '';
-    switchTab('basic');
-    showModal();
-    setTimeout(() => $('mName').focus(), 80);
+  // ---------- Cover ----------
+  const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+
+  function setCover(url) {
+    const dz = $('coverDropzone');
+    const pv = $('coverPreview');
+    if (url) {
+      $('coverImg').src = url;
+      pv.hidden = false; dz.hidden = true;
+    } else {
+      $('coverImg').removeAttribute('src');
+      pv.hidden = true; dz.hidden = false;
+    }
+  }
+
+  async function uploadCover(file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
+    const pid = await ensureProductIdForUpload();
+    if (!pid) return;
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/cover/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      const done = await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ object_key: boot.object_key }),
+      });
+      state.current.product.cover_object_key = boot.object_key;
+      setCover(done.cover_url + `?_=${Date.now()}`);
+    } catch (e) {
+      alert('封面上传失败：' + (e.message || ''));
+    }
+  }
+
+  // ---------- Items ----------
+  function renderItems(items) {
+    const g = $('itemsGrid');
+    g.innerHTML = items.map(it => `
+      <div class="oc-item" data-item="${it.id}">
+        <div class="thumb">
+          ${it.thumbnail_url
+            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
+            : `<div class="thumb-ph">${icon('film', 20)}</div>`}
+          <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
+        </div>
+        <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
+      </div>
+    `).join('');
+    g.querySelectorAll('[data-item]').forEach(card => {
+      card.querySelector('.rm').addEventListener('click', () => removeItem(+card.dataset.item, card));
+    });
+    $('itemsBadge').textContent = items.length;
+  }
+
+  async function removeItem(itemId, card) {
+    if (!confirm('确认删除该素材？')) return;
+    await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
+    card.remove();
+    $('itemsBadge').textContent = document.querySelectorAll('.oc-item').length;
+  }
+
+  async function ensureProductIdForUpload() {
+    if (state.current && state.current.product && state.current.product.id) return state.current.product.id;
+    const name = $('mName').value.trim();
+    const code = $('mCode').value.trim().toLowerCase();
+    if (!name) { alert('请先填写产品名称'); $('mName').focus(); return null; }
+    if (!SLUG_RE.test(code)) { alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return null; }
+    try {
+      const res = await fetchJSON('/medias/api/products', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, product_code: code }),
+      });
+      const full = await fetchJSON('/medias/api/products/' + res.id);
+      state.current = full;
+      $('modalTitle').textContent = '编辑产品素材';
+      return res.id;
+    } catch (e) {
+      const msg = (e.message || '').toString();
+      if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('mCode').focus(); }
+      else alert('创建失败：' + msg);
+      return null;
+    }
+  }
+
+  async function uploadVideo(file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    const pid = await ensureProductIdForUpload();
+    if (!pid) return;
+    const box = $('uploadProgress');
+    const row = document.createElement('div');
+    row.className = 'oc-upload-row';
+    row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>上传中…</span>`;
+    box.appendChild(row);
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size }),
+      });
+      row.className = 'oc-upload-row ok';
+      row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>完成</span>`;
+    } catch (e) {
+      row.className = 'oc-upload-row err';
+      row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
+    }
+    const full = await fetchJSON('/medias/api/products/' + pid);
+    state.current = full;
+    renderItems(full.items);
+    loadList();
+  }
+
+  async function save() {
+    const name = $('mName').value.trim();
+    const code = $('mCode').value.trim().toLowerCase();
+    if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
+    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return; }
+    if (!state.current || !state.current.product || !state.current.product.cover_object_key) {
+      alert('请上传封面图'); return;
+    }
+    if (!document.querySelectorAll('.oc-item').length) {
+      alert('请至少上传 1 条视频素材'); return;
+    }
+    const pid = state.current.product.id;
+    try {
+      await fetchJSON('/medias/api/products/' + pid, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name, product_code: code,
+          copywritings: collectCopywritings(),
+        }),
+      });
+      hideModal();
+      loadList();
+    } catch (e) {
+      const msg = (e.message || '').toString();
+      if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('mCode').focus(); }
+      else alert('保存失败：' + msg);
+    }
   }
 
   // ---------- Copywritings ----------
@@ -234,102 +378,6 @@
     });
   }
 
-  // ---------- Items ----------
-  function renderItems(items) {
-    const g = $('itemsGrid');
-    g.innerHTML = items.map(it => `
-      <div class="oc-item" data-item="${it.id}">
-        <div class="thumb">
-          ${it.thumbnail_url
-            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
-            : `<div class="thumb-ph">${icon('film', 20)}</div>`}
-          <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
-        </div>
-        <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
-      </div>
-    `).join('');
-    g.querySelectorAll('[data-item]').forEach(card => {
-      card.querySelector('.rm').addEventListener('click', () => removeItem(+card.dataset.item, card));
-    });
-    $('itemsBadge').textContent = items.length;
-  }
-
-  async function removeItem(itemId, card) {
-    if (!confirm('确认删除该素材？')) return;
-    await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
-    card.remove();
-    $('itemsBadge').textContent = document.querySelectorAll('.oc-item').length;
-  }
-
-  async function ensureProductIdForUpload() {
-    if (state.current && state.current.product && state.current.product.id) return state.current.product.id;
-    const name = $('mName').value.trim();
-    if (!name) { alert('请先填写产品名称'); switchTab('basic'); $('mName').focus(); return null; }
-    const res = await fetchJSON('/medias/api/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name, color_people: $('mColor').value || null, source: $('mSource').value || null,
-      }),
-    });
-    const full = await fetchJSON('/medias/api/products/' + res.id);
-    state.current = full;
-    $('modalTitle').textContent = '编辑产品素材';
-    return res.id;
-  }
-
-  async function uploadFiles(files) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
-    const pid = await ensureProductIdForUpload();
-    if (!pid) return;
-    const box = $('uploadProgress');
-    for (const f of files) {
-      const row = document.createElement('div');
-      row.className = 'oc-upload-row';
-      row.innerHTML = `
-        <span class="fname">${escapeHtml(f.name)}</span>
-        <span>上传中…</span>`;
-      box.appendChild(row);
-      try {
-        const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: f.name }),
-        });
-        const putRes = await fetch(boot.upload_url, { method: 'PUT', body: f });
-        if (!putRes.ok) throw new Error('TOS 上传失败');
-        await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ object_key: boot.object_key, filename: f.name, file_size: f.size }),
-        });
-        row.className = 'oc-upload-row ok';
-        row.innerHTML = `<span class="fname">${escapeHtml(f.name)}</span><span>完成</span>`;
-      } catch (e) {
-        row.className = 'oc-upload-row err';
-        row.innerHTML = `<span class="fname">${escapeHtml(f.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
-      }
-    }
-    const full = await fetchJSON('/medias/api/products/' + pid);
-    state.current = full;
-    renderItems(full.items);
-    loadList();
-  }
-
-  async function save() {
-    const name = $('mName').value.trim();
-    if (!name) { alert('产品名称必填'); switchTab('basic'); $('mName').focus(); return; }
-    const pid = await ensureProductIdForUpload();
-    if (!pid) return;
-    await fetchJSON('/medias/api/products/' + pid, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name, color_people: $('mColor').value || null, source: $('mSource').value || null,
-        copywritings: collectCopywritings(),
-      }),
-    });
-    hideModal();
-    loadList();
-  }
-
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
     $('searchBtn').addEventListener('click', () => { state.page = 1; loadList(); });
@@ -352,11 +400,25 @@
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
 
-    document.querySelectorAll('.oc-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
-
     $('cwAddBtn').addEventListener('click', () => {
       $('cwList').appendChild(cwCard({}, $('cwList').children.length + 1));
       updateCwBadge();
+    });
+
+    const cdz = $('coverDropzone');
+    cdz.addEventListener('click', () => $('coverInput').click());
+    cdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('coverInput').click(); } });
+    cdz.addEventListener('dragover', (e) => { e.preventDefault(); cdz.classList.add('drag'); });
+    cdz.addEventListener('dragleave', () => cdz.classList.remove('drag'));
+    cdz.addEventListener('drop', (e) => {
+      e.preventDefault(); cdz.classList.remove('drag');
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) uploadCover(f);
+    });
+    $('coverReplace').addEventListener('click', () => $('coverInput').click());
+    $('coverInput').addEventListener('change', (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (f) uploadCover(f);
     });
 
     const dz = $('dropzone');
@@ -366,13 +428,13 @@
     dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
     dz.addEventListener('drop', (e) => {
       e.preventDefault(); dz.classList.remove('drag');
-      const files = [...(e.dataTransfer.files || [])].filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
-      if (files.length) uploadFiles(files);
+      const file = [...(e.dataTransfer.files || [])]
+        .find(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv)$/i.test(f.name));
+      if (file) uploadVideo(file);
     });
     $('fileInput').addEventListener('change', (e) => {
-      const files = [...e.target.files];
-      e.target.value = '';
-      if (files.length) uploadFiles(files);
+      const file = e.target.files[0]; e.target.value = '';
+      if (file) uploadVideo(file);
     });
 
     loadList();
