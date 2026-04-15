@@ -766,3 +766,11 @@ def test_medias_page_wraps_video_titles_in_edit_modal(authed_client_no_db):
     assert 'white-space:normal;' in body
     assert 'overflow-wrap:anywhere;' in body
     assert 'min-height:calc(1.45em * 2);' in body
+
+
+def test_medias_page_centers_new_item_submit_button_in_edit_modal(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '.oc-edit-form .oc-new-item-footer { justify-content:center; }' in body
