@@ -180,7 +180,6 @@ def build_compose_artifact() -> dict:
     return {
         "title": "视频合成",
         "items": [
-            media_item("video", "软字幕视频", "soft_video"),
             media_item("video", "硬字幕视频", "hard_video"),
         ],
     }
