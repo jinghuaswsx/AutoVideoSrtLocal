@@ -139,8 +139,13 @@
 .oc-input::placeholder, .oc-textarea::placeholder { color:var(--oc-fg-subtle); }
 .oc-input:focus, .oc-textarea:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
 
-.oc-ai-box { padding:var(--oc-sp-4); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:linear-gradient(135deg, var(--oc-accent-subtle), var(--oc-cyan-subtle)); margin-bottom:var(--oc-sp-5); }
-.oc-ai-box .title { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; font-weight:600; color:var(--oc-accent); margin-bottom:var(--oc-sp-2); }
+.oc-ai-details { margin-top:var(--oc-sp-2); border-top:1px dashed var(--oc-border); padding-top:var(--oc-sp-4); }
+.oc-ai-details > summary { list-style:none; display:inline-flex; align-items:center; gap:var(--oc-sp-2); font-size:12px; color:var(--oc-fg-muted); cursor:pointer; padding:var(--oc-sp-2) var(--oc-sp-3); border-radius:var(--oc-r); transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease); user-select:none; }
+.oc-ai-details > summary::-webkit-details-marker { display:none; }
+.oc-ai-details > summary:hover { background:var(--oc-bg-muted); color:var(--oc-accent); }
+.oc-ai-details > summary .chevron { transition:transform var(--oc-dur) var(--oc-ease-out); }
+.oc-ai-details[open] > summary .chevron { transform:rotate(180deg); }
+.oc-ai-box { padding:var(--oc-sp-4); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:linear-gradient(135deg, var(--oc-accent-subtle), var(--oc-cyan-subtle)); margin-top:var(--oc-sp-3); }
 .oc-ai-box .hint { font-size:12px; color:var(--oc-fg-muted); margin-bottom:var(--oc-sp-3); line-height:1.55; }
 .oc-ai-box .oc-textarea { background:var(--oc-bg); border-color:var(--oc-border-strong); }
 .oc-ai-box .row { display:flex; justify-content:flex-end; margin-top:var(--oc-sp-3); }
@@ -214,18 +219,6 @@
       <button class="oc-icon-btn" id="editClose" aria-label="关闭"><svg width="16" height="16"><use href="#ic-close"/></svg></button>
     </div>
     <div class="oc-modal-body">
-      <div class="oc-ai-box">
-        <div class="title"><svg width="14" height="14"><use href="#ic-sparkles"/></svg><span>AI 生成</span></div>
-        <div class="hint">描述你的需求，Sonnet 会为你起名并撰写一条完整可用的提示词。</div>
-        <textarea id="aiReq" class="oc-textarea" rows="3" placeholder="例如：我需要一个提示词，让助手扮演电商文案策划师，根据产品卖点写 3 条种草短文。"></textarea>
-        <div class="row">
-          <button class="oc-btn primary" id="aiGenBtn">
-            <svg width="14" height="14" id="aiGenIcon"><use href="#ic-sparkles"/></svg>
-            <span id="aiGenText">生成</span>
-          </button>
-        </div>
-      </div>
-
       <div class="oc-field">
         <label class="oc-label" for="pName">名称<span class="req">*</span><span class="hint">用于搜索</span></label>
         <input id="pName" class="oc-input" maxlength="255" placeholder="例如：电商种草文案助手">
@@ -236,8 +229,26 @@
       </div>
       <div class="oc-field">
         <label class="oc-label" for="pContent">提示词正文<span class="req">*</span></label>
-        <textarea id="pContent" class="oc-textarea lg" placeholder="system prompt 正文…"></textarea>
+        <textarea id="pContent" class="oc-textarea lg" placeholder="直接粘贴 system prompt 正文…"></textarea>
       </div>
+
+      <details class="oc-ai-details">
+        <summary>
+          <svg width="14" height="14"><use href="#ic-sparkles"/></svg>
+          <span>不知道怎么写？用 AI 生成（可选）</span>
+          <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="oc-ai-box">
+          <div class="hint">描述你的需求，Sonnet 会为你起名并撰写一条完整可用的提示词，回填到上方字段。</div>
+          <textarea id="aiReq" class="oc-textarea" rows="3" placeholder="例如：我需要一个提示词，让助手扮演电商文案策划师，根据产品卖点写 3 条种草短文。"></textarea>
+          <div class="row">
+            <button class="oc-btn primary" id="aiGenBtn" type="button">
+              <svg width="14" height="14" id="aiGenIcon"><use href="#ic-sparkles"/></svg>
+              <span id="aiGenText">生成并回填</span>
+            </button>
+          </div>
+        </div>
+      </details>
     </div>
     <div class="oc-modal-foot">
       <button class="oc-btn ghost" id="editCancel">取消</button>
