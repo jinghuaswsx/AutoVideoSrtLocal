@@ -348,20 +348,10 @@
       <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
       <div class="idx">#${idx}</div>
       <div class="stack">
-        <input class="oc-input" data-field="title" placeholder="标题">
-        <textarea class="oc-textarea" data-field="body" placeholder="正文"></textarea>
-        <input class="oc-input" data-field="description" placeholder="描述">
-        <input class="oc-input" data-field="ad_carrier" placeholder="广告媒体库">
-        <textarea class="oc-textarea" data-field="ad_copy" placeholder="广告文案"></textarea>
-        <input class="oc-input" data-field="ad_keywords" placeholder="广告词">
+        <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
       </div>
     `;
-    d.querySelector('[data-field="title"]').value = c.title || '';
     d.querySelector('[data-field="body"]').value = c.body || '';
-    d.querySelector('[data-field="description"]').value = c.description || '';
-    d.querySelector('[data-field="ad_carrier"]').value = c.ad_carrier || '';
-    d.querySelector('[data-field="ad_copy"]').value = c.ad_copy || '';
-    d.querySelector('[data-field="ad_keywords"]').value = c.ad_keywords || '';
     d.querySelector('.rm').addEventListener('click', () => { d.remove(); reindexCw(); });
     return d;
   }
