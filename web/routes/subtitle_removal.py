@@ -23,7 +23,12 @@ from web.upload_util import validate_video_extension
 bp = Blueprint("subtitle_removal", __name__)
 _submit_locks: dict[str, threading.Lock] = {}
 _submit_locks_guard = threading.Lock()
-_RECOVERABLE_TASK_STATUSES = {"queued", "running", "submitted"}
+_INFLIGHT_STEP_STATUSES = {
+    "submit": {"queued", "running"},
+    "poll": {"queued", "running"},
+    "download_result": {"running"},
+    "upload_result": {"running"},
+}
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -113,11 +118,12 @@ def _get_submit_lock(task_id: str) -> threading.Lock:
 
 
 def _task_has_inflight_step(task: dict) -> bool:
-    status = (task.get("status") or "").strip().lower()
-    if status in _RECOVERABLE_TASK_STATUSES:
-        return True
     steps = task.get("steps") or {}
-    return any((str(step_status or "").strip().lower() in _RECOVERABLE_TASK_STATUSES) for step_status in steps.values())
+    for step_name, allowed_statuses in _INFLIGHT_STEP_STATUSES.items():
+        step_status = (steps.get(step_name) or "").strip().lower()
+        if step_status in allowed_statuses:
+            return True
+    return False
 
 
 def resume_inflight_tasks() -> list[str]:
@@ -162,7 +168,7 @@ def resume_inflight_tasks() -> list[str]:
         task_status = (task.get("status") or row_status).strip().lower()
         if task_status in {"deleted", "done", "error"} or task.get("deleted_at"):
             continue
-        if not _task_has_inflight_step(task) and row_status not in _RECOVERABLE_TASK_STATUSES and task_status not in _RECOVERABLE_TASK_STATUSES:
+        if not _task_has_inflight_step(task):
             continue
         try:
             task.setdefault("_user_id", row.get("user_id"))
