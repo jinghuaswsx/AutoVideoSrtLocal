@@ -22,12 +22,50 @@
 
 /* 图片列表 */
 .vc-asset-images { display: flex; gap: 8px; flex-wrap: wrap; }
-.vc-asset-img { width: 80px; height: 80px; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border-main); flex-shrink: 0; }
+.vc-asset-img { width: 80px; height: 80px; border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border-main); flex-shrink: 0; position: relative; }
 .vc-asset-img img { width: 100%; height: 100%; object-fit: cover; }
 
 /* 音频 */
 .vc-asset-audio { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-body); border-radius: 8px; font-size: 13px; color: var(--text-main); }
 .vc-asset-audio-icon { font-size: 20px; }
+
+/* 素材操作按钮 */
+.vc-asset-wrap { position: relative; display: inline-block; }
+.vc-del-btn {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: #fff;
+  border: none; cursor: pointer; font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+  z-index: 2;
+}
+.vc-del-btn:hover { background: rgba(220,38,38,0.85); }
+.vc-add-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 5px; padding: 6px 14px; border-radius: 8px;
+  border: 1.5px dashed var(--border-main); background: var(--bg-body);
+  color: var(--text-muted, #9ca3af); font-size: 13px; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.vc-add-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.vc-add-img-placeholder {
+  width: 80px; height: 80px; border-radius: 8px;
+  border: 1.5px dashed var(--border-main); background: var(--bg-body);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-muted, #9ca3af); font-size: 22px;
+  flex-shrink: 0; transition: border-color .15s, color .15s;
+}
+.vc-add-img-placeholder:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.vc-regen-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 20px; border-radius: 8px;
+  background: var(--primary-color, #3b82f6); color: #fff;
+  border: none; font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: opacity .15s;
+}
+.vc-regen-btn:hover { opacity: 0.88; }
+.vc-regen-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* 文案 */
 .vc-prompt-text { font-size: 13px; color: var(--text-main); line-height: 1.7; white-space: pre-wrap; word-break: break-word; padding: 12px 14px; background: var(--bg-body); border-radius: 8px; max-height: 180px; overflow-y: auto; }
@@ -72,39 +110,83 @@
       <div class="vc-card-title">输入素材</div>
       <div class="vc-assets">
 
+        {% set gs = state.get('steps', {}).get('generate', 'pending') %}
+        {% set can_edit = gs != 'running' %}
+
+        <!-- 参考视频 -->
         {% if state.get('video_path') %}
         <div class="vc-asset-section">
           <div class="vc-asset-label">参考视频</div>
-          <video class="vc-asset-video" controls preload="metadata">
-            <source src="/api/video-creation/{{ task_id }}/asset/video/0" type="video/mp4">
-          </video>
-        </div>
-        {% endif %}
-
-        {% if state.get('image_paths') %}
-        <div class="vc-asset-section">
-          <div class="vc-asset-label">参考图片（{{ state.get('image_paths')|length }} 张）</div>
-          <div class="vc-asset-images">
-            {% for i in range(state.get('image_paths', [])|length) %}
-            <div class="vc-asset-img">
-              <img src="/api/video-creation/{{ task_id }}/asset/image/{{ i }}" alt="" loading="lazy">
-            </div>
-            {% endfor %}
+          <div class="vc-asset-wrap" style="display:block;">
+            <video class="vc-asset-video" controls preload="metadata">
+              <source src="/api/video-creation/{{ task_id }}/asset/video/0" type="video/mp4">
+            </video>
+            {% if can_edit %}
+            <button class="vc-del-btn" onclick="deleteAsset('video',0)" title="删除视频">&#10005;</button>
+            {% endif %}
           </div>
         </div>
+        {% elif can_edit %}
+        <div class="vc-asset-section">
+          <div class="vc-asset-label">参考视频</div>
+          <button class="vc-add-btn" onclick="document.getElementById('addVideoInput').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            添加视频
+          </button>
+          <input type="file" id="addVideoInput" accept="video/*" style="display:none" onchange="addAsset('video',this)">
+        </div>
         {% endif %}
 
+        <!-- 参考图片 -->
+        <div class="vc-asset-section">
+          {% set img_count = state.get('image_paths', [])|length %}
+          {% if img_count > 0 or can_edit %}
+          <div class="vc-asset-label">参考图片{% if img_count > 0 %}（{{ img_count }} 张）{% endif %}</div>
+          <div class="vc-asset-images">
+            {% for i in range(img_count) %}
+            <div class="vc-asset-img">
+              <img src="/api/video-creation/{{ task_id }}/asset/image/{{ i }}" alt="" loading="lazy">
+              {% if can_edit %}
+              <button class="vc-del-btn" onclick="deleteAsset('image',{{ i }})" title="删除图片">&#10005;</button>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% if can_edit and img_count < 9 %}
+            <div class="vc-add-img-placeholder" onclick="document.getElementById('addImageInput').click()" title="添加图片">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <input type="file" id="addImageInput" accept="image/*" style="display:none" onchange="addAsset('image',this)">
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- 参考音频 -->
         {% if state.get('audio_path') %}
         <div class="vc-asset-section">
           <div class="vc-asset-label">参考音频</div>
-          <div class="vc-asset-audio">
-            <span class="vc-asset-audio-icon">&#127925;</span>
-            <span>已上传音频</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="vc-asset-audio">
+              <span class="vc-asset-audio-icon">&#127925;</span>
+              <span>已上传音频</span>
+            </div>
+            {% if can_edit %}
+            <button class="vc-del-btn" style="position:static;" onclick="deleteAsset('audio',0)" title="删除音频">&#10005;</button>
+            {% endif %}
           </div>
+        </div>
+        {% elif can_edit %}
+        <div class="vc-asset-section">
+          <div class="vc-asset-label">参考音频</div>
+          <button class="vc-add-btn" onclick="document.getElementById('addAudioInput').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            添加音频
+          </button>
+          <input type="file" id="addAudioInput" accept="audio/*" style="display:none" onchange="addAsset('audio',this)">
         </div>
         {% endif %}
 
-        {% if not state.get('video_path') and not state.get('image_paths') and not state.get('audio_path') %}
+        {% if not state.get('video_path') and not state.get('image_paths') and not state.get('audio_path') and not can_edit %}
         <div style="font-size:13px; color:#9ca3af;">仅使用文案生成</div>
         {% endif %}
 
@@ -176,6 +258,18 @@
         <div class="vc-result-empty">正在等待生成任务启动...</div>
         {% endif %}
       </div>
+
+      <!-- 重新生成按钮：仅在 error / done 状态下显示 -->
+      {% set gs = state.get('steps', {}).get('generate', 'pending') %}
+      {% if gs in ('error', 'done') %}
+      <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-main);">
+        <button class="vc-regen-btn" id="regenBtn" onclick="doRegenerate()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+          重新生成
+        </button>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
@@ -231,6 +325,43 @@ function updateStep(step, status, message) {
   else if (status === 'running') icon.innerHTML = '&#8635;';
   else if (status === 'error') icon.innerHTML = '&#10005;';
   if (msg) msg.textContent = message || '';
+}
+
+// ── 素材管理 ──
+
+async function deleteAsset(kind, idx) {
+  if (!confirm('确定删除该素材？')) return;
+  try {
+    const res = await fetch(`/api/video-creation/${TASK_ID}/asset/${kind}/${idx}`, {method: 'DELETE'});
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || '删除失败'); return; }
+    location.reload();
+  } catch(e) { alert('请求失败: ' + e); }
+}
+
+async function addAsset(kind, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/api/video-creation/${TASK_ID}/asset/${kind}`, {method: 'POST', body: fd});
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || '上传失败'); input.value = ''; return; }
+    location.reload();
+  } catch(e) { alert('请求失败: ' + e); input.value = ''; }
+}
+
+async function doRegenerate() {
+  if (!confirm('确认重新生成？将消耗新的 Seedance 配额。')) return;
+  const btn = document.getElementById('regenBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '提交中...'; }
+  try {
+    const res = await fetch(`/api/video-creation/${TASK_ID}/regenerate`, {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || '操作失败'); if (btn) { btn.disabled = false; btn.innerHTML = '重新生成'; } return; }
+    location.reload();
+  } catch(e) { alert('请求失败: ' + e); if (btn) { btn.disabled = false; } }
 }
 </script>
 {% endblock %}

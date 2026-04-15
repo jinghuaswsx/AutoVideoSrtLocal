@@ -346,6 +346,157 @@ def get_asset(task_id: str, kind: str, idx: int):
     return send_file(path)
 
 
+@bp.route("/api/video-creation/<task_id>/asset/<kind>/<int:idx>", methods=["DELETE"])
+@login_required
+def delete_asset(task_id: str, kind: str, idx: int):
+    """删除某项素材。kind = video / image / audio。仅当 steps.generate != running 时允许。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify(error="not found"), 404
+    state = json.loads(row.get("state_json") or "{}")
+    if state.get("steps", {}).get("generate") == "running":
+        return jsonify(error="生成进行中，无法删除素材"), 400
+
+    if kind == "video":
+        if idx != 0:
+            return jsonify(error="not found"), 404
+        path = state.get("video_path")
+        if not path:
+            return jsonify(error="not found"), 404
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        state["video_path"] = None
+    elif kind == "image":
+        paths = state.get("image_paths", [])
+        if idx >= len(paths):
+            return jsonify(error="not found"), 404
+        path = paths[idx]
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        paths.pop(idx)
+        state["image_paths"] = paths
+    elif kind == "audio":
+        if idx != 0:
+            return jsonify(error="not found"), 404
+        path = state.get("audio_path")
+        if not path:
+            return jsonify(error="not found"), 404
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        state["audio_path"] = None
+    else:
+        return jsonify(error="unknown kind"), 400
+
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+    return jsonify({"status": "ok"})
+
+
+@bp.route("/api/video-creation/<task_id>/asset/<kind>", methods=["POST"])
+@login_required
+def add_asset(task_id: str, kind: str):
+    """追加素材。kind = video / image / audio。multipart: files['file']。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify(error="not found"), 404
+    state = json.loads(row.get("state_json") or "{}")
+    if state.get("steps", {}).get("generate") == "running":
+        return jsonify(error="生成进行中，无法添加素材"), 400
+
+    upload_file = request.files.get("file")
+    if not upload_file or not upload_file.filename:
+        return jsonify(error="请上传文件"), 400
+
+    from web.upload_util import secure_filename_component, validate_video_extension, validate_image_extension
+
+    if kind == "video":
+        if state.get("video_path"):
+            return jsonify(error="已存在视频，请先删除"), 400
+        if not validate_video_extension(upload_file.filename):
+            return jsonify(error="不支持的视频格式"), 400
+        safe_name = secure_filename_component(upload_file.filename)
+        path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
+        upload_file.save(path)
+        state["video_path"] = path
+    elif kind == "image":
+        image_paths = state.get("image_paths", [])
+        if len(image_paths) >= 9:
+            return jsonify(error="图片最多 9 张"), 400
+        if not validate_image_extension(upload_file.filename):
+            return jsonify(error="不支持的图片格式"), 400
+        safe_name = secure_filename_component(upload_file.filename)
+        idx = len(image_paths)
+        path = os.path.join(UPLOAD_DIR, f"{task_id}_img{idx}_{safe_name}")
+        upload_file.save(path)
+        _shrink_image_if_oversize(path)
+        image_paths.append(path)
+        state["image_paths"] = image_paths
+    elif kind == "audio":
+        if state.get("audio_path"):
+            return jsonify(error="已存在音频，请先删除"), 400
+        safe_name = secure_filename_component(upload_file.filename)
+        path = os.path.join(UPLOAD_DIR, f"{task_id}_audio_{safe_name}")
+        upload_file.save(path)
+        state["audio_path"] = path
+    else:
+        return jsonify(error="unknown kind"), 400
+
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+    return jsonify({"status": "ok"})
+
+
+@bp.route("/api/video-creation/<task_id>/regenerate", methods=["POST"])
+@login_required
+def regenerate(task_id: str):
+    """重新触发 Seedance 生成。仅当状态不是 running 时允许。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s AND type = 'video_creation' AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify(error="not found"), 404
+    state = json.loads(row.get("state_json") or "{}")
+    if state.get("steps", {}).get("generate") == "running":
+        return jsonify(error="生成进行中"), 400
+
+    api_key = resolve_key(current_user.id, "seedance", "SEEDANCE_API_KEY")
+    if not api_key:
+        return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
+
+    # 重置状态
+    state.setdefault("steps", {})["generate"] = "pending"
+    state["result_video_url"] = None
+    state["result_video_path"] = None
+    state["seedance_task_id"] = None
+    db_execute(
+        "UPDATE projects SET state_json = %s, status = 'uploaded' WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+
+    eventlet.spawn(_do_generate_v2, task_id, api_key, state)
+    return jsonify({"status": "ok"})
+
+
 @bp.route("/api/video-creation/<task_id>", methods=["DELETE"])
 @login_required
 def delete(task_id: str):
