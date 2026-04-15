@@ -145,6 +145,68 @@ def test_subtitle_removal_complete_upload_rejects_thumbnail_failure(tmp_path, au
     assert task["steps"]["prepare"] == "pending"
 
 
+def test_subtitle_removal_complete_upload_rejects_head_object_failure_but_keeps_source_state(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.head_object",
+        lambda object_key: (_ for _ in ()).throw(RuntimeError("head failed")),
+    )
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+        },
+    )
+
+    assert response.status_code != 201
+    task = store.get(payload["task_id"])
+    assert task is not None
+    assert task["status"] != "ready"
+    assert task["steps"]["prepare"] == "pending"
+    assert task["source_tos_key"] == payload["object_key"]
+    assert task["source_object_info"]["file_size"] == 2048
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+
+
+def test_subtitle_removal_complete_upload_rejects_download_failure_but_keeps_source_state(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.download_file",
+        lambda object_key, local_path: (_ for _ in ()).throw(RuntimeError("download failed")),
+    )
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+        },
+    )
+
+    assert response.status_code != 201
+    task = store.get(payload["task_id"])
+    assert task is not None
+    assert task["status"] != "ready"
+    assert task["steps"]["prepare"] == "pending"
+    assert task["source_tos_key"] == payload["object_key"]
+    assert task["source_object_info"]["file_size"] == 2048
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+
+
 def test_subtitle_removal_source_artifact_serves_owned_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
     thumbnail = tmp_path / "thumbnail.jpg"
     thumbnail.write_bytes(b"jpg")

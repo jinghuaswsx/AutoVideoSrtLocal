@@ -116,15 +116,12 @@ def complete_upload():
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    object_head = tos_clients.head_object(object_key)
-    object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
     source_object_info = {
-        "file_size": object_size,
+        "file_size": file_size,
         "content_type": content_type,
         "original_filename": original_filename,
     }
 
-    tos_clients.download_file(object_key, video_path)
     store.create_subtitle_removal(
         task_id,
         video_path,
@@ -137,6 +134,22 @@ def complete_upload():
         source_tos_key=object_key,
         source_object_info=source_object_info,
     )
+
+    try:
+        object_head = tos_clients.head_object(object_key)
+    except Exception:
+        store.update(task_id, error="head object failed")
+        return jsonify({"error": "Unable to inspect uploaded source object"}), 502
+
+    object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
+    source_object_info["file_size"] = object_size
+    store.update(task_id, source_object_info=source_object_info)
+
+    try:
+        tos_clients.download_file(object_key, video_path)
+    except Exception:
+        store.update(task_id, error="download source failed")
+        return jsonify({"error": "Unable to download uploaded source object"}), 502
 
     media_info = dict(probe_media_info(video_path) or {})
     media_info["file_size_mb"] = round(object_size / (1024 * 1024), 2) if object_size else 0.0
