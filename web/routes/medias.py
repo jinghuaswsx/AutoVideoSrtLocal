@@ -18,6 +18,14 @@ _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 
 
+def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
+    """返回 (lang, error)。lang 校验不通过返回 (None, error msg)。"""
+    lang = (body.get("lang") or default or "en").strip().lower()
+    if not medias.is_valid_language(lang):
+        return None, f"不支持的语种: {lang}"
+    return lang, None
+
+
 def _download_image_to_tos(url: str, pid: int, prefix: str) -> tuple[str, bytes, str] | tuple[None, None, str]:
     """从 URL 抓图并上传到 TOS media bucket。返回 (object_key, content, ext) 或失败时 (None, None, error_msg)。"""
     if not url:
@@ -81,17 +89,18 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
 
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
-                       items_filenames: list[str] | None = None) -> dict:
-    cover_url = None
-    if p.get("cover_object_key"):
-        cover_url = f"/medias/cover/{p['id']}"
-    elif cover_item_id:
-        cover_url = f"/medias/thumb/{cover_item_id}"
+                       items_filenames: list[str] | None = None,
+                       lang_coverage: dict | None = None) -> dict:
+    covers = medias.get_product_covers(p["id"])
+    has_en_cover = "en" in covers
+    cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
+        f"/medias/thumb/{cover_item_id}" if cover_item_id else None
+    )
     return {
         "id": p["id"],
         "name": p["name"],
         "product_code": p.get("product_code"),
-        "cover_object_key": p.get("cover_object_key"),
+        "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
         "source": p.get("source"),
         "archived": bool(p.get("archived")),
@@ -100,6 +109,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "items_count": items_count,
         "items_filenames": items_filenames or [],
         "cover_thumbnail_url": cover_url,
+        "lang_coverage": lang_coverage or {},
     }
 
 
@@ -107,6 +117,7 @@ def _serialize_item(it: dict) -> dict:
     has_user_cover = bool(it.get("cover_object_key"))
     return {
         "id": it["id"],
+        "lang": it.get("lang") or "en",
         "filename": it["filename"],
         "display_name": it.get("display_name") or it["filename"],
         "object_key": it["object_key"],
@@ -153,9 +164,13 @@ def api_list_products():
     counts = medias.count_items_by_product(pids)
     covers = medias.first_thumb_item_by_product(pids)
     filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
+    coverage = medias.lang_coverage_by_product(pids)
     data = [
-        _serialize_product(r, counts.get(r["id"], 0), covers.get(r["id"]),
-                           items_filenames=filenames.get(r["id"], []))
+        _serialize_product(
+            r, counts.get(r["id"], 0), covers.get(r["id"]),
+            items_filenames=filenames.get(r["id"], []),
+            lang_coverage=coverage.get(r["id"], {}),
+        )
         for r in rows
     ]
     return jsonify({"items": data, "total": total, "page": page, "page_size": limit})
@@ -190,6 +205,7 @@ def api_get_product(pid: int):
         abort(404)
     return jsonify({
         "product": _serialize_product(p, None),
+        "covers": medias.get_product_covers(pid),
         "copywritings": medias.list_copywritings(pid),
         "items": [_serialize_item(i) for i in medias.list_items(pid)],
     })
@@ -212,18 +228,22 @@ def api_update_product(pid: int):
     if exist and exist["id"] != pid:
         return jsonify({"error": "产品 ID 已被占用"}), 409
 
+    if not medias.has_english_cover(pid):
+        return jsonify({"error": "必须先上传英文（EN）产品主图才能保存"}), 400
+
     items = medias.list_items(pid)
     if not items:
         return jsonify({"error": "至少需要 1 条视频素材"}), 400
 
     update_fields = {"name": name, "product_code": product_code}
-    # 显式传入 cover_object_key（包括 null 清空）才更新，否则保持原值
-    if "cover_object_key" in body:
-        update_fields["cover_object_key"] = body["cover_object_key"] or None
     medias.update_product(pid, **update_fields)
 
-    if isinstance(body.get("copywritings"), list):
-        medias.replace_copywritings(pid, body["copywritings"])
+    if isinstance(body.get("copywritings"), dict):
+        for lang_code, lang_items in body["copywritings"].items():
+            if not medias.is_valid_language(lang_code):
+                continue
+            if isinstance(lang_items, list):
+                medias.replace_copywritings(pid, lang_items, lang=lang_code)
     return jsonify({"ok": True})
 
 
@@ -269,6 +289,9 @@ def api_item_complete(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
     object_key = (body.get("object_key") or "").strip()
     filename = (body.get("filename") or "").strip()
     file_size = int(body.get("file_size") or 0)
@@ -285,6 +308,7 @@ def api_item_complete(pid: int):
         pid, current_user.id, filename, object_key,
         file_size=file_size or None,
         cover_object_key=cover_object_key,
+        lang=lang,
     )
 
     # 下载用户封面到本地缓存供代理
@@ -335,25 +359,28 @@ def api_cover_from_url(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
     object_key, data, err_or_ext = _download_image_to_tos(
-        (body.get("url") or "").strip(), pid, "cover",
+        (body.get("url") or "").strip(), pid, f"cover_{lang}",
     )
     if object_key is None:
         return jsonify({"error": err_or_ext}), 400
-    old_key = p.get("cover_object_key")
-    if old_key and old_key != object_key:
+    old = medias.get_product_covers(pid).get(lang)
+    if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old_key)
+            tos_clients.delete_media_object(old)
         except Exception:
             pass
-    medias.update_product(pid, cover_object_key=object_key)
+    medias.set_product_cover(pid, lang, object_key)
     try:
         product_dir = THUMB_DIR / str(pid)
         product_dir.mkdir(parents=True, exist_ok=True)
-        (product_dir / f"cover{err_or_ext}").write_bytes(data)
+        (product_dir / f"cover_{lang}{err_or_ext}").write_bytes(data)
     except Exception:
         pass
-    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}", "object_key": object_key})
+    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}", "object_key": object_key})
 
 
 @bp.route("/api/products/<int:pid>/item-cover/from-url", methods=["POST"])
@@ -501,11 +528,14 @@ def api_cover_bootstrap(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
     filename = os.path.basename((body.get("filename") or "cover.jpg").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
     object_key = tos_clients.build_media_object_key(
-        current_user.id, pid, f"cover_{filename}",
+        current_user.id, pid, f"cover_{lang}_{filename}",
     )
     return jsonify({
         "object_key": object_key,
@@ -521,31 +551,55 @@ def api_cover_complete(pid: int):
     if not _can_access_product(p, write=True):
         abort(404)
     body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
     object_key = (body.get("object_key") or "").strip()
     if not object_key:
         return jsonify({"error": "object_key required"}), 400
     if not tos_clients.media_object_exists(object_key):
         return jsonify({"error": "对象不存在"}), 400
 
-    old_key = p.get("cover_object_key")
-    if old_key and old_key != object_key:
+    old = medias.get_product_covers(pid).get(lang)
+    if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old_key)
+            tos_clients.delete_media_object(old)
         except Exception:
             pass
 
-    medias.update_product(pid, cover_object_key=object_key)
+    medias.set_product_cover(pid, lang, object_key)
 
     try:
         product_dir = THUMB_DIR / str(pid)
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
-        local = product_dir / f"cover{ext}"
+        local = product_dir / f"cover_{lang}{ext}"
         tos_clients.download_media_file(object_key, str(local))
     except Exception:
         pass
 
-    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}"})
+    return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}"})
+
+
+@bp.route("/api/products/<int:pid>/cover", methods=["DELETE"])
+@login_required
+def api_cover_delete(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p, write=True):
+        abort(404)
+    lang = (request.args.get("lang") or "").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+    if lang == "en":
+        return jsonify({"error": "英文主图不能删除"}), 400
+    old = medias.get_product_covers(pid).get(lang)
+    if old:
+        try:
+            tos_clients.delete_media_object(old)
+        except Exception:
+            pass
+    medias.delete_product_cover(pid, lang)
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/items/<int:item_id>", methods=["DELETE"])
@@ -590,19 +644,23 @@ def cover(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    if not p.get("cover_object_key"):
+    lang = (request.args.get("lang") or "en").strip().lower()
+    object_key = medias.resolve_cover(pid, lang)
+    if not object_key:
         abort(404)
+    covers = medias.get_product_covers(pid)
+    actual_lang = lang if lang in covers else "en"
     product_dir = THUMB_DIR / str(pid)
     for ext in (".jpg", ".jpeg", ".png", ".webp"):
-        f = product_dir / f"cover{ext}"
+        f = product_dir / f"cover_{actual_lang}{ext}"
         if f.exists():
             mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
             return send_file(str(f), mimetype=mime)
     try:
         product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(p["cover_object_key"]).suffix or ".jpg"
-        local = product_dir / f"cover{ext}"
-        tos_clients.download_media_file(p["cover_object_key"], str(local))
+        ext = Path(object_key).suffix or ".jpg"
+        local = product_dir / f"cover_{actual_lang}{ext}"
+        tos_clients.download_media_file(object_key, str(local))
         mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
         return send_file(str(local), mimetype=mime)
     except Exception:
@@ -622,3 +680,9 @@ def api_play_url(item_id: int):
         abort(404)
     url = tos_clients.generate_signed_media_download_url(it["object_key"])
     return jsonify({"url": url})
+
+
+@bp.route("/api/languages", methods=["GET"])
+@login_required
+def api_list_languages():
+    return jsonify({"items": medias.list_languages()})
