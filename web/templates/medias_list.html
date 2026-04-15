@@ -223,6 +223,25 @@
 .oc-item:hover .item-cover-btn { opacity:1; }
 .oc-item .item-cover-btn:hover { background:var(--oc-accent); }
 
+/* 编辑弹窗：每条视频素材卡（图片/视频 双 tab） */
+#edItemsGrid { grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4); }
+.oc-vitem { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg); padding:var(--oc-sp-3); }
+.oc-vitem .vname { font-size:12px; font-weight:500; color:var(--oc-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.oc-vitem .vtabs { display:flex; gap:var(--oc-sp-1); border-bottom:1px solid var(--oc-border); }
+.oc-vitem .vtab { flex:1; height:28px; background:none; border:none; color:var(--oc-fg-muted); font-size:12px; font-family:inherit; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
+.oc-vitem .vtab:hover { color:var(--oc-fg); }
+.oc-vitem .vtab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
+.oc-vitem .vbody { position:relative; aspect-ratio:9/16; background:var(--oc-bg-muted); border-radius:var(--oc-r); overflow:hidden; }
+.oc-vitem .vpane { position:absolute; inset:0; display:none; }
+.oc-vitem .vpane.active { display:block; }
+.oc-vitem .vpane img, .oc-vitem .vpane video { width:100%; height:100%; object-fit:contain; background:oklch(22% 0.02 235); display:block; }
+.oc-vitem .thumb-ph, .oc-vitem .vvideo-ph { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--oc-fg-muted); font-size:12px; text-align:center; padding:var(--oc-sp-3); }
+.oc-vitem .vvideo-ph.err { color:var(--oc-danger-fg); }
+.oc-vitem .vactions { display:flex; justify-content:space-between; gap:var(--oc-sp-2); }
+.oc-vitem .vactions .oc-btn { height:26px; font-size:12px; padding:0 8px; }
+.oc-vitem .vactions .danger-txt { color:var(--oc-danger-fg); }
+.oc-vitem .vactions .danger-txt:hover { background:var(--oc-danger-bg); }
+
 /* ──── Cover blocks（统一基类） ──── */
 .oc-cover { position:relative; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); overflow:hidden; transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }
 .oc-cover:has(img:not([hidden])) { border-style:solid; border-color:var(--oc-border); background:var(--oc-bg-muted); }
@@ -309,7 +328,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 
 .oc-pill { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 8px; border-radius:9999px; background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
 
-.oc-thumb-sm { width:48px; height:48px; border-radius:var(--oc-r); overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); }
+.oc-thumb-sm { width:200px; height:200px; border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); }
+.oc-table-fixed { table-layout:fixed; }
+.oc-table-fixed td, .oc-table-fixed th { overflow:hidden; word-break:break-word; }
 .oc-thumb-sm img { width:100%; height:100%; object-fit:cover; display:block; }
 .oc-thumb-sm .cover-ph { display:flex; align-items:center; justify-content:center; }
 

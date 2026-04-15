@@ -71,18 +71,18 @@
       return;
     }
     grid.innerHTML = `
-      <table class="oc-table">
+      <table class="oc-table oc-table-fixed">
         <thead>
           <tr>
             <th style="width:56px">ID</th>
-            <th style="width:64px">主图</th>
+            <th style="width:220px">主图</th>
             <th>产品名称</th>
-            <th style="width:180px">产品 ID</th>
-            <th style="width:72px">素材数</th>
+            <th>产品 ID</th>
+            <th>素材数</th>
             <th>素材文件名</th>
-            <th style="width:140px">创建时间</th>
-            <th style="width:140px">修改时间</th>
-            <th style="width:100px">操作</th>
+            <th>创建时间</th>
+            <th>修改时间</th>
+            <th style="width:110px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -597,25 +597,55 @@
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
       const cover = it.cover_url || it.thumbnail_url;
-      const img = cover
+      const name = escapeHtml(it.display_name || it.filename);
+      const imgTag = cover
         ? `<img src="${escapeHtml(cover)}?_=${Date.now()}" loading="lazy" alt="">`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
-      <div class="oc-item" data-item="${it.id}">
-        <div class="thumb">
-          ${img}
-          <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
-          <button class="oc-btn sm ghost item-cover-btn" type="button" title="更换视频封面">${icon('edit', 12)}<span>换封面</span></button>
+      <div class="oc-vitem" data-item="${it.id}">
+        <div class="vname" title="${name}">${name}</div>
+        <div class="vtabs">
+          <button type="button" class="vtab active" data-tab="img">图片</button>
+          <button type="button" class="vtab" data-tab="video">视频</button>
         </div>
-        <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
+        <div class="vbody">
+          <div class="vpane active" data-pane="img">${imgTag}</div>
+          <div class="vpane" data-pane="video">
+            <div class="vvideo-ph">点击"视频"标签后加载播放</div>
+          </div>
+        </div>
+        <div class="vactions">
+          <button class="oc-btn text sm" data-act="cover">${icon('edit', 12)}<span>换封面</span></button>
+          <button class="oc-btn text sm danger-txt" data-act="del">${icon('trash', 12)}<span>删除</span></button>
+        </div>
       </div>`;
     }).join('');
     g.querySelectorAll('[data-item]').forEach(card => {
       const id = +card.dataset.item;
-      card.querySelector('.rm').addEventListener('click', () => edRemoveItem(id, card));
-      card.querySelector('.item-cover-btn').addEventListener('click', () => edPickItemCover(id));
+      const tabs = card.querySelectorAll('.vtab');
+      const panes = card.querySelectorAll('.vpane');
+      tabs.forEach(t => t.addEventListener('click', () => {
+        tabs.forEach(x => x.classList.toggle('active', x === t));
+        panes.forEach(p => p.classList.toggle('active', p.dataset.pane === t.dataset.tab));
+        if (t.dataset.tab === 'video') edEnsureVideoLoaded(card, id);
+      }));
+      card.querySelector('[data-act="del"]').addEventListener('click', () => edRemoveItem(id, card));
+      card.querySelector('[data-act="cover"]').addEventListener('click', () => edPickItemCover(id));
     });
     $('edItemsBadge').textContent = (items || []).length;
+  }
+
+  async function edEnsureVideoLoaded(card, itemId) {
+    const pane = card.querySelector('[data-pane="video"]');
+    if (pane.dataset.loaded === '1') return;
+    pane.innerHTML = `<div class="vvideo-ph">加载中…</div>`;
+    try {
+      const r = await fetchJSON(`/medias/api/items/${itemId}/play_url`);
+      pane.innerHTML = `<video controls preload="metadata" src="${escapeHtml(r.url)}"></video>`;
+      pane.dataset.loaded = '1';
+    } catch (e) {
+      pane.innerHTML = `<div class="vvideo-ph err">加载失败：${escapeHtml(e.message || '')}</div>`;
+    }
   }
 
   function edPickItemCover(itemId) {
