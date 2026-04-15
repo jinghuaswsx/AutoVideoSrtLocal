@@ -15,13 +15,8 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup, tos_clients
-from appcore.api_keys import resolve_jianying_project_root
 from pipeline.alignment import build_script_segments
-from pipeline.capcut import (
-    build_capcut_archive_name,
-    deploy_capcut_project,
-    rewrite_capcut_project_paths,
-)
+from pipeline.capcut import deploy_capcut_project
 from web.preview_artifacts import (
     build_alignment_artifact,
     build_translate_artifact,
@@ -29,6 +24,7 @@ from web.preview_artifacts import (
 )
 from web import store
 from web.services import pipeline_runner
+from web.services.artifact_download import serve_artifact_download
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
@@ -133,64 +129,6 @@ def _artifact_candidates(task_id: str, name: str, task: dict | None = None, vari
         candidates.append(os.path.join(task_dir, filename))
 
     return candidates
-
-
-def _resolved_variant_key(variant: str | None) -> str:
-    return variant or "normal"
-
-
-def _artifact_kind_for_download(file_type: str) -> str | None:
-    return {
-        "soft": "soft_video",
-        "hard": "hard_video",
-        "srt": "srt",
-        "capcut": "capcut_archive",
-    }.get(file_type)
-
-
-def _artifact_upload_slot(artifact_kind: str, variant: str | None = None) -> str:
-    return f"{_resolved_variant_key(variant)}:{artifact_kind}"
-
-
-def _get_tos_upload_record(task: dict, artifact_kind: str, variant: str | None = None) -> dict | None:
-    payload = (task.get("tos_uploads") or {}).get(_artifact_upload_slot(artifact_kind, variant))
-    if isinstance(payload, dict) and payload.get("tos_key"):
-        return payload
-    return None
-
-
-def _upload_capcut_archive_for_current_user(task_id: str, task: dict, variant: str | None, archive_path: str) -> dict | None:
-    if not archive_path or not os.path.exists(archive_path) or not tos_clients.is_tos_configured():
-        return None
-
-    resolved_variant = _resolved_variant_key(variant)
-    source_name = task.get("display_name") or task.get("original_filename") or task_id
-    download_name = build_capcut_archive_name(source_name, variant=variant)
-    tos_key = tos_clients.build_artifact_object_key(current_user.id, task_id, resolved_variant, download_name)
-    slot = _artifact_upload_slot("capcut_archive", variant)
-    uploads = dict(task.get("tos_uploads") or {})
-    previous = uploads.get(slot)
-
-    if isinstance(previous, dict):
-        previous_key = previous.get("tos_key")
-        if previous_key and previous_key != tos_key:
-            try:
-                tos_clients.delete_object(previous_key)
-            except Exception:
-                pass
-
-    tos_clients.upload_file(archive_path, tos_key)
-    payload = {
-        "tos_key": tos_key,
-        "artifact_kind": "capcut_archive",
-        "variant": resolved_variant,
-        "file_size": os.path.getsize(archive_path),
-        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-        "jianying_project_root": resolve_jianying_project_root(current_user.id),
-    }
-    uploads[slot] = payload
-    store.update(task_id, tos_uploads=uploads)
-    return payload
 
 
 def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> str | None:
@@ -556,63 +494,17 @@ def update_segments(task_id):
 @bp.route("/<task_id>/download/<file_type>", methods=["GET"])
 @login_required
 def download(task_id, file_type):
-    """下载成品文件，file_type: soft | hard | srt"""
+    """下载成品文件，file_type: soft | hard | srt | capcut。
+
+    实际下载逻辑见 web.services.artifact_download.serve_artifact_download，
+    三个翻译模块共用同一套 TOS-优先 / 本地-兜底 策略。
+    """
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None
-    variant_state = task.get("variants", {}).get(variant, {}) if variant else {}
-    exports = variant_state.get("exports", {}) if variant else task.get("exports", {})
-    result = variant_state.get("result", {}) if variant else task.get("result", {})
-    path_map = {
-        "soft": result.get("soft_video"),
-        "hard": result.get("hard_video"),
-        "srt": variant_state.get("srt_path") if variant else task.get("srt_path"),
-        "capcut": exports.get("capcut_archive"),
-    }
-    path = path_map.get(file_type)
-    artifact_kind = _artifact_kind_for_download(file_type)
-    if file_type == "capcut" and path:
-        project_dir = exports.get("capcut_project")
-        if project_dir and os.path.isdir(project_dir):
-            manifest_path = exports.get("capcut_manifest")
-            jianying_project_dir = rewrite_capcut_project_paths(
-                project_dir=project_dir,
-                manifest_path=manifest_path,
-                archive_path=path,
-                jianying_project_root=resolve_jianying_project_root(current_user.id),
-            )
-            updated_exports = dict(exports)
-            updated_exports["jianying_project_dir"] = jianying_project_dir
-            if variant:
-                store.update_variant(task_id, variant, exports=updated_exports)
-            else:
-                store.update(task_id, exports=updated_exports)
-        try:
-            upload_payload = _upload_capcut_archive_for_current_user(task_id, task, variant, path)
-        except Exception:
-            upload_payload = None
-        if upload_payload:
-            try:
-                return redirect(tos_clients.generate_signed_download_url(upload_payload["tos_key"]))
-            except Exception:
-                pass
-    uploaded_artifact = _get_tos_upload_record(task, artifact_kind, variant) if artifact_kind else None
-    if uploaded_artifact:
-        try:
-            return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
-        except Exception:
-            pass
-    if not path or not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
-
-    download_name = None
-    if file_type == "capcut":
-        source_name = task.get("display_name") or task.get("original_filename") or task_id
-        download_name = build_capcut_archive_name(source_name, variant=variant)
-
-    return send_file(os.path.abspath(path), as_attachment=True, download_name=download_name)
+    return serve_artifact_download(task, task_id, file_type, variant=variant)
 
 
 @bp.route("/<task_id>/deploy/capcut", methods=["POST"])

@@ -130,8 +130,9 @@
 .oc-modal-mask { position:fixed; inset:0; background:oklch(22% 0.02 235 / 0.48); display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-5); z-index:200; animation:oc-fade var(--oc-dur) var(--oc-ease-out); }
 @keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
 .oc-modal { width:720px; max-width:100%; max-height:90vh; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-xl); overflow:hidden; box-shadow:var(--oc-shadow-lg); animation:oc-rise var(--oc-dur-slow) var(--oc-ease); }
-.oc-modal.wide { width:900px; }
-.oc-modal.xl { width:1100px; }
+/* 新建/编辑 和 详情 两个大弹窗都铺满视口，避免 4K 屏下窄而小气 */
+.oc-modal.wide { width:95vw; max-width:none; }
+.oc-modal.xl { width:95vw; max-width:none; }
 @keyframes oc-rise { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
 .oc-modal-head { display:flex; align-items:center; justify-content:space-between; padding:var(--oc-sp-4) var(--oc-sp-5); border-bottom:1px solid var(--oc-border); }
 .oc-modal-head h3 { font-size:15px; font-weight:600; margin:0; }

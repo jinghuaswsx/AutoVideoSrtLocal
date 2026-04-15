@@ -402,7 +402,10 @@ def test_download_route_can_return_normal_capcut_archive(tmp_path, authed_client
         "normal",
         exports={"capcut_archive": str(archive_path)},
     )
-    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "web.services.artifact_download.upload_capcut_archive_for_current_user",
+        lambda *a, **kw: None,
+    )
 
     response = authed_client_no_db.get("/api/tasks/task-download-variant/download/capcut?variant=normal")
 
@@ -479,8 +482,14 @@ def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path,
         },
     )
 
-    monkeypatch.setattr("web.routes.task.resolve_jianying_project_root", lambda user_id: DEFAULT_JIANYING_PROJECT_ROOT)
-    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "web.services.artifact_download.resolve_jianying_project_root",
+        lambda user_id: DEFAULT_JIANYING_PROJECT_ROOT,
+    )
+    monkeypatch.setattr(
+        "web.services.artifact_download.upload_capcut_archive_for_current_user",
+        lambda *a, **kw: None,
+    )
 
     response = authed_client_no_db.get("/api/tasks/task-download-rewrite/download/capcut?variant=normal")
 
@@ -613,7 +622,10 @@ def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, a
 
     monkeypatch.setattr("web.routes.task.db_query_one", fake_db_query_one)
     monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
-    monkeypatch.setattr("web.routes.task._upload_capcut_archive_for_current_user", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        "web.services.artifact_download.upload_capcut_archive_for_current_user",
+        lambda *a, **kw: None,
+    )
 
     rename_response = authed_client_no_db.patch(
         "/api/tasks/task-rename-download",

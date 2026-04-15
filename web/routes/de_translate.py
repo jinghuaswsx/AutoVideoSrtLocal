@@ -15,6 +15,7 @@ from appcore.db import query as db_query, query_one as db_query_one, execute as 
 from pipeline.alignment import build_script_segments
 from web import store
 from web.services import de_pipeline_runner
+from web.services.artifact_download import serve_artifact_download
 
 log = logging.getLogger(__name__)
 
@@ -281,24 +282,13 @@ def resume(task_id):
 @bp.route("/api/de-translate/<task_id>/download/<file_type>")
 @login_required
 def download(task_id, file_type):
+    """下载德语任务产物，TOS 优先 / 本地兜底，与英文模块完全一致。"""
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    task_dir = task.get("task_dir") or os.path.join(OUTPUT_DIR, task_id)
     variant = request.args.get("variant", "normal")
-    variant_state = (task.get("variants") or {}).get(variant, {})
-
-    path_map = {
-        "soft": variant_state.get("result", {}).get("soft_video"),
-        "hard": variant_state.get("result", {}).get("hard_video"),
-        "srt": variant_state.get("srt_path"),
-        "capcut": variant_state.get("exports", {}).get("capcut_archive"),
-    }
-    path = path_map.get(file_type)
-    if not path or not os.path.exists(path):
-        return jsonify({"error": "File not found"}), 404
-    return send_file(os.path.abspath(path), as_attachment=True)
+    return serve_artifact_download(task, task_id, file_type, variant=variant)
 
 
 @bp.route("/api/de-translate/<task_id>", methods=["DELETE"])

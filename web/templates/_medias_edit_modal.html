@@ -95,14 +95,17 @@
           <span>视频素材<span class="req">*</span></span>
           <span class="count" id="itemsBadge">0</span>
         </div>
+        <!-- 已上传的素材先展示 -->
+        <div id="itemsGrid" class="oc-items-grid"></div>
+        <!-- 正在上传的条目紧跟其后 -->
+        <div id="uploadProgress" class="oc-upload-list"></div>
+        <!-- 添加新素材的输入框放最底下 -->
         <div class="oc-dropzone" id="dropzone" tabindex="0" role="button" aria-label="上传视频素材">
           <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
           <div class="dz-title">点击或拖拽上传 1 个视频素材</div>
           <div class="dz-hint">每次操作仅接受 1 个文件；支持 mp4 / mov / webm / mkv，可多次上传</div>
           <input type="file" id="fileInput" accept="video/*" hidden>
         </div>
-        <div id="uploadProgress" class="oc-upload-list"></div>
-        <div id="itemsGrid" class="oc-items-grid"></div>
       </section>
 
     </div>
