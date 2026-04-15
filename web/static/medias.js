@@ -2,6 +2,28 @@
   const state = { page: 1, current: null, pendingItemCover: null };
   const $ = (id) => document.getElementById(id);
 
+  let LANGUAGES = [];
+
+  async function ensureLanguages() {
+    if (LANGUAGES.length) return LANGUAGES;
+    const data = await fetchJSON('/medias/api/languages');
+    LANGUAGES = data.items || [];
+    return LANGUAGES;
+  }
+
+  function renderLangBar(coverage) {
+    if (!LANGUAGES.length) return '';
+    return `<div class="oc-lang-bar">` + LANGUAGES.map(l => {
+      const c = (coverage || {})[l.code] || { items: 0, copy: 0, cover: false };
+      const filled = c.items > 0;
+      const cls = filled ? 'filled' : 'empty';
+      const title = `${l.name_zh}: ${c.items} 视频 / ${c.copy} 文案 / ${c.cover ? '有主图' : '无主图'}`;
+      return `<span class="oc-lang-chip ${cls}" title="${escapeHtml(title)}">`
+           + `${l.code.toUpperCase()}${filled ? `<span class="count">${c.items}</span>` : ''}`
+           + `</span>`;
+    }).join('') + `</div>`;
+  }
+
   function icon(name, size = 14) {
     return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
   }
@@ -34,6 +56,7 @@
     if (scopeAll) params.set('scope', 'all');
     renderSkeleton();
     try {
+      await ensureLanguages();
       const data = await fetchJSON('/medias/api/products?' + params);
       renderGrid(data.items);
       renderPager(data.total, data.page, data.page_size);
@@ -79,7 +102,7 @@
             <th>产品名称</th>
             <th>产品 ID</th>
             <th>素材数</th>
-            <th>素材文件名</th>
+            <th style="width:260px">语种覆盖</th>
             <th>创建时间</th>
             <th>修改时间</th>
             <th style="width:110px">操作</th>
@@ -99,23 +122,18 @@
 
   function rowHTML(p) {
     const count = p.items_count || 0;
-    const filenames = p.items_filenames || [];
-    const extra = Math.max(0, count - filenames.length);
-    const fnHtml = filenames.length
-      ? filenames.map(n => `<li title="${escapeHtml(n)}">${escapeHtml(n)}</li>`).join('')
-        + (extra > 0 ? `<li class="more">+${extra} 更多</li>` : '')
-      : '<li class="empty">—</li>';
+    const warn = !p.has_en_cover ? ' oc-row-warn' : '';
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     return `
-      <tr data-pid="${p.id}">
+      <tr class="oc-row${warn}" data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
         <td class="name"><a href="#" data-pid="${p.id}">${escapeHtml(p.name)}</a></td>
         <td class="mono">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
-        <td><ul class="oc-fn-list">${fnHtml}</ul></td>
+        <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.created_at)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
