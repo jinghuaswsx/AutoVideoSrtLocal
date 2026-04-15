@@ -358,6 +358,23 @@ def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(aut
         sio_client.disconnect()
 
 
+def test_create_app_triggers_subtitle_removal_recovery(monkeypatch):
+    called = []
+
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("WTF_CSRF_ENABLED", "0")
+    monkeypatch.delenv("DISABLE_STARTUP_RECOVERY", raising=False)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.resume_inflight_tasks",
+        lambda: called.append("resume"),
+    )
+
+    app = create_app()
+
+    assert app is not None
+    assert called == ["resume"]
+
+
 def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
     response = authed_client_no_db.get("/subtitle-removal")
 

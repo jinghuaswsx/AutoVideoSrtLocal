@@ -10,6 +10,7 @@ Flask 应用工厂
 """
 import os
 import sys
+import logging
 from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -45,6 +46,20 @@ from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
+
+log = logging.getLogger(__name__)
+
+
+def _run_startup_recovery() -> None:
+    disable = os.getenv("DISABLE_STARTUP_RECOVERY", "").strip().lower()
+    if disable in {"1", "true", "yes"}:
+        return
+    try:
+        from web.routes.subtitle_removal import resume_inflight_tasks
+
+        resume_inflight_tasks()
+    except Exception:
+        log.warning("subtitle removal startup recovery failed", exc_info=True)
 
 
 def create_app() -> Flask:
@@ -96,6 +111,7 @@ def create_app() -> Flask:
     app.register_blueprint(fr_translate_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
+    _run_startup_recovery()
 
     # WebSocket 事件
     @socketio.on("join_task")

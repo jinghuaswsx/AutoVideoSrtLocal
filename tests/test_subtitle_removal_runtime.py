@@ -154,3 +154,38 @@ def test_runner_start_is_per_task_idempotent(monkeypatch):
     assert runner.start("sr-gate", user_id=1) is True
     assert runner.start("sr-gate", user_id=1) is False
     assert started == ["thread"]
+
+
+def test_resume_inflight_tasks_requeues_polling_rows(monkeypatch):
+    import web.routes.subtitle_removal as subtitle_removal
+
+    started = []
+
+    monkeypatch.setattr(
+        subtitle_removal,
+        "db_query",
+        lambda sql, args=(): [{
+            "id": "sr-recover",
+            "user_id": 1,
+            "state_json": '{"id":"sr-recover","type":"subtitle_removal","status":"running","steps":{"prepare":"done","submit":"running","poll":"pending","download_result":"pending","upload_result":"pending"}}',
+            "status": "running",
+        }] if "FROM projects" in sql else [],
+    )
+    monkeypatch.setattr(
+        subtitle_removal,
+        "subtitle_removal_runner",
+        type(
+            "Runner",
+            (),
+            {
+                "is_running": lambda self, task_id: False,
+                "start": lambda self, task_id, user_id=None: started.append((task_id, user_id)) or True,
+            },
+        )(),
+    )
+
+    result = subtitle_removal.resume_inflight_tasks()
+
+    assert result == ["sr-recover"]
+    assert started == [("sr-recover", 1)]
+    assert subtitle_removal.task_state.get("sr-recover")["status"] == "running"

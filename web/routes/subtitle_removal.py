@@ -11,8 +11,9 @@ from flask import Blueprint, render_template, abort, jsonify, request, redirect,
 from flask_login import login_required, current_user
 
 from appcore import cleanup
+from appcore import task_state
 from appcore import tos_clients
-from appcore.db import execute as db_execute, query_one as db_query_one
+from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
@@ -22,6 +23,7 @@ from web.upload_util import validate_video_extension
 bp = Blueprint("subtitle_removal", __name__)
 _submit_locks: dict[str, threading.Lock] = {}
 _submit_locks_guard = threading.Lock()
+_RECOVERABLE_TASK_STATUSES = {"queued", "running", "submitted"}
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -108,6 +110,70 @@ def _get_submit_lock(task_id: str) -> threading.Lock:
             lock = threading.Lock()
             _submit_locks[task_id] = lock
         return lock
+
+
+def _task_has_inflight_step(task: dict) -> bool:
+    status = (task.get("status") or "").strip().lower()
+    if status in _RECOVERABLE_TASK_STATUSES:
+        return True
+    steps = task.get("steps") or {}
+    return any((str(step_status or "").strip().lower() in _RECOVERABLE_TASK_STATUSES) for step_status in steps.values())
+
+
+def resume_inflight_tasks() -> list[str]:
+    restored: list[str] = []
+    try:
+        rows = db_query(
+            """
+            SELECT id, user_id, status, state_json
+            FROM projects
+            WHERE type = 'subtitle_removal'
+              AND deleted_at IS NULL
+              AND status IN ('queued', 'running', 'submitted')
+            ORDER BY created_at ASC
+            """,
+            (),
+        )
+    except Exception:
+        return restored
+
+    for row in rows:
+        task_id = (row.get("id") or "").strip()
+        if not task_id:
+            continue
+        if subtitle_removal_runner.is_running(task_id):
+            continue
+
+        row_status = (row.get("status") or "").strip().lower()
+        task = None
+        state_json = row.get("state_json") or ""
+        if state_json:
+            try:
+                task = json.loads(state_json)
+            except Exception:
+                task = None
+        if not task:
+            try:
+                task = store.get(task_id)
+            except Exception:
+                task = None
+        if not task or task.get("type") != "subtitle_removal":
+            continue
+        task_status = (task.get("status") or row_status).strip().lower()
+        if task_status in {"deleted", "done", "error"} or task.get("deleted_at"):
+            continue
+        if not _task_has_inflight_step(task) and row_status not in _RECOVERABLE_TASK_STATUSES and task_status not in _RECOVERABLE_TASK_STATUSES:
+            continue
+        try:
+            task.setdefault("_user_id", row.get("user_id"))
+            with task_state._lock:
+                task_state._tasks[task_id] = task
+            if subtitle_removal_runner.start(task_id, user_id=row.get("user_id")):
+                restored.append(task_id)
+        except Exception:
+            continue
+
+    return restored
 
 
 def _submit_locked(task_id: str, task: dict, body: dict):
