@@ -35,6 +35,18 @@
       return Math.max(min, Math.min(max, value));
     }
 
+    function pointInsideRect(point, rect) {
+      if (!point || !rect) {
+        return false;
+      }
+      return (
+        point.x >= rect.left &&
+        point.x <= rect.left + rect.width &&
+        point.y >= rect.top &&
+        point.y <= rect.top + rect.height
+      );
+    }
+
     function getMediaInfo() {
       return bootstrap.media_info || {};
     }
@@ -187,6 +199,10 @@
 
     function syncMode(nextMode) {
       selectionState.mode = nextMode;
+      if (nextMode !== "box") {
+        selectionState.box = null;
+        updateSelectionBoxDisplay(null);
+      }
       modeInputs.forEach(function (input) {
         input.checked = input.value === nextMode;
       });
@@ -203,6 +219,10 @@
       if (stateHint) {
         stateHint.textContent = nextMode === "box" ? "请在首帧图上拖拽字幕区域" : "全屏去除将直接提交整帧";
       }
+      window.subtitleRemovalState = Object.assign({}, window.subtitleRemovalState || {}, {
+        remove_mode: selectionState.mode,
+        selection_box: selectionState.box,
+      });
     }
 
     function refreshSubtitleRemovalState() {
@@ -289,6 +309,9 @@
           return;
         }
         var pointer = getPointerPosition(event);
+        if (!pointInsideRect(pointer, imageRect)) {
+          return;
+        }
         selectionState.dragging = true;
         selectionState.start = pointer;
         selectionState.current = pointer;

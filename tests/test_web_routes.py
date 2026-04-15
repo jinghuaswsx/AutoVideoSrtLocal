@@ -253,6 +253,7 @@ def test_subtitle_removal_detail_shell_exposes_selection_stage_hooks(authed_clie
     assert "提交去字幕任务" in body
     assert "全屏去除" in body
     assert "框选去除" in body
+    assert "Task 4" not in body
 
 
 def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):
