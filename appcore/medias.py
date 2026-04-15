@@ -103,14 +103,22 @@ def replace_copywritings(product_id: int, items: list[dict]) -> None:
 def create_item(product_id: int, user_id: int, filename: str, object_key: str,
                 display_name: str | None = None, file_url: str | None = None,
                 thumbnail_path: str | None = None, duration_seconds: float | None = None,
-                file_size: int | None = None) -> int:
+                file_size: int | None = None,
+                cover_object_key: str | None = None) -> int:
     return execute(
         "INSERT INTO media_items "
         "(product_id, user_id, filename, display_name, object_key, file_url, "
-        " thumbnail_path, duration_seconds, file_size) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        " thumbnail_path, cover_object_key, duration_seconds, file_size) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (product_id, user_id, filename, display_name or filename, object_key,
-         file_url, thumbnail_path, duration_seconds, file_size),
+         file_url, thumbnail_path, cover_object_key, duration_seconds, file_size),
+    )
+
+
+def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
+    return execute(
+        "UPDATE media_items SET cover_object_key=%s WHERE id=%s",
+        (cover_object_key, item_id),
     )
 
 

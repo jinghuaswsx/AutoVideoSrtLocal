@@ -1,5 +1,5 @@
 (function() {
-  const state = { page: 1, current: null };
+  const state = { page: 1, current: null, pendingItemCover: null };
   const $ = (id) => document.getElementById(id);
 
   function icon(name, size = 14) {
@@ -155,10 +155,12 @@
 
   function openCreate() {
     state.current = { product: null, copywritings: [], items: [] };
+    state.pendingItemCover = null;
     $('modalTitle').textContent = '添加产品素材';
     $('mName').value = '';
     $('mCode').value = '';
     setCover(null);
+    setItemCover(null);
     renderCopywritings([]);
     renderItems([]);
     $('uploadProgress').innerHTML = '';
@@ -176,14 +178,56 @@
   function setCover(url) {
     const dz = $('coverDropzone');
     const img = $('coverImg');
-    const actions = $('coverActions');
+    const replace = $('coverReplace');
     if (url) {
-      img.src = url;
-      img.hidden = false; actions.hidden = false; dz.hidden = true;
+      img.src = url; img.hidden = false; dz.hidden = true;
+      if (replace) replace.hidden = false;
     } else {
-      img.removeAttribute('src'); img.hidden = true;
-      actions.hidden = true; dz.hidden = false;
+      img.removeAttribute('src'); img.hidden = true; dz.hidden = false;
+      if (replace) replace.hidden = true;
     }
+  }
+
+  // ---- Item cover (add modal, pending) ----
+  function setItemCover(url) {
+    const dz = $('itemCoverDropzone');
+    const img = $('itemCoverImg');
+    const replace = $('itemCoverReplace');
+    const clear = $('itemCoverClear');
+    if (url) {
+      img.src = url; img.hidden = false; dz.hidden = true;
+      if (replace) replace.hidden = false;
+      if (clear) clear.hidden = false;
+    } else {
+      img.removeAttribute('src'); img.hidden = true; dz.hidden = false;
+      if (replace) replace.hidden = true;
+      if (clear) clear.hidden = true;
+    }
+  }
+
+  async function uploadItemCover(file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
+    const pid = await ensureProductIdForUpload();
+    if (!pid) return;
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/item-cover/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      state.pendingItemCover = boot.object_key;
+      const blobUrl = URL.createObjectURL(file);
+      setItemCover(blobUrl);
+    } catch (e) {
+      alert('视频封面上传失败：' + (e.message || ''));
+    }
+  }
+
+  function clearItemCover() {
+    state.pendingItemCover = null;
+    setItemCover(null);
   }
 
   async function uploadCover(file) {
@@ -277,8 +321,15 @@
       if (!putRes.ok) throw new Error('TOS 上传失败');
       await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size }),
+        body: JSON.stringify({
+          object_key: boot.object_key,
+          filename: file.name,
+          file_size: file.size,
+          cover_object_key: state.pendingItemCover || null,
+        }),
       });
+      state.pendingItemCover = null;
+      setItemCover(null);
       row.className = 'oc-upload-row ok';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>完成</span>`;
     } catch (e) {
@@ -489,21 +540,61 @@
 
   function edRenderItems(items) {
     const g = $('edItemsGrid');
-    g.innerHTML = (items || []).map(it => `
+    g.innerHTML = (items || []).map(it => {
+      const cover = it.cover_url || it.thumbnail_url;
+      const img = cover
+        ? `<img src="${escapeHtml(cover)}?_=${Date.now()}" loading="lazy" alt="">`
+        : `<div class="thumb-ph">${icon('film', 20)}</div>`;
+      return `
       <div class="oc-item" data-item="${it.id}">
         <div class="thumb">
-          ${it.thumbnail_url
-            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
-            : `<div class="thumb-ph">${icon('film', 20)}</div>`}
+          ${img}
           <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
+          <button class="oc-btn sm ghost item-cover-btn" type="button" title="更换视频封面">${icon('edit', 12)}<span>换封面</span></button>
         </div>
         <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
     g.querySelectorAll('[data-item]').forEach(card => {
-      card.querySelector('.rm').addEventListener('click', () => edRemoveItem(+card.dataset.item, card));
+      const id = +card.dataset.item;
+      card.querySelector('.rm').addEventListener('click', () => edRemoveItem(id, card));
+      card.querySelector('.item-cover-btn').addEventListener('click', () => edPickItemCover(id));
     });
     $('edItemsBadge').textContent = (items || []).length;
+  }
+
+  function edPickItemCover(itemId) {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/*';
+    picker.onchange = (e) => {
+      const f = e.target.files[0];
+      if (f) edUploadItemCover(itemId, f);
+    };
+    picker.click();
+  }
+
+  async function edUploadItemCover(itemId, file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    const pid = edState.current && edState.current.product && edState.current.product.id;
+    if (!pid) return;
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/item-cover/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      await fetchJSON(`/medias/api/items/${itemId}/cover/set`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ object_key: boot.object_key }),
+      });
+      const full = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = full;
+      edRenderItems(full.items);
+    } catch (e) {
+      alert('视频封面上传失败：' + (e.message || ''));
+    }
   }
 
   async function edRemoveItem(itemId, card) {
@@ -588,6 +679,24 @@
     $('coverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
       if (f) uploadCover(f);
+    });
+
+    // 视频封面图（add modal, 等待 /items/complete 时带过去）
+    const icdz = $('itemCoverDropzone');
+    icdz.addEventListener('click', () => $('itemCoverInput').click());
+    icdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('itemCoverInput').click(); } });
+    icdz.addEventListener('dragover', (e) => { e.preventDefault(); icdz.classList.add('drag'); });
+    icdz.addEventListener('dragleave', () => icdz.classList.remove('drag'));
+    icdz.addEventListener('drop', (e) => {
+      e.preventDefault(); icdz.classList.remove('drag');
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) uploadItemCover(f);
+    });
+    $('itemCoverReplace').addEventListener('click', () => $('itemCoverInput').click());
+    $('itemCoverClear').addEventListener('click', clearItemCover);
+    $('itemCoverInput').addEventListener('change', (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (f) uploadItemCover(f);
     });
 
     const dz = $('dropzone');
