@@ -10,13 +10,13 @@ CREATE TABLE IF NOT EXISTS media_languages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO media_languages (code, name_zh, sort_order) VALUES
-  ('en','英语',1),
-  ('de','德语',2),
-  ('fr','法语',3),
-  ('es','西班牙语',4),
-  ('it','意大利语',5),
-  ('ja','日语',6),
-  ('ko','韩语',7);
+  ('en', '英语', 1),
+  ('de', '德语', 2),
+  ('fr', '法语', 3),
+  ('es', '西班牙语', 4),
+  ('it', '意大利语', 5),
+  ('ja', '日语', 6),
+  ('pt', '葡萄牙语', 7);
 
 -- 2. 素材加 lang
 ALTER TABLE media_items
@@ -28,7 +28,7 @@ ALTER TABLE media_copywritings
   ADD COLUMN lang VARCHAR(8) NOT NULL DEFAULT 'en' AFTER product_id,
   ADD KEY idx_product_lang (product_id, lang, idx);
 
--- 4. 产品主图按语种分
+-- 4. 产品主图按语种分表
 CREATE TABLE IF NOT EXISTS media_product_covers (
   product_id INT          NOT NULL,
   lang       VARCHAR(8)   NOT NULL,

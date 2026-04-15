@@ -993,3 +993,15 @@ def test_task_api_get_recovers_interrupted_pipeline_before_return(authed_client_
     assert payload["status"] == "error"
     assert payload["steps"]["translate"] == "error"
     assert payload["current_review_step"] == ""
+
+
+def test_medias_languages_api_returns_pt_without_ko(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/api/languages")
+
+    assert response.status_code == 200
+    items = response.get_json()["items"]
+    codes = [item["code"] for item in items]
+    assert "pt" in codes
+    assert "ja" in codes
+    assert "ko" not in codes
+    assert "jp" not in codes
