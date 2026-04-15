@@ -414,7 +414,15 @@
     if (!state.current || !state.current.product || !state.current.product.cover_object_key) {
       alert('请上传商品主图'); return;
     }
-    // 视频素材不再是添加阶段的强制项，进入"编辑"弹窗可继续补充
+    const cw = collectCopywritings();
+    if (!cw.length) { alert('请填写文案'); $('cwBody') && $('cwBody').focus(); return; }
+    const items = (state.current && state.current.items) || [];
+    if (!items.length) { alert('请上传至少一条视频素材'); return; }
+    const missingCover = items.filter(it => !it.cover_object_key);
+    if (missingCover.length) {
+      alert('每条视频素材都必须有视频封面图，请先上传封面再选视频源');
+      return;
+    }
     const pid = state.current.product.id;
     try {
       await fetchJSON('/medias/api/products/' + pid, {
@@ -422,7 +430,7 @@
         body: JSON.stringify({
           name, product_code: code,
           cover_object_key: state.current.product.cover_object_key,
-          copywritings: collectCopywritings(),
+          copywritings: cw,
         }),
       });
       hideModal();

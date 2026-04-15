@@ -46,8 +46,7 @@
       <!-- 文案（单个 textarea，有内容就提交，空的忽略） -->
       <section class="oc-section">
         <div class="oc-section-title">
-          <span>文案</span>
-          <span class="optional">(可选)</span>
+          <span>文案<span class="req">*</span></span>
         </div>
         <textarea id="cwBody" class="oc-textarea oc-cw-body" rows="4"
                   placeholder="有文案就直接填在这里，没有可以留空。保存时跟产品一起提交。"></textarea>
@@ -61,15 +60,14 @@
       <!-- 视频素材 -->
       <section class="oc-section">
         <div class="oc-section-title">
-          <span>视频素材</span>
-          <span class="optional">(可选，保存前就能上传)</span>
+          <span>视频素材<span class="req">*</span></span>
           <span class="oc-badge" id="itemsBadge" style="margin-left:auto">0</span>
         </div>
 
         <div class="oc-new-item-body" style="display:flex;gap:var(--oc-sp-4);align-items:flex-start">
           <!-- 左：视频封面图 -->
           <div class="oc-new-item-col" style="flex:1;min-width:0">
-            <div class="oc-new-item-label">视频封面图</div>
+            <div class="oc-new-item-label">视频封面图<span class="req">*</span></div>
             <div id="itemCoverBox" class="oc-cover-9-16">
               <div id="itemCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传视频封面图">
                 <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
@@ -91,7 +89,7 @@
 
           <!-- 右：视频源 -->
           <div class="oc-new-item-col" style="flex:1;min-width:0">
-            <div class="oc-new-item-label">视频源</div>
+            <div class="oc-new-item-label">视频源<span class="req">*</span></div>
             <div id="dropzone" class="oc-dropzone" tabindex="0" role="button" aria-label="上传视频素材">
               <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
               <div class="dz-title">点击或拖拽上传视频</div>
