@@ -31,16 +31,22 @@ def _can_access_product(product: dict | None, write: bool = False) -> bool:
 
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None) -> dict:
+    cover_url = None
+    if p.get("cover_object_key"):
+        cover_url = f"/medias/cover/{p['id']}"
+    elif cover_item_id:
+        cover_url = f"/medias/thumb/{cover_item_id}"
     return {
         "id": p["id"],
         "name": p["name"],
+        "product_code": p.get("product_code"),
         "color_people": p.get("color_people"),
         "source": p.get("source"),
         "archived": bool(p.get("archived")),
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
         "items_count": items_count,
-        "cover_thumbnail_url": f"/medias/thumb/{cover_item_id}" if cover_item_id else None,
+        "cover_thumbnail_url": cover_url,
     }
 
 
