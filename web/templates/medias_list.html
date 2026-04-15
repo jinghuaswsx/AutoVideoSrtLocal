@@ -226,7 +226,7 @@
 @media (max-width: 768px) { .oc-split { grid-template-columns:1fr; } }
 .oc-split-col { display:flex; flex-direction:column; gap:var(--oc-sp-3); min-width:0; }
 
-.oc-cover-box { position:relative; width:100%; aspect-ratio:9/16; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); overflow:hidden; transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }
+.oc-cover-box { position:relative; width:100%; aspect-ratio:1/1; max-width:400px; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); overflow:hidden; transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }
 .oc-cover-box:has(img:not([hidden])) { border-style:solid; border-color:var(--oc-border); background:var(--oc-bg-muted); }
 .oc-cover-box .cover-dz { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); color:var(--oc-fg-muted); cursor:pointer; text-align:center; padding:var(--oc-sp-4); }
 .oc-cover-box .cover-dz .dz-icon { width:36px; height:36px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; }
@@ -254,6 +254,57 @@
 .oc-hint { font-size:11px; color:var(--oc-fg-subtle); margin-top:-4px; }
 
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
+
+/* ────────── Table（列表） ────────── */
+.oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; }
+.oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
+.oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
+.oc-table tbody tr:last-child td { border-bottom:none; }
+.oc-table td.mono { font-family:var(--font-mono,ui-monospace,Consolas,monospace); font-size:12px; color:var(--oc-fg); font-variant-numeric:tabular-nums; }
+.oc-table td.muted, .oc-table .muted { color:var(--oc-fg-muted); font-size:12px; }
+.oc-table td.name a { color:var(--oc-fg); font-weight:500; text-decoration:none; }
+.oc-table td.name a:hover { color:var(--oc-accent); }
+.oc-table td.actions { display:flex; gap:var(--oc-sp-1); align-items:center; white-space:nowrap; }
+.oc-table td.actions .oc-btn svg { margin-right:2px; }
+.oc-table td.actions .danger-txt { color:var(--oc-danger-fg); }
+.oc-table td.actions .danger-txt:hover { background:var(--oc-danger-bg); }
+
+.oc-pill { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 8px; border-radius:9999px; background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
+
+.oc-thumb-sm { width:48px; height:48px; border-radius:var(--oc-r); overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); }
+.oc-thumb-sm img { width:100%; height:100%; object-fit:cover; display:block; }
+.oc-thumb-sm .cover-ph { display:flex; align-items:center; justify-content:center; }
+
+.oc-fn-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; max-width:280px; font-size:12px; line-height:1.45; }
+.oc-fn-list li { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); }
+.oc-fn-list li.more { color:var(--oc-fg-subtle); font-size:11px; }
+.oc-fn-list li.empty { color:var(--oc-fg-subtle); }
+
+/* ────────── Edit 详情 Modal ────────── */
+.oc-modal-wide { width:1080px; }
+.oc-cover-row { display:flex; gap:var(--oc-sp-5); align-items:flex-start; }
+.oc-cover-actions { display:flex; flex-direction:column; gap:var(--oc-sp-2); align-items:flex-start; padding-top:var(--oc-sp-2); }
+.oc-cover-square { position:relative; width:400px; height:400px; max-width:100%; border:1.5px dashed var(--oc-border-strong); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); overflow:hidden; transition:border-color var(--oc-dur-fast) var(--oc-ease), background var(--oc-dur-fast) var(--oc-ease); }
+.oc-cover-square:has(img:not([hidden])) { border-style:solid; border-color:var(--oc-border); background:var(--oc-bg-muted); }
+.oc-cover-square .cover-dz { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--oc-sp-2); color:var(--oc-fg-muted); cursor:pointer; text-align:center; padding:var(--oc-sp-4); }
+.oc-cover-square .cover-dz .dz-icon { width:36px; height:36px; border-radius:50%; background:var(--oc-accent-subtle); color:var(--oc-accent); display:flex; align-items:center; justify-content:center; }
+.oc-cover-square .cover-dz .dz-title { font-size:14px; font-weight:500; color:var(--oc-fg); }
+.oc-cover-square .cover-dz .dz-hint { font-size:12px; color:var(--oc-fg-subtle); }
+.oc-cover-square:hover:not(:has(img:not([hidden]))), .oc-cover-square.drag { border-color:var(--oc-accent); background:var(--oc-accent-subtle); }
+.oc-cover-square img { width:100%; height:100%; object-fit:cover; display:block; }
+
+/* 编辑弹窗的文案改为网格 */
+.oc-cw-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-3); }
+.oc-cw-grid .oc-cw { min-height:180px; }
+.oc-cw-grid .oc-cw .stack { flex:1; }
+.oc-cw-grid .oc-cw textarea[data-field="body"] { min-height:140px; }
+
+@media (max-width: 768px) {
+  .oc-cover-row { flex-direction:column; }
+  .oc-cover-square { width:100%; height:auto; aspect-ratio:1/1; }
+  .oc-table { font-size:12px; }
+}
 {% endblock %}
 
 {% block content %}
@@ -330,6 +381,7 @@
 </div>
 
 {% include "_medias_edit_modal.html" %}
+{% include "_medias_edit_detail_modal.html" %}
 
 <script>
   window.MEDIAS_TOS_READY = {{ 'true' if tos_ready else 'false' }};

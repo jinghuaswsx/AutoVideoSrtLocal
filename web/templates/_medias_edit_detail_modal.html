@@ -1,0 +1,89 @@
+<div class="oc-modal-mask oc" id="edMask" hidden>
+  <div class="oc-modal oc-modal-wide" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+    <div class="oc-modal-head">
+      <h3 id="edTitle">编辑产品素材</h3>
+      <button class="oc-icon-btn" id="edClose" title="关闭" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+
+    <div class="oc-modal-body">
+
+      <!-- 基本信息 -->
+      <section class="oc-section">
+        <div class="oc-row">
+          <div class="oc-field" style="margin-bottom:0">
+            <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
+            <input id="edName" class="oc-input" maxlength="120">
+          </div>
+          <div class="oc-field" style="margin-bottom:0">
+            <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
+            <input id="edCode" class="oc-input" maxlength="64" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <!-- 产品主图 -->
+      <section class="oc-section">
+        <div class="oc-section-title">
+          <span>产品主图</span>
+          <span class="optional">(可选)</span>
+        </div>
+        <div class="oc-cover-row">
+          <div id="edCoverBox" class="oc-cover-square">
+            <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
+              <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+              <div class="dz-title">点击或拖拽上传</div>
+              <div class="dz-hint">JPG / PNG / WebP</div>
+            </div>
+            <img id="edCoverImg" alt="主图" hidden>
+          </div>
+          <div class="oc-cover-actions">
+            <button type="button" class="oc-btn ghost sm" id="edCoverReplace">更换主图</button>
+            <button type="button" class="oc-btn text sm" id="edCoverClear">清空主图</button>
+            <input type="file" id="edCoverInput" accept="image/*" hidden>
+          </div>
+        </div>
+      </section>
+
+      <!-- 文案 -->
+      <section class="oc-section">
+        <div class="oc-section-title">
+          <span>文案</span>
+          <span class="optional">(可选)</span>
+          <span class="count" id="edCwBadge">0</span>
+        </div>
+        <div id="edCwList" class="oc-cw-grid"></div>
+        <button class="oc-add-btn" type="button" id="edCwAddBtn">
+          <svg width="14" height="14"><use href="#ic-plus"/></svg>
+          <span>添加文案条目</span>
+        </button>
+      </section>
+
+      <!-- 视频素材 -->
+      <section class="oc-section">
+        <div class="oc-section-title">
+          <span>视频素材<span class="req">*</span></span>
+          <span class="count" id="edItemsBadge">0</span>
+          <span class="oc-spacer" style="flex:1"></span>
+          <button class="oc-btn ghost sm" type="button" id="edVideoAddBtn">
+            <svg width="14" height="14"><use href="#ic-plus"/></svg>
+            <span>上传视频</span>
+          </button>
+          <input type="file" id="edVideoInput" accept="video/*" hidden>
+        </div>
+        <div id="edUploadProgress" class="oc-upload-list"></div>
+        <div id="edItemsGrid" class="oc-items-grid"></div>
+      </section>
+
+    </div>
+
+    <div class="oc-modal-foot">
+      <button class="oc-btn ghost" id="edCancelBtn">取消</button>
+      <button class="oc-btn primary" id="edSaveBtn">
+        <svg width="14" height="14"><use href="#ic-check"/></svg>
+        <span>保存</span>
+      </button>
+    </div>
+  </div>
+</div>

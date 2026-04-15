@@ -70,54 +70,59 @@
       if (ec) ec.addEventListener('click', () => $('createBtn').click());
       return;
     }
-    grid.innerHTML = items.map(cardHTML).join('');
-    grid.querySelectorAll('[data-pid]').forEach(el => {
-      const pid = +el.dataset.pid;
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.menu-btn') || e.target.closest('.oc-menu-pop')) return;
-        openEdit(pid);
-      });
-    });
-    grid.querySelectorAll('.menu-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeAllMenus();
-        const pop = btn.nextElementSibling;
-        if (pop) pop.classList.add('open');
-      });
-    });
-    grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); closeAllMenus(); openEdit(+b.dataset.edit); }));
-    grid.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); closeAllMenus(); deleteProduct(+b.dataset.del); }));
+    grid.innerHTML = `
+      <table class="oc-table">
+        <thead>
+          <tr>
+            <th style="width:56px">ID</th>
+            <th style="width:64px">主图</th>
+            <th>产品名称</th>
+            <th style="width:180px">产品 ID</th>
+            <th style="width:72px">素材数</th>
+            <th>素材文件名</th>
+            <th style="width:140px">创建时间</th>
+            <th style="width:140px">修改时间</th>
+            <th style="width:100px">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map(rowHTML).join('')}
+        </tbody>
+      </table>`;
+    grid.querySelectorAll('[data-edit]').forEach(b =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); openEdit(+b.dataset.edit); }));
+    grid.querySelectorAll('[data-del]').forEach(b =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); deleteProduct(+b.dataset.del); }));
+    grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
+      a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
   }
 
-  function cardHTML(p) {
+  function rowHTML(p) {
+    const count = p.items_count || 0;
+    const filenames = p.items_filenames || [];
+    const extra = Math.max(0, count - filenames.length);
+    const fnHtml = filenames.length
+      ? filenames.map(n => `<li title="${escapeHtml(n)}">${escapeHtml(n)}</li>`).join('')
+        + (extra > 0 ? `<li class="more">+${extra} 更多</li>` : '')
+      : '<li class="empty">—</li>';
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
-      : `<div class="cover-ph">${icon('film', 32)}</div>`;
-    const tags = [];
-    if (p.source) tags.push(`<span class="oc-tag on-cover">${escapeHtml(p.source)}</span>`);
-    tags.push(`<span class="oc-tag on-cover">${icon('film', 11)} ${p.items_count || 0}</span>`);
-
+      : `<div class="cover-ph">${icon('film', 16)}</div>`;
     return `
-      <article class="oc-card" data-pid="${p.id}" tabindex="0">
-        <div class="cover">
-          ${cover}
-          <div class="cover-tags">${tags.join('')}</div>
-          <button class="menu-btn" type="button" aria-label="更多操作">${icon('more', 16)}</button>
-          <div class="oc-menu-pop">
-            <button data-edit="${p.id}">${icon('edit', 14)}<span>编辑</span></button>
-            <button class="danger" data-del="${p.id}">${icon('trash', 14)}<span>删除</span></button>
-          </div>
-        </div>
-        <div class="info">
-          <div class="name">${escapeHtml(p.name)}</div>
-          <div class="color">${p.color_people ? escapeHtml(p.color_people) : '未设置色号 / 代言人'}</div>
-          <div class="meta">
-            <span>${fmtDate(p.created_at)}</span>
-            <span>#${p.id}</span>
-          </div>
-        </div>
-      </article>`;
+      <tr data-pid="${p.id}">
+        <td class="mono">${p.id}</td>
+        <td><div class="oc-thumb-sm">${cover}</div></td>
+        <td class="name"><a href="#" data-pid="${p.id}">${escapeHtml(p.name)}</a></td>
+        <td class="mono">${p.product_code ? escapeHtml(p.product_code) : '<span class="muted">—</span>'}</td>
+        <td><span class="oc-pill">${count}</span></td>
+        <td><ul class="oc-fn-list">${fnHtml}</ul></td>
+        <td class="muted">${fmtDate(p.created_at)}</td>
+        <td class="muted">${fmtDate(p.updated_at)}</td>
+        <td class="actions">
+          <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
+          <button class="oc-btn sm text danger-txt" data-del="${p.id}">${icon('trash', 12)}</button>
+        </td>
+      </tr>`;
   }
 
   function closeAllMenus() {
@@ -163,20 +168,7 @@
   }
 
   async function openEdit(pid) {
-    try {
-      const data = await fetchJSON('/medias/api/products/' + pid);
-      state.current = data;
-      $('modalTitle').textContent = '编辑产品素材';
-      $('mName').value = data.product.name || '';
-      $('mCode').value = data.product.product_code || '';
-      setCover(data.product.cover_object_key ? `/medias/cover/${pid}?_=${Date.now()}` : null);
-      renderCopywritings(data.copywritings);
-      renderItems(data.items);
-      $('uploadProgress').innerHTML = '';
-      showModal();
-    } catch (e) {
-      alert('加载失败：' + (e.message || e));
-    }
+    return openEditDetail(pid);
   }
 
   // ---------- Cover ----------
@@ -370,6 +362,192 @@
     });
   }
 
+  // ========== Edit Detail Modal ==========
+  const edState = { current: null, clearCover: false };
+
+  function edShow() { $('edMask').hidden = false; }
+  function edHide() { $('edMask').hidden = true; edState.current = null; edState.clearCover = false; }
+
+  async function openEditDetail(pid) {
+    try {
+      const data = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = data;
+      edState.clearCover = false;
+      $('edName').value = data.product.name || '';
+      $('edCode').value = data.product.product_code || '';
+      edSetCover(data.product.cover_object_key ? `/medias/cover/${pid}?_=${Date.now()}` : null);
+      edRenderCopywritings(data.copywritings);
+      edRenderItems(data.items);
+      $('edUploadProgress').innerHTML = '';
+      edShow();
+    } catch (e) {
+      alert('加载失败：' + (e.message || e));
+    }
+  }
+
+  function edSetCover(url) {
+    const dz = $('edCoverDropzone');
+    const img = $('edCoverImg');
+    if (url) { img.src = url; img.hidden = false; dz.hidden = true; }
+    else { img.removeAttribute('src'); img.hidden = true; dz.hidden = false; }
+  }
+
+  async function edUploadCover(file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
+    const pid = edState.current && edState.current.product && edState.current.product.id;
+    if (!pid) return;
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/cover/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      const done = await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ object_key: boot.object_key }),
+      });
+      edState.current.product.cover_object_key = boot.object_key;
+      edState.clearCover = false;
+      edSetCover(done.cover_url + `?_=${Date.now()}`);
+    } catch (e) {
+      alert('封面上传失败：' + (e.message || ''));
+    }
+  }
+
+  function edClearCover() {
+    edState.clearCover = true;
+    if (edState.current && edState.current.product) edState.current.product.cover_object_key = null;
+    edSetCover(null);
+  }
+
+  async function edUploadVideo(file) {
+    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    const pid = edState.current && edState.current.product && edState.current.product.id;
+    if (!pid) return;
+    const box = $('edUploadProgress');
+    const row = document.createElement('div');
+    row.className = 'oc-upload-row';
+    row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>上传中…</span>`;
+    box.appendChild(row);
+    try {
+      const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name }),
+      });
+      const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
+      if (!putRes.ok) throw new Error('TOS 上传失败');
+      await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ object_key: boot.object_key, filename: file.name, file_size: file.size }),
+      });
+      row.className = 'oc-upload-row ok';
+      row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>完成</span>`;
+    } catch (e) {
+      row.className = 'oc-upload-row err';
+      row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
+    }
+    const full = await fetchJSON('/medias/api/products/' + pid);
+    edState.current = full;
+    edRenderItems(full.items);
+    loadList();
+  }
+
+  function edRenderCopywritings(list) {
+    const box = $('edCwList');
+    box.innerHTML = '';
+    (list || []).forEach((c, i) => box.appendChild(edCwCard(c, i + 1)));
+    $('edCwBadge').textContent = box.children.length;
+  }
+
+  function edCwCard(c, idx) {
+    const d = document.createElement('div');
+    d.className = 'oc-cw';
+    d.innerHTML = `
+      <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
+      <div class="idx">#${idx}</div>
+      <div class="stack">
+        <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
+      </div>
+    `;
+    d.querySelector('[data-field="body"]').value = (c && c.body) || '';
+    d.querySelector('.rm').addEventListener('click', () => {
+      d.remove();
+      [...$('edCwList').children].forEach((e, i) => {
+        const el = e.querySelector('.idx'); if (el) el.textContent = '#' + (i + 1);
+      });
+      $('edCwBadge').textContent = $('edCwList').children.length;
+    });
+    return d;
+  }
+
+  function edCollectCopywritings() {
+    return [...$('edCwList').children].map(card => ({
+      body: card.querySelector('[data-field="body"]').value || null,
+    }));
+  }
+
+  function edRenderItems(items) {
+    const g = $('edItemsGrid');
+    g.innerHTML = (items || []).map(it => `
+      <div class="oc-item" data-item="${it.id}">
+        <div class="thumb">
+          ${it.thumbnail_url
+            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
+            : `<div class="thumb-ph">${icon('film', 20)}</div>`}
+          <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
+        </div>
+        <div class="name" title="${escapeHtml(it.display_name || it.filename)}">${escapeHtml(it.display_name || it.filename)}</div>
+      </div>
+    `).join('');
+    g.querySelectorAll('[data-item]').forEach(card => {
+      card.querySelector('.rm').addEventListener('click', () => edRemoveItem(+card.dataset.item, card));
+    });
+    $('edItemsBadge').textContent = (items || []).length;
+  }
+
+  async function edRemoveItem(itemId, card) {
+    if (!confirm('确认删除该素材？')) return;
+    await fetch('/medias/api/items/' + itemId, { method: 'DELETE' });
+    card.remove();
+    $('edItemsBadge').textContent = $('edItemsGrid').children.length;
+    const pid = edState.current && edState.current.product && edState.current.product.id;
+    if (pid) {
+      const full = await fetchJSON('/medias/api/products/' + pid);
+      edState.current = full;
+    }
+  }
+
+  async function edSave() {
+    const name = $('edName').value.trim();
+    const code = $('edCode').value.trim().toLowerCase();
+    if (!name) { alert('产品名称必填'); $('edName').focus(); return; }
+    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('edCode').focus(); return; }
+    if (!$('edItemsGrid').children.length) { alert('请至少保留 1 条视频素材'); return; }
+    const pid = edState.current.product.id;
+    const payload = {
+      name, product_code: code,
+      copywritings: edCollectCopywritings(),
+    };
+    // 显式传 cover_object_key：清空时为 null；有值时传对象 key；未变更时传原值
+    payload.cover_object_key = edState.clearCover
+      ? null
+      : (edState.current.product.cover_object_key || null);
+    try {
+      await fetchJSON('/medias/api/products/' + pid, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      edHide();
+      loadList();
+    } catch (e) {
+      const msg = (e.message || '').toString();
+      if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('edCode').focus(); }
+      else alert('保存失败：' + msg);
+    }
+  }
+
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
     $('searchBtn').addEventListener('click', () => { state.page = 1; loadList(); });
@@ -427,6 +605,41 @@
     $('fileInput').addEventListener('change', (e) => {
       const file = e.target.files[0]; e.target.value = '';
       if (file) uploadVideo(file);
+    });
+
+    // ---- Edit detail modal wiring ----
+    $('edClose').addEventListener('click', edHide);
+    $('edCancelBtn').addEventListener('click', edHide);
+    $('edSaveBtn').addEventListener('click', edSave);
+    $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('edMask').hidden) edHide(); });
+
+    $('edCwAddBtn').addEventListener('click', () => {
+      $('edCwList').appendChild(edCwCard({}, $('edCwList').children.length + 1));
+      $('edCwBadge').textContent = $('edCwList').children.length;
+    });
+
+    const edCdz = $('edCoverDropzone');
+    edCdz.addEventListener('click', () => $('edCoverInput').click());
+    edCdz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('edCoverInput').click(); } });
+    edCdz.addEventListener('dragover', (e) => { e.preventDefault(); edCdz.classList.add('drag'); });
+    edCdz.addEventListener('dragleave', () => edCdz.classList.remove('drag'));
+    edCdz.addEventListener('drop', (e) => {
+      e.preventDefault(); edCdz.classList.remove('drag');
+      const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
+      if (f) edUploadCover(f);
+    });
+    $('edCoverReplace').addEventListener('click', () => $('edCoverInput').click());
+    $('edCoverClear').addEventListener('click', edClearCover);
+    $('edCoverInput').addEventListener('change', (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (f) edUploadCover(f);
+    });
+
+    $('edVideoAddBtn').addEventListener('click', () => $('edVideoInput').click());
+    $('edVideoInput').addEventListener('change', (e) => {
+      const f = e.target.files[0]; e.target.value = '';
+      if (f) edUploadVideo(f);
     });
 
     loadList();
