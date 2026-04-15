@@ -24,7 +24,7 @@ def test_is_valid_language():
 
 
 def test_create_item_with_lang(user_id):
-    pid = medias.create_product(user_id, "多语素材测试", product_code="mlt-items-01")
+    pid = medias.create_product(user_id, "多语素材测试")
     try:
         iid_en = medias.create_item(pid, user_id, "en.mp4", "k/en", lang="en")
         iid_de = medias.create_item(pid, user_id, "de.mp4", "k/de", lang="de")
@@ -39,7 +39,7 @@ def test_create_item_with_lang(user_id):
 
 
 def test_replace_copywritings_per_lang(user_id):
-    pid = medias.create_product(user_id, "多语文案测试", product_code="mlt-copy-01")
+    pid = medias.create_product(user_id, "多语文案测试")
     try:
         medias.replace_copywritings(pid, [{"title": "T_en", "body": "B"}], lang="en")
         medias.replace_copywritings(pid, [
@@ -59,7 +59,7 @@ def test_replace_copywritings_per_lang(user_id):
 
 
 def test_product_covers_per_lang(user_id):
-    pid = medias.create_product(user_id, "多语主图测试", product_code="mlt-cover-01")
+    pid = medias.create_product(user_id, "多语主图测试")
     try:
         medias.set_product_cover(pid, "en", "covers/en.jpg")
         medias.set_product_cover(pid, "de", "covers/de.jpg")
@@ -76,7 +76,7 @@ def test_product_covers_per_lang(user_id):
 
 
 def test_lang_coverage_map(user_id):
-    pid = medias.create_product(user_id, "覆盖度测试", product_code="mlt-cov-01")
+    pid = medias.create_product(user_id, "覆盖度测试")
     try:
         medias.create_item(pid, user_id, "a.mp4", "k/a", lang="en")
         medias.create_item(pid, user_id, "b.mp4", "k/b", lang="en")

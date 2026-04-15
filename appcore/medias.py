@@ -269,7 +269,11 @@ def has_english_cover(product_id: int) -> bool:
 # ---------- 覆盖度统计 ----------
 
 def lang_coverage_by_product(product_ids: list[int]) -> dict[int, dict[str, dict]]:
-    """返回 { pid: { lang: {items, copy, cover} } }，仅包含启用语种。"""
+    """返回 { pid: { lang: {items, copy, cover} } }，仅包含当前启用的语种。
+
+    已禁用语种（media_languages.enabled=0）下的存量 items/copywritings/covers
+    会被忽略，不计入任何语种桶。
+    """
     if not product_ids:
         return {}
     langs = [l["code"] for l in list_languages()]
