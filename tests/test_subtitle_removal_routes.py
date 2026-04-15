@@ -328,3 +328,111 @@ def test_state_api_returns_detail_payload(authed_client_no_db):
     assert payload["id"] == task["id"]
     assert payload["remove_mode"] == "full"
     assert payload["media_info"]["resolution"] == "720x1280"
+
+
+def test_subtitle_removal_submit_persists_mode_and_starts_runner(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit",
+        "uploads/source.mp4",
+        "output/sr-submit",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.setdefault("task_id", task_id),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit/submit",
+        json={"remove_mode": "box", "selection_box": {"x1": 0, "y1": 1000, "x2": 720, "y2": 1180}},
+    )
+
+    assert response.status_code == 202
+    assert started["task_id"] == "sr-submit"
+    saved = store.get("sr-submit")
+    assert saved["remove_mode"] == "box"
+    assert saved["selection_box"] == {"x1": 0, "y1": 1000, "x2": 720, "y2": 1180}
+    assert saved["position_payload"] == {"l": 0, "t": 1000, "w": 720, "h": 180}
+    assert saved["steps"]["submit"] == "queued"
+
+
+def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-full",
+        "uploads/source-full.mp4",
+        "output/sr-submit-full",
+        original_filename="source-full.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-full",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-full/submit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-submit-full")
+    assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
+    assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_submit_rejects_duration_over_limit(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-too-long",
+        "uploads/source-too-long.mp4",
+        "output/sr-submit-too-long",
+        original_filename="source-too-long.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-too-long",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 9999.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append(task_id),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-too-long/submit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 400
+    assert started == []

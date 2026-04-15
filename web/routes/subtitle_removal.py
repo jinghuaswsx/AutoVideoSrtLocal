@@ -4,6 +4,7 @@ import json
 import os
 import uuid
 
+import config
 from flask import Blueprint, render_template, abort, jsonify, request, send_file, url_for
 from flask_login import login_required, current_user
 
@@ -12,6 +13,7 @@ from appcore.db import execute as db_execute, query_one as db_query_one
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
+from web.services import subtitle_removal_runner
 from web.upload_util import validate_video_extension
 
 bp = Blueprint("subtitle_removal", __name__)
@@ -41,6 +43,55 @@ def _media_info_is_ready(media_info: dict | None) -> bool:
         and float(info.get("duration") or 0.0) > 0
         and (info.get("resolution") or "").strip()
     )
+
+
+def _normalize_selection_box(mode: str, selection_box: dict | None, media_info: dict) -> dict:
+    try:
+        width = int(media_info.get("width") or 0)
+        height = int(media_info.get("height") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid media dimensions") from exc
+    if width <= 0 or height <= 0:
+        raise ValueError("media dimensions are required")
+    if mode == "full":
+        return {"x1": 0, "y1": 0, "x2": width, "y2": height}
+    if not isinstance(selection_box, dict):
+        raise ValueError("selection_box required for box mode")
+    try:
+        x1 = selection_box.get("x1")
+        y1 = selection_box.get("y1")
+        x2 = selection_box.get("x2")
+        y2 = selection_box.get("y2")
+        if x1 is None and "l" in selection_box:
+            x1 = selection_box.get("l")
+        if y1 is None and "t" in selection_box:
+            y1 = selection_box.get("t")
+        if x2 is None and "w" in selection_box and x1 is not None:
+            x2 = int(x1) + int(selection_box.get("w") or 0)
+        if y2 is None and "h" in selection_box and y1 is not None:
+            y2 = int(y1) + int(selection_box.get("h") or 0)
+        x1 = int(x1 or 0)
+        y1 = int(y1 or 0)
+        x2 = int(x2 or 0)
+        y2 = int(y2 or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("selection_box must contain integer coordinates") from exc
+    x1 = max(0, min(width, x1))
+    y1 = max(0, min(height, y1))
+    x2 = max(0, min(width, x2))
+    y2 = max(0, min(height, y2))
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("selection_box must have positive width and height")
+    return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+
+
+def _to_position_payload(selection_box: dict) -> dict:
+    return {
+        "l": selection_box["x1"],
+        "t": selection_box["y1"],
+        "w": selection_box["x2"] - selection_box["x1"],
+        "h": selection_box["y2"] - selection_box["y1"],
+    }
 
 
 def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
@@ -223,6 +274,51 @@ def complete_upload():
     store.set_step_message(task_id, "prepare", "首帧提取和媒体信息解析已完成")
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
     return jsonify({"task_id": task_id}), 201
+
+
+@bp.route("/api/subtitle-removal/<task_id>/submit", methods=["POST"])
+@login_required
+def submit(task_id: str):
+    task = _get_owned_task(task_id)
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("remove_mode") or "").strip().lower()
+    selection_box = body.get("selection_box")
+    media_info = task.get("media_info") or {}
+
+    if mode not in {"full", "box"}:
+        return jsonify({"error": "remove_mode must be full or box"}), 400
+
+    try:
+        duration = float(media_info.get("duration") or 0.0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid media duration"}), 400
+    if duration > config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS:
+        return jsonify({"error": "video duration exceeds provider limit"}), 400
+
+    try:
+        normalized = _normalize_selection_box(mode, selection_box, media_info)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    store.update(
+        task_id,
+        status="queued",
+        remove_mode=mode,
+        selection_box=normalized,
+        position_payload=_to_position_payload(normalized),
+        provider_task_id="",
+        provider_status="queued",
+        provider_emsg="",
+        provider_result_url="",
+        result_video_path="",
+        result_tos_key="",
+        result_object_info={},
+        error="",
+    )
+    store.set_step(task_id, "submit", "queued")
+    store.set_step_message(task_id, "submit", "等待后台提交去字幕任务")
+    subtitle_removal_runner.start(task_id, user_id=current_user.id)
+    return jsonify({"task_id": task_id, "status": "queued"}), 202
 
 
 @bp.route("/api/subtitle-removal/<task_id>/artifact/source", methods=["GET"])
