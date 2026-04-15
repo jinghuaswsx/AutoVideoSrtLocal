@@ -297,6 +297,44 @@ def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client
     assert "download/result" in body
 
 
+def test_subtitle_removal_detail_shell_shows_result_actions_for_local_result_only(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-result-local",
+        "uploads/sr-result-local.mp4",
+        "output/sr-result-local",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        result_tos_key="",
+        result_video_path="/tmp/result.cleaned.mp4",
+        provider_task_id="provider-task-1",
+        provider_status="success",
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-result-local")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "srResultPanel" in body
+    assert "artifact/result" in body
+    assert "download/result" in body
+
+
 def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):
     joined_rooms = []
 

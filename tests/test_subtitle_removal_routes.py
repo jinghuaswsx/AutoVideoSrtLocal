@@ -639,6 +639,29 @@ def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task
     assert started["task_id"] == "sr-resume"
 
 
+def test_subtitle_removal_resume_poll_rejects_duplicate_runner_start(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-resume-busy",
+        "uploads/source.mp4",
+        "output/sr-resume-busy",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update("sr-resume-busy", status="running", provider_task_id="provider-task-1")
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.is_running", lambda task_id: True)
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append(task_id),
+    )
+
+    response = authed_client_no_db.post("/api/subtitle-removal/sr-resume-busy/resume-poll")
+
+    assert response.status_code == 409
+    assert started == []
+
+
 def test_subtitle_removal_delete_soft_deletes_project_and_cleans_tos_keys(authed_client_no_db, monkeypatch):
     task = store.create_subtitle_removal(
         "sr-delete",

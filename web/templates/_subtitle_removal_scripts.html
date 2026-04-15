@@ -205,13 +205,15 @@
       var taskStatus = (state && state.status) || "";
       var providerTaskId = (state && state.provider_task_id) || "";
       var resultTosKey = (state && state.result_tos_key) || "";
+      var resultVideoPath = (state && state.result_video_path) || "";
       var previewUrl = (state && state.result_artifact_url) || "";
       var downloadUrl = (state && state.result_download_url) || "";
       var providerStatus = (state && state.provider_status) || "";
       var providerMessage = (state && state.provider_emsg) || "";
       var html = "";
+      var hasResult = !!(resultTosKey || resultVideoPath);
 
-      if (taskStatus === "done" && resultTosKey) {
+      if (taskStatus === "done" && hasResult) {
         html = [
           '<div class="sr-result-preview">',
           '<video class="sr-result-video" controls playsinline src="' + previewUrl + '"></video>',

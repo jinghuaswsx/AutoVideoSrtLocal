@@ -16,6 +16,15 @@ from appcore.subtitle_removal_provider import SubtitleRemovalProviderError, quer
 log = logging.getLogger(__name__)
 
 
+class SubtitleRemovalTaskDeleted(RuntimeError):
+    pass
+
+
+def _task_is_deleted(task_id: str) -> bool:
+    task = task_state.get(task_id) or {}
+    return (task.get("status") or "").strip() == "deleted" or bool(task.get("deleted_at"))
+
+
 def _download_result_file(url: str, local_path: str) -> str:
     response = requests.get(url, timeout=120, stream=True)
     response.raise_for_status()
@@ -62,6 +71,8 @@ class SubtitleRemovalRuntime:
         self._bus.publish(Event(type=event_type, task_id=task_id, payload=payload or {}))
 
     def _set_step(self, task_id: str, step: str, status: str, message: str = "") -> None:
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
         task_state.set_step(task_id, step, status)
         if message:
             task_state.set_step_message(task_id, step, message)
@@ -71,13 +82,19 @@ class SubtitleRemovalRuntime:
         task = task_state.get(task_id)
         if not task:
             return
+        if _task_is_deleted(task_id):
+            return
         try:
             task_state.update(task_id, status="running", error="")
             if not task.get("provider_task_id"):
                 self._submit(task_id)
             self._poll_until_terminal(task_id)
+            if _task_is_deleted(task_id):
+                return
             task_state.set_step(task_id, "poll", "done")
             task_state.set_expires_at(task_id, "subtitle_removal")
+        except SubtitleRemovalTaskDeleted:
+            return
         except Exception as exc:
             log.exception("[subtitle_removal] runtime failed task_id=%s", task_id)
             task_state.update(task_id, status="error", error=str(exc))
@@ -89,6 +106,8 @@ class SubtitleRemovalRuntime:
         task = task_state.get(task_id)
         if not task:
             raise RuntimeError("subtitle removal task not found")
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
         source_tos_key = (task.get("source_tos_key") or "").strip()
         if not source_tos_key:
             raise RuntimeError("source_tos_key is missing")
@@ -123,11 +142,15 @@ class SubtitleRemovalRuntime:
             task = task_state.get(task_id)
             if not task:
                 raise RuntimeError("subtitle removal task not found")
+            if _task_is_deleted(task_id):
+                raise SubtitleRemovalTaskDeleted(task_id)
             provider_task_id = (task.get("provider_task_id") or "").strip()
             if not provider_task_id:
                 raise RuntimeError("provider_task_id is missing")
 
             progress = query_progress(provider_task_id)
+            if _task_is_deleted(task_id):
+                raise SubtitleRemovalTaskDeleted(task_id)
             status = (progress.get("status") or "").strip().lower()
             task_state.update(
                 task_id,
@@ -162,6 +185,8 @@ class SubtitleRemovalRuntime:
         task = task_state.get(task_id)
         if not task:
             raise RuntimeError("subtitle removal task not found")
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
         result_url = progress.get("resultUrl") or ""
         if not result_url:
             raise RuntimeError("provider resultUrl is missing")
@@ -174,6 +199,8 @@ class SubtitleRemovalRuntime:
         except Exception as exc:
             self._set_step(task_id, "download_result", "error", f"下载处理结果失败: {exc}")
             raise
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
         task_state.update(task_id, result_video_path=result_path)
         self._set_step(task_id, "download_result", "done", "处理结果下载完成")
 
@@ -185,6 +212,8 @@ class SubtitleRemovalRuntime:
         except Exception as exc:
             self._set_step(task_id, "upload_result", "error", f"上传结果到TOS失败: {exc}")
             raise
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
         task_state.update(
             task_id,
             status="done",

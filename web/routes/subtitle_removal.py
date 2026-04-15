@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import uuid
+from datetime import datetime
 
 import config
 from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
@@ -35,6 +36,7 @@ def _get_owned_task(task_id: str) -> dict:
         or task.get("_user_id") != current_user.id
         or task.get("type") != "subtitle_removal"
         or (task.get("status") or "").strip() == "deleted"
+        or task.get("deleted_at")
     ):
         abort(404)
     return task
@@ -422,6 +424,8 @@ def resume_poll(task_id: str):
         return jsonify({"error": "task is already finished"}), 409
     if not (task.get("provider_task_id") or "").strip():
         return jsonify({"error": "provider_task_id required"}), 400
+    if subtitle_removal_runner.is_running(task_id):
+        return jsonify({"error": "task is already running"}), 409
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
     return jsonify({"task_id": task_id, "status": "queued"}), 202
 
@@ -453,5 +457,5 @@ def delete_task(task_id: str):
         except Exception:
             pass
     db_execute("UPDATE projects SET deleted_at = NOW() WHERE id = %s AND user_id = %s", (task_id, current_user.id))
-    store.update(task_id, status="deleted")
+    store.update(task_id, status="deleted", deleted_at=datetime.now().isoformat(timespec="seconds"))
     return ("", 204)
