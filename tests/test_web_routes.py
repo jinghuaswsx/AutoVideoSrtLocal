@@ -755,3 +755,14 @@ def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
 
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     assert 'copywritings: { en: cw }' in medias_js
+
+
+def test_medias_page_wraps_video_titles_in_edit_modal(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '.oc-vitem .vname {' in body
+    assert 'white-space:normal;' in body
+    assert 'overflow-wrap:anywhere;' in body
+    assert 'min-height:calc(1.45em * 2);' in body

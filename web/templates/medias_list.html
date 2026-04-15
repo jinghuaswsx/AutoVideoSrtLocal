@@ -228,7 +228,16 @@
 /* 编辑弹窗：每条视频素材卡（图片/视频 双 tab） */
 #edItemsGrid { grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:var(--oc-sp-4); }
 .oc-vitem { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg); padding:var(--oc-sp-3); }
-.oc-vitem .vname { font-size:12px; font-weight:500; color:var(--oc-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.oc-vitem .vname {
+  font-size:12px;
+  font-weight:500;
+  color:var(--oc-fg);
+  line-height:1.45;
+  min-height:calc(1.45em * 2);
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .oc-vitem .vtabs { display:flex; gap:var(--oc-sp-1); border-bottom:1px solid var(--oc-border); }
 .oc-vitem .vtab { flex:1; height:28px; background:none; border:none; color:var(--oc-fg-muted); font-size:12px; font-family:inherit; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-vitem .vtab:hover { color:var(--oc-fg); }
