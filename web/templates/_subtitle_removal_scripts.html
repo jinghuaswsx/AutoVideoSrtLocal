@@ -1,7 +1,245 @@
 <script>
   (function () {
     var bootstrap = window.subtitleRemovalBootstrap || {};
+    var uploadPage = document.querySelector("[data-subtitle-removal-page='upload']");
     var page = document.querySelector("[data-subtitle-removal-page='detail']");
+    var uploadInput = document.getElementById("srUploadInput");
+    var uploadButton = document.getElementById("srPickVideoButton");
+    var uploadDropzone = document.getElementById("srUploadDropzone");
+    var uploadProgressPanel = document.getElementById("srUploadProgressPanel");
+    var uploadProgressBar = document.getElementById("srUploadProgress");
+    var uploadProgressText = document.getElementById("srUploadPercent");
+    var uploadProgressLabel = document.getElementById("srUploadProgressLabel");
+    var uploadMeta = document.getElementById("srUploadMeta");
+    var uploadError = document.getElementById("srUploadError");
+
+    function numberOrNull(value) {
+      var next = Number(value);
+      return Number.isFinite(next) ? next : null;
+    }
+
+    function normalizeSelectionBox(selectionBox, positionPayload) {
+      var x1 = numberOrNull(selectionBox && (selectionBox.x1 != null ? selectionBox.x1 : selectionBox.l));
+      var y1 = numberOrNull(selectionBox && (selectionBox.y1 != null ? selectionBox.y1 : selectionBox.t));
+      var x2 = numberOrNull(selectionBox && selectionBox.x2);
+      var y2 = numberOrNull(selectionBox && selectionBox.y2);
+      var width = numberOrNull(selectionBox && selectionBox.w);
+      var height = numberOrNull(selectionBox && selectionBox.h);
+
+      if ((x1 == null || y1 == null || width == null || height == null) && positionPayload) {
+        x1 = x1 == null ? numberOrNull(positionPayload.l) : x1;
+        y1 = y1 == null ? numberOrNull(positionPayload.t) : y1;
+        width = width == null ? numberOrNull(positionPayload.w) : width;
+        height = height == null ? numberOrNull(positionPayload.h) : height;
+      }
+
+      if (x1 != null && y1 != null && x2 != null && y2 != null) {
+        width = x2 - x1;
+        height = y2 - y1;
+      } else if (x1 != null && y1 != null && width != null && height != null) {
+        x2 = x1 + width;
+        y2 = y1 + height;
+      }
+
+      if (x1 == null || y1 == null || x2 == null || y2 == null) {
+        return null;
+      }
+      width = x2 - x1;
+      height = y2 - y1;
+      if (width <= 0 || height <= 0) {
+        return null;
+      }
+      return {
+        l: Math.round(x1),
+        t: Math.round(y1),
+        w: Math.round(width),
+        h: Math.round(height),
+        x1: Math.round(x1),
+        y1: Math.round(y1),
+        x2: Math.round(x2),
+        y2: Math.round(y2),
+      };
+    }
+
+    function clearUploadError() {
+      if (!uploadError) {
+        return;
+      }
+      uploadError.textContent = "";
+      uploadError.classList.add("sr-hidden");
+    }
+
+    function showUploadError(message) {
+      if (!uploadError) {
+        return;
+      }
+      uploadError.textContent = message || "上传失败";
+      uploadError.classList.remove("sr-hidden");
+    }
+
+    function setUploadBusy(isBusy, labelText) {
+      if (uploadButton) {
+        uploadButton.disabled = !!isBusy;
+        uploadButton.textContent = labelText || (isBusy ? "上传中…" : "选择视频并上传");
+      }
+    }
+
+    function updateUploadProgress(percent, labelText) {
+      if (uploadProgressPanel) {
+        uploadProgressPanel.classList.remove("sr-hidden");
+      }
+      if (uploadProgressBar) {
+        uploadProgressBar.style.width = Math.max(0, Math.min(100, percent || 0)) + "%";
+      }
+      if (uploadProgressText) {
+        uploadProgressText.textContent = Math.max(0, Math.min(100, percent || 0)) + "%";
+      }
+      if (uploadProgressLabel && labelText) {
+        uploadProgressLabel.textContent = labelText;
+      }
+    }
+
+    function renderUploadFileMeta(file) {
+      if (!uploadMeta || !file) {
+        return;
+      }
+      uploadMeta.textContent = file.name + " · " + (file.size / 1024 / 1024).toFixed(1) + " MB";
+    }
+
+    function requestUploadBootstrap(file) {
+      return fetch("/api/subtitle-removal/upload/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          original_filename: file.name,
+          file_size: file.size,
+          content_type: file.type || "application/octet-stream",
+        }),
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) {
+            throw new Error(data.error || "上传初始化失败");
+          }
+          return data;
+        });
+      });
+    }
+
+    function uploadFileToSignedUrl(file, bootstrapData) {
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("PUT", bootstrapData.upload_url, true);
+        xhr.upload.onprogress = function (event) {
+          if (!event.lengthComputable) {
+            return;
+          }
+          updateUploadProgress(Math.round((event.loaded / event.total) * 100), "视频直传中…");
+        };
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+            return;
+          }
+          reject(new Error("视频上传到对象存储失败"));
+        };
+        xhr.onerror = function () {
+          reject(new Error("网络异常，上传失败"));
+        };
+        xhr.send(file);
+      });
+    }
+
+    function completeSubtitleRemovalUpload(file, bootstrapData) {
+      return fetch("/api/subtitle-removal/upload/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: bootstrapData.task_id,
+          object_key: bootstrapData.object_key,
+          original_filename: file.name,
+          file_size: file.size,
+          content_type: file.type || "application/octet-stream",
+        }),
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) {
+            throw new Error(data.error || "上传完成确认失败");
+          }
+          return data;
+        });
+      });
+    }
+
+    function handleUploadFile(file) {
+      if (!file) {
+        return Promise.resolve();
+      }
+      clearUploadError();
+      renderUploadFileMeta(file);
+      setUploadBusy(true, "准备上传…");
+      updateUploadProgress(0, "正在申请上传地址…");
+      return requestUploadBootstrap(file)
+        .then(function (bootstrapData) {
+          return uploadFileToSignedUrl(file, bootstrapData).then(function () {
+            updateUploadProgress(100, "视频已上传，正在完成建档…");
+            return completeSubtitleRemovalUpload(file, bootstrapData);
+          });
+        })
+        .then(function (data) {
+          window.location.href = `/subtitle-removal/${data.task_id}`;
+        })
+        .catch(function (error) {
+          setUploadBusy(false, "重新选择视频");
+          showUploadError(error.message || "上传失败");
+        });
+    }
+
+    function initUploadPage() {
+      if (!uploadPage || !uploadInput || !uploadButton || !uploadDropzone) {
+        return;
+      }
+      uploadButton.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        uploadInput.click();
+      });
+      uploadDropzone.addEventListener("click", function () {
+        uploadInput.click();
+      });
+      uploadDropzone.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          uploadInput.click();
+        }
+      });
+      uploadInput.addEventListener("change", function () {
+        if (uploadInput.files && uploadInput.files[0]) {
+          handleUploadFile(uploadInput.files[0]);
+        }
+      });
+      ["dragenter", "dragover"].forEach(function (eventName) {
+        uploadDropzone.addEventListener(eventName, function (event) {
+          event.preventDefault();
+          uploadDropzone.classList.add("is-dragover");
+        });
+      });
+      ["dragleave", "dragend", "drop"].forEach(function (eventName) {
+        uploadDropzone.addEventListener(eventName, function (event) {
+          event.preventDefault();
+          if (eventName === "drop") {
+            uploadDropzone.classList.remove("is-dragover");
+            if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
+              handleUploadFile(event.dataTransfer.files[0]);
+            }
+            return;
+          }
+          uploadDropzone.classList.remove("is-dragover");
+        });
+      });
+    }
+
+    initUploadPage();
+    window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;
     if (!page) {
       return;
     }
@@ -29,7 +267,7 @@
 
     var selectionState = {
       mode: bootstrap.remove_mode || "full",
-      box: bootstrap.selection_box || null,
+      box: normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload),
       dragging: false,
       start: null,
       current: null,
@@ -90,6 +328,7 @@
     }
 
     function selectionBoxToOverlayRect(selectionBox, imageRect, mediaInfo) {
+      selectionBox = normalizeSelectionBox(selectionBox, null);
       if (!selectionBox || !imageRect) {
         return null;
       }
@@ -167,7 +406,7 @@
     }
 
     function getCurrentSelectionPayload() {
-      return selectionState.box || bootstrap.selection_box || null;
+      return selectionState.box || normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload) || null;
     }
 
     function getActionPayload() {
@@ -284,11 +523,11 @@
           tile.classList.toggle("is-active", !!input && input.checked);
         });
       }
-      if (state.selection_box) {
-        selectionState.box = state.selection_box;
+      if (state.selection_box || state.position_payload) {
+        selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);
         var imageRect = getContainedImageRect(selectionOverlay, state.media_info || getMediaInfo());
-        if (imageRect) {
-          updateSelectionBoxDisplay(selectionBoxToOverlayRect(state.selection_box, imageRect, state.media_info || getMediaInfo()));
+        if (imageRect && selectionState.box) {
+          updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
         }
       }
       renderResultPanel(state);
@@ -496,6 +735,7 @@
     }
 
     window.computeSelectionBox = computeSelectionBox;
+    window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;
     window.renderSubtitleRemovalState = renderSubtitleRemovalState;
     window.refreshSubtitleRemovalState = refreshSubtitleRemovalState;
     window.subtitleRemovalState = Object.assign({}, bootstrap, {

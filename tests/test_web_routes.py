@@ -73,6 +73,36 @@ def test_index_page_uses_tos_direct_upload_bootstrap(authed_client_no_db):
     assert 'xhr.open("PUT", bootstrap.upload_url, true)' in body
 
 
+def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "subtitle_removal_upload.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert 'id="srUploadInput"' in template
+    assert 'type="file"' in template
+    assert 'accept="video/*"' in template
+    assert 'id="srPickVideoButton"' in template
+    assert 'disabled' not in template
+    assert "/api/subtitle-removal/upload/bootstrap" in scripts
+    assert "/api/subtitle-removal/upload/complete" in scripts
+    assert 'xhr.open("PUT", bootstrapData.upload_url, true)' in scripts
+    assert "window.location.href = `/subtitle-removal/${data.task_id}`;" in scripts
+
+
+def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
+
+    assert "function normalizeSelectionBox(selectionBox, positionPayload)" in scripts
+    assert "selectionBox.x1 != null ? selectionBox.x1 : selectionBox.l" in scripts
+    assert "positionPayload.l" in scripts
+    assert "x2 = x1 + width;" in scripts
+    assert "y2 = y1 + height;" in scripts
+    assert "selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);" in scripts
+    assert "window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;" in scripts
+    assert "return selectionState.box || normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload) || null;" in scripts
+
+
 def test_index_page_uses_simple_start_button_loading_state(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 
@@ -182,9 +212,10 @@ def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     assert upload_response.status_code == 200
     upload_body = upload_response.get_data(as_text=True)
     assert "字幕移除" in upload_body
-    assert "type=\"file\"" not in upload_body
-    assert "subtitleRemovalFile" not in upload_body
-    assert "sr-upload-placeholder" in upload_body
+    assert 'id="srUploadInput"' in upload_body
+    assert 'id="srPickVideoButton"' in upload_body
+    assert 'id="srUploadDropzone"' in upload_body
+    assert "暂不支持文件选择" not in upload_body
     assert detail_response.status_code == 200
     detail_body = detail_response.get_data(as_text=True)
     assert "全屏去除" in detail_body
