@@ -58,3 +58,7 @@ testuser.md
 .omc/project-memory.json
 .omc/state/
 google_api_key
+
+# Fonts (binary files, not versioned)
+fonts/*.ttf
+fonts/*.otf
