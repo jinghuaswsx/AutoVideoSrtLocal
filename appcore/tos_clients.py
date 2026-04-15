@@ -169,6 +169,9 @@ def collect_task_tos_keys(task: dict | None) -> list[str]:
     source_tos_key = (task.get("source_tos_key") or "").strip()
     if source_tos_key:
         keys.append(source_tos_key)
+    result_tos_key = (task.get("result_tos_key") or "").strip()
+    if result_tos_key:
+        keys.append(result_tos_key)
 
     tos_uploads = task.get("tos_uploads") or {}
     if isinstance(tos_uploads, dict):

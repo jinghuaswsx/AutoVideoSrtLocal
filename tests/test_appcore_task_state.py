@@ -32,6 +32,29 @@ def test_create_stores_original_filename():
     assert task["original_filename"] == "my_video.mp4"
 
 
+def test_create_subtitle_removal_initializes_expected_shape():
+    task = ts.create_subtitle_removal(
+        "sr-init",
+        "uploads/source.mp4",
+        "output/sr-init",
+        original_filename="source.mp4",
+        user_id=9,
+    )
+
+    assert task["type"] == "subtitle_removal"
+    assert task["status"] == "uploaded"
+    assert task["steps"] == {
+        "prepare": "pending",
+        "submit": "pending",
+        "poll": "pending",
+        "download_result": "pending",
+        "upload_result": "pending",
+    }
+    assert task["remove_mode"] == ""
+    assert task["selection_box"] is None
+    assert task["result_tos_key"] == ""
+
+
 def test_get_returns_task():
     ts.create("t1", "/v.mp4", "/d")
     assert ts.get("t1") is not None

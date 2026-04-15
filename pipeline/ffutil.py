@@ -1,4 +1,5 @@
 """公共 ffmpeg/ffprobe 工具函数。"""
+import json
 import os
 import subprocess
 
@@ -16,6 +17,37 @@ def get_media_duration(path: str) -> float:
         return float(result.stdout.strip())
     except (ValueError, OSError):
         return 0.0
+
+
+def probe_media_info(path: str) -> dict:
+    """Return width, height, resolution, and duration from ffprobe."""
+    empty = {"width": 0, "height": 0, "resolution": "", "duration": 0.0}
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height:format=duration",
+                "-of", "json",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        payload = json.loads(result.stdout or "{}")
+        stream = (payload.get("streams") or [{}])[0]
+        width = int(stream.get("width") or 0)
+        height = int(stream.get("height") or 0)
+        duration = float((payload.get("format") or {}).get("duration") or 0.0)
+        return {
+            "width": width,
+            "height": height,
+            "resolution": f"{width}x{height}" if width and height else "",
+            "duration": duration,
+        }
+    except (IndexError, ValueError, OSError, json.JSONDecodeError, subprocess.SubprocessError):
+        return empty
 
 
 def extract_thumbnail(video_path: str, output_dir: str, scale: str | None = None) -> str | None:

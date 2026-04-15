@@ -126,3 +126,18 @@ def test_collect_task_tos_keys_includes_source_and_uploaded_artifacts(monkeypatc
         "artifacts/1/task/normal/example_soft.mp4",
         "legacy/artifacts/example.srt",
     ]
+
+
+def test_collect_task_tos_keys_includes_result_tos_key(monkeypatch):
+    monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=object))
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    state = {
+        "source_tos_key": "uploads/1/task/source.mp4",
+        "result_tos_key": "artifacts/1/task/result.mp4",
+    }
+
+    assert tos_clients.collect_task_tos_keys(state) == [
+        "uploads/1/task/source.mp4",
+        "artifacts/1/task/result.mp4",
+    ]
