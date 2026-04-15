@@ -479,6 +479,9 @@ class PipelineRunner:
             subtitle_position=task.get("subtitle_position", "bottom"),
             timeline_manifest=variant_state.get("timeline_manifest"),
             variant=variant,
+            font_name=task.get("subtitle_font", "Impact"),
+            font_size_preset=task.get("subtitle_size", "medium"),
+            subtitle_position_y=float(task.get("subtitle_position_y", 0.68)),
         )
         variant_state["result"] = result
         variants[variant] = variant_state
