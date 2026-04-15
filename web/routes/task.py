@@ -15,6 +15,7 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup, tos_clients
+from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
 from web.preview_artifacts import (
@@ -200,6 +201,7 @@ def upload():
 @bp.route("/<task_id>", methods=["GET"])
 @login_required
 def get_task(task_id):
+    recover_task_if_needed(task_id)
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
@@ -593,6 +595,7 @@ RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle"
 @bp.route("/<task_id>/resume", methods=["POST"])
 @login_required
 def resume_from_step(task_id):
+    recover_task_if_needed(task_id)
     """从指定步骤重新开始流水线，该步骤之前已完成的结果保留不动。"""
     row = db_query_one(
         "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",

@@ -18,6 +18,7 @@ from flask import Flask
 from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
+from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
 
@@ -93,6 +94,8 @@ def create_app() -> Flask:
     app.register_blueprint(fr_translate_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
+
+    recover_all_interrupted_tasks()
 
     # WebSocket 事件
     @socketio.on("join_task")

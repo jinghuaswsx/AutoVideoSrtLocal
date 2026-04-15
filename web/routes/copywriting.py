@@ -13,6 +13,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore import task_state
+from appcore.task_recovery import recover_all_interrupted_tasks, recover_task_if_needed, register_active_task, unregister_active_task
 from appcore.settings import get_retention_hours
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
@@ -27,6 +28,7 @@ bp = Blueprint("copywriting", __name__)
 @bp.route("/copywriting")
 @login_required
 def list_page():
+    recover_all_interrupted_tasks()
     """文案项目列表页。"""
     conn = get_connection()
     try:
@@ -50,6 +52,7 @@ def list_page():
 @bp.route("/copywriting/<task_id>")
 @login_required
 def detail_page(task_id: str):
+    recover_task_if_needed(task_id)
     """文案创作工作页。"""
     task = task_state.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
@@ -204,7 +207,8 @@ def upload():
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    eventlet.spawn(runner.start, task_id)
+    register_active_task("copywriting", task_id)
+    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.start)
 
     return jsonify(task_id=task_id), 201
 
@@ -333,7 +337,8 @@ def generate(task_id: str):
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    eventlet.spawn(runner.generate_copy, task_id)
+    register_active_task("copywriting", task_id)
+    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.generate_copy)
 
     return jsonify(ok=True)
 
@@ -464,7 +469,8 @@ def start_tts(task_id: str):
     bus = EventBus()
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
-    eventlet.spawn(runner.start_tts_compose, task_id)
+    register_active_task("copywriting", task_id)
+    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.start_tts_compose)
 
     return jsonify(ok=True)
 
@@ -569,6 +575,14 @@ def get_artifact(task_id: str, name: str):
 # ── 辅助函数 ──────────────────────────────────────────
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
+
+
+def _run_copywriting_with_tracking(task_id: str, runner_method):
+    register_active_task("copywriting", task_id)
+    try:
+        return runner_method(task_id)
+    finally:
+        unregister_active_task("copywriting", task_id)
 
 
 def _subscribe_socketio(bus: EventBus, socketio):
