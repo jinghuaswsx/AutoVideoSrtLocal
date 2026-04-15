@@ -516,14 +516,9 @@
     if (!box) return;
     box.innerHTML = LANGUAGES.map(l => {
       const t = edLangTallies(l.code);
-      const isEn = l.code === 'en';
-      // badge: en 无 cover 显示红色！；其他语种有内容显示绿色
-      let badgeHtml = '';
-      if (isEn && !t.cover) {
-        badgeHtml = `<span class="badge">!</span>`;
-      } else if (t.items > 0 || t.cover) {
-        badgeHtml = `<span class="badge has">${t.items}</span>`;
-      }
+      // badge: 视频数 0 → 红色；>0 → 绿色；所有语种统一显示
+      const badgeCls = t.items > 0 ? 'badge has' : 'badge';
+      const badgeHtml = `<span class="${badgeCls}">${t.items}</span>`;
       const active = edState.activeLang === l.code ? ' active' : '';
       return `<button class="oc-lang-tab${active}" data-lang="${escapeHtml(l.code)}" title="${escapeHtml(l.name_zh || l.code)}">`
            + `${l.code.toUpperCase()}${badgeHtml}`
