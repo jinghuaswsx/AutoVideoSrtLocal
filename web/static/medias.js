@@ -120,7 +120,6 @@
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
           <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
-          <button class="oc-btn sm text danger-txt" data-del="${p.id}">${icon('trash', 12)}</button>
         </td>
       </tr>`;
   }
