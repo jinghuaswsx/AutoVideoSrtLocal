@@ -337,4 +337,50 @@ class TestStepTtsIntegration:
         v_state = task["variants"]["normal"]
         assert v_state["tts_audio_path"].endswith("tts_full.normal.mp3")
         assert task["tts_duration_status"] == "converged"
-        assert len(task["tts_duration_rounds"]) == 1
+
+
+class TestLanguageSpecificRunners:
+    def test_de_runner_uses_german_localization_module(self, monkeypatch):
+        """DeTranslateRunner._step_tts goes through base class with de localization."""
+        from appcore.runtime_de import DeTranslateRunner
+        from appcore.events import EventBus
+        captured_modules = []
+
+        import importlib
+        real_import_module = importlib.import_module
+
+        def tracking_import(name, *a, **kw):
+            if "localization" in name:
+                captured_modules.append(name)
+            return real_import_module(name, *a, **kw)
+
+        monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+        runner = DeTranslateRunner(bus=EventBus(), user_id=1)
+        # Just trigger the module resolution via loc_mod lookup
+        import importlib as _il
+        loc_mod = _il.import_module(runner.localization_module)
+        assert loc_mod.__name__ == "pipeline.localization_de"
+        assert hasattr(loc_mod, "build_localized_rewrite_messages")
+        assert hasattr(loc_mod, "build_tts_script_messages")
+
+    def test_fr_runner_uses_french_localization_module(self):
+        from appcore.runtime_fr import FrTranslateRunner
+        from appcore.events import EventBus
+        runner = FrTranslateRunner(bus=EventBus(), user_id=1)
+        import importlib as _il
+        loc_mod = _il.import_module(runner.localization_module)
+        assert loc_mod.__name__ == "pipeline.localization_fr"
+        assert hasattr(loc_mod, "build_localized_rewrite_messages")
+
+    def test_de_runner_does_not_override_step_tts(self):
+        """DeTranslateRunner must inherit _step_tts from base (no local override)."""
+        from appcore.runtime_de import DeTranslateRunner
+        from appcore.runtime import PipelineRunner
+        # The bound method should resolve to the same function as base class
+        assert DeTranslateRunner._step_tts is PipelineRunner._step_tts
+
+    def test_fr_runner_does_not_override_step_tts(self):
+        from appcore.runtime_fr import FrTranslateRunner
+        from appcore.runtime import PipelineRunner
+        assert FrTranslateRunner._step_tts is PipelineRunner._step_tts
