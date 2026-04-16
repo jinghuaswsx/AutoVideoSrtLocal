@@ -92,7 +92,7 @@
     }
 
     function loadLanguages(){
-      return fetch("/api/languages",{credentials:"same-origin"})
+      return fetch("/medias/api/languages",{credentials:"same-origin"})
         .then(function(r){return r.json();})
         .then(function(d){
           var items = (d.items || [])
