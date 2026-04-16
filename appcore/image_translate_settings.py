@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from appcore.db import execute, query_one
+from appcore import medias
 
 
 # 支持的目标语言（与 media_languages 表 enabled=1 的小语种保持一致；en 是源语言）
@@ -15,6 +16,56 @@ PRESETS: tuple[str, ...] = ("cover", "detail")
 
 def _key(preset: str, lang: str) -> str:
     return f"image_translate.prompt_{preset}_{lang}"
+
+
+def list_image_translate_languages() -> list[dict]:
+    """返回图片翻译可用语种，过滤掉源语言 en。"""
+    return [row for row in medias.list_languages() if row.get("code") != "en"]
+
+
+def is_image_translate_language_supported(code: str) -> bool:
+    return any(lang.get("code") == code for lang in list_image_translate_languages())
+
+
+def _get_language_info(code: str) -> dict:
+    for lang in list_image_translate_languages():
+        if lang.get("code") == code:
+            return lang
+    raise ValueError(f"unsupported lang: {code}")
+
+
+def _build_generic_prompt(preset: str, lang_info: dict) -> str:
+    lang_name = lang_info.get("name_zh") or lang_info.get("code") or ""
+    if preset == "cover":
+        return f"""Task: Localize this English video cover image into {lang_name}.
+
+Core Rules:
+1. Keep all visual elements (background, images, graphics) completely unchanged - only replace the English text with {lang_name}
+2. Text position, size, layout style, font weight, color, shadow/stroke effects must stay consistent with the original
+3. 只替换文字，保留布局；如果目标语言文本变长，可以轻微缩小字号以适配原文本区域，但绝不能溢出或破坏布局
+4. Output size must be strictly the same as the input image
+
+Translation Requirements:
+- Use natural {lang_name} that fits short-video cover copy
+- Do not translate word-for-word from English; rewrite it so it reads naturally in {lang_name}
+- Keep the hierarchy intact: headline stays prominent, supporting text stays secondary
+"""
+
+    return f"""你是一位专业的{lang_name}产品详情图本地化专家。
+
+## 任务
+将此产品详情图中的所有英文说明翻译成{lang_name}。
+
+## 规则
+- 只替换文字，保留背景、图片、图标、颜色和版式不变
+- 保持原始文本的位置、对齐方式、字号层级、字体粗细和视觉结构
+- 只替换文字，保留布局；如果{lang_name}文本比英文更长，可以轻微缩小字号以适配原文本区域，但不可溢出或破坏布局
+- 输出分辨率和图片尺寸必须与输入完全一致
+
+## 质量要求
+- 使用自然、地道的{lang_name}表达，避免生硬的逐字直译
+- 保留所有非文本视觉元素，不做任何修改
+"""
 
 
 # ============================================================
@@ -366,12 +417,13 @@ def get_prompt(preset: str, lang: str) -> str:
     """返回某语言 + 某预设下的 prompt；不存在则写入内置默认后返回。"""
     if preset not in PRESETS:
         raise ValueError("preset must be cover or detail")
-    if lang not in SUPPORTED_LANGS:
-        raise ValueError(f"unsupported lang: {lang}")
+    lang_info = _get_language_info(lang)
     key = _key(preset, lang)
     value = _read(key)
     if value is None or value == "":
-        default = _DEFAULTS[(preset, lang)]
+        default = _DEFAULTS.get((preset, lang))
+        if default is None:
+            default = _build_generic_prompt(preset, lang_info)
         _write(key, default)
         return default
     return value
@@ -385,11 +437,13 @@ def get_prompts_for_lang(lang: str) -> dict[str, str]:
 def update_prompt(preset: str, lang: str, value: str) -> None:
     if preset not in PRESETS:
         raise ValueError("preset must be cover or detail")
-    if lang not in SUPPORTED_LANGS:
-        raise ValueError(f"unsupported lang: {lang}")
+    _get_language_info(lang)
     _write(_key(preset, lang), value)
 
 
 def list_all_prompts() -> dict[str, dict[str, str]]:
     """管理员页面用：返回 {lang: {cover, detail}}（12 条）。"""
-    return {lang: get_prompts_for_lang(lang) for lang in SUPPORTED_LANGS}
+    return {
+        lang["code"]: get_prompts_for_lang(lang["code"])
+        for lang in list_image_translate_languages()
+    }
