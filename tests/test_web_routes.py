@@ -326,6 +326,10 @@ def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client
     assert "srResumeSubtitleRemoval" in body
     assert "srResubmitSubtitleRemoval" in body
     assert "srDeleteSubtitleRemoval" in body
+    assert "结果操作" in body
+    assert '<button id="srResumeSubtitleRemoval" type="button" class="btn btn-secondary">继续轮询</button>' in body
+    assert '<button id="srResubmitSubtitleRemoval" type="button" class="btn btn-secondary">重提</button>' in body
+    assert '<button id="srDeleteSubtitleRemoval" type="button" class="btn btn-danger">删除</button>' in body
     assert "artifact/result" in body
     assert "download/result" in body
 

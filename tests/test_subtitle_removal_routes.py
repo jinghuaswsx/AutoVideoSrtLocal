@@ -82,6 +82,7 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert response.status_code == 201
     task = store.get(payload["task_id"])
     assert task["steps"]["prepare"] == "done"
+    assert task["step_messages"]["prepare"] == "首帧提取和媒体信息解析已完成"
     assert task["thumbnail_path"].endswith("thumbnail.jpg")
     assert task["media_info"]["resolution"] == "720x1280"
 
@@ -424,6 +425,8 @@ def test_subtitle_removal_submit_persists_mode_and_starts_runner(authed_client_n
     assert saved["selection_box"] == {"x1": 0, "y1": 1000, "x2": 720, "y2": 1180}
     assert saved["position_payload"] == {"l": 0, "t": 1000, "w": 720, "h": 180}
     assert saved["steps"]["submit"] == "queued"
+    assert saved["step_messages"]["prepare"] == "首帧提取和媒体信息解析已完成"
+    assert saved["step_messages"]["submit"] == "等待后台提交去字幕任务"
 
 
 def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeypatch):

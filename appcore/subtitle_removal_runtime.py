@@ -125,13 +125,13 @@ class SubtitleRemovalRuntime:
         if not result_path or not os.path.exists(result_path):
             raise RuntimeError("subtitle removal result_video_path is missing")
 
-        self._set_step(task_id, "upload_result", "running", "姝ｅ湪涓婁紶缁撴灉鍒癟OS")
+        self._set_step(task_id, "upload_result", "running", "正在上传结果到TOS")
         user_id = self._user_id if self._user_id is not None else task.get("_user_id")
         result_key = tos_clients.build_artifact_object_key(user_id, task_id, "subtitle_removal", os.path.basename(result_path))
         try:
             tos_clients.upload_file(result_path, result_key)
         except Exception as exc:
-            self._set_step(task_id, "upload_result", "error", f"涓婁紶缁撴灉鍒癟OS澶辫触: {exc}")
+            self._set_step(task_id, "upload_result", "error", f"上传结果到TOS失败: {exc}")
             raise
         if _task_is_deleted(task_id):
             raise SubtitleRemovalTaskDeleted(task_id)
@@ -145,7 +145,7 @@ class SubtitleRemovalRuntime:
                 "result_url": "",
             },
         )
-        self._set_step(task_id, "upload_result", "done", "缁撴灉宸插洖浼犲埌TOS")
+        self._set_step(task_id, "upload_result", "done", "结果已回传到TOS")
         self._emit(task_id, EVT_SR_DONE, {"task_id": task_id, "result_tos_key": result_key})
 
     def _submit(self, task_id: str) -> None:

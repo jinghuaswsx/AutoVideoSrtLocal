@@ -265,7 +265,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         }
     )
     next_messages = dict(task.get("step_messages") or {})
-    next_messages.setdefault("prepare", "棣栧抚鎻愬彇鍜屽獟浣撲俊鎭В鏋愬凡瀹屾垚")
+    next_messages.setdefault("prepare", "首帧提取和媒体信息解析已完成")
     next_messages["submit"] = "等待后台提交去字幕任务"
     next_messages["poll"] = ""
     next_messages["download_result"] = ""
@@ -292,7 +292,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         step_messages=next_messages,
     )
     store.set_step(task_id, "submit", "queued")
-    store.set_step_message(task_id, "submit", "绛夊緟鍚庡彴鎻愪氦鍘诲瓧骞曚换鍔?")
+    store.set_step_message(task_id, "submit", "等待后台提交去字幕任务")
     subtitle_removal_runner.start(task_id, user_id=current_user.id)
     return jsonify({"task_id": task_id, "status": "queued"}), 202
 

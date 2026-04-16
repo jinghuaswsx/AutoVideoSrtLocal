@@ -352,3 +352,4 @@ def test_runtime_resumes_existing_result_upload_without_re_submitting_provider(m
     assert saved["status"] == "done"
     assert uploaded == [(str(result_path), "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4")]
     assert saved["result_tos_key"] == "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4"
+    assert saved["step_messages"]["upload_result"] == "结果已回传到TOS"
