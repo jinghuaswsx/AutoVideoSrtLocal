@@ -47,6 +47,19 @@ def ensure_local_source_video(task_id: str) -> str:
     tos_clients.download_file(source_tos_key, video_path)
     if not os.path.exists(video_path):
         raise RuntimeError(f"TOS 下载后文件仍不存在: {video_path}")
+
+    # Generate a thumbnail on first local materialisation (idempotent; skips if existing).
+    try:
+        from pipeline.ffutil import extract_thumbnail
+        task_dir = task.get("task_dir") or os.path.dirname(video_path)
+        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
+        if not os.path.exists(thumb_path):
+            thumb = extract_thumbnail(video_path, task_dir)
+            if thumb:
+                from appcore.db import execute as db_execute
+                db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+    except Exception:
+        log.warning("[source_video] thumbnail generation failed for task %s", task_id, exc_info=True)
     return video_path
 
 

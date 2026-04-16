@@ -145,6 +145,75 @@ def upload_and_start():
     return jsonify({"task_id": task_id}), 201
 
 
+@bp.route("/api/fr-translate/bootstrap", methods=["POST"])
+@login_required
+def bootstrap_upload():
+    """前端上传前先请求签名 URL（TOS 直传路径）."""
+    from appcore import tos_clients
+    from web.upload_util import validate_video_extension
+
+    body = request.get_json(silent=True) or {}
+    original_filename = os.path.basename((body.get("original_filename") or "").strip())
+    if not original_filename:
+        return jsonify({"error": "original_filename required"}), 400
+    if not validate_video_extension(original_filename):
+        return jsonify({"error": "不支持的视频格式"}), 400
+    if not tos_clients.is_tos_configured():
+        return jsonify({"error": "TOS 未配置"}), 503
+
+    task_id = str(uuid.uuid4())
+    object_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    return jsonify({
+        "task_id": task_id,
+        "object_key": object_key,
+        "upload_url": tos_clients.generate_signed_upload_url(object_key),
+    })
+
+
+@bp.route("/api/fr-translate/complete", methods=["POST"])
+@login_required
+def complete_upload():
+    """TOS 直传完成后，后端创建任务记录（不再 save 本地，由 runner 按需从 TOS 拉取）."""
+    from appcore import tos_clients
+
+    body = request.get_json(silent=True) or {}
+    task_id = (body.get("task_id") or "").strip()
+    object_key = (body.get("object_key") or "").strip()
+    original_filename = os.path.basename((body.get("original_filename") or "").strip())
+    if not task_id or not object_key or not original_filename:
+        return jsonify({"error": "task_id, object_key, original_filename required"}), 400
+
+    expected_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    if object_key != expected_key:
+        return jsonify({"error": "object_key mismatch"}), 400
+    if not tos_clients.object_exists(object_key):
+        return jsonify({"error": "上传的对象不存在"}), 400
+
+    ext = os.path.splitext(original_filename)[1].lower()
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    os.makedirs(task_dir, exist_ok=True)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+
+    user_id = current_user.id
+    store.create(task_id, video_path, task_dir,
+                 original_filename=original_filename,
+                 user_id=user_id)
+    db_execute("UPDATE projects SET type = 'fr_translate' WHERE id = %s", (task_id,))
+
+    display_name = _resolve_name_conflict(user_id, _default_display_name(original_filename))
+    db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+    store.update(
+        task_id,
+        display_name=display_name,
+        type="fr_translate",
+        source_tos_key=object_key,
+    )
+
+    # Thumbnail 需要本地文件——延迟到 runner._run() 调 ensure_local_source_video 时生成。
+    return jsonify({"task_id": task_id}), 201
+
+
 @bp.route("/api/fr-translate/<task_id>", methods=["GET"])
 @login_required
 def get_task(task_id):

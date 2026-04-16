@@ -58,6 +58,11 @@ def run_cleanup() -> None:
         log.error("Orphan upload file cleanup failed: %s", e)
 
     try:
+        _trim_local_uploads_with_tos_backup()
+    except Exception as e:
+        log.error("TOS-backed local upload trim failed: %s", e)
+
+    try:
         delete_stale_upload_objects()
     except Exception as e:
         log.error("Orphan upload cleanup failed: %s", e)
@@ -201,3 +206,45 @@ def _cleanup_orphan_uploads() -> None:
             log.info("Deleted orphan upload: %s", filename)
         except Exception:
             pass
+
+
+def _trim_local_uploads_with_tos_backup() -> None:
+    """Delete local upload files for finished tasks that have a TOS backup.
+
+    Policy: if a task is not actively running (status done/error/composing_done)
+    and has a non-empty source_tos_key, the local mp4 in UPLOAD_DIR is
+    redundant — it can be re-fetched from TOS on demand via
+    appcore.source_video.ensure_local_source_video().
+    Keeps disk usage low without losing recoverability.
+    """
+    from config import UPLOAD_DIR
+    if not UPLOAD_DIR or not os.path.isdir(UPLOAD_DIR):
+        return
+
+    rows = query(
+        "SELECT id, state_json FROM projects "
+        "WHERE deleted_at IS NULL AND status IN ('done', 'error', 'composing_done')"
+    )
+    trimmed = 0
+    for row in rows:
+        try:
+            state = json.loads(row["state_json"]) if row.get("state_json") else {}
+        except Exception:
+            continue
+        source_tos_key = (state.get("source_tos_key") or "").strip()
+        video_path = (state.get("video_path") or "").strip()
+        if not source_tos_key or not video_path:
+            continue
+        if not video_path.startswith(os.path.abspath(UPLOAD_DIR) + os.sep) \
+                and not video_path.startswith(UPLOAD_DIR):
+            continue
+        if not os.path.isfile(video_path):
+            continue
+        try:
+            os.remove(video_path)
+            trimmed += 1
+            log.info("Trimmed TOS-backed local upload: %s (task %s)", video_path, row["id"])
+        except Exception:
+            pass
+    if trimmed:
+        log.info("Trimmed %d local upload files backed by TOS", trimmed)
