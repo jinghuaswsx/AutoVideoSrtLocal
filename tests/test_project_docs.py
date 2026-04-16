@@ -8,6 +8,9 @@ def test_env_example_uses_runtime_variable_names():
     assert "TOS_ACCESS_KEY=" in content
     assert "TOS_SECRET_KEY=" in content
     assert "OPENROUTER_API_KEY=" in content
+    assert "OPENAPI_MEDIA_API_KEY=" in content
+    assert "OPENAPI_MEDIA_API_KEY=changeme-materials-openapi-key" not in content
+    assert "Generate a random key in .env before enabling materials OpenAPI." in content
     assert "ELEVENLABS_API_KEY=" in content
 
 
