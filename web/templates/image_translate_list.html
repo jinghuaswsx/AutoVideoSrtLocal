@@ -9,25 +9,28 @@
 
     <div class="form-row">
       <label>场景预设</label>
-      <select id="itPreset">
-        <option value="cover">封面图翻译</option>
-        <option value="detail">产品详情图翻译</option>
-      </select>
+      <div id="itPresetPills" class="it-pill-group" role="radiogroup">
+        <button type="button" class="it-pill is-active" data-value="cover" role="radio" aria-checked="true">封面图翻译</button>
+        <button type="button" class="it-pill" data-value="detail" role="radio" aria-checked="false">产品详情图翻译</button>
+      </div>
+      <input type="hidden" id="itPreset" value="cover">
     </div>
 
     <div class="form-row">
       <label>目标语言 <span class="required">*</span></label>
-      <select id="itLanguage"><option value="">请选择</option></select>
+      <div id="itLanguagePills" class="it-pill-group" role="radiogroup"></div>
+      <input type="hidden" id="itLanguage" value="">
     </div>
 
     <div class="form-row">
       <label>使用模型 <span class="required">*</span></label>
-      <select id="itModel"><option value="">请选择</option></select>
+      <div id="itModelPills" class="it-pill-group" role="radiogroup"></div>
+      <input type="hidden" id="itModel" value="">
     </div>
 
     <div class="form-row">
-      <label>提示词（可编辑；<code>{target_language_name}</code> 会自动替换）</label>
-      <textarea id="itPrompt" rows="4" style="width:100%"></textarea>
+      <label>提示词（可编辑，切换语言/预设会加载对应系统默认）</label>
+      <textarea id="itPrompt" rows="8" style="width:100%;font-family:var(--font-mono,monospace);font-size:13px"></textarea>
     </div>
 
     <div class="form-row">

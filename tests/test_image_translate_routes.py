@@ -51,14 +51,25 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     assert data["default_model_id"] == ""
 
 
-def test_system_prompts_endpoint(authed_client_no_db, monkeypatch):
-    from appcore import image_translate_settings as its
-    monkeypatch.setattr(its, "query_one", lambda sql, p: {"value": "X {target_language_name}"})
-    monkeypatch.setattr(its, "execute", lambda sql, p: None)
+def test_system_prompts_endpoint_requires_lang(authed_client_no_db):
     resp = authed_client_no_db.get("/api/image-translate/system-prompts")
+    assert resp.status_code == 400
+
+
+def test_system_prompts_endpoint_returns_per_lang(authed_client_no_db, monkeypatch):
+    from appcore import image_translate_settings as its
+    monkeypatch.setattr(its, "query_one", lambda sql, p: {"value": "X 预设 " + p[0]})
+    monkeypatch.setattr(its, "execute", lambda sql, p: None)
+    resp = authed_client_no_db.get("/api/image-translate/system-prompts?lang=de")
     assert resp.status_code == 200
     j = resp.get_json()
     assert "cover" in j and "detail" in j
+    assert "de" in j["cover"]  # 从 fake query_one 里看到 key 带了 de
+
+
+def test_system_prompts_rejects_unsupported_lang(authed_client_no_db):
+    resp = authed_client_no_db.get("/api/image-translate/system-prompts?lang=xx")
+    assert resp.status_code == 400
 
 
 def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):

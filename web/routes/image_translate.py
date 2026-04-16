@@ -15,7 +15,7 @@ from appcore import medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
-from appcore.image_translate_settings import get_default_prompts, render_prompt
+from appcore.image_translate_settings import SUPPORTED_LANGS, get_prompts_for_lang
 from web import store
 from web.services import image_translate_runner
 
@@ -91,7 +91,10 @@ def api_models():
 @bp.route("/api/image-translate/system-prompts", methods=["GET"])
 @login_required
 def api_system_prompts():
-    return jsonify(get_default_prompts())
+    lang = (request.args.get("lang") or "").strip().lower()
+    if lang not in SUPPORTED_LANGS:
+        return jsonify({"error": f"lang 必须是 {SUPPORTED_LANGS} 之一"}), 400
+    return jsonify(get_prompts_for_lang(lang))
 
 
 @bp.route("/api/image-translate/upload/bootstrap", methods=["POST"])
@@ -171,7 +174,8 @@ def api_upload_complete():
         items.append({"idx": idx, "filename": filename, "src_tos_key": key})
 
     lang_name = _target_language_name(lang_code)
-    final_prompt = render_prompt(prompt_tpl, target_language_name=lang_name)
+    # Prompts are language-specific (no placeholders). Use as-is.
+    final_prompt = prompt_tpl
     task_dir = ""
     task_state.create_image_translate(
         task_id,

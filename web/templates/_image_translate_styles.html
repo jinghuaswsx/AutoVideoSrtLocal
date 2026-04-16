@@ -6,6 +6,17 @@
 .it-shell .form-row label { display:block; font-size:13px; color:var(--text-main,#111827);
                              opacity:.8; margin-bottom:6px; }
 .it-shell .required { color:#dc2626; }
+.it-pill-group { display:flex; flex-wrap:wrap; gap:8px; }
+.it-pill { appearance:none; border:1.5px solid var(--border-main,#e5e7eb); background:#fff;
+           color:var(--text-main,#111827); border-radius:999px; padding:8px 18px;
+           font-size:13px; font-weight:500; cursor:pointer; outline:none;
+           transition: border-color 120ms, background-color 120ms, color 120ms, box-shadow 120ms; }
+.it-pill:hover { border-color:#9ca3af; background:#f8fbff; }
+.it-pill.is-active { border-color:var(--primary-color,#3b82f6);
+                     background:linear-gradient(180deg, #1d6fe8 0%, #175bc6 100%);
+                     color:#fff; box-shadow:0 4px 10px rgba(29,111,232,.18); }
+.it-pill.is-active:hover { background:linear-gradient(180deg, #1d6fe8 0%, #175bc6 100%); }
+.it-pill:focus-visible { box-shadow:0 0 0 3px rgba(59,130,246,.22); }
 .it-thumbs { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
              gap:8px; margin-top:8px; }
 .it-thumb { position:relative; border:1px solid var(--border-main,#e5e7eb); border-radius:8px;
