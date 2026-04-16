@@ -18,20 +18,33 @@ def _key(preset: str, lang: str) -> str:
     return f"image_translate.prompt_{preset}_{lang}"
 
 
+def _normalize_language_code(code: str) -> str:
+    return (code or "").strip().lower()
+
+
 def list_image_translate_languages() -> list[dict]:
     """返回图片翻译可用语种，过滤掉源语言 en。"""
-    return [row for row in medias.list_languages() if row.get("code") != "en"]
+    return [
+        row
+        for row in medias.list_languages()
+        if _normalize_language_code(row.get("code")) != "en"
+    ]
 
 
 def is_image_translate_language_supported(code: str) -> bool:
-    return any(lang.get("code") == code for lang in list_image_translate_languages())
+    normalized = _normalize_language_code(code)
+    return any(
+        _normalize_language_code(lang.get("code")) == normalized
+        for lang in list_image_translate_languages()
+    )
 
 
 def _get_language_info(code: str) -> dict:
+    normalized = _normalize_language_code(code)
     for lang in list_image_translate_languages():
-        if lang.get("code") == code:
+        if _normalize_language_code(lang.get("code")) == normalized:
             return lang
-    raise ValueError(f"unsupported lang: {code}")
+    raise ValueError(f"unsupported lang: {normalized}")
 
 
 def _build_generic_prompt(preset: str, lang_info: dict) -> str:
@@ -417,11 +430,12 @@ def get_prompt(preset: str, lang: str) -> str:
     """返回某语言 + 某预设下的 prompt；不存在则写入内置默认后返回。"""
     if preset not in PRESETS:
         raise ValueError("preset must be cover or detail")
-    lang_info = _get_language_info(lang)
-    key = _key(preset, lang)
+    normalized_lang = _normalize_language_code(lang)
+    lang_info = _get_language_info(normalized_lang)
+    key = _key(preset, normalized_lang)
     value = _read(key)
     if value is None or value == "":
-        default = _DEFAULTS.get((preset, lang))
+        default = _DEFAULTS.get((preset, normalized_lang))
         if default is None:
             default = _build_generic_prompt(preset, lang_info)
         _write(key, default)
@@ -437,8 +451,9 @@ def get_prompts_for_lang(lang: str) -> dict[str, str]:
 def update_prompt(preset: str, lang: str, value: str) -> None:
     if preset not in PRESETS:
         raise ValueError("preset must be cover or detail")
-    _get_language_info(lang)
-    _write(_key(preset, lang), value)
+    normalized_lang = _normalize_language_code(lang)
+    _get_language_info(normalized_lang)
+    _write(_key(preset, normalized_lang), value)
 
 
 def list_all_prompts() -> dict[str, dict[str, str]]:

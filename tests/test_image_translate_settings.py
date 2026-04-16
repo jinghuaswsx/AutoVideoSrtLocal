@@ -41,6 +41,23 @@ def test_list_image_translate_languages_filters_out_en(monkeypatch):
     assert [lang["code"] for lang in langs] == ["de", "nl"]
 
 
+def test_language_support_checks_normalize_code(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _mock_languages(
+        monkeypatch,
+        [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "nl", "name_zh": "荷兰语", "enabled": 1},
+        ],
+    )
+
+    assert its.is_image_translate_language_supported(" NL ")
+    info = its._get_language_info(" NL ")
+    assert info["code"] == "nl"
+    assert info["name_zh"] == "荷兰语"
+
+
 def test_get_prompt_generates_generic_prompt_for_dynamic_lang(monkeypatch):
     from appcore import image_translate_settings as its
 
@@ -70,6 +87,36 @@ def test_get_prompt_generates_generic_prompt_for_dynamic_lang(monkeypatch):
     assert "只替换文字" in value
     assert "保留布局" in value
     assert store["image_translate.prompt_cover_nl"] == value
+
+
+def test_get_prompt_generates_generic_detail_prompt_for_dynamic_lang(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _mock_languages(
+        monkeypatch,
+        [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "nl", "name_zh": "荷兰语", "enabled": 1},
+        ],
+    )
+
+    store = {}
+
+    def fake_query_one(sql, params):
+        key = params[0]
+        return {"value": store[key]} if key in store else None
+
+    def fake_execute(sql, params):
+        store[params[0]] = params[1]
+
+    monkeypatch.setattr(its, "query_one", fake_query_one)
+    monkeypatch.setattr(its, "execute", fake_execute)
+
+    value = its.get_prompt("detail", "nl")
+    assert "荷兰语" in value
+    assert "只替换文字" in value
+    assert "保留布局" in value
+    assert store["image_translate.prompt_detail_nl"] == value
 
 
 def test_get_prompt_bootstraps_when_missing(monkeypatch):
