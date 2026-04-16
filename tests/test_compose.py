@@ -128,6 +128,21 @@ def test_build_subtitle_filter_includes_margin_v():
     assert "Alignment=2" in vf
 
 
+def test_build_subtitle_filter_uses_8char_hex_colors():
+    # 必须使用完整 8 位十六进制（AABBGGRR），而不是 3 字节 &HFFFFFF —
+    # 部分 libass 版本把 3 字节解析为半透明 alpha 导致字幕不可见
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    assert "PrimaryColour=&H00FFFFFF" in vf
+    assert "OutlineColour=&H00000000" in vf
+
+
+def test_build_subtitle_filter_sets_border_style_1():
+    # 显式 BorderStyle=1 确保走 outline+shadow 渲染，避免系统字体回退时
+    # libass 走默认 BorderStyle 导致字幕不显示
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    assert "BorderStyle=1" in vf
+
+
 def test_build_subtitle_filter_omits_fontsdir_when_dir_missing(tmp_path, monkeypatch):
     # fonts 目录不存在时不应加入 fontsdir 参数，以免 libass 渲染失败
     import pipeline.compose as compose_mod
