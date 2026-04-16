@@ -127,6 +127,11 @@ def _resolve_translate_provider(user_id: int | None) -> str:
     return pref if pref in ("openrouter", "doubao") else "openrouter"
 
 
+def _lang_display(label: str) -> str:
+    """Convert language label (en/de/fr) to Chinese display name for step messages."""
+    return {"en": "英语", "de": "德语", "fr": "法语"}.get(label, label)
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,
@@ -197,6 +202,158 @@ class PipelineRunner:
         task_state.set_step(task_id, step, status)
         task_state.set_step_message(task_id, step, message)
         self._emit(task_id, EVT_STEP_UPDATE, {"step": step, "status": status, "message": message})
+
+    def _emit_duration_round(self, task_id: str, round_index: int,
+                             phase: str, record: dict) -> None:
+        """Emit EVT_TTS_DURATION_ROUND with merged payload."""
+        from appcore.events import EVT_TTS_DURATION_ROUND
+        payload = dict(record)
+        payload["round"] = round_index
+        payload["phase"] = phase
+        self._emit(task_id, EVT_TTS_DURATION_ROUND, payload)
+
+    def _run_tts_duration_loop(
+        self, *, task_id: str, task_dir: str, loc_mod,
+        provider: str, video_duration: float, voice: dict,
+        initial_localized_translation: dict, source_full_text: str,
+        source_language: str, elevenlabs_api_key: str,
+        script_segments: list, variant: str,
+    ) -> dict:
+        """Iterate translate_rewrite → tts_script_regen → audio_gen → measure
+        up to 3 rounds until audio duration lands in [video-3, video].
+
+        Returns dict with: localized_translation, tts_script, tts_audio_path,
+        tts_segments, rounds, final_round.
+        """
+        import importlib
+        from pipeline.speech_rate_model import get_rate, update_rate
+        from pipeline.tts import generate_full_audio, _get_audio_duration
+        from pipeline.translate import generate_tts_script, generate_localized_rewrite
+
+        MAX_ROUNDS = 3
+        duration_lo = max(0.0, video_duration - 3.0)
+        duration_hi = video_duration
+
+        rounds: list[dict] = []
+        prev_localized = initial_localized_translation
+        last_audio_duration = 0.0
+        last_char_count = 0
+
+        from functools import partial
+        validator = partial(
+            getattr(loc_mod, "validate_tts_script", None)
+            or importlib.import_module("pipeline.localization").validate_tts_script,
+            max_words=14 if self.target_language_label in ("de", "fr") else 10,
+        )
+
+        for round_index in range(1, MAX_ROUNDS + 1):
+            round_record: dict = {
+                "round": round_index,
+                "video_duration": video_duration,
+                "duration_lo": duration_lo,
+                "duration_hi": duration_hi,
+                "artifact_paths": {},
+            }
+
+            # Phase 1: translate_rewrite (skipped on round 1)
+            if round_index == 1:
+                localized_translation = prev_localized
+                round_record["message"] = "初始译文（来自 translate 步骤）"
+            else:
+                voice_el_id = voice["elevenlabs_voice_id"]
+                lang_code = self.tts_language_code or "en"
+                cps = get_rate(voice_el_id, lang_code)
+                if not cps or cps <= 0:
+                    cps = (last_char_count / last_audio_duration) if last_audio_duration > 0 else 15.0
+                target_duration, target_chars, direction = _compute_next_target(
+                    round_index, last_audio_duration, cps, video_duration,
+                )
+                round_record["target_duration"] = target_duration
+                round_record["target_chars"] = target_chars
+                round_record["direction"] = direction
+                round_record["message"] = (
+                    f"第 {round_index} 轮：重写{_lang_display(self.target_language_label)}译文"
+                    f"（目标 {target_chars} 字符，{direction}）"
+                )
+                self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
+
+                localized_translation = generate_localized_rewrite(
+                    source_full_text=source_full_text,
+                    prev_localized_translation=prev_localized,
+                    target_chars=target_chars,
+                    direction=direction,
+                    source_language=source_language,
+                    messages_builder=loc_mod.build_localized_rewrite_messages,
+                    provider=provider,
+                    user_id=self.user_id,
+                )
+                _save_json(task_dir, f"localized_translation.round_{round_index}.json", localized_translation)
+                round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
+                round_record["char_count_prev"] = last_char_count
+
+            # Phase 2: tts_script_regen
+            self._emit_duration_round(task_id, round_index, "tts_script_regen", round_record)
+            tts_script = generate_tts_script(
+                localized_translation,
+                provider=provider, user_id=self.user_id,
+                messages_builder=loc_mod.build_tts_script_messages,
+                validator=validator,
+            )
+            _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
+            round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
+
+            # Phase 3: audio_gen
+            self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
+            tts_segments = loc_mod.build_tts_segments(tts_script, script_segments)
+            result = generate_full_audio(
+                tts_segments, voice["elevenlabs_voice_id"], task_dir,
+                variant=f"round_{round_index}",
+                elevenlabs_api_key=elevenlabs_api_key,
+                model_id=self.tts_model_id,
+                language_code=self.tts_language_code,
+            )
+            round_record["artifact_paths"]["tts_full_audio"] = f"tts_full.round_{round_index}.mp3"
+
+            # Phase 4: measure
+            audio_duration = _get_audio_duration(result["full_audio_path"])
+            char_count = len(tts_script.get("full_text", ""))
+            update_rate(voice["elevenlabs_voice_id"],
+                        self.tts_language_code or "en",
+                        chars=char_count, duration_seconds=audio_duration)
+            round_record["audio_duration"] = audio_duration
+            round_record["char_count"] = char_count
+
+            # persist rounds incrementally so UI survives page refresh
+            import appcore.task_state as task_state
+            rounds.append(round_record)
+            task_state.update(task_id, tts_duration_rounds=rounds)
+
+            self._emit_duration_round(task_id, round_index, "measure", round_record)
+
+            if duration_lo <= audio_duration <= duration_hi:
+                self._emit_duration_round(task_id, round_index, "converged", round_record)
+                task_state.update(task_id, tts_duration_status="converged")
+                return {
+                    "localized_translation": localized_translation,
+                    "tts_script": tts_script,
+                    "tts_audio_path": result["full_audio_path"],
+                    "tts_segments": result["segments"],
+                    "rounds": rounds,
+                    "final_round": round_index,
+                }
+
+            prev_localized = localized_translation
+            last_audio_duration = audio_duration
+            last_char_count = char_count
+
+        # 3 rounds exhausted, not converged
+        self._emit_duration_round(task_id, MAX_ROUNDS, "failed", round_record)
+        import appcore.task_state as task_state
+        task_state.update(task_id, tts_duration_status="failed")
+        raise RuntimeError(
+            f"TTS 音频时长 {MAX_ROUNDS} 轮内未收敛到 [{duration_lo:.1f}, {duration_hi:.1f}] 区间，"
+            f"最后一次为 {last_audio_duration:.1f}s。请调整 voice 或翻译 prompt 后重试。"
+        )
 
     def start(self, task_id: str) -> None:
         self._run(task_id, start_step="extract")
