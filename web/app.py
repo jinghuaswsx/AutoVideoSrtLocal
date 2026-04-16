@@ -64,6 +64,11 @@ def _run_startup_recovery() -> None:
     except Exception:
         log.warning("subtitle removal startup recovery failed", exc_info=True)
     _recover_translate_lab_tasks_on_startup()
+    try:
+        from web.services.image_translate_runner import resume_inflight_tasks as resume_image_translate
+        resume_image_translate()
+    except Exception:
+        log.warning("image translate startup recovery failed", exc_info=True)
 
 
 def _recover_translate_lab_tasks_on_startup() -> list[str]:
@@ -257,5 +262,19 @@ def create_app() -> Flask:
             task = task_state.get(task_id)
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
+
+    @socketio.on("join_image_translate_task")
+    def on_join_image_translate(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = (data or {}).get("task_id")
+        if not task_id:
+            return
+        from web import store
+        task = store.get(task_id)
+        if task and task.get("_user_id") == current_user.id \
+                and task.get("type") == "image_translate":
+            join_room(task_id)
 
     return app
