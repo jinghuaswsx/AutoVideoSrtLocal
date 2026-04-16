@@ -187,12 +187,15 @@ def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, mar
     # 只在 fonts 目录存在时才传 fontsdir；目录不存在时 libass 仍能用系统字体渲染
     fd = _fonts_dir()
     fontsdir_param = f":fontsdir='{_escape_subtitle_filter_path(fd)}'" if os.path.isdir(fd) else ""
+    # 使用完整 8 位十六进制颜色（AABBGGRR）避免部分 libass 版本把 3 字节 &HFFFFFF
+    # 误判为半透明/空 alpha 导致字幕不可见；显式指定 BorderStyle=1 确保走
+    # outline + shadow 渲染路径，避免系统字体回退时走 opaque box 或跳过渲染。
     return (
         f"subtitles=filename='{escaped_path}'"
         f"{fontsdir_param}"
         f":force_style='FontName={font_name},FontSize={font_size_pt},"
-        f"PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,"
-        f"Alignment=2,MarginV={margin_v}'"
+        f"PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,"
+        f"Outline=2,Shadow=0,Bold=1,Alignment=2,MarginV={margin_v}'"
     )
 
 
