@@ -30,7 +30,16 @@
 
   async function fetchJSON(url, opts) {
     const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      let msg;
+      try {
+        const data = await res.json();
+        msg = data.error || data.message || JSON.stringify(data);
+      } catch {
+        msg = await res.text();
+      }
+      throw new Error(msg);
+    }
     return res.json();
   }
 
