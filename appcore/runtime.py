@@ -130,6 +130,12 @@ def _resolve_translate_provider(user_id: int | None) -> str:
 class PipelineRunner:
     project_type: str = "translation"
 
+    # 是否在 compose 阶段生成软字幕视频（仅 v2 重新 override 为 True 保持原行为）
+    include_soft_video: bool = False
+
+    # 是否把 AI 视频分析放在主流程 _run() 的 steps 列表里（v2 override 为 True）
+    include_analysis_in_main_flow: bool = False
+
     def __init__(self, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
         self.user_id = user_id
@@ -163,6 +169,8 @@ class PipelineRunner:
             ("analysis", lambda: self._step_analysis(task_id)),
             ("export", lambda: self._step_export(task_id, video_path, task_dir)),
         ]
+        if not self.include_analysis_in_main_flow:
+            steps = [s for s in steps if s[0] != "analysis"]
 
         try:
             should_run = False
@@ -482,6 +490,7 @@ class PipelineRunner:
             font_name=task.get("subtitle_font", "Impact"),
             font_size_preset=task.get("subtitle_size", "medium"),
             subtitle_position_y=float(task.get("subtitle_position_y", 0.68)),
+            with_soft=self.include_soft_video,
         )
         variant_state["result"] = result
         variants[variant] = variant_state
@@ -608,3 +617,22 @@ class PipelineRunner:
             "exports": {"normal": exports},
         })
         _upload_artifacts_to_tos(task_state.get(task_id) or {}, task_id)
+
+
+def run_analysis_only(
+    task_id: str,
+    runner: "PipelineRunner",
+) -> None:
+    """单独执行 AI 视频分析步骤，不影响任务整体 status。
+
+    所有异常只更新 steps.analysis 为 error、记录 step_message；
+    绝不触碰 task 整体 status 与 error 字段。
+    """
+    try:
+        runner._step_analysis(task_id)
+    except Exception as exc:
+        log.exception("AI 分析执行失败 task_id=%s", task_id)
+        try:
+            runner._set_step(task_id, "analysis", "error", f"AI 分析失败：{exc}")
+        except Exception:
+            pass
