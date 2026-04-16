@@ -37,8 +37,16 @@ if [ ! -d "$APP_DIR/.git" ]; then
 
   # 4. 创建测试数据库并从生产库复刻
   echo "=== 复刻数据库 $PROD_DB -> $DB_NAME ==="
-  mysql -u root -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  mysqldump -u root "$PROD_DB" | mysql -u root "$DB_NAME"
+  # 从生产 .env 读取数据库密码
+  DB_PASS=$(grep '^DB_PASSWORD=' "$PROD_DIR/.env" | cut -d'=' -f2-)
+  DB_USER_ENV=$(grep '^DB_USER=' "$PROD_DIR/.env" | cut -d'=' -f2- || echo "root")
+  DB_USER_ENV=${DB_USER_ENV:-root}
+  MYSQL_OPTS="-u $DB_USER_ENV"
+  if [ -n "$DB_PASS" ]; then
+    MYSQL_OPTS="$MYSQL_OPTS -p$DB_PASS"
+  fi
+  mysql $MYSQL_OPTS -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+  mysqldump $MYSQL_OPTS "$PROD_DB" | mysql $MYSQL_OPTS "$DB_NAME"
   echo "数据库复刻完成"
 
   # 5. 创建必要目录
