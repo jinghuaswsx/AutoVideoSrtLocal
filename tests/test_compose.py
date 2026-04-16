@@ -35,7 +35,8 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
 
     vf = captured["cmd"][captured["cmd"].index("-vf") + 1]
     assert "G\\:/Code/AutoVideoSrt/output/task/subtitle.srt" in vf
-    assert "FontName=Impact" in vf
+    # 默认字体 Impact 被 alias 到 Anton
+    assert "FontName=Anton" in vf
     assert "FontSize=14" in vf    # medium preset → ASS PlayResY=288 基准
     assert "MarginV=92" in vf     # round(288*(1-0.68)) = 92
     assert "Alignment=2" in vf
@@ -100,12 +101,12 @@ def test_build_subtitle_filter_includes_font_name():
 
 
 def test_build_subtitle_filter_includes_font_size():
-    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 18, 50)
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 18, 50)
     assert "FontSize=18" in vf
 
 
 def test_build_subtitle_filter_includes_margin_v():
-    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
     assert "MarginV=346" in vf
     assert "Alignment=2" in vf
 
@@ -113,7 +114,7 @@ def test_build_subtitle_filter_includes_margin_v():
 def test_build_subtitle_filter_uses_8char_hex_colors():
     # 必须使用完整 8 位十六进制（AABBGGRR），而不是 3 字节 &HFFFFFF —
     # 部分 libass 版本把 3 字节解析为半透明 alpha 导致字幕不可见
-    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
     assert "PrimaryColour=&H00FFFFFF" in vf
     assert "OutlineColour=&H00000000" in vf
 
@@ -121,8 +122,15 @@ def test_build_subtitle_filter_uses_8char_hex_colors():
 def test_build_subtitle_filter_sets_border_style_1():
     # 显式 BorderStyle=1 确保走 outline+shadow 渲染，避免系统字体回退时
     # libass 走默认 BorderStyle 导致字幕不显示
-    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 346)
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
     assert "BorderStyle=1" in vf
+
+
+def test_build_subtitle_filter_aliases_impact_to_anton():
+    # Impact 是 Microsoft 专有字体，Linux 服务器上没有；代码别名到 Anton
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 100)
+    assert "FontName=Anton" in vf
+    assert "FontName=Impact" not in vf
 
 
 def test_build_subtitle_filter_omits_fontsdir_when_dir_missing(tmp_path, monkeypatch):
@@ -148,8 +156,9 @@ def test_build_subtitle_filter_includes_fontsdir_when_dir_exists(tmp_path, monke
 
 class TestBuildSubtitleFilterSanitizesFontName:
     def test_valid_font_name_passes_through(self):
-        result = _build_subtitle_filter("/tmp/sub.srt", "Impact", 14, 100)
-        assert "FontName=Impact" in result
+        # Anton 不在 alias 表里，直接透传
+        result = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 100)
+        assert "FontName=Anton" in result
 
     def test_font_name_with_spaces_passes_through(self):
         result = _build_subtitle_filter("/tmp/sub.srt", "Arial Bold", 14, 100)
@@ -159,21 +168,22 @@ class TestBuildSubtitleFilterSanitizesFontName:
         result = _build_subtitle_filter("/tmp/sub.srt", "Noto-Sans", 14, 100)
         assert "FontName=Noto-Sans" in result
 
-    def test_font_name_with_comma_falls_back_to_impact(self):
+    def test_font_name_with_comma_falls_back_to_anton(self):
+        # 含逗号 → fallback 到 Impact → alias 到 Anton
         result = _build_subtitle_filter("/tmp/sub.srt", "Arial,Bold", 14, 100)
-        assert "FontName=Impact" in result
+        assert "FontName=Anton" in result
 
-    def test_font_name_with_single_quote_falls_back_to_impact(self):
+    def test_font_name_with_single_quote_falls_back_to_anton(self):
         result = _build_subtitle_filter("/tmp/sub.srt", "Arial'Bold", 14, 100)
-        assert "FontName=Impact" in result
+        assert "FontName=Anton" in result
 
-    def test_font_name_with_colon_falls_back_to_impact(self):
+    def test_font_name_with_colon_falls_back_to_anton(self):
         result = _build_subtitle_filter("/tmp/sub.srt", "Arial:Bold", 14, 100)
-        assert "FontName=Impact" in result
+        assert "FontName=Anton" in result
 
-    def test_empty_font_name_falls_back_to_impact(self):
+    def test_empty_font_name_falls_back_to_anton(self):
         result = _build_subtitle_filter("/tmp/sub.srt", "", 14, 100)
-        assert "FontName=Impact" in result
+        assert "FontName=Anton" in result
 
 
 # ---------------------------------------------------------------------------

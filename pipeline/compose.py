@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 _FONT_SIZE_BASE: dict[str, int] = {"small": 11, "medium": 14, "large": 18}
 _VALID_FONT_NAME = re.compile(r'^[A-Za-z0-9 \-_]+$')
 
+# Impact 是 Microsoft 专有字体，Linux 服务器上没有；用开源视觉相近的 Anton 代替
+_FONT_ALIAS: dict[str, str] = {
+    "Impact": "Anton",
+}
+
 
 def _fonts_dir() -> str:
     """返回项目 fonts/ 目录的绝对路径。"""
@@ -198,6 +203,8 @@ def _compose_hard(
 def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, margin_v: int) -> str:
     if not _VALID_FONT_NAME.match(font_name):
         font_name = "Impact"
+    # 把用户选择的字体名映射到服务器端实际可用的字体（如 Impact → Anton）
+    font_name = _FONT_ALIAS.get(font_name, font_name)
     escaped_path = _escape_subtitle_filter_path(srt_path)
     # 只在 fonts 目录存在时才传 fontsdir；目录不存在时 libass 仍能用系统字体渲染
     fd = _fonts_dir()
