@@ -375,11 +375,29 @@ class PipelineRunner:
                 round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
                 # Persist the actual LLM prompt used this round for audit / UI download.
                 if localized_translation.get("_messages"):
+                    rewrite_input_snapshot = [
+                        {
+                            "key": "source_full_text",
+                            "title": "原始文本输入",
+                            "content": source_full_text,
+                        },
+                        {
+                            "key": "reference_translation",
+                            "title": "本轮参考译文输入",
+                            "content": json.dumps(
+                                initial_localized_translation,
+                                ensure_ascii=False,
+                                indent=2,
+                            ),
+                        },
+                    ]
                     _save_json(task_dir,
                                f"localized_rewrite_messages.round_{round_index}.json",
                                {"round": round_index,
                                 "target_words": target_words,
                                 "direction": direction,
+                                "source_language": source_language,
+                                "input_snapshot": rewrite_input_snapshot,
                                 "messages": localized_translation["_messages"]})
                     round_record["artifact_paths"]["localized_rewrite_messages"] = (
                         f"localized_rewrite_messages.round_{round_index}.json"

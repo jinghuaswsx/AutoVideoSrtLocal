@@ -1168,6 +1168,233 @@
     container.hidden = false;
   }
 
+  window._durationPromptCache = window._durationPromptCache || {};
+  window._durationPromptLoading = window._durationPromptLoading || {};
+  window._durationPromptOpen = window._durationPromptOpen || {};
+
+  function _phaseLabel(phase) {
+    return ({
+      translate_rewrite: 'Rewriting translation',
+      tts_script_regen: 'Generating TTS script',
+      audio_gen: 'Generating audio',
+      measure: 'Measuring duration',
+      converged: 'Target range reached',
+      best_pick: 'Picked nearest round',
+      truncate_audio: 'Truncating final audio',
+      truncated: 'Final audio truncated',
+      failed: 'Loop failed',
+    })[phase] || phase || '';
+  }
+
+  function _roundStatusIcon(round, isFailed) {
+    const finalDuration = round.final_duration != null ? round.final_duration : round.audio_duration;
+    if (finalDuration != null) {
+      const lo = round.duration_lo;
+      const hi = round.duration_hi;
+      if (lo != null && hi != null && finalDuration >= lo && finalDuration <= hi) {
+        return ['success', 'OK'];
+      }
+      if (isFailed) return ['error', 'X'];
+      return ['warning', '!'];
+    }
+    return ['running', '...'];
+  }
+
+  function _durationPromptToText(content) {
+    if (content == null) return '';
+    if (typeof content === 'string') return content;
+    try {
+      return JSON.stringify(content, null, 2);
+    } catch (err) {
+      return String(content);
+    }
+  }
+
+  async function toggleDurationRoundPrompt(roundIndex) {
+    window._durationPromptOpen[roundIndex] = !window._durationPromptOpen[roundIndex];
+    renderTtsDurationLog();
+    if (!window._durationPromptOpen[roundIndex]) return;
+    if (window._durationPromptCache[roundIndex] || window._durationPromptLoading[roundIndex]) return;
+
+    window._durationPromptLoading[roundIndex] = true;
+    renderTtsDurationLog();
+    try {
+      const res = await fetch(_durationRoundFileUrl(roundIndex, 'localized_rewrite_messages'));
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || 'Prompt snapshot load failed');
+      }
+      window._durationPromptCache[roundIndex] = payload;
+    } catch (err) {
+      window._durationPromptCache[roundIndex] = {
+        __error: err && err.message ? err.message : 'Prompt snapshot load failed',
+      };
+    } finally {
+      delete window._durationPromptLoading[roundIndex];
+      renderTtsDurationLog();
+    }
+  }
+
+  function _renderDurationPromptPanel(round) {
+    if (!window._durationPromptOpen[round.round]) return '';
+
+    if (window._durationPromptLoading[round.round]) {
+      return `
+        <div class="duration-round-debug">
+          <div class="duration-round-debug-title">Prompt details</div>
+          <div class="duration-round-debug-empty">Loading...</div>
+        </div>
+      `;
+    }
+
+    const payload = window._durationPromptCache[round.round];
+    if (!payload) return '';
+    if (payload.__error) {
+      return `
+        <div class="duration-round-debug">
+          <div class="duration-round-debug-title">Prompt details</div>
+          <div class="duration-round-debug-empty duration-round-debug-empty--error">${escapeHtml(payload.__error)}</div>
+        </div>
+      `;
+    }
+
+    const inputSnapshot = Array.isArray(payload.input_snapshot) ? payload.input_snapshot : [];
+    const inputHtml = inputSnapshot.length
+      ? inputSnapshot.map(item => `
+          <div class="duration-round-debug-block">
+            <div class="duration-round-debug-label">${escapeHtml(item.title || item.label || 'Input')}</div>
+            <pre class="duration-round-debug-pre">${escapeHtml(_durationPromptToText(item.content))}</pre>
+          </div>
+        `).join('')
+      : '<div class="duration-round-debug-empty">No input snapshot saved for this round.</div>';
+
+    const messages = Array.isArray(payload.messages) ? payload.messages : [];
+    const messageHtml = messages.length
+      ? messages.map((msg, idx) => `
+          <div class="duration-round-debug-block">
+            <div class="duration-round-debug-label">Message ${idx + 1} | ${escapeHtml((msg && msg.role) || 'unknown')}</div>
+            <pre class="duration-round-debug-pre">${escapeHtml(_durationPromptToText(msg && msg.content))}</pre>
+          </div>
+        `).join('')
+      : '<div class="duration-round-debug-empty">No message content saved for this round.</div>';
+
+    return `
+      <div class="duration-round-debug">
+        <div class="duration-round-debug-title">Round inputs</div>
+        <div class="duration-round-debug-grid">${inputHtml}</div>
+        <div class="duration-round-debug-title">Prompt messages</div>
+        <div class="duration-round-debug-list">${messageHtml}</div>
+      </div>
+    `;
+  }
+
+  function renderTtsDurationLog() {
+    const container = document.getElementById('ttsDurationLog');
+    if (!container) return;
+    const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
+    if (!rounds.length) {
+      container.hidden = true;
+      container.innerHTML = '';
+      return;
+    }
+
+    const status = currentTask.tts_duration_status || 'running';
+    const videoDuration = rounds[0].video_duration || null;
+    const targetLo = rounds[0].duration_lo;
+    const targetHi = rounds[0].duration_hi;
+    const metaStr = (videoDuration != null && targetLo != null && targetHi != null)
+      ? `Video ${videoDuration.toFixed(1)}s | target [${targetLo.toFixed(1)}, ${targetHi.toFixed(1)}]`
+      : '';
+
+    const parts = [];
+    parts.push(`<div class="duration-log-header">Duration loop <span class="meta">${metaStr}</span></div>`);
+
+    rounds.forEach((round, idx) => {
+      const isLast = idx === rounds.length - 1;
+      const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
+      const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase) : '';
+      const targetWords = round.target_words != null ? round.target_words : round.target_chars;
+      const targetStr = (round.target_duration != null && targetWords != null)
+        ? `Target ${round.target_duration.toFixed(1)}s / ${targetWords} words (${round.direction || 'adjust'})`
+        : 'Initial translation';
+      const measuredWords = round.word_count != null ? round.word_count : round.char_count;
+      const measuredStr = (round.audio_duration != null && measuredWords != null)
+        ? `Actual ${round.audio_duration.toFixed(1)}s / ${measuredWords} words`
+        : '';
+
+      const actions = [];
+      const artifactPaths = round.artifact_paths || {};
+      if (artifactPaths.localized_rewrite_messages) {
+        actions.push(`
+          <button type="button" class="duration-round-toggle"
+                  onclick="toggleDurationRoundPrompt(${round.round})">
+            ${window._durationPromptOpen[round.round] ? 'Hide prompt' : 'View prompt'}
+          </button>
+        `);
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_rewrite_messages')}" target="_blank">Prompt JSON</a>`);
+      }
+      if (artifactPaths.localized_translation) {
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_translation')}" target="_blank">Translation JSON</a>`);
+      }
+      if (artifactPaths.tts_script) {
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_script')}" target="_blank">TTS script JSON</a>`);
+      }
+      if (artifactPaths.tts_full_audio) {
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_full_audio')}" target="_blank">Audio MP3</a>`);
+      }
+
+      const truncationInfo = (round.pre_trim_duration != null && round.final_duration != null
+        && round.pre_trim_duration > round.final_duration + 1e-6)
+        ? `Truncated: ${round.pre_trim_duration.toFixed(1)}s -> ${round.final_duration.toFixed(1)}s`
+        : '';
+
+      parts.push(`
+        <div class="duration-round">
+          <div class="duration-round-title">
+            <span class="status-icon ${iconClass}">${iconChar}</span>
+            <span>Round ${round.round}</span>
+          </div>
+          <div class="duration-round-meta">${targetStr}${measuredStr ? ' | ' + measuredStr : ''}</div>
+          ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}</div>` : ''}
+          ${truncationInfo ? `<div class="duration-round-meta">${truncationInfo}</div>` : ''}
+          ${actions.length ? `<div class="duration-round-files">${actions.join('')}</div>` : ''}
+          ${_renderDurationPromptPanel(round)}
+        </div>
+      `);
+    });
+
+    if (status === 'converged') {
+      const last = rounds[rounds.length - 1];
+      const finalDuration = last.final_duration != null ? last.final_duration : last.audio_duration;
+      if (finalDuration != null) {
+        const finalLo = last.duration_lo;
+        const finalHi = last.duration_hi;
+        const inTarget = finalLo != null && finalHi != null
+          && finalDuration >= finalLo && finalDuration <= finalHi;
+        const wasTruncated = last.pre_trim_duration != null
+          && last.final_duration != null
+          && last.pre_trim_duration > last.final_duration + 1e-6;
+        const prefix = wasTruncated ? 'After truncation' : `Round ${last.round}`;
+        const rangeStr = (finalLo != null && finalHi != null)
+          ? ` | target [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]`
+          : '';
+
+        if (inTarget) {
+          parts.push(`<div class="duration-log-final">OK ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr}</div>`);
+        } else if (finalLo != null && finalDuration < finalLo) {
+          parts.push(`<div class="duration-log-final warning">Note ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr} | below lower bound</div>`);
+        } else {
+          parts.push(`<div class="duration-log-final warning">Note ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr} | above video duration</div>`);
+        }
+      }
+    } else if (status === 'failed') {
+      parts.push('<div class="duration-log-final failed">Duration loop failed</div>');
+    }
+
+    container.innerHTML = parts.join('');
+    container.hidden = false;
+  }
+
   function renderResultPanelFromTask() {
     if (!currentTask) return;
     const downloads = {};
