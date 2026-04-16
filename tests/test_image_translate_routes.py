@@ -184,6 +184,55 @@ def test_complete_rejects_bad_uploaded_items(authed_client_no_db, monkeypatch):
         assert resp.status_code == 400
 
 
+def test_complete_rejects_missing_uploaded_item(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 2,
+        "files": [
+            {"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"},
+            {"filename": "b.jpg", "size": 1, "content_type": "image/jpeg"},
+        ],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 400
+
+
+def test_complete_rejects_duplicate_uploaded_idx(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 2,
+        "files": [
+            {"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"},
+            {"filename": "b.jpg", "size": 1, "content_type": "image/jpeg"},
+        ],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "uploaded": [
+            {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
+            {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
+        ],
+    })
+    assert resp.status_code == 400
+
+
 def test_get_state(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
