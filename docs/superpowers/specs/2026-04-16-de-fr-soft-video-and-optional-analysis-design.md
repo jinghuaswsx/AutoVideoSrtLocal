@@ -113,11 +113,13 @@ class PipelineRunnerV2(PipelineRunner):
 - 不删 task.py 和 artifact_download.py 里的 soft 映射（保留英语流水线兼容性）。
 - 纯搜索确认没有前端或其他地方对 de/fr 的 `soft` 下载发起请求。
 
-### 7. 初始化任务 `steps.analysis` 状态
+### 7. `steps.analysis` 状态处理（不改后端）
 
-- 新建英语/德语/法语任务时，`steps.analysis` 从默认的 `"pending"` 改为 `"idle"`。
-- 其他步骤保持 `"pending"`。
-- 具体改动点：task_state 新建逻辑里判断 `project_type in {"translation", "de_translate", "fr_translate"}` 给 `steps.analysis` 初值 `"idle"`；v2 等其他类型保持 `"pending"`。
+现有 `task_state.create` 的 `steps` dict 里**本来就没有 `analysis` 键**（见 [appcore/task_state.py:103-112](appcore/task_state.py#L103-L112)），前端读取时用 `currentTask.steps?.analysis || "pending"` 得到 `"pending"`。
+
+- 不改 `task_state`（无需改后端初值）。
+- 前端在渲染 analysis 步骤时，把 `pending` 统一视为 `idle` 展示占位文案 + 运行按钮。
+- `_step_analysis` 被调用（手动触发或 v2 自动流程）时照旧通过 `_set_step` 把 `analysis` 设为 `running` / `done` / `error`，自然覆盖前端默认值。
 
 ### 8. 前端 `_task_workbench.html`
 
@@ -211,7 +213,7 @@ class PipelineRunnerV2(PipelineRunner):
   - [appcore/runtime.py](appcore/runtime.py) — 类属性默认 False + steps 过滤 + `run_analysis_only`
   - [appcore/runtime_v2.py](appcore/runtime_v2.py) — 显式 override 类属性为 True（保持 v2 原行为）
   - [appcore/runtime_de.py](appcore/runtime_de.py) / [appcore/runtime_fr.py](appcore/runtime_fr.py) — 无需改动（继承基类）
-  - [appcore/task_state.py](appcore/task_state.py) — 英语/德语/法语项目 `steps.analysis` 初值 `"idle"`
+  - ~~`appcore/task_state.py`~~ — 无需改动，现有 steps dict 不含 analysis 键，前端负责 idle 展示
   - [web/services/pipeline_runner.py](web/services/pipeline_runner.py) — 新增 `run_analysis`
   - [web/services/de_pipeline_runner.py](web/services/de_pipeline_runner.py) — 新增 `run_analysis`
   - [web/services/fr_pipeline_runner.py](web/services/fr_pipeline_runner.py) — 新增 `run_analysis`
@@ -235,9 +237,8 @@ class PipelineRunnerV2(PipelineRunner):
 1. pipeline.compose_video 新增 `with_soft` 参数 + 测试。
 2. runner 基类加类属性（默认 False）、`_run` 过滤、`run_analysis_only` 模块函数。
 3. v2 runner 显式 override 类属性为 True（保持 v2 现有行为）。
-4. task_state 新建逻辑：翻译类项目 `steps.analysis` 初值 `"idle"`。
-5. en/de/fr pipeline_runner 服务层各自新增 `run_analysis`。
-6. en/de/fr 路由新增 `POST /analysis/run`。
-7. 前端 `_task_workbench.html` 挪 analysis 卡片到末尾 + 添加按钮区。
-8. 前端 `_task_workbench_scripts.html` 按钮状态机 + 过滤 soft_video + optionalSteps 进度排除。
-9. 老项目兼容冒烟测试（en/de/fr 三种）。
+4. en/de/fr pipeline_runner 服务层各自新增 `run_analysis`。
+5. en/de/fr 路由新增 `POST /analysis/run`，`RESUMABLE_STEPS` 去掉 `analysis`。
+6. 前端 `_task_workbench.html` 挪 analysis 卡片到末尾 + 添加按钮区。
+7. 前端 `_task_workbench_scripts.html` 按钮状态机 + 过滤 soft_video + MAIN_STEPS 进度排除。
+8. 老项目兼容冒烟测试（en/de/fr 三种）。
