@@ -1,6 +1,7 @@
 <script>
   const socket = io();
-  const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"];
+  const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
   const TASK_WORKBENCH_CONFIG = {
     taskId: {{ task_id|tojson }},
@@ -549,13 +550,46 @@
       const iconEl = document.getElementById(`icon-${step}`);
       const msgEl = document.getElementById(`msg-${step}`);
       let status = currentTask?.steps?.[step] || "pending";
-      if (status === "running" && currentTask?.status === "error") status = "error";
-      const message = currentTask?.step_messages?.[step] || placeholderText(status);
+      if (step === "analysis") {
+        // AI 分析是手动触发的附加步骤，不跟随主流程错误
+        if (status === "pending") status = "idle";
+      } else {
+        if (status === "running" && currentTask?.status === "error") status = "error";
+      }
+      const fallback = step === "analysis" && status === "idle"
+        ? "可选附加分析 · 点击按钮手动触发"
+        : placeholderText(status);
+      const message = currentTask?.step_messages?.[step] || fallback;
       stepEl.className = `step ${status}`;
       iconEl.className = `step-icon ${status}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
       msgEl.textContent = message;
     });
+    updateAnalysisButton();
+  }
+
+  function updateAnalysisButton() {
+    const btn = document.getElementById("runAnalysisBtn");
+    if (!btn) return;
+    const status = currentTask?.steps?.analysis || "pending";
+    if (status === "running") {
+      btn.disabled = true;
+      btn.textContent = "AI 分析中...";
+      btn.classList.remove("hidden");
+    } else if (status === "done") {
+      btn.disabled = false;
+      btn.textContent = "重新分析";
+      btn.classList.remove("hidden");
+    } else if (status === "error") {
+      btn.disabled = false;
+      btn.textContent = "重新分析";
+      btn.classList.remove("hidden");
+    } else {
+      // idle / pending
+      btn.disabled = false;
+      btn.textContent = "运行 AI 分析";
+      btn.classList.remove("hidden");
+    }
   }
 
   function renderStepPreviews(artifacts) {
@@ -573,7 +607,11 @@
       } else if (!artifact.items || !artifact.items.length) {
         html = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
       } else {
-        html = artifact.items.map(item => renderPreviewItem(item)).join("");
+        // 老项目的 compose artifact 里可能还留着 soft_video 条目 → 过滤
+        const items = (step === "compose")
+          ? artifact.items.filter(it => it.artifact !== "soft_video")
+          : artifact.items;
+        html = items.map(item => renderPreviewItem(item)).join("");
       }
       // 只有 HTML 真正变化时才写入 innerHTML，避免把正在播放的 <video>/<audio> 重建导致从头开始
       if (previewEl.dataset.lastHtml !== html) {
@@ -885,9 +923,9 @@
       setStartButtonBusy(true, START_BUTTON_DEFAULT_LABEL);
       return;
     }
-    const hasStarted = STEP_ORDER.some(step => (currentTask.steps?.[step] || "pending") !== "pending");
-    const isWaiting = STEP_ORDER.some(step => currentTask.steps?.[step] === "waiting");
-    const isRunning = STEP_ORDER.some(step => currentTask.steps?.[step] === "running");
+    const hasStarted = MAIN_STEPS.some(step => (currentTask.steps?.[step] || "pending") !== "pending");
+    const isWaiting = MAIN_STEPS.some(step => currentTask.steps?.[step] === "waiting");
+    const isRunning = MAIN_STEPS.some(step => currentTask.steps?.[step] === "running");
     startBtn.disabled = startRequestInFlight || hasStarted || isWaiting || isRunning || currentTask.status === "done";
     if (!startRequestInFlight) {
       startBtn.textContent = START_BUTTON_DEFAULT_LABEL;
@@ -897,7 +935,7 @@
   function updateResumeButtons(task) {
     const steps = task.steps || {};
     const isRunning = task.status === "running";
-    STEP_ORDER.forEach(step => {
+    MAIN_STEPS.forEach(step => {
       const btn = document.getElementById(`resume-${step}`);
       if (!btn) return;
       const stepStatus = steps[step];
@@ -935,11 +973,39 @@
     });
   });
 
+  const runAnalysisBtn = document.getElementById("runAnalysisBtn");
+  if (runAnalysisBtn) {
+    runAnalysisBtn.addEventListener("click", async () => {
+      if (!taskId) return;
+      const original = runAnalysisBtn.textContent;
+      runAnalysisBtn.disabled = true;
+      runAnalysisBtn.textContent = "启动中...";
+      try {
+        const res = await fetch(_apiUrl("/analysis/run"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showError(data.error || "启动 AI 分析失败");
+          runAnalysisBtn.disabled = false;
+          runAnalysisBtn.textContent = original;
+          return;
+        }
+        socket.emit("join_task", { task_id: taskId });
+        scheduleRefreshTaskState(200);
+      } catch (err) {
+        showError(err.message || "启动 AI 分析失败");
+        runAnalysisBtn.disabled = false;
+        runAnalysisBtn.textContent = original;
+      }
+    });
+  }
+
   function renderResultPanelFromTask() {
     if (!currentTask) return;
     const downloads = {};
     if (currentTask.result?.hard_video) downloads.hard = _apiUrl('/download/hard');
-    if (currentTask.result?.soft_video) downloads.soft = _apiUrl('/download/soft');
     if (currentTask.srt_path) downloads.srt = _apiUrl('/download/srt');
     if (currentTask.exports?.capcut_archive) downloads.capcut = _apiUrl('/download/capcut');
     renderDownloads(downloads);
