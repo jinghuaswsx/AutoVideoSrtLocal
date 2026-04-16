@@ -39,6 +39,10 @@ def _resolved_variant_key(variant: str | None) -> str:
     return variant or "normal"
 
 
+def _is_pure_tos_task(task: dict) -> bool:
+    return (task.get("delivery_mode") or "").strip() == "pure_tos"
+
+
 def artifact_kind_for_download(file_type: str) -> str | None:
     return _ARTIFACT_KIND_MAP.get(file_type)
 
@@ -166,6 +170,8 @@ def serve_artifact_download(
                 return redirect(tos_clients.generate_signed_download_url(upload_payload["tos_key"]))
             except Exception:
                 pass
+        if _is_pure_tos_task(task):
+            return jsonify({"error": "CapCut 工程包尚未上传到 TOS，暂不可下载"}), 409
 
     # ─── 其它类型：优先查任务完成时上传的 TOS 记录 ───
     if artifact_kind:
@@ -175,6 +181,8 @@ def serve_artifact_download(
                 return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
             except Exception:
                 pass
+        if _is_pure_tos_task(task):
+            return jsonify({"error": "下载文件尚未上传到 TOS，暂不可下载"}), 409
 
     # ─── Fallback：本地文件 ───
     if not path or not os.path.exists(path):

@@ -706,6 +706,62 @@ def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_cl
     assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-tos/normal/example_soft.mp4"
 
 
+def test_download_route_rejects_local_capcut_fallback_for_pure_tos_task(tmp_path, authed_client_no_db, monkeypatch):
+    archive_path = tmp_path / "capcut_normal.zip"
+    archive_path.write_bytes(b"capcut-archive")
+    store.create("task-download-pure-tos-missing", "video.mp4", str(tmp_path), user_id=1)
+    store.update(
+        "task-download-pure-tos-missing",
+        delivery_mode="pure_tos",
+        display_name="example",
+    )
+    store.update_variant(
+        "task-download-pure-tos-missing",
+        "normal",
+        exports={"capcut_archive": str(archive_path)},
+    )
+    monkeypatch.setattr(
+        "web.services.artifact_download.upload_capcut_archive_for_current_user",
+        lambda *a, **kw: None,
+    )
+
+    response = authed_client_no_db.get("/api/tasks/task-download-pure-tos-missing/download/capcut?variant=normal")
+
+    assert response.status_code == 409
+    assert "TOS" in response.get_json()["error"]
+
+
+def test_download_route_redirects_capcut_for_pure_tos_task(tmp_path, authed_client_no_db, monkeypatch):
+    archive_path = tmp_path / "capcut_normal.zip"
+    archive_path.write_bytes(b"capcut-archive")
+    store.create("task-download-pure-tos-capcut", "video.mp4", str(tmp_path), user_id=1)
+    store.update(
+        "task-download-pure-tos-capcut",
+        delivery_mode="pure_tos",
+        display_name="example",
+    )
+    store.update_variant(
+        "task-download-pure-tos-capcut",
+        "normal",
+        exports={"capcut_archive": str(archive_path)},
+    )
+    monkeypatch.setattr(
+        "web.services.artifact_download.upload_capcut_archive_for_current_user",
+        lambda *a, **kw: {
+            "tos_key": "artifacts/1/task-download-pure-tos-capcut/normal/example_capcut_normal.zip",
+        },
+    )
+    monkeypatch.setattr(
+        "web.services.artifact_download.tos_clients.generate_signed_download_url",
+        lambda object_key: f"https://signed.example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.get("/api/tasks/task-download-pure-tos-capcut/download/capcut?variant=normal")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-pure-tos-capcut/normal/example_capcut_normal.zip"
+
+
 def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
     project_dir = tmp_path / "capcut_normal"
     resources_dir = project_dir / "Resources" / "auto_generated"

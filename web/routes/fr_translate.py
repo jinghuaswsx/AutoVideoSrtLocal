@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import uuid
 from datetime import datetime
 
 from flask import Blueprint, render_template, request, jsonify, send_file, abort
@@ -21,8 +20,6 @@ from web.services.artifact_download import serve_artifact_download
 log = logging.getLogger(__name__)
 
 bp = Blueprint("fr_translate", __name__)
-
-from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -104,45 +101,7 @@ def upload_and_start():
     if not validate_video_extension(file.filename):
         return jsonify({"error": "不支持的视频格式"}), 400
 
-    task_id = str(uuid.uuid4())
-    task_dir = os.path.join(OUTPUT_DIR, task_id)
-    os.makedirs(task_dir, exist_ok=True)
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-    ext = os.path.splitext(file.filename)[1].lower()
-    original_filename = os.path.basename(file.filename)
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
-    file.save(video_path)
-
-    user_id = current_user.id
-    store.create(task_id, video_path, task_dir,
-                 original_filename=original_filename,
-                 user_id=user_id)
-
-    db_execute("UPDATE projects SET type = 'fr_translate' WHERE id = %s", (task_id,))
-
-    display_name = _resolve_name_conflict(user_id, _default_display_name(original_filename))
-    db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-
-    # Back up source video to TOS so it can be re-fetched if the local file
-    # gets orphaned (e.g. uploads dir cleanup). Non-fatal on failure.
-    from appcore.source_video import upload_local_source_video
-    source_tos_key = upload_local_source_video(task_id, video_path, original_filename, user_id)
-
-    # Persist type + source_tos_key into in-memory task dict so later
-    # store.update calls don't revert them via _sync_task_to_db.
-    store.update(
-        task_id,
-        display_name=display_name,
-        type="fr_translate",
-        source_tos_key=source_tos_key or "",
-    )
-
-    thumb = _extract_thumbnail(video_path, task_dir)
-    if thumb:
-        db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
-
-    return jsonify({"task_id": task_id}), 201
+    return jsonify({"error": "新建法语翻译任务已切换为 TOS 直传，请先调用 bootstrap/complete 接口"}), 410
 
 
 @bp.route("/api/fr-translate/bootstrap", methods=["POST"])
@@ -189,6 +148,10 @@ def complete_upload():
     if not tos_clients.object_exists(object_key):
         return jsonify({"error": "上传的对象不存在"}), 400
 
+    object_head = tos_clients.head_object(object_key)
+    object_size = int(getattr(object_head, "content_length", 0) or body.get("file_size") or 0)
+    content_type = (body.get("content_type") or "").strip()
+
     ext = os.path.splitext(original_filename)[1].lower()
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
@@ -208,6 +171,13 @@ def complete_upload():
         display_name=display_name,
         type="fr_translate",
         source_tos_key=object_key,
+        source_object_info={
+            "file_size": object_size,
+            "content_type": content_type,
+            "original_filename": original_filename,
+            "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+        },
+        delivery_mode="pure_tos",
     )
 
     # Thumbnail 需要本地文件——延迟到 runner._run() 调 ensure_local_source_video 时生成。
