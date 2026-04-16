@@ -24,6 +24,12 @@ _SELECT_FIELDS = (
     "descriptive, preview_url, labels_json"
 )
 
+_LABEL_FIELDS = frozenset({"use_case", "accent", "age", "descriptive"})
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
 
 def _parse_labels(raw) -> dict:
     """兼容 str / dict / None，解析失败返回 {}。"""
@@ -73,6 +79,8 @@ def list_voices(
         params.append(gender)
 
     def _json_in(field: str, values: list[str]) -> None:
+        if field not in _LABEL_FIELDS:
+            raise ValueError(f"invalid label field: {field}")
         marks = ",".join(["%s"] * len(values))
         where.append(
             f"JSON_UNQUOTE(JSON_EXTRACT(labels_json, '$.{field}')) IN ({marks})"
@@ -89,7 +97,7 @@ def list_voices(
         _json_in("descriptive", descriptives)
 
     if q:
-        like = f"%{q}%"
+        like = f"%{_escape_like(q)}%"
         where.append("(name LIKE %s OR descriptive LIKE %s)")
         params.extend([like, like])
 
