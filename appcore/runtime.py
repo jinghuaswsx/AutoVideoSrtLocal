@@ -230,7 +230,7 @@ class PipelineRunner:
         from pipeline.tts import generate_full_audio, _get_audio_duration
         from pipeline.translate import generate_tts_script, generate_localized_rewrite
 
-        MAX_ROUNDS = 3
+        MAX_ROUNDS = 5
         duration_lo = max(0.0, video_duration - 3.0)
         duration_hi = video_duration
 

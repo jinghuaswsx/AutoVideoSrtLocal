@@ -1130,7 +1130,7 @@
         parts.push(`<div class="duration-log-final">✓ 第 ${last.round} 轮收敛 · 最终音频 ${last.audio_duration.toFixed(1)}s</div>`);
       }
     } else if (status === 'failed') {
-      parts.push(`<div class="duration-log-final failed">✗ 3 轮未收敛，任务失败</div>`);
+      parts.push(`<div class="duration-log-final failed">✗ 5 轮未收敛，任务失败</div>`);
     }
 
     container.innerHTML = parts.join('');

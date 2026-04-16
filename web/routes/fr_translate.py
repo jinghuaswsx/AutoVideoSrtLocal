@@ -356,7 +356,7 @@ _ALLOWED_ROUND_KINDS = {
 @login_required
 def get_round_file(task_id: str, round_index: int, kind: str):
     """Serve per-round intermediate artifacts (localized_translation / tts_script / tts_full_audio)."""
-    if round_index not in (1, 2, 3):
+    if round_index not in (1, 2, 3, 4, 5):
         abort(404)
     if kind not in _ALLOWED_ROUND_KINDS:
         abort(404)

@@ -206,10 +206,12 @@ class TestDurationLoopMultiRound:
         # round 1 record has no direction (no rewrite)
         assert "direction" not in result["rounds"][0]
 
-    def test_three_rounds_exhausted_raises(self, tmp_path, monkeypatch):
-        # All three rounds return audio longer than video
-        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [40.0, 38.0, 36.0])
-        with pytest.raises(RuntimeError, match="3 轮内未收敛"):
+    def test_all_rounds_exhausted_raises(self, tmp_path, monkeypatch):
+        # All rounds return audio longer than video (5 entries to cover MAX_ROUNDS=5)
+        runner, loc_mod, initial = self._setup(
+            monkeypatch, tmp_path, [40.0, 38.0, 36.0, 35.0, 34.0],
+        )
+        with pytest.raises(RuntimeError, match=r"\d+ 轮内未收敛"):
             runner._run_tts_duration_loop(
                 task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
                 provider="openrouter", video_duration=30.0,
