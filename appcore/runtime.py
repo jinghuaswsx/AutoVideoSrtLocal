@@ -574,6 +574,18 @@ class PipelineRunner:
         self._run(task_id, start_step=start_step)
 
     def _run(self, task_id: str, start_step: str = "extract") -> None:
+        # Make sure the source video is present locally before any step runs.
+        # If it was orphaned (e.g. uploads dir cleanup) but we have a TOS backup,
+        # this pulls it back. Otherwise we fail loud with a user-friendly message.
+        try:
+            from appcore.source_video import ensure_local_source_video
+            ensure_local_source_video(task_id)
+        except Exception as exc:
+            task_state.update(task_id, status="error", error=str(exc))
+            task_state.set_expires_at(task_id, self.project_type)
+            self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
+            return
+
         task = task_state.get(task_id)
         video_path = task["video_path"]
         task_dir = task["task_dir"]

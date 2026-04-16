@@ -110,21 +110,33 @@ def upload_and_start():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     ext = os.path.splitext(file.filename)[1].lower()
+    original_filename = os.path.basename(file.filename)
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     file.save(video_path)
 
     user_id = current_user.id
     store.create(task_id, video_path, task_dir,
-                 original_filename=os.path.basename(file.filename),
+                 original_filename=original_filename,
                  user_id=user_id)
 
     db_execute("UPDATE projects SET type = 'de_translate' WHERE id = %s", (task_id,))
 
-    display_name = _resolve_name_conflict(user_id, _default_display_name(os.path.basename(file.filename)))
+    display_name = _resolve_name_conflict(user_id, _default_display_name(original_filename))
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-    # Persist type into in-memory task dict so later store.update calls don't
-    # revert it to the default "translation" via _sync_task_to_db.
-    store.update(task_id, display_name=display_name, type="de_translate")
+
+    # Back up source video to TOS so it can be re-fetched if the local file
+    # gets orphaned (e.g. uploads dir cleanup). Non-fatal on failure.
+    from appcore.source_video import upload_local_source_video
+    source_tos_key = upload_local_source_video(task_id, video_path, original_filename, user_id)
+
+    # Persist type + source_tos_key into in-memory task dict so later
+    # store.update calls don't revert them via _sync_task_to_db.
+    store.update(
+        task_id,
+        display_name=display_name,
+        type="de_translate",
+        source_tos_key=source_tos_key or "",
+    )
 
     thumb = _extract_thumbnail(video_path, task_dir)
     if thumb:
