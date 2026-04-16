@@ -1,10 +1,9 @@
-<script>
+﻿<script>
 (function(){
   var pageEl = document.querySelector("[data-page^='image-translate']");
   if (!pageEl) return;
   var pageType = pageEl.getAttribute("data-page");
 
-  // ================= 列表页 =================
   if (pageType === "image-translate-list") {
     var state = { files: [] };
 
@@ -13,6 +12,7 @@
     var modelEl = document.getElementById("itModel");
     var presetPills = document.getElementById("itPresetPills");
     var langPills = document.getElementById("itLanguagePills");
+    var langEmpty = document.getElementById("itLanguageEmpty");
     var modelPills = document.getElementById("itModelPills");
     var promptEl = document.getElementById("itPrompt");
     var fileInput = document.getElementById("itFileInput");
@@ -59,6 +59,25 @@
       });
     }
 
+    function setLanguageEmptyState(message) {
+      langEl.value = "";
+      promptEl.value = "";
+      langPills.hidden = true;
+      langPills.innerHTML = "";
+      langEmpty.hidden = false;
+      langEmpty.textContent = message || "暂无可用目标语言，请先在后台启用至少一个语言后再创建任务。";
+      submitBtn.disabled = true;
+    }
+
+    function setLanguageOptions(items) {
+      langEmpty.hidden = true;
+      langEmpty.textContent = "";
+      langPills.hidden = false;
+      renderPills(langPills, items);
+      langEl.value = items[0].value;
+      submitBtn.disabled = false;
+    }
+
     function loadPromptForCurrent(){
       var lang = langEl.value;
       if (!lang) return Promise.resolve();
@@ -77,12 +96,14 @@
         .then(function(r){return r.json();})
         .then(function(d){
           var items = (d.items || [])
-            .filter(function(lang){ return lang.code !== "en"; })
-            .map(function(lang){ return {value: lang.code, label: lang.name_zh}; });
-          renderPills(langPills, items);
-          if (items.length) {
-            langEl.value = items[0].value;
+            .filter(function(lang){ return lang && lang.code && lang.code !== "en"; })
+            .map(function(lang){ return { value: (lang.code || "").trim(), label: (lang.name_zh || lang.code || "").trim() || lang.code }; })
+            .filter(function(lang){ return !!lang.value; });
+          if (!items.length) {
+            setLanguageEmptyState("暂无可用目标语言，请先在后台启用至少一个语言后再创建任务。");
+            return [];
           }
+          setLanguageOptions(items);
           return items;
         });
     }
@@ -102,7 +123,6 @@
         });
     }
 
-    // preset 胶囊
     bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
     setPillActive(presetPills, presetEl.value || "cover");
 
@@ -121,7 +141,7 @@
         var img = document.createElement("img");
         img.src = URL.createObjectURL(f);
         var btn = document.createElement("button");
-        btn.className = "it-thumb-remove"; btn.textContent = "×";
+        btn.className = "it-thumb-remove"; btn.textContent = "删";
         btn.onclick = function(){ state.files.splice(idx,1); renderThumbs(); };
         wrap.appendChild(img); wrap.appendChild(btn);
         thumbsEl.appendChild(wrap);
@@ -137,9 +157,8 @@
       if (!promptEl.value.trim()) return showError("prompt 不能为空");
 
       submitBtn.disabled = true;
-      submitBtn.textContent = "申请上传地址…";
+      submitBtn.textContent = "申请上传地址...";
       try {
-        // 1. bootstrap
         var bootstrap = await fetch("/api/image-translate/upload/bootstrap",{
           method:"POST", credentials:"same-origin",
           headers:{"Content-Type":"application/json"},
@@ -151,15 +170,14 @@
           }),
         }).then(r => r.json().then(d => { if(!r.ok) throw new Error(d.error||"bootstrap failed"); return d; }));
 
-        // 2. 逐个直传
         for (var i=0; i<state.files.length; i++){
-          submitBtn.textContent = "上传 " + (i+1) + "/" + state.files.length + "…";
+          submitBtn.textContent = "上传 " + (i+1) + "/" + state.files.length + "...";
           var up = bootstrap.uploads[i];
           var res = await fetch(up.upload_url, {method:"PUT", body: state.files[i]});
           if (!res.ok) throw new Error("直传失败 " + (i+1));
         }
 
-        submitBtn.textContent = "建档中…";
+        submitBtn.textContent = "创建任务中...";
         var complete = await fetch("/api/image-translate/upload/complete",{
           method:"POST", credentials:"same-origin",
           headers:{"Content-Type":"application/json"},
@@ -183,8 +201,8 @@
       }
     };
 
-    // 初始化胶囊组
-    loadLanguages().then(function(){
+    loadLanguages().then(function(items){
+      if (!items.length) return;
       bindPillGroup(langPills, langEl, function(){ loadPromptForCurrent(); });
       loadPromptForCurrent();
     });
@@ -194,7 +212,6 @@
     return;
   }
 
-  // ================= 详情页 =================
   if (pageType === "image-translate-detail") {
     var taskId = pageEl.getAttribute("data-task-id");
     var listEl = document.getElementById("itItemList");
@@ -270,7 +287,6 @@
         .then(function(r){ if (r.status === 204) location.href = "/image-translate"; });
     };
 
-    // Socket.IO
     if (window.io) {
       var socket = window.io();
       var join = function(){ socket.emit("join_image_translate_task", {task_id: taskId}); };
