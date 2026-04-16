@@ -29,3 +29,20 @@ def test_publish_with_no_subscribers_does_not_raise():
 def test_event_payload_defaults_to_empty_dict():
     event = Event(type=EVT_STEP_UPDATE, task_id="t1")
     assert event.payload == {}
+
+
+def test_tts_duration_round_event_constant_exists():
+    from appcore.events import EVT_TTS_DURATION_ROUND
+    assert EVT_TTS_DURATION_ROUND == "tts_duration_round"
+
+
+def test_tts_duration_round_does_not_collide_with_other_events():
+    from appcore import events
+    # Gather all EVT_* constants
+    constants = {
+        name: getattr(events, name)
+        for name in dir(events)
+        if name.startswith("EVT_")
+    }
+    values = list(constants.values())
+    assert len(values) == len(set(values)), "EVT_* constants must be unique"
