@@ -171,21 +171,38 @@ def api_delete_media_language(code: str):
 @login_required
 @admin_required
 def get_image_translate_prompts():
-    from appcore.image_translate_settings import get_default_prompts
-    return jsonify(get_default_prompts())
+    from appcore.image_translate_settings import (
+        PRESETS,
+        SUPPORTED_LANGS,
+        get_prompts_for_lang,
+        list_all_prompts,
+    )
+    lang = (request.args.get("lang") or "").strip().lower()
+    if lang:
+        if lang not in SUPPORTED_LANGS:
+            return jsonify({"error": f"unsupported lang: {lang}"}), 400
+        return jsonify(get_prompts_for_lang(lang))
+    return jsonify({
+        "languages": list(SUPPORTED_LANGS),
+        "presets": list(PRESETS),
+        "prompts": list_all_prompts(),
+    })
 
 
 @bp.route("/api/image-translate/prompts", methods=["POST"])
 @login_required
 @admin_required
 def set_image_translate_prompt():
-    from appcore.image_translate_settings import update_prompt
+    from appcore.image_translate_settings import PRESETS, SUPPORTED_LANGS, update_prompt
     body = request.get_json(silent=True) or {}
     preset = (body.get("preset") or "").strip().lower()
+    lang = (body.get("lang") or "").strip().lower()
     value = (body.get("value") or "").strip()
-    if preset not in {"cover", "detail"}:
+    if preset not in PRESETS:
         return jsonify({"error": "preset must be cover or detail"}), 400
+    if lang not in SUPPORTED_LANGS:
+        return jsonify({"error": f"lang must be one of {SUPPORTED_LANGS}"}), 400
     if not value:
         return jsonify({"error": "value required"}), 400
-    update_prompt(preset, value)
+    update_prompt(preset, lang, value)
     return jsonify({"ok": True})

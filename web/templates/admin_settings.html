@@ -140,47 +140,130 @@
     <div class="settings-card-head">
       <h2>图片翻译默认提示词</h2>
     </div>
-    <p class="field-hint">支持占位符 <code>{target_language_name}</code>（提交时替换为用户选择的目标语言中文名）</p>
+    <p class="field-hint">共 6 种目标语言 × 2 种场景预设 = 12 条 prompt，逐条可改。保存后立即对所有用户生效。</p>
 
     <div class="field-group">
-      <label>封面图翻译 prompt</label>
-      <textarea id="imgTransCover" rows="4" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none"></textarea>
+      <label>选择语言</label>
+      <div id="imgTransLangPills" class="it-admin-pill-group"></div>
+    </div>
+
+    <div class="field-group">
+      <label>封面图翻译 prompt（当前语言：<span id="imgTransCoverLangLabel">-</span>）</label>
+      <textarea id="imgTransCover" rows="8" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
       <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveCover">保存封面 prompt</button></div>
     </div>
 
     <div class="section-divider"></div>
 
     <div class="field-group">
-      <label>产品详情图翻译 prompt</label>
-      <textarea id="imgTransDetail" rows="4" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none"></textarea>
+      <label>产品详情图翻译 prompt（当前语言：<span id="imgTransDetailLangLabel">-</span>）</label>
+      <textarea id="imgTransDetail" rows="10" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
       <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveDetail">保存详情 prompt</button></div>
     </div>
   </div>
 </div>
 
+<style>
+.it-admin-pill-group { display:flex; flex-wrap:wrap; gap:8px; }
+.it-admin-pill { appearance:none; border:1.5px solid var(--border-main,#e5e7eb); background:#fff;
+  color:var(--text-main,#111827); border-radius:999px; padding:6px 14px; font-size:13px;
+  font-weight:500; cursor:pointer; outline:none;
+  transition: border-color 120ms, background-color 120ms, color 120ms, box-shadow 120ms; }
+.it-admin-pill:hover { border-color:#9ca3af; background:#f8fbff; }
+.it-admin-pill.is-active { border-color:var(--primary-color,#3b82f6);
+  background:linear-gradient(180deg,#1d6fe8 0%,#175bc6 100%); color:#fff;
+  box-shadow:0 4px 10px rgba(29,111,232,.18); }
+</style>
+
 <script>
 (function(){
   var cardEl = document.getElementById("imageTranslatePromptsCard");
   if (!cardEl) return;
-  function fetchPrompts() {
+
+  var LANG_LABELS = { de:"德语", fr:"法语", es:"西班牙语", it:"意大利语", ja:"日语", pt:"葡萄牙语" };
+  var SUPPORTED = ["de","fr","es","it","ja","pt"];
+  var currentLang = SUPPORTED[0];
+  var allPrompts = {};  // {lang: {cover, detail}}
+
+  var pillsWrap = document.getElementById("imgTransLangPills");
+  var coverTa = document.getElementById("imgTransCover");
+  var detailTa = document.getElementById("imgTransDetail");
+  var coverLabel = document.getElementById("imgTransCoverLangLabel");
+  var detailLabel = document.getElementById("imgTransDetailLangLabel");
+
+  function renderPills(){
+    pillsWrap.innerHTML = "";
+    SUPPORTED.forEach(function(code){
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "it-admin-pill" + (code === currentLang ? " is-active" : "");
+      btn.setAttribute("data-lang", code);
+      btn.textContent = LANG_LABELS[code] || code;
+      btn.onclick = function(){ switchLang(code); };
+      pillsWrap.appendChild(btn);
+    });
+  }
+
+  function setActive(code){
+    pillsWrap.querySelectorAll(".it-admin-pill").forEach(function(b){
+      b.classList.toggle("is-active", b.getAttribute("data-lang") === code);
+    });
+  }
+
+  function fillTextareas(){
+    var entry = allPrompts[currentLang] || {};
+    coverTa.value = entry.cover || "";
+    detailTa.value = entry.detail || "";
+    coverLabel.textContent = LANG_LABELS[currentLang] || currentLang;
+    detailLabel.textContent = LANG_LABELS[currentLang] || currentLang;
+  }
+
+  function switchLang(code){
+    currentLang = code;
+    setActive(code);
+    fillTextareas();
+  }
+
+  function fetchAllPrompts(){
     return fetch('/admin/api/image-translate/prompts', {credentials:'same-origin'})
-      .then(r => r.json()).then(data => {
-        document.getElementById('imgTransCover').value = data.cover || '';
-        document.getElementById('imgTransDetail').value = data.detail || '';
+      .then(function(r){return r.json();})
+      .then(function(data){
+        if (data && data.prompts) {
+          allPrompts = data.prompts;
+          if (Array.isArray(data.languages) && data.languages.length) {
+            SUPPORTED = data.languages;
+            currentLang = SUPPORTED[0];
+            renderPills();
+          }
+        }
+        fillTextareas();
       });
   }
-  function save(preset, id) {
+
+  function save(preset){
+    var ta = preset === "cover" ? coverTa : detailTa;
     return fetch('/admin/api/image-translate/prompts', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({preset, value: document.getElementById(id).value})
-    }).then(r => r.json()).then(data => {
-      if (data.error) alert(data.error); else alert('已保存');
-    });
+      body: JSON.stringify({preset: preset, lang: currentLang, value: ta.value}),
+    }).then(function(r){return r.json().then(function(d){return {ok: r.ok, body: d};});})
+      .then(function(res){
+        if (!res.ok || (res.body && res.body.error)) {
+          alert((res.body && res.body.error) || "保存失败");
+          return;
+        }
+        // 刷新本地缓存
+        if (!allPrompts[currentLang]) allPrompts[currentLang] = {};
+        allPrompts[currentLang][preset] = ta.value;
+        alert('已保存 ' + (LANG_LABELS[currentLang] || currentLang) + ' 的' + (preset === "cover" ? "封面图" : "产品详情图") + " prompt");
+      });
   }
-  document.getElementById('imgTransSaveCover').onclick = () => save('cover','imgTransCover');
-  document.getElementById('imgTransSaveDetail').onclick = () => save('detail','imgTransDetail');
-  fetchPrompts();
+
+  document.getElementById('imgTransSaveCover').onclick = function(){ save('cover'); };
+  document.getElementById('imgTransSaveDetail').onclick = function(){ save('detail'); };
+
+  renderPills();
+  fetchAllPrompts();
 })();
 </script>
 {% endblock %}

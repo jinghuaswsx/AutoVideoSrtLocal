@@ -11,49 +11,107 @@
     var presetEl = document.getElementById("itPreset");
     var langEl = document.getElementById("itLanguage");
     var modelEl = document.getElementById("itModel");
+    var presetPills = document.getElementById("itPresetPills");
+    var langPills = document.getElementById("itLanguagePills");
+    var modelPills = document.getElementById("itModelPills");
     var promptEl = document.getElementById("itPrompt");
     var fileInput = document.getElementById("itFileInput");
     var thumbsEl = document.getElementById("itThumbs");
     var submitBtn = document.getElementById("itSubmit");
     var errEl = document.getElementById("itError");
     var hintEl = document.getElementById("itHint");
-    var defaultPrompts = { cover: "", detail: "" };
 
     function showError(msg){ errEl.textContent = msg; errEl.style.display = msg ? "block" : "none"; }
     function clearError(){ showError(""); }
+
+    function setPillActive(groupEl, value) {
+      var pills = groupEl.querySelectorAll(".it-pill");
+      pills.forEach(function(p){
+        var active = p.getAttribute("data-value") === value;
+        p.classList.toggle("is-active", active);
+        p.setAttribute("aria-checked", active ? "true" : "false");
+      });
+    }
+
+    function bindPillGroup(groupEl, hiddenInput, onChange) {
+      groupEl.addEventListener("click", function(ev){
+        var btn = ev.target.closest(".it-pill");
+        if (!btn) return;
+        var value = btn.getAttribute("data-value") || "";
+        if (!value || hiddenInput.value === value) return;
+        hiddenInput.value = value;
+        setPillActive(groupEl, value);
+        if (onChange) onChange(value);
+      });
+    }
+
+    function renderPills(groupEl, items) {
+      groupEl.innerHTML = "";
+      items.forEach(function(it, idx){
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "it-pill" + (idx === 0 ? " is-active" : "");
+        btn.setAttribute("role", "radio");
+        btn.setAttribute("aria-checked", idx === 0 ? "true" : "false");
+        btn.setAttribute("data-value", it.value);
+        btn.textContent = it.label;
+        groupEl.appendChild(btn);
+      });
+    }
+
+    function loadPromptForCurrent(){
+      var lang = langEl.value;
+      if (!lang) return Promise.resolve();
+      return fetch("/api/image-translate/system-prompts?lang=" + encodeURIComponent(lang),
+                   {credentials:"same-origin"})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if (d && d[presetEl.value]) {
+            promptEl.value = d[presetEl.value];
+          }
+        });
+    }
 
     function loadLanguages(){
       return fetch("/api/languages",{credentials:"same-origin"})
         .then(function(r){return r.json();})
         .then(function(d){
-          (d.items || []).forEach(function(lang){
-            if (lang.code === "en") return;  // 源固定英文
-            var opt = document.createElement("option");
-            opt.value = lang.code; opt.textContent = lang.name_zh;
-            langEl.appendChild(opt);
-          });
+          var items = (d.items || [])
+            .filter(function(lang){ return lang.code !== "en"; })
+            .map(function(lang){ return {value: lang.code, label: lang.name_zh}; });
+          renderPills(langPills, items);
+          if (items.length) {
+            langEl.value = items[0].value;
+          }
+          return items;
         });
     }
+
     function loadModels(){
       return fetch("/api/image-translate/models",{credentials:"same-origin"})
         .then(function(r){return r.json();})
         .then(function(d){
-          (d.items || []).forEach(function(m){
-            var opt = document.createElement("option");
-            opt.value = m.id; opt.textContent = m.name;
-            modelEl.appendChild(opt);
-          });
-          if (d.default_model_id) modelEl.value = d.default_model_id;
+          var items = (d.items || []).map(function(m){ return {value: m.id, label: m.name}; });
+          renderPills(modelPills, items);
+          if (items.length) {
+            var defaultId = (d.default_model_id || "").trim();
+            var picked = defaultId && items.some(function(i){return i.value === defaultId;}) ? defaultId : items[0].value;
+            modelEl.value = picked;
+            setPillActive(modelPills, picked);
+          }
         });
     }
-    function loadPrompts(){
-      return fetch("/api/image-translate/system-prompts",{credentials:"same-origin"})
-        .then(function(r){return r.json();})
-        .then(function(d){
-          defaultPrompts = d;
-          promptEl.value = d[presetEl.value] || "";
-        });
-    }
+
+    // preset 胶囊
+    bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
+    setPillActive(presetPills, presetEl.value || "cover");
+
+    fileInput.onchange = function(){
+      var chosen = Array.prototype.slice.call(fileInput.files || []);
+      state.files = state.files.concat(chosen).slice(0, 20);
+      fileInput.value = "";
+      renderThumbs();
+    };
 
     function renderThumbs(){
       thumbsEl.innerHTML = "";
@@ -70,14 +128,6 @@
       });
       hintEl.textContent = "已选 " + state.files.length + " 张，最多 20 张";
     }
-
-    presetEl.onchange = function(){ promptEl.value = defaultPrompts[presetEl.value] || ""; };
-    fileInput.onchange = function(){
-      var chosen = Array.prototype.slice.call(fileInput.files || []);
-      state.files = state.files.concat(chosen).slice(0, 20);
-      fileInput.value = "";
-      renderThumbs();
-    };
 
     submitBtn.onclick = async function(){
       clearError();
@@ -133,9 +183,14 @@
       }
     };
 
-    loadLanguages();
-    loadModels();
-    loadPrompts();
+    // 初始化胶囊组
+    loadLanguages().then(function(){
+      bindPillGroup(langPills, langEl, function(){ loadPromptForCurrent(); });
+      loadPromptForCurrent();
+    });
+    loadModels().then(function(){
+      bindPillGroup(modelPills, modelEl, null);
+    });
     return;
   }
 
