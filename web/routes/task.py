@@ -592,7 +592,7 @@ def delete_task(task_id):
     return jsonify({"status": "ok"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"]
+RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/<task_id>/resume", methods=["POST"])
@@ -632,3 +632,26 @@ def resume_from_step(task_id):
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.resume(task_id, start_step, user_id=user_id)
     return jsonify({"status": "started", "start_step": start_step})
+
+
+@bp.route("/<task_id>/analysis/run", methods=["POST"])
+@login_required
+def run_ai_analysis(task_id):
+    """手动触发 AI 视频分析（评分 + CSK），不影响任务整体 status。"""
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = store.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    if (task.get("steps") or {}).get("analysis") == "running":
+        return jsonify({"error": "AI 分析正在运行中"}), 409
+
+    user_id = current_user.id if current_user.is_authenticated else None
+    pipeline_runner.run_analysis(task_id, user_id=user_id)
+    return jsonify({"status": "started"})
