@@ -81,6 +81,15 @@ def test_system_prompts_endpoint_rejects_en_and_unsupported_lang(authed_client_n
     assert authed_client_no_db.get("/api/image-translate/system-prompts?lang=xx").status_code == 400
 
 
+def test_image_translate_empty_state_container(authed_client_no_db, monkeypatch):
+    from appcore import db as app_db
+
+    monkeypatch.setattr(app_db, "query", lambda *args, **kwargs: [])
+    resp = authed_client_no_db.get("/image-translate")
+    assert resp.status_code == 200
+    assert 'id="itLanguageEmpty"' in resp.get_data(as_text=True)
+
+
 def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     resp = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={

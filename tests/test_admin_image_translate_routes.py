@@ -56,6 +56,16 @@ def test_admin_get_rejects_unenabled_lang(authed_client_no_db, monkeypatch):
     assert resp.status_code == 400
 
 
+def test_admin_settings_empty_state_container(authed_client_no_db, monkeypatch):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(r, "get_all_retention_settings", lambda: {})
+    monkeypatch.setattr(r.medias, "list_languages_for_admin", lambda: [])
+    resp = authed_client_no_db.get("/admin/settings")
+    assert resp.status_code == 200
+    assert 'id="imgTransPromptEmpty"' in resp.get_data(as_text=True)
+
+
 def test_admin_post_prompt_accepts_dynamic_language(authed_client_no_db, monkeypatch):
     from appcore import image_translate_settings as its
 
