@@ -35,6 +35,10 @@ log = logging.getLogger(__name__)
 class PipelineRunnerV2(PipelineRunner):
     """视频翻译（测试）模块的流水线 runner。"""
 
+    # v2 流水线保持原行为：生成软字幕视频 + 主流程自动跑 analysis
+    include_soft_video: bool = True
+    include_analysis_in_main_flow: bool = True
+
     project_type: str = "translate_lab"
 
     # ------------------------------------------------------------------
