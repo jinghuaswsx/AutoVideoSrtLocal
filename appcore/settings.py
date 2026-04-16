@@ -22,6 +22,16 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
 _HARDCODE_DEFAULT_HOURS = 168
 
 
+def _parse_positive_hours(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        hours = int(raw)
+    except (ValueError, TypeError):
+        return None
+    return hours if hours > 0 else None
+
+
 def _query_one(sql: str, args: tuple = ()):
     from appcore.db import query_one
     return query_one(sql, args)
@@ -51,18 +61,12 @@ def set_setting(key: str, value: str) -> None:
 
 
 def get_retention_hours(project_type: str) -> int:
-    override = get_setting(f"retention_{project_type}_hours")
-    if override:
-        try:
-            return int(override)
-        except (ValueError, TypeError):
-            pass
-    default = get_setting("retention_default_hours")
-    if default:
-        try:
-            return int(default)
-        except (ValueError, TypeError):
-            pass
+    override = _parse_positive_hours(get_setting(f"retention_{project_type}_hours"))
+    if override is not None:
+        return override
+    default = _parse_positive_hours(get_setting("retention_default_hours"))
+    if default is not None:
+        return default
     return _HARDCODE_DEFAULT_HOURS
 
 
@@ -87,7 +91,7 @@ def adjust_expires_for_default(old_hours: int, new_hours: int) -> int:
     # 找出哪些模块有独立覆盖
     overridden = set()
     for ptype in PROJECT_TYPE_LABELS:
-        if get_setting(f"retention_{ptype}_hours"):
+        if _parse_positive_hours(get_setting(f"retention_{ptype}_hours")) is not None:
             overridden.add(ptype)
 
     from appcore.db import execute as db_execute
@@ -116,9 +120,8 @@ def get_all_retention_settings() -> dict:
     result: dict = {}
     for row in rows:
         key = row["key"]
-        try:
-            val = int(row["value"])
-        except (ValueError, TypeError):
+        val = _parse_positive_hours(row["value"])
+        if val is None:
             continue
         if key == "retention_default_hours":
             result["default"] = val

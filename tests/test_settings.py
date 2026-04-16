@@ -45,6 +45,24 @@ def test_get_retention_hours_fallback_hardcode(monkeypatch):
     assert settings.get_retention_hours("translation") == 168
 
 
+def test_get_retention_hours_ignores_non_positive_override(monkeypatch):
+    import appcore.settings as settings
+
+    store = {
+        "retention_default_hours": "48",
+        "retention_de_translate_hours": "0",
+    }
+
+    def fake_query_one(sql, args):
+        key = args[0]
+        if key in store:
+            return {"value": store[key]}
+        return None
+
+    monkeypatch.setattr(settings, "_query_one", fake_query_one)
+    assert settings.get_retention_hours("de_translate") == 48
+
+
 def test_get_setting(monkeypatch):
     import appcore.settings as settings
 
@@ -72,6 +90,7 @@ def test_get_all_retention_settings(monkeypatch):
     rows = [
         {"key": "retention_default_hours", "value": "168"},
         {"key": "retention_copywriting_hours", "value": "48"},
+        {"key": "retention_de_translate_hours", "value": "0"},
     ]
     monkeypatch.setattr(
         settings, "_query",
@@ -80,6 +99,7 @@ def test_get_all_retention_settings(monkeypatch):
     result = settings.get_all_retention_settings()
     assert result["default"] == 168
     assert result["copywriting"] == 48
+    assert result.get("de_translate") is None
     assert result.get("translation") is None
 
 
