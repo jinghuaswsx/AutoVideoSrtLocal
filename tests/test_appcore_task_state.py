@@ -273,3 +273,14 @@ def test_create_image_translate_minimal(tmp_path):
     # 读回来状态一致
     got = ts.get(task_id)
     assert got["preset"] == "cover"
+
+
+def test_create_task_initializes_tts_duration_fields(tmp_path):
+    from appcore import task_state
+    task_id = "test-duration-init"
+    task = task_state.create(
+        task_id, str(tmp_path / "video.mp4"), str(tmp_path / "out"),
+        original_filename="video.mp4", user_id=None,
+    )
+    assert task["tts_duration_rounds"] == []
+    assert task["tts_duration_status"] is None

@@ -149,6 +149,8 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "variants": {
             "normal": _empty_variant_state("普通版"),
         },
+        "tts_duration_rounds": [],
+        "tts_duration_status": None,
     }
     if user_id is not None:
         task["_user_id"] = user_id
