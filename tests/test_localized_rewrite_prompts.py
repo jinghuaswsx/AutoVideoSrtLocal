@@ -108,3 +108,59 @@ class TestFrenchRewritePrompt:
         assert "250" in msgs[1]["content"]
         assert "shrink" in msgs[1]["content"].lower()
         assert "Chinese" in msgs[1]["content"]
+
+
+class TestGenerateLocalizedRewrite:
+    def test_rewrite_calls_llm_with_custom_messages_builder(self, monkeypatch):
+        """generate_localized_rewrite 必须走语言专属 messages_builder 路径。"""
+        from pipeline import translate
+
+        # Mock resolve_provider_config
+        captured = {}
+        class FakeResponse:
+            class choices: pass
+        class FakeChoice:
+            class message: pass
+
+        def fake_resolve(provider, user_id=None, api_key_override=None):
+            class FakeClient:
+                class chat:
+                    class completions:
+                        @staticmethod
+                        def create(**kwargs):
+                            captured["messages"] = kwargs["messages"]
+                            captured["model"] = kwargs["model"]
+                            r = type("R", (), {})()
+                            c = type("C", (), {})()
+                            m = type("M", (), {})()
+                            m.content = '{"full_text": "Short.", "sentences": [{"index": 0, "text": "Short.", "source_segment_indices": [0]}]}'
+                            c.message = m
+                            r.choices = [c]
+                            r.usage = type("U", (), {"prompt_tokens": 10, "completion_tokens": 5})()
+                            return r
+            return FakeClient(), "fake-model"
+
+        monkeypatch.setattr(translate, "resolve_provider_config", fake_resolve)
+
+        from pipeline.localization_de import build_localized_rewrite_messages
+        result = translate.generate_localized_rewrite(
+            source_full_text="Source",
+            prev_localized_translation={
+                "full_text": "Hallo.",
+                "sentences": [{"index": 0, "text": "Hallo.", "source_segment_indices": [0]}],
+            },
+            target_chars=50,
+            direction="shrink",
+            source_language="en",
+            messages_builder=build_localized_rewrite_messages,
+            provider="openrouter",
+        )
+        assert result["full_text"] == "Short."
+        assert len(result["sentences"]) == 1
+        # Confirm messages_builder was called with rewrite-specific args
+        assert "50" in captured["messages"][1]["content"]
+        assert "shrink" in captured["messages"][1]["content"].lower()
+        assert "Hallo." in captured["messages"][1]["content"]
+        # usage was attached
+        assert result["_usage"]["input_tokens"] == 10
+        assert result["_usage"]["output_tokens"] == 5

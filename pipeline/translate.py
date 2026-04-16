@@ -157,3 +157,70 @@ def generate_tts_script(
     return result
 
 
+def generate_localized_rewrite(
+    source_full_text: str,
+    prev_localized_translation: dict,
+    target_chars: int,
+    direction: str,
+    source_language: str,
+    messages_builder,
+    *,
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    openrouter_api_key: str | None = None,
+) -> dict:
+    """Rewrite an existing localized_translation to a target character count.
+
+    Args:
+        source_full_text: original source text (Chinese or English).
+        prev_localized_translation: previous round's translation dict
+            ({full_text, sentences[...]}); supplied as reference for the LLM.
+        target_chars: approximate character count target for the new full_text.
+        direction: "shrink" or "expand".
+        source_language: "zh" or "en" (used for lang_label in the prompt).
+        messages_builder: language-specific callable, e.g.
+            pipeline.localization_de.build_localized_rewrite_messages.
+        provider: "openrouter" | "doubao".
+        user_id: user id for key/extras resolution.
+        openrouter_api_key: override api key.
+
+    Returns:
+        Same schema as generate_localized_translation:
+        {"full_text": str, "sentences": [...], "_usage": {...}}
+    """
+    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
+    extra_body: dict = {}
+    if provider != "doubao":
+        extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
+    if provider == "openrouter":
+        extra_body["plugins"] = [{"id": "response-healing"}]
+
+    messages = messages_builder(
+        source_full_text=source_full_text,
+        prev_localized_translation=prev_localized_translation,
+        target_chars=target_chars,
+        direction=direction,
+        source_language=source_language,
+    )
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.2,
+        max_tokens=4096,
+        **({"extra_body": extra_body} if extra_body else {}),
+    )
+    raw_content = response.choices[0].message.content
+    log.info("localized_rewrite raw response (provider=%s, direction=%s, target_chars=%d): %s",
+             provider, direction, target_chars, raw_content[:2000])
+    payload = parse_json_content(raw_content)
+    result = validate_localized_translation(payload)
+    usage = getattr(response, "usage", None)
+    if usage:
+        result["_usage"] = {
+            "input_tokens": getattr(usage, "prompt_tokens", None),
+            "output_tokens": getattr(usage, "completion_tokens", None),
+        }
+    return result
+
+
