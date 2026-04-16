@@ -48,6 +48,7 @@ def compose_video(
     font_name: str = "Impact",
     font_size_preset: str = "medium",
     subtitle_position_y: float = 0.68,
+    with_soft: bool = True,
 ) -> dict:
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -56,6 +57,7 @@ def compose_video(
     soft_output = os.path.join(output_dir, f"{base_name}_soft{suffix}.mp4")
     hard_output = os.path.join(output_dir, f"{base_name}_hard{suffix}.mp4")
 
+    # 硬字幕合成依赖软字幕中间产物；with_soft=False 时合成后把 soft 文件删掉
     if timeline_manifest:
         _compose_soft_from_manifest(video_path, tts_audio_path, timeline_manifest, soft_output)
     else:
@@ -69,6 +71,13 @@ def compose_video(
         font_size_preset=font_size_preset,
         subtitle_position_y=subtitle_position_y,
     )
+
+    if not with_soft:
+        try:
+            os.remove(soft_output)
+        except OSError:
+            pass
+        soft_output = None
 
     return {
         "soft_video": soft_output,
