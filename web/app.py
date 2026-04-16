@@ -50,6 +50,7 @@ from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
 from web.routes.openapi_materials import bp as openapi_materials_bp
 from web.routes.image_translate import bp as image_translate_bp
+from web.routes.voice_library import bp as voice_library_bp
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +177,7 @@ def create_app() -> Flask:
     app.register_blueprint(task_bp)
     app.register_blueprint(tos_upload_bp)
     app.register_blueprint(voice_bp)
+    app.register_blueprint(voice_library_bp)
     app.register_blueprint(prompt_bp)
     app.register_blueprint(copywriting_bp)
     app.register_blueprint(text_translate_bp)

@@ -40,6 +40,15 @@ def list_enabled_language_codes() -> list[str]:
     return [row["code"] for row in rows]
 
 
+def list_enabled_languages_kv() -> list[tuple[str, str]]:
+    """返回所有启用语种的 (code, name_zh) 二元组列表，供前端下拉选项使用。"""
+    rows = query(
+        "SELECT code, name_zh FROM media_languages "
+        "WHERE enabled=1 ORDER BY sort_order ASC, code ASC"
+    )
+    return [(r["code"], r["name_zh"]) for r in rows]
+
+
 def get_language_usage(code: str) -> dict:
     item_row = query_one(
         "SELECT COUNT(*) AS c FROM media_items WHERE lang=%s AND deleted_at IS NULL",

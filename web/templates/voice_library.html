@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block title %}声音仓库{% endblock %}
+{% block content %}
+<div class="oc voice-library-root" data-current-user-id="{{ current_user.id }}">
+  <div class="oc-tabs">
+    <a href="#browse" class="oc-tab">浏览试听</a>
+    <a href="#match" class="oc-tab">视频匹配</a>
+  </div>
+  <section id="tab-browse" class="oc-tab-panel"></section>
+  <section id="tab-match" class="oc-tab-panel" hidden></section>
+</div>
+{% include "_voice_library_styles.html" %}
+{% include "_voice_library_scripts.html" %}
+{% endblock %}
