@@ -19,6 +19,7 @@
   let refreshTimer = null;
   let activeRefreshLoop = null;
   let startRequestInFlight = false;
+  let analysisStartInFlight = false;
   const START_BUTTON_DEFAULT_LABEL = "开始处理";
   const START_BUTTON_LOADING_LABEL = "加载视频中...";
 
@@ -571,24 +572,26 @@
   function updateAnalysisButton() {
     const btn = document.getElementById("runAnalysisBtn");
     if (!btn) return;
+    btn.classList.remove("hidden");
     const status = currentTask?.steps?.analysis || "pending";
+    if (analysisStartInFlight && status !== "running" && status !== "done" && status !== "error") {
+      btn.disabled = true;
+      btn.textContent = "启动中...";
+      return;
+    }
+    if (status === "running" || status === "done" || status === "error") {
+      analysisStartInFlight = false;
+    }
     if (status === "running") {
       btn.disabled = true;
       btn.textContent = "AI 分析中...";
-      btn.classList.remove("hidden");
-    } else if (status === "done") {
+    } else if (status === "done" || status === "error") {
       btn.disabled = false;
       btn.textContent = "重新分析";
-      btn.classList.remove("hidden");
-    } else if (status === "error") {
-      btn.disabled = false;
-      btn.textContent = "重新分析";
-      btn.classList.remove("hidden");
     } else {
       // idle / pending
       btn.disabled = false;
       btn.textContent = "运行 AI 分析";
-      btn.classList.remove("hidden");
     }
   }
 
@@ -977,9 +980,9 @@
   if (runAnalysisBtn) {
     runAnalysisBtn.addEventListener("click", async () => {
       if (!taskId) return;
-      const original = runAnalysisBtn.textContent;
-      runAnalysisBtn.disabled = true;
-      runAnalysisBtn.textContent = "启动中...";
+      if (analysisStartInFlight) return;
+      analysisStartInFlight = true;
+      updateAnalysisButton();
       try {
         const res = await fetch(_apiUrl("/analysis/run"), {
           method: "POST",
@@ -988,16 +991,21 @@
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           showError(data.error || "启动 AI 分析失败");
-          runAnalysisBtn.disabled = false;
-          runAnalysisBtn.textContent = original;
+          analysisStartInFlight = false;
+          updateAnalysisButton();
           return;
         }
         socket.emit("join_task", { task_id: taskId });
         scheduleRefreshTaskState(200);
+        // Safeguard: clear flag after 5s if status never transitions
+        setTimeout(() => {
+          analysisStartInFlight = false;
+          updateAnalysisButton();
+        }, 5000);
       } catch (err) {
         showError(err.message || "启动 AI 分析失败");
-        runAnalysisBtn.disabled = false;
-        runAnalysisBtn.textContent = original;
+        analysisStartInFlight = false;
+        updateAnalysisButton();
       }
     });
   }
