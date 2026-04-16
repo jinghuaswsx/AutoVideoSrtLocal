@@ -332,8 +332,8 @@
     g.innerHTML = items.map(it => `
       <div class="oc-item" data-item="${it.id}">
         <div class="thumb">
-          ${it.thumbnail_url
-            ? `<img src="${escapeHtml(it.thumbnail_url)}" loading="lazy" alt="">`
+          ${(it.thumbnail_url || it.cover_url)
+            ? `<img src="${escapeHtml(it.thumbnail_url || it.cover_url)}" loading="lazy" alt="">`
             : `<div class="thumb-ph">${icon('film', 20)}</div>`}
           <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
         </div>
@@ -409,8 +409,12 @@
       row.className = 'oc-upload-row err';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
     }
+    const prevCoverKey = state.current && state.current.product && state.current.product.cover_object_key;
     const full = await fetchJSON('/medias/api/products/' + pid);
     state.current = full;
+    if (prevCoverKey && !state.current.product.cover_object_key) {
+      state.current.product.cover_object_key = prevCoverKey;
+    }
     renderItems(full.items);
     loadList();
   }
@@ -420,7 +424,7 @@
     const code = $('mCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return; }
-    if (!state.current || !state.current.product || !state.current.product.cover_object_key) {
+    if (!state.current || !state.current.product || (!state.current.product.cover_object_key && !state.current.product.has_en_cover)) {
       alert('请上传商品主图'); return;
     }
     const cw = collectCopywritings();
