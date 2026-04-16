@@ -8,7 +8,7 @@ import uuid
 import zipfile
 from datetime import datetime
 
-from flask import Blueprint, Response, abort, jsonify, redirect, request
+from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import medias, task_state, tos_clients
@@ -307,6 +307,57 @@ def api_download_zip(task_id: str):
         buf.getvalue(),
         mimetype="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@bp.route("/image-translate", methods=["GET"])
+@login_required
+def page_list():
+    import json as _json
+    from appcore.db import query as db_query
+    rows = db_query(
+        """
+        SELECT id, created_at, status, state_json
+        FROM projects
+        WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT 100
+        """,
+        (current_user.id,),
+    )
+    history = []
+    for row in rows or []:
+        state = {}
+        try:
+            state = _json.loads(row.get("state_json") or "{}")
+        except Exception:
+            state = {}
+        items = state.get("items") or []
+        done = sum(1 for it in items if it.get("status") == "done")
+        preset = state.get("preset") or ""
+        preset_label = "封面图翻译" if preset == "cover" else ("产品详情图翻译" if preset == "detail" else "")
+        history.append({
+            "id": row["id"],
+            "created_at": row.get("created_at"),
+            "status": row.get("status") or state.get("status") or "",
+            "preset": preset,
+            "preset_label": preset_label,
+            "target_language_name": state.get("target_language_name") or "",
+            "model_id": state.get("model_id") or "",
+            "total": len(items),
+            "done": done,
+        })
+    return render_template("image_translate_list.html", history=history)
+
+
+@bp.route("/image-translate/<task_id>", methods=["GET"])
+@login_required
+def page_detail(task_id: str):
+    task = _get_owned_task(task_id)
+    return render_template(
+        "image_translate_detail.html",
+        task_id=task_id,
+        state=_state_payload(task),
     )
 
 

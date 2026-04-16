@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+{% block title %}图片翻译{% endblock %}
+{% block page_title %}图片翻译{% endblock %}
+{% block content %}
+<div class="it-shell" data-page="image-translate-list">
+
+  <section class="card">
+    <h2>新建图片翻译任务</h2>
+
+    <div class="form-row">
+      <label>场景预设</label>
+      <select id="itPreset">
+        <option value="cover">封面图翻译</option>
+        <option value="detail">产品详情图翻译</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>目标语言 <span class="required">*</span></label>
+      <select id="itLanguage"><option value="">请选择</option></select>
+    </div>
+
+    <div class="form-row">
+      <label>使用模型 <span class="required">*</span></label>
+      <select id="itModel"><option value="">请选择</option></select>
+    </div>
+
+    <div class="form-row">
+      <label>提示词（可编辑；<code>{target_language_name}</code> 会自动替换）</label>
+      <textarea id="itPrompt" rows="4" style="width:100%"></textarea>
+    </div>
+
+    <div class="form-row">
+      <label>图片（最多 20 张）</label>
+      <input id="itFileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+      <div id="itThumbs" class="it-thumbs"></div>
+    </div>
+
+    <div class="form-row">
+      <button id="itSubmit" class="btn btn-primary">提交任务</button>
+      <span id="itHint" class="hint"></span>
+    </div>
+
+    <div id="itError" class="inline-error" style="display:none"></div>
+  </section>
+
+  <section class="card">
+    <h2>历史任务</h2>
+    {% if not history %}
+      <div class="empty">暂无任务</div>
+    {% else %}
+      <table class="table">
+        <thead>
+          <tr><th>时间</th><th>预设</th><th>目标语言</th><th>模型</th><th>进度</th><th>状态</th></tr>
+        </thead>
+        <tbody>
+          {% for item in history %}
+          <tr onclick="location.href='/image-translate/{{ item.id }}'" style="cursor:pointer">
+            <td>{{ item.created_at }}</td>
+            <td>{{ item.preset_label }}</td>
+            <td>{{ item.target_language_name }}</td>
+            <td>{{ item.model_id }}</td>
+            <td>{{ item.done }} / {{ item.total }}</td>
+            <td><span class="chip">{{ item.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </section>
+
+</div>
+{% include "_image_translate_styles.html" %}
+{% include "_image_translate_scripts.html" %}
+{% endblock %}
