@@ -7,6 +7,7 @@ from appcore.settings import (
     PROJECT_TYPE_LABELS,
     get_all_retention_settings,
     get_retention_hours,
+    has_retention_override,
     set_setting,
     adjust_expires_for_type,
     adjust_expires_for_default,
@@ -58,6 +59,7 @@ def settings():
         # ── 记住旧值，用于计算 delta ──
         old_default = get_retention_hours("__nonexistent__")  # 纯全局默认
         old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
+        old_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
 
         # 保存全局默认值
         default_days = request.form.get("retention_default_days", "").strip()
@@ -90,7 +92,10 @@ def settings():
 
         # ── 同步调整已有项目的 expires_at ──
         adjusted = 0
+        new_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
         for ptype in PROJECT_TYPE_LABELS:
+            if ptype not in old_override_types and ptype not in new_override_types:
+                continue
             new_hours = get_retention_hours(ptype)
             if new_hours != old_per_type[ptype]:
                 adjusted += adjust_expires_for_type(ptype, old_per_type[ptype], new_hours)
@@ -98,7 +103,11 @@ def settings():
         # 全局默认变更：调整没有模块覆盖的项目
         new_default = get_retention_hours("__nonexistent__")
         if new_default != old_default:
-            adjusted += adjust_expires_for_default(old_default, new_default)
+            adjusted += adjust_expires_for_default(
+                old_default,
+                new_default,
+                excluded_project_types=old_override_types | new_override_types,
+            )
 
         if adjusted:
             flash(f"保留周期设置已保存，已同步调整 {adjusted} 个项目的过期时间")

@@ -70,6 +70,10 @@ def get_retention_hours(project_type: str) -> int:
     return _HARDCODE_DEFAULT_HOURS
 
 
+def has_retention_override(project_type: str) -> bool:
+    return _parse_positive_hours(get_setting(f"retention_{project_type}_hours")) is not None
+
+
 def adjust_expires_for_type(project_type: str, old_hours: int, new_hours: int) -> int:
     """保留期变更时，同步调整该类型所有未过期项目的 expires_at。返回受影响行数。"""
     if old_hours == new_hours:
@@ -83,15 +87,19 @@ def adjust_expires_for_type(project_type: str, old_hours: int, new_hours: int) -
     )
 
 
-def adjust_expires_for_default(old_hours: int, new_hours: int) -> int:
+def adjust_expires_for_default(
+    old_hours: int,
+    new_hours: int,
+    excluded_project_types: set[str] | None = None,
+) -> int:
     """全局默认保留期变更时，调整所有【没有模块覆盖】的未过期项目的 expires_at。"""
     if old_hours == new_hours:
         return 0
     delta = new_hours - old_hours
     # 找出哪些模块有独立覆盖
-    overridden = set()
+    overridden = set(excluded_project_types or ())
     for ptype in PROJECT_TYPE_LABELS:
-        if _parse_positive_hours(get_setting(f"retention_{ptype}_hours")) is not None:
+        if has_retention_override(ptype):
             overridden.add(ptype)
 
     from appcore.db import execute as db_execute

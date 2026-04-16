@@ -66,6 +66,57 @@ def test_admin_settings_empty_state_container(authed_client_no_db, monkeypatch):
     assert 'id="imgTransPromptEmpty"' in resp.get_data(as_text=True)
 
 
+def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(
+        r,
+        "PROJECT_TYPE_LABELS",
+        {"translation": "英文翻译", "de_translate": "德语翻译"},
+    )
+
+    store = {"retention_default_hours": "768"}
+
+    def fake_get_retention_hours(project_type):
+        if project_type == "__nonexistent__":
+            return int(store["retention_default_hours"])
+        return int(store.get(f"retention_{project_type}_hours") or store["retention_default_hours"])
+
+    def fake_set_setting(key, value):
+        store[key] = value
+
+    def fake_db_execute(sql, args=()):
+        if "DELETE FROM system_settings" in sql:
+            store.pop(args[0], None)
+        return 0
+
+    per_type_calls = []
+    default_calls = []
+
+    monkeypatch.setattr(r, "get_retention_hours", fake_get_retention_hours)
+    monkeypatch.setattr(r, "has_retention_override", lambda project_type: False)
+    monkeypatch.setattr(r, "set_setting", fake_set_setting)
+    monkeypatch.setattr(r, "adjust_expires_for_type", lambda *args: per_type_calls.append(args) or 0)
+    monkeypatch.setattr(r, "adjust_expires_for_default", lambda *args, **kwargs: default_calls.append((args, kwargs)) or 0)
+    monkeypatch.setattr("appcore.db.execute", fake_db_execute)
+
+    resp = authed_client_no_db.post(
+        "/admin/settings",
+        data={
+            "retention_default_days": "2",
+            "retention_translation_days": "",
+            "retention_de_translate_days": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert per_type_calls == []
+    assert len(default_calls) == 1
+
+
 def test_admin_post_prompt_accepts_dynamic_language(authed_client_no_db, monkeypatch):
     from appcore import image_translate_settings as its
 
