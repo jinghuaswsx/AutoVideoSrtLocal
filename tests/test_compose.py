@@ -241,3 +241,109 @@ class TestGetVideoHeightReturnsDefaultOnFailure:
             with caplog.at_level(logging.WARNING, logger="pipeline.compose"):
                 _get_video_height("/fake/video.mp4")
         assert "无法解析" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# compose_video — with_soft 开关
+# ---------------------------------------------------------------------------
+
+class TestComposeVideoWithSoftFlag:
+    """控制是否生成软字幕视频。"""
+
+    def _patch_all(self, monkeypatch, calls):
+        """让 _compose_soft_from_manifest / _compose_soft_legacy / _compose_hard
+        都替换为只记录调用的 mock。"""
+        from pipeline import compose as compose_mod
+
+        def fake_soft_manifest(*args, **kwargs):
+            calls.append(("soft_manifest", args, kwargs))
+        def fake_soft_legacy(*args, **kwargs):
+            calls.append(("soft_legacy", args, kwargs))
+        def fake_hard(*args, **kwargs):
+            calls.append(("hard", args, kwargs))
+
+        monkeypatch.setattr(compose_mod, "_compose_soft_from_manifest", fake_soft_manifest)
+        monkeypatch.setattr(compose_mod, "_compose_soft_legacy", fake_soft_legacy)
+        monkeypatch.setattr(compose_mod, "_compose_hard", fake_hard)
+        monkeypatch.setattr(compose_mod, "_get_duration", lambda p: 10.0)
+
+    def test_with_soft_true_generates_both(self, tmp_path, monkeypatch):
+        from pipeline.compose import compose_video
+        calls = []
+        self._patch_all(monkeypatch, calls)
+
+        result = compose_video(
+            video_path=str(tmp_path / "in.mp4"),
+            tts_audio_path=str(tmp_path / "tts.mp3"),
+            srt_path=str(tmp_path / "sub.srt"),
+            output_dir=str(tmp_path),
+            timeline_manifest={"segments": [{"video_ranges": [{"start": 0, "end": 1}]}],
+                               "total_tts_duration": 1.0, "video_consumed_duration": 1.0},
+            with_soft=True,
+        )
+
+        kinds = [c[0] for c in calls]
+        assert "soft_manifest" in kinds
+        assert "hard" in kinds
+        assert result["soft_video"] and result["soft_video"].endswith("_soft.mp4")
+        assert result["hard_video"] and result["hard_video"].endswith("_hard.mp4")
+
+    def test_with_soft_false_skips_soft(self, tmp_path, monkeypatch):
+        from pipeline.compose import compose_video
+        calls = []
+        self._patch_all(monkeypatch, calls)
+
+        result = compose_video(
+            video_path=str(tmp_path / "in.mp4"),
+            tts_audio_path=str(tmp_path / "tts.mp3"),
+            srt_path=str(tmp_path / "sub.srt"),
+            output_dir=str(tmp_path),
+            timeline_manifest={"segments": [{"video_ranges": [{"start": 0, "end": 1}]}],
+                               "total_tts_duration": 1.0, "video_consumed_duration": 1.0},
+            with_soft=False,
+        )
+
+        # 硬字幕仍需 soft 作为中间产物，所以 soft_manifest 会被调用
+        kinds = [c[0] for c in calls]
+        assert "hard" in kinds
+        # 但返回值中 soft_video 为 None（中间文件已清理）
+        assert result["soft_video"] is None
+        assert result["hard_video"] and result["hard_video"].endswith("_hard.mp4")
+
+    def test_default_with_soft_is_true(self, tmp_path, monkeypatch):
+        """不传 with_soft 参数时默认生成软字幕，保持向后兼容。"""
+        from pipeline.compose import compose_video
+        calls = []
+        self._patch_all(monkeypatch, calls)
+
+        compose_video(
+            video_path=str(tmp_path / "in.mp4"),
+            tts_audio_path=str(tmp_path / "tts.mp3"),
+            srt_path=str(tmp_path / "sub.srt"),
+            output_dir=str(tmp_path),
+            timeline_manifest={"segments": [{"video_ranges": [{"start": 0, "end": 1}]}],
+                               "total_tts_duration": 1.0, "video_consumed_duration": 1.0},
+        )
+
+        kinds = [c[0] for c in calls]
+        assert "soft_manifest" in kinds
+
+    def test_with_soft_false_without_manifest_still_skips(self, tmp_path, monkeypatch):
+        """legacy 分支（无 timeline_manifest）也要尊重 with_soft=False。"""
+        from pipeline.compose import compose_video
+        calls = []
+        self._patch_all(monkeypatch, calls)
+
+        result = compose_video(
+            video_path=str(tmp_path / "in.mp4"),
+            tts_audio_path=str(tmp_path / "tts.mp3"),
+            srt_path=str(tmp_path / "sub.srt"),
+            output_dir=str(tmp_path),
+            timeline_manifest=None,
+            with_soft=False,
+        )
+
+        kinds = [c[0] for c in calls]
+        assert "hard" in kinds
+        # 返回值 soft_video 为 None
+        assert result["soft_video"] is None
