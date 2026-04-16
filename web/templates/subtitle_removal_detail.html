@@ -1,0 +1,122 @@
+{% extends "layout.html" %}
+{% block title %}字幕移除{% endblock %}
+{% block page_title %}字幕移除{% endblock %}
+{% block content %}
+<script>
+  window.subtitleRemovalBootstrap = {{ state | tojson }};
+</script>
+<div class="sr-shell sr-detail-page" data-subtitle-removal-page="detail" data-task-id="{{ task_id }}">
+  <header class="sr-hero">
+    <div class="sr-hero-copy">
+      <p class="sr-kicker">字幕移除</p>
+      <h1>首帧框选</h1>
+      <p>上传后先在视频首帧上选择字幕区域，再提交去字幕任务。</p>
+    </div>
+    <div class="sr-status-chip" data-role="sr-status-chip">{{ state.status or project.status or 'uploaded' }}</div>
+  </header>
+
+  <div class="sr-grid sr-grid-detail">
+    <section class="sr-card sr-source-card">
+      <div class="sr-card-head">
+        <div>
+          <h2>首帧预览</h2>
+          <div class="sr-card-subtitle">{{ project.original_filename or task_id }}</div>
+        </div>
+        <div class="sr-card-meta" id="srStateModeText">{{ '框选去除' if state.remove_mode == 'box' else '全屏去除' }}</div>
+      </div>
+
+      <div class="sr-selection-stage" data-role="selection-stage">
+        <div class="sr-selection-viewport">
+          <img
+            id="srSelectionImage"
+            class="sr-selection-image"
+            src="{{ state.thumbnail_url or '' }}"
+            alt="首帧预览"
+            {% if not state.thumbnail_url %}hidden{% endif %}
+          >
+          <div id="srSelectionOverlay" class="sr-selection-overlay" aria-label="字幕区域选择层"></div>
+          <div id="srSelectionBox" class="sr-selection-box" hidden></div>
+          <div id="srSelectionEmpty" class="sr-selection-empty"{% if state.thumbnail_url %}hidden{% endif %}>
+            <div class="sr-selection-empty-title">首帧图暂未就绪</div>
+            <div class="sr-hint">完成上传后会在这里显示可框选的字幕区域。</div>
+          </div>
+        </div>
+        <div class="sr-selection-footer">
+          <div id="srSelectionHint" class="sr-hint">选择“框选去除”后，可直接在首帧图上拖拽字幕区域。</div>
+          <div id="srSelectionCoords" class="sr-selection-coords">未选择区域</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sr-card sr-control-card">
+      <div class="sr-card-head">
+        <div>
+          <h2>去除方式</h2>
+          <div class="sr-card-subtitle">先选模式，再决定是否框选区域</div>
+        </div>
+      </div>
+
+      <div class="sr-mode-select">
+        <label class="sr-radio-tile is-active">
+          <input type="radio" name="remove_mode" value="full" checked>
+          <span class="sr-radio-title">全屏去除</span>
+          <span class="sr-radio-desc">直接按整帧提交，不需要框选。</span>
+        </label>
+        <label class="sr-radio-tile">
+          <input type="radio" name="remove_mode" value="box">
+          <span class="sr-radio-title">框选去除</span>
+          <span class="sr-radio-desc">先在首帧图上拖拽字幕区域，再提交。</span>
+        </label>
+      </div>
+
+      <div class="sr-action-row">
+        <button id="srSubmitSubtitleRemoval" type="button" class="btn btn-primary">提交去字幕任务</button>
+        <span class="sr-hint">确认模式和区域后，即可提交当前视频的去字幕处理。</span>
+      </div>
+
+      <div class="sr-status-panel">
+        <div class="sr-status-item">
+          <span class="sr-status-label">任务状态</span>
+          <strong id="srStateStatus">{{ state.status or project.status or 'uploaded' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">当前模式</span>
+          <strong id="srStateMode">{{ '框选去除' if state.remove_mode == 'box' else '全屏去除' }}</strong>
+        </div>
+        <div class="sr-status-item">
+          <span class="sr-status-label">视频分辨率</span>
+          <strong id="srStateResolution">{{ state.media_info.resolution or '未读取' }}</strong>
+        </div>
+      </div>
+
+      <div class="sr-detail-summary">
+        <div>
+          <span class="sr-status-label">首帧选择</span>
+          <strong id="srStateSelection">未选择区域</strong>
+        </div>
+        <div>
+          <span class="sr-status-label">识别说明</span>
+          <strong id="srStateHint">请先选择全屏或框选模式</strong>
+        </div>
+      </div>
+
+      <div class="sr-result-area">
+        <div class="sr-card-head" style="margin-top: 20px;">
+          <div>
+            <h2>缁撴灉鎿嶄綔</h2>
+            <div class="sr-card-subtitle">鎻愪氦鍚庡彲鍦ㄨ繖閲屾樉绀哄洖鐣欏拰缁撴灉銆?/div>
+          </div>
+        </div>
+        <div id="srResultPanel" class="sr-result-panel"></div>
+        <div class="sr-action-row sr-result-actions">
+          <button id="srResumeSubtitleRemoval" type="button" class="btn btn-secondary">缁х画杞</button>
+          <button id="srResubmitSubtitleRemoval" type="button" class="btn btn-secondary">閲嶆彁</button>
+          <button id="srDeleteSubtitleRemoval" type="button" class="btn btn-danger">鍒犻櫎</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% include "_subtitle_removal_styles.html" %}
+{% include "_subtitle_removal_scripts.html" %}
+{% endblock %}

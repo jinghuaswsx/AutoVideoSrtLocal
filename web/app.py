@@ -10,6 +10,7 @@ Flask 应用工厂
 """
 import os
 import sys
+import logging
 from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -18,6 +19,7 @@ from flask import Flask
 from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
+from appcore import task_state
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
@@ -39,11 +41,26 @@ from web.routes.prompt import bp as prompt_bp
 from web.routes.text_translate import bp as text_translate_bp
 from web.routes.video_creation import bp as video_creation_bp
 from web.routes.video_review import bp as video_review_bp
+from web.routes.subtitle_removal import bp as subtitle_removal_bp
 from web.routes.copywriting import bp as copywriting_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
+
+log = logging.getLogger(__name__)
+
+
+def _run_startup_recovery() -> None:
+    disable = os.getenv("DISABLE_STARTUP_RECOVERY", "").strip().lower()
+    if disable in {"1", "true", "yes"}:
+        return
+    try:
+        from web.routes.subtitle_removal import resume_inflight_tasks
+
+        resume_inflight_tasks()
+    except Exception:
+        log.warning("subtitle removal startup recovery failed", exc_info=True)
 
 
 def create_app() -> Flask:
@@ -90,10 +107,12 @@ def create_app() -> Flask:
     app.register_blueprint(text_translate_bp)
     app.register_blueprint(video_creation_bp)
     app.register_blueprint(video_review_bp)
+    app.register_blueprint(subtitle_removal_bp)
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
+    _run_startup_recovery()
 
     recover_all_interrupted_tasks()
 
@@ -143,6 +162,18 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
+
+    @socketio.on("join_subtitle_removal_task")
+    def on_join_subtitle_removal(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = data.get("task_id")
+        if task_id:
+            # subtitle_removal joins should work even when the process memory is cold.
+            task = task_state.get(task_id)
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
 

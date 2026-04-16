@@ -81,3 +81,9 @@ def test_get_all_retention_settings(monkeypatch):
     assert result["default"] == 168
     assert result["copywriting"] == 48
     assert result.get("translation") is None
+
+
+def test_project_type_labels_include_subtitle_removal():
+    import appcore.settings as settings
+
+    assert settings.PROJECT_TYPE_LABELS["subtitle_removal"] == "字幕移除"

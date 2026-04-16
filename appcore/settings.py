@@ -14,6 +14,7 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
     "copywriting": "文案创作",
     "video_creation": "视频生成",
     "text_translate": "文案翻译",
+    "subtitle_removal": "字幕移除",
 }
 
 _HARDCODE_DEFAULT_HOURS = 168

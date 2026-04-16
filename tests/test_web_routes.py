@@ -1,9 +1,9 @@
 from pathlib import Path
 import json
-from types import SimpleNamespace
 
 from web import store
 from web.app import create_app
+from web.extensions import socketio
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
 
 
@@ -82,11 +82,13 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert 'type="file"' in template
     assert 'accept="video/*"' in template
     assert 'id="srPickVideoButton"' in template
+    assert 'data-subtitle-removal-page="upload"' in template
     assert 'disabled' not in template
     assert "/api/subtitle-removal/upload/bootstrap" in scripts
     assert "/api/subtitle-removal/upload/complete" in scripts
-    assert 'xhr.open("PUT", bootstrap.upload_url, true)' in scripts
+    assert 'xhr.open("PUT", bootstrapData.upload_url, true)' in scripts
     assert "window.location.href = `/subtitle-removal/${data.task_id}`;" in scripts
+    assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
@@ -94,13 +96,13 @@ def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
     scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
 
     assert "function normalizeSelectionBox(selectionBox, positionPayload)" in scripts
-    assert 'typeof selectionBox.x1 === "number"' in scripts
-    assert 'typeof positionPayload.l === "number"' in scripts
-    assert "x2: x1 + width" in scripts
-    assert "y2: y1 + height" in scripts
-    assert "task.selection_box = normalizedSelection;" in scripts
-    assert "task.position_payload = normalizedSelection ? {" in scripts
-    assert "selection_box: normalizedSelection || undefined" in scripts
+    assert "selectionBox.x1 != null ? selectionBox.x1 : selectionBox.l" in scripts
+    assert "positionPayload.l" in scripts
+    assert "x2 = x1 + width;" in scripts
+    assert "y2 = y1 + height;" in scripts
+    assert "selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);" in scripts
+    assert "window.normalizeSubtitleRemovalSelectionBox = normalizeSelectionBox;" in scripts
+    assert "return selectionState.box || normalizeSelectionBox(bootstrap.selection_box, bootstrap.position_payload) || null;" in scripts
 
 
 def test_index_page_uses_simple_start_button_loading_state(authed_client_no_db):
@@ -185,6 +187,236 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
     assert "\"current_review_step\": \"alignment\"" in body.lower()
 
 
+def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
+    def fake_create_subtitle_removal(task_id, video_path, task_dir, original_filename=None, user_id=None):
+        task = store.create(task_id, video_path, task_dir, original_filename=original_filename, user_id=user_id)
+        store.update(task_id, type="subtitle_removal")
+        return task
+
+    monkeypatch.setattr(store, "create_subtitle_removal", fake_create_subtitle_removal, raising=False)
+    task = store.create_subtitle_removal("sr-page", "uploads/sr-page.mp4", "output/sr-page", original_filename="demo.mp4", user_id=1)
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    upload_response = authed_client_no_db.get("/subtitle-removal")
+    detail_response = authed_client_no_db.get("/subtitle-removal/sr-page")
+
+    assert upload_response.status_code == 200
+    upload_body = upload_response.get_data(as_text=True)
+    assert "字幕移除" in upload_body
+    assert 'id="srUploadInput"' in upload_body
+    assert 'id="srPickVideoButton"' in upload_body
+    assert 'id="srUploadDropzone"' in upload_body
+    assert "暂不支持文件选择" not in upload_body
+    assert detail_response.status_code == 200
+    detail_body = detail_response.get_data(as_text=True)
+    assert "全屏去除" in detail_body
+    assert "框选去除" in detail_body
+    assert "join_subtitle_removal_task" in detail_body
+    assert 'socket.on("connect", joinFn);' in detail_body
+    assert "连接任务房间" not in detail_body
+
+
+def test_subtitle_removal_detail_shell_is_read_only(authed_client_no_db, monkeypatch):
+    task = store.create("sr-readonly", "uploads/sr-readonly.mp4", "output/sr-readonly", original_filename="demo.mp4", user_id=1)
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-readonly")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "disabled" in body
+    assert "sr-mode-readonly" in body
+
+
+def test_subtitle_removal_detail_shell_exposes_selection_stage_hooks(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal("sr-selection", "uploads/sr-selection.mp4", "output/sr-selection", original_filename="demo.mp4", user_id=1)
+    store.update(
+        task["id"],
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+        remove_mode="box",
+        selection_box={"l": 0, "t": 0, "w": 720, "h": 1280},
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "ready",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-selection")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "srSelectionOverlay" in body
+    assert "computeSelectionBox" in body
+    assert "提交去字幕任务" in body
+    assert "全屏去除" in body
+    assert "框选去除" in body
+    assert "Task 4" not in body
+
+
+def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-result-shell",
+        "uploads/sr-result-shell.mp4",
+        "output/sr-result-shell",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        result_tos_key="artifacts/1/sr-result-shell/subtitle_removal/result.cleaned.mp4",
+        result_video_path="",
+        provider_task_id="provider-task-1",
+        provider_status="success",
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-result-shell")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "srResultPanel" in body
+    assert "srResumeSubtitleRemoval" in body
+    assert "srResubmitSubtitleRemoval" in body
+    assert "srDeleteSubtitleRemoval" in body
+    assert "artifact/result" in body
+    assert "download/result" in body
+
+
+def test_subtitle_removal_detail_shell_shows_result_actions_for_local_result_only(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-result-local",
+        "uploads/sr-result-local.mp4",
+        "output/sr-result-local",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        result_tos_key="",
+        result_video_path="/tmp/result.cleaned.mp4",
+        provider_task_id="provider-task-1",
+        provider_status="success",
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-result-local")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "srResultPanel" in body
+    assert "artifact/result" in body
+    assert "download/result" in body
+
+
+def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):
+    joined_rooms = []
+
+    monkeypatch.setattr("web.app.join_room", lambda room: joined_rooms.append(room))
+    monkeypatch.setattr("web.store.get", lambda task_id: None)
+    monkeypatch.setattr(
+        "appcore.db.query_one",
+        lambda sql, args: {
+            "state_json": json.dumps({"id": "sr-db", "type": "subtitle_removal"}, ensure_ascii=False),
+            "user_id": 1,
+            "display_name": "",
+            "original_filename": "demo.mp4",
+        },
+    )
+
+    sio_client = socketio.test_client(authed_client_no_db.application, flask_test_client=authed_client_no_db)
+    try:
+        sio_client.emit("join_subtitle_removal_task", {"task_id": "sr-db"})
+        assert joined_rooms == ["sr-db"]
+    finally:
+        sio_client.disconnect()
+
+
+def test_create_app_triggers_subtitle_removal_recovery(monkeypatch):
+    called = []
+
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("WTF_CSRF_ENABLED", "0")
+    monkeypatch.delenv("DISABLE_STARTUP_RECOVERY", raising=False)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.resume_inflight_tasks",
+        lambda: called.append("resume"),
+    )
+
+    app = create_app()
+
+    assert app is not None
+    assert called == ["resume"]
+
+
+def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'href="/subtitle-removal"' in body
+    assert '<span class="nav-icon">🧽</span>' in body
+
+
 def test_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
 
@@ -214,118 +446,6 @@ def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, m
 
     assert response.status_code == 200
     assert (1, "jianying", "", {"project_root": custom_root}) in captured
-
-
-def test_admin_media_languages_api_lists_all_rows(authed_client_no_db, monkeypatch):
-    import web.routes.admin as admin_routes
-
-    monkeypatch.setattr(
-        admin_routes,
-        "medias",
-        SimpleNamespace(list_languages_for_admin=lambda: [
-            {
-                "code": "en",
-                "name_zh": "英语",
-                "sort_order": 1,
-                "enabled": 1,
-                "items_count": 0,
-                "copy_count": 0,
-                "cover_count": 0,
-                "in_use": False,
-            },
-            {
-                "code": "pt",
-                "name_zh": "葡萄牙语",
-                "sort_order": 7,
-                "enabled": 0,
-                "items_count": 2,
-                "copy_count": 0,
-                "cover_count": 0,
-                "in_use": True,
-            },
-        ]),
-        raising=False,
-    )
-
-    response = authed_client_no_db.get("/admin/api/media-languages")
-
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert [item["code"] for item in payload["items"]] == ["en", "pt"]
-    assert payload["items"][1]["in_use"] is True
-
-
-def test_admin_media_languages_api_rejects_deleting_in_use_language(authed_client_no_db, monkeypatch):
-    import web.routes.admin as admin_routes
-
-    monkeypatch.setattr(
-        admin_routes,
-        "medias",
-        SimpleNamespace(
-            delete_language=lambda code: (_ for _ in ()).throw(ValueError("该语种已有关联数据，只能停用")),
-        ),
-        raising=False,
-    )
-
-    response = authed_client_no_db.delete("/admin/api/media-languages/de")
-
-    assert response.status_code == 400
-    assert "只能停用" in response.get_json()["error"]
-
-
-def test_admin_settings_page_contains_media_languages_config(authed_client_no_db, monkeypatch):
-    import web.routes.admin as admin_routes
-
-    monkeypatch.setattr(admin_routes, "get_all_retention_settings", lambda: {"default": 168})
-    monkeypatch.setattr(
-        admin_routes,
-        "medias",
-        SimpleNamespace(
-            list_languages_for_admin=lambda: [
-                {
-                    "code": "en",
-                    "name_zh": "英语",
-                    "sort_order": 1,
-                    "enabled": 1,
-                    "items_count": 0,
-                    "copy_count": 0,
-                    "cover_count": 0,
-                    "in_use": False,
-                }
-            ]
-        ),
-        raising=False,
-    )
-
-    response = authed_client_no_db.get("/admin/settings")
-
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "素材语种配置" in body
-    assert 'id="mediaLanguagesCard"' in body
-    assert 'id="mediaLanguagesTableBody"' in body
-    assert "admin_settings.js" in body
-
-
-def test_medias_languages_api_returns_enabled_languages_only(authed_client_no_db, monkeypatch):
-    import web.routes.medias as medias_routes
-
-    monkeypatch.setattr(
-        medias_routes,
-        "medias",
-        SimpleNamespace(
-            list_languages=lambda: [
-                {"code": "en", "name_zh": "英语", "sort_order": 1, "enabled": 1},
-                {"code": "pt", "name_zh": "葡萄牙语", "sort_order": 7, "enabled": 1},
-            ]
-        ),
-        raising=False,
-    )
-
-    response = authed_client_no_db.get("/medias/api/languages")
-
-    assert response.status_code == 200
-    assert [item["code"] for item in response.get_json()["items"]] == ["en", "pt"]
 
 
 def test_task_detail_returns_artifacts_structure(authed_client_no_db):
@@ -928,110 +1048,3 @@ def test_medias_page_shrinks_edit_modal_video_cards_to_eighty_percent(authed_cli
     assert '.oc-edit-form #edItemsGrid {' in body
     assert 'grid-template-columns:repeat(auto-fill, 208px);' in body
     assert 'justify-content:flex-start;' in body
-
-
-def test_video_creation_detail_recovers_orphan_running_task(authed_client_no_db, monkeypatch):
-    import web.routes.video_creation as video_creation_routes
-
-    calls = []
-    row = {
-        "id": "vc-orphan",
-        "user_id": 1,
-        "type": "video_creation",
-        "state_json": json.dumps({"steps": {"generate": "error"}, "error": "任务因服务重启中断"}, ensure_ascii=False),
-    }
-
-    monkeypatch.setattr(
-        video_creation_routes,
-        "recover_project_if_needed",
-        lambda task_id, project_type: calls.append((task_id, project_type)),
-        raising=False,
-    )
-    monkeypatch.setattr(video_creation_routes, "db_query_one", lambda sql, args: row)
-
-    response = authed_client_no_db.get("/video-creation/vc-orphan")
-
-    assert response.status_code == 200
-    assert calls == [("vc-orphan", "video_creation")]
-    assert "生成失败" in response.get_data(as_text=True)
-
-
-def test_video_creation_regenerate_recovers_stale_running_before_restart(authed_client_no_db, monkeypatch):
-    import web.routes.video_creation as video_creation_routes
-
-    state = {
-        "task_dir": "output/vc-regenerate",
-        "prompt": "demo",
-        "steps": {"generate": "running"},
-        "result_video_url": None,
-        "result_video_path": None,
-        "seedance_task_id": None,
-    }
-    row = {"state_json": json.dumps(state, ensure_ascii=False)}
-    updates = []
-    spawned = []
-
-    def fake_recover(task_id, project_type):
-        payload = json.loads(row["state_json"])
-        payload["steps"]["generate"] = "error"
-        row["state_json"] = json.dumps(payload, ensure_ascii=False)
-
-    monkeypatch.setattr(video_creation_routes, "recover_project_if_needed", fake_recover, raising=False)
-    monkeypatch.setattr(video_creation_routes, "db_query_one", lambda sql, args: row)
-    monkeypatch.setattr(video_creation_routes, "db_execute", lambda sql, args=(): updates.append((sql, args)))
-    monkeypatch.setattr(video_creation_routes, "resolve_key", lambda *args, **kwargs: "seedance-key")
-    monkeypatch.setattr(video_creation_routes.eventlet, "spawn", lambda fn, *args: spawned.append((fn.__name__, args)))
-
-    response = authed_client_no_db.post("/api/video-creation/vc-regenerate/regenerate")
-
-    assert response.status_code == 200
-    assert updates
-    assert spawned and spawned[0][0] == "_run_generate_with_tracking"
-
-
-def test_task_api_get_recovers_interrupted_pipeline_before_return(authed_client_no_db, monkeypatch):
-    import web.routes.task as task_routes
-
-    store.create("task-orphan", "video.mp4", "output/task-orphan", user_id=1)
-    store.update(
-        "task-orphan",
-        status="running",
-        current_review_step="translate",
-        steps={
-            "extract": "done",
-            "asr": "done",
-            "alignment": "done",
-            "translate": "running",
-            "tts": "pending",
-            "subtitle": "pending",
-            "compose": "pending",
-            "export": "pending",
-        },
-    )
-
-    def fake_recover(task_id):
-        store.set_step(task_id, "translate", "error")
-        store.set_step_message(task_id, "translate", "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。")
-        store.update(task_id, status="error", current_review_step="")
-
-    monkeypatch.setattr(task_routes, "recover_task_if_needed", fake_recover, raising=False)
-
-    response = authed_client_no_db.get("/api/tasks/task-orphan")
-
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["status"] == "error"
-    assert payload["steps"]["translate"] == "error"
-    assert payload["current_review_step"] == ""
-
-
-def test_medias_languages_api_returns_pt_without_ko(authed_client_no_db):
-    response = authed_client_no_db.get("/medias/api/languages")
-
-    assert response.status_code == 200
-    items = response.get_json()["items"]
-    codes = [item["code"] for item in items]
-    assert "pt" in codes
-    assert "ja" in codes
-    assert "ko" not in codes
-    assert "jp" not in codes

@@ -41,13 +41,14 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
         db_execute(
-            """INSERT INTO projects (id, user_id, original_filename, status, task_dir, state_json, expires_at)
-               VALUES (%s, %s, %s, %s, %s, %s, NULL)
+            """INSERT INTO projects (id, user_id, type, original_filename, status, task_dir, state_json, expires_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
                ON DUPLICATE KEY UPDATE
+                 type = VALUES(type),
                  status = VALUES(status),
                  state_json = VALUES(state_json),
                  task_dir = VALUES(task_dir)""",
-            (task_id, user_id, original_filename,
+            (task_id, user_id, task.get("type", "translation"), original_filename,
              task.get("status", "uploaded"),
              task.get("task_dir", ""),
              state_json),
@@ -68,8 +69,8 @@ def _sync_task_to_db(task_id: str) -> None:
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
         db_execute(
-            "UPDATE projects SET state_json = %s, status = %s WHERE id = %s",
-            (state_json, task.get("status", "uploaded"), task_id),
+            "UPDATE projects SET state_json = %s, status = %s, type = %s WHERE id = %s",
+            (state_json, task.get("status", "uploaded"), task.get("type", "translation"), task_id),
         )
     except Exception:
         log.warning("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
@@ -375,6 +376,56 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
     with _lock:
         _tasks[task_id] = task
     _sync_task_to_db(task_id)
+    return task
+
+
+def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
+                            original_filename: str, user_id: int) -> dict:
+    task = {
+        "id": task_id,
+        "type": "subtitle_removal",
+        "status": "uploaded",
+        "video_path": video_path,
+        "task_dir": task_dir,
+        "original_filename": original_filename,
+        "display_name": "",
+        "thumbnail_path": "",
+        "source_tos_key": "",
+        "source_object_info": {},
+        "media_info": {
+            "width": 0,
+            "height": 0,
+            "resolution": "",
+            "duration": 0.0,
+            "file_size_mb": 0.0,
+        },
+        "steps": {
+            "prepare": "pending",
+            "submit": "pending",
+            "poll": "pending",
+            "download_result": "pending",
+            "upload_result": "pending",
+        },
+        "step_messages": {},
+        "remove_mode": "",
+        "selection_box": None,
+        "position_payload": None,
+        "provider_task_id": "",
+        "provider_status": "",
+        "provider_emsg": "",
+        "provider_result_url": "",
+        "provider_raw": {},
+        "poll_attempts": 0,
+        "last_polled_at": None,
+        "result_video_path": "",
+        "result_tos_key": "",
+        "result_object_info": {},
+        "error": "",
+        "_user_id": user_id,
+    }
+    with _lock:
+        _tasks[task_id] = task
+    _db_upsert(task_id, user_id, task, original_filename)
     return task
 
 
