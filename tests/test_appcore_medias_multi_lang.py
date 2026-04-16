@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from appcore import medias
 from appcore.db import query_one
 
@@ -23,6 +24,32 @@ def test_list_languages_returns_enabled_sorted():
 def test_is_valid_language():
     assert medias.is_valid_language("de") is True
     assert medias.is_valid_language("xx") is False
+
+
+def test_list_enabled_language_codes_returns_codes_only():
+    fake_rows = [
+        {"code": "en", "name_zh": "英语", "sort_order": 1, "enabled": 1},
+        {"code": "de", "name_zh": "德语", "sort_order": 2, "enabled": 1},
+        {"code": "fr", "name_zh": "法语", "sort_order": 3, "enabled": 1},
+    ]
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return fake_rows
+
+    with patch("appcore.medias.query", side_effect=fake_query):
+        codes = medias.list_enabled_language_codes()
+
+    assert codes == ["en", "de", "fr"]
+    assert "enabled=1" in captured["sql"]
+    assert "ORDER BY sort_order ASC, code ASC" in captured["sql"]
+
+
+def test_list_enabled_language_codes_returns_empty_when_no_rows():
+    with patch("appcore.medias.query", return_value=[]):
+        assert medias.list_enabled_language_codes() == []
 
 
 def test_list_languages_for_admin_includes_disabled_and_usage(monkeypatch):
