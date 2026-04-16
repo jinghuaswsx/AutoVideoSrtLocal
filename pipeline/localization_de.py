@@ -26,6 +26,7 @@ __all__ = [
     "build_tts_segments",
     "LOCALIZED_TRANSLATION_SYSTEM_PROMPT",
     "TTS_SCRIPT_SYSTEM_PROMPT",
+    "LOCALIZED_REWRITE_SYSTEM_PROMPT",
     "WEAK_STARTERS_DE",
     "MAX_CHARS_PER_LINE",
     "DEFAULT_MALE_VOICE_ID",
@@ -34,6 +35,7 @@ __all__ = [
     "TTS_LANGUAGE_CODE",
     "build_localized_translation_messages",
     "build_tts_script_messages",
+    "build_localized_rewrite_messages",
 ]
 
 # ── 德语字幕参数 ──────────────────────────────────────
@@ -125,5 +127,51 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
         {
             "role": "user",
             "content": json.dumps(localized_translation, ensure_ascii=False, indent=2),
+        },
+    ]
+
+
+LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a native German content creator REWRITING an existing German translation to match a target character count.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
+
+REWRITE CONSTRAINTS (critical):
+- Target character count: approximately {target_chars} characters (±5%, measured on full_text).
+- Direction: {direction}
+  * "shrink": remove modifiers and repetitions while preserving every factual claim and the core benefit (Kernvorteil).
+  * "expand": add natural elaborations (examples, relatable details). Preserve all facts; never invent new claims.
+- Keep the same number of sentences as the previous translation when possible.
+- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+
+STYLE (identical to original German localization):
+- Write authentically and sachlich (no exaggerated claims, no artificial urgency).
+- Use the product terms Germans actually use (Caps, Organizer, Display, etc. — not literal translations).
+- Conversational German at B1 level. Prefer 6-12 words per sentence.
+- Capitalize all nouns. Use German number conventions (2,5 not 2.5).
+- Do not use em dashes or en dashes. Plain ASCII punctuation only.
+- Do NOT add any CTA at the end — the video will have a separate CTA clip appended later."""
+
+
+def build_localized_rewrite_messages(
+    source_full_text: str,
+    prev_localized_translation: dict,
+    target_chars: int,
+    direction: str,
+    source_language: str = "zh",
+) -> list[dict]:
+    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    prompt = LOCALIZED_REWRITE_SYSTEM_PROMPT.replace(
+        "{target_chars}", str(target_chars)
+    ).replace("{direction}", direction)
+    return [
+        {"role": "system", "content": prompt},
+        {
+            "role": "user",
+            "content": (
+                f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                f"{source_full_text}\n\n"
+                f"Previous German translation (rewrite this to {direction} to ~{target_chars} chars):\n"
+                f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
+            ),
         },
     ]

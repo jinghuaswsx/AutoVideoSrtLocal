@@ -54,3 +54,30 @@ class TestEnglishRewritePrompt:
         )
         assert "Chinese" in msgs_zh[1]["content"]
         assert "English" in msgs_en[1]["content"]
+
+
+class TestGermanRewritePrompt:
+    def test_prompt_inherits_german_localization_rules(self):
+        from pipeline.localization_de import LOCALIZED_REWRITE_SYSTEM_PROMPT
+        # German-specific rules must persist
+        assert "German" in LOCALIZED_REWRITE_SYSTEM_PROMPT or "Deutsch" in LOCALIZED_REWRITE_SYSTEM_PROMPT
+        assert "DACH" in LOCALIZED_REWRITE_SYSTEM_PROMPT or "Germans" in LOCALIZED_REWRITE_SYSTEM_PROMPT
+        # rewrite constraints
+        assert "target" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
+        assert "shrink" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
+        assert "expand" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
+
+    def test_builder_for_german(self):
+        from pipeline.localization_de import build_localized_rewrite_messages
+        msgs = build_localized_rewrite_messages(
+            source_full_text="Source text",
+            prev_localized_translation={
+                "full_text": "Hallo Welt.",
+                "sentences": [{"index": 0, "text": "Hallo Welt.", "source_segment_indices": [0]}],
+            },
+            target_chars=300, direction="expand", source_language="en",
+        )
+        assert "300" in msgs[1]["content"]
+        assert "expand" in msgs[1]["content"].lower()
+        assert "Hallo Welt" in msgs[1]["content"]
+        assert "English" in msgs[1]["content"]
