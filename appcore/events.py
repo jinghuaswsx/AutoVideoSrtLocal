@@ -29,6 +29,16 @@ EVT_CW_COMPOSE_READY = "cw_compose_ready"
 EVT_CW_DONE = "cw_done"
 EVT_CW_ERROR = "cw_error"
 
+# ── 视频翻译（测试）事件 ──────────────────────────────
+EVT_LAB_SHOT_DECOMPOSE_RESULT = "lab_shot_decompose_result"
+EVT_LAB_VOICE_MATCH_CANDIDATES = "lab_voice_match_candidates"
+EVT_LAB_VOICE_CONFIRMED = "lab_voice_confirmed"
+EVT_LAB_TRANSLATE_PROGRESS = "lab_translate_progress"
+EVT_LAB_TTS_PROGRESS = "lab_tts_progress"
+EVT_LAB_SUBTITLE_READY = "lab_subtitle_ready"
+EVT_LAB_PIPELINE_DONE = "lab_pipeline_done"
+EVT_LAB_PIPELINE_ERROR = "lab_pipeline_error"
+
 
 @dataclass
 class Event:

@@ -45,6 +45,7 @@ from web.routes.subtitle_removal import bp as subtitle_removal_bp
 from web.routes.copywriting import bp as copywriting_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
+from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
 
@@ -61,6 +62,72 @@ def _run_startup_recovery() -> None:
         resume_inflight_tasks()
     except Exception:
         log.warning("subtitle removal startup recovery failed", exc_info=True)
+    _recover_translate_lab_tasks_on_startup()
+
+
+def _recover_translate_lab_tasks_on_startup() -> list[str]:
+    """启动时把 running / awaiting_voice 的 translate_lab 任务重新拉起。
+
+    与 subtitle_removal 的 resume_inflight_tasks 设计一致：失败只打日志，
+    绝不阻断服务器启动。返回已恢复的 task_id 列表，主要供测试断言用。
+    """
+    restored: list[str] = []
+    try:
+        from appcore.db import query as db_query
+        from web.services import translate_lab_runner
+
+        rows = db_query(
+            "SELECT id, user_id, state_json FROM projects "
+            "WHERE type='translate_lab' AND deleted_at IS NULL "
+            "AND status IN ('running','awaiting_voice')",
+            (),
+        )
+    except Exception:
+        log.warning("translate_lab startup recovery query failed",
+                    exc_info=True)
+        return restored
+
+    import json as _json
+
+    for row in rows or []:
+        task_id = (row.get("id") or "").strip()
+        if not task_id:
+            continue
+        try:
+            state = {}
+            state_json = row.get("state_json") or ""
+            if state_json:
+                try:
+                    state = _json.loads(state_json)
+                except Exception:
+                    state = {}
+            task = task_state.get(task_id) or {}
+            if not task:
+                # 把 DB 里的 state 先灌回内存，便于 runner 从 task_state 读。
+                if state:
+                    task_state.update(task_id, **state)
+                    task_state.update(task_id, _user_id=row.get("user_id"))
+                    task = task_state.get(task_id) or {}
+            # 从首个非 done 的步骤恢复（缺字段时回退到 extract）
+            steps = (task.get("steps") or state.get("steps") or {})
+            start_step = "extract"
+            for name in ["extract", "shot_decompose", "voice_match",
+                         "translate", "tts_verify", "subtitle", "compose"]:
+                if (steps.get(name) or "") != "done":
+                    start_step = name
+                    break
+            translate_lab_runner.resume(
+                task_id=task_id,
+                start_step=start_step,
+                user_id=row.get("user_id"),
+            )
+            restored.append(task_id)
+        except Exception:
+            log.warning(
+                "[translate_lab recovery] resume failed task_id=%s",
+                task_id, exc_info=True,
+            )
+    return restored
 
 
 def create_app() -> Flask:
@@ -110,6 +177,7 @@ def create_app() -> Flask:
     app.register_blueprint(subtitle_removal_bp)
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
+    app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
     _run_startup_recovery()
@@ -173,6 +241,17 @@ def create_app() -> Flask:
         task_id = data.get("task_id")
         if task_id:
             # subtitle_removal joins should work even when the process memory is cold.
+            task = task_state.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
+
+    @socketio.on("join_translate_lab_task")
+    def on_join_translate_lab(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = (data or {}).get("task_id")
+        if task_id:
             task = task_state.get(task_id)
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)

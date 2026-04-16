@@ -15,6 +15,7 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
     "video_creation": "视频生成",
     "text_translate": "文案翻译",
     "subtitle_removal": "字幕移除",
+    "translate_lab": "视频翻译（测试）",
 }
 
 _HARDCODE_DEFAULT_HOURS = 168
