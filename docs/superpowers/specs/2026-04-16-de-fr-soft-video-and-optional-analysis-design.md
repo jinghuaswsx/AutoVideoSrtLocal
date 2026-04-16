@@ -42,11 +42,11 @@ extract → asr → alignment → translate → tts → subtitle → compose →
 ```
 改前（de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → analysis → export
 改后（de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → export
-                                                                                 + analysis（附加，手动触发）
+                                                                                 → analysis（附加，手动触发，放在 export 卡片之后）
 ```
 
 - compose 完成后自动进入 export，整体 `status` 推进到 `done`。
-- `analysis` 步骤仍然以"第 8 步"的顺位展示在时间线上（在 compose 之后、export 之前），但默认状态为 `idle`，不自动跑。
+- `analysis` 步骤以"第 9 步"的顺位展示在时间线上**最末尾**（在 export 卡片之后），但默认状态为 `idle`，不自动跑。
 - 用户点击 analysis 卡片上的「运行 AI 分析」按钮才会触发；运行中状态在卡片内展示，完成后 artifact 在卡片 preview 区展示。
 - analysis 的成功/失败只更新 `steps.analysis` 和 analysis artifact，**不修改 task 整体 `status`、`error` 字段**。
 
@@ -119,6 +119,7 @@ class DeTranslateRunner(PipelineRunner):
 
 ### 8. 前端 `_task_workbench.html`
 
+- **step-analysis 卡片在 DOM 中的位置从原先 step-compose 和 step-export 之间，挪到 step-export 之后**（作为时间线最末尾一项）。step-analysis 的 step-icon 编号由 `8` 改为 `9`；step-export 的 step-icon 编号由 `9` 改回 `8`。
 - step-analysis 卡片增加按钮区：
 
 ```html
@@ -128,6 +129,8 @@ class DeTranslateRunner(PipelineRunner):
 ```
 
 按钮 default hidden，由脚本按 step 状态决定何时显示。
+
+> 注：该模板是 de/fr/en 共用的 `_task_workbench.html`。调整顺序后英语流水线卡片顺序也变为 `... compose → export → analysis`，但英语主流程的 `_run` 仍按 compose→analysis→export 的逻辑顺序执行（`include_analysis_in_main_flow=True`）。视觉顺序与逻辑顺序不完全对应但互不影响，因为每个 step 的状态独立更新；若后续觉得英语项目卡片顺序错位不便观感，可通过模板条件渲染决定 analysis 的插入位置（`project_type in ("de_translate", "fr_translate")` 则插到末尾）。本次实施采用**条件插入**：模板中对 analysis 位置按项目类型分两种写法，使英语保留原顺序（8=analysis / 9=export），de/fr 改为（8=export / 9=analysis）。
 
 ### 9. 前端 `_task_workbench_scripts.html`
 
@@ -211,7 +214,7 @@ class DeTranslateRunner(PipelineRunner):
   - [web/services/fr_pipeline_runner.py](web/services/fr_pipeline_runner.py) — 新增 `run_analysis`
   - [web/routes/de_translate.py](web/routes/de_translate.py) — `POST /analysis/run`；`steps.analysis` 初值 `idle`；可选删除 `/download/soft`
   - [web/routes/fr_translate.py](web/routes/fr_translate.py) — 同上
-  - [web/templates/_task_workbench.html](web/templates/_task_workbench.html) — step-analysis 按钮
+  - [web/templates/_task_workbench.html](web/templates/_task_workbench.html) — step-analysis 按钮 + 按 project_type 切换 analysis 卡片位置（de/fr 放 export 之后）
   - [web/templates/_task_workbench_scripts.html](web/templates/_task_workbench_scripts.html) — idle 状态、过滤 soft_video、optionalSteps
   - [web/templates/de_translate_detail.html](web/templates/de_translate_detail.html) — 注入 optional_steps
   - [web/templates/fr_translate_detail.html](web/templates/fr_translate_detail.html) — 注入 optional_steps
