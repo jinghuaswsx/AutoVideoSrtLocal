@@ -15,7 +15,7 @@ from appcore import medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
-from appcore.image_translate_settings import SUPPORTED_LANGS, get_prompts_for_lang
+from appcore import image_translate_settings as its
 from web import store
 from web.services import image_translate_runner
 
@@ -92,9 +92,9 @@ def api_models():
 @login_required
 def api_system_prompts():
     lang = (request.args.get("lang") or "").strip().lower()
-    if lang not in SUPPORTED_LANGS:
-        return jsonify({"error": f"lang 必须是 {SUPPORTED_LANGS} 之一"}), 400
-    return jsonify(get_prompts_for_lang(lang))
+    if not its.is_image_translate_language_supported(lang):
+        return jsonify({"error": "lang must be a supported image-translate language"}), 400
+    return jsonify(its.get_prompts_for_lang(lang))
 
 
 @bp.route("/api/image-translate/upload/bootstrap", methods=["POST"])
