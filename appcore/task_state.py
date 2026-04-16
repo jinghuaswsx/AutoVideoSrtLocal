@@ -379,6 +379,65 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
     return task
 
 
+def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
+                         original_filename: str, user_id: int, **options) -> dict:
+    """创建视频翻译（测试）模块的初始任务状态。
+
+    测试模块采用 7 步流水线：
+    extract -> shot_decompose -> voice_match -> translate -> tts_verify -> subtitle -> compose
+    其余字段为空占位，真正的业务写入在后续任务里完成。
+    """
+    task = {
+        "id": task_id,
+        "type": "translate_lab",
+        "status": "uploaded",
+        "video_path": video_path,
+        "task_dir": task_dir,
+        "original_filename": original_filename,
+        "display_name": "",
+        "thumbnail_path": "",
+        "source_tos_key": "",
+        "source_object_info": {},
+        "steps": {
+            "extract": "pending",
+            "shot_decompose": "pending",
+            "voice_match": "pending",
+            "translate": "pending",
+            "tts_verify": "pending",
+            "subtitle": "pending",
+            "compose": "pending",
+        },
+        "step_messages": {
+            "extract": "",
+            "shot_decompose": "",
+            "voice_match": "",
+            "translate": "",
+            "tts_verify": "",
+            "subtitle": "",
+            "compose": "",
+        },
+        "current_review_step": "",
+        "shot_decompose": {},
+        "voice_match": {},
+        "voice_confirmed": {},
+        "translate_result": {},
+        "tts_result": {},
+        "subtitle_result": {},
+        "compose_result": {},
+        "artifacts": {},
+        "preview_files": {},
+        "result": {},
+        "error": "",
+        "_user_id": user_id,
+    }
+    if options:
+        task.update(options)
+    with _lock:
+        _tasks[task_id] = task
+    _db_upsert(task_id, user_id, task, original_filename)
+    return task
+
+
 def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
                             original_filename: str, user_id: int) -> dict:
     task = {

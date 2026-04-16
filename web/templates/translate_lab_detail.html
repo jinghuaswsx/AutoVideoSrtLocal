@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+{% set lab_steps = [
+  ('extract', '提取音频'),
+  ('shot_decompose', '镜头分解'),
+  ('voice_match', '音色匹配'),
+  ('translate', '翻译'),
+  ('tts_verify', 'TTS 校验'),
+  ('subtitle', '字幕生成'),
+  ('compose', '合成输出'),
+] %}
+{% block title %}{{ project.display_name or project.original_filename or project.id }} - 视频翻译（测试）{% endblock %}
+{% block page_title %}{{ project.display_name or project.original_filename or project.id }}（视频翻译（测试）） {% endblock %}
+{% block extra_style %}
+.back-link { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--text-main); text-decoration: none; opacity: 0.75; }
+.back-link:hover { opacity: 1; color: var(--primary-color); }
+.page-subtitle { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
+.lab-placeholder {
+  background: var(--bg-card);
+  border: 1.5px dashed var(--border-main);
+  border-radius: 12px;
+  padding: 24px;
+  color: #6b7280;
+  font-size: 14px;
+}
+.lab-placeholder h2 { font-size: 16px; color: var(--text-main); margin-bottom: 12px; }
+.lab-step-list { margin-top: 16px; display: grid; gap: 8px; }
+.lab-step {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--bg-body);
+  border: 1px solid var(--border-main); border-radius: 10px; font-size: 13px;
+}
+.lab-step .step-code { font-family: "JetBrains Mono", Consolas, monospace; color: #9ca3af; font-size: 12px; }
+.lab-step .step-label { color: var(--text-main); font-weight: 600; }
+.lab-step .step-status { color: #9ca3af; font-size: 12px; }
+.expired-notice { background: var(--bg-card); border: 1.5px dashed var(--border-main); border-radius: 12px; padding: 40px; text-align: center; color: #9ca3af; }
+{% endblock %}
+{% block content %}
+<a class="back-link" href="/translate-lab">← 返回视频翻译（测试）列表</a>
+{% if project.deleted_at %}
+<div class="expired-notice">
+  <p style="font-size: 24px; margin-bottom: 12px;">任务已过期</p>
+  <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
+</div>
+{% else %}
+<p class="page-subtitle">视频翻译（测试）模块骨架页面，Task 14 起会接入真实交互（镜头分解、音色确认、翻译、TTS 校验、字幕与合成）。</p>
+<section class="lab-placeholder">
+  <h2>流水线步骤占位</h2>
+  <p>当前仅骨架，用于确认路由、模板、菜单与任务工厂可用。</p>
+  <div class="lab-step-list">
+    {% for code, label in lab_steps %}
+    {% set status = (state.steps or {}).get(code, 'pending') %}
+    <div class="lab-step">
+      <div>
+        <span class="step-label">{{ label }}</span>
+        <span class="step-code">{{ code }}</span>
+      </div>
+      <span class="step-status">{{ status }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
