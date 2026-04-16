@@ -484,6 +484,20 @@
   socket.on("capcut_ready", () => scheduleRefreshTaskState(0));
   socket.on("pipeline_done", () => scheduleRefreshTaskState(0));
   socket.on("pipeline_error", ({ error }) => { showError(error); alert("错误: " + error); scheduleRefreshTaskState(0); });
+  socket.on("tts_duration_round", payload => {
+    if (!currentTask || !taskId) return;
+    currentTask.tts_duration_rounds = currentTask.tts_duration_rounds || [];
+    _upsertDurationRound(currentTask.tts_duration_rounds, payload);
+    if (payload.phase === "converged") {
+      currentTask.tts_duration_status = "converged";
+    } else if (payload.phase === "failed") {
+      currentTask.tts_duration_status = "failed";
+    } else {
+      currentTask.tts_duration_status = "running";
+    }
+    renderTtsDurationLog();
+    scheduleRefreshTaskState();
+  });
 
   async function refreshTaskState() {
     if (!taskId) return;
@@ -543,6 +557,7 @@
     updateStartButtonState();
     updateResumeButtons(currentTask);
     syncActiveRefreshLoop(currentTask);
+    renderTtsDurationLog();
   }
 
   function renderStepMessages() {
@@ -1008,6 +1023,118 @@
         updateAnalysisButton();
       }
     });
+  }
+
+  function _upsertDurationRound(rounds, payload) {
+    const idx = rounds.findIndex(r => r.round === payload.round);
+    if (idx >= 0) {
+      rounds[idx] = { ...rounds[idx], ...payload, __current_phase: payload.phase };
+    } else {
+      rounds.push({ ...payload, __current_phase: payload.phase });
+    }
+  }
+
+  function _durationRoundFileUrl(roundIndex, kind) {
+    // TASK_WORKBENCH_CONFIG.apiBase is injected by detail templates; fallback to english default
+    const base = (TASK_WORKBENCH_CONFIG && TASK_WORKBENCH_CONFIG.apiBase)
+      || '/api/tasks';
+    return `${base}/${taskId}/round-file/${roundIndex}/${kind}`;
+  }
+
+  function _phaseLabel(phase) {
+    return ({
+      translate_rewrite: '正在重写译文',
+      tts_script_regen:  '正在切分朗读块',
+      audio_gen:         '正在生成 TTS 音频',
+      measure:           '测量音频时长',
+      converged:         '已收敛',
+      failed:            '迭代失败',
+    })[phase] || phase || '';
+  }
+
+  function _roundStatusIcon(round, isFinalConverged, isFailed) {
+    if (round.audio_duration != null) {
+      const lo = round.duration_lo, hi = round.duration_hi;
+      if (lo != null && hi != null && round.audio_duration >= lo && round.audio_duration <= hi) {
+        return ['success', '✓'];
+      }
+      if (isFailed) return ['error', '✗'];
+      return ['warning', '!'];
+    }
+    return ['running', '⟳'];
+  }
+
+  function renderTtsDurationLog() {
+    const container = document.getElementById('ttsDurationLog');
+    if (!container) return;
+    const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
+    if (!rounds.length) {
+      container.hidden = true;
+      container.innerHTML = '';
+      return;
+    }
+    const status = currentTask.tts_duration_status || 'running';
+    const video_d = rounds[0].video_duration || null;
+    const lo = rounds[0].duration_lo, hi = rounds[0].duration_hi;
+
+    const metaStr = (video_d != null && lo != null && hi != null)
+      ? `视频 ${video_d.toFixed(1)}s · 目标区间 [${lo.toFixed(1)}, ${hi.toFixed(1)}]`
+      : '';
+
+    const parts = [];
+    parts.push(`<div class="duration-log-header">时长控制迭代 <span class="meta">${metaStr}</span></div>`);
+
+    rounds.forEach((r, idx) => {
+      const isLast = idx === rounds.length - 1;
+      const [iconClass, iconChar] = _roundStatusIcon(
+        r,
+        status === 'converged' && isLast,
+        status === 'failed' && isLast,
+      );
+      const phaseLabel = isLast && status === 'running' ? _phaseLabel(r.__current_phase) : '';
+      const targetStr = (r.target_duration != null)
+        ? `目标 ${r.target_duration.toFixed(1)}s / ${r.target_chars} 字符（${r.direction}）`
+        : '初始译文';
+      const measuredStr = (r.audio_duration != null)
+        ? `实测 ${r.audio_duration.toFixed(1)}s / ${r.char_count} 字符`
+        : '';
+
+      const files = [];
+      const ap = r.artifact_paths || {};
+      if (ap.localized_translation) {
+        files.push(`<a href="${_durationRoundFileUrl(r.round, 'localized_translation')}" target="_blank">译文 JSON</a>`);
+      }
+      if (ap.tts_script) {
+        files.push(`<a href="${_durationRoundFileUrl(r.round, 'tts_script')}" target="_blank">朗读文案 JSON</a>`);
+      }
+      if (ap.tts_full_audio) {
+        files.push(`<a href="${_durationRoundFileUrl(r.round, 'tts_full_audio')}" target="_blank">音频 MP3</a>`);
+      }
+
+      parts.push(`
+        <div class="duration-round">
+          <div class="duration-round-title">
+            <span class="status-icon ${iconClass}">${iconChar}</span>
+            <span>轮次 ${r.round}</span>
+          </div>
+          <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
+          ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
+          ${files.length ? `<div class="duration-round-files">${files.join('')}</div>` : ''}
+        </div>
+      `);
+    });
+
+    if (status === 'converged') {
+      const last = rounds[rounds.length - 1];
+      if (last.audio_duration != null) {
+        parts.push(`<div class="duration-log-final">✓ 第 ${last.round} 轮收敛 · 最终音频 ${last.audio_duration.toFixed(1)}s</div>`);
+      }
+    } else if (status === 'failed') {
+      parts.push(`<div class="duration-log-final failed">✗ 3 轮未收敛，任务失败</div>`);
+    }
+
+    container.innerHTML = parts.join('');
+    container.hidden = false;
   }
 
   function renderResultPanelFromTask() {
