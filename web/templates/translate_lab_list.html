@@ -1,13 +1,17 @@
 {% extends "layout.html" %}
 {% block title %}视频翻译（测试） - AutoVideoSrt{% endblock %}
 {% block page_title %}视频翻译（测试）{% endblock %}
-{% block extra_style %}
+{% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='translate_lab.css') }}">
 {% endblock %}
 {% block content %}
 <div class="page-header">
   <h1>视频翻译（测试）</h1>
   <div class="page-header-right">
+    <div class="view-toggle">
+      <button class="view-toggle-btn active" id="viewGrid" type="button" title="卡片视图">&#9638;</button>
+      <button class="view-toggle-btn" id="viewList" type="button" title="列表视图">&#9776;</button>
+    </div>
     <button class="btn btn-ghost btn-sm" type="button" id="syncVoiceLibraryBtn" title="拉取 ElevenLabs 共享音色库">同步音色库</button>
     <button class="btn btn-primary" type="button" id="openCreateBtn">+ 新建任务</button>
   </div>
@@ -19,7 +23,8 @@
 </div>
 
 {% if projects %}
-<div class="grid lab-grid">
+<!-- Grid View -->
+<div class="grid active" id="gridView">
   {% for p in projects %}
   <div class="project-card-wrap">
     <a class="project-card" href="/translate-lab/{{ p.id }}">
@@ -55,6 +60,45 @@
     </a>
     <button class="card-menu-btn" type="button" data-menu-id="menu-{{ p.id }}">⋯</button>
     <div class="card-menu" id="menu-{{ p.id }}">
+      <button type="button" class="danger" data-task-id="{{ p.id }}" data-action="delete">删除</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- List View -->
+<div class="list-view" id="listView">
+  {% for p in projects %}
+  <div class="list-item">
+    <a href="/translate-lab/{{ p.id }}" style="display:contents;text-decoration:none;color:inherit">
+      <div class="list-thumb">
+        {% if p.thumbnail_path %}
+          <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
+        {% else %}
+          🧪
+        {% endif %}
+      </div>
+      <div class="list-info">
+        <div class="list-filename">{{ p.display_name or (p.original_filename or p.id)[:10] }}</div>
+        <div class="list-meta">
+          <span class="lang-tag">{{ (p.source_language or 'zh')|upper }} → {{ (p.target_language or 'en')|upper }}</span>
+          <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
+          <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+          {% if p.expires_at %}
+          {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+          {% if hours_left <= 0 %}
+          <span class="expire-tag urgent">已过期</span>
+          {% elif hours_left <= 12 %}
+          <span class="expire-tag warning">剩余 {{ hours_left }}h</span>
+          {% else %}
+          <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </a>
+    <button class="card-menu-btn list-menu-variant" type="button" data-menu-id="lmenu-{{ p.id }}">⋯</button>
+    <div class="card-menu" id="lmenu-{{ p.id }}">
       <button type="button" class="danger" data-task-id="{{ p.id }}" data-action="delete">删除</button>
     </div>
   </div>
@@ -131,10 +175,33 @@
   </div>
 </div>
 
-<!-- Toast 提示 -->
+<!-- Toast -->
 <div class="lab-toast" id="labToast" role="status" aria-live="polite"></div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='translate_lab.js') }}"></script>
+<script>
+  // 视图切换（网格 / 列表）
+  (function () {
+    var grid = document.getElementById('gridView');
+    var list = document.getElementById('listView');
+    var gBtn = document.getElementById('viewGrid');
+    var lBtn = document.getElementById('viewList');
+    function switchView(mode) {
+      if (!grid || !list) return;
+      gBtn.classList.toggle('active', mode === 'grid');
+      lBtn.classList.toggle('active', mode === 'list');
+      grid.classList.toggle('active', mode === 'grid');
+      list.classList.toggle('active', mode === 'list');
+      try { localStorage.setItem('translateLabViewMode', mode); } catch (e) {}
+    }
+    if (gBtn) gBtn.addEventListener('click', function () { switchView('grid'); });
+    if (lBtn) lBtn.addEventListener('click', function () { switchView('list'); });
+    try {
+      var saved = localStorage.getItem('translateLabViewMode');
+      if (saved === 'list') switchView('list');
+    } catch (e) {}
+  })();
+</script>
 <script>TranslateLab.initList();</script>
 {% endblock %}

@@ -165,3 +165,27 @@ def api_delete_media_language(code: str):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True})
+
+
+@bp.route("/api/image-translate/prompts", methods=["GET"])
+@login_required
+@admin_required
+def get_image_translate_prompts():
+    from appcore.image_translate_settings import get_default_prompts
+    return jsonify(get_default_prompts())
+
+
+@bp.route("/api/image-translate/prompts", methods=["POST"])
+@login_required
+@admin_required
+def set_image_translate_prompt():
+    from appcore.image_translate_settings import update_prompt
+    body = request.get_json(silent=True) or {}
+    preset = (body.get("preset") or "").strip().lower()
+    value = (body.get("value") or "").strip()
+    if preset not in {"cover", "detail"}:
+        return jsonify({"error": "preset must be cover or detail"}), 400
+    if not value:
+        return jsonify({"error": "value required"}), 400
+    update_prompt(preset, value)
+    return jsonify({"ok": True})

@@ -563,23 +563,23 @@
       const previewEl = document.getElementById(`preview-${step}`);
       const artifact = artifacts[step];
       const status = currentTask?.steps?.[step] || "pending";
+      let html;
       if (!artifact) {
-        previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
-        return;
+        html = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+      } else if (artifact.layout === "variant_compare") {
+        html = renderVariantCompareArtifact(artifact);
+      } else if (artifact.layout === "analysis") {
+        html = renderAnalysisArtifact(artifact);
+      } else if (!artifact.items || !artifact.items.length) {
+        html = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+      } else {
+        html = artifact.items.map(item => renderPreviewItem(item)).join("");
       }
-      if (artifact.layout === "variant_compare") {
-        previewEl.innerHTML = renderVariantCompareArtifact(artifact);
-        return;
+      // 只有 HTML 真正变化时才写入 innerHTML，避免把正在播放的 <video>/<audio> 重建导致从头开始
+      if (previewEl.dataset.lastHtml !== html) {
+        previewEl.innerHTML = html;
+        previewEl.dataset.lastHtml = html;
       }
-      if (artifact.layout === "analysis") {
-        previewEl.innerHTML = renderAnalysisArtifact(artifact);
-        return;
-      }
-      if (!artifact.items || !artifact.items.length) {
-        previewEl.innerHTML = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
-        return;
-      }
-      previewEl.innerHTML = artifact.items.map(item => renderPreviewItem(item)).join("");
     });
   }
 

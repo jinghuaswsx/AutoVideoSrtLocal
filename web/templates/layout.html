@@ -281,6 +281,7 @@
     .theme-btn:hover { background: var(--bg-card); border-color: var(--primary-color); }
     {% block extra_style %}{% endblock %}
   </style>
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
   <!-- Sidebar -->
@@ -317,6 +318,9 @@
       </a>
       <a href="{{ url_for('subtitle_removal.upload_page') }}" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
         <span class="nav-icon">🧽</span> 字幕移除
+      </a>
+      <a href="{{ url_for('image_translate.page_list') }}" {% if request.path.startswith('/image-translate') %}class="active"{% endif %}>
+        <span class="nav-icon">🖼️</span> 图片翻译
       </a>
       <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
         <span class="nav-icon">📦</span> 素材管理
