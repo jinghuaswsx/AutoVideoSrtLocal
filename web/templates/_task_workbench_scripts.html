@@ -1057,7 +1057,10 @@
 
   function _roundStatusIcon(round, isFinalConverged, isFailed) {
     if (round.audio_duration != null) {
-      const lo = round.duration_lo, hi = round.duration_hi;
+      // Round-level success uses the stage-1 band [0.9v, 1.1v] (the rewrite
+      // loop's internal convergence target). The final [video-3, video]
+      // judgement is shown in the log-final line instead.
+      const lo = round.stage1_lo, hi = round.stage1_hi;
       if (lo != null && hi != null && round.audio_duration >= lo && round.audio_duration <= hi) {
         return ['success', '✓'];
       }
@@ -1137,9 +1140,20 @@
       // Prefer final_duration (after trim) over raw audio_duration
       const finalDur = last.final_duration != null ? last.final_duration : last.audio_duration;
       if (finalDur != null) {
+        const finalLo = last.duration_lo, finalHi = last.duration_hi;
+        const inTarget = finalLo != null && finalHi != null
+          && finalDur >= finalLo && finalDur <= finalHi;
         const trimmed = last.removed_count != null && last.removed_count > 0;
-        const label = trimmed ? '裁剪后' : `第 ${last.round} 轮`;
-        parts.push(`<div class="duration-log-final">✓ ${label} · 最终音频 ${finalDur.toFixed(1)}s</div>`);
+        const prefix = trimmed ? '裁剪后' : `第 ${last.round} 轮`;
+        const rangeStr = (finalLo != null && finalHi != null)
+          ? ` · 目标 [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]` : '';
+        if (inTarget) {
+          parts.push(`<div class="duration-log-final">✓ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr}（已命中）</div>`);
+        } else if (finalDur < finalLo) {
+          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr} · 低于下界，视频末尾会有静音</div>`);
+        } else {
+          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr} · 超过视频时长</div>`);
+        }
       }
     } else if (status === 'failed') {
       parts.push(`<div class="duration-log-final failed">✗ 时长控制失败</div>`);

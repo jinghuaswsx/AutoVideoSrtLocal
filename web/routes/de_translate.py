@@ -122,7 +122,9 @@ def upload_and_start():
 
     display_name = _resolve_name_conflict(user_id, _default_display_name(os.path.basename(file.filename)))
     db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-    store.update(task_id, display_name=display_name)
+    # Persist type into in-memory task dict so later store.update calls don't
+    # revert it to the default "translation" via _sync_task_to_db.
+    store.update(task_id, display_name=display_name, type="de_translate")
 
     thumb = _extract_thumbnail(video_path, task_dir)
     if thumb:
