@@ -11,53 +11,126 @@
 {% block title %}{{ project.display_name or project.original_filename or project.id }} - 视频翻译（测试）{% endblock %}
 {% block page_title %}{{ project.display_name or project.original_filename or project.id }}（视频翻译（测试）） {% endblock %}
 {% block extra_style %}
-.back-link { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--text-main); text-decoration: none; opacity: 0.75; }
-.back-link:hover { opacity: 1; color: var(--primary-color); }
-.page-subtitle { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
-.lab-placeholder {
-  background: var(--bg-card);
-  border: 1.5px dashed var(--border-main);
-  border-radius: 12px;
-  padding: 24px;
-  color: #6b7280;
-  font-size: 14px;
-}
-.lab-placeholder h2 { font-size: 16px; color: var(--text-main); margin-bottom: 12px; }
-.lab-step-list { margin-top: 16px; display: grid; gap: 8px; }
-.lab-step {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px; background: var(--bg-body);
-  border: 1px solid var(--border-main); border-radius: 10px; font-size: 13px;
-}
-.lab-step .step-code { font-family: "JetBrains Mono", Consolas, monospace; color: #9ca3af; font-size: 12px; }
-.lab-step .step-label { color: var(--text-main); font-weight: 600; }
-.lab-step .step-status { color: #9ca3af; font-size: 12px; }
-.expired-notice { background: var(--bg-card); border: 1.5px dashed var(--border-main); border-radius: 12px; padding: 40px; text-align: center; color: #9ca3af; }
+<link rel="stylesheet" href="{{ url_for('static', filename='translate_lab.css') }}">
 {% endblock %}
 {% block content %}
 <a class="back-link" href="/translate-lab">← 返回视频翻译（测试）列表</a>
 {% if project.deleted_at %}
 <div class="expired-notice">
-  <p style="font-size: 24px; margin-bottom: 12px;">任务已过期</p>
+  <p class="expired-title">任务已过期</p>
   <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
 </div>
 {% else %}
-<p class="page-subtitle">视频翻译（测试）模块骨架页面，Task 14 起会接入真实交互（镜头分解、音色确认、翻译、TTS 校验、字幕与合成）。</p>
-<section class="lab-placeholder">
-  <h2>流水线步骤占位</h2>
-  <p>当前仅骨架，用于确认路由、模板、菜单与任务工厂可用。</p>
-  <div class="lab-step-list">
-    {% for code, label in lab_steps %}
-    {% set status = (state.steps or {}).get(code, 'pending') %}
-    <div class="lab-step">
-      <div>
-        <span class="step-label">{{ label }}</span>
-        <span class="step-code">{{ code }}</span>
+
+{# 把任务初始状态序列化给前端。包含状态、选项、已有分镜、音色候选等，避免首次加载要额外 fetch。 #}
+{% set _source_language = state.source_language or project.source_language or 'zh' %}
+{% set _target_language = state.target_language or project.target_language or 'en' %}
+{% set _voice_match_mode = state.voice_match_mode or project.voice_match_mode or 'auto' %}
+
+<div class="lab-detail"
+     data-task-id="{{ project.id }}"
+     data-initial-status="{{ project.status or 'uploaded' }}"
+     data-source-language="{{ _source_language }}"
+     data-target-language="{{ _target_language }}"
+     data-voice-match-mode="{{ _voice_match_mode }}">
+
+  <!-- 顶部概览 + 启动区 -->
+  <section class="lab-card lab-overview" id="labOverview">
+    <div class="lab-overview-top">
+      <div class="lab-overview-meta">
+        <div class="lab-overview-title">{{ project.display_name or project.original_filename or project.id }}</div>
+        <div class="lab-overview-sub">
+          <span class="lang-tag">{{ _source_language|upper }} → {{ _target_language|upper }}</span>
+          <span class="mode-tag" id="labVoiceModeTag">音色：{% if _voice_match_mode == 'manual' %}人工确认{% else %}自动匹配{% endif %}</span>
+          <span class="status-tag" id="labStatusTag" data-status="{{ project.status or 'uploaded' }}">{{ project.status or 'uploaded' }}</span>
+        </div>
       </div>
-      <span class="step-status">{{ status }}</span>
+      <div class="lab-overview-actions" id="labOverviewActions">
+        <button type="button" class="btn btn-primary btn-sm" id="labStartBtn">开始处理</button>
+      </div>
     </div>
-    {% endfor %}
-  </div>
-</section>
+
+    <!-- 7 步进度条 -->
+    <ol class="lab-steps" id="labSteps">
+      {% for code, label in lab_steps %}
+      {% set status = (state.steps or {}).get(code, 'pending') %}
+      <li class="lab-step-item lab-step--{{ status }}" data-step="{{ code }}">
+        <span class="lab-step-index">{{ loop.index }}</span>
+        <div class="lab-step-text">
+          <div class="lab-step-label">{{ label }}</div>
+          <div class="lab-step-msg" data-step-msg="{{ code }}">{{ (state.step_messages or {}).get(code, '') }}</div>
+        </div>
+        <span class="lab-step-status" data-step-status="{{ code }}">{{ status }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <!-- 分镜时间轴 -->
+  <section class="lab-card" id="labShotSection" hidden>
+    <header class="lab-card-head">
+      <h2>分镜时间轴</h2>
+      <span class="lab-card-sub" id="labShotSummary"></span>
+    </header>
+    <div class="shot-timeline" id="labShotTimeline"></div>
+  </section>
+
+  <!-- 音色匹配（仅 manual 模式展示候选） -->
+  <section class="lab-card" id="labVoiceSection" hidden>
+    <header class="lab-card-head">
+      <h2>音色匹配</h2>
+      <span class="lab-card-sub" id="labVoiceSubtitle">请从下列候选中选择一个继续</span>
+    </header>
+    <div class="voice-match" id="labVoiceMatch"></div>
+    <audio id="labVoicePreviewAudio" preload="none"></audio>
+  </section>
+
+  <!-- 翻译与 TTS 合并展示（按分镜） -->
+  <section class="lab-card" id="labTranslateSection" hidden>
+    <header class="lab-card-head">
+      <h2>翻译与配音</h2>
+      <span class="lab-card-sub" id="labTranslateSummary"></span>
+    </header>
+    <div class="translate-tts" id="labTranslateList"></div>
+  </section>
+
+  <!-- 字幕预览 -->
+  <section class="lab-card" id="labSubtitleSection" hidden>
+    <header class="lab-card-head">
+      <h2>字幕</h2>
+      <div class="lab-card-actions">
+        <a id="labSubtitleDownload" class="btn btn-ghost btn-sm" href="#" download>下载 SRT</a>
+      </div>
+    </header>
+    <pre class="subtitle-preview" id="labSubtitlePreview"></pre>
+  </section>
+
+  <!-- 最终视频 -->
+  <section class="lab-card" id="labComposeSection" hidden>
+    <header class="lab-card-head">
+      <h2>合成输出</h2>
+      <div class="lab-card-actions">
+        <a id="labComposeDownload" class="btn btn-primary btn-sm" href="#" download>下载成片</a>
+      </div>
+    </header>
+    <video id="labComposeVideo" controls class="compose-video" preload="metadata"></video>
+  </section>
+
+  <!-- 错误提示 -->
+  <section class="lab-error" id="labError" hidden>
+    <span class="lab-error-icon">!</span>
+    <span class="lab-error-text" id="labErrorText"></span>
+  </section>
+
+</div>
+
+<!-- Toast -->
+<div class="lab-toast" id="labToast" role="status" aria-live="polite"></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if not project.deleted_at %}
+<script src="{{ url_for('static', filename='translate_lab.js') }}"></script>
+<script>TranslateLab.initDetail();</script>
 {% endif %}
 {% endblock %}

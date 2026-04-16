@@ -2,6 +2,7 @@
 
 包含：
 - 列表页与详情页（Task 2 已实现）
+- 新建任务上传 API（Task 14）
 - 启动 / 恢复 API、音色确认 API（Task 13）
 - 管理员触发共享音色库全量同步、embedding 回填 API（Task 13）
 
@@ -13,24 +14,56 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from datetime import datetime
 
 from flask import Blueprint, render_template, abort, request, jsonify
 from flask_login import login_required, current_user
 
+from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state
 from appcore.api_keys import resolve_key
-from appcore.db import query as db_query, query_one as db_query_one
+from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.settings import get_retention_hours
 from pipeline.voice_library_sync import (
     embed_missing_voices,
     sync_all_shared_voices,
 )
+from web import store
 from web.services import translate_lab_runner
+from web.upload_util import validate_video_extension
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("translate_lab", __name__)
+
+# 允许的目标语言 / 源语言 / 音色匹配模式
+_ALLOWED_SOURCE_LANGUAGES = {"zh", "en"}
+_ALLOWED_TARGET_LANGUAGES = {"en", "de", "fr", "ja", "es", "pt"}
+_ALLOWED_VOICE_MODES = {"auto", "manual"}
+
+
+def _default_display_name(original_filename: str) -> str:
+    """截取文件名前 10 字作为默认显示名。"""
+    name = os.path.splitext(original_filename)[0] if original_filename else ""
+    return name[:10] or "未命名"
+
+
+def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
+    """若 display_name 已被同一用户占用，则追加 (2)/(3)/... 递增。"""
+    base = desired_name
+    candidate = base
+    n = 2
+    while True:
+        row = db_query_one(
+            "SELECT id FROM projects WHERE user_id=%s AND display_name=%s "
+            "AND deleted_at IS NULL",
+            (user_id, candidate),
+        )
+        if not row:
+            return candidate
+        candidate = f"{base} ({n})"
+        n += 1
 
 
 def _get_lab_task(task_id: str, user_id: int) -> dict | None:
@@ -97,6 +130,125 @@ def detail(task_id: str):
 
 
 # ── API 路由 ──────────────────────────────────────────
+
+@bp.route("/api/translate-lab", methods=["POST"])
+@login_required
+def upload_and_create():
+    """上传视频并创建 translate_lab 任务。
+
+    表单字段：
+    - ``video``（必填）视频文件。
+    - ``source_language``（可选，默认 zh）:``zh|en``。
+    - ``target_language``（可选，默认 en）:``en|de|fr|ja|es|pt``。
+    - ``voice_match_mode``（可选，默认 auto）:``auto|manual``。
+
+    成功返回 ``{"task_id": "..."}``。
+    """
+    if "video" not in request.files:
+        return jsonify({"error": "缺少视频文件"}), 400
+    file = request.files["video"]
+    if not file.filename:
+        return jsonify({"error": "文件名为空"}), 400
+    if not validate_video_extension(file.filename):
+        return jsonify({"error": "不支持的视频格式"}), 400
+
+    source_language = (request.form.get("source_language") or "zh").strip()
+    target_language = (request.form.get("target_language") or "en").strip()
+    voice_match_mode = (request.form.get("voice_match_mode") or "auto").strip()
+    if source_language not in _ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": "source_language 非法"}), 400
+    if target_language not in _ALLOWED_TARGET_LANGUAGES:
+        return jsonify({"error": "target_language 非法"}), 400
+    if voice_match_mode not in _ALLOWED_VOICE_MODES:
+        return jsonify({"error": "voice_match_mode 非法"}), 400
+
+    task_id = str(uuid.uuid4())
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    os.makedirs(task_dir, exist_ok=True)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    file.save(video_path)
+
+    user_id = current_user.id
+    original_filename = os.path.basename(file.filename)
+    store.create_translate_lab(
+        task_id,
+        video_path,
+        task_dir,
+        original_filename=original_filename,
+        user_id=user_id,
+        source_language=source_language,
+        target_language=target_language,
+        voice_match_mode=voice_match_mode,
+    )
+
+    display_name = _resolve_name_conflict(
+        user_id, _default_display_name(original_filename),
+    )
+    db_execute(
+        "UPDATE projects SET display_name=%s WHERE id=%s",
+        (display_name, task_id),
+    )
+    task_state.update(task_id, display_name=display_name)
+
+    # 生成缩略图（失败不影响任务创建）
+    try:
+        from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
+        thumb = _extract_thumbnail(video_path, task_dir)
+        if thumb:
+            db_execute(
+                "UPDATE projects SET thumbnail_path=%s WHERE id=%s",
+                (thumb, task_id),
+            )
+    except Exception:
+        log.warning("[translate_lab] 缩略图生成失败 task_id=%s",
+                    task_id, exc_info=True)
+
+    return jsonify({
+        "task_id": task_id,
+        "source_language": source_language,
+        "target_language": target_language,
+        "voice_match_mode": voice_match_mode,
+    }), 201
+
+
+@bp.route("/api/translate-lab/<task_id>", methods=["DELETE"])
+@login_required
+def delete_task(task_id: str):
+    """软删除 translate_lab 任务。"""
+    user_id = current_user.id
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s "
+        "AND type='translate_lab' AND deleted_at IS NULL",
+        (task_id, user_id),
+    )
+    if not row:
+        return jsonify({"error": "任务不存在"}), 404
+    db_execute(
+        "UPDATE projects SET deleted_at=NOW() WHERE id=%s",
+        (task_id,),
+    )
+    try:
+        task_state.update(task_id, status="deleted")
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/translate-lab/<task_id>", methods=["GET"])
+@login_required
+def get_task(task_id: str):
+    """读取 translate_lab 任务当前状态（用于详情页刷新兜底）。"""
+    user_id = current_user.id
+    task = _get_lab_task(task_id, user_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+    # 不把内部字段 _user_id 等暴露给前端
+    payload = {k: v for k, v in task.items() if not k.startswith("_")}
+    return jsonify(payload)
+
 
 @bp.route("/api/translate-lab/<task_id>/start", methods=["POST"])
 @login_required

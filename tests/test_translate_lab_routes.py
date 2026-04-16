@@ -200,3 +200,184 @@ def test_embed_voice_library(authed_client_no_db, monkeypatch):
     assert data["count"] == 7
     assert seen["limit"] == 10
     assert "voice_embed_cache" in seen["cache_dir"]
+
+
+# ── Task 14：UI 回归测试 ──────────────────────────────
+
+
+def test_detail_page_contains_7_step_indicators(
+    authed_client_no_db, monkeypatch,
+):
+    """详情页必须包含 7 步流水线的所有 step code。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "user_id": uid,
+            "type": "translate_lab", "status": "running",
+            "display_name": "demo",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_query_one",
+        lambda sql, args: {
+            "id": "lab-1", "user_id": 1,
+            "type": "translate_lab",
+            "display_name": "demo",
+            "original_filename": "demo.mp4",
+            "status": "running",
+            "created_at": None, "expires_at": None, "deleted_at": None,
+            "state_json": "{}",
+        },
+    )
+    resp = authed_client_no_db.get("/translate-lab/lab-1")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    for step in ["extract", "shot_decompose", "voice_match",
+                 "translate", "tts_verify", "subtitle", "compose"]:
+        assert step in body, f"missing step {step}"
+
+
+def test_list_page_has_create_and_sync_buttons(
+    authed_client_no_db, monkeypatch,
+):
+    """列表页必须含「新建任务」和「同步音色库」按钮及其 DOM hook。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_query",
+        lambda sql, args: [],
+    )
+    resp = authed_client_no_db.get("/translate-lab")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="openCreateBtn"' in body
+    assert 'id="syncVoiceLibraryBtn"' in body
+    # 表单字段存在
+    assert 'name="voice_match_mode"' in body
+    assert 'id="createSourceLang"' in body
+    assert 'id="createTargetLang"' in body
+    # JS bundle 已挂载
+    assert "translate_lab.js" in body
+
+
+def test_upload_and_create_returns_task_id(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    """POST /api/translate-lab 接收视频文件并调 create_translate_lab。"""
+    seen: dict = {}
+
+    def fake_create(task_id, video_path, task_dir, **kwargs):
+        seen["task_id"] = task_id
+        seen["video_path"] = video_path
+        seen["task_dir"] = task_dir
+        seen.update(kwargs)
+        return {"id": task_id, "type": "translate_lab"}
+
+    monkeypatch.setattr(
+        "web.routes.translate_lab.store.create_translate_lab", fake_create,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_execute", lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_query_one",
+        lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.task_state.update",
+        lambda tid, **kw: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.OUTPUT_DIR", str(tmp_path / "output"),
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.UPLOAD_DIR", str(tmp_path / "uploads"),
+    )
+
+    # 缩略图生成：强制失败避免加载 ffmpeg 依赖（代码里已 try/except）
+    def _raise(*args, **kwargs):
+        raise RuntimeError("no ffmpeg in test")
+    monkeypatch.setattr(
+        "pipeline.ffutil.extract_thumbnail", _raise, raising=False,
+    )
+
+    from io import BytesIO
+    resp = authed_client_no_db.post(
+        "/api/translate-lab",
+        data={
+            "video": (BytesIO(b"fake-mp4"), "sample.mp4"),
+            "source_language": "zh",
+            "target_language": "de",
+            "voice_match_mode": "manual",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["task_id"] == seen["task_id"]
+    assert data["source_language"] == "zh"
+    assert data["target_language"] == "de"
+    assert data["voice_match_mode"] == "manual"
+    # create_translate_lab 收到正确 options
+    assert seen["source_language"] == "zh"
+    assert seen["target_language"] == "de"
+    assert seen["voice_match_mode"] == "manual"
+
+
+def test_upload_rejects_bad_extension(authed_client_no_db, monkeypatch):
+    """非视频扩展名应当被 validate_video_extension 拦截。"""
+    from io import BytesIO
+    resp = authed_client_no_db.post(
+        "/api/translate-lab",
+        data={"video": (BytesIO(b"x"), "foo.txt")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_rejects_bad_target_language(
+    authed_client_no_db, monkeypatch, tmp_path,
+):
+    """未在白名单中的 target_language 返回 400。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab.OUTPUT_DIR", str(tmp_path / "output"),
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.UPLOAD_DIR", str(tmp_path / "uploads"),
+    )
+    from io import BytesIO
+    resp = authed_client_no_db.post(
+        "/api/translate-lab",
+        data={
+            "video": (BytesIO(b"x"), "foo.mp4"),
+            "target_language": "ru",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+
+
+def test_delete_translate_lab_task(authed_client_no_db, monkeypatch):
+    """DELETE /api/translate-lab/<id> 软删除并返回 ok。"""
+    seen: dict = {}
+
+    def fake_query_one(sql, args):
+        return {"id": "lab-1"}
+
+    def fake_execute(sql, args):
+        seen["sql"] = sql
+        seen["args"] = args
+
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_query_one", fake_query_one,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.db_execute", fake_execute,
+    )
+    monkeypatch.setattr(
+        "web.routes.translate_lab.task_state.update",
+        lambda tid, **kw: None,
+    )
+
+    resp = authed_client_no_db.delete("/api/translate-lab/lab-1")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert "deleted_at=NOW()" in seen["sql"]
