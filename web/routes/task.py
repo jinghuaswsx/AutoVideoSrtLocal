@@ -273,6 +273,36 @@ def _send_with_range(path: str):
     return resp
 
 
+_ALLOWED_ROUND_KINDS = {
+    "localized_translation": ("localized_translation.round_{r}.json", "application/json"),
+    "tts_script":            ("tts_script.round_{r}.json",            "application/json"),
+    "tts_full_audio":        ("tts_full.round_{r}.mp3",               "audio/mpeg"),
+}
+
+
+@bp.route("/<task_id>/round-file/<int:round_index>/<kind>", methods=["GET"])
+@login_required
+def get_round_file(task_id: str, round_index: int, kind: str):
+    """Serve per-round intermediate artifacts for the default (English) translation pipeline."""
+    if round_index not in (1, 2, 3):
+        abort(404)
+    if kind not in _ALLOWED_ROUND_KINDS:
+        abort(404)
+
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
+    filename = filename_pattern.format(r=round_index)
+    path = os.path.join(task.get("task_dir", ""), filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not ready"}), 404
+
+    return send_file(os.path.abspath(path), mimetype=mime,
+                     as_attachment=False, download_name=filename)
+
+
 @bp.route("/<task_id>/start", methods=["POST"])
 @login_required
 def start(task_id):
