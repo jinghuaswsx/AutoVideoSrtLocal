@@ -143,6 +143,7 @@ def _compose_soft_legacy(video_path: str, audio_path: str, duration: float, outp
         "-c:a", "aac",
         "-b:a", "192k",
         "-shortest",
+        "-movflags", "+faststart",
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -171,6 +172,7 @@ def _compose_hard(
         "-preset", "fast",
         "-crf", "18",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -181,11 +183,13 @@ def _compose_hard(
 def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, margin_v: int) -> str:
     if not _VALID_FONT_NAME.match(font_name):
         font_name = "Impact"
-    fonts_dir = _escape_subtitle_filter_path(_fonts_dir())
     escaped_path = _escape_subtitle_filter_path(srt_path)
+    # 只在 fonts 目录存在时才传 fontsdir；目录不存在时 libass 仍能用系统字体渲染
+    fd = _fonts_dir()
+    fontsdir_param = f":fontsdir='{_escape_subtitle_filter_path(fd)}'" if os.path.isdir(fd) else ""
     return (
         f"subtitles=filename='{escaped_path}'"
-        f":fontsdir='{fonts_dir}'"
+        f"{fontsdir_param}"
         f":force_style='FontName={font_name},FontSize={font_size_pt},"
         f"PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Bold=1,"
         f"Alignment=2,MarginV={margin_v}'"

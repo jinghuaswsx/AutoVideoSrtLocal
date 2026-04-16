@@ -128,7 +128,19 @@ def test_build_subtitle_filter_includes_margin_v():
     assert "Alignment=2" in vf
 
 
-def test_build_subtitle_filter_includes_fontsdir():
+def test_build_subtitle_filter_omits_fontsdir_when_dir_missing(tmp_path, monkeypatch):
+    # fonts 目录不存在时不应加入 fontsdir 参数，以免 libass 渲染失败
+    import pipeline.compose as compose_mod
+    monkeypatch.setattr(compose_mod, "_fonts_dir", lambda: str(tmp_path / "nonexistent"))
+    vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
+    assert "fontsdir=" not in vf
+
+
+def test_build_subtitle_filter_includes_fontsdir_when_dir_exists(tmp_path, monkeypatch):
+    import pipeline.compose as compose_mod
+    fonts_dir = tmp_path / "fonts"
+    fonts_dir.mkdir()
+    monkeypatch.setattr(compose_mod, "_fonts_dir", lambda: str(fonts_dir))
     vf = _build_subtitle_filter("/tmp/sub.srt", "Anton", 14, 346)
     assert "fontsdir=" in vf
 
