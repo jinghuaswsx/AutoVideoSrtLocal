@@ -738,13 +738,6 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
       <input type="checkbox" id="archived">
       <span>已归档</span>
     </label>
-    {% if is_admin %}
-    <label class="oc-chip" id="chipScope">
-      <svg class="check" width="12" height="12"><use href="#ic-check"/></svg>
-      <input type="checkbox" id="scopeAll">
-      <span>查看全部</span>
-    </label>
-    {% endif %}
     <span class="oc-spacer"></span>
     <button class="oc-btn ghost" id="searchBtn">
       <svg width="14" height="14"><use href="#ic-search"/></svg>
@@ -762,7 +755,6 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 
 <script>
   window.MEDIAS_TOS_READY = {{ 'true' if tos_ready else 'false' }};
-  window.MEDIAS_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
 </script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 {% endblock %}

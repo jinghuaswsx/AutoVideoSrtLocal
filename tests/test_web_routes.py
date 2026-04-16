@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import json
 
@@ -908,6 +909,111 @@ def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, a
     assert 'filename=example_capcut_normal.zip' in download_response.headers["Content-Disposition"]
 
 
+def test_medias_list_is_shared_for_normal_users(authed_user_client_no_db, monkeypatch):
+    captured = {}
+    shared_row = {
+        "id": 7,
+        "user_id": 88,
+        "name": "shared-product",
+        "product_code": "shared-product",
+        "color_people": None,
+        "source": None,
+        "archived": False,
+        "created_at": datetime(2026, 4, 16, 10, 0, 0),
+        "updated_at": datetime(2026, 4, 16, 10, 0, 0),
+    }
+
+    def fake_list_products(user_id, **kwargs):
+        captured["user_id"] = user_id
+        return [shared_row], 1
+
+    monkeypatch.setattr("web.routes.medias.medias.list_products", fake_list_products)
+    monkeypatch.setattr("web.routes.medias.medias.count_items_by_product", lambda pids: {7: 1})
+    monkeypatch.setattr("web.routes.medias.medias.first_thumb_item_by_product", lambda pids: {7: None})
+    monkeypatch.setattr("web.routes.medias.medias.list_item_filenames_by_product", lambda pids, limit_per=5: {7: ["shared.mp4"]})
+    monkeypatch.setattr("web.routes.medias.medias.lang_coverage_by_product", lambda pids: {7: {"en": 1}})
+    monkeypatch.setattr("web.routes.medias.medias.get_product_covers_batch", lambda pids: {7: {"en": "shared-cover.jpg"}})
+
+    response = authed_user_client_no_db.get("/medias/api/products")
+
+    assert response.status_code == 200
+    assert captured["user_id"] is None
+    payload = response.get_json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["name"] == "shared-product"
+    assert payload["items"][0]["id"] == 7
+    assert payload["items"][0]["product_code"] == "shared-product"
+
+
+def test_medias_normal_user_can_read_update_and_delete_other_users_product(authed_user_client_no_db, monkeypatch):
+    product = {
+        "id": 7,
+        "user_id": 88,
+        "name": "共享产品",
+        "product_code": "shared",
+        "color_people": None,
+        "source": None,
+        "archived": False,
+        "created_at": datetime(2026, 4, 16, 10, 0, 0),
+        "updated_at": datetime(2026, 4, 16, 10, 0, 0),
+    }
+    updated = {}
+    deleted = {}
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product if pid == 7 else None)
+    monkeypatch.setattr("web.routes.medias.medias.get_product_covers", lambda pid: {"en": "shared-cover.jpg"} if pid == 7 else {})
+    monkeypatch.setattr("web.routes.medias.medias.list_copywritings", lambda pid: [{"lang": "en", "text": "shared copy"}] if pid == 7 else [])
+    monkeypatch.setattr(
+        "web.routes.medias.medias.list_items",
+        lambda pid: [{
+            "id": 701,
+            "product_id": 7,
+            "lang": "en",
+            "filename": "shared.mp4",
+            "display_name": "shared.mp4",
+            "cover_object_key": None,
+            "object_key": "shared.mp4",
+            "thumbnail_path": None,
+            "duration_seconds": 12.3,
+            "file_size": 456,
+            "created_at": datetime(2026, 4, 16, 10, 5, 0),
+        }] if pid == 7 else []
+    )
+    monkeypatch.setattr("web.routes.medias.medias.get_product_by_code", lambda code: None)
+    monkeypatch.setattr("web.routes.medias.medias.has_english_cover", lambda pid: True)
+    monkeypatch.setattr("web.routes.medias.medias.update_product", lambda pid, **fields: updated.update({"pid": pid, **fields}))
+    monkeypatch.setattr("web.routes.medias.medias.replace_copywritings", lambda pid, lang_items, lang=None: None)
+    monkeypatch.setattr("web.routes.medias.medias.soft_delete_product", lambda pid: deleted.update({"pid": pid}))
+
+    read_response = authed_user_client_no_db.get("/medias/api/products/7")
+    update_response = authed_user_client_no_db.put(
+        "/medias/api/products/7",
+        json={"name": "共享改名", "product_code": "shared-edited"},
+    )
+    delete_response = authed_user_client_no_db.delete("/medias/api/products/7")
+
+    failures = []
+
+    if read_response.status_code != 200:
+        failures.append(f"GET /medias/api/products/7 returned {read_response.status_code}")
+    else:
+        read_payload = read_response.get_json()
+        if read_payload["product"]["name"] != "共享产品":
+            failures.append(f"GET returned product name {read_payload['product']['name']!r}")
+
+    if update_response.status_code != 200:
+        failures.append(f"PUT /medias/api/products/7 returned {update_response.status_code}")
+    if updated != {"pid": 7, "name": "共享改名", "product_code": "shared-edited"}:
+        failures.append(f"PUT captured {updated!r}")
+
+    if delete_response.status_code != 200:
+        failures.append(f"DELETE /medias/api/products/7 returned {delete_response.status_code}")
+    if deleted != {"pid": 7}:
+        failures.append(f"DELETE captured {deleted!r}")
+
+    assert not failures, "\n".join(failures)
+
+
 def test_deploy_route_copies_variant_capcut_project(tmp_path, logged_in_client, monkeypatch):
     project_dir = tmp_path / "capcut_hook_cta"
     project_dir.mkdir()
@@ -1052,3 +1158,26 @@ def test_medias_page_shrinks_edit_modal_video_cards_to_eighty_percent(authed_cli
     assert '.oc-edit-form #edItemsGrid {' in body
     assert 'grid-template-columns:repeat(auto-fill, 208px);' in body
     assert 'justify-content:flex-start;' in body
+
+
+def test_medias_page_removes_admin_only_scope_toggle(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="scopeAll"' not in body
+    assert 'id="chipScope"' not in body
+    assert 'window.MEDIAS_IS_ADMIN' not in body
+
+
+def test_medias_scripts_do_not_use_admin_scope_switch():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    load_list_block = medias_js.split("// ---------- List ----------", 1)[1].split("// ---------- Modal ----------", 1)[0]
+    events_block = medias_js.split("// ---------- Events ----------", 1)[1].split("$('createBtn').addEventListener('click', openCreate);", 1)[0]
+
+    assert "scopeAll" not in load_list_block
+    assert "MEDIAS_IS_ADMIN" not in load_list_block
+    assert "params.set('scope', 'all')" not in load_list_block
+    assert "syncChip('chipScope', 'scopeAll')" not in events_block
+    assert "chipScope" not in events_block

@@ -72,19 +72,9 @@ bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
 
-
-def _is_admin() -> bool:
-    return getattr(current_user, "role", "") == "admin"
-
-
-def _can_access_product(product: dict | None, write: bool = False) -> bool:
-    if not product:
-        return False
-    if product["user_id"] == current_user.id:
-        return True
-    if _is_admin() and not write:
-        return True
-    return False
+def _can_access_product(product: dict | None) -> bool:
+    # 共享媒体库：只要产品存在就允许访问。
+    return product is not None
 
 
 def _serialize_product(p: dict, items_count: int | None = None,
@@ -143,7 +133,6 @@ def index():
     return render_template(
         "medias_list.html",
         tos_ready=tos_clients.is_media_bucket_configured(),
-        is_admin=_is_admin(),
     )
 
 
@@ -154,14 +143,12 @@ def index():
 def api_list_products():
     keyword = (request.args.get("keyword") or "").strip()
     archived = request.args.get("archived") in ("1", "true", "yes")
-    scope_all = request.args.get("scope") == "all" and _is_admin()
     page = max(1, int(request.args.get("page") or 1))
     limit = 20
     offset = (page - 1) * limit
 
-    user_id = None if scope_all else current_user.id
-    rows, total = medias.list_products(user_id, keyword=keyword, archived=archived,
-                                        offset=offset, limit=limit)
+    rows, total = medias.list_products(None, keyword=keyword, archived=archived,
+                                       offset=offset, limit=limit)
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
     thumb_covers = medias.first_thumb_item_by_product(pids)
@@ -220,7 +207,7 @@ def api_get_product(pid: int):
 @login_required
 def api_update_product(pid: int):
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
 
@@ -254,7 +241,7 @@ def api_update_product(pid: int):
 @login_required
 def api_delete_product(pid: int):
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     medias.soft_delete_product(pid)
     return jsonify({"ok": True})
@@ -268,7 +255,7 @@ def api_item_bootstrap(pid: int):
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     filename = os.path.basename((body.get("filename") or "").strip())
@@ -289,7 +276,7 @@ def api_item_bootstrap(pid: int):
 @login_required
 def api_item_complete(pid: int):
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
@@ -359,7 +346,7 @@ def api_cover_from_url(pid: int):
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
@@ -393,7 +380,7 @@ def api_item_cover_from_url(pid: int):
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     object_key, _data, err_or_ext = _download_image_to_tos(
@@ -411,7 +398,7 @@ def api_item_cover_set_from_url(item_id: int):
     if not it:
         abort(404)
     p = medias.get_product(it["product_id"])
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     object_key, data, err_or_ext = _download_image_to_tos(
@@ -442,7 +429,7 @@ def api_item_cover_bootstrap(pid: int):
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     filename = os.path.basename((body.get("filename") or "item_cover.jpg").strip())
@@ -466,7 +453,7 @@ def api_item_cover_set(item_id: int):
     if not it:
         abort(404)
     p = medias.get_product(it["product_id"])
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     object_key = (body.get("object_key") or "").strip()
@@ -528,7 +515,7 @@ def api_cover_bootstrap(pid: int):
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
@@ -551,7 +538,7 @@ def api_cover_bootstrap(pid: int):
 @login_required
 def api_cover_complete(pid: int):
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
@@ -588,7 +575,7 @@ def api_cover_complete(pid: int):
 @login_required
 def api_cover_delete(pid: int):
     p = medias.get_product(pid)
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
     if not medias.is_valid_language(lang):
@@ -612,7 +599,7 @@ def api_delete_item(item_id: int):
     if not it:
         abort(404)
     p = medias.get_product(it["product_id"])
-    if not _can_access_product(p, write=True):
+    if not _can_access_product(p):
         abort(404)
     medias.soft_delete_item(item_id)
     try:

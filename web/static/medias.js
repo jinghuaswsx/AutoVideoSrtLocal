@@ -58,11 +58,9 @@
   async function loadList() {
     const kw = $('kw').value.trim();
     const archived = $('archived').checked;
-    const scopeAll = window.MEDIAS_IS_ADMIN && $('scopeAll') && $('scopeAll').checked;
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
     if (archived) params.set('archived', '1');
-    if (scopeAll) params.set('scope', 'all');
     renderSkeleton();
     try {
       await ensureLanguages();
@@ -1117,7 +1115,6 @@
       sync();
     };
     syncChip('chipArchived', 'archived');
-    syncChip('chipScope', 'scopeAll');
 
     $('createBtn').addEventListener('click', openCreate);
     $('modalClose').addEventListener('click', hideModal);

@@ -69,3 +69,28 @@ def authed_client_no_db(monkeypatch):
         session["_fresh"] = True
 
     return client
+
+
+@pytest.fixture
+def authed_user_client_no_db(monkeypatch):
+    """Flask client for a normal user with app startup recovery disabled."""
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    from web.app import create_app
+
+    fake_user = {
+        "id": 2,
+        "username": "test-user",
+        "role": "user",
+        "is_active": 1,
+    }
+
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 2 else None)
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "2"
+        session["_fresh"] = True
+
+    return client
