@@ -160,7 +160,7 @@ def generate_tts_script(
 def generate_localized_rewrite(
     source_full_text: str,
     prev_localized_translation: dict,
-    target_chars: int,
+    target_words: int,
     direction: str,
     source_language: str,
     messages_builder,
@@ -169,13 +169,13 @@ def generate_localized_rewrite(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
-    """Rewrite an existing localized_translation to a target character count.
+    """Rewrite an existing localized_translation to a target word count.
 
     Args:
         source_full_text: original source text (Chinese or English).
         prev_localized_translation: previous round's translation dict
             ({full_text, sentences[...]}); supplied as reference for the LLM.
-        target_chars: approximate character count target for the new full_text.
+        target_words: approximate whitespace-token count target for full_text.
         direction: "shrink" or "expand".
         source_language: "zh" or "en" (used for lang_label in the prompt).
         messages_builder: language-specific callable, e.g.
@@ -186,7 +186,9 @@ def generate_localized_rewrite(
 
     Returns:
         Same schema as generate_localized_translation:
-        {"full_text": str, "sentences": [...], "_usage": {...}}
+        {"full_text": str, "sentences": [...], "_usage": {...}, "_messages": [...]}
+        The "_messages" field echoes the exact prompt sent to the LLM so the
+        caller can persist it for audit / UI display.
     """
     client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
     extra_body: dict = {}
@@ -198,7 +200,7 @@ def generate_localized_rewrite(
     messages = messages_builder(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
-        target_chars=target_chars,
+        target_words=target_words,
         direction=direction,
         source_language=source_language,
     )
@@ -211,8 +213,8 @@ def generate_localized_rewrite(
         **({"extra_body": extra_body} if extra_body else {}),
     )
     raw_content = response.choices[0].message.content
-    log.info("localized_rewrite raw response (provider=%s, direction=%s, target_chars=%d): %s",
-             provider, direction, target_chars, raw_content[:2000])
+    log.info("localized_rewrite raw response (provider=%s, direction=%s, target_words=%d): %s",
+             provider, direction, target_words, raw_content[:2000])
     payload = parse_json_content(raw_content)
     result = validate_localized_translation(payload)
     usage = getattr(response, "usage", None)
@@ -221,6 +223,7 @@ def generate_localized_rewrite(
             "input_tokens": getattr(usage, "prompt_tokens", None),
             "output_tokens": getattr(usage, "completion_tokens", None),
         }
+    result["_messages"] = messages
     return result
 
 

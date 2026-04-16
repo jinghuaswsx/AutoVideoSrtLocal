@@ -1098,15 +1098,20 @@
         status === 'failed' && isLast,
       );
       const phaseLabel = isLast && status === 'running' ? _phaseLabel(r.__current_phase) : '';
-      const targetStr = (r.target_duration != null)
-        ? `目标 ${r.target_duration.toFixed(1)}s / ${r.target_chars} 字符（${r.direction}）`
+      const targetWords = r.target_words != null ? r.target_words : r.target_chars;  // 向后兼容老字段
+      const targetStr = (r.target_duration != null && targetWords != null)
+        ? `目标 ${r.target_duration.toFixed(1)}s / ${targetWords} 单词（${r.direction}）`
         : '初始译文';
-      const measuredStr = (r.audio_duration != null)
-        ? `实测 ${r.audio_duration.toFixed(1)}s / ${r.char_count} 字符`
+      const measuredWords = r.word_count != null ? r.word_count : r.char_count;
+      const measuredStr = (r.audio_duration != null && measuredWords != null)
+        ? `实测 ${r.audio_duration.toFixed(1)}s / ${measuredWords} 单词`
         : '';
 
       const files = [];
       const ap = r.artifact_paths || {};
+      if (ap.localized_rewrite_messages) {
+        files.push(`<a href="${_durationRoundFileUrl(r.round, 'localized_rewrite_messages')}" target="_blank">调用提示词</a>`);
+      }
       if (ap.localized_translation) {
         files.push(`<a href="${_durationRoundFileUrl(r.round, 'localized_translation')}" target="_blank">译文 JSON</a>`);
       }

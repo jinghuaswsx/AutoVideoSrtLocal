@@ -6,7 +6,7 @@ class TestEnglishRewritePrompt:
     def test_prompt_contains_rewrite_instructions(self):
         from pipeline.localization import LOCALIZED_REWRITE_SYSTEM_PROMPT
         assert "REWRITING" in LOCALIZED_REWRITE_SYSTEM_PROMPT.upper()
-        assert "target character count" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
+        assert "target word count" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
         assert "shrink" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
         assert "expand" in LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
 
@@ -28,7 +28,7 @@ class TestEnglishRewritePrompt:
                 "full_text": "Bonjour monde.",
                 "sentences": [{"index": 0, "text": "Bonjour monde.", "source_segment_indices": [0]}],
             },
-            target_chars=200,
+            target_words=200,
             direction="shrink",
             source_language="zh",
         )
@@ -45,12 +45,12 @@ class TestEnglishRewritePrompt:
         msgs_zh = build_localized_rewrite_messages(
             source_full_text="中文原文",
             prev_localized_translation={"full_text": "x", "sentences": [{"index": 0, "text": "x", "source_segment_indices": [0]}]},
-            target_chars=100, direction="shrink", source_language="zh",
+            target_words=100, direction="shrink", source_language="zh",
         )
         msgs_en = build_localized_rewrite_messages(
             source_full_text="English source",
             prev_localized_translation={"full_text": "x", "sentences": [{"index": 0, "text": "x", "source_segment_indices": [0]}]},
-            target_chars=100, direction="shrink", source_language="en",
+            target_words=100, direction="shrink", source_language="en",
         )
         assert "Chinese" in msgs_zh[1]["content"]
         assert "English" in msgs_en[1]["content"]
@@ -75,7 +75,7 @@ class TestGermanRewritePrompt:
                 "full_text": "Hallo Welt.",
                 "sentences": [{"index": 0, "text": "Hallo Welt.", "source_segment_indices": [0]}],
             },
-            target_chars=300, direction="expand", source_language="en",
+            target_words=300, direction="expand", source_language="en",
         )
         assert "300" in msgs[1]["content"]
         assert "expand" in msgs[1]["content"].lower()
@@ -103,7 +103,7 @@ class TestFrenchRewritePrompt:
                 "full_text": "C'est super.",
                 "sentences": [{"index": 0, "text": "C'est super.", "source_segment_indices": [0]}],
             },
-            target_chars=250, direction="shrink", source_language="zh",
+            target_words=250, direction="shrink", source_language="zh",
         )
         assert "250" in msgs[1]["content"]
         assert "shrink" in msgs[1]["content"].lower()
@@ -149,7 +149,7 @@ class TestGenerateLocalizedRewrite:
                 "full_text": "Hallo.",
                 "sentences": [{"index": 0, "text": "Hallo.", "source_segment_indices": [0]}],
             },
-            target_chars=50,
+            target_words=50,
             direction="shrink",
             source_language="en",
             messages_builder=build_localized_rewrite_messages,

@@ -132,13 +132,17 @@ def _lang_display(label: str) -> str:
     return {"en": "英语", "de": "德语", "fr": "法语"}.get(label, label)
 
 
+# Default words-per-second by target language (fallback when no measured data).
+_DEFAULT_WPS = {"en": 2.5, "de": 2.0, "fr": 2.8}
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,
-    cps: float,
+    wps: float,
     video_duration: float,
 ) -> tuple[float, int, str]:
-    """Compute (target_duration, target_chars, direction) for rewrite rounds 2+.
+    """Compute (target_duration, target_words, direction) for rewrite rounds 2+.
 
     Round 2 aims directly at video_duration (center of the [0.9v, 1.1v] range).
     Round 3+ uses adaptive over-correction: reverse half of the previous error,
@@ -147,11 +151,11 @@ def _compute_next_target(
     Args:
         round_index: 2 or higher.
         last_audio_duration: audio length from the previous round (seconds).
-        cps: characters-per-second rate for this voice×language.
+        wps: words-per-second rate for this voice×language (measured or default).
         video_duration: original video duration (seconds).
 
     Returns:
-        (target_duration_seconds, target_char_count, direction)
+        (target_duration_seconds, target_word_count, direction)
         direction ∈ {"shrink", "expand"}
     """
     duration_lo = video_duration * 0.9
@@ -166,8 +170,8 @@ def _compute_next_target(
         target_duration = max(duration_lo, min(duration_hi, raw))
         direction = "shrink" if last_audio_duration > center else "expand"
 
-    target_chars = max(10, round(target_duration * cps))
-    return target_duration, target_chars, direction
+    target_words = max(3, round(target_duration * wps))
+    return target_duration, target_words, direction
 
 
 class PipelineRunner:
@@ -221,7 +225,6 @@ class PipelineRunner:
         tts_segments, rounds, final_round.
         """
         import importlib
-        from pipeline.speech_rate_model import get_rate, update_rate
         from pipeline.tts import generate_full_audio, _get_audio_duration
         from pipeline.translate import generate_tts_script, generate_localized_rewrite
 
@@ -235,11 +238,12 @@ class PipelineRunner:
 
         rounds: list[dict] = []
         round_products: list[dict] = []  # full per-round products (kept in-memory only)
-        prev_localized = initial_localized_translation
         last_audio_duration = 0.0
-        last_char_count = 0
+        last_word_count = 0
+        default_wps = _DEFAULT_WPS.get(self.target_language_label, 2.5)
 
         from functools import partial
+        from pipeline.localization import count_words as _count_words
         validator = partial(
             getattr(loc_mod, "validate_tts_script", None)
             or importlib.import_module("pipeline.localization").validate_tts_script,
@@ -257,32 +261,38 @@ class PipelineRunner:
                 "artifact_paths": {},
             }
 
-            # Phase 1: translate_rewrite (skipped on round 1)
+            # Phase 1: translate_rewrite (skipped on round 1).
+            # IMPORTANT: rewrite uses the ORIGINAL ASR source and the INITIAL
+            # localized_translation (round-1 product) as a style anchor — never
+            # the previous rewrite's output. This prevents recursive drift
+            # over multiple rounds.
             if round_index == 1:
-                localized_translation = prev_localized
+                localized_translation = initial_localized_translation
                 round_record["message"] = "初始译文（来自 translate 步骤）"
             else:
-                voice_el_id = voice["elevenlabs_voice_id"]
-                lang_code = self.tts_language_code or "en"
-                cps = get_rate(voice_el_id, lang_code)
-                if not cps or cps <= 0:
-                    cps = (last_char_count / last_audio_duration) if last_audio_duration > 0 else 15.0
-                target_duration, target_chars, direction = _compute_next_target(
-                    round_index, last_audio_duration, cps, video_duration,
+                # wps: measured from round 1 if available, else language default.
+                if last_audio_duration > 0 and last_word_count > 0:
+                    wps = last_word_count / last_audio_duration
+                else:
+                    wps = default_wps
+                target_duration, target_words, direction = _compute_next_target(
+                    round_index, last_audio_duration, wps, video_duration,
                 )
                 round_record["target_duration"] = target_duration
-                round_record["target_chars"] = target_chars
+                round_record["target_words"] = target_words
+                round_record["wps_used"] = wps
                 round_record["direction"] = direction
                 round_record["message"] = (
-                    f"第 {round_index} 轮：重写{_lang_display(self.target_language_label)}译文"
-                    f"（目标 {target_chars} 字符，{direction}）"
+                    f"第 {round_index} 轮：重译{_lang_display(self.target_language_label)}文案"
+                    f"（目标 {target_words} 单词，{direction}）"
                 )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
+                # Always base on the INITIAL translation, not the last round's output.
                 localized_translation = generate_localized_rewrite(
                     source_full_text=source_full_text,
-                    prev_localized_translation=prev_localized,
-                    target_chars=target_chars,
+                    prev_localized_translation=initial_localized_translation,
+                    target_words=target_words,
                     direction=direction,
                     source_language=source_language,
                     messages_builder=loc_mod.build_localized_rewrite_messages,
@@ -291,7 +301,18 @@ class PipelineRunner:
                 )
                 _save_json(task_dir, f"localized_translation.round_{round_index}.json", localized_translation)
                 round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
-                round_record["char_count_prev"] = last_char_count
+                # Persist the actual LLM prompt used this round for audit / UI download.
+                if localized_translation.get("_messages"):
+                    _save_json(task_dir,
+                               f"localized_rewrite_messages.round_{round_index}.json",
+                               {"round": round_index,
+                                "target_words": target_words,
+                                "direction": direction,
+                                "messages": localized_translation["_messages"]})
+                    round_record["artifact_paths"]["localized_rewrite_messages"] = (
+                        f"localized_rewrite_messages.round_{round_index}.json"
+                    )
+                round_record["word_count_prev"] = last_word_count
 
             # Phase 2: tts_script_regen
             self._emit_duration_round(task_id, round_index, "tts_script_regen", round_record)
@@ -318,12 +339,10 @@ class PipelineRunner:
 
             # Phase 4: measure
             audio_duration = _get_audio_duration(result["full_audio_path"])
-            char_count = len(tts_script.get("full_text", ""))
-            update_rate(voice["elevenlabs_voice_id"],
-                        self.tts_language_code or "en",
-                        chars=char_count, duration_seconds=audio_duration)
+            word_count = _count_words(tts_script.get("full_text", ""))
             round_record["audio_duration"] = audio_duration
-            round_record["char_count"] = char_count
+            round_record["word_count"] = word_count
+            round_record["wps_observed"] = (word_count / audio_duration) if audio_duration > 0 else 0.0
 
             # persist rounds incrementally so UI survives page refresh
             import appcore.task_state as task_state
@@ -350,9 +369,9 @@ class PipelineRunner:
                     "final_round": round_index,
                 }
 
-            prev_localized = localized_translation
+            # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
-            last_char_count = char_count
+            last_word_count = word_count
 
         # MAX_ROUNDS rounds completed without landing in [0.9v, 1.1v].
         # Pick the round whose audio_duration is closest to video_duration.

@@ -7,55 +7,57 @@ from appcore.runtime import _compute_next_target
 class TestComputeNextTarget:
     def test_round2_shrink_when_audio_over_video(self):
         # video=30, lo=27, hi=33, audio=35 (over hi)
-        td, tc, direction = _compute_next_target(
-            round_index=2, last_audio_duration=35.0, cps=15.0, video_duration=30.0,
+        td, tw, direction = _compute_next_target(
+            round_index=2, last_audio_duration=35.0, wps=2.5, video_duration=30.0,
         )
         assert direction == "shrink"
         assert td == pytest.approx(30.0)  # aim at video_duration
-        assert tc == round(30.0 * 15.0)  # 450
+        assert tw == round(30.0 * 2.5)  # 75
 
     def test_round2_expand_when_audio_below_lower_bound(self):
         # video=30, lo=27, audio=25 (below lo)
-        td, tc, direction = _compute_next_target(
-            round_index=2, last_audio_duration=25.0, cps=15.0, video_duration=30.0,
+        td, tw, direction = _compute_next_target(
+            round_index=2, last_audio_duration=25.0, wps=2.5, video_duration=30.0,
         )
         assert direction == "expand"
         assert td == pytest.approx(30.0)
-        assert tc == round(30.0 * 15.0)  # 450
+        assert tw == round(30.0 * 2.5)  # 75
 
     def test_round3_adaptive_overcorrection_when_still_long(self):
         # video=30, center=30, audio=33
         # raw = 30 - 0.5*(33 - 30) = 28.5 → within [27, 33] clamp
-        td, tc, direction = _compute_next_target(
-            round_index=3, last_audio_duration=33.0, cps=15.0, video_duration=30.0,
+        td, tw, direction = _compute_next_target(
+            round_index=3, last_audio_duration=33.0, wps=2.5, video_duration=30.0,
         )
         assert direction == "shrink"
         assert td == pytest.approx(28.5)
+        assert tw == round(28.5 * 2.5)  # 71
 
     def test_round3_adaptive_overcorrection_when_still_short(self):
         # video=30, center=30, audio=25
         # raw = 30 - 0.5*(25 - 30) = 32.5 → within [27, 33] clamp
-        td, tc, direction = _compute_next_target(
-            round_index=3, last_audio_duration=25.0, cps=15.0, video_duration=30.0,
+        td, tw, direction = _compute_next_target(
+            round_index=3, last_audio_duration=25.0, wps=2.5, video_duration=30.0,
         )
         assert direction == "expand"
         assert td == pytest.approx(32.5)
+        assert tw == round(32.5 * 2.5)  # 81
 
-    def test_target_chars_floor_at_10(self):
-        # Tiny video + small cps → target_chars would be ~0
-        td, tc, direction = _compute_next_target(
-            round_index=2, last_audio_duration=5.0, cps=0.1, video_duration=1.0,
+    def test_target_words_floor_at_3(self):
+        # Tiny video + small wps → target_words would be ~0 without floor.
+        td, tw, direction = _compute_next_target(
+            round_index=2, last_audio_duration=5.0, wps=0.01, video_duration=1.0,
         )
-        assert tc >= 10
+        assert tw >= 3
 
     def test_short_video(self):
         # video=2 → lo=1.8, hi=2.2; round 2 shrink aims at video=2
-        td, tc, direction = _compute_next_target(
-            round_index=2, last_audio_duration=5.0, cps=15.0, video_duration=2.0,
+        td, tw, direction = _compute_next_target(
+            round_index=2, last_audio_duration=5.0, wps=2.5, video_duration=2.0,
         )
         assert direction == "shrink"
         assert td == pytest.approx(2.0)
-        assert tc >= 10
+        assert tw >= 3
 
 
 import os

@@ -156,12 +156,12 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
     ]
 
 
-LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a French content creator based in France REWRITING an existing French translation to match a target character count.
+LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a French content creator based in France REWRITING an existing French translation to match a target word count.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 
 REWRITE CONSTRAINTS (critical):
-- Target character count: approximately {target_chars} characters (±5%, measured on full_text).
+- Target word count: approximately {target_words} words (±10%, counted as whitespace-separated tokens of full_text). Note: French élisions like "l'organizer" and "c'est" count as one word.
 - Direction: {direction}
   * "shrink": remove modifiers, examples, and repetitions while preserving every factual claim and the core benefit.
   * "expand": add natural elaborations (examples, relatable details, light context). Preserve all facts; never invent new claims.
@@ -183,13 +183,13 @@ STYLE (identical to original French localization):
 def build_localized_rewrite_messages(
     source_full_text: str,
     prev_localized_translation: dict,
-    target_chars: int,
+    target_words: int,
     direction: str,
     source_language: str = "zh",
 ) -> list[dict]:
     lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
     prompt = LOCALIZED_REWRITE_SYSTEM_PROMPT.replace(
-        "{target_chars}", str(target_chars)
+        "{target_words}", str(target_words)
     ).replace("{direction}", direction)
     return [
         {"role": "system", "content": prompt},
@@ -198,7 +198,7 @@ def build_localized_rewrite_messages(
             "content": (
                 f"Source {lang_label} full text (for reference, preserve meaning):\n"
                 f"{source_full_text}\n\n"
-                f"Previous French translation (rewrite this to {direction} to ~{target_chars} chars):\n"
+                f"Previous French translation (rewrite this to {direction} to ~{target_words} words):\n"
                 f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
             ),
         },

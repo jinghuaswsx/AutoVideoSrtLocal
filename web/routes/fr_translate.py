@@ -348,9 +348,10 @@ def get_artifact(task_id, name):
 
 
 _ALLOWED_ROUND_KINDS = {
-    "localized_translation": ("localized_translation.round_{r}.json", "application/json"),
-    "tts_script":            ("tts_script.round_{r}.json",            "application/json"),
-    "tts_full_audio":        ("tts_full.round_{r}.mp3",               "audio/mpeg"),
+    "localized_translation":        ("localized_translation.round_{r}.json",       "application/json"),
+    "localized_rewrite_messages":   ("localized_rewrite_messages.round_{r}.json",  "application/json"),
+    "tts_script":                   ("tts_script.round_{r}.json",                  "application/json"),
+    "tts_full_audio":               ("tts_full.round_{r}.mp3",                     "audio/mpeg"),
 }
 
 
