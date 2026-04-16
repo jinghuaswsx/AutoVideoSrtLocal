@@ -1,11 +1,11 @@
-# 德语/法语视频翻译：移除软字幕视频 + AI 分析改为可选手动触发
+# 英语/德语/法语视频翻译：移除软字幕视频 + AI 分析改为可选手动触发
 
 日期：2026-04-16
 分支：feature/image-translate
 
 ## 背景
 
-德语（`DeTranslateRunner`）和法语（`FrTranslateRunner`）视频翻译模块目前主流程有 9 步：
+英语（`PipelineRunner` 基类，对应默认"翻译"项目）、德语（`DeTranslateRunner`）、法语（`FrTranslateRunner`）三种视频翻译模块目前主流程有 9 步：
 
 ```
 extract → asr → alignment → translate → tts → subtitle → compose → analysis → export
@@ -23,26 +23,26 @@ extract → asr → alignment → translate → tts → subtitle → compose →
    - 虽然内部对 `score` 与 `csk` 各自 try/except，但仍是自动触发，主流程要等它跑完才能进入 export。
    - 用户希望把它当成"参考用的附加数据"，成功或失败都不打紧，且默认不跑，由用户手动触发。
 
-本次只改德语和法语两个模块，不影响英语（`PipelineRunner` 基类默认行为保持不变）与 v2 流水线（`runtime_v2`）。
+本次改英语、德语、法语三个模块（都走 `PipelineRunner` 或其子类，共用 `_task_workbench.html`）。不影响 v2 流水线（`runtime_v2.py` / `PipelineRunnerV2`，走 translate_lab 独立模板）。
 
 ## 目标
 
-1. 德语/法语主流程不再生成软字幕 mp4，也不再展示软字幕视频；老项目（artifact 里还有 `soft_video` 条目的）UI 立刻不再出现软字幕视频。
-2. 德语/法语 AI 视频分析从主流程中移除，compose 完成后直接跑 export；AI 分析保留为时间线第 8 步卡片里的"运行 AI 分析"按钮，按需触发，成功/失败都不影响整体 `status`。
-3. 英语主流程（`PipelineRunner`）行为保持不变。
+1. 英语/德语/法语主流程不再生成软字幕 mp4，也不再展示软字幕视频；老项目（artifact 里还有 `soft_video` 条目的）UI 立刻不再出现软字幕视频。
+2. 英语/德语/法语 AI 视频分析从主流程中移除，compose 完成后直接跑 export；AI 分析保留为时间线最末尾（第 9 步位置）卡片里的"运行 AI 分析"按钮，按需触发，成功/失败都不影响整体 `status`。
+3. v2 流水线（`PipelineRunnerV2`，translate_lab）行为保持不变（变体合成，依然生成 soft/hard，analysis 不变）。
 
 ## 非目标
 
-- 不动 v2 流水线（`runtime_v2.py`）相关逻辑。
+- 不动 v2 流水线（`runtime_v2.py` / `PipelineRunnerV2`）相关逻辑（通过类属性 override 保持现有行为）。
 - 不做 DB 数据迁移脚本（老项目软字幕 artifact 条目通过前端防御式过滤兼容）。
 - 不改 AI 分析本身的实现（评分 + CSK 的 Gemini 调用逻辑不变）。
 
 ## 主流程变化
 
 ```
-改前（de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → analysis → export
-改后（de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → export
-                                                                                 → analysis（附加，手动触发，放在 export 卡片之后）
+改前（en/de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → analysis → export
+改后（en/de/fr）：extract → asr → alignment → translate → tts → subtitle → compose → export
+                                                                                    → analysis（附加，手动触发，放在 export 卡片之后）
 ```
 
 - compose 完成后自动进入 export，整体 `status` 推进到 `done`。
@@ -61,47 +61,49 @@ extract → asr → alignment → translate → tts → subtitle → compose →
 
 ### 2. `appcore/runtime.py`
 
-- `PipelineRunner` 基类新增两个类属性：
-  - `include_soft_video: bool = True`
-  - `include_analysis_in_main_flow: bool = True`
+- `PipelineRunner` 基类新增两个类属性，**默认值直接设为 False**（英语流水线也生效）：
+  - `include_soft_video: bool = False`
+  - `include_analysis_in_main_flow: bool = False`
 - `_step_compose(...)` 调用 `compose_video(..., with_soft=self.include_soft_video)`。
 - `_step_compose` 里 `if result.get("soft_video"):` 的 `set_preview_file` 分支不变（`with_soft=False` 时 `result["soft_video"]` 为 None，自然不会进分支）。
 - `_run()` 按 `self.include_analysis_in_main_flow` 过滤 steps 列表；False 时跳过 `("analysis", ...)` 元组。
 - 新增模块级函数 `run_analysis_only(task_id: str, user_id: int | None = None, runner_cls: type[PipelineRunner] = PipelineRunner) -> None`：
   - 单独启动后台线程。
-  - 构造 runner 实例（带 EventBus 和 socketio handler 订阅，复用 de/fr 的 pipeline_runner 注册机制）。
+  - 构造 runner 实例（带 EventBus 和 socketio handler 订阅，复用现有 pipeline_runner 注册机制）。
   - 执行 `runner._step_analysis(task_id)`，内部异常捕获后只做 `_set_step(task_id, "analysis", "error", str(exc))` + 记录 artifact 的 `score_error`/`csk_error`，**绝不改 status**。
   - 实际上 `_step_analysis` 内部的 try/except 已经分别处理 score 和 csk，只需再包一层外层兜底即可。
 
 ### 3. `appcore/runtime_de.py` / `appcore/runtime_fr.py`
 
-两个子类各自设置类属性：
+子类无需额外 override —— 直接继承基类默认值 `False/False`。
+
+### 3b. `appcore/runtime_v2.py`
+
+`PipelineRunnerV2` **显式 override 回 True/True** 保持现有行为：
 
 ```python
-class DeTranslateRunner(PipelineRunner):
-    project_type = "de_translate"
-    include_soft_video = False
-    include_analysis_in_main_flow = False
+class PipelineRunnerV2(PipelineRunner):
+    include_soft_video = True
+    include_analysis_in_main_flow = True
 ```
 
-（`FrTranslateRunner` 同理。）
+（如果 v2 的 compose/analysis 实现不走基类 `_step_compose` / `_run` 的 steps 列表，则上述覆盖可能无效但也无害；需要在实现时核对 v2 的执行路径。）
 
-### 4. `web/services/de_pipeline_runner.py` / `fr_pipeline_runner.py`
+### 4. `web/services/pipeline_runner.py` / `de_pipeline_runner.py` / `fr_pipeline_runner.py`
 
-- 新增 `run_analysis(task_id, user_id=None)` 入口函数，与现有 `start/resume` 平行：
+- 三者分别新增 `run_analysis(task_id, user_id=None)` 入口函数，与现有 `start/resume` 平行：
   - 订阅 EventBus → socketio emit（复用 `_make_socketio_handler`）。
   - 后台线程执行 runner 的 analysis 步骤（通过 `run_analysis_only` 或直接 `runner._step_analysis`）。
+  - 英语 `pipeline_runner.py` 使用 `PipelineRunner`；de/fr 使用各自子类。
 
-### 5. 路由层 `web/routes/de_translate.py` / `web/routes/fr_translate.py`
+### 5. 路由层 `web/routes/task.py` / `de_translate.py` / `fr_translate.py`
 
-- **删除** `GET /api/{de|fr}-translate/<task_id>/download/soft` 路由（若在 de/fr 自身路由里定义了；通过 task blueprint 通用下发的不删，见第 6 节）。
-- **新增** `POST /api/{de|fr}-translate/<task_id>/analysis/run`：
+- **新增** `POST /api/task/<task_id>/analysis/run`（英语/默认翻译）、`POST /api/{de|fr}-translate/<task_id>/analysis/run`：
   - 权限校验同现有 endpoint。
   - 检查 `task.steps.analysis` 不处于 `running`（幂等防重）。
-  - 调用 pipeline_runner.run_analysis(task_id, user_id)。
+  - 调用对应 pipeline_runner.run_analysis(task_id, user_id)。
   - 返回 `{"ok": true}`。
-
-（如果 de/fr 路由里没有独立的 `/download/soft`（通过 task blueprint 统一处理），则需要看 [web/routes/task.py](web/routes/task.py) 里 `soft_video` 的处理；第 6 节补充。）
+- **`/download/soft` 路由**：看是否在 task blueprint 通用定义；若新项目 `result.soft_video = None` 则自然 404，保留不强制清理以兼容 v2 流水线（仍写 soft_video）。
 
 ### 6. 下载接口兼容
 
@@ -113,13 +115,13 @@ class DeTranslateRunner(PipelineRunner):
 
 ### 7. 初始化任务 `steps.analysis` 状态
 
-- 新建 de/fr 任务时，`steps.analysis` 从默认的 `"pending"` 改为 `"idle"`。
+- 新建英语/德语/法语任务时，`steps.analysis` 从默认的 `"pending"` 改为 `"idle"`。
 - 其他步骤保持 `"pending"`。
-- 具体改动点：de/fr 的任务创建路由（或 task_state 的新建逻辑里，判断 `project_type` 给 `steps.analysis` 特殊初值）。
+- 具体改动点：task_state 新建逻辑里判断 `project_type in {"translation", "de_translate", "fr_translate"}` 给 `steps.analysis` 初值 `"idle"`；v2 等其他类型保持 `"pending"`。
 
 ### 8. 前端 `_task_workbench.html`
 
-- **step-analysis 卡片在 DOM 中的位置从原先 step-compose 和 step-export 之间，挪到 step-export 之后**（作为时间线最末尾一项）。step-analysis 的 step-icon 编号由 `8` 改为 `9`；step-export 的 step-icon 编号由 `9` 改回 `8`。
+- **step-analysis 卡片位置统一挪到 step-export 之后**（作为时间线最末尾一项）。step-export 编号 `8`，step-analysis 编号 `9`。
 - step-analysis 卡片增加按钮区：
 
 ```html
@@ -130,8 +132,6 @@ class DeTranslateRunner(PipelineRunner):
 
 按钮 default hidden，由脚本按 step 状态决定何时显示。
 
-> 注：该模板是 de/fr/en 共用的 `_task_workbench.html`。调整顺序后英语流水线卡片顺序也变为 `... compose → export → analysis`，但英语主流程的 `_run` 仍按 compose→analysis→export 的逻辑顺序执行（`include_analysis_in_main_flow=True`）。视觉顺序与逻辑顺序不完全对应但互不影响，因为每个 step 的状态独立更新；若后续觉得英语项目卡片顺序错位不便观感，可通过模板条件渲染决定 analysis 的插入位置（`project_type in ("de_translate", "fr_translate")` 则插到末尾）。本次实施采用**条件插入**：模板中对 analysis 位置按项目类型分两种写法，使英语保留原顺序（8=analysis / 9=export），de/fr 改为（8=export / 9=analysis）。
-
 ### 9. 前端 `_task_workbench_scripts.html`
 
 - 步骤状态机新增 `idle`：
@@ -141,21 +141,21 @@ class DeTranslateRunner(PipelineRunner):
   - `error`：显示错误消息 + 「重新分析」按钮。
   - 「重新分析」和「运行 AI 分析」都走同一个 POST `/analysis/run` 路径。
 - 删除 `if (currentTask.result?.soft_video) downloads.soft = _apiUrl('/download/soft');` 行。
-- 进度条/整体状态计算：de/fr 项目时 analysis 步骤不计入主流程进度（通过 `STEP_ORDER` 过滤或判断 `include_analysis_in_main_flow`）。
-  - 实现方式：前端 `TASK_WORKBENCH_CONFIG` 增加 `optionalSteps: ["analysis"]`；de/fr 模板注入时传入。
+- 进度条/整体状态计算：en/de/fr 项目 analysis 步骤统一不计入主流程进度。
+  - 实现方式：前端 `STEP_ORDER` 把 analysis 从主流程 steps 列表中剔除，或通过 `optionalSteps: ["analysis"]` 配置。
   - 主流程 `status === "done"` 的判断不再依赖 analysis 完成。
 - 防御性过滤 compose artifact：渲染 compose items 时过滤 `item.artifact === "soft_video"`。老项目数据进来立刻不展示软字幕视频。
 
-### 10. de/fr 详情页模板 `de_translate_detail.html` / `fr_translate_detail.html`
+### 10. 详情页模板 `index.html` / `project_detail.html` / `de_translate_detail.html` / `fr_translate_detail.html`
 
-- 注入 `optional_steps: ["analysis"]` 到 JS config，或通过 `project_type` 让脚本自行判断。
-- 注入 `api_base` 已存在（`/api/de-translate` / `/api/fr-translate`），`runAnalysis` 前端调用 `${api_base}/${task_id}/analysis/run`。
+- `api_base` 已注入（`/api/task` / `/api/de-translate` / `/api/fr-translate`），前端 `runAnalysis` 调用 `${api_base}/${task_id}/analysis/run`。
+- `optionalSteps: ["analysis"]` 配置对 en/de/fr 都注入（或作为脚本默认配置）。
 
 ## 数据兼容策略
 
 - **老项目 compose artifact 里的 `soft_video` 条目** → 前端渲染时过滤 `item.artifact === "soft_video"`。无需 DB 迁移。
-- **老项目 `steps.analysis` 状态为 `"pending"` / `"running"` / `"done"`** → 兼容处理：
-  - `pending`（老代码默认值） → 前端渲染时若属 de/fr 项目且步骤是 analysis，视为 `idle`，显示运行按钮。
+- **老项目 `steps.analysis` 状态为 `"pending"` / `"running"` / `"done"`** → 兼容处理（en/de/fr 同）：
+  - `pending`（老代码默认值） → 前端渲染 analysis 步骤时统一视为 `idle`，显示「运行 AI 分析」按钮。
   - `done` → 正常展示结果 artifact + 显示「重新分析」按钮。
   - `running` → 显示 running 状态（正常进行中）。
 - **老项目 `result.soft_video` 已有值** → 前端已不再渲染也不再生成下载链接；保留原数据不强制清理。
@@ -167,34 +167,35 @@ class DeTranslateRunner(PipelineRunner):
 - `tests/test_compose.py`（新增或增补）：
   - `compose_video(..., with_soft=False)` 不生成 soft 视频文件，`result["soft_video"]` 为 None。
   - `compose_video(..., with_soft=True)`（默认）行为不变。
-- `tests/test_runner_de.py` / `tests/test_runner_fr.py`（新增或增补）：
-  - `_run()` 执行步骤列表不含 `analysis`。
+- `tests/test_runner.py` / `test_runner_de.py` / `test_runner_fr.py`（新增或增补）：
+  - `PipelineRunner._run()` 执行步骤列表不含 `analysis`。
   - compose 步骤完成后自动进入 export。
   - 手动触发 `run_analysis_only()` 会执行 `_step_analysis` 且异常时不修改 `status`。
+- `tests/test_runner_v2.py`（若存在，补充）：
+  - `PipelineRunnerV2._run()` 步骤列表仍含 `analysis`（行为保持）。
 
 ### 集成/路由测试
 
-- `tests/test_de_translate_routes.py` / `test_fr_translate_routes.py`（新增或增补）：
+- `tests/test_task_routes.py` / `test_de_translate_routes.py` / `test_fr_translate_routes.py`（新增或增补）：
   - POST `/analysis/run` 触发分析流水线；幂等防重。
-  - GET `/download/soft` 返回 404（或该接口已不存在）。
 
 ### 手工 QA 点
 
-1. 新建一个 de 项目，跑完主流程：
+1. 新建一个 **en** 项目，跑完主流程：
    - compose 卡片只展示硬字幕视频。
    - 没有生成 `*_soft.mp4` 文件。
    - compose 完成后立刻进入 export 并整体 `status === "done"`。
-   - analysis 卡片显示「运行 AI 分析」按钮。
+   - analysis 卡片位于时间线最末尾，显示「运行 AI 分析」按钮。
    - 点击按钮，analysis 正常跑完，结果在卡片展示。
    - 人为制造 analysis 失败（假 token），step 显示 error，task `status` 仍为 `done`。
-2. 打开一个老的 de 项目：
+2. **de 项目**、**fr 项目**重复同样流程。
+3. 打开一个老的 en/de/fr 项目：
    - compose 卡片只剩硬字幕视频（软字幕已被前端过滤）。
    - 下载栏不显示软字幕下载。
    - analysis 状态依据现存数据正常展示。
-3. 新建 fr 项目重复上述 QA。
-4. 新建 en 项目（走 `PipelineRunner` 默认）：
+4. 新建 translate_lab（v2）项目：
    - compose 仍生成软字幕视频（向后兼容）。
-   - analysis 仍自动跑（向后兼容）。
+   - analysis 仍按 v2 原逻辑处理（向后兼容）。
 
 ## 风险与对策
 
@@ -207,31 +208,36 @@ class DeTranslateRunner(PipelineRunner):
 
 - 新增/修改
   - [pipeline/compose.py](pipeline/compose.py) — `compose_video` 新增 `with_soft` 参数
-  - [appcore/runtime.py](appcore/runtime.py) — 类属性 + steps 过滤 + `run_analysis_only`
-  - [appcore/runtime_de.py](appcore/runtime_de.py) — 类属性覆写
-  - [appcore/runtime_fr.py](appcore/runtime_fr.py) — 类属性覆写
+  - [appcore/runtime.py](appcore/runtime.py) — 类属性默认 False + steps 过滤 + `run_analysis_only`
+  - [appcore/runtime_v2.py](appcore/runtime_v2.py) — 显式 override 类属性为 True（保持 v2 原行为）
+  - [appcore/runtime_de.py](appcore/runtime_de.py) / [appcore/runtime_fr.py](appcore/runtime_fr.py) — 无需改动（继承基类）
+  - [appcore/task_state.py](appcore/task_state.py) — 英语/德语/法语项目 `steps.analysis` 初值 `"idle"`
+  - [web/services/pipeline_runner.py](web/services/pipeline_runner.py) — 新增 `run_analysis`
   - [web/services/de_pipeline_runner.py](web/services/de_pipeline_runner.py) — 新增 `run_analysis`
   - [web/services/fr_pipeline_runner.py](web/services/fr_pipeline_runner.py) — 新增 `run_analysis`
-  - [web/routes/de_translate.py](web/routes/de_translate.py) — `POST /analysis/run`；`steps.analysis` 初值 `idle`；可选删除 `/download/soft`
-  - [web/routes/fr_translate.py](web/routes/fr_translate.py) — 同上
-  - [web/templates/_task_workbench.html](web/templates/_task_workbench.html) — step-analysis 按钮 + 按 project_type 切换 analysis 卡片位置（de/fr 放 export 之后）
-  - [web/templates/_task_workbench_scripts.html](web/templates/_task_workbench_scripts.html) — idle 状态、过滤 soft_video、optionalSteps
-  - [web/templates/de_translate_detail.html](web/templates/de_translate_detail.html) — 注入 optional_steps
-  - [web/templates/fr_translate_detail.html](web/templates/fr_translate_detail.html) — 注入 optional_steps
+  - [web/routes/task.py](web/routes/task.py) — `POST /api/task/<id>/analysis/run`（英语）
+  - [web/routes/de_translate.py](web/routes/de_translate.py) — `POST /analysis/run`
+  - [web/routes/fr_translate.py](web/routes/fr_translate.py) — `POST /analysis/run`
+  - [web/templates/_task_workbench.html](web/templates/_task_workbench.html) — step-analysis 挪到末尾（编号 9）+ 按钮区
+  - [web/templates/_task_workbench_scripts.html](web/templates/_task_workbench_scripts.html) — idle 状态、过滤 soft_video、optionalSteps、进度计算
 - 测试
   - [tests/test_compose.py](tests/test_compose.py)
+  - [tests/test_runner.py](tests/test_runner.py) 或现有文件补充（英语基类）
   - [tests/test_runner_de.py](tests/test_runner_de.py) 或现有文件补充
   - [tests/test_runner_fr.py](tests/test_runner_fr.py) 或现有文件补充
+  - [tests/test_runner_v2.py](tests/test_runner_v2.py) 或现有文件补充（v2 保持原行为）
+  - [tests/test_task_routes.py](tests/test_task_routes.py) 或现有文件补充
   - [tests/test_de_translate_routes.py](tests/test_de_translate_routes.py) 或现有文件补充
   - [tests/test_fr_translate_routes.py](tests/test_fr_translate_routes.py) 或现有文件补充
 
 ## 落地顺序（后续实现计划的大致阶段）
 
 1. pipeline.compose_video 新增 `with_soft` 参数 + 测试。
-2. runner 基类加类属性、`_run` 过滤、`run_analysis_only` 模块函数。
-3. de/fr runner 子类覆写类属性。
-4. de/fr pipeline_runner 服务层新增 `run_analysis`。
-5. de/fr 路由新增 `POST /analysis/run`、修正 `steps.analysis` 初值。
-6. 前端 `_task_workbench.html` / `_task_workbench_scripts.html` 按钮 + 状态机 + 过滤 + 进度排除。
-7. de/fr detail 模板注入 `optionalSteps`。
-8. 老项目兼容冒烟测试。
+2. runner 基类加类属性（默认 False）、`_run` 过滤、`run_analysis_only` 模块函数。
+3. v2 runner 显式 override 类属性为 True（保持 v2 现有行为）。
+4. task_state 新建逻辑：翻译类项目 `steps.analysis` 初值 `"idle"`。
+5. en/de/fr pipeline_runner 服务层各自新增 `run_analysis`。
+6. en/de/fr 路由新增 `POST /analysis/run`。
+7. 前端 `_task_workbench.html` 挪 analysis 卡片到末尾 + 添加按钮区。
+8. 前端 `_task_workbench_scripts.html` 按钮状态机 + 过滤 soft_video + optionalSteps 进度排除。
+9. 老项目兼容冒烟测试（en/de/fr 三种）。
