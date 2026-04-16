@@ -1,0 +1,14 @@
+[Unit]
+Description=AutoVideoSrt Test Environment
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/autovideosrt-test
+Environment="PATH=/opt/autovideosrt-test/venv/bin:/usr/bin:/usr/local/bin:/bin"
+ExecStart=/opt/autovideosrt-test/venv/bin/gunicorn -w 1 -k eventlet --bind 0.0.0.0:9999 --timeout 300 main:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
