@@ -100,3 +100,31 @@ def test_no_flask_or_socketio_imports():
         builtins.__import__ = real_import
 
     assert not forbidden, f"appcore.runtime imported forbidden modules: {forbidden}"
+
+
+def test_pipeline_runner_has_tts_class_attributes():
+    from appcore.runtime import PipelineRunner
+    # Default (English) values
+    assert PipelineRunner.tts_language_code is None
+    assert PipelineRunner.tts_model_id == "eleven_turbo_v2_5"
+    assert PipelineRunner.tts_default_voice_language is None
+    assert PipelineRunner.localization_module == "pipeline.localization"
+    assert PipelineRunner.target_language_label == "en"
+
+
+def test_de_runner_overrides_tts_class_attributes():
+    from appcore.runtime_de import DeTranslateRunner
+    assert DeTranslateRunner.tts_language_code == "de"
+    assert DeTranslateRunner.tts_model_id == "eleven_multilingual_v2"
+    assert DeTranslateRunner.tts_default_voice_language == "de"
+    assert DeTranslateRunner.localization_module == "pipeline.localization_de"
+    assert DeTranslateRunner.target_language_label == "de"
+
+
+def test_fr_runner_overrides_tts_class_attributes():
+    from appcore.runtime_fr import FrTranslateRunner
+    assert FrTranslateRunner.tts_language_code == "fr"
+    assert FrTranslateRunner.tts_model_id == "eleven_multilingual_v2"
+    assert FrTranslateRunner.tts_default_voice_language == "fr"
+    assert FrTranslateRunner.localization_module == "pipeline.localization_fr"
+    assert FrTranslateRunner.target_language_label == "fr"

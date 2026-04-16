@@ -33,6 +33,11 @@ class FrTranslateRunner(PipelineRunner):
     """French-specific pipeline runner."""
 
     project_type: str = "fr_translate"
+    tts_language_code = "fr"
+    tts_model_id = "eleven_multilingual_v2"
+    tts_default_voice_language = "fr"
+    localization_module = "pipeline.localization_fr"
+    target_language_label = "fr"
 
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         super()._step_asr(task_id, task_dir)

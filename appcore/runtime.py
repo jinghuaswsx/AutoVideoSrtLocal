@@ -173,6 +173,13 @@ def _compute_next_target(
 class PipelineRunner:
     project_type: str = "translation"
 
+    # ── TTS / localization 差异点（子类 override） ──
+    tts_language_code: str | None = None           # ElevenLabs language_code; None=auto
+    tts_model_id: str = "eleven_turbo_v2_5"        # ElevenLabs model_id
+    tts_default_voice_language: str | None = None  # voice_library.ensure_defaults language; None=en
+    localization_module: str = "pipeline.localization"
+    target_language_label: str = "en"              # 中文消息展示标签，例如 "de" / "fr"
+
     # 是否在 compose 阶段生成软字幕视频（仅 v2 重新 override 为 True 保持原行为）
     include_soft_video: bool = False
 

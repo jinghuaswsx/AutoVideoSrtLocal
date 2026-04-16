@@ -33,6 +33,11 @@ class DeTranslateRunner(PipelineRunner):
     """German-specific pipeline runner."""
 
     project_type: str = "de_translate"
+    tts_language_code = "de"
+    tts_model_id = "eleven_multilingual_v2"
+    tts_default_voice_language = "de"
+    localization_module = "pipeline.localization_de"
+    target_language_label = "de"
 
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         super()._step_asr(task_id, task_dir)
