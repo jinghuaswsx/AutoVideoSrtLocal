@@ -593,73 +593,114 @@ class PipelineRunner:
         })
 
     def _step_tts(self, task_id: str, task_dir: str) -> None:
+        import importlib
+        import appcore.task_state as task_state
+
         task = task_state.get(task_id)
-        self._set_step(task_id, "tts", "running", "正在生成 ElevenLabs 朗读文案与配音...")
+        loc_mod = importlib.import_module(self.localization_module)
+
+        lang_display = _lang_display(self.target_language_label)
+        self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...")
+
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
-        from pipeline.localization import build_tts_segments
-        from pipeline.timeline import build_timeline_manifest
-        from pipeline.translate import generate_tts_script, get_model_display_name
-        from pipeline.tts import generate_full_audio, get_default_voice, get_voice_by_id
 
         provider = _resolve_translate_provider(self.user_id)
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
-
-        voice = None
-        if task.get("voice_id"):
-            voice = get_voice_by_id(task["voice_id"], self.user_id)
-        if not voice and task.get("recommended_voice_id"):
-            voice = get_voice_by_id(task["recommended_voice_id"], self.user_id)
-        if not voice:
-            voice = get_default_voice(self.user_id, task.get("voice_gender", "male"))
+        voice = self._resolve_voice(task, loc_mod)
 
         variant = "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
-        localized_translation = variant_state.get("localized_translation", {})
+        initial_localized = variant_state.get("localized_translation", {}) \
+                            or task.get("localized_translation", {})
+        source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
+        source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
 
-        tts_script = generate_tts_script(localized_translation, provider=provider, user_id=self.user_id)
-        tts_segments = build_tts_segments(tts_script, task.get("script_segments", []))
-        result = generate_full_audio(tts_segments, voice["elevenlabs_voice_id"], task_dir, variant=variant, elevenlabs_api_key=elevenlabs_api_key)
-        timeline_manifest = build_timeline_manifest(result["segments"], video_duration=video_duration)
+        # reset duration tracking for a fresh run (e.g. resume)
+        task_state.update(task_id, tts_duration_rounds=[], tts_duration_status="running")
+
+        loop_result = self._run_tts_duration_loop(
+            task_id=task_id,
+            task_dir=task_dir,
+            loc_mod=loc_mod,
+            provider=provider,
+            video_duration=video_duration,
+            voice=voice,
+            initial_localized_translation=initial_localized,
+            source_full_text=source_full_text,
+            source_language=source_language,
+            elevenlabs_api_key=elevenlabs_api_key,
+            script_segments=task.get("script_segments", []),
+            variant=variant,
+        )
+
+        # Promote final to standard file names
+        self._promote_final_artifacts(task_dir, loop_result["final_round"], variant)
+        final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+
+        from pipeline.timeline import build_timeline_manifest
+        timeline_manifest = build_timeline_manifest(
+            loop_result["tts_segments"], video_duration=video_duration,
+        )
 
         variant_state.update({
-            "segments": result["segments"],
-            "tts_script": tts_script,
-            "tts_audio_path": result["full_audio_path"],
+            "segments": loop_result["tts_segments"],
+            "tts_script": loop_result["tts_script"],
+            "tts_audio_path": final_audio_path,
             "timeline_manifest": timeline_manifest,
-            "voice_id": voice["id"],
+            "voice_id": voice.get("id"),
+            "localized_translation": loop_result["localized_translation"],
         })
         variants[variant] = variant_state
-        task_state.set_preview_file(task_id, "tts_full_audio", result["full_audio_path"])
-        _save_json(task_dir, "tts_script.normal.json", tts_script)
-        _save_json(task_dir, "tts_result.normal.json", result["segments"])
+
+        task_state.set_preview_file(task_id, "tts_full_audio", final_audio_path)
+        _save_json(task_dir, "tts_script.normal.json", loop_result["tts_script"])
+        _save_json(task_dir, "tts_result.normal.json", loop_result["tts_segments"])
         _save_json(task_dir, "timeline_manifest.normal.json", timeline_manifest)
+        _save_json(task_dir, "localized_translation.normal.json", loop_result["localized_translation"])
+        _save_json(task_dir, "tts_duration_rounds.json", loop_result["rounds"])
 
         task_state.update(
             task_id,
             variants=variants,
-            segments=result["segments"],
-            tts_script=tts_script,
-            tts_audio_path=result["full_audio_path"],
-            voice_id=voice["id"],
+            segments=loop_result["tts_segments"],
+            tts_script=loop_result["tts_script"],
+            tts_audio_path=final_audio_path,
+            voice_id=voice.get("id"),
             timeline_manifest=timeline_manifest,
+            localized_translation=loop_result["localized_translation"],
         )
 
-        task_state.set_artifact(task_id, "tts", build_tts_artifact(tts_script, result["segments"]))
-        self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": tts_script})
-        self._set_step(task_id, "tts", "done", "英文配音生成完成")
+        task_state.set_artifact(task_id, "tts",
+            build_tts_artifact(loop_result["tts_script"], loop_result["tts_segments"]))
+            # TODO: Task 14 will add duration_rounds=loop_result["rounds"] kwarg to build_tts_artifact
+
+        from appcore.events import EVT_TTS_SCRIPT_READY
+        self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": loop_result["tts_script"]})
+        self._set_step(
+            task_id, "tts", "done",
+            f"{lang_display}配音生成完成（{loop_result['final_round']} 轮收敛）",
+        )
+
+        # Usage log for LLM + ElevenLabs (rewrite rounds 2/3 also recorded)
         from appcore.usage_log import record as _log_usage
-        # 记录 TTS script LLM 调用的 token 用量
-        _tts_script_usage = tts_script.get("_usage") or {}
-        _log_usage(self.user_id, task_id, provider,
-                   model_name=get_model_display_name(provider, self.user_id),
-                   success=True,
-                   input_tokens=_tts_script_usage.get("input_tokens"),
-                   output_tokens=_tts_script_usage.get("output_tokens"))
-        # 记录 ElevenLabs TTS 调用
-        _log_usage(self.user_id, task_id, "elevenlabs", success=True)
+        from pipeline.translate import get_model_display_name
+        for round_record in loop_result["rounds"]:
+            round_idx = round_record["round"]
+            if round_idx >= 2:
+                # rewrite LLM call
+                _log_usage(self.user_id, task_id, provider,
+                           model_name=get_model_display_name(provider, self.user_id),
+                           success=True)
+            # tts_script LLM call every round
+            _log_usage(self.user_id, task_id, provider,
+                       model_name=get_model_display_name(provider, self.user_id),
+                       success=True)
+        # ElevenLabs call every round
+        for _ in loop_result["rounds"]:
+            _log_usage(self.user_id, task_id, "elevenlabs", success=True)
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)

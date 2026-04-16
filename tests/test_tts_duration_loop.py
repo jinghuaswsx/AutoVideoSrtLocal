@@ -264,3 +264,77 @@ class TestPromoteFinalArtifacts:
         dst = tmp_path / "tts_full.normal.mp3"
         assert dst.exists()
         assert dst.read_bytes() == b"audio data"
+
+
+class TestStepTtsIntegration:
+    def test_step_tts_persists_final_artifacts_to_variant_state(self, tmp_path, monkeypatch):
+        """_step_tts 把 loop 最终产物写回 task.variants[normal] 并覆盖 normal 文件名。"""
+        from appcore import task_state
+        from appcore.events import EventBus
+        from appcore.runtime import PipelineRunner
+
+        task_id = "step-tts-int"
+        task = task_state.create(task_id, str(tmp_path / "v.mp4"), str(tmp_path),
+                                  original_filename="v.mp4", user_id=1)
+        # Prime with script_segments + localized_translation (what translate step would have set)
+        task_state.update(
+            task_id,
+            script_segments=[{"index": 0, "text": "x", "start_time": 0.0, "end_time": 3.0}],
+            source_full_text_zh="中文原文",
+            source_language="zh",
+            localized_translation={
+                "full_text": "EN text.",
+                "sentences": [{"index": 0, "text": "EN text.", "source_segment_indices": [0]}],
+            },
+            variants={"normal": {"label": "普通版", "localized_translation": {
+                "full_text": "EN text.",
+                "sentences": [{"index": 0, "text": "EN text.", "source_segment_indices": [0]}],
+            }}},
+            voice_id=None,
+            recommended_voice_id=None,
+            voice_gender="male",
+        )
+
+        def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"audio")
+            return {"full_audio_path": out,
+                    "segments": [{"index": 0, "tts_path": out, "tts_duration": 28.0}]}
+
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 28.0)
+        monkeypatch.setattr("pipeline.translate.generate_tts_script",
+                            lambda loc, **kw: {"full_text": "EN.", "blocks": [], "subtitle_chunks": []})
+        monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
+        monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+        monkeypatch.setattr("pipeline.extract.get_video_duration", lambda p: 30.0)
+        monkeypatch.setattr("appcore.api_keys.resolve_key", lambda u, s, e: "fake-key")
+        monkeypatch.setattr("appcore.api_keys.get_key", lambda u, s: None)
+        monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda u, s: {})
+        monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda p, u: "fake-model")
+
+        from pipeline import localization as loc_mod
+        monkeypatch.setattr(loc_mod, "build_tts_segments", lambda s, sg: [])
+
+        # voice resolution: make get_voice_by_id return a fake voice
+        monkeypatch.setattr("pipeline.tts.get_voice_by_id",
+                            lambda vid, uid: {"id": 99, "elevenlabs_voice_id": "vx", "name": "V"})
+        # Skip library fallback by forcing voice_id
+        task_state.update(task_id, voice_id=99)
+
+        monkeypatch.setattr("appcore.usage_log.record", lambda *a, **kw: None)
+
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+        runner._step_tts(task_id, str(tmp_path))
+
+        task = task_state.get(task_id)
+        assert task["steps"]["tts"] == "done"
+        assert (tmp_path / "tts_full.normal.mp3").exists()
+        # round_1 file must also exist (intermediate)
+        assert (tmp_path / "tts_full.round_1.mp3").exists()
+        # variant state updated
+        v_state = task["variants"]["normal"]
+        assert v_state["tts_audio_path"].endswith("tts_full.normal.mp3")
+        assert task["tts_duration_status"] == "converged"
+        assert len(task["tts_duration_rounds"]) == 1
