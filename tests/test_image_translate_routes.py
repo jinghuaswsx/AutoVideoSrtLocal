@@ -159,6 +159,31 @@ def test_complete_rejects_invalid_language(authed_client_no_db, monkeypatch):
     assert resp.status_code == 400
 
 
+def test_complete_rejects_bad_uploaded_items(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1, "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    cases = [
+        {"uploaded": [{"object_key": b["uploads"][0]["object_key"], "filename": "a.jpg"}]},
+        {"uploaded": [None]},
+        {"uploaded": [{"idx": "nope", "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg"}]},
+    ]
+    for payload in cases:
+        resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+            "task_id": b["task_id"],
+            "preset": "cover",
+            "target_language": "de",
+            "model_id": "gemini-3-pro-image-preview",
+            "prompt": "x {target_language_name}",
+            **payload,
+        })
+        assert resp.status_code == 400
+
+
 def test_get_state(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
@@ -299,10 +324,11 @@ def test_delete_task(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
     monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: None)
-    # mock db_execute 避免真实 DB 调用
-    monkeypatch.setattr("appcore.db.execute", lambda sql, params: None)
+    called = {}
+    monkeypatch.setattr(r, "db_execute", lambda sql, params: called.setdefault("db_execute", True))
     # mock store.update 以防写真实 DB
     from web import store
     monkeypatch.setattr(store, "update", lambda *a, **kw: None)
     resp = authed_client_no_db.delete(f"/api/image-translate/{tid}")
     assert resp.status_code == 204
+    assert called.get("db_execute") is True

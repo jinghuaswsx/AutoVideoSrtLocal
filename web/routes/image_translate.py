@@ -164,7 +164,17 @@ def api_upload_complete():
     reserved = {f["idx"]: f for f in rv["files"]}
     items = []
     for u in uploaded:
-        idx = int(u.get("idx"))
+        if not isinstance(u, dict):
+            return jsonify({"error": "uploaded item must be an object"}), 400
+        idx_raw = u.get("idx")
+        if isinstance(idx_raw, bool):
+            return jsonify({"error": "uploaded item idx must be an integer"}), 400
+        if isinstance(idx_raw, int):
+            idx = idx_raw
+        elif isinstance(idx_raw, str) and idx_raw.strip().isdigit():
+            idx = int(idx_raw.strip())
+        else:
+            return jsonify({"error": "uploaded item idx must be an integer"}), 400
         key = (u.get("object_key") or "").strip()
         filename = (u.get("filename") or reserved.get(idx, {}).get("filename") or "").strip()
         if idx not in reserved or reserved[idx]["object_key"] != key:
