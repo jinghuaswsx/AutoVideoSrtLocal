@@ -1,12 +1,15 @@
 """
 ElevenLabs 共享音色库分页同步
 """
+import hashlib
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 import requests
 
-from appcore.db import execute
+from appcore.db import execute, query
+from pipeline.voice_embedding import embed_audio_file, serialize_embedding
 
 SHARED_VOICES_URL = "https://api.elevenlabs.io/v1/shared-voices"
 DEFAULT_PAGE_SIZE = 100
@@ -113,3 +116,61 @@ def sync_all_shared_voices(
         if not next_token:
             break
     return total
+
+
+def _list_voices_without_embedding(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """查询尚未回写 embedding 的音色。"""
+    sql = (
+        "SELECT voice_id, preview_url FROM elevenlabs_voices "
+        "WHERE preview_url IS NOT NULL AND audio_embedding IS NULL"
+    )
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    return query(sql)
+
+
+def _download_preview(url: str, dest_path) -> str:
+    """下载 preview 音频到 dest_path（pathlib.Path 或 str）。"""
+    resp = requests.get(url, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    # dest_path 可能是 pathlib.Path（测试里传的是 tmp_path / file）或 str
+    dest_str = str(dest_path)
+    with open(dest_str, "wb") as f:
+        f.write(resp.content)
+    return dest_str
+
+
+def _update_embedding(voice_id: str, blob: bytes) -> None:
+    execute(
+        "UPDATE elevenlabs_voices SET audio_embedding=%s, updated_at=%s "
+        "WHERE voice_id=%s",
+        (blob, datetime.utcnow(), voice_id),
+    )
+
+
+def embed_missing_voices(cache_dir: str, limit: Optional[int] = None) -> int:
+    """批量下载 preview_url 并生成 embedding，回写到数据库。
+
+    单条失败不中断整批（日志 warning）。
+    返回成功处理的条目数。
+    """
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+
+    count = 0
+    for row in _list_voices_without_embedding(limit=limit):
+        voice_id = row["voice_id"]
+        url = row.get("preview_url")
+        if not url:
+            continue
+        file_name = hashlib.sha1(voice_id.encode("utf-8")).hexdigest() + ".mp3"
+        dest = cache_path / file_name
+        try:
+            _download_preview(url, dest)
+            vec = embed_audio_file(str(dest))
+            _update_embedding(voice_id, serialize_embedding(vec))
+            count += 1
+        except Exception as exc:
+            # 容错：单条失败不影响批次
+            print(f"[embed_missing_voices] failed {voice_id}: {exc}")
+    return count

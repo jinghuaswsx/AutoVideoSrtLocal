@@ -83,3 +83,84 @@ def test_sync_all_forwards_language_filter():
         sync_all_shared_voices(api_key="dummy", language="en", gender="female")
     assert seen_params.get("language") == "en"
     assert seen_params.get("gender") == "female"
+
+
+import numpy as np
+
+
+def test_embed_missing_voices_downloads_and_stores(tmp_path):
+    voices_needing_embed = [
+        {"voice_id": "v1", "preview_url": "http://a.mp3"},
+        {"voice_id": "v2", "preview_url": "http://b.mp3"},
+    ]
+
+    saved = {}
+
+    def fake_download(url, dest):
+        dest.write_bytes(b"x")
+        return str(dest)
+
+    def fake_embed(path):
+        return np.full(256, 0.5, dtype=np.float32)
+
+    def fake_update(voice_id, blob):
+        saved[voice_id] = blob
+
+    with patch("pipeline.voice_library_sync._list_voices_without_embedding",
+               return_value=voices_needing_embed), \
+         patch("pipeline.voice_library_sync._download_preview",
+               side_effect=fake_download), \
+         patch("pipeline.voice_library_sync.embed_audio_file",
+               side_effect=fake_embed), \
+         patch("pipeline.voice_library_sync._update_embedding",
+               side_effect=fake_update):
+        from pipeline.voice_library_sync import embed_missing_voices
+        count = embed_missing_voices(cache_dir=str(tmp_path))
+    assert count == 2
+    assert set(saved.keys()) == {"v1", "v2"}
+
+
+def test_embed_missing_voices_skips_voice_without_preview_url(tmp_path):
+    voices = [
+        {"voice_id": "v1", "preview_url": None},
+        {"voice_id": "v2", "preview_url": "http://b.mp3"},
+    ]
+    saved = {}
+    with patch("pipeline.voice_library_sync._list_voices_without_embedding",
+               return_value=voices), \
+         patch("pipeline.voice_library_sync._download_preview",
+               side_effect=lambda u, d: d.write_bytes(b"x") or str(d)), \
+         patch("pipeline.voice_library_sync.embed_audio_file",
+               return_value=np.zeros(256, dtype=np.float32)), \
+         patch("pipeline.voice_library_sync._update_embedding",
+               side_effect=lambda vid, blob: saved.setdefault(vid, blob)):
+        from pipeline.voice_library_sync import embed_missing_voices
+        count = embed_missing_voices(cache_dir=str(tmp_path))
+    assert count == 1
+    assert saved == {"v2": saved["v2"]}
+
+
+def test_embed_missing_voices_continues_on_single_failure(tmp_path):
+    voices = [
+        {"voice_id": "bad", "preview_url": "http://bad.mp3"},
+        {"voice_id": "good", "preview_url": "http://good.mp3"},
+    ]
+    saved = {}
+    def fake_download(url, dest):
+        if "bad" in url:
+            raise RuntimeError("download failed")
+        dest.write_bytes(b"x")
+        return str(dest)
+    with patch("pipeline.voice_library_sync._list_voices_without_embedding",
+               return_value=voices), \
+         patch("pipeline.voice_library_sync._download_preview",
+               side_effect=fake_download), \
+         patch("pipeline.voice_library_sync.embed_audio_file",
+               return_value=np.full(256, 0.3, dtype=np.float32)), \
+         patch("pipeline.voice_library_sync._update_embedding",
+               side_effect=lambda vid, blob: saved.update({vid: blob})):
+        from pipeline.voice_library_sync import embed_missing_voices
+        count = embed_missing_voices(cache_dir=str(tmp_path))
+    assert count == 1
+    assert "good" in saved
+    assert "bad" not in saved
