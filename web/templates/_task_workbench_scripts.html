@@ -39,7 +39,7 @@
   let _voicesCache = [];
   let _selectedVoiceId = null;
   let _selectedSubtitleFont = "Impact";
-  let _selectedSubtitleSize = "medium";
+  let _selectedSubtitleSize = 14;
   let _subtitlePositionY = parseFloat(localStorage.getItem("subtitle_position_y") || "0.68");
   let _playingAudio = null;
   let _previewAudio = null;
@@ -272,10 +272,14 @@
     });
     _selectedSubtitleFont = savedFont;
 
-    // 恢复字幕字号
-    const savedSize = currentTask.subtitle_size || "medium";
+    // 恢复字幕字号（兼容旧 small/medium/large 字符串和新数字值）
+    const _legacySizeMap = { small: 10, medium: 14, large: 18 };
+    const savedSizeRaw = currentTask.subtitle_size;
+    const savedSize = typeof savedSizeRaw === "number"
+      ? savedSizeRaw
+      : (_legacySizeMap[savedSizeRaw] || 14);
     document.querySelectorAll("#subtitleSizeGroup button").forEach(btn => {
-      btn.classList.toggle("btn-outline--active", btn.dataset.size === savedSize);
+      btn.classList.toggle("btn-outline--active", parseInt(btn.dataset.size, 10) === savedSize);
     });
     _selectedSubtitleSize = savedSize;
 
@@ -1360,13 +1364,49 @@
   });
 
   // ===== 字号按钮组 =====
+  let _updateSizePreview = function() {};  // 由 initSizePreview 赋值
+
   document.getElementById("subtitleSizeGroup").addEventListener("click", function(e) {
     const btn = e.target.closest("button[data-size]");
     if (!btn) return;
     document.querySelectorAll("#subtitleSizeGroup button").forEach(b => b.classList.remove("btn-outline--active"));
     btn.classList.add("btn-outline--active");
-    _selectedSubtitleSize = btn.dataset.size;
+    _selectedSubtitleSize = parseInt(btn.dataset.size, 10);
+    _updateSizePreview();
   });
+
+  // ===== 字号 1:1 预览弹窗 =====
+  (function initSizePreview() {
+    const backdrop = document.getElementById("sizePreviewBackdrop");
+    const scrollArea = document.getElementById("sizePreviewScroll");
+
+    _updateSizePreview = function() {
+      const subtitleEl = document.getElementById("spfSubtitleText");
+      const posEl = document.getElementById("spfSubtitle");
+      const labelEl = document.getElementById("sizePreviewLabel");
+      if (!subtitleEl) return;
+      subtitleEl.style.fontSize = _selectedSubtitleSize + "px";
+      subtitleEl.style.fontFamily = _selectedSubtitleFont + ", Impact, sans-serif";
+      if (posEl) posEl.style.top = (_subtitlePositionY * 100) + "%";
+      if (labelEl) labelEl.textContent = "（" + _selectedSubtitleSize + "pt · 1080p）";
+    };
+
+    function scrollToSubtitle() {
+      if (!scrollArea) return;
+      const scrollTop = 1920 * _subtitlePositionY - scrollArea.clientHeight / 2;
+      scrollArea.scrollTop = Math.max(0, scrollTop);
+    }
+
+    document.getElementById("openSizePreviewBtn").addEventListener("click", function() {
+      _updateSizePreview();
+      backdrop.classList.remove("hidden");
+      requestAnimationFrame(() => requestAnimationFrame(scrollToSubtitle));
+    });
+
+    document.getElementById("closeSizePreviewBtn").addEventListener("click", function() {
+      backdrop.classList.add("hidden");
+    });
+  })();
 
   // ===== 手机位置选择器 =====
   (function initPhonePicker() {

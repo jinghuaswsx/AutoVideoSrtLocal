@@ -136,7 +136,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "recommended_voice_id": None,
         "subtitle_position": "bottom",
         "subtitle_font": "Impact",
-        "subtitle_size": "medium",
+        "subtitle_size": 14,
         "subtitle_position_y": 0.68,
         "interactive_review": False,
         "source_tos_key": "",

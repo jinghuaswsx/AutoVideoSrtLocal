@@ -70,6 +70,25 @@ def test_compute_font_size_unknown_preset_falls_back_to_medium():
     assert _compute_font_size(1080, "xlarge") == 14
 
 
+def test_compute_font_size_numeric_int_at_1080p():
+    # 数字字号：1080p 下直接返回该值
+    assert _compute_font_size(1080, 14) == 14
+    assert _compute_font_size(1080, 20) == 20
+    assert _compute_font_size(1080, 8) == 8
+
+
+def test_compute_font_size_numeric_scales_with_height():
+    # 720p 下按比例缩放: round(720/1080 * 14) = 9
+    assert _compute_font_size(720, 14) == 9
+    # 1920p 下放大: round(1920/1080 * 14) = round(24.89) = 25
+    assert _compute_font_size(1920, 14) == 25
+
+
+def test_compute_font_size_numeric_float():
+    # 浮点数字号同样支持
+    assert _compute_font_size(1080, 14.0) == 14
+
+
 # ---------------------------------------------------------------------------
 # _compute_margin_v
 # ---------------------------------------------------------------------------

@@ -288,7 +288,7 @@ def start(task_id):
         voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
         subtitle_position=body.get("subtitle_position", "bottom"),
         subtitle_font=body.get("subtitle_font", "Impact"),
-        subtitle_size=body.get("subtitle_size", "medium"),
+        subtitle_size=body.get("subtitle_size", 14),
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         interactive_review=_parse_bool(body.get("interactive_review", False)),
     )

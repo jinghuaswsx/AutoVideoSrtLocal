@@ -20,9 +20,15 @@ def _fonts_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
 
 
-def _compute_font_size(video_height: int, preset: str) -> int:
-    """根据视频高度和预设档位计算自适应字号（ASS pt）。"""
-    base = _FONT_SIZE_BASE.get(preset, _FONT_SIZE_BASE["medium"])
+def _compute_font_size(video_height: int, preset) -> int:
+    """根据视频高度和预设档位计算自适应字号（ASS pt）。
+
+    preset 可以是数字（直接作为 1080p 基准字号）或旧版字符串（small/medium/large）。
+    """
+    if isinstance(preset, (int, float)):
+        base = int(preset)
+    else:
+        base = _FONT_SIZE_BASE.get(preset, _FONT_SIZE_BASE["medium"])
     return round(video_height / 1080 * base)
 
 

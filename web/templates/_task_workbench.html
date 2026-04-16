@@ -60,7 +60,7 @@
 }
 .font-card:hover { border-color: var(--primary-color); background: rgba(59,130,246,0.06); }
 .font-card--selected { border: 2px solid var(--primary-color); background: rgba(59,130,246,0.08); }
-.font-card__preview { font-size: 20px; line-height: 1; color: var(--text-main); }
+.font-card__preview { font-size: 8px; line-height: 1.35; color: var(--text-main); white-space: normal; text-align: center; }
 .font-card__name { font-size: 10px; font-weight: 700; color: var(--text-main); margin-top: 2px; }
 .font-card__tag { font-size: 9px; color: #9ca3af; }
 
@@ -162,6 +162,88 @@
 .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
 .badge--info { background: rgba(59,130,246,0.1); color: var(--primary-color); }
 .badge--warn { background: #fffbeb; color: #92400e; }
+
+/* 字号按钮组扩展 */
+.btn-group--wrap { flex-wrap: wrap; }
+.btn-outline--size { padding: 4px 7px !important; min-width: 28px; text-align: center; }
+
+/* ===== 字号预览弹窗 ===== */
+.size-preview-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.75);
+  display: flex; flex-direction: column; z-index: 1001; overflow: hidden;
+}
+.size-preview-backdrop.hidden { display: none !important; }
+.size-preview-header {
+  background: #1e293b; color: #e2e8f0; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; font-size: 14px; font-weight: 700;
+  border-bottom: 1px solid #334155;
+}
+.size-preview-header__label { color: #94a3b8; font-weight: 400; margin-left: 8px; font-size: 13px; }
+.size-preview-scroll {
+  flex: 1; overflow: auto; display: flex; justify-content: center;
+  background: #0f172a; padding: 24px 0;
+}
+/* 1080×1920 手机画面 */
+.spf-phone {
+  width: 1080px; height: 1920px; position: relative;
+  background: #111; flex-shrink: 0;
+}
+.spf-bg {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, #1a2744 0%, #0d1527 55%, #050c17 100%);
+}
+.spf-topbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; justify-content: center; gap: 81px; padding: 54px 0 27px;
+  background: linear-gradient(180deg, rgba(0,0,0,.5) 0%, transparent 100%);
+  pointer-events: none;
+}
+.spf-tab { font-size: 54px; color: rgba(255,255,255,.55); font-weight: 600; }
+.spf-tab--active { color: #fff; border-bottom: 8px solid #fff; padding-bottom: 4px; }
+.spf-right {
+  position: absolute; right: 34px; bottom: 392px; z-index: 10;
+  display: flex; flex-direction: column; align-items: center; gap: 68px;
+  pointer-events: none;
+}
+.spf-icon-item { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.spf-icon-circle {
+  width: 176px; height: 176px; border-radius: 50%;
+  background: rgba(255,255,255,.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 80px; color: #fff;
+}
+.spf-icon-num { font-size: 47px; color: rgba(255,255,255,.8); font-weight: 600; }
+.spf-blocked {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 392px;
+  background: rgba(255,60,60,.1); border-top: 6px dashed rgba(255,80,80,.45);
+  z-index: 9; pointer-events: none;
+}
+.spf-blocked-label {
+  font-size: 44px; color: rgba(255,120,120,.9); font-weight: 700;
+  position: absolute; top: 20px; left: 28px;
+}
+.spf-info {
+  position: absolute; bottom: 0; left: 0; right: 243px; z-index: 10;
+  padding: 40px 40px 54px;
+  background: linear-gradient(0deg, rgba(0,0,0,.7) 0%, transparent 100%);
+  pointer-events: none;
+}
+.spf-creator { font-size: 54px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+.spf-title { font-size: 47px; color: rgba(255,255,255,.85); line-height: 1.3; margin-bottom: 14px; }
+.spf-music { font-size: 44px; color: rgba(255,255,255,.6); }
+.spf-subtitle {
+  position: absolute; left: 0; right: 0; z-index: 20;
+  text-align: center; transform: translateY(-50%); pointer-events: none;
+}
+.spf-subtitle-inner {
+  display: inline-block;
+  background: rgba(0,0,0,.62); border: 3px solid rgba(255,220,0,.6);
+  padding: 14px 54px; border-radius: 10px;
+  color: #fff; font-weight: 900;
+  text-shadow: 3px 3px 8px rgba(0,0,0,.9);
+  white-space: nowrap; letter-spacing: .02em;
+}
   </style>
 </div>
 
@@ -183,32 +265,32 @@
       <label>字幕样式</label>
       <div class="subtitle-font-grid" id="subtitleFontGrid">
         <button type="button" class="font-card font-card--selected" data-font="Impact">
-          <span class="font-card__preview" style="font-weight:900;letter-spacing:.01em;">Aa</span>
+          <span class="font-card__preview" style="font-weight:900;letter-spacing:.01em;">TikTok and Facebook</span>
           <span class="font-card__name">Impact</span>
           <span class="font-card__tag">冲击感</span>
         </button>
         <button type="button" class="font-card" data-font="Oswald Bold">
-          <span class="font-card__preview" style="font-weight:700;letter-spacing:.03em;">Aa</span>
+          <span class="font-card__preview" style="font-weight:700;letter-spacing:.03em;">TikTok and Facebook</span>
           <span class="font-card__name">Oswald</span>
           <span class="font-card__tag">现代感</span>
         </button>
         <button type="button" class="font-card" data-font="Bebas Neue">
-          <span class="font-card__preview" style="font-weight:900;letter-spacing:.08em;">AA</span>
+          <span class="font-card__preview" style="font-weight:900;letter-spacing:.08em;">TikTok and Facebook</span>
           <span class="font-card__name">Bebas</span>
           <span class="font-card__tag">全大写</span>
         </button>
         <button type="button" class="font-card" data-font="Montserrat ExtraBold">
-          <span class="font-card__preview" style="font-weight:800;">Aa</span>
+          <span class="font-card__preview" style="font-weight:800;">TikTok and Facebook</span>
           <span class="font-card__name">Montserrat</span>
           <span class="font-card__tag">几何感</span>
         </button>
         <button type="button" class="font-card" data-font="Poppins Bold">
-          <span class="font-card__preview" style="font-weight:700;">Aa</span>
+          <span class="font-card__preview" style="font-weight:700;">TikTok and Facebook</span>
           <span class="font-card__name">Poppins</span>
           <span class="font-card__tag">友好感</span>
         </button>
         <button type="button" class="font-card" data-font="Anton">
-          <span class="font-card__preview" style="font-weight:900;letter-spacing:.02em;">Aa</span>
+          <span class="font-card__preview" style="font-weight:900;letter-spacing:.02em;">TikTok and Facebook</span>
           <span class="font-card__name">Anton</span>
           <span class="font-card__tag">标题感</span>
         </button>
@@ -216,11 +298,19 @@
       <div class="subtitle-controls">
         <div class="subtitle-size-group">
           <span class="subtitle-controls__label">字号</span>
-          <div class="btn-group" id="subtitleSizeGroup">
-            <button type="button" class="btn btn-sm btn-outline" data-size="small">小</button>
-            <button type="button" class="btn btn-sm btn-outline btn-outline--active" data-size="medium">中</button>
-            <button type="button" class="btn btn-sm btn-outline" data-size="large">大</button>
+          <div class="btn-group btn-group--wrap" id="subtitleSizeGroup">
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="8">8</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="10">10</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="12">12</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size btn-outline--active" data-size="14">14</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="16">16</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="18">18</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="20">20</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="22">22</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="24">24</button>
+            <button type="button" class="btn btn-sm btn-outline btn-outline--size" data-size="28">28</button>
           </div>
+          <button type="button" class="btn btn-sm btn-outline" id="openSizePreviewBtn" title="1:1 预览字号效果">👁 预览</button>
         </div>
         <div class="subtitle-pos-group">
           <span class="subtitle-controls__label">位置</span>
@@ -304,6 +394,47 @@
         <div>当前位置（距顶）：<strong id="pfPosDisplay">68.0%</strong></div>
         <div id="pfZoneBadge" class="badge badge--info">安全区 ✓</div>
         <button type="button" class="btn btn-primary btn-sm" id="confirmPhonePosBtn">确认此位置</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 字号 1:1 预览弹窗 -->
+<div class="size-preview-backdrop hidden" id="sizePreviewBackdrop">
+  <div class="size-preview-header">
+    <span>字号 1:1 预览 <span class="size-preview-header__label" id="sizePreviewLabel">（14pt · 1080p）</span></span>
+    <button type="button" class="btn btn-ghost btn-sm" id="closeSizePreviewBtn" style="color:#94a3b8;">✕ 关闭</button>
+  </div>
+  <div class="size-preview-scroll" id="sizePreviewScroll">
+    <div class="spf-phone" id="spfPhone">
+      <div class="spf-bg"></div>
+      <div class="spf-topbar">
+        <span class="spf-tab">Following</span>
+        <span class="spf-tab spf-tab--active">For You</span>
+        <span class="spf-tab">LIVE</span>
+      </div>
+      <div class="spf-right">
+        <div class="spf-icon-item">
+          <div class="spf-icon-circle">♥</div>
+          <span class="spf-icon-num">24.6K</span>
+        </div>
+        <div class="spf-icon-item">
+          <div class="spf-icon-circle">💬</div>
+          <span class="spf-icon-num">1,203</span>
+        </div>
+        <div class="spf-icon-item">
+          <div class="spf-icon-circle">↗</div>
+          <span class="spf-icon-num">Share</span>
+        </div>
+      </div>
+      <div class="spf-blocked"><span class="spf-blocked-label">⚠ 底部 UI 遮挡区</span></div>
+      <div class="spf-info">
+        <div class="spf-creator">@美妆达人小雅</div>
+        <div class="spf-title">这款精华真的太好用了！</div>
+        <div class="spf-music">♪ 原声</div>
+      </div>
+      <div class="spf-subtitle" id="spfSubtitle">
+        <span class="spf-subtitle-inner" id="spfSubtitleText">TikTok and Facebook</span>
       </div>
     </div>
   </div>
