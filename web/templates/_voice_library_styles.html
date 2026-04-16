@@ -22,4 +22,14 @@
   .vl-play-btn.is-playing { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
   .vl-pager { display:flex; justify-content:center; align-items:center; gap:var(--space-4); margin-top:var(--space-6); }
   .vl-empty { padding:var(--space-8); text-align:center; color:var(--fg-muted); }
+  .vl-match { display:flex; flex-direction:column; gap:var(--space-6); }
+  .vl-match-step { padding:var(--space-5); background:var(--bg-subtle); border-radius:var(--radius-lg); }
+  .vl-match-step h3 { margin:0 0 var(--space-4); font-size:var(--text-md); }
+  .vl-upload-zone { display:flex; gap:var(--space-4); align-items:center; padding:var(--space-6); border:2px dashed var(--border-strong); border-radius:var(--radius-lg); background:#fff; }
+  .vl-upload-hint { color:var(--fg-muted); font-size:var(--text-sm); }
+  .vl-progress-bar { height:6px; background:var(--bg-muted); border-radius:var(--radius-full); overflow:hidden; margin-top:var(--space-3); }
+  #vl-progress-fill { height:100%; width:0%; background:var(--accent); transition:width var(--duration) var(--ease); }
+  #vl-progress-label { margin-top:var(--space-2); font-size:var(--text-sm); color:var(--fg-muted); }
+  .vl-sample-audio { display:flex; align-items:center; gap:var(--space-4); margin-bottom:var(--space-5); }
+  .vl-similarity { background:var(--success-bg); color:var(--success-fg); padding:2px var(--space-2); border-radius:var(--radius-sm); font-size:var(--text-xs); }
 </style>

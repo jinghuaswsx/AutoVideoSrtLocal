@@ -162,6 +162,136 @@
     await loadList();
   }
 
+  const match = { language: "", gender: "", taskId: null, pollTimer: null };
+
+  function renderMatchLangs(langs) {
+    const box = $("#vl-match-languages");
+    box.innerHTML = "";
+    langs.forEach(l => {
+      const b = document.createElement("button");
+      b.className = "vl-pill"; b.textContent = l.name_zh;
+      if (l.code === match.language) b.classList.add("is-active");
+      b.addEventListener("click", () => {
+        match.language = l.code; renderMatchLangs(langs);
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function renderMatchGender() {
+    const box = $("#vl-match-gender"); box.innerHTML = "";
+    [["male", "男"], ["female", "女"]].forEach(([v, t]) => {
+      const b = document.createElement("button");
+      b.className = "vl-pill"; b.textContent = t;
+      if (v === match.gender) b.classList.add("is-active");
+      b.addEventListener("click", () => { match.gender = v; renderMatchGender(); });
+      box.appendChild(b);
+    });
+  }
+
+  function setProgress(pct, label) {
+    $("#vl-progress").hidden = false;
+    $("#vl-progress-fill").style.width = pct + "%";
+    $("#vl-progress-label").textContent = label;
+  }
+
+  async function uploadViaSignedPut(file) {
+    const pre = await fetch("/voice-library/api/match/upload-url", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      credentials: "same-origin",
+      body: JSON.stringify({filename: file.name, content_type: file.type || "video/mp4"}),
+    }).then(r => r.json());
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", pre.upload_url);
+      xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) setProgress((e.loaded / e.total) * 90, `上传中 ${Math.round(e.loaded/e.total*100)}%`);
+      };
+      xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error("upload " + xhr.status));
+      xhr.onerror = () => reject(new Error("upload network error"));
+      xhr.send(file);
+    });
+    return pre.object_key;
+  }
+
+  const PHASE_LABEL = {
+    pending: "等待中", sampling: "采样音频",
+    embedding: "计算声纹", matching: "匹配声音库",
+    done: "完成", failed: "失败",
+  };
+
+  async function pollMatchStatus() {
+    try {
+      const resp = await fetch(`/voice-library/api/match/status/${match.taskId}`,
+        {credentials: "same-origin"});
+      if (!resp.ok) throw new Error("status " + resp.status);
+      const t = await resp.json();
+      setProgress(t.progress || 90, PHASE_LABEL[t.status] || t.status);
+      if (t.status === "done") { clearInterval(match.pollTimer); match.pollTimer = null; renderMatchResult(t.result); }
+      else if (t.status === "failed") { clearInterval(match.pollTimer); match.pollTimer = null; setProgress(100, "失败：" + (t.error || "未知错误")); }
+    } catch (e) {
+      clearInterval(match.pollTimer); match.pollTimer = null;
+      setProgress(100, "网络错误：" + e.message);
+    }
+  }
+
+  function renderMatchResult(result) {
+    $("#vl-match-step3").hidden = false;
+    $("#vl-sample-audio").src = result.sample_audio_url;
+    const grid = $("#vl-result-grid"); grid.innerHTML = "";
+    (result.candidates || []).forEach(v => {
+      const card = renderCard(v);
+      const tag = document.createElement("span");
+      tag.className = "vl-similarity";
+      tag.textContent = `相似度 ${(v.similarity * 100).toFixed(1)}%`;
+      card.querySelector(".vl-card-title").appendChild(tag);
+      grid.appendChild(card);
+    });
+  }
+
+  async function startMatch(file) {
+    if (!match.language || !match.gender) {
+      alert("请先选择目标语种和性别"); return;
+    }
+    setProgress(0, "准备上传");
+    try {
+      const objectKey = await uploadViaSignedPut(file);
+      setProgress(92, "任务启动中");
+      const r = await fetch("/voice-library/api/match/start", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        credentials: "same-origin",
+        body: JSON.stringify({object_key: objectKey, language: match.language, gender: match.gender}),
+      });
+      if (!r.ok) throw new Error("start " + r.status);
+      match.taskId = (await r.json()).task_id;
+      match.pollTimer = setInterval(pollMatchStatus, 1500);
+      setProgress(95, "采样中");
+    } catch (e) {
+      setProgress(100, "失败：" + e.message);
+    }
+  }
+
+  function bindMatchEvents() {
+    $("#vl-upload-pick").addEventListener("click", () => $("#vl-upload-input").click());
+    $("#vl-upload-input").addEventListener("change", (e) => {
+      if (e.target.files.length) startMatch(e.target.files[0]);
+    });
+    const zone = $("#vl-upload-zone");
+    zone.addEventListener("dragover", e => { e.preventDefault(); });
+    zone.addEventListener("drop", e => {
+      e.preventDefault();
+      if (e.dataTransfer.files.length) startMatch(e.dataTransfer.files[0]);
+    });
+    $("#vl-match-reset").addEventListener("click", () => {
+      match.taskId = null;
+      if (match.pollTimer) { clearInterval(match.pollTimer); match.pollTimer = null; }
+      $("#vl-match-step3").hidden = true;
+      $("#vl-progress").hidden = true;
+      $("#vl-upload-input").value = "";
+    });
+  }
+
   async function bootstrap() {
     const opts = await fetchJSON("/voice-library/api/filters");
     if (!opts.languages.length) {
@@ -171,6 +301,9 @@
     }
     state.language = opts.languages[0].code;
     await refreshFiltersAndList();
+    renderMatchLangs(opts.languages);
+    renderMatchGender();
+    if (opts.languages.length) match.language = opts.languages[0].code;
   }
 
   function bindEvents() {
@@ -193,6 +326,7 @@
       clearTimeout(qTimer);
       qTimer = setTimeout(() => { state.q = qInput.value.trim(); state.page = 1; loadList(); }, 300);
     });
+    bindMatchEvents();
   }
 
   document.addEventListener("DOMContentLoaded", () => {
