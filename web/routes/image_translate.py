@@ -15,7 +15,7 @@ from appcore import medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
-from appcore.image_translate_settings import SUPPORTED_LANGS, get_prompts_for_lang
+from appcore import image_translate_settings as its
 from web import store
 from web.services import image_translate_runner
 
@@ -92,9 +92,9 @@ def api_models():
 @login_required
 def api_system_prompts():
     lang = (request.args.get("lang") or "").strip().lower()
-    if lang not in SUPPORTED_LANGS:
-        return jsonify({"error": f"lang 必须是 {SUPPORTED_LANGS} 之一"}), 400
-    return jsonify(get_prompts_for_lang(lang))
+    if not its.is_image_translate_language_supported(lang):
+        return jsonify({"error": "lang must be a supported image-translate language"}), 400
+    return jsonify(its.get_prompts_for_lang(lang))
 
 
 @bp.route("/api/image-translate/upload/bootstrap", methods=["POST"])
@@ -163,8 +163,22 @@ def api_upload_complete():
 
     reserved = {f["idx"]: f for f in rv["files"]}
     items = []
+    seen_idxs: set[int] = set()
     for u in uploaded:
-        idx = int(u.get("idx"))
+        if not isinstance(u, dict):
+            return jsonify({"error": "uploaded item must be an object"}), 400
+        idx_raw = u.get("idx")
+        if isinstance(idx_raw, bool):
+            return jsonify({"error": "uploaded item idx must be an integer"}), 400
+        if isinstance(idx_raw, int):
+            idx = idx_raw
+        elif isinstance(idx_raw, str) and idx_raw.strip().isdigit():
+            idx = int(idx_raw.strip())
+        else:
+            return jsonify({"error": "uploaded item idx must be an integer"}), 400
+        if idx in seen_idxs:
+            return jsonify({"error": f"duplicated uploaded idx={idx}"}), 400
+        seen_idxs.add(idx)
         key = (u.get("object_key") or "").strip()
         filename = (u.get("filename") or reserved.get(idx, {}).get("filename") or "").strip()
         if idx not in reserved or reserved[idx]["object_key"] != key:
@@ -172,6 +186,8 @@ def api_upload_complete():
         if not tos_clients.object_exists(key):
             return jsonify({"error": f"对象不存在 idx={idx}"}), 400
         items.append({"idx": idx, "filename": filename, "src_tos_key": key})
+    if seen_idxs != set(reserved):
+        return jsonify({"error": "uploaded items must exactly match reserved items"}), 400
 
     lang_name = _target_language_name(lang_code)
     # Prompts are language-specific (no placeholders). Use as-is.

@@ -51,25 +51,43 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     assert data["default_model_id"] == ""
 
 
-def test_system_prompts_endpoint_requires_lang(authed_client_no_db):
+def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "is_image_translate_language_supported", lambda code: False)
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda code: {"cover": f"cover-{code}", "detail": f"detail-{code}"})
     resp = authed_client_no_db.get("/api/image-translate/system-prompts")
     assert resp.status_code == 400
 
 
-def test_system_prompts_endpoint_returns_per_lang(authed_client_no_db, monkeypatch):
-    from appcore import image_translate_settings as its
-    monkeypatch.setattr(its, "query_one", lambda sql, p: {"value": "X 预设 " + p[0]})
-    monkeypatch.setattr(its, "execute", lambda sql, p: None)
-    resp = authed_client_no_db.get("/api/image-translate/system-prompts?lang=de")
+def test_system_prompts_endpoint_accepts_dynamic_language(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "is_image_translate_language_supported", lambda code: code == "nl")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda code: {"cover": f"cover-{code}", "detail": f"detail-{code}"})
+
+    resp = authed_client_no_db.get("/api/image-translate/system-prompts?lang= NL ")
     assert resp.status_code == 200
-    j = resp.get_json()
-    assert "cover" in j and "detail" in j
-    assert "de" in j["cover"]  # 从 fake query_one 里看到 key 带了 de
+    assert resp.get_json() == {"cover": "cover-nl", "detail": "detail-nl"}
 
 
-def test_system_prompts_rejects_unsupported_lang(authed_client_no_db):
-    resp = authed_client_no_db.get("/api/image-translate/system-prompts?lang=xx")
-    assert resp.status_code == 400
+def test_system_prompts_endpoint_rejects_en_and_unsupported_lang(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "is_image_translate_language_supported", lambda code: code == "nl")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda code: {"cover": f"cover-{code}", "detail": f"detail-{code}"})
+
+    assert authed_client_no_db.get("/api/image-translate/system-prompts?lang=en").status_code == 400
+    assert authed_client_no_db.get("/api/image-translate/system-prompts?lang=xx").status_code == 400
+
+
+def test_image_translate_empty_state_container(authed_client_no_db, monkeypatch):
+    from appcore import db as app_db
+
+    monkeypatch.setattr(app_db, "query", lambda *args, **kwargs: [])
+    resp = authed_client_no_db.get("/image-translate")
+    assert resp.status_code == 200
+    assert 'id="itLanguageEmpty"' in resp.get_data(as_text=True)
 
 
 def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):
@@ -146,6 +164,80 @@ def test_complete_rejects_invalid_language(authed_client_no_db, monkeypatch):
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "x {target_language_name}",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 400
+
+
+def test_complete_rejects_bad_uploaded_items(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1, "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    cases = [
+        {"uploaded": [{"object_key": b["uploads"][0]["object_key"], "filename": "a.jpg"}]},
+        {"uploaded": [None]},
+        {"uploaded": [{"idx": "nope", "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg"}]},
+    ]
+    for payload in cases:
+        resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+            "task_id": b["task_id"],
+            "preset": "cover",
+            "target_language": "de",
+            "model_id": "gemini-3-pro-image-preview",
+            "prompt": "x {target_language_name}",
+            **payload,
+        })
+        assert resp.status_code == 400
+
+
+def test_complete_rejects_missing_uploaded_item(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 2,
+        "files": [
+            {"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"},
+            {"filename": "b.jpg", "size": 1, "content_type": "image/jpeg"},
+        ],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 400
+
+
+def test_complete_rejects_duplicate_uploaded_idx(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 2,
+        "files": [
+            {"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"},
+            {"filename": "b.jpg", "size": 1, "content_type": "image/jpeg"},
+        ],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "uploaded": [
+            {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
+            {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
+        ],
     })
     assert resp.status_code == 400
 
@@ -290,10 +382,11 @@ def test_delete_task(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
     monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: None)
-    # mock db_execute 避免真实 DB 调用
-    monkeypatch.setattr("appcore.db.execute", lambda sql, params: None)
+    called = {}
+    monkeypatch.setattr(r, "db_execute", lambda sql, params: called.setdefault("db_execute", True))
     # mock store.update 以防写真实 DB
     from web import store
     monkeypatch.setattr(store, "update", lambda *a, **kw: None)
     resp = authed_client_no_db.delete(f"/api/image-translate/{tid}")
     assert resp.status_code == 204
+    assert called.get("db_execute") is True

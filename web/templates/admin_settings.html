@@ -82,7 +82,7 @@
                  value="{{ (current.get('default', 168) / 24) | int }}">
           <span class="unit">天</span>
         </div>
-        <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算</div>
+        <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算。</div>
       </div>
 
       <div class="section-divider"></div>
@@ -110,10 +110,10 @@
   <div class="settings-card" id="mediaLanguagesCard">
     <div class="settings-card-head">
       <div>
-        <h2>素材语种配置</h2>
+        <h2>素材语言配置</h2>
         <p class="field-hint">这里维护素材页和后续模块共用的小语种。编码创建后只读，`EN` 不能停用或删除。</p>
       </div>
-      <button type="button" class="btn btn-ghost" id="addMediaLanguageBtn">新增语种</button>
+      <button type="button" class="btn btn-ghost" id="addMediaLanguageBtn">新增语言</button>
     </div>
 
     <div id="mediaLanguagesFlash" class="success-msg" hidden></div>
@@ -136,30 +136,30 @@
   </div>
 </div>
 
-  <div class="settings-card" id="imageTranslatePromptsCard">
-    <div class="settings-card-head">
-      <h2>图片翻译默认提示词</h2>
-    </div>
-    <p class="field-hint">共 6 种目标语言 × 2 种场景预设 = 12 条 prompt，逐条可改。保存后立即对所有用户生效。</p>
+<div class="settings-card" id="imageTranslatePromptsCard">
+  <div class="settings-card-head">
+    <h2>图片翻译默认提示词</h2>
+  </div>
+  <p class="field-hint">共 6 种目标语言 × 2 种场景预设 = 12 条 prompt，逐条可改。保存后立刻对所有用户生效。</p>
+  <div id="imgTransPromptEmpty" hidden></div>
 
-    <div class="field-group">
-      <label>选择语言</label>
-      <div id="imgTransLangPills" class="it-admin-pill-group"></div>
-    </div>
+  <div class="field-group">
+    <label>选择语言</label>
+    <div id="imgTransLangPills" class="it-admin-pill-group"></div>
+  </div>
 
-    <div class="field-group">
-      <label>封面图翻译 prompt（当前语言：<span id="imgTransCoverLangLabel">-</span>）</label>
-      <textarea id="imgTransCover" rows="8" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
-      <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveCover">保存封面 prompt</button></div>
-    </div>
+  <div class="field-group">
+    <label>封面图翻译 prompt（当前语言：<span id="imgTransCoverLangLabel">-</span>）</label>
+    <textarea id="imgTransCover" rows="8" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
+    <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveCover">保存封面 prompt</button></div>
+  </div>
 
-    <div class="section-divider"></div>
+  <div class="section-divider"></div>
 
-    <div class="field-group">
-      <label>产品详情图翻译 prompt（当前语言：<span id="imgTransDetailLangLabel">-</span>）</label>
-      <textarea id="imgTransDetail" rows="10" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
-      <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveDetail">保存详情 prompt</button></div>
-    </div>
+  <div class="field-group">
+    <label>产品详情图翻译 prompt（当前语言：<span id="imgTransDetailLangLabel">-</span>）</label>
+    <textarea id="imgTransDetail" rows="10" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:13px;font-family:var(--font-mono,monospace);outline:none"></textarea>
+    <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveDetail">保存详情 prompt</button></div>
   </div>
 </div>
 
@@ -181,8 +181,9 @@
   if (!cardEl) return;
 
   var LANG_LABELS = { de:"德语", fr:"法语", es:"西班牙语", it:"意大利语", ja:"日语", pt:"葡萄牙语" };
-  var SUPPORTED = ["de","fr","es","it","ja","pt"];
-  var currentLang = SUPPORTED[0];
+  var supportedLanguages = [];
+  var currentLang = "";
+  var supportedLanguageMap = {};
   var allPrompts = {};  // {lang: {cover, detail}}
 
   var pillsWrap = document.getElementById("imgTransLangPills");
@@ -190,15 +191,66 @@
   var detailTa = document.getElementById("imgTransDetail");
   var coverLabel = document.getElementById("imgTransCoverLangLabel");
   var detailLabel = document.getElementById("imgTransDetailLangLabel");
+  var promptEmptyEl = document.getElementById("imgTransPromptEmpty");
+  var saveCoverBtn = document.getElementById("imgTransSaveCover");
+  var saveDetailBtn = document.getElementById("imgTransSaveDetail");
+
+  function getLanguageLabel(code){
+    return (supportedLanguageMap[code] && supportedLanguageMap[code].name_zh) || LANG_LABELS[code] || code || "-";
+  }
+
+  function setLanguageControlsDisabled(disabled){
+    coverTa.disabled = disabled;
+    detailTa.disabled = disabled;
+    saveCoverBtn.disabled = disabled;
+    saveDetailBtn.disabled = disabled;
+  }
+
+  function showEmptyState(message){
+    currentLang = "";
+    supportedLanguages = [];
+    supportedLanguageMap = {};
+    pillsWrap.innerHTML = "";
+    pillsWrap.hidden = true;
+    promptEmptyEl.hidden = false;
+    promptEmptyEl.innerHTML = '<div class="field-hint">' + (message || "暂无可用语言，请先在“素材语言配置”中启用至少一个语言。") + "</div>";
+    coverTa.value = "";
+    detailTa.value = "";
+    coverLabel.textContent = "-";
+    detailLabel.textContent = "-";
+    setLanguageControlsDisabled(true);
+  }
+
+  function normalizeLanguages(rawLanguages){
+    supportedLanguages = [];
+    supportedLanguageMap = {};
+    (Array.isArray(rawLanguages) ? rawLanguages : []).forEach(function(item){
+      var code = "";
+      var name = "";
+      if (typeof item === "string") {
+        code = item.trim();
+        name = code;
+      } else if (item) {
+        code = (item.code || "").trim();
+        name = (item.name_zh || item.code || "").trim() || code;
+      }
+      if (!code || code === "en") return;
+      var normalized = { code: code, name_zh: name || code };
+      supportedLanguages.push(normalized);
+      supportedLanguageMap[code] = normalized;
+    });
+  }
 
   function renderPills(){
     pillsWrap.innerHTML = "";
-    SUPPORTED.forEach(function(code){
+    if (!supportedLanguages.length) return;
+    supportedLanguages.forEach(function(item){
+      var code = item.code;
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "it-admin-pill" + (code === currentLang ? " is-active" : "");
       btn.setAttribute("data-lang", code);
-      btn.textContent = LANG_LABELS[code] || code;
+      btn.textContent = item.name_zh || LANG_LABELS[code] || code;
       btn.onclick = function(){ switchLang(code); };
       pillsWrap.appendChild(btn);
     });
@@ -214,11 +266,12 @@
     var entry = allPrompts[currentLang] || {};
     coverTa.value = entry.cover || "";
     detailTa.value = entry.detail || "";
-    coverLabel.textContent = LANG_LABELS[currentLang] || currentLang;
-    detailLabel.textContent = LANG_LABELS[currentLang] || currentLang;
+    coverLabel.textContent = getLanguageLabel(currentLang);
+    detailLabel.textContent = getLanguageLabel(currentLang);
   }
 
   function switchLang(code){
+    if (!code) return;
     currentLang = code;
     setActive(code);
     fillTextareas();
@@ -228,20 +281,27 @@
     return fetch('/admin/api/image-translate/prompts', {credentials:'same-origin'})
       .then(function(r){return r.json();})
       .then(function(data){
-        if (data && data.prompts) {
-          allPrompts = data.prompts;
-          if (Array.isArray(data.languages) && data.languages.length) {
-            SUPPORTED = data.languages;
-            currentLang = SUPPORTED[0];
-            renderPills();
-          }
+        allPrompts = (data && data.prompts) || {};
+        normalizeLanguages(data && data.languages);
+        if (!supportedLanguages.length) {
+          showEmptyState("暂无可用语言，请先在“素材语言配置”中启用至少一个语言。");
+          return;
         }
+        promptEmptyEl.hidden = true;
+        promptEmptyEl.innerHTML = "";
+        pillsWrap.hidden = false;
+        setLanguageControlsDisabled(false);
+        currentLang = supportedLanguages[0].code;
+        renderPills();
         fillTextareas();
       });
   }
 
   function save(preset){
+    if (!currentLang) return;
     var ta = preset === "cover" ? coverTa : detailTa;
+    var langLabel = getLanguageLabel(currentLang);
+    var promptLabel = preset === "cover" ? "封面图" : "产品详情图";
     return fetch('/admin/api/image-translate/prompts', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
@@ -252,17 +312,16 @@
           alert((res.body && res.body.error) || "保存失败");
           return;
         }
-        // 刷新本地缓存
         if (!allPrompts[currentLang]) allPrompts[currentLang] = {};
         allPrompts[currentLang][preset] = ta.value;
-        alert('已保存 ' + (LANG_LABELS[currentLang] || currentLang) + ' 的' + (preset === "cover" ? "封面图" : "产品详情图") + " prompt");
+        alert("已保存 " + langLabel + " 的 " + promptLabel + " prompt");
       });
   }
 
-  document.getElementById('imgTransSaveCover').onclick = function(){ save('cover'); };
-  document.getElementById('imgTransSaveDetail').onclick = function(){ save('detail'); };
+  saveCoverBtn.onclick = function(){ if (!currentLang) return; save('cover'); };
+  saveDetailBtn.onclick = function(){ if (!currentLang) return; save('detail'); };
 
-  renderPills();
+  setLanguageControlsDisabled(true);
   fetchAllPrompts();
 })();
 </script>
