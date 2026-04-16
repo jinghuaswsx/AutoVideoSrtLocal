@@ -405,13 +405,85 @@ class PipelineRunnerV2(PipelineRunner):
     ) -> None:
         """合成最终视频。
 
-        现有 pipeline.compose.compose_video 使用"单条合并音轨 + timeline_manifest"
-        的方案，而 V2 流水线输出的是"每个分镜一段独立 MP3"。两者数据结构不兼容，
-        适配工作留到 Task 14/15 的 e2e 阶段完成。
+        V2 流水线输出的是"每个分镜一段独立 MP3"；本步骤先把它们按分镜时间轴
+        拼成一段整体音轨（中间空白处自然为静音），再复用
+        ``pipeline.compose.compose_video`` 生成软/硬字幕版视频。
         """
-        raise NotImplementedError(
-            "PipelineRunnerV2._step_compose 适配未完成；"
-            "现有 pipeline.compose.compose_video 接收单个 tts_audio_path + "
-            "timeline_manifest，而 V2 产出分镜级 audio_path 列表，需要在 "
-            "Task 14/15 阶段实现适配（拼接分段音频 + 调用 compose_video 或新写一版）。"
+        from pipeline.audio_stitch import (
+            build_stitched_audio,
+            build_timeline_manifest,
         )
+        from pipeline.compose import compose_video
+
+        self._set_step(task_id, "compose", "running", "正在合成最终视频...")
+        task = task_state.get(task_id) or {}
+        tts_results = task.get("tts_results") or []
+        if not tts_results:
+            raise RuntimeError("没有可合成的 TTS 分段")
+
+        shots_by_idx = {
+            s.get("index"): s for s in (task.get("shots") or [])
+        }
+        segments: List[Dict[str, Any]] = []
+        for tts in tts_results:
+            shot = shots_by_idx.get(tts.get("shot_index"))
+            if not shot:
+                continue
+            audio_path = tts.get("audio_path")
+            if not audio_path:
+                continue
+            segments.append({
+                "shot_index": tts.get("shot_index"),
+                "shot_start": float(shot.get("start") or 0.0),
+                "shot_duration": float(shot.get("duration") or 0.0),
+                "actual_duration": float(tts.get("final_duration") or 0.0),
+                "audio_path": audio_path,
+            })
+
+        if not segments:
+            raise RuntimeError("没有可合成的分镜音频")
+
+        stitched_path = os.path.join(task_dir, "stitched_audio.mp3")
+        build_stitched_audio(
+            segments,
+            total_duration=float(task.get("video_duration") or 0.0),
+            output_path=stitched_path,
+        )
+        timeline = build_timeline_manifest(segments)
+
+        subtitle_path = task.get("subtitle_path")
+        result = compose_video(
+            video_path=video_path,
+            tts_audio_path=stitched_path,
+            srt_path=subtitle_path,
+            output_dir=task_dir,
+            subtitle_position=task.get("subtitle_position", "bottom"),
+            timeline_manifest=timeline,
+            variant=task.get("variant"),
+            font_name=task.get("font_name", "Impact"),
+            font_size_preset=task.get("font_size_preset", "medium"),
+        )
+        final_path = (
+            (result or {}).get("hard_video")
+            or (result or {}).get("soft_video")
+        )
+        task_state.update(
+            task_id,
+            final_video=final_path,
+            compose_result=result,
+            stitched_audio_path=stitched_path,
+            status="completed",
+        )
+        task_state.set_expires_at(task_id, self.project_type)
+        if result:
+            if result.get("soft_video"):
+                task_state.set_preview_file(task_id, "soft_video",
+                                            result["soft_video"])
+            if result.get("hard_video"):
+                task_state.set_preview_file(task_id, "hard_video",
+                                            result["hard_video"])
+        self._emit(task_id, EVT_LAB_PIPELINE_DONE, {
+            "video": final_path,
+            "compose_result": result,
+        })
+        self._set_step(task_id, "compose", "done", "合成完成")
