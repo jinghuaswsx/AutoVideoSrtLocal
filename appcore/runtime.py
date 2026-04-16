@@ -226,8 +226,12 @@ class PipelineRunner:
         from pipeline.translate import generate_tts_script, generate_localized_rewrite
 
         MAX_ROUNDS = 5
-        duration_lo = video_duration * 0.9
-        duration_hi = video_duration * 1.1
+        # Final target range (shown to the user, used for final success judgement):
+        final_target_lo = max(0.0, video_duration - 3.0)
+        final_target_hi = video_duration
+        # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
+        stage1_lo = video_duration * 0.9
+        stage1_hi = video_duration * 1.1
 
         rounds: list[dict] = []
         round_products: list[dict] = []  # full per-round products (kept in-memory only)
@@ -246,8 +250,10 @@ class PipelineRunner:
             round_record: dict = {
                 "round": round_index,
                 "video_duration": video_duration,
-                "duration_lo": duration_lo,
-                "duration_hi": duration_hi,
+                "duration_lo": final_target_lo,
+                "duration_hi": final_target_hi,
+                "stage1_lo": stage1_lo,
+                "stage1_hi": stage1_hi,
                 "artifact_paths": {},
             }
 
@@ -332,7 +338,7 @@ class PipelineRunner:
 
             self._emit_duration_round(task_id, round_index, "measure", round_record)
 
-            if duration_lo <= audio_duration <= duration_hi:
+            if stage1_lo <= audio_duration <= stage1_hi:
                 self._emit_duration_round(task_id, round_index, "converged", round_record)
                 task_state.update(task_id, tts_duration_status="converged")
                 return {
@@ -385,13 +391,23 @@ class PipelineRunner:
         tts_segments: list, tts_script: dict, localized_translation: dict,
         video_duration: float,
     ) -> dict:
-        """Drop trailing blocks until audio ≤ video_duration.
+        """Drop trailing blocks to land in [video-3, video].
+
+        Policy:
+          - If total audio ≤ video_duration, skip (short is acceptable).
+          - Otherwise, drop blocks from the tail one at a time:
+              * If a drop lands duration in [video-3, video] → stop, adopt it.
+              * If a drop overshoots below video-3 → stop, pick the candidate
+                (any drop state with duration ≤ video) whose duration is
+                closest to [video-3, video]. Never return a state with
+                duration > video (hard upper bound).
+              * Else (still > video) → keep dropping.
+          - If we run out of blocks, raise.
 
         Returns dict with keys:
-          - skipped: True if total audio already ≤ video_duration (no action taken)
-          - audio_path, tts_script, localized_translation, tts_segments: trimmed products
+          - skipped: True if total ≤ video_duration
+          - audio_path, tts_script, localized_translation, tts_segments
           - removed_count, removed_duration, final_duration
-        Raises RuntimeError if trimming would empty all blocks.
         """
         import subprocess
 
@@ -399,18 +415,55 @@ class PipelineRunner:
         if total <= video_duration:
             return {"skipped": True}
 
+        final_target_lo = max(0.0, video_duration - 3.0)
+        final_target_hi = video_duration
+
+        def _distance_to_range(d: float) -> float:
+            if final_target_lo <= d <= final_target_hi:
+                return 0.0
+            if d > final_target_hi:
+                return d - final_target_hi
+            return final_target_lo - d
+
         kept = list(tts_segments)
         removed: list[dict] = []
         current = total
-        while kept and current > video_duration:
+        # Candidates are states where audio ≤ video (satisfies the hard upper bound).
+        candidates: list[dict] = []
+        final_state: dict | None = None
+
+        while kept:
             seg = kept.pop()
             removed.append(seg)
             current -= float(seg.get("tts_duration", 0.0) or 0.0)
 
-        if not kept:
+            if current <= final_target_hi:
+                candidates.append({
+                    "kept": list(kept),
+                    "removed": list(removed),
+                    "duration": current,
+                })
+
+            if final_target_lo <= current <= final_target_hi:
+                # Landed in range — perfect.
+                final_state = candidates[-1]
+                break
+
+            if current < final_target_lo:
+                # Overshot below target range — pick the candidate closest to [lo, hi].
+                # candidates is non-empty here (we just appended one on this iteration).
+                final_state = min(candidates, key=lambda c: _distance_to_range(c["duration"]))
+                break
+            # current still > final_target_hi: keep dropping.
+
+        if final_state is None or not final_state["kept"]:
             raise RuntimeError(
                 "尾部裁剪后无剩余朗读块——单块时长已超视频时长，无法产出音频。"
             )
+
+        kept = final_state["kept"]
+        removed = final_state["removed"]
+        current = final_state["duration"]
 
         seg_dir = os.path.join(task_dir, "tts_segments", round_variant)
         os.makedirs(seg_dir, exist_ok=True)
