@@ -415,6 +415,7 @@
     if (prevCoverKey && !state.current.product.cover_object_key) {
       state.current.product.cover_object_key = prevCoverKey;
     }
+    setCover(full.product.cover_thumbnail_url || null);
     renderItems(full.items);
     loadList();
   }
@@ -822,7 +823,7 @@
     const url = $('edItemCoverUrl'); if (url) url.value = '';
   }
 
-  async function edUploadItemCover(file) {
+  async function edUploadPendingItemCover(file) {
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
@@ -1228,7 +1229,7 @@
       edIcDz.addEventListener('drop', (e) => {
         e.preventDefault(); edIcDz.classList.remove('drag');
         const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/'));
-        if (f) edUploadItemCover(f);
+        if (f) edUploadPendingItemCover(f);
       });
     }
     $('edItemCoverReplace') && $('edItemCoverReplace').addEventListener('click', () => $('edItemCoverInput').click());
@@ -1238,7 +1239,7 @@
     });
     $('edItemCoverInput') && $('edItemCoverInput').addEventListener('change', (e) => {
       const f = e.target.files[0]; e.target.value = '';
-      if (f) edUploadItemCover(f);
+      if (f) edUploadPendingItemCover(f);
     });
     $('edItemCoverFromUrlBtn') && $('edItemCoverFromUrlBtn').addEventListener('click', edImportItemCoverFromUrl);
     $('edItemCoverUrl') && $('edItemCoverUrl').addEventListener('keydown', (e) => {
