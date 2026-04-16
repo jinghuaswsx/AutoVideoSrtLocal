@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, abort, jsonify, redirect, request
 from flask_login import current_user, login_required
 
 from appcore import medias, task_state, tos_clients
@@ -197,3 +197,40 @@ def api_upload_complete():
 def api_state(task_id: str):
     task = _get_owned_task(task_id)
     return jsonify(_state_payload(task))
+
+
+def _get_item(task: dict, idx: int) -> dict | None:
+    for it in task.get("items") or []:
+        if int(it.get("idx")) == int(idx):
+            return it
+    return None
+
+
+@bp.route("/api/image-translate/<task_id>/artifact/source/<int:idx>", methods=["GET"])
+@login_required
+def api_source_artifact(task_id: str, idx: int):
+    task = _get_owned_task(task_id)
+    item = _get_item(task, idx)
+    if not item or not item.get("src_tos_key"):
+        abort(404)
+    return redirect(tos_clients.generate_signed_download_url(item["src_tos_key"]))
+
+
+@bp.route("/api/image-translate/<task_id>/artifact/result/<int:idx>", methods=["GET"])
+@login_required
+def api_result_artifact(task_id: str, idx: int):
+    task = _get_owned_task(task_id)
+    item = _get_item(task, idx)
+    if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
+        abort(404)
+    return redirect(tos_clients.generate_signed_download_url(item["dst_tos_key"]))
+
+
+@bp.route("/api/image-translate/<task_id>/download/result/<int:idx>", methods=["GET"])
+@login_required
+def api_download_result(task_id: str, idx: int):
+    task = _get_owned_task(task_id)
+    item = _get_item(task, idx)
+    if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
+        abort(404)
+    return redirect(tos_clients.generate_signed_download_url(item["dst_tos_key"]))

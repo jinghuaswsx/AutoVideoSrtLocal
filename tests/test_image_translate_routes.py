@@ -159,3 +159,68 @@ def test_get_state(authed_client_no_db, monkeypatch):
     assert state["preset"] == "cover"
     assert state["target_language_name"] == "德语"
     assert len(state["items"]) == 1
+
+
+def _prep_task(client, monkeypatch, with_done=True):
+    """建完整任务，并可选标 done。返回 task_id。"""
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = client.post("/api/image-translate/upload/bootstrap", json={
+        "count":1,
+        "files":[{"filename":"a.jpg","size":1,"content_type":"image/jpeg"}],
+    }).get_json()
+    tid = b["task_id"]
+    client.post("/api/image-translate/upload/complete", json={
+        "task_id": tid, "preset":"cover","target_language":"de",
+        "model_id":"gemini-3-pro-image-preview",
+        "prompt":"... {target_language_name} ...",
+        "uploaded":[{"idx":0,"object_key":b["uploads"][0]["object_key"],"filename":"a.jpg","size":1}],
+    })
+    from web import store
+    task = store.get(tid)
+    if with_done:
+        task["items"][0]["status"] = "done"
+        task["items"][0]["dst_tos_key"] = f"artifacts/image_translate/1/{tid}/out_0.png"
+        task["progress"]["done"] = 1
+    return tid
+
+
+def test_source_artifact_redirects(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
+                         lambda k, expires=None: f"https://tos-dl/{k}")
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/artifact/source/0",
+                                    follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"].startswith("https://tos-dl/")
+
+
+def test_result_artifact_404_when_not_done(authed_client_no_db, monkeypatch):
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/artifact/result/0",
+                                    follow_redirects=False)
+    assert resp.status_code == 404
+
+
+def test_result_artifact_redirects_when_done(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
+                         lambda k, expires=None: f"https://tos-dl/{k}")
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/artifact/result/0",
+                                    follow_redirects=False)
+    assert resp.status_code == 302
+    assert "out_0.png" in resp.headers["Location"]
+
+
+def test_result_download_redirects_when_done(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
+                         lambda k, expires=None: f"https://tos-dl/{k}")
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/result/0",
+                                    follow_redirects=False)
+    assert resp.status_code == 302
+    assert "out_0.png" in resp.headers["Location"]
