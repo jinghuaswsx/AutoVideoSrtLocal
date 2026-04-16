@@ -355,6 +355,97 @@ def test_upload_rejects_bad_target_language(
     assert resp.status_code == 400
 
 
+def test_download_subtitle_not_ready_returns_404(authed_client_no_db, monkeypatch):
+    """subtitle_path 未生成时应返回 404。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+        },
+    )
+    resp = authed_client_no_db.get(
+        "/api/translate-lab/lab-1/subtitle",
+    )
+    assert resp.status_code == 404
+
+
+def test_download_subtitle_returns_file(authed_client_no_db, monkeypatch, tmp_path):
+    """subtitle_path 指向真实文件时能正常返回内容。"""
+    srt = tmp_path / "sample.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+            "subtitle_path": str(srt),
+        },
+    )
+    resp = authed_client_no_db.get("/api/translate-lab/lab-1/subtitle")
+    assert resp.status_code == 200
+    assert "hello" in resp.get_data(as_text=True)
+
+
+def test_stream_shot_audio_not_ready_returns_404(authed_client_no_db, monkeypatch):
+    """tts_results 为空时应返回 404。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+            "tts_results": [],
+        },
+    )
+    resp = authed_client_no_db.get(
+        "/api/translate-lab/lab-1/audio/1",
+    )
+    assert resp.status_code == 404
+
+
+def test_stream_shot_audio_returns_file(authed_client_no_db, monkeypatch, tmp_path):
+    """指定分镜的 audio_path 指向真实文件时能正常返回。"""
+    audio = tmp_path / "shot_1.mp3"
+    audio.write_bytes(b"ID3\x00\x00\x00fake-mp3")
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+            "tts_results": [
+                {"shot_index": 1, "audio_path": str(audio)},
+            ],
+        },
+    )
+    resp = authed_client_no_db.get("/api/translate-lab/lab-1/audio/1")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/mpeg"
+
+
+def test_stream_final_video_not_ready_returns_404(authed_client_no_db, monkeypatch):
+    """final_video / compose_result 均缺失时 404。"""
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+        },
+    )
+    resp = authed_client_no_db.get("/api/translate-lab/lab-1/final-video")
+    assert resp.status_code == 404
+
+
+def test_stream_final_video_returns_file(authed_client_no_db, monkeypatch, tmp_path):
+    """compose_result.hard_video 指向真实文件时能正常返回。"""
+    video = tmp_path / "out.mp4"
+    video.write_bytes(b"\x00\x00\x00\x20ftypmp42")
+    monkeypatch.setattr(
+        "web.routes.translate_lab._get_lab_task",
+        lambda tid, uid: {
+            "id": tid, "_user_id": uid, "type": "translate_lab",
+            "compose_result": {"hard_video": str(video)},
+        },
+    )
+    resp = authed_client_no_db.get("/api/translate-lab/lab-1/final-video")
+    assert resp.status_code == 200
+    assert resp.mimetype == "video/mp4"
+
+
 def test_delete_translate_lab_task(authed_client_no_db, monkeypatch):
     """DELETE /api/translate-lab/<id> 软删除并返回 ok。"""
     seen: dict = {}

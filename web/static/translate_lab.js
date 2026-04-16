@@ -332,10 +332,13 @@
     }
 
     // 最终视频
-    if (task.result && task.result.final_video_url) {
+    if (task.compose_result && (task.compose_result.hard_video || task.compose_result.soft_video)) {
+      showComposeSection("/api/translate-lab/" + D.taskId + "/final-video");
+    } else if (task.final_video) {
+      showComposeSection("/api/translate-lab/" + D.taskId + "/final-video");
+    } else if (task.result && task.result.final_video_url) {
       showComposeSection(task.result.final_video_url);
     } else if (task.final_video_path) {
-      // 兼容字段：若后端把路径直接写在顶层
       showComposeSection(urlForFinalVideo(task));
     }
 
@@ -352,7 +355,10 @@
   }
 
   function urlForFinalVideo(task) {
-    // 若后端尚未暴露专属 URL，这里保留占位让 href 不崩；实际下载路由由 Task 15 负责
+    // 兼容字段：后端可能只写 final_video_path，统一指向产物路由。
+    if (D && D.taskId) {
+      return "/api/translate-lab/" + D.taskId + "/final-video";
+    }
     return "#";
   }
 
@@ -633,7 +639,7 @@
       var shotDuration = shot.duration !== undefined ? Number(shot.duration).toFixed(2) : null;
       var durationOk = finalDuration !== null && shotDuration !== null
         && Number(finalDuration) <= Number(shotDuration) + 0.3;
-      var audioPath = tts.audio_path ? fileToAudioUrl(tts.audio_path) : "";
+      var audioPath = tts.audio_path ? fileToAudioUrl(D.taskId, idx) : "";
       return ''
         + '<div class="tt-item">'
         + '  <span class="tt-index">#' + idx + '</span>'
@@ -660,13 +666,9 @@
     }
   }
 
-  function fileToAudioUrl(audioPath) {
-    // 后端音频路径不公开访问；实际播放依赖 Task 15 的产物路由。
-    // 这里给出相对文件名作为占位，若后续提供 /api/translate-lab/<id>/audio/<idx>
-    // 可在此替换。
-    if (!audioPath) return "";
-    // 尝试提取 path 末尾，交给路由去解析
-    return "";
+  function fileToAudioUrl(taskId, shotIndex) {
+    if (!taskId || shotIndex === undefined || shotIndex === null) return "";
+    return "/api/translate-lab/" + taskId + "/audio/" + shotIndex;
   }
 
   // ── 字幕 & 合成 ─────────────────────────────────────

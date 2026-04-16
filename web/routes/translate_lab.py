@@ -17,7 +17,7 @@ import os
 import uuid
 from datetime import datetime
 
-from flask import Blueprint, render_template, abort, request, jsonify
+from flask import Blueprint, render_template, abort, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
@@ -304,6 +304,66 @@ def confirm_voice(task_id: str):
         chosen = {"voice_id": voice_id}
     task_state.update(task_id, chosen_voice=chosen, status="running")
     return jsonify({"ok": True, "chosen": chosen})
+
+
+@bp.route("/api/translate-lab/<task_id>/subtitle", methods=["GET"])
+@login_required
+def download_subtitle(task_id: str):
+    """下载最终生成的 SRT 字幕文件。"""
+    user_id = current_user.id
+    task = _get_lab_task(task_id, user_id)
+    if not task:
+        return jsonify({"error": "not found"}), 404
+    srt_path = task.get("subtitle_path")
+    if not srt_path or not os.path.isfile(srt_path):
+        return jsonify({"error": "subtitle not ready"}), 404
+    return send_file(
+        srt_path,
+        mimetype="application/x-subrip",
+        as_attachment=True,
+        download_name=f"{task_id}.srt",
+    )
+
+
+@bp.route("/api/translate-lab/<task_id>/audio/<int:shot_index>",
+          methods=["GET"])
+@login_required
+def stream_shot_audio(task_id: str, shot_index: int):
+    """按分镜索引流式返回对应 TTS 音频。"""
+    user_id = current_user.id
+    task = _get_lab_task(task_id, user_id)
+    if not task:
+        return jsonify({"error": "not found"}), 404
+    tts_results = task.get("tts_results") or []
+    target = next(
+        (r for r in tts_results if r.get("shot_index") == shot_index),
+        None,
+    )
+    if not target or not target.get("audio_path"):
+        return jsonify({"error": "audio not ready"}), 404
+    audio_path = target["audio_path"]
+    if not os.path.isfile(audio_path):
+        return jsonify({"error": "file missing"}), 404
+    return send_file(audio_path, mimetype="audio/mpeg")
+
+
+@bp.route("/api/translate-lab/<task_id>/final-video", methods=["GET"])
+@login_required
+def stream_final_video(task_id: str):
+    """播放/下载合成完成的视频（优先硬字幕版）。"""
+    user_id = current_user.id
+    task = _get_lab_task(task_id, user_id)
+    if not task:
+        return jsonify({"error": "not found"}), 404
+    compose_result = task.get("compose_result") or {}
+    path = (
+        compose_result.get("hard_video")
+        or compose_result.get("soft_video")
+        or task.get("final_video")
+    )
+    if not path or not os.path.isfile(path):
+        return jsonify({"error": "video not ready"}), 404
+    return send_file(path, mimetype="video/mp4")
 
 
 @bp.route("/api/translate-lab/voice-library/sync", methods=["POST"])
