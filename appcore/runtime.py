@@ -355,6 +355,47 @@ class PipelineRunner:
             f"最后一次为 {last_audio_duration:.1f}s。请调整 voice 或翻译 prompt 后重试。"
         )
 
+    def _promote_final_artifacts(self, task_dir: str, final_round: int, variant: str) -> None:
+        """Copy tts_full.round_{N}.mp3 to tts_full.{variant}.mp3 for downstream compatibility."""
+        import shutil
+        src = os.path.join(task_dir, f"tts_full.round_{final_round}.mp3")
+        dst = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+
+    def _resolve_voice(self, task: dict, loc_mod) -> dict:
+        """Resolve voice for TTS: explicit task.voice_id → recommended → default.
+
+        Falls back to loc_mod.DEFAULT_{MALE,FEMALE}_VOICE_ID if library has none.
+        """
+        from pipeline.tts import get_voice_by_id
+
+        voice = None
+        if task.get("voice_id"):
+            voice = get_voice_by_id(task["voice_id"], self.user_id)
+        if not voice and task.get("recommended_voice_id"):
+            voice = get_voice_by_id(task["recommended_voice_id"], self.user_id)
+        if not voice:
+            from pipeline.voice_library import get_voice_library
+            gender = task.get("voice_gender", "male")
+            lib = get_voice_library()
+            if self.tts_default_voice_language:
+                lib.ensure_defaults(self.user_id, language=self.tts_default_voice_language)
+                voice = lib.get_default_voice(self.user_id, gender=gender,
+                                              language=self.tts_default_voice_language)
+            else:
+                voice = lib.get_default_voice(self.user_id, gender=gender)
+        if not voice:
+            default_male = getattr(loc_mod, "DEFAULT_MALE_VOICE_ID", None)
+            default_female = getattr(loc_mod, "DEFAULT_FEMALE_VOICE_ID", None)
+            gender = task.get("voice_gender", "male")
+            voice = {
+                "id": None,
+                "elevenlabs_voice_id": default_male if gender == "male" else default_female,
+                "name": "Default",
+            }
+        return voice
+
     def start(self, task_id: str) -> None:
         self._run(task_id, start_step="extract")
 

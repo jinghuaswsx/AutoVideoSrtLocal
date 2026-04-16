@@ -243,3 +243,24 @@ class TestDurationLoopMultiRound:
         assert (tmp_path / "localized_translation.round_2.json").exists()
         assert (tmp_path / "tts_script.round_2.json").exists()
         assert (tmp_path / "tts_full.round_2.mp3").exists()
+
+
+class TestPromoteFinalArtifacts:
+    def test_promotes_round_n_to_normal(self, tmp_path):
+        from appcore.runtime import PipelineRunner
+        from appcore.events import EventBus
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+
+        # Create round_2 source file
+        src = tmp_path / "tts_full.round_2.mp3"
+        src.write_bytes(b"audio data")
+
+        runner._promote_final_artifacts(
+            task_dir=str(tmp_path),
+            final_round=2,
+            variant="normal",
+        )
+
+        dst = tmp_path / "tts_full.normal.mp3"
+        assert dst.exists()
+        assert dst.read_bytes() == b"audio data"
