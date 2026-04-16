@@ -20,21 +20,28 @@ def _fonts_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fonts")
 
 
-def _compute_font_size(video_height: int, preset) -> int:
-    """根据视频高度和预设档位计算自适应字号（ASS pt）。
+def _compute_font_size(preset) -> int:
+    """把字号预设转成 libass 可用的 ASS FontSize（基于 PlayResY=288）。
 
-    preset 可以是数字（直接作为 1080p 基准字号）或旧版字符串（small/medium/large）。
+    preset 可以是数字（直接作为 ASS FontSize）或字符串档位（small/medium/large）。
+
+    libass 会把这个值按 video_height/288 线性缩放到实际像素，因此这里
+    给定的值是"SRT 默认 ASS 画布"上的尺寸，视频分辨率越高字号自动越大，
+    不需要我们再乘 video_height/1080。
     """
     if isinstance(preset, (int, float)):
-        base = int(preset)
-    else:
-        base = _FONT_SIZE_BASE.get(preset, _FONT_SIZE_BASE["medium"])
-    return round(video_height / 1080 * base)
+        return int(preset)
+    return _FONT_SIZE_BASE.get(preset, _FONT_SIZE_BASE["medium"])
 
 
-def _compute_margin_v(video_height: int, position_y: float) -> int:
-    """将「距顶百分比」转换为 ffmpeg ASS MarginV（距底像素）。"""
-    return round(video_height * (1.0 - position_y))
+def _compute_margin_v(position_y: float) -> int:
+    """把「距顶百分比」转成 libass 可用的 ASS MarginV（基于 PlayResY=288）。
+
+    libass 会按 video_height/288 线性缩放，因此 MarginV 基准用 288 而不是
+    视频实际高度；不然会被 libass 再缩放一次把字幕推出画面。
+    position_y=0.68 → MarginV=round(288*0.32)=92 → 1920p 视频实际距底 ≈614 px。
+    """
+    return round(288 * (1.0 - position_y))
 
 
 def compose_video(
@@ -168,9 +175,8 @@ def _compose_hard(
     font_size_preset: str = "medium",
     subtitle_position_y: float = 0.68,
 ) -> None:
-    video_height = _get_video_height(video_path)
-    font_size_pt = _compute_font_size(video_height, font_size_preset)
-    margin_v = _compute_margin_v(video_height, subtitle_position_y)
+    font_size_pt = _compute_font_size(font_size_preset)
+    margin_v = _compute_margin_v(subtitle_position_y)
     vf = _build_subtitle_filter(srt_path, font_name, font_size_pt, margin_v)
 
     cmd = [

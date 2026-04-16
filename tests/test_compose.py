@@ -23,8 +23,6 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
 
     def fake_run(cmd, capture_output=True, text=True):
         captured["cmd"] = cmd
-        if cmd and "ffprobe" in cmd[0]:
-            return SimpleNamespace(returncode=0, stdout="1080\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("pipeline.compose.subprocess.run", fake_run)
@@ -38,74 +36,58 @@ def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatc
     vf = captured["cmd"][captured["cmd"].index("-vf") + 1]
     assert "G\\:/Code/AutoVideoSrt/output/task/subtitle.srt" in vf
     assert "FontName=Impact" in vf
-    assert "FontSize=14" in vf    # medium preset at 1080p
-    assert "MarginV=346" in vf    # round(1080*(1-0.68))
+    assert "FontSize=14" in vf    # medium preset → ASS PlayResY=288 基准
+    assert "MarginV=92" in vf     # round(288*(1-0.68)) = 92
     assert "Alignment=2" in vf
 
 
 # ---------------------------------------------------------------------------
-# _compute_font_size
+# _compute_font_size — 返回 ASS FontSize（基于 PlayResY=288，libass 自动缩放）
 # ---------------------------------------------------------------------------
 
-def test_compute_font_size_medium_at_1080p():
-    assert _compute_font_size(1080, "medium") == 14
+def test_compute_font_size_medium():
+    assert _compute_font_size("medium") == 14
 
 
-def test_compute_font_size_small_at_1080p():
-    assert _compute_font_size(1080, "small") == 11
+def test_compute_font_size_small():
+    assert _compute_font_size("small") == 11
 
 
-def test_compute_font_size_large_at_1080p():
-    assert _compute_font_size(1080, "large") == 18
-
-
-def test_compute_font_size_scales_with_height():
-    # 720p medium: round(720/1080*14) = round(9.33) = 9
-    assert _compute_font_size(720, "medium") == 9
-    # 1920p large: round(1920/1080*18) = round(32.0) = 32
-    assert _compute_font_size(1920, "large") == 32
+def test_compute_font_size_large():
+    assert _compute_font_size("large") == 18
 
 
 def test_compute_font_size_unknown_preset_falls_back_to_medium():
-    assert _compute_font_size(1080, "xlarge") == 14
+    assert _compute_font_size("xlarge") == 14
 
 
-def test_compute_font_size_numeric_int_at_1080p():
-    # 数字字号：1080p 下直接返回该值
-    assert _compute_font_size(1080, 14) == 14
-    assert _compute_font_size(1080, 20) == 20
-    assert _compute_font_size(1080, 8) == 8
-
-
-def test_compute_font_size_numeric_scales_with_height():
-    # 720p 下按比例缩放: round(720/1080 * 14) = 9
-    assert _compute_font_size(720, 14) == 9
-    # 1920p 下放大: round(1920/1080 * 14) = round(24.89) = 25
-    assert _compute_font_size(1920, 14) == 25
+def test_compute_font_size_numeric_int():
+    assert _compute_font_size(14) == 14
+    assert _compute_font_size(20) == 20
+    assert _compute_font_size(8) == 8
 
 
 def test_compute_font_size_numeric_float():
-    # 浮点数字号同样支持
-    assert _compute_font_size(1080, 14.0) == 14
+    assert _compute_font_size(14.0) == 14
 
 
 # ---------------------------------------------------------------------------
-# _compute_margin_v
+# _compute_margin_v — 基于 ASS PlayResY=288（libass 自动缩放到实际分辨率）
 # ---------------------------------------------------------------------------
 
 def test_compute_margin_v_default_position():
-    # position_y=0.68 → margin_v = round(1080*(1-0.68)) = round(345.6) = 346
-    assert _compute_margin_v(1080, 0.68) == 346
+    # position_y=0.68 → margin_v = round(288*(1-0.68)) = round(92.16) = 92
+    assert _compute_margin_v(0.68) == 92
 
 
 def test_compute_margin_v_bottom():
-    # position_y=0.95 → margin_v = round(1080*0.05) = 54
-    assert _compute_margin_v(1080, 0.95) == 54
+    # position_y=0.95 → margin_v = round(288*0.05) = 14
+    assert _compute_margin_v(0.95) == 14
 
 
 def test_compute_margin_v_top():
-    # position_y=0.1 → margin_v = round(1080*0.9) = 972
-    assert _compute_margin_v(1080, 0.1) == 972
+    # position_y=0.1 → margin_v = round(288*0.9) = 259
+    assert _compute_margin_v(0.1) == 259
 
 
 # ---------------------------------------------------------------------------
