@@ -6,7 +6,36 @@
     <a href="#browse" class="oc-tab">浏览试听</a>
     <a href="#match" class="oc-tab">视频匹配</a>
   </div>
-  <section id="tab-browse" class="oc-tab-panel"></section>
+  <section id="tab-browse" class="oc-tab-panel vl-browse">
+  <aside class="vl-filter-panel">
+    <div class="vl-filter-group">
+      <label>语言</label>
+      <div id="vl-browse-languages" class="vl-pill-row"></div>
+    </div>
+    <div class="vl-filter-group">
+      <label>性别</label>
+      <div id="vl-browse-gender" class="vl-pill-row"></div>
+    </div>
+    <div class="vl-filter-group"><label>用途</label><select id="vl-use-case" multiple></select></div>
+    <div class="vl-filter-group"><label>口音</label><select id="vl-accent" multiple></select></div>
+    <div class="vl-filter-group"><label>年龄</label><select id="vl-age" multiple></select></div>
+    <div class="vl-filter-group"><label>音色</label><select id="vl-descriptive" multiple></select></div>
+    <div class="vl-filter-group">
+      <label>关键词</label>
+      <input id="vl-q" type="text" placeholder="搜索名字或描述" />
+    </div>
+    <button id="vl-reset-filters" class="oc-btn-ghost">重置筛选</button>
+  </aside>
+  <main class="vl-main">
+    <div id="vl-grid" class="vl-grid"></div>
+    <div id="vl-empty" class="vl-empty" hidden></div>
+    <nav class="vl-pager">
+      <button id="vl-prev" class="oc-btn-secondary">上一页</button>
+      <span id="vl-page-info"></span>
+      <button id="vl-next" class="oc-btn-secondary">下一页</button>
+    </nav>
+  </main>
+</section>
   <section id="tab-match" class="oc-tab-panel" hidden></section>
 </div>
 {% include "_voice_library_styles.html" %}
