@@ -224,3 +224,65 @@ def test_result_download_redirects_when_done(authed_client_no_db, monkeypatch):
                                     follow_redirects=False)
     assert resp.status_code == 302
     assert "out_0.png" in resp.headers["Location"]
+
+
+def test_retry_failed_item_resets_and_triggers_runner(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    from web import store
+    task = store.get(tid)
+    task["items"][0]["status"] = "failed"
+    task["items"][0]["attempts"] = 3
+    task["items"][0]["error"] = "timeout"
+    called = {}
+    monkeypatch.setattr(r, "_start_runner", lambda tid, uid: called.setdefault("ok", True))
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry/0")
+    assert resp.status_code == 202
+    assert task["items"][0]["status"] == "pending"
+    assert task["items"][0]["attempts"] == 0
+    assert task["items"][0]["error"] == ""
+    assert called.get("ok") is True
+
+
+def test_retry_rejects_non_failed_item(authed_client_no_db, monkeypatch):
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry/0")
+    assert resp.status_code == 409
+
+
+def test_zip_download_contains_done_items(authed_client_no_db, monkeypatch):
+    import io, zipfile
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+
+    def fake_download(key, local_path):
+        with open(local_path, "wb") as f:
+            f.write(b"BYTES-" + key.encode())
+        return local_path
+    monkeypatch.setattr(r.tos_clients, "download_file", fake_download)
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/zip")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "application/zip"
+    zf = zipfile.ZipFile(io.BytesIO(resp.data))
+    names = zf.namelist()
+    assert len(names) == 1
+    assert names[0].endswith(".png")
+
+
+def test_zip_download_404_when_no_done(authed_client_no_db, monkeypatch):
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/zip")
+    assert resp.status_code == 404
+
+
+def test_delete_task(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: None)
+    # mock db_execute 避免真实 DB 调用
+    monkeypatch.setattr("appcore.db.execute", lambda sql, params: None)
+    # mock store.update 以防写真实 DB
+    from web import store
+    monkeypatch.setattr(store, "update", lambda *a, **kw: None)
+    resp = authed_client_no_db.delete(f"/api/image-translate/{tid}")
+    assert resp.status_code == 204

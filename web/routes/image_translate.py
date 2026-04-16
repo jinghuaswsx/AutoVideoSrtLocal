@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import io
+import os
+import tempfile
 import threading
 import uuid
+import zipfile
+from datetime import datetime
 
-from flask import Blueprint, abort, jsonify, redirect, request
+from flask import Blueprint, Response, abort, jsonify, redirect, request
 from flask_login import current_user, login_required
 
 from appcore import medias, task_state, tos_clients
+from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
 from appcore.image_translate_settings import get_default_prompts, render_prompt
@@ -234,3 +240,95 @@ def api_download_result(task_id: str, idx: int):
     if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
         abort(404)
     return redirect(tos_clients.generate_signed_download_url(item["dst_tos_key"]))
+
+
+@bp.route("/api/image-translate/<task_id>/retry/<int:idx>", methods=["POST"])
+@login_required
+def api_retry_item(task_id: str, idx: int):
+    task = _get_owned_task(task_id)
+    item = _get_item(task, idx)
+    if not item:
+        abort(404)
+    if item.get("status") != "failed":
+        return jsonify({"error": "只有 failed 的图可以重试"}), 409
+    item["status"] = "pending"
+    item["attempts"] = 0
+    item["error"] = ""
+    item["dst_tos_key"] = ""
+    total = len(task["items"])
+    done = sum(1 for it in task["items"] if it["status"] == "done")
+    failed = sum(1 for it in task["items"] if it["status"] == "failed")
+    task["progress"] = {"total": total, "done": done, "failed": failed, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=task["items"],
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, current_user.id)
+    return jsonify({"task_id": task_id, "idx": idx, "status": "queued"}), 202
+
+
+@bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
+@login_required
+def api_download_zip(task_id: str):
+    task = _get_owned_task(task_id)
+    done_items = [it for it in (task.get("items") or [])
+                  if it.get("status") == "done" and it.get("dst_tos_key")]
+    if not done_items:
+        abort(404)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for it in done_items:
+            key = it["dst_tos_key"]
+            suffix = os.path.splitext(key)[1] or ".png"
+            fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="it_zip_")
+            os.close(fd)
+            try:
+                tos_clients.download_file(key, tmp_path)
+                with open(tmp_path, "rb") as f:
+                    raw = f.read()
+            finally:
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+            base = os.path.splitext(
+                os.path.basename(it.get("filename") or f"out_{it['idx']}")
+            )[0] or "image"
+            zf.writestr(f"{int(it['idx']):02d}_{base}{suffix}", raw)
+    buf.seek(0)
+
+    filename = f"{task_id}-{task.get('target_language') or 'result'}.zip"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@bp.route("/api/image-translate/<task_id>", methods=["DELETE"])
+@login_required
+def api_delete_task(task_id: str):
+    task = _get_owned_task(task_id)
+    for it in task.get("items") or []:
+        for key_name in ("src_tos_key", "dst_tos_key"):
+            v = (it.get(key_name) or "").strip()
+            if v:
+                try:
+                    tos_clients.delete_object(v)
+                except Exception:
+                    pass
+    try:
+        db_execute(
+            "UPDATE projects SET deleted_at = NOW() WHERE id=%s AND user_id=%s",
+            (task_id, current_user.id),
+        )
+    except Exception:
+        pass
+    store.update(task_id, status="deleted",
+                 deleted_at=datetime.now().isoformat(timespec="seconds"))
+    return ("", 204)
