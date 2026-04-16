@@ -163,6 +163,7 @@ def api_upload_complete():
 
     reserved = {f["idx"]: f for f in rv["files"]}
     items = []
+    seen_idxs: set[int] = set()
     for u in uploaded:
         if not isinstance(u, dict):
             return jsonify({"error": "uploaded item must be an object"}), 400
@@ -175,6 +176,9 @@ def api_upload_complete():
             idx = int(idx_raw.strip())
         else:
             return jsonify({"error": "uploaded item idx must be an integer"}), 400
+        if idx in seen_idxs:
+            return jsonify({"error": f"duplicated uploaded idx={idx}"}), 400
+        seen_idxs.add(idx)
         key = (u.get("object_key") or "").strip()
         filename = (u.get("filename") or reserved.get(idx, {}).get("filename") or "").strip()
         if idx not in reserved or reserved[idx]["object_key"] != key:
@@ -182,6 +186,8 @@ def api_upload_complete():
         if not tos_clients.object_exists(key):
             return jsonify({"error": f"对象不存在 idx={idx}"}), 400
         items.append({"idx": idx, "filename": filename, "src_tos_key": key})
+    if seen_idxs != set(reserved):
+        return jsonify({"error": "uploaded items must exactly match reserved items"}), 400
 
     lang_name = _target_language_name(lang_code)
     # Prompts are language-specific (no placeholders). Use as-is.
