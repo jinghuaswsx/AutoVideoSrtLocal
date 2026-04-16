@@ -127,6 +127,49 @@ def _resolve_translate_provider(user_id: int | None) -> str:
     return pref if pref in ("openrouter", "doubao") else "openrouter"
 
 
+def _compute_next_target(
+    round_index: int,
+    last_audio_duration: float,
+    cps: float,
+    video_duration: float,
+) -> tuple[float, int, str]:
+    """Compute (target_duration, target_chars, direction) for round 2 or 3.
+
+    Round 2 uses fixed offsets; round 3 uses adaptive over-correction
+    (reverse half of the error, clamped to the interior of the target range
+    with a 0.3s safety margin).
+
+    Args:
+        round_index: 2 or 3.
+        last_audio_duration: audio length from the previous round (seconds).
+        cps: characters-per-second rate for this voice×language.
+        video_duration: original video duration (seconds).
+
+    Returns:
+        (target_duration_seconds, target_char_count, direction)
+        direction ∈ {"shrink", "expand"}
+    """
+    duration_lo = max(0.0, video_duration - 3.0)
+    duration_hi = video_duration
+    center = video_duration - 1.5
+
+    if round_index == 2:
+        if last_audio_duration > duration_hi:
+            target_duration = max(0.0, video_duration - 2.0)
+            direction = "shrink"
+        else:
+            # below lo
+            target_duration = max(0.0, video_duration - 1.0)
+            direction = "expand"
+    else:  # round_index == 3 (and any fallback)
+        raw = center - 0.5 * (last_audio_duration - center)
+        target_duration = max(duration_lo + 0.3, min(duration_hi - 0.3, raw))
+        direction = "shrink" if last_audio_duration > center else "expand"
+
+    target_chars = max(10, round(target_duration * cps))
+    return target_duration, target_chars, direction
+
+
 class PipelineRunner:
     project_type: str = "translation"
 
