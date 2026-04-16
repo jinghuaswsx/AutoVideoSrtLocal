@@ -1,4 +1,4 @@
-﻿<script>
+<script>
 (function(){
   var pageEl = document.querySelector("[data-page^='image-translate']");
   if (!pageEl) return;
@@ -141,7 +141,7 @@
         var img = document.createElement("img");
         img.src = URL.createObjectURL(f);
         var btn = document.createElement("button");
-        btn.className = "it-thumb-remove"; btn.textContent = "删";
+        btn.className = "it-thumb-remove"; btn.textContent = "×";
         btn.onclick = function(){ state.files.splice(idx,1); renderThumbs(); };
         wrap.appendChild(img); wrap.appendChild(btn);
         thumbsEl.appendChild(wrap);
