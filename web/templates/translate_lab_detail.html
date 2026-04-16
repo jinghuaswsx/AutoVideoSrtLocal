@@ -10,7 +10,7 @@
 ] %}
 {% block title %}{{ project.display_name or project.original_filename or project.id }} - 视频翻译（测试）{% endblock %}
 {% block page_title %}{{ project.display_name or project.original_filename or project.id }}（视频翻译（测试）） {% endblock %}
-{% block extra_style %}
+{% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='translate_lab.css') }}">
 {% endblock %}
 {% block content %}
