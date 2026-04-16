@@ -1,3 +1,234 @@
 <script>
-/* 图片翻译前端脚本将在 Task 12 完整实现 */
+(function(){
+  var pageEl = document.querySelector("[data-page^='image-translate']");
+  if (!pageEl) return;
+  var pageType = pageEl.getAttribute("data-page");
+
+  // ================= 列表页 =================
+  if (pageType === "image-translate-list") {
+    var state = { files: [] };
+
+    var presetEl = document.getElementById("itPreset");
+    var langEl = document.getElementById("itLanguage");
+    var modelEl = document.getElementById("itModel");
+    var promptEl = document.getElementById("itPrompt");
+    var fileInput = document.getElementById("itFileInput");
+    var thumbsEl = document.getElementById("itThumbs");
+    var submitBtn = document.getElementById("itSubmit");
+    var errEl = document.getElementById("itError");
+    var hintEl = document.getElementById("itHint");
+    var defaultPrompts = { cover: "", detail: "" };
+
+    function showError(msg){ errEl.textContent = msg; errEl.style.display = msg ? "block" : "none"; }
+    function clearError(){ showError(""); }
+
+    function loadLanguages(){
+      return fetch("/api/languages",{credentials:"same-origin"})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          (d.items || []).forEach(function(lang){
+            if (lang.code === "en") return;  // 源固定英文
+            var opt = document.createElement("option");
+            opt.value = lang.code; opt.textContent = lang.name_zh;
+            langEl.appendChild(opt);
+          });
+        });
+    }
+    function loadModels(){
+      return fetch("/api/image-translate/models",{credentials:"same-origin"})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          (d.items || []).forEach(function(m){
+            var opt = document.createElement("option");
+            opt.value = m.id; opt.textContent = m.name;
+            modelEl.appendChild(opt);
+          });
+          if (d.default_model_id) modelEl.value = d.default_model_id;
+        });
+    }
+    function loadPrompts(){
+      return fetch("/api/image-translate/system-prompts",{credentials:"same-origin"})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          defaultPrompts = d;
+          promptEl.value = d[presetEl.value] || "";
+        });
+    }
+
+    function renderThumbs(){
+      thumbsEl.innerHTML = "";
+      state.files.forEach(function(f, idx){
+        var wrap = document.createElement("div");
+        wrap.className = "it-thumb";
+        var img = document.createElement("img");
+        img.src = URL.createObjectURL(f);
+        var btn = document.createElement("button");
+        btn.className = "it-thumb-remove"; btn.textContent = "×";
+        btn.onclick = function(){ state.files.splice(idx,1); renderThumbs(); };
+        wrap.appendChild(img); wrap.appendChild(btn);
+        thumbsEl.appendChild(wrap);
+      });
+      hintEl.textContent = "已选 " + state.files.length + " 张，最多 20 张";
+    }
+
+    presetEl.onchange = function(){ promptEl.value = defaultPrompts[presetEl.value] || ""; };
+    fileInput.onchange = function(){
+      var chosen = Array.prototype.slice.call(fileInput.files || []);
+      state.files = state.files.concat(chosen).slice(0, 20);
+      fileInput.value = "";
+      renderThumbs();
+    };
+
+    submitBtn.onclick = async function(){
+      clearError();
+      if (!state.files.length) return showError("请选择图片");
+      if (!langEl.value) return showError("请选择目标语言");
+      if (!modelEl.value) return showError("请选择模型");
+      if (!promptEl.value.trim()) return showError("prompt 不能为空");
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "申请上传地址…";
+      try {
+        // 1. bootstrap
+        var bootstrap = await fetch("/api/image-translate/upload/bootstrap",{
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            count: state.files.length,
+            files: state.files.map(function(f){
+              return {filename: f.name, size: f.size, content_type: f.type || "application/octet-stream"};
+            }),
+          }),
+        }).then(r => r.json().then(d => { if(!r.ok) throw new Error(d.error||"bootstrap failed"); return d; }));
+
+        // 2. 逐个直传
+        for (var i=0; i<state.files.length; i++){
+          submitBtn.textContent = "上传 " + (i+1) + "/" + state.files.length + "…";
+          var up = bootstrap.uploads[i];
+          var res = await fetch(up.upload_url, {method:"PUT", body: state.files[i]});
+          if (!res.ok) throw new Error("直传失败 " + (i+1));
+        }
+
+        submitBtn.textContent = "建档中…";
+        var complete = await fetch("/api/image-translate/upload/complete",{
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            task_id: bootstrap.task_id,
+            preset: presetEl.value,
+            target_language: langEl.value,
+            model_id: modelEl.value,
+            prompt: promptEl.value,
+            uploaded: bootstrap.uploads.map(function(u,idx){
+              return {idx: u.idx, object_key: u.object_key, filename: state.files[idx].name, size: state.files[idx].size};
+            }),
+          }),
+        }).then(r => r.json().then(d => { if(!r.ok) throw new Error(d.error||"complete failed"); return d; }));
+
+        location.href = "/image-translate/" + complete.task_id;
+      } catch (e) {
+        showError(e.message || "提交失败");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "提交任务";
+      }
+    };
+
+    loadLanguages();
+    loadModels();
+    loadPrompts();
+    return;
+  }
+
+  // ================= 详情页 =================
+  if (pageType === "image-translate-detail") {
+    var taskId = pageEl.getAttribute("data-task-id");
+    var listEl = document.getElementById("itItemList");
+    var progressText = document.getElementById("itProgressText");
+    var progressFill = document.getElementById("itProgressFill");
+    var zipBtn = document.getElementById("itZipDownload");
+    var delBtn = document.getElementById("itDelete");
+
+    function renderItems(state){
+      listEl.innerHTML = "";
+      (state.items || []).forEach(function(it){
+        var row = document.createElement("div");
+        row.className = "it-item";
+        var left = document.createElement("img");
+        left.src = "/api/image-translate/"+taskId+"/artifact/source/"+it.idx;
+        row.appendChild(left);
+        var right = document.createElement("div");
+        if (it.status === "done") {
+          var imgOut = document.createElement("img");
+          imgOut.src = "/api/image-translate/"+taskId+"/artifact/result/"+it.idx + "?t=" + Date.now();
+          right.appendChild(imgOut);
+        } else {
+          right.innerHTML = '<div class="it-item-status">状态：'+(it.status||"pending")+
+                            (it.error ? '<br>错误：'+it.error : '')+'</div>';
+        }
+        row.appendChild(right);
+        var actions = document.createElement("div");
+        actions.className = "it-item-actions";
+        if (it.status === "done") {
+          var a = document.createElement("a");
+          a.className = "btn"; a.href = "/api/image-translate/"+taskId+"/download/result/"+it.idx;
+          a.textContent = "下载"; actions.appendChild(a);
+        } else if (it.status === "failed") {
+          var btn = document.createElement("button");
+          btn.className = "btn"; btn.textContent = "重试";
+          btn.onclick = function(){ retry(it.idx); };
+          actions.appendChild(btn);
+        }
+        row.appendChild(actions);
+        listEl.appendChild(row);
+      });
+    }
+
+    function renderProgress(state){
+      var p = state.progress || {total:0, done:0, failed:0};
+      progressText.textContent = p.done + " / " + p.total + " 完成，" + p.failed + " 失败";
+      var pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
+      progressFill.style.width = pct + "%";
+    }
+
+    function renderAll(state){
+      renderItems(state);
+      renderProgress(state);
+    }
+
+    function refresh(){
+      return fetch("/api/image-translate/"+taskId,{credentials:"same-origin"})
+        .then(function(r){return r.json();})
+        .then(renderAll);
+    }
+
+    function retry(idx){
+      fetch("/api/image-translate/"+taskId+"/retry/"+idx,{method:"POST"})
+        .then(refresh);
+    }
+
+    zipBtn.onclick = function(){
+      location.href = "/api/image-translate/"+taskId+"/download/zip";
+    };
+    delBtn.onclick = function(){
+      if (!confirm("确认删除该任务？")) return;
+      fetch("/api/image-translate/"+taskId,{method:"DELETE"})
+        .then(function(r){ if (r.status === 204) location.href = "/image-translate"; });
+    };
+
+    // Socket.IO
+    if (window.io) {
+      var socket = window.io();
+      var join = function(){ socket.emit("join_image_translate_task", {task_id: taskId}); };
+      join();
+      socket.on("connect", join);
+      socket.on("image_translate:item_updated", function(){ refresh(); });
+      socket.on("image_translate:progress", function(){ refresh(); });
+      socket.on("image_translate:task_done", function(){ refresh(); });
+    }
+
+    renderAll(window.imageTranslateBootstrap || {});
+    refresh();
+    return;
+  }
+})();
 </script>
