@@ -77,20 +77,53 @@ if SEEDANCE_API_KEY and not os.environ.get("SEEDANCE_API_KEY"):
 ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
-# Google Gemini (AI Studio)
-def _resolve_gemini_key() -> str:
-    key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
-    if key:
-        return key
-    key_file = BASE_DIR / "google_api_key"
-    if key_file.exists():
-        try:
-            return key_file.read_text(encoding="utf-8").strip()
-        except Exception:
-            return ""
-    return ""
+# Google Gemini
+# 后端选择：aistudio（AI Studio，默认）| cloud（Vertex AI Express Mode）
+GEMINI_BACKEND = _env("GEMINI_BACKEND", "aistudio").lower()
 
-GEMINI_API_KEY = _resolve_gemini_key()
+
+def _parse_google_api_key_file() -> dict[str, str]:
+    """解析 google_api_key 文件。支持两种格式：
+    - 带标签：`AISTUDIO: AIza...` / `CLOUD: AQ.Ab8...`
+    - 单行：整个文件当作 AISTUDIO key（向后兼容）
+    """
+    key_file = BASE_DIR / "google_api_key"
+    if not key_file.exists():
+        return {}
+    try:
+        text = key_file.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    result: dict[str, str] = {}
+    found_label = False
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            label, _, value = line.partition(":")
+            label = label.strip().upper()
+            value = value.strip()
+            if label in {"AISTUDIO", "CLOUD"} and value:
+                result[label] = value
+                found_label = True
+    if not found_label:
+        one_liner = text.strip()
+        if one_liner:
+            result["AISTUDIO"] = one_liner
+    return result
+
+
+def _resolve_gemini_keys() -> tuple[str, str]:
+    """返回 (aistudio_key, cloud_key)。优先环境变量，其次 google_api_key 文件。"""
+    file_keys = _parse_google_api_key_file()
+    aistudio = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY") or file_keys.get("AISTUDIO", "")
+    cloud = _env("GEMINI_CLOUD_API_KEY") or file_keys.get("CLOUD", "")
+    return aistudio, cloud
+
+
+GEMINI_AISTUDIO_API_KEY, GEMINI_CLOUD_API_KEY = _resolve_gemini_keys()
+GEMINI_API_KEY = GEMINI_CLOUD_API_KEY if GEMINI_BACKEND == "cloud" else GEMINI_AISTUDIO_API_KEY
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 
 # 路径

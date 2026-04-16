@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+{% block title %}图片翻译详情{% endblock %}
+{% block page_title %}图片翻译详情{% endblock %}
+{% block content %}
+<script>
+  window.imageTranslateBootstrap = {{ state | tojson }};
+</script>
+<div class="it-shell" data-page="image-translate-detail" data-task-id="{{ task_id }}">
+
+  <section class="card">
+    <h2>任务信息</h2>
+    <div class="it-meta-grid">
+      <div><label>预设</label><strong id="itMetaPreset">{{ '封面图翻译' if state.preset == 'cover' else '产品详情图翻译' }}</strong></div>
+      <div><label>目标语言</label><strong id="itMetaLang">{{ state.target_language_name }}</strong></div>
+      <div><label>模型</label><strong id="itMetaModel">{{ state.model_id }}</strong></div>
+    </div>
+    <details class="it-prompt-snapshot" style="margin-top:12px">
+      <summary>提示词快照</summary>
+      <pre>{{ state.prompt }}</pre>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>进度</h2>
+    <div id="itProgress" class="it-progress">
+      <span id="itProgressText">{{ state.progress.done }} / {{ state.progress.total }} 完成，{{ state.progress.failed }} 失败</span>
+      <div class="it-progress-bar"><div id="itProgressFill"></div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>图片对比</h2>
+    <div id="itItemList" class="it-items"></div>
+    <div class="form-row" style="margin-top:16px">
+      <button id="itZipDownload" class="btn btn-primary">打包下载全部</button>
+      <button id="itDelete" class="btn btn-danger" style="margin-left:8px">删除任务</button>
+    </div>
+  </section>
+
+</div>
+{% include "_image_translate_styles.html" %}
+{% include "_image_translate_scripts.html" %}
+{% endblock %}

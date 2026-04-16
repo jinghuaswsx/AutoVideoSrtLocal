@@ -17,7 +17,7 @@ from google.genai import types as genai_types
 from google.genai import errors as genai_errors
 
 from appcore.api_keys import resolve_extra, resolve_key
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GEMINI_API_KEY, GEMINI_BACKEND, GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,10 @@ def resolve_config(user_id: int | None = None, service: str = "gemini",
 
 def _get_client(api_key: str) -> genai.Client:
     if api_key not in _clients:
-        _clients[api_key] = genai.Client(api_key=api_key)
+        if GEMINI_BACKEND == "cloud":
+            _clients[api_key] = genai.Client(vertexai=True, api_key=api_key)
+        else:
+            _clients[api_key] = genai.Client(api_key=api_key)
     return _clients[api_key]
 
 

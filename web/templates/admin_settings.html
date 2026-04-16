@@ -135,6 +135,54 @@
     </div>
   </div>
 </div>
+
+  <div class="settings-card" id="imageTranslatePromptsCard">
+    <div class="settings-card-head">
+      <h2>图片翻译默认提示词</h2>
+    </div>
+    <p class="field-hint">支持占位符 <code>{target_language_name}</code>（提交时替换为用户选择的目标语言中文名）</p>
+
+    <div class="field-group">
+      <label>封面图翻译 prompt</label>
+      <textarea id="imgTransCover" rows="4" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none"></textarea>
+      <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveCover">保存封面 prompt</button></div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <div class="field-group">
+      <label>产品详情图翻译 prompt</label>
+      <textarea id="imgTransDetail" rows="4" style="width:100%;background:#f8fbff;border:1.5px solid var(--border-main,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none"></textarea>
+      <div style="margin-top:8px"><button type="button" class="settings-save-btn" id="imgTransSaveDetail">保存详情 prompt</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var cardEl = document.getElementById("imageTranslatePromptsCard");
+  if (!cardEl) return;
+  function fetchPrompts() {
+    return fetch('/admin/api/image-translate/prompts', {credentials:'same-origin'})
+      .then(r => r.json()).then(data => {
+        document.getElementById('imgTransCover').value = data.cover || '';
+        document.getElementById('imgTransDetail').value = data.detail || '';
+      });
+  }
+  function save(preset, id) {
+    return fetch('/admin/api/image-translate/prompts', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({preset, value: document.getElementById(id).value})
+    }).then(r => r.json()).then(data => {
+      if (data.error) alert(data.error); else alert('已保存');
+    });
+  }
+  document.getElementById('imgTransSaveCover').onclick = () => save('cover','imgTransCover');
+  document.getElementById('imgTransSaveDetail').onclick = () => save('detail','imgTransDetail');
+  fetchPrompts();
+})();
+</script>
 {% endblock %}
 {% block scripts %}
   {{ super() }}

@@ -241,3 +241,35 @@ def test_concurrent_confirm_segments_no_exception():
     assert not errors, f"并发 confirm_segments 出错: {errors}"
     task = ts.get("ts1")
     assert task["_segments_confirmed"] is True
+
+
+def test_create_image_translate_minimal(tmp_path):
+    task_id = "tid-img-1"
+    task_dir = str(tmp_path / task_id)
+    task = ts.create_image_translate(
+        task_id,
+        task_dir,
+        user_id=1,
+        preset="cover",
+        target_language="de",
+        target_language_name="德语",
+        model_id="gemini-3-pro-image-preview",
+        prompt="把图中文字翻译成德语",
+        items=[
+            {"idx": 0, "filename": "a.jpg", "src_tos_key": "src/0.jpg"},
+            {"idx": 1, "filename": "b.png", "src_tos_key": "src/1.png"},
+        ],
+    )
+    assert task["type"] == "image_translate"
+    assert task["status"] == "queued"
+    assert task["preset"] == "cover"
+    assert task["target_language"] == "de"
+    assert task["model_id"] == "gemini-3-pro-image-preview"
+    assert len(task["items"]) == 2
+    assert task["items"][0]["status"] == "pending"
+    assert task["items"][0]["attempts"] == 0
+    assert task["progress"] == {"total": 2, "done": 0, "failed": 0, "running": 0}
+    assert task["steps"]["process"] == "pending"
+    # 读回来状态一致
+    got = ts.get(task_id)
+    assert got["preset"] == "cover"

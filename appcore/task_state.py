@@ -488,6 +488,56 @@ def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
     return task
 
 
+def create_image_translate(task_id: str, task_dir: str, *,
+                            user_id: int,
+                            preset: str,
+                            target_language: str,
+                            target_language_name: str,
+                            model_id: str,
+                            prompt: str,
+                            items: list[dict]) -> dict:
+    """创建图片翻译任务的初始状态。"""
+    normalized_items = []
+    for idx, raw in enumerate(items):
+        normalized_items.append({
+            "idx": int(raw.get("idx", idx)),
+            "filename": str(raw.get("filename") or ""),
+            "src_tos_key": str(raw.get("src_tos_key") or ""),
+            "dst_tos_key": "",
+            "status": "pending",
+            "attempts": 0,
+            "error": "",
+        })
+    task = {
+        "id": task_id,
+        "type": "image_translate",
+        "status": "queued",
+        "task_dir": task_dir,
+        "preset": preset,
+        "target_language": target_language,
+        "target_language_name": target_language_name,
+        "model_id": model_id,
+        "prompt": prompt,
+        "display_name": "",
+        "original_filename": "",
+        "steps": {"prepare": "done", "process": "pending"},
+        "step_messages": {"prepare": "", "process": ""},
+        "progress": {
+            "total": len(normalized_items),
+            "done": 0,
+            "failed": 0,
+            "running": 0,
+        },
+        "items": normalized_items,
+        "error": "",
+        "_user_id": user_id,
+    }
+    with _lock:
+        _tasks[task_id] = task
+    _db_upsert(task_id, user_id, task, "")
+    return task
+
+
 def set_keyframes(task_id: str, keyframes: list[str]) -> None:
     """设置关键帧路径列表。"""
     with _lock:
