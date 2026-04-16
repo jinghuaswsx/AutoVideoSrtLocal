@@ -350,6 +350,39 @@ def resolve_cover(product_id: int, lang: str) -> str | None:
     return covers.get(lang) or covers.get("en")
 
 
+def collect_media_object_references() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    rows.extend(query(
+        "SELECT source, object_key FROM ("
+        " SELECT 'item' AS source, object_key AS object_key"
+        " FROM media_items WHERE deleted_at IS NULL"
+        " UNION ALL"
+        " SELECT 'item_cover' AS source, cover_object_key AS object_key"
+        " FROM media_items WHERE deleted_at IS NULL"
+        ") refs"
+    ))
+    rows.extend(query(
+        "SELECT 'product_cover' AS source, object_key "
+        "FROM media_product_covers"
+    ))
+    rows.extend(query(
+        "SELECT 'legacy_product_cover' AS source, cover_object_key AS object_key "
+        "FROM media_products WHERE deleted_at IS NULL"
+    ))
+
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        key = str((row or {}).get("object_key") or "").strip()
+        if not key:
+            continue
+        grouped.setdefault(key, set()).add(str((row or {}).get("source") or "unknown"))
+
+    return [
+        {"object_key": key, "sources": sorted(sources)}
+        for key, sources in sorted(grouped.items())
+    ]
+
+
 def has_english_cover(product_id: int) -> bool:
     row = query_one(
         "SELECT 1 AS ok FROM media_product_covers WHERE product_id=%s AND lang='en'",
