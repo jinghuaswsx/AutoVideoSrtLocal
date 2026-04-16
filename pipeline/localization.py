@@ -486,3 +486,46 @@ DEFAULT_PROMPTS = [
     {"name": "普通翻译", "prompt_text": LOCALIZED_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
     {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
 ]
+
+LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a US short-video commerce copywriter REWRITING an existing English translation to match a target character count.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
+
+REWRITE CONSTRAINTS (critical):
+- Target character count: approximately {target_chars} characters (±5%, measured on full_text).
+- Direction: {direction}
+  * "shrink": remove modifiers, examples, and repetitions while preserving every factual claim and the core selling point.
+  * "expand": add natural elaborations, relatable details, or examples. Preserve all facts; never invent new claims.
+- Keep the same number of sentences as the previous translation when possible.
+- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+
+STYLE (identical to original translation prompt):
+- Natural, native, sales-capable American English.
+- Keep each sentence concise and punchy for subtitles. Prefer 6-10 words.
+- Do not use em dashes or en dashes. Plain ASCII punctuation only, preferring commas, periods, and question marks.
+- Preserve meaning — never drop key facts or invent new ones."""
+
+
+def build_localized_rewrite_messages(
+    source_full_text: str,
+    prev_localized_translation: dict,
+    target_chars: int,
+    direction: str,
+    source_language: str = "zh",
+) -> list[dict]:
+    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    prompt = LOCALIZED_REWRITE_SYSTEM_PROMPT.replace(
+        "{target_chars}", str(target_chars)
+    ).replace("{direction}", direction)
+    return [
+        {"role": "system", "content": prompt},
+        {
+            "role": "user",
+            "content": (
+                f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                f"{source_full_text}\n\n"
+                f"Previous translation (rewrite this to {direction} to ~{target_chars} chars):\n"
+                f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
+            ),
+        },
+    ]
