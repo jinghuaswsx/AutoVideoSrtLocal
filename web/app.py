@@ -179,4 +179,15 @@ def create_app() -> Flask:
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
 
+    @socketio.on("join_translate_lab_task")
+    def on_join_translate_lab(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = (data or {}).get("task_id")
+        if task_id:
+            task = task_state.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
+
     return app
