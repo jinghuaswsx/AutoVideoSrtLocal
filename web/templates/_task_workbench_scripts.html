@@ -488,7 +488,7 @@
     if (!currentTask || !taskId) return;
     currentTask.tts_duration_rounds = currentTask.tts_duration_rounds || [];
     _upsertDurationRound(currentTask.tts_duration_rounds, payload);
-    if (payload.phase === "converged") {
+    if (payload.phase === "converged" || payload.phase === "best_pick" || payload.phase === "trimmed") {
       currentTask.tts_duration_status = "converged";
     } else if (payload.phase === "failed") {
       currentTask.tts_duration_status = "failed";
@@ -1048,6 +1048,9 @@
       audio_gen:         '正在生成 TTS 音频',
       measure:           '测量音频时长',
       converged:         '已收敛',
+      best_pick:         '选最接近轮次',
+      trim_tail:         '正在裁剪尾部句子',
+      trimmed:           '尾部裁剪完成',
       failed:            '迭代失败',
     })[phase] || phase || '';
   }
@@ -1111,6 +1114,10 @@
         files.push(`<a href="${_durationRoundFileUrl(r.round, 'tts_full_audio')}" target="_blank">音频 MP3</a>`);
       }
 
+      const trimInfo = (r.removed_count != null && r.final_duration != null)
+        ? `✂️ 尾部裁剪：删除 ${r.removed_count} 个朗读块（${(r.removed_duration || 0).toFixed(1)}s）→ 最终 ${r.final_duration.toFixed(1)}s`
+        : '';
+
       parts.push(`
         <div class="duration-round">
           <div class="duration-round-title">
@@ -1119,6 +1126,7 @@
           </div>
           <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
           ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
+          ${trimInfo ? `<div class="duration-round-meta">${trimInfo}</div>` : ''}
           ${files.length ? `<div class="duration-round-files">${files.join('')}</div>` : ''}
         </div>
       `);
@@ -1126,11 +1134,15 @@
 
     if (status === 'converged') {
       const last = rounds[rounds.length - 1];
-      if (last.audio_duration != null) {
-        parts.push(`<div class="duration-log-final">✓ 第 ${last.round} 轮收敛 · 最终音频 ${last.audio_duration.toFixed(1)}s</div>`);
+      // Prefer final_duration (after trim) over raw audio_duration
+      const finalDur = last.final_duration != null ? last.final_duration : last.audio_duration;
+      if (finalDur != null) {
+        const trimmed = last.removed_count != null && last.removed_count > 0;
+        const label = trimmed ? '裁剪后' : `第 ${last.round} 轮`;
+        parts.push(`<div class="duration-log-final">✓ ${label} · 最终音频 ${finalDur.toFixed(1)}s</div>`);
       }
     } else if (status === 'failed') {
-      parts.push(`<div class="duration-log-final failed">✗ 5 轮未收敛，任务失败</div>`);
+      parts.push(`<div class="duration-log-final failed">✗ 时长控制失败</div>`);
     }
 
     container.innerHTML = parts.join('');

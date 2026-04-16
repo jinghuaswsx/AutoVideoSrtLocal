@@ -6,42 +6,40 @@ from appcore.runtime import _compute_next_target
 
 class TestComputeNextTarget:
     def test_round2_shrink_when_audio_over_video(self):
-        # video=30, audio=35 (over by 5)
+        # video=30, lo=27, hi=33, audio=35 (over hi)
         td, tc, direction = _compute_next_target(
             round_index=2, last_audio_duration=35.0, cps=15.0, video_duration=30.0,
         )
         assert direction == "shrink"
-        assert td == pytest.approx(28.0)  # video - 2.0
-        assert tc == round(28.0 * 15.0)  # 420
+        assert td == pytest.approx(30.0)  # aim at video_duration
+        assert tc == round(30.0 * 15.0)  # 450
 
     def test_round2_expand_when_audio_below_lower_bound(self):
-        # video=30, lo=27, audio=25 (under lo by 2)
+        # video=30, lo=27, audio=25 (below lo)
         td, tc, direction = _compute_next_target(
             round_index=2, last_audio_duration=25.0, cps=15.0, video_duration=30.0,
         )
         assert direction == "expand"
-        assert td == pytest.approx(29.0)  # video - 1.0
-        assert tc == round(29.0 * 15.0)  # 435
+        assert td == pytest.approx(30.0)
+        assert tc == round(30.0 * 15.0)  # 450
 
     def test_round3_adaptive_overcorrection_when_still_long(self):
-        # video=30, center=28.5, audio=33 (still long by ~4.5 from center)
-        # target = center - 0.5 * (33 - 28.5) = 28.5 - 2.25 = 26.25
-        # clamp: max(lo+0.3, min(hi-0.3, 26.25)) = max(27.3, min(29.7, 26.25)) = 27.3
+        # video=30, center=30, audio=33
+        # raw = 30 - 0.5*(33 - 30) = 28.5 → within [27, 33] clamp
         td, tc, direction = _compute_next_target(
             round_index=3, last_audio_duration=33.0, cps=15.0, video_duration=30.0,
         )
         assert direction == "shrink"
-        assert td == pytest.approx(27.3)  # clamped to duration_lo + 0.3
+        assert td == pytest.approx(28.5)
 
     def test_round3_adaptive_overcorrection_when_still_short(self):
-        # video=30, center=28.5, audio=25 (still short)
-        # target = 28.5 - 0.5 * (25 - 28.5) = 28.5 + 1.75 = 30.25
-        # clamp to hi - 0.3 = 29.7
+        # video=30, center=30, audio=25
+        # raw = 30 - 0.5*(25 - 30) = 32.5 → within [27, 33] clamp
         td, tc, direction = _compute_next_target(
             round_index=3, last_audio_duration=25.0, cps=15.0, video_duration=30.0,
         )
         assert direction == "expand"
-        assert td == pytest.approx(29.7)  # clamped to duration_hi - 0.3
+        assert td == pytest.approx(32.5)
 
     def test_target_chars_floor_at_10(self):
         # Tiny video + small cps → target_chars would be ~0
@@ -50,13 +48,13 @@ class TestComputeNextTarget:
         )
         assert tc >= 10
 
-    def test_short_video_below_3s_lo_is_zero(self):
-        # video=2 → duration_lo = 0
+    def test_short_video(self):
+        # video=2 → lo=1.8, hi=2.2; round 2 shrink aims at video=2
         td, tc, direction = _compute_next_target(
             round_index=2, last_audio_duration=5.0, cps=15.0, video_duration=2.0,
         )
-        # round 2 shrink → target = video - 2.0 = 0.0; target_chars clamped to >=10
         assert direction == "shrink"
+        assert td == pytest.approx(2.0)
         assert tc >= 10
 
 
@@ -83,7 +81,7 @@ class TestDurationLoopRound1Only:
             return {"full_audio_path": out, "segments": [{"index": 0, "tts_path": out, "tts_duration": 28.5}]}
 
         def fake_get_audio_duration(path):
-            return 28.5  # Within [27, 30] for video=30
+            return 28.5  # Within [27, 33] for video=30
 
         def fake_gen_tts_script(loc, **kwargs):
             return {"full_text": "Short text.", "blocks": [{"index": 0, "text": "Short.",
@@ -189,7 +187,7 @@ class TestDurationLoopMultiRound:
         return runner, loc_mod, initial
 
     def test_round2_shrink_converges(self, tmp_path, monkeypatch):
-        # round 1: 35s (over), round 2: 28.5s (in range for video=30)
+        # video=30, lo=27, hi=33; round 1: 35 (>hi), round 2: 28.5 (in range)
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
@@ -206,25 +204,27 @@ class TestDurationLoopMultiRound:
         # round 1 record has no direction (no rewrite)
         assert "direction" not in result["rounds"][0]
 
-    def test_all_rounds_exhausted_raises(self, tmp_path, monkeypatch):
-        # All rounds return audio longer than video (5 entries to cover MAX_ROUNDS=5)
+    def test_all_rounds_exhausted_picks_best(self, tmp_path, monkeypatch):
+        # 5 rounds all > hi=33 (video=30). Best = last (34.0, closest to 30).
         runner, loc_mod, initial = self._setup(
             monkeypatch, tmp_path, [40.0, 38.0, 36.0, 35.0, 34.0],
         )
-        with pytest.raises(RuntimeError, match=r"\d+ 轮内未收敛"):
-            runner._run_tts_duration_loop(
-                task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
-                provider="openrouter", video_duration=30.0,
-                voice={"id": 1, "elevenlabs_voice_id": "v"},
-                initial_localized_translation=initial,
-                source_full_text="Source", source_language="zh",
-                elevenlabs_api_key="k",
-                script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
-                variant="normal",
-            )
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        # Best = last round (34.0 is closest to 30 among the 5)
+        assert result["final_round"] == 5
+        assert len(result["rounds"]) == 5
         from appcore import task_state
         task = task_state.get("tdl-multi")
-        assert task["tts_duration_status"] == "failed"
+        assert task["tts_duration_status"] == "converged"
 
     def test_intermediate_files_written(self, tmp_path, monkeypatch):
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
@@ -266,6 +266,95 @@ class TestPromoteFinalArtifacts:
         dst = tmp_path / "tts_full.normal.mp3"
         assert dst.exists()
         assert dst.read_bytes() == b"audio data"
+
+
+class TestTrimTailSegments:
+    def test_trim_drops_trailing_blocks_until_within_video(self, tmp_path, monkeypatch):
+        """Audio > video → drop trailing blocks until audio ≤ video."""
+        from appcore.runtime import PipelineRunner
+        from appcore.events import EventBus
+
+        # Mock ffmpeg concat: just create a target file, don't really run
+        import subprocess
+        real_run = subprocess.run
+
+        def fake_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and cmd[0] == "ffmpeg":
+                out_path = cmd[-1]
+                with open(out_path, "wb") as f:
+                    f.write(b"trimmed audio")
+                r = MagicMock()
+                r.returncode = 0
+                r.stderr = ""
+                return r
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+        # Prepare 4 segments totaling 24s; video=20s — need to drop at least the last one (6s)
+        seg_dir = tmp_path / "tts_segments" / "round_1"
+        seg_dir.mkdir(parents=True)
+        segs = []
+        for i, dur in enumerate([6.0, 6.0, 6.0, 6.0]):
+            p = seg_dir / f"seg_{i:04d}.mp3"
+            p.write_bytes(b"x")
+            segs.append({"index": i, "tts_path": str(p), "tts_duration": dur})
+
+        tts_script = {
+            "full_text": "Block0 Block1 Block2 Block3",
+            "blocks": [
+                {"index": 0, "text": "Block0", "sentence_indices": [0], "source_segment_indices": [0]},
+                {"index": 1, "text": "Block1", "sentence_indices": [1], "source_segment_indices": [1]},
+                {"index": 2, "text": "Block2", "sentence_indices": [2], "source_segment_indices": [2]},
+                {"index": 3, "text": "Block3", "sentence_indices": [3], "source_segment_indices": [3]},
+            ],
+            "subtitle_chunks": [
+                {"index": 0, "text": "Block0", "block_indices": [0], "sentence_indices": [0], "source_segment_indices": [0]},
+                {"index": 1, "text": "Block1", "block_indices": [1], "sentence_indices": [1], "source_segment_indices": [1]},
+                {"index": 2, "text": "Block2", "block_indices": [2], "sentence_indices": [2], "source_segment_indices": [2]},
+                {"index": 3, "text": "Block3", "block_indices": [3], "sentence_indices": [3], "source_segment_indices": [3]},
+            ],
+        }
+        loc = {
+            "full_text": "S0 S1 S2 S3",
+            "sentences": [
+                {"index": 0, "text": "S0", "source_segment_indices": [0]},
+                {"index": 1, "text": "S1", "source_segment_indices": [1]},
+                {"index": 2, "text": "S2", "source_segment_indices": [2]},
+                {"index": 3, "text": "S3", "source_segment_indices": [3]},
+            ],
+        }
+
+        result = runner._trim_tail_segments(
+            task_dir=str(tmp_path), round_variant="round_1",
+            tts_segments=segs, tts_script=tts_script, localized_translation=loc,
+            video_duration=20.0,
+        )
+
+        assert result["skipped"] is False
+        assert result["removed_count"] == 1
+        assert result["removed_duration"] == pytest.approx(6.0)
+        assert result["final_duration"] == pytest.approx(18.0)
+        assert len(result["tts_segments"]) == 3
+        assert [b["index"] for b in result["tts_script"]["blocks"]] == [0, 1, 2]
+        assert [s["index"] for s in result["localized_translation"]["sentences"]] == [0, 1, 2]
+        assert result["tts_script"]["full_text"] == "Block0 Block1 Block2"
+        assert result["localized_translation"]["full_text"] == "S0 S1 S2"
+        assert len(result["tts_script"]["subtitle_chunks"]) == 3
+
+    def test_trim_skipped_when_audio_within_video(self, tmp_path):
+        from appcore.runtime import PipelineRunner
+        from appcore.events import EventBus
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+        segs = [{"index": 0, "tts_path": "/x", "tts_duration": 10.0}]
+        result = runner._trim_tail_segments(
+            task_dir=str(tmp_path), round_variant="round_1",
+            tts_segments=segs, tts_script={"blocks": [], "subtitle_chunks": []},
+            localized_translation={"sentences": []},
+            video_duration=20.0,
+        )
+        assert result == {"skipped": True}
 
 
 class TestStepTtsIntegration:

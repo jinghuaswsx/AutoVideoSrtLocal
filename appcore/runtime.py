@@ -138,14 +138,14 @@ def _compute_next_target(
     cps: float,
     video_duration: float,
 ) -> tuple[float, int, str]:
-    """Compute (target_duration, target_chars, direction) for round 2 or 3.
+    """Compute (target_duration, target_chars, direction) for rewrite rounds 2+.
 
-    Round 2 uses fixed offsets; round 3 uses adaptive over-correction
-    (reverse half of the error, clamped to the interior of the target range
-    with a 0.3s safety margin).
+    Round 2 aims directly at video_duration (center of the [0.9v, 1.1v] range).
+    Round 3+ uses adaptive over-correction: reverse half of the previous error,
+    clamped to the range.
 
     Args:
-        round_index: 2 or 3.
+        round_index: 2 or higher.
         last_audio_duration: audio length from the previous round (seconds).
         cps: characters-per-second rate for this voice×language.
         video_duration: original video duration (seconds).
@@ -154,21 +154,16 @@ def _compute_next_target(
         (target_duration_seconds, target_char_count, direction)
         direction ∈ {"shrink", "expand"}
     """
-    duration_lo = max(0.0, video_duration - 3.0)
-    duration_hi = video_duration
-    center = video_duration - 1.5
+    duration_lo = video_duration * 0.9
+    duration_hi = video_duration * 1.1
+    center = video_duration
 
     if round_index == 2:
-        if last_audio_duration > duration_hi:
-            target_duration = max(0.0, video_duration - 2.0)
-            direction = "shrink"
-        else:
-            # below lo
-            target_duration = max(0.0, video_duration - 1.0)
-            direction = "expand"
-    else:  # round_index == 3 (and any fallback)
+        target_duration = video_duration
+        direction = "shrink" if last_audio_duration > center else "expand"
+    else:  # round 3+
         raw = center - 0.5 * (last_audio_duration - center)
-        target_duration = max(duration_lo + 0.3, min(duration_hi - 0.3, raw))
+        target_duration = max(duration_lo, min(duration_hi, raw))
         direction = "shrink" if last_audio_duration > center else "expand"
 
     target_chars = max(10, round(target_duration * cps))
@@ -231,10 +226,11 @@ class PipelineRunner:
         from pipeline.translate import generate_tts_script, generate_localized_rewrite
 
         MAX_ROUNDS = 5
-        duration_lo = max(0.0, video_duration - 3.0)
-        duration_hi = video_duration
+        duration_lo = video_duration * 0.9
+        duration_hi = video_duration * 1.1
 
         rounds: list[dict] = []
+        round_products: list[dict] = []  # full per-round products (kept in-memory only)
         prev_localized = initial_localized_translation
         last_audio_duration = 0.0
         last_char_count = 0
@@ -326,6 +322,12 @@ class PipelineRunner:
             # persist rounds incrementally so UI survives page refresh
             import appcore.task_state as task_state
             rounds.append(round_record)
+            round_products.append({
+                "localized_translation": localized_translation,
+                "tts_script": tts_script,
+                "tts_audio_path": result["full_audio_path"],
+                "tts_segments": result["segments"],
+            })
             task_state.update(task_id, tts_duration_rounds=rounds)
 
             self._emit_duration_round(task_id, round_index, "measure", round_record)
@@ -346,14 +348,29 @@ class PipelineRunner:
             last_audio_duration = audio_duration
             last_char_count = char_count
 
-        # 3 rounds exhausted, not converged
-        self._emit_duration_round(task_id, MAX_ROUNDS, "failed", round_record)
+        # MAX_ROUNDS rounds completed without landing in [0.9v, 1.1v].
+        # Pick the round whose audio_duration is closest to video_duration.
         import appcore.task_state as task_state
-        task_state.update(task_id, tts_duration_status="failed")
-        raise RuntimeError(
-            f"TTS 音频时长 {MAX_ROUNDS} 轮内未收敛到 [{duration_lo:.1f}, {duration_hi:.1f}] 区间，"
-            f"最后一次为 {last_audio_duration:.1f}s。请调整 voice 或翻译 prompt 后重试。"
+        best_i = min(
+            range(len(rounds)),
+            key=lambda i: abs(rounds[i]["audio_duration"] - video_duration),
         )
+        best_record = rounds[best_i]
+        best_product = round_products[best_i]
+        best_record["message"] = (
+            f"{MAX_ROUNDS} 轮未精确收敛，选第 {best_i + 1} 轮"
+            f"（{best_record['audio_duration']:.1f}s，距 {video_duration:.1f}s 最近）"
+        )
+        self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
+        task_state.update(task_id, tts_duration_status="converged")
+        return {
+            "localized_translation": best_product["localized_translation"],
+            "tts_script": best_product["tts_script"],
+            "tts_audio_path": best_product["tts_audio_path"],
+            "tts_segments": best_product["tts_segments"],
+            "rounds": rounds,
+            "final_round": best_i + 1,
+        }
 
     def _promote_final_artifacts(self, task_dir: str, final_round: int, variant: str) -> None:
         """Copy tts_full.round_{N}.mp3 to tts_full.{variant}.mp3 for downstream compatibility."""
@@ -362,6 +379,88 @@ class PipelineRunner:
         dst = os.path.join(task_dir, f"tts_full.{variant}.mp3")
         if os.path.exists(src):
             shutil.copy2(src, dst)
+
+    def _trim_tail_segments(
+        self, *, task_dir: str, round_variant: str,
+        tts_segments: list, tts_script: dict, localized_translation: dict,
+        video_duration: float,
+    ) -> dict:
+        """Drop trailing blocks until audio ≤ video_duration.
+
+        Returns dict with keys:
+          - skipped: True if total audio already ≤ video_duration (no action taken)
+          - audio_path, tts_script, localized_translation, tts_segments: trimmed products
+          - removed_count, removed_duration, final_duration
+        Raises RuntimeError if trimming would empty all blocks.
+        """
+        import subprocess
+
+        total = sum(float(s.get("tts_duration", 0.0) or 0.0) for s in tts_segments)
+        if total <= video_duration:
+            return {"skipped": True}
+
+        kept = list(tts_segments)
+        removed: list[dict] = []
+        current = total
+        while kept and current > video_duration:
+            seg = kept.pop()
+            removed.append(seg)
+            current -= float(seg.get("tts_duration", 0.0) or 0.0)
+
+        if not kept:
+            raise RuntimeError(
+                "尾部裁剪后无剩余朗读块——单块时长已超视频时长，无法产出音频。"
+            )
+
+        seg_dir = os.path.join(task_dir, "tts_segments", round_variant)
+        os.makedirs(seg_dir, exist_ok=True)
+        concat_list = os.path.join(seg_dir, "concat_trimmed.txt")
+        with open(concat_list, "w", encoding="utf-8") as f:
+            for s in kept:
+                f.write(f"file '{os.path.abspath(s['tts_path'])}'\n")
+        out_path = os.path.join(task_dir, f"tts_full.{round_variant}.trimmed.mp3")
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+             "-c", "copy", out_path],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(f"尾部裁剪 ffmpeg 拼接失败: {r.stderr}")
+
+        kept_block_ids = {s["index"] for s in kept}
+        new_blocks = [b for b in tts_script.get("blocks", []) if b["index"] in kept_block_ids]
+        new_subtitle_chunks = [
+            c for c in tts_script.get("subtitle_chunks", [])
+            if c.get("block_indices")
+            and all(bi in kept_block_ids for bi in c["block_indices"])
+        ]
+        new_full_text = " ".join(b.get("text", "") for b in new_blocks).strip()
+        new_tts_script = {
+            "full_text": new_full_text,
+            "blocks": new_blocks,
+            "subtitle_chunks": new_subtitle_chunks,
+        }
+
+        kept_sentence_ids: set[int] = set()
+        for b in new_blocks:
+            kept_sentence_ids.update(b.get("sentence_indices", []))
+        new_sentences = [
+            s for s in localized_translation.get("sentences", [])
+            if s.get("index") in kept_sentence_ids
+        ]
+        new_loc_full_text = " ".join(s.get("text", "") for s in new_sentences).strip()
+        new_loc = {"full_text": new_loc_full_text, "sentences": new_sentences}
+
+        return {
+            "skipped": False,
+            "audio_path": out_path,
+            "tts_script": new_tts_script,
+            "localized_translation": new_loc,
+            "tts_segments": kept,
+            "removed_count": len(removed),
+            "removed_duration": total - current,
+            "final_duration": current,
+        }
 
     def _resolve_voice(self, task: dict, loc_mod) -> dict:
         """Resolve voice for TTS: explicit task.voice_id → recommended → default.
@@ -636,9 +735,53 @@ class PipelineRunner:
             variant=variant,
         )
 
-        # Promote final to standard file names
-        self._promote_final_artifacts(task_dir, loop_result["final_round"], variant)
+        # Stage 2a: if audio > video, drop trailing blocks until audio ≤ video.
+        # Stage 2b (audio ≤ video) is implicit — no action needed.
+        from pipeline.tts import _get_audio_duration
+        final_round = loop_result["final_round"]
+        round_variant = f"round_{final_round}"
+        pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+        if pre_trim_duration > video_duration:
+            trim_record = {
+                "pre_trim_duration": pre_trim_duration,
+                "video_duration": video_duration,
+                "message": (
+                    f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
+                    "正在裁剪尾部..."
+                ),
+            }
+            self._emit_duration_round(task_id, final_round, "trim_tail", trim_record)
+            trim_result = self._trim_tail_segments(
+                task_dir=task_dir,
+                round_variant=round_variant,
+                tts_segments=loop_result["tts_segments"],
+                tts_script=loop_result["tts_script"],
+                localized_translation=loop_result["localized_translation"],
+                video_duration=video_duration,
+            )
+            if not trim_result.get("skipped"):
+                loop_result["tts_audio_path"] = trim_result["audio_path"]
+                loop_result["tts_script"] = trim_result["tts_script"]
+                loop_result["localized_translation"] = trim_result["localized_translation"]
+                loop_result["tts_segments"] = trim_result["tts_segments"]
+                trimmed_record = {
+                    "pre_trim_duration": pre_trim_duration,
+                    "removed_count": trim_result["removed_count"],
+                    "removed_duration": trim_result["removed_duration"],
+                    "final_duration": trim_result["final_duration"],
+                    "video_duration": video_duration,
+                    "message": (
+                        f"裁剪完成：删除 {trim_result['removed_count']} 个朗读块"
+                        f"（{trim_result['removed_duration']:.1f}s），"
+                        f"最终音频 {trim_result['final_duration']:.1f}s"
+                    ),
+                }
+                self._emit_duration_round(task_id, final_round, "trimmed", trimmed_record)
+
+        # Copy the (possibly trimmed) final audio to the standard variant filename.
+        import shutil
         final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+        shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
 
         from pipeline.timeline import build_timeline_manifest
         timeline_manifest = build_timeline_manifest(
