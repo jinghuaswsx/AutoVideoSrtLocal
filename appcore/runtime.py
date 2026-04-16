@@ -174,6 +174,78 @@ def _compute_next_target(
     return target_duration, target_words, direction
 
 
+def _distance_to_duration_range(duration: float, lower: float, upper: float) -> float:
+    """Return the distance from duration to the inclusive [lower, upper] range."""
+    if lower <= duration <= upper:
+        return 0.0
+    if duration > upper:
+        return duration - upper
+    return lower - duration
+
+
+def _fit_tts_segments_to_duration(tts_segments: list[dict], target_duration: float) -> list[dict]:
+    """Keep only the audible prefix of TTS segments within target_duration."""
+    kept: list[dict] = []
+    elapsed = 0.0
+    target_duration = max(0.0, float(target_duration or 0.0))
+
+    for segment in tts_segments:
+        seg_duration = float(segment.get("tts_duration", 0.0) or 0.0)
+        remaining = target_duration - elapsed
+        if remaining <= 1e-6:
+            break
+
+        seg_copy = dict(segment)
+        if seg_duration <= remaining + 1e-6:
+            seg_copy["tts_duration"] = seg_duration
+            kept.append(seg_copy)
+            elapsed += seg_duration
+            continue
+
+        seg_copy["tts_duration"] = round(remaining, 3)
+        kept.append(seg_copy)
+        break
+
+    return kept
+
+
+def _trim_tts_metadata_to_segments(
+    tts_script: dict,
+    localized_translation: dict,
+    tts_segments: list[dict],
+) -> tuple[dict, dict]:
+    """Trim script/localized metadata to the kept TTS segment indices."""
+    kept_block_ids = {
+        int(segment["index"])
+        for segment in tts_segments
+        if segment.get("index") is not None
+    }
+    new_blocks = [block for block in tts_script.get("blocks", []) if block.get("index") in kept_block_ids]
+    new_subtitle_chunks = [
+        chunk for chunk in tts_script.get("subtitle_chunks", [])
+        if chunk.get("block_indices")
+        and all(block_index in kept_block_ids for block_index in chunk["block_indices"])
+    ]
+    new_tts_script = {
+        "full_text": " ".join(block.get("text", "") for block in new_blocks).strip(),
+        "blocks": new_blocks,
+        "subtitle_chunks": new_subtitle_chunks,
+    }
+
+    kept_sentence_ids: set[int] = set()
+    for block in new_blocks:
+        kept_sentence_ids.update(block.get("sentence_indices", []))
+    new_sentences = [
+        sentence for sentence in localized_translation.get("sentences", [])
+        if sentence.get("index") in kept_sentence_ids
+    ]
+    new_localized_translation = {
+        "full_text": " ".join(sentence.get("text", "") for sentence in new_sentences).strip(),
+        "sentences": new_sentences,
+    }
+    return new_tts_script, new_localized_translation
+
+
 class PipelineRunner:
     project_type: str = "translation"
 
@@ -219,7 +291,7 @@ class PipelineRunner:
         script_segments: list, variant: str,
     ) -> dict:
         """Iterate translate_rewrite → tts_script_regen → audio_gen → measure
-        up to 3 rounds until audio duration lands in [video-3, video].
+        up to 5 rounds until audio duration lands in [video-3, video].
 
         Returns dict with: localized_translation, tts_script, tts_audio_path,
         tts_segments, rounds, final_round.
@@ -357,7 +429,7 @@ class PipelineRunner:
 
             self._emit_duration_round(task_id, round_index, "measure", round_record)
 
-            if stage1_lo <= audio_duration <= stage1_hi:
+            if final_target_lo <= audio_duration <= final_target_hi:
                 self._emit_duration_round(task_id, round_index, "converged", round_record)
                 task_state.update(task_id, tts_duration_status="converged")
                 return {
@@ -373,12 +445,14 @@ class PipelineRunner:
             last_audio_duration = audio_duration
             last_word_count = word_count
 
-        # MAX_ROUNDS rounds completed without landing in [0.9v, 1.1v].
-        # Pick the round whose audio_duration is closest to video_duration.
+        # MAX_ROUNDS rounds completed without landing in [video-3, video].
+        # Pick the round whose audio_duration is closest to the final target range.
         import appcore.task_state as task_state
         best_i = min(
             range(len(rounds)),
-            key=lambda i: abs(rounds[i]["audio_duration"] - video_duration),
+            key=lambda i: _distance_to_duration_range(
+                rounds[i]["audio_duration"], final_target_lo, final_target_hi,
+            ),
         )
         best_record = rounds[best_i]
         best_product = round_products[best_i]
@@ -404,6 +478,58 @@ class PipelineRunner:
         dst = os.path.join(task_dir, f"tts_full.{variant}.mp3")
         if os.path.exists(src):
             shutil.copy2(src, dst)
+
+    def _truncate_audio_to_duration(
+        self,
+        *,
+        input_audio_path: str,
+        output_audio_path: str,
+        duration: float,
+        tts_segments: list,
+        tts_script: dict,
+        localized_translation: dict,
+    ) -> dict:
+        """Truncate final audio to duration and keep downstream metadata in sync."""
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", input_audio_path,
+                "-t", str(round(float(duration), 3)),
+                "-map", "0:a:0",
+                "-vn",
+                "-c:a", "libmp3lame",
+                "-q:a", "2",
+                output_audio_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"最终音频截断失败: {result.stderr}")
+
+        fitted_segments = _fit_tts_segments_to_duration(tts_segments, duration)
+        fitted_tts_script, fitted_localized_translation = _trim_tts_metadata_to_segments(
+            tts_script,
+            localized_translation,
+            fitted_segments,
+        )
+        removed_count = max(0, len(tts_segments) - len(fitted_segments))
+        removed_duration = max(
+            0.0,
+            sum(float(segment.get("tts_duration", 0.0) or 0.0) for segment in tts_segments) - float(duration),
+        )
+        return {
+            "skipped": False,
+            "audio_path": output_audio_path,
+            "tts_segments": fitted_segments,
+            "tts_script": fitted_tts_script,
+            "localized_translation": fitted_localized_translation,
+            "removed_count": removed_count,
+            "removed_duration": round(removed_duration, 3),
+            "final_duration": round(float(duration), 3),
+        }
 
     def _trim_tail_segments(
         self, *, task_dir: str, round_variant: str,
@@ -437,13 +563,6 @@ class PipelineRunner:
         final_target_lo = max(0.0, video_duration - 3.0)
         final_target_hi = video_duration
 
-        def _distance_to_range(d: float) -> float:
-            if final_target_lo <= d <= final_target_hi:
-                return 0.0
-            if d > final_target_hi:
-                return d - final_target_hi
-            return final_target_lo - d
-
         kept = list(tts_segments)
         removed: list[dict] = []
         current = total
@@ -471,7 +590,10 @@ class PipelineRunner:
             if current < final_target_lo:
                 # Overshot below target range — pick the candidate closest to [lo, hi].
                 # candidates is non-empty here (we just appended one on this iteration).
-                final_state = min(candidates, key=lambda c: _distance_to_range(c["duration"]))
+                final_state = min(
+                    candidates,
+                    key=lambda c: _distance_to_duration_range(c["duration"], final_target_lo, final_target_hi),
+                )
                 break
             # current still > final_target_hi: keep dropping.
 
@@ -499,29 +621,7 @@ class PipelineRunner:
         if r.returncode != 0:
             raise RuntimeError(f"尾部裁剪 ffmpeg 拼接失败: {r.stderr}")
 
-        kept_block_ids = {s["index"] for s in kept}
-        new_blocks = [b for b in tts_script.get("blocks", []) if b["index"] in kept_block_ids]
-        new_subtitle_chunks = [
-            c for c in tts_script.get("subtitle_chunks", [])
-            if c.get("block_indices")
-            and all(bi in kept_block_ids for bi in c["block_indices"])
-        ]
-        new_full_text = " ".join(b.get("text", "") for b in new_blocks).strip()
-        new_tts_script = {
-            "full_text": new_full_text,
-            "blocks": new_blocks,
-            "subtitle_chunks": new_subtitle_chunks,
-        }
-
-        kept_sentence_ids: set[int] = set()
-        for b in new_blocks:
-            kept_sentence_ids.update(b.get("sentence_indices", []))
-        new_sentences = [
-            s for s in localized_translation.get("sentences", [])
-            if s.get("index") in kept_sentence_ids
-        ]
-        new_loc_full_text = " ".join(s.get("text", "") for s in new_sentences).strip()
-        new_loc = {"full_text": new_loc_full_text, "sentences": new_sentences}
+        new_tts_script, new_loc = _trim_tts_metadata_to_segments(tts_script, localized_translation, kept)
 
         return {
             "skipped": False,
@@ -819,29 +919,31 @@ class PipelineRunner:
             variant=variant,
         )
 
-        # Stage 2a: if audio > video, drop trailing blocks until audio ≤ video.
-        # Stage 2b (audio ≤ video) is implicit — no action needed.
+        # Final selection:
+        # - if audio > video, truncate the final audio to video duration;
+        # - if audio <= video, keep it as-is.
         from pipeline.tts import _get_audio_duration
         final_round = loop_result["final_round"]
-        round_variant = f"round_{final_round}"
         pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+        import shutil
+        final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
         if pre_trim_duration > video_duration:
             trim_record = {
                 "pre_trim_duration": pre_trim_duration,
                 "video_duration": video_duration,
                 "message": (
                     f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
-                    "正在裁剪尾部..."
+                    "正在直接截断到视频时长..."
                 ),
             }
-            self._emit_duration_round(task_id, final_round, "trim_tail", trim_record)
-            trim_result = self._trim_tail_segments(
-                task_dir=task_dir,
-                round_variant=round_variant,
+            self._emit_duration_round(task_id, final_round, "truncate_audio", trim_record)
+            trim_result = self._truncate_audio_to_duration(
+                input_audio_path=loop_result["tts_audio_path"],
+                output_audio_path=final_audio_path,
+                duration=video_duration,
                 tts_segments=loop_result["tts_segments"],
                 tts_script=loop_result["tts_script"],
                 localized_translation=loop_result["localized_translation"],
-                video_duration=video_duration,
             )
             if not trim_result.get("skipped"):
                 loop_result["tts_audio_path"] = trim_result["audio_path"]
@@ -855,17 +957,17 @@ class PipelineRunner:
                     "final_duration": trim_result["final_duration"],
                     "video_duration": video_duration,
                     "message": (
-                        f"裁剪完成：删除 {trim_result['removed_count']} 个朗读块"
-                        f"（{trim_result['removed_duration']:.1f}s），"
-                        f"最终音频 {trim_result['final_duration']:.1f}s"
+                        f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
+                        f"对齐视频 {video_duration:.1f}s"
                     ),
                 }
-                self._emit_duration_round(task_id, final_round, "trimmed", trimmed_record)
+                self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
-        # Copy the (possibly trimmed) final audio to the standard variant filename.
+        # Copy the final audio to the standard variant filename when needed.
         import shutil
         final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
-        shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
+        if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+            shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
 
         from pipeline.timeline import build_timeline_manifest
         timeline_manifest = build_timeline_manifest(
