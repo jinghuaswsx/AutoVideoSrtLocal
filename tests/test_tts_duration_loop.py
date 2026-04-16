@@ -132,3 +132,114 @@ class TestDurationLoopRound1Only:
         assert len(result["rounds"]) == 1
         assert result["rounds"][0]["round"] == 1
         assert result["rounds"][0]["audio_duration"] == 28.5
+
+
+class TestDurationLoopMultiRound:
+    def _setup(self, monkeypatch, tmp_path, audio_durations):
+        """audio_durations: list of durations returned in sequence per round."""
+        from appcore import task_state
+        task_state.create("tdl-multi", "v.mp4", str(tmp_path),
+                          original_filename="v.mp4", user_id=1)
+        call_counter = {"i": 0}
+
+        def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return {"full_audio_path": out,
+                    "segments": [{"index": 0, "tts_path": out, "tts_duration": 1.0}]}
+
+        def fake_get_audio_duration(path):
+            idx = call_counter["i"]
+            call_counter["i"] += 1
+            return audio_durations[min(idx, len(audio_durations) - 1)]
+
+        def fake_gen_tts_script(loc, **kwargs):
+            return {"full_text": loc.get("full_text", ""), "blocks": [], "subtitle_chunks": []}
+
+        def fake_gen_rewrite(**kwargs):
+            # Pretend rewrite shortens by 30%
+            prev = kwargs["prev_localized_translation"]
+            new_text = prev["full_text"][: int(len(prev["full_text"]) * 0.7)]
+            return {
+                "full_text": new_text,
+                "sentences": [{"index": 0, "text": new_text, "source_segment_indices": [0]}],
+            }
+
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", fake_get_audio_duration)
+        monkeypatch.setattr("pipeline.translate.generate_tts_script", fake_gen_tts_script)
+        monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
+        monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
+        monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        monkeypatch.setattr(loc_mod, "build_tts_segments", lambda s, sg: [])
+        # stub the rewrite builder
+        monkeypatch.setattr(loc_mod, "build_localized_rewrite_messages",
+                            lambda **kw: [{"role": "system", "content": ""},
+                                          {"role": "user", "content": ""}], raising=False)
+
+        from appcore.events import EventBus
+        from appcore.runtime import PipelineRunner
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+
+        initial = {"full_text": "A" * 400, "sentences": [{"index": 0, "text": "A" * 400, "source_segment_indices": [0]}]}
+        return runner, loc_mod, initial
+
+    def test_round2_shrink_converges(self, tmp_path, monkeypatch):
+        # round 1: 35s (over), round 2: 28.5s (in range for video=30)
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k", script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        assert result["final_round"] == 2
+        assert len(result["rounds"]) == 2
+        assert result["rounds"][1].get("direction") == "shrink"
+        # round 1 record has no direction (no rewrite)
+        assert "direction" not in result["rounds"][0]
+
+    def test_three_rounds_exhausted_raises(self, tmp_path, monkeypatch):
+        # All three rounds return audio longer than video
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [40.0, 38.0, 36.0])
+        with pytest.raises(RuntimeError, match="3 轮内未收敛"):
+            runner._run_tts_duration_loop(
+                task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+                provider="openrouter", video_duration=30.0,
+                voice={"id": 1, "elevenlabs_voice_id": "v"},
+                initial_localized_translation=initial,
+                source_full_text="Source", source_language="zh",
+                elevenlabs_api_key="k",
+                script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+                variant="normal",
+            )
+        from appcore import task_state
+        task = task_state.get("tdl-multi")
+        assert task["tts_duration_status"] == "failed"
+
+    def test_intermediate_files_written(self, tmp_path, monkeypatch):
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
+        runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        # round 1 only produces tts_script + audio (no localized, since initial reused)
+        assert (tmp_path / "tts_script.round_1.json").exists()
+        assert (tmp_path / "tts_full.round_1.mp3").exists()
+        # round 2 produces all three
+        assert (tmp_path / "localized_translation.round_2.json").exists()
+        assert (tmp_path / "tts_script.round_2.json").exists()
+        assert (tmp_path / "tts_full.round_2.mp3").exists()
