@@ -35,6 +35,15 @@ def test_runtime_settings_do_not_embed_real_default_secrets(monkeypatch):
     assert config.ELEVENLABS_API_KEY == ""
 
 
+def test_materials_openapi_key_defaults_to_empty(monkeypatch):
+    monkeypatch.delenv("OPENAPI_MEDIA_API_KEY", raising=False)
+
+    config = importlib.import_module("config")
+    config = importlib.reload(config)
+
+    assert config.OPENAPI_MEDIA_API_KEY == ""
+
+
 def test_subtitle_removal_provider_defaults(monkeypatch):
     monkeypatch.setenv("SUBTITLE_REMOVAL_PROVIDER_TOKEN", "test-token")
     monkeypatch.delenv("SUBTITLE_REMOVAL_PROVIDER_URL", raising=False)
