@@ -674,8 +674,8 @@ class PipelineRunner:
         )
 
         task_state.set_artifact(task_id, "tts",
-            build_tts_artifact(loop_result["tts_script"], loop_result["tts_segments"]))
-            # TODO: Task 14 will add duration_rounds=loop_result["rounds"] kwarg to build_tts_artifact
+            build_tts_artifact(loop_result["tts_script"], loop_result["tts_segments"],
+                               duration_rounds=loop_result["rounds"]))
 
         from appcore.events import EVT_TTS_SCRIPT_READY
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": loop_result["tts_script"]})

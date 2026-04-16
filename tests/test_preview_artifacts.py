@@ -68,3 +68,37 @@ def test_build_variant_compare_artifact_contains_two_named_columns():
     assert artifact["layout"] == "variant_compare"
     assert artifact["variants"]["normal"]["label"] == "普通版"
     assert artifact["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
+
+
+def test_build_tts_artifact_with_duration_rounds():
+    rounds = [
+        {"round": 1, "audio_duration": 35.0, "char_count": 400, "video_duration": 30.0,
+         "duration_lo": 27.0, "duration_hi": 30.0,
+         "artifact_paths": {"tts_script": "tts_script.round_1.json",
+                            "tts_full_audio": "tts_full.round_1.mp3"}},
+        {"round": 2, "direction": "shrink", "target_duration": 28.0, "target_chars": 420,
+         "audio_duration": 28.5, "char_count": 310, "video_duration": 30.0,
+         "duration_lo": 27.0, "duration_hi": 30.0,
+         "artifact_paths": {"localized_translation": "localized_translation.round_2.json",
+                            "tts_script": "tts_script.round_2.json",
+                            "tts_full_audio": "tts_full.round_2.mp3"}},
+    ]
+    artifact = build_tts_artifact(
+        {"full_text": "hi", "blocks": [], "subtitle_chunks": []},
+        [{"index": 0, "tts_path": "/x/y.mp3", "tts_duration": 1.0}],
+        duration_rounds=rounds,
+    )
+    items = artifact["items"]
+    duration_items = [it for it in items if it.get("type") == "tts_duration_rounds"]
+    assert len(duration_items) == 1
+    assert duration_items[0]["rounds"] == rounds
+
+
+def test_build_tts_artifact_without_duration_rounds_is_backward_compatible():
+    artifact = build_tts_artifact(
+        {"full_text": "hi", "blocks": [], "subtitle_chunks": []},
+        [{"index": 0, "tts_path": "/x/y.mp3", "tts_duration": 1.0}],
+    )
+    items = artifact["items"]
+    duration_items = [it for it in items if it.get("type") == "tts_duration_rounds"]
+    assert len(duration_items) == 0
