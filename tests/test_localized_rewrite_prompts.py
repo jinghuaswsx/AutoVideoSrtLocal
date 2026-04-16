@@ -81,3 +81,30 @@ class TestGermanRewritePrompt:
         assert "expand" in msgs[1]["content"].lower()
         assert "Hallo Welt" in msgs[1]["content"]
         assert "English" in msgs[1]["content"]
+
+
+class TestFrenchRewritePrompt:
+    def test_prompt_inherits_french_elision_rules(self):
+        from pipeline.localization_fr import LOCALIZED_REWRITE_SYSTEM_PROMPT
+        # French-specific rules must persist
+        text = LOCALIZED_REWRITE_SYSTEM_PROMPT.lower()
+        assert "french" in text or "français" in text
+        assert "élision" in LOCALIZED_REWRITE_SYSTEM_PROMPT or "elision" in text
+        # rewrite constraints
+        assert "target" in text
+        assert "shrink" in text
+        assert "expand" in text
+
+    def test_builder_for_french(self):
+        from pipeline.localization_fr import build_localized_rewrite_messages
+        msgs = build_localized_rewrite_messages(
+            source_full_text="Source",
+            prev_localized_translation={
+                "full_text": "C'est super.",
+                "sentences": [{"index": 0, "text": "C'est super.", "source_segment_indices": [0]}],
+            },
+            target_chars=250, direction="shrink", source_language="zh",
+        )
+        assert "250" in msgs[1]["content"]
+        assert "shrink" in msgs[1]["content"].lower()
+        assert "Chinese" in msgs[1]["content"]

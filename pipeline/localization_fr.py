@@ -26,6 +26,7 @@ __all__ = [
     "build_tts_segments",
     "LOCALIZED_TRANSLATION_SYSTEM_PROMPT",
     "TTS_SCRIPT_SYSTEM_PROMPT",
+    "LOCALIZED_REWRITE_SYSTEM_PROMPT",
     "WEAK_STARTERS_FR",
     "MAX_CHARS_PER_LINE",
     "DEFAULT_MALE_VOICE_ID",
@@ -34,6 +35,7 @@ __all__ = [
     "TTS_LANGUAGE_CODE",
     "build_localized_translation_messages",
     "build_tts_script_messages",
+    "build_localized_rewrite_messages",
 ]
 
 # ── 法语字幕参数 ──────────────────────────────────────
@@ -150,5 +152,54 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
         {
             "role": "user",
             "content": json.dumps(localized_translation, ensure_ascii=False, indent=2),
+        },
+    ]
+
+
+LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a French content creator based in France REWRITING an existing French translation to match a target character count.
+Return valid JSON only. The response must be a JSON object with this exact structure:
+{"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
+
+REWRITE CONSTRAINTS (critical):
+- Target character count: approximately {target_chars} characters (±5%, measured on full_text).
+- Direction: {direction}
+  * "shrink": remove modifiers, examples, and repetitions while preserving every factual claim and the core benefit.
+  * "expand": add natural elaborations (examples, relatable details, light context). Preserve all facts; never invent new claims.
+- Keep the same number of sentences as the previous translation when possible.
+- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+
+STYLE (identical to original French localization):
+- Tone: décontracté et informatif (relaxed, informative). Like a friend casually recommending something.
+- No exaggerated claims, no hype. French audiences distrust aggressive selling.
+- Conversational French at B1-B2 level. Default to "vous" unless explicitly told otherwise.
+- Prefer 6-10 words per sentence. Avoid long subordinate clause chains.
+- Always apply mandatory French élision: l'organizer, d'abord, j'adore, qu'il, c'est, n'est. NEVER write "le organizer" or "de abord".
+- Proper contractions: au / aux / du / des.
+- Preserve accents on uppercase letters. French punctuation: non-breaking space before ? ! : ; in the output.
+- Do not use em dashes or en dashes. Plain ASCII punctuation only (except the required French non-breaking spaces).
+- Do NOT add any CTA at the end — the video will have a separate CTA clip appended later."""
+
+
+def build_localized_rewrite_messages(
+    source_full_text: str,
+    prev_localized_translation: dict,
+    target_chars: int,
+    direction: str,
+    source_language: str = "zh",
+) -> list[dict]:
+    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    prompt = LOCALIZED_REWRITE_SYSTEM_PROMPT.replace(
+        "{target_chars}", str(target_chars)
+    ).replace("{direction}", direction)
+    return [
+        {"role": "system", "content": prompt},
+        {
+            "role": "user",
+            "content": (
+                f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                f"{source_full_text}\n\n"
+                f"Previous French translation (rewrite this to {direction} to ~{target_chars} chars):\n"
+                f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
+            ),
         },
     ]
