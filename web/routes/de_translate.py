@@ -257,7 +257,7 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"]
+RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/api/de-translate/<task_id>/resume", methods=["POST"])
@@ -343,3 +343,25 @@ def get_artifact(task_id, name):
     if path and os.path.exists(path):
         return send_file(os.path.abspath(path))
     return jsonify({"error": "Artifact not found"}), 404
+
+
+@bp.route("/api/de-translate/<task_id>/analysis/run", methods=["POST"])
+@login_required
+def run_ai_analysis(task_id):
+    """手动触发德语项目 AI 视频分析，不影响任务整体 status。"""
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id=%s AND user_id=%s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = store.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    if (task.get("steps") or {}).get("analysis") == "running":
+        return jsonify({"error": "AI 分析正在运行中"}), 409
+
+    de_pipeline_runner.run_analysis(task_id, user_id=current_user.id)
+    return jsonify({"status": "started"})
