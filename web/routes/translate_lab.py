@@ -88,12 +88,28 @@ def _get_lab_task(task_id: str, user_id: int) -> dict | None:
 def index():
     rows = db_query(
         """SELECT id, original_filename, display_name, thumbnail_path, status,
-                  created_at, expires_at, deleted_at
+                  created_at, expires_at, deleted_at, state_json
            FROM projects
            WHERE user_id = %s AND type = 'translate_lab' AND deleted_at IS NULL
            ORDER BY created_at DESC""",
         (current_user.id,),
     )
+    # source_language / target_language live inside state_json, not as DB
+    # columns — parse them out so templates can display actual values instead
+    # of defaulting to zh/en for every project.
+    for row in (rows or []):
+        raw = row.pop("state_json", None)
+        if raw:
+            try:
+                state = json.loads(raw)
+                row["source_language"] = state.get("source_language") or "zh"
+                row["target_language"] = state.get("target_language") or "en"
+            except Exception:
+                row["source_language"] = "zh"
+                row["target_language"] = "en"
+        else:
+            row["source_language"] = "zh"
+            row["target_language"] = "en"
     try:
         retention_hours = get_retention_hours("translate_lab")
     except Exception:

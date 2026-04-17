@@ -685,11 +685,18 @@
     var download = $("#labSubtitleDownload");
     if (!section) return;
     section.hidden = false;
+    var url = "/api/translate-lab/" + D.taskId + "/subtitle";
     if (download) {
-      download.href = "/api/translate-lab/" + D.taskId + "/subtitle";
+      download.href = url;
     }
     if (preview) {
-      preview.textContent = "字幕已生成：" + srtPath;
+      preview.textContent = "加载字幕中...";
+      fetch(url, { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+        .then(function (text) { preview.textContent = text || "(空字幕)"; })
+        .catch(function (err) {
+          preview.textContent = "字幕加载失败 (" + err + "，文件路径: " + srtPath + ")";
+        });
     }
   }
 

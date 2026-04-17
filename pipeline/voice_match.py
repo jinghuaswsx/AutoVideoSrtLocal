@@ -79,7 +79,8 @@ def _query_voices_by_language(language: str, gender: Optional[str] = None,
         sql += " AND gender = %s"
         params.append(gender)
     if limit:
-        sql += f" LIMIT {int(limit)}"
+        sql += " LIMIT %s"
+        params.append(int(limit))
     return query(sql, tuple(params))
 
 

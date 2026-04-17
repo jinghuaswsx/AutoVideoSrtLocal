@@ -118,3 +118,7 @@ def _get_audio_duration(audio_path: str) -> float:
         return float(result.stdout.strip())
     except ValueError:
         return 0.0
+
+
+# Public alias — prefer this over the underscored name in new code.
+get_audio_duration = _get_audio_duration

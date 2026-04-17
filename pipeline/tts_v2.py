@@ -36,8 +36,8 @@ def _tts_generate(text: str, voice_id: str, output_path: str,
 
 
 def _get_duration(path: str) -> float:
-    from pipeline.tts import _get_audio_duration
-    return _get_audio_duration(path)
+    from pipeline.tts import get_audio_duration
+    return get_audio_duration(path)
 
 
 def _refine_text(previous_text: str, over_ratio: float,
