@@ -513,7 +513,9 @@
     if (!res.ok) return;
     currentTask = await res.json();
     renderTaskHero();
-    applyTaskConfigToForm();
+    // 不在此处 applyTaskConfigToForm()：任务运行中的 5s 轮询会用服务端保存值
+    // 覆盖用户刚点的字体/字号/位置选择（CSS 选中态和 _selected* 变量），
+    // 表现为"点字体/字号/位置没反应"。只在 bootVoices 首次加载时应用一次即可。
     renderTaskState();
     restoreReviewState();
     _syncSourceLangPanel();
