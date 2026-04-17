@@ -364,6 +364,13 @@
 
   // ── Socket.IO 事件 ───────────────────────────────────
   function bindLabEvents(socket) {
+    // Generic step status updates from base PipelineRunner._set_step.
+    // Covers extract/compose and any step without a dedicated event.
+    socket.on("step_update", function (payload) {
+      if (payload && payload.step) {
+        setStepState(payload.step, payload.status, payload.message);
+      }
+    });
     socket.on("lab_shot_decompose_result", function (payload) {
       if (!payload) return;
       if (Array.isArray(payload.shots)) {

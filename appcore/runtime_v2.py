@@ -60,6 +60,17 @@ class PipelineRunnerV2(PipelineRunner):
         ]
 
     def _run(self, task_id: str, start_step: str = "extract") -> None:
+        # Guard: restore source video from TOS if the local file was cleaned up.
+        # Matches PipelineRunner._run behaviour so V2 doesn't crash on resume.
+        try:
+            from appcore.source_video import ensure_local_source_video
+            ensure_local_source_video(task_id)
+        except Exception as exc:
+            task_state.update(task_id, status="error", error=str(exc))
+            task_state.set_expires_at(task_id, self.project_type)
+            self._emit(task_id, EVT_LAB_PIPELINE_ERROR, {"error": str(exc)})
+            return
+
         task = task_state.get(task_id) or {}
         video_path = task.get("video_path", "")
         task_dir = task.get("task_dir", "")
@@ -476,7 +487,7 @@ class PipelineRunnerV2(PipelineRunner):
             final_video=final_path,
             compose_result=result,
             stitched_audio_path=stitched_path,
-            status="completed",
+            status="done",
         )
         task_state.set_expires_at(task_id, self.project_type)
         if result:

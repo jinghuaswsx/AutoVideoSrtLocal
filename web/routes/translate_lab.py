@@ -20,6 +20,8 @@ from datetime import datetime
 from flask import Blueprint, render_template, abort, request, jsonify, send_file
 from flask_login import login_required, current_user
 
+from web.auth import admin_required
+
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state
 from appcore.api_keys import resolve_key
@@ -259,7 +261,15 @@ def start_task(task_id: str):
     if not task:
         return jsonify({"error": "not found"}), 404
     options = request.get_json(silent=True) or {}
-    update_fields = dict(options)
+    # Whitelist user-controllable fields — never let clients overwrite internal
+    # task_state keys (ownership, paths, status, etc.) through a start call.
+    _ALLOWED_START_FIELDS = {
+        "source_language", "target_language",
+        "voice_match_mode", "voice_gender",
+        "interactive_review",
+        "subtitle_position", "subtitle_font", "subtitle_size", "subtitle_position_y",
+    }
+    update_fields = {k: v for k, v in options.items() if k in _ALLOWED_START_FIELDS}
     update_fields["status"] = "running"
     task_state.update(task_id, **update_fields)
     translate_lab_runner.start(task_id=task_id, user_id=user_id)
@@ -276,6 +286,10 @@ def resume_task(task_id: str):
         return jsonify({"error": "not found"}), 404
     payload = request.get_json(silent=True) or {}
     start_step = payload.get("start_step", "extract")
+    _VALID_STEPS = {"extract", "shot_decompose", "voice_match",
+                    "translate", "tts_verify", "subtitle", "compose"}
+    if start_step not in _VALID_STEPS:
+        return jsonify({"error": f"start_step must be one of {sorted(_VALID_STEPS)}"}), 400
     task_state.update(task_id, status="running")
     translate_lab_runner.resume(
         task_id=task_id, start_step=start_step, user_id=user_id,
@@ -368,6 +382,7 @@ def stream_final_video(task_id: str):
 
 @bp.route("/api/translate-lab/voice-library/sync", methods=["POST"])
 @login_required
+@admin_required
 def sync_voice_library():
     """管理员触发：拉取 ElevenLabs 全量共享音色，upsert 本地库。"""
     user_id = current_user.id
@@ -380,6 +395,7 @@ def sync_voice_library():
 
 @bp.route("/api/translate-lab/voice-library/embed", methods=["POST"])
 @login_required
+@admin_required
 def embed_voice_library():
     """管理员触发：为 preview_url 已有但 embedding 缺失的音色补算。"""
     payload = request.get_json(silent=True) or {}
