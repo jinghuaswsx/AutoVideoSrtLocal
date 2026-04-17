@@ -1233,20 +1233,28 @@
     window._durationPromptOpen[roundIndex] = !window._durationPromptOpen[roundIndex];
     renderTtsDurationLog();
     if (!window._durationPromptOpen[roundIndex]) return;
+    // 只在"已经拿到合法 payload"时才跳过重复请求；null/未定义都视作未缓存。
     if (window._durationPromptCache[roundIndex] || window._durationPromptLoading[roundIndex]) return;
 
     window._durationPromptLoading[roundIndex] = true;
     renderTtsDurationLog();
     try {
       const res = await fetch(_durationRoundFileUrl(roundIndex, 'localized_rewrite_messages'), { cache: 'no-store' });
-      const payload = await res.json();
+      const raw = await res.text();
       if (!res.ok) {
-        throw new Error(payload.error || 'Prompt snapshot load failed');
+        let errMsg = `HTTP ${res.status}`;
+        try { errMsg = (JSON.parse(raw) || {}).error || errMsg; } catch (_) {}
+        throw new Error(errMsg);
       }
+      if (!raw) throw new Error('空响应');
+      const payload = JSON.parse(raw);
       window._durationPromptCache[roundIndex] = payload;
     } catch (err) {
-      window._durationPromptCache[roundIndex] = {
-        __error: err && err.message ? err.message : 'Prompt snapshot load failed',
+      // 错误不写入长期缓存，下次再点会重新请求；用临时 key 仅供本次渲染用。
+      window._durationPromptCache[roundIndex] = null;
+      window._durationPromptLastError = {
+        roundIndex,
+        message: err && err.message ? err.message : 'Prompt snapshot load failed',
       };
     } finally {
       delete window._durationPromptLoading[roundIndex];
@@ -1267,7 +1275,18 @@
     }
 
     const payload = window._durationPromptCache[round.round];
-    if (!payload) return '';
+    const lastErr = window._durationPromptLastError;
+    if (!payload) {
+      if (lastErr && lastErr.roundIndex === round.round) {
+        return `
+          <div class="duration-round-debug">
+            <div class="duration-round-debug-title">Prompt details</div>
+            <div class="duration-round-debug-empty duration-round-debug-empty--error">${escapeHtml(lastErr.message)}（再次点击 Prompt JSON 可重试）</div>
+          </div>
+        `;
+      }
+      return '';
+    }
     if (payload.__error) {
       return `
         <div class="duration-round-debug">
