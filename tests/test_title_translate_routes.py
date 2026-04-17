@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,6 +31,48 @@ def test_static_script_contains_client_hooks():
     assert "function validateSourceText" in content
     assert "请按“标题/文案/描述”三行格式输入" in content
     assert "navigator.clipboard.writeText" in content
+
+
+def test_static_script_exports_validate_hook_without_runtime_reference_error():
+    js_path = Path("web/static/title_translate.js").resolve()
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+
+const sandbox = {{
+  window: {{}},
+  navigator: {{}},
+  FormData: function FormData() {{}},
+  fetch: function fetch() {{
+    return Promise.reject(new Error("fetch should not run during bootstrap"));
+  }},
+  document: {{
+    readyState: "loading",
+    addEventListener() {{}},
+  }},
+  setTimeout,
+  clearTimeout,
+  console,
+}};
+
+vm.runInNewContext(fs.readFileSync({js_path.as_posix()!r}, "utf8"), sandbox, {{ filename: "title_translate.js" }});
+
+if (!sandbox.window.TitleTranslateWorkbench) {{
+  throw new Error("TitleTranslateWorkbench was not exported");
+}}
+
+if (typeof sandbox.window.TitleTranslateWorkbench.validateSourceText !== "function") {{
+  throw new Error("validateSourceText export is missing");
+}}
+"""
+    result = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_languages_api_returns_enabled_targets(authed_client_no_db, monkeypatch):
