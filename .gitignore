@@ -42,8 +42,8 @@ example.mp4
 # Stray empty file
 AutoVideoSrt
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code local state
+.claude/
 
 # Node (not used by this project)
 package.json
@@ -55,8 +55,7 @@ package-lock.json
 
 # Test notes
 testuser.md
-.omc/project-memory.json
-.omc/state/
+.omc/
 google_api_key
 
 # Fonts — 项目必需的开源字体（OFL）需要 version；个人/商业字体仍然不 track。
