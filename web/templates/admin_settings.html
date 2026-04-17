@@ -175,6 +175,43 @@
   box-shadow:0 4px 10px rgba(29,111,232,.18); }
 </style>
 
+<section class="admin-section" id="voice-library-sync">
+  <h2>声音库同步（ElevenLabs）</h2>
+  <p class="field-hint">为每个启用小语种同步 ElevenLabs 共享音色库（含声纹向量生成）。同一时间只允许一个同步任务。</p>
+  <div class="oc-table-wrap">
+    <table class="oc-table">
+      <thead><tr><th>语种</th><th>条目数</th><th>声纹覆盖</th><th>最后同步</th><th>操作</th></tr></thead>
+      <tbody id="voice-sync-tbody"></tbody>
+    </table>
+  </div>
+  <div id="voice-sync-live" class="vl-sync-live" hidden></div>
+</section>
+<style>
+  .admin-section { background:var(--bg-card,#fff); border:1.5px solid var(--border-main,#e5e7eb); border-radius:14px; padding:24px; }
+  .admin-section h2 { font-size:16px; font-weight:700; color:var(--text-main,#111827); margin:0 0 6px; }
+  #voice-library-sync { margin-top:var(--space-7,32px); }
+  .oc-table { width:100%; border-collapse:collapse; min-width:560px; }
+  .oc-table thead th {
+    text-align:left; font-size:12px; font-weight:700; letter-spacing:0.02em; color:#475569;
+    background:#f4f8fc; padding:12px 14px; border-bottom:1px solid var(--border-main,#e5e7eb);
+  }
+  .oc-table thead th:first-child { border-radius:8px 0 0 0; }
+  .oc-table thead th:last-child  { border-radius:0 8px 0 0; }
+  .oc-table tbody td { padding:12px 14px; border-bottom:1px solid #edf2f7; font-size:13px; color:var(--text-main,#111827); vertical-align:middle; }
+  .oc-table tbody tr:last-child td { border-bottom:none; }
+  .oc-table-wrap { border:1px solid var(--border-main,#e5e7eb); border-radius:12px; overflow:auto; background:#fbfdff; margin-top:12px; }
+  .oc-btn-primary {
+    background:var(--primary-gradient,#3b82f6); color:#fff; border:none; border-radius:8px;
+    padding:6px 14px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;
+    transition:opacity 120ms;
+  }
+  .oc-btn-primary:hover:not(:disabled) { opacity:0.88; }
+  .oc-btn-primary:disabled { opacity:0.45; cursor:not-allowed; }
+  .vl-sync-live { margin-top:var(--space-4,16px); padding:var(--space-4,16px); background:var(--accent-subtle,#e8f1ff); border-radius:var(--radius-md,8px); font-size:13px; color:var(--text-main,#111827); }
+  .vl-sync-live .bar { height:6px; background:var(--bg-muted,#e5e7eb); border-radius:var(--radius-full,9999px); overflow:hidden; margin-top:var(--space-2,8px); }
+  .vl-sync-live .fill { height:100%; width:0%; background:var(--primary-color,#3b82f6); transition:width .2s cubic-bezier(0.32,0.72,0,1); }
+</style>
+
 <script>
 (function(){
   var cardEl = document.getElementById("imageTranslatePromptsCard");
