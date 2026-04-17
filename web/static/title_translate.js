@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  var SOURCE_FORMAT_ERROR = "请按“标题/文案/描述”三行格式输入，每行使用英文冒号，例如 `标题: ...`。";
+  var SOURCE_EMPTY_MESSAGE = "请输入要翻译的文案。";
+  var PROMPT_PLACEHOLDER = "选择语种并输入原文后，这里会显示即将发送给模型的完整提示词。";
 
   function $(selector, root) {
     return (root || document).querySelector(selector);
@@ -65,41 +66,25 @@
     return Promise.resolve();
   }
 
+  function copyText(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text);
+    }
+    return fallbackCopy(text);
+  }
+
   function validateSourceText(rawText) {
     var text = String(rawText || "").replace(/\r\n?/g, "\n").trim();
     if (!text) {
-      return { ok: false, message: SOURCE_FORMAT_ERROR };
+      return { ok: false, message: SOURCE_EMPTY_MESSAGE };
     }
+    return { ok: true, value: text };
+  }
 
-    var lines = text.split("\n");
-    if (lines.length !== 3) {
-      return { ok: false, message: SOURCE_FORMAT_ERROR };
-    }
-
-    var labels = ["标题", "文案", "描述"];
-    var normalized = [];
-
-    for (var i = 0; i < labels.length; i += 1) {
-      var label = labels[i];
-      var line = lines[i].trim();
-      var match = line.match(new RegExp("^" + label + ":\\s*(.+)$"));
-      if (!match) {
-        return { ok: false, message: SOURCE_FORMAT_ERROR };
-      }
-
-      var value = (match[1] || "").trim();
-      if (!value) {
-        return { ok: false, message: SOURCE_FORMAT_ERROR };
-      }
-
-      normalized.push(label + ": " + value);
-    }
-
-    return {
-      ok: true,
-      value: normalized.join("\n"),
-      lines: normalized,
-    };
+  function renderPromptPreview(template, sourceText) {
+    var tpl = typeof template === "string" ? template : "";
+    if (!tpl) return "";
+    return tpl.split("{{SOURCE_TEXT}}").join(sourceText || "");
   }
 
   function createWorkbench(root) {
@@ -122,6 +107,12 @@
     var sourceErrorEl = $("#titleTranslateSourceError", root);
     var translateBtn = $("#titleTranslateTranslateBtn", root);
     var resultEl = $("#titleTranslateResult", root);
+    var resultBodyEl = $("#titleTranslateResultBody", root);
+    var resultMetaEl = $("#titleTranslateResultMeta", root);
+    var resultCopyBtn = $("#titleTranslateCopyBtn", root);
+    var promptBodyEl = $("#titleTranslatePromptBody", root);
+    var promptMetaEl = $("#titleTranslatePromptMeta", root);
+    var promptCopyBtn = $("#titleTranslatePromptCopyBtn", root);
 
     function setSourceError(message) {
       if (!sourceErrorEl) return;
@@ -159,72 +150,6 @@
       }
     }
 
-    function setResultState(mode, payload) {
-      state.resultMode = mode;
-      if (!resultEl) return;
-      resultEl.setAttribute("data-state", mode);
-
-      if (mode === "empty") {
-        resultEl.innerHTML = '<div class="title-translate-result-empty">结果将显示在这里</div>';
-        return;
-      }
-
-      if (mode === "loading") {
-        resultEl.innerHTML = (
-          '<div class="title-translate-state title-translate-state--loading">' +
-          '正在使用 Claude Sonnet 翻译…' +
-          '</div>'
-        );
-        return;
-      }
-
-      if (mode === "error") {
-        resultEl.innerHTML = (
-          '<div class="title-translate-state title-translate-state--error">' +
-          escapeHtml(payload || "接口返回错误，请稍后重试。") +
-          '</div>'
-        );
-        return;
-      }
-
-      if (mode === "success") {
-        var data = payload || {};
-        var result = data.result || {};
-        var language = data.language || {};
-        var languageLabel = language.name_zh || language.code || "";
-        var model = data.model || "Claude Sonnet";
-
-        state.currentResultText = [
-          "标题: " + (result.title || ""),
-          "文案: " + (result.body || ""),
-          "描述: " + (result.description || ""),
-        ].join("\n");
-
-        resultEl.innerHTML = (
-          '<div class="title-translate-result-head">' +
-          '  <div>' +
-          '    <div class="title-translate-panel-title">翻译结果</div>' +
-          '    <div class="title-translate-result-meta">目标语种：' + escapeHtml(languageLabel) + ' · ' + escapeHtml(model) + '</div>' +
-          '  </div>' +
-          '  <button type="button" class="title-translate-copy-btn" data-copy-all="true">复制全部</button>' +
-          '</div>' +
-          '<div class="title-translate-block">' +
-          '  <div class="title-translate-block-label">标题</div>' +
-          '  <div class="title-translate-block-value">' + escapeHtml(result.title || "") + '</div>' +
-          '</div>' +
-          '<div class="title-translate-block">' +
-          '  <div class="title-translate-block-label">文案</div>' +
-          '  <div class="title-translate-block-value">' + escapeHtml(result.body || "") + '</div>' +
-          '</div>' +
-          '<div class="title-translate-block">' +
-          '  <div class="title-translate-block-label">描述</div>' +
-          '  <div class="title-translate-block-value">' + escapeHtml(result.description || "") + '</div>' +
-          '</div>'
-        );
-        return;
-      }
-    }
-
     function getSelectedLanguage() {
       for (var i = 0; i < state.languages.length; i += 1) {
         if (state.languages[i].code === state.selectedLanguageCode) {
@@ -232,6 +157,99 @@
         }
       }
       return null;
+    }
+
+    function setResultState(mode, payload) {
+      state.resultMode = mode;
+      if (!resultEl) return;
+      resultEl.setAttribute("data-state", mode);
+
+      var language = getSelectedLanguage();
+      var languageLabel = language ? (language.name_zh || language.code || "") : "";
+
+      if (mode === "empty") {
+        state.currentResultText = "";
+        if (resultBodyEl) {
+          resultBodyEl.textContent = "结果将显示在这里";
+          resultBodyEl.classList.add("title-translate-result-body--empty");
+        }
+        if (resultMetaEl) resultMetaEl.textContent = "等待翻译";
+        if (resultCopyBtn) resultCopyBtn.disabled = true;
+        return;
+      }
+
+      if (mode === "loading") {
+        state.currentResultText = "";
+        if (resultBodyEl) {
+          resultBodyEl.textContent = "正在使用 Claude Sonnet 翻译…";
+          resultBodyEl.classList.remove("title-translate-result-body--empty");
+        }
+        if (resultMetaEl) {
+          resultMetaEl.textContent = languageLabel ? ("目标语种：" + languageLabel + " · 翻译中") : "翻译中";
+        }
+        if (resultCopyBtn) resultCopyBtn.disabled = true;
+        return;
+      }
+
+      if (mode === "error") {
+        state.currentResultText = "";
+        if (resultBodyEl) {
+          resultBodyEl.textContent = payload || "接口返回错误，请稍后重试。";
+          resultBodyEl.classList.remove("title-translate-result-body--empty");
+        }
+        if (resultMetaEl) resultMetaEl.textContent = "翻译失败";
+        if (resultCopyBtn) resultCopyBtn.disabled = true;
+        return;
+      }
+
+      if (mode === "success") {
+        var data = payload || {};
+        var resultText = typeof data.result === "string" ? data.result : "";
+        var respLanguage = data.language || {};
+        var respLabel = respLanguage.name_zh || respLanguage.code || languageLabel;
+        var model = data.model || "Claude Sonnet";
+
+        state.currentResultText = resultText;
+        if (resultBodyEl) {
+          resultBodyEl.textContent = resultText || "(模型未返回内容)";
+          resultBodyEl.classList.remove("title-translate-result-body--empty");
+        }
+        if (resultMetaEl) {
+          resultMetaEl.textContent = "目标语种：" + respLabel + " · " + model;
+        }
+        if (resultCopyBtn) resultCopyBtn.disabled = !resultText;
+        return;
+      }
+    }
+
+    function renderPromptPanel() {
+      if (!promptBodyEl) return;
+      var language = getSelectedLanguage();
+      var template = language && typeof language.prompt === "string" ? language.prompt : "";
+      var sourceText = sourceEl ? sourceEl.value : "";
+      var trimmedSource = String(sourceText || "").replace(/\r\n?/g, "\n");
+
+      if (!template) {
+        promptBodyEl.textContent = PROMPT_PLACEHOLDER;
+        promptBodyEl.classList.add("title-translate-prompt-body--empty");
+        if (promptMetaEl) {
+          promptMetaEl.textContent = language
+            ? "该语种暂未配置提示词模板。"
+            : "根据左侧输入和选中语种实时生成。";
+        }
+        if (promptCopyBtn) promptCopyBtn.disabled = true;
+        return;
+      }
+
+      var effectiveSource = trimmedSource.trim() ? trimmedSource : "(此处将替换为左侧输入的原文)";
+      var rendered = renderPromptPreview(template, effectiveSource);
+      promptBodyEl.textContent = rendered;
+      promptBodyEl.classList.remove("title-translate-prompt-body--empty");
+      if (promptMetaEl) {
+        var label = language.name_zh || language.code || "";
+        promptMetaEl.textContent = "目标语种：" + label + "，将原文替换到 {{SOURCE_TEXT}}。";
+      }
+      if (promptCopyBtn) promptCopyBtn.disabled = false;
     }
 
     function renderPills() {
@@ -282,15 +300,18 @@
           if (!list.length) {
             setResultState("error", "暂无可用语种，请先在后台启用目标语种。");
             setControlsDisabled(true);
+            renderPromptPanel();
             return;
           }
           setControlsDisabled(false);
           setResultState("empty");
+          renderPromptPanel();
         })
         .catch(function (err) {
           pillsEl.innerHTML = '<span class="title-translate-pill is-disabled">语种加载失败</span>';
           setResultState("error", "语种列表加载失败： " + (err && err.message ? err.message : "请刷新页面重试"));
           setControlsDisabled(true);
+          renderPromptPanel();
         });
     }
 
@@ -301,6 +322,14 @@
       if (!code || code === state.selectedLanguageCode) return;
       state.selectedLanguageCode = code;
       renderPills();
+      renderPromptPanel();
+      if (state.resultMode !== "success") {
+        setResultState("empty");
+      } else if (resultMetaEl) {
+        var lang = getSelectedLanguage();
+        var label = lang ? (lang.name_zh || lang.code || "") : "";
+        resultMetaEl.textContent = "目标语种：" + label + " · 点击翻译刷新结果";
+      }
     }
 
     function handleTranslate() {
@@ -344,33 +373,31 @@
         });
     }
 
-    function copyCurrentResult() {
+    function flashCopyButton(button, originalText) {
+      if (!button) return;
+      button.textContent = "已复制";
+      setTimeout(function () {
+        button.textContent = originalText || "复制";
+      }, 1200);
+    }
+
+    function handleResultCopy() {
       if (!state.currentResultText) return;
-      var copyBtn = resultEl ? resultEl.querySelector("[data-copy-all]") : null;
-      var originalText = copyBtn ? copyBtn.textContent : "";
-
-      var copyPromise;
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-        copyPromise = navigator.clipboard.writeText(state.currentResultText);
-      } else {
-        copyPromise = fallbackCopy(state.currentResultText);
-      }
-
-      copyPromise.then(function () {
-        if (copyBtn) {
-          copyBtn.textContent = "已复制";
-          setTimeout(function () {
-            copyBtn.textContent = originalText || "复制全部";
-          }, 1200);
-        }
+      var original = resultCopyBtn ? resultCopyBtn.textContent : "复制";
+      copyText(state.currentResultText).then(function () {
+        flashCopyButton(resultCopyBtn, original);
       });
     }
 
-    function handleResultClick(event) {
-      var copyBtn = event.target.closest("[data-copy-all]");
-      if (!copyBtn) return;
-      event.preventDefault();
-      copyCurrentResult();
+    function handlePromptCopy() {
+      if (!promptBodyEl) return;
+      if (promptBodyEl.classList.contains("title-translate-prompt-body--empty")) return;
+      var text = promptBodyEl.textContent || "";
+      if (!text) return;
+      var original = promptCopyBtn ? promptCopyBtn.textContent : "复制";
+      copyText(text).then(function () {
+        flashCopyButton(promptCopyBtn, original);
+      });
     }
 
     function bindEvents() {
@@ -385,10 +412,14 @@
           if (sourceErrorEl && sourceErrorEl.textContent) {
             setSourceError("");
           }
+          renderPromptPanel();
         });
       }
-      if (resultEl) {
-        resultEl.addEventListener("click", handleResultClick);
+      if (resultCopyBtn) {
+        resultCopyBtn.addEventListener("click", handleResultCopy);
+      }
+      if (promptCopyBtn) {
+        promptCopyBtn.addEventListener("click", handlePromptCopy);
       }
     }
 
@@ -397,12 +428,14 @@
       state.initialized = true;
       bindEvents();
       setResultState("empty");
+      renderPromptPanel();
       loadLanguages();
     }
 
     return {
       init: init,
       validateSourceText: validateSourceText,
+      renderPromptPreview: renderPromptPreview,
     };
   }
 
@@ -417,6 +450,7 @@
   window.TitleTranslateWorkbench = {
     init: init,
     validateSourceText: validateSourceText,
+    renderPromptPreview: renderPromptPreview,
   };
 
   if (document.readyState === "loading") {

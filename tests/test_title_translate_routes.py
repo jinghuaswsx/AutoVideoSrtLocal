@@ -24,15 +24,16 @@ def test_workspace_shell_renders_required_dom(authed_client_no_db):
     )
 
 
-def test_dashboard_sidebar_places_title_translate_near_top(authed_client_no_db):
+def test_dashboard_sidebar_places_title_translate_below_fr(authed_client_no_db):
     resp = authed_client_no_db.get("/title-translate")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
+    fr_idx = html.index('href="/fr-translate"')
     title_idx = html.index('href="/title-translate"')
-    de_idx = html.index('href="/de-translate"')
+    lab_idx = html.index('href="/translate-lab"')
 
-    assert title_idx < de_idx
+    assert fr_idx < title_idx < lab_idx
 
 
 def test_static_script_contains_client_hooks():
@@ -40,7 +41,8 @@ def test_static_script_contains_client_hooks():
     assert js_path.exists(), "web/static/title_translate.js should exist"
     content = js_path.read_text(encoding="utf-8")
     assert "function validateSourceText" in content
-    assert "请按“标题/文案/描述”三行格式输入" in content
+    assert "function renderPromptPreview" in content
+    assert "{{SOURCE_TEXT}}" in content
     assert "navigator.clipboard.writeText" in content
 
 
@@ -86,21 +88,31 @@ if (typeof sandbox.window.TitleTranslateWorkbench.validateSourceText !== "functi
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def test_languages_api_returns_enabled_targets(authed_client_no_db, monkeypatch):
+def test_languages_api_returns_enabled_targets_with_prompt(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
 
-    expected = [
+    rows = [
         {"code": "de", "name_zh": "德语", "sort_order": 2},
         {"code": "fr", "name_zh": "法语", "sort_order": 3},
     ]
-    monkeypatch.setattr(r.title_translate_settings, "list_title_translate_languages", lambda: expected)
+    monkeypatch.setattr(r.title_translate_settings, "list_title_translate_languages", lambda: rows)
+    monkeypatch.setattr(
+        r.title_translate_settings,
+        "get_prompt",
+        lambda code: f"PROMPT:{code}\n{{{{SOURCE_TEXT}}}}",
+    )
 
     resp = authed_client_no_db.get("/api/title-translate/languages")
     assert resp.status_code == 200
-    assert resp.get_json() == {"languages": expected}
+    assert resp.get_json() == {
+        "languages": [
+            {"code": "de", "name_zh": "德语", "sort_order": 2, "prompt": "PROMPT:de\n{{SOURCE_TEXT}}"},
+            {"code": "fr", "name_zh": "法语", "sort_order": 3, "prompt": "PROMPT:fr\n{{SOURCE_TEXT}}"},
+        ]
+    }
 
 
-def test_translate_rejects_invalid_source_text_structure(authed_client_no_db, monkeypatch):
+def test_translate_rejects_empty_source_text(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
 
     monkeypatch.setattr(
@@ -111,10 +123,7 @@ def test_translate_rejects_invalid_source_text_structure(authed_client_no_db, mo
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
-        json={
-            "language": "de",
-            "source_text": "标题: Hello\n文案: Body",
-        },
+        json={"language": "de", "source_text": "   "},
     )
 
     assert resp.status_code == 400
@@ -141,7 +150,7 @@ def test_translate_rejects_invalid_language(authed_client_no_db, monkeypatch):
     assert "language" in resp.get_json()["error"]
 
 
-def test_translate_success_sends_prompt_and_parses_response(authed_client_no_db, monkeypatch):
+def test_translate_success_sends_prompt_and_returns_raw_output(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
 
     captured = {}
@@ -182,7 +191,7 @@ def test_translate_success_sends_prompt_and_parses_response(authed_client_no_db,
         "/api/title-translate/translate",
         json={
             "language": "de",
-            "source_text": "标题: 原始标题\n文案: 原始文案\n描述: 原始描述",
+            "source_text": "任意原文\n多行内容",
         },
     )
 
@@ -190,20 +199,16 @@ def test_translate_success_sends_prompt_and_parses_response(authed_client_no_db,
     assert captured["model"] == r.config.CLAUDE_MODEL
     assert captured["extra_body"] == {"plugins": [{"id": "response-healing"}]}
     assert captured["messages"] == [
-        {"role": "user", "content": "PROMPT\n标题: 原始标题\n文案: 原始文案\n描述: 原始描述\nEND"}
+        {"role": "user", "content": "PROMPT\n任意原文\n多行内容\nEND"}
     ]
     assert resp.get_json() == {
-        "result": {
-            "title": "Hello World",
-            "body": "Fresh copy",
-            "description": "Short description",
-        },
+        "result": "标题: Hello World\n文案: Fresh copy\n描述: Short description",
         "language": {"code": "de", "name_zh": "德语"},
         "model": r.config.CLAUDE_MODEL,
     }
 
 
-def test_translate_rejects_invalid_model_output(authed_client_no_db, monkeypatch):
+def test_translate_rejects_empty_model_output(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
 
     fake_client = SimpleNamespace(
@@ -212,7 +217,7 @@ def test_translate_rejects_invalid_model_output(authed_client_no_db, monkeypatch
                 create=lambda **kwargs: SimpleNamespace(
                     choices=[
                         SimpleNamespace(
-                            message=SimpleNamespace(content="标题: Hello\n文案: Body")
+                            message=SimpleNamespace(content="   ")
                         )
                     ]
                 )
@@ -234,14 +239,11 @@ def test_translate_rejects_invalid_model_output(authed_client_no_db, monkeypatch
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
-        json={
-            "language": "de",
-            "source_text": "标题: 原始标题\n文案: 原始文案\n描述: 原始描述",
-        },
+        json={"language": "de", "source_text": "原文"},
     )
 
     assert resp.status_code == 502
-    assert "模型输出格式不合法" in resp.get_json()["error"]
+    assert "模型输出" in resp.get_json()["error"]
 
 
 def test_translate_returns_json_error_when_model_call_fails(authed_client_no_db, monkeypatch):

@@ -84,7 +84,7 @@
 
   .title-translate-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) 184px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.1fr) 148px minmax(0, 1fr) minmax(0, 1.1fr);
     gap: 16px;
     align-items: start;
   }
@@ -193,7 +193,54 @@
     min-height: 320px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
+  }
+
+  .title-translate-prompt-preview {
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .title-translate-prompt-body {
+    flex: 1;
+    min-height: 260px;
+    border: 1px solid var(--border-main);
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 14px 15px;
+    color: #1e293b;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 540px;
+  }
+
+  .title-translate-prompt-body--empty {
+    color: #94a3b8;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .title-translate-result-body {
+    flex: 1;
+    min-height: 260px;
+    border: 1px solid var(--border-main);
+    border-radius: 12px;
+    background: #fff;
+    padding: 14px 15px;
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 540px;
   }
 
   .title-translate-state {
@@ -286,7 +333,7 @@
     line-height: 1.7;
   }
 
-  @media (max-width: 1100px) {
+  @media (max-width: 1400px) {
     .title-translate-grid {
       grid-template-columns: 1fr;
     }
@@ -298,6 +345,11 @@
 
     .title-translate-translate-btn {
       min-width: 168px;
+    }
+
+    .title-translate-prompt-body,
+    .title-translate-result-body {
+      max-height: 420px;
     }
   }
 
@@ -335,7 +387,7 @@
       <div class="title-translate-eyebrow">多语言标题翻译工作台</div>
       <h1 class="title-translate-heading">多语言标题翻译</h1>
       <p class="title-translate-desc">
-        左侧输入固定三段结构的原文，顶部选择目标语种，中间点击翻译，右侧查看结果并一键复制。
+        左侧输入原文，顶部选择目标语种，中间点击翻译，右侧查看结果并一键复制。最右侧会实时显示点击翻译时将使用的完整提示词。
       </p>
     </div>
     <div class="title-translate-lang-pills" id="titleTranslateLangPills" aria-label="目标语种"></div>
@@ -346,7 +398,7 @@
       <div class="title-translate-panel-head">
         <div>
           <div class="title-translate-panel-title">英文原文</div>
-          <div class="title-translate-panel-subtitle">请按“标题 / 文案 / 描述”三行填写，三段都必须保留。</div>
+          <div class="title-translate-panel-subtitle">可粘贴任意文案，无格式要求。</div>
         </div>
       </div>
       <textarea
@@ -354,7 +406,7 @@
         class="title-translate-source"
         spellcheck="false"
         autocomplete="off"
-        placeholder="标题: The future of video localization&#10;文案: Ship faster with a clearer workflow&#10;描述: Keep titles, copy, and descriptions in sync"
+        placeholder="在这里粘贴要翻译的任意文案…"
       ></textarea>
       <div id="titleTranslateSourceError" class="title-translate-source-error" aria-live="polite"></div>
     </div>
@@ -364,7 +416,7 @@
         翻译
       </button>
       <div class="title-translate-action-hint">
-        点击后会先校验三段结构，再调用 Claude Sonnet 生成目标语种的标题、文案和描述。
+        点击后会按右侧预览的提示词调用 Claude Sonnet 生成译文。
       </div>
     </div>
 
@@ -374,7 +426,25 @@
       aria-live="polite"
       data-state="empty"
     >
-      <div class="title-translate-result-empty">结果将显示在这里</div>
+      <div class="title-translate-panel-head">
+        <div>
+          <div class="title-translate-panel-title">翻译结果</div>
+          <div class="title-translate-result-meta" id="titleTranslateResultMeta">等待翻译</div>
+        </div>
+        <button type="button" class="title-translate-copy-btn" id="titleTranslateCopyBtn" disabled>复制</button>
+      </div>
+      <div class="title-translate-result-body" id="titleTranslateResultBody">结果将显示在这里</div>
+    </div>
+
+    <div class="title-translate-panel title-translate-prompt-preview" aria-label="提示词预览">
+      <div class="title-translate-panel-head">
+        <div>
+          <div class="title-translate-panel-title">提示词预览</div>
+          <div class="title-translate-panel-subtitle" id="titleTranslatePromptMeta">根据左侧输入和选中语种实时生成。</div>
+        </div>
+        <button type="button" class="title-translate-copy-btn" id="titleTranslatePromptCopyBtn">复制</button>
+      </div>
+      <div class="title-translate-prompt-body title-translate-prompt-body--empty" id="titleTranslatePromptBody">选择语种并输入原文后，这里会显示即将发送给模型的完整提示词。</div>
     </div>
   </section>
 </div>
