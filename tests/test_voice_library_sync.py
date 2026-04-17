@@ -164,3 +164,66 @@ def test_embed_missing_voices_continues_on_single_failure(tmp_path):
     assert count == 1
     assert "good" in saved
     assert "bad" not in saved
+
+
+def test_sync_all_invokes_on_page(monkeypatch):
+    pages = [
+        ([{"voice_id": "v1", "name": "A", "labels": {}}], "t2"),
+        ([{"voice_id": "v2", "name": "B", "labels": {}}], None),
+    ]
+    calls = iter(pages)
+
+    def fake_fetch(**kwargs):
+        return next(calls)
+
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync.fetch_shared_voices_page", fake_fetch
+    )
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync.upsert_voice", lambda v: None
+    )
+
+    seen = []
+    def on_page(idx, voices):
+        seen.append((idx, [v["voice_id"] for v in voices]))
+
+    total = sync_all_shared_voices(api_key="dummy", on_page=on_page)
+    assert total == 2
+    assert seen == [(0, ["v1"]), (1, ["v2"])]
+
+
+def test_embed_missing_invokes_on_progress(tmp_path, monkeypatch):
+    voices = [
+        {"voice_id": "v1", "preview_url": "http://a.mp3"},
+        {"voice_id": "v2", "preview_url": "http://b.mp3"},
+    ]
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync._list_voices_without_embedding",
+        lambda limit=None, language=None: voices,
+    )
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync._download_preview",
+        lambda url, dest: str(dest),
+    )
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync.embed_audio_file",
+        lambda path: np.full(256, 0.5, dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        "pipeline.voice_library_sync._update_embedding",
+        lambda vid, blob: None,
+    )
+
+    progress = []
+    def on_progress(done, total, vid, ok):
+        progress.append((done, total, vid, ok))
+
+    from pipeline.voice_library_sync import embed_missing_voices
+    count = embed_missing_voices(
+        cache_dir=str(tmp_path), on_progress=on_progress
+    )
+    assert count == 2
+    assert progress == [
+        (1, 2, "v1", True),
+        (2, 2, "v2", True),
+    ]

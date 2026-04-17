@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block title %}声音仓库{% endblock %}
+{% block content %}
+<div class="oc voice-library-root" data-current-user-id="{{ current_user.id }}">
+  <div class="oc-tabs">
+    <a href="#browse" class="oc-tab">浏览试听</a>
+    <a href="#match" class="oc-tab">视频匹配</a>
+  </div>
+  <section id="tab-browse" class="oc-tab-panel vl-browse">
+  <aside class="vl-filter-panel">
+    <div class="vl-filter-group">
+      <label>语言</label>
+      <div id="vl-browse-languages" class="vl-pill-row"></div>
+    </div>
+    <div class="vl-filter-group">
+      <label>性别</label>
+      <div id="vl-browse-gender" class="vl-pill-row"></div>
+    </div>
+    <div class="vl-filter-group"><label>用途</label><select id="vl-use-case" multiple></select></div>
+    <div class="vl-filter-group"><label>口音</label><select id="vl-accent" multiple></select></div>
+    <div class="vl-filter-group"><label>年龄</label><select id="vl-age" multiple></select></div>
+    <div class="vl-filter-group"><label>音色</label><select id="vl-descriptive" multiple></select></div>
+    <div class="vl-filter-group">
+      <label>关键词</label>
+      <input id="vl-q" type="text" placeholder="搜索名字或描述" />
+    </div>
+    <button id="vl-reset-filters" class="oc-btn-ghost">重置筛选</button>
+  </aside>
+  <main class="vl-main">
+    <div id="vl-grid" class="vl-grid"></div>
+    <div id="vl-empty" class="vl-empty" hidden></div>
+    <nav class="vl-pager">
+      <button id="vl-prev" class="oc-btn-secondary">上一页</button>
+      <span id="vl-page-info"></span>
+      <button id="vl-next" class="oc-btn-secondary">下一页</button>
+    </nav>
+  </main>
+</section>
+  <section id="tab-match" class="oc-tab-panel vl-match" hidden>
+  <div class="vl-match-step" id="vl-match-step1">
+    <h3>1. 选择目标语种与性别</h3>
+    <div class="vl-filter-group"><label>目标语种</label><div id="vl-match-languages" class="vl-pill-row"></div></div>
+    <div class="vl-filter-group"><label>性别（必选）</label><div id="vl-match-gender" class="vl-pill-row"></div></div>
+  </div>
+
+  <div class="vl-match-step" id="vl-match-step2">
+    <h3>2. 上传视频</h3>
+    <div class="vl-upload-zone" id="vl-upload-zone">
+      <input type="file" id="vl-upload-input" accept="video/*" hidden />
+      <button class="oc-btn-primary" id="vl-upload-pick">选择视频</button>
+      <span class="vl-upload-hint">拖拽视频到这里，或点击选择（≤ 500MB）</span>
+    </div>
+    <div class="vl-progress" id="vl-progress" hidden>
+      <div class="vl-progress-bar"><div id="vl-progress-fill"></div></div>
+      <div id="vl-progress-label"></div>
+    </div>
+  </div>
+
+  <div class="vl-match-step" id="vl-match-step3" hidden>
+    <h3>3. 匹配结果</h3>
+    <div class="vl-sample-audio">
+      <span>源视频采样 10s：</span>
+      <audio id="vl-sample-audio" controls></audio>
+    </div>
+    <div class="vl-grid" id="vl-result-grid"></div>
+    <button class="oc-btn-secondary" id="vl-match-reset">重新上传一个视频</button>
+  </div>
+</section>
+</div>
+{% include "_voice_library_styles.html" %}
+{% include "_voice_library_scripts.html" %}
+{% endblock %}

@@ -282,3 +282,82 @@
 
   render();
 })();
+
+(function () {
+  if (!document.getElementById("voice-library-sync")) return;
+  const $ = s => document.querySelector(s);
+
+  async function fetchStatus() {
+    const r = await fetch("/admin/voice-library/sync-status", {credentials: "same-origin"});
+    return r.json();
+  }
+
+  function render(status) {
+    const tbody = $("#voice-sync-tbody");
+    tbody.innerHTML = "";
+    const busy = status.current && status.current.status === "running";
+    const busyLang = busy ? status.current.language : null;
+    (status.summary || []).forEach(row => {
+      const tr = document.createElement("tr");
+      const ratio = row.total_rows ? ((row.embedded_rows / row.total_rows * 100).toFixed(1) + "%") : "-";
+      tr.innerHTML = `
+        <td>${escapeHtml(row.name_zh)} (${escapeHtml(row.language)})</td>
+        <td>${row.total_rows}</td>
+        <td>${row.embedded_rows}/${row.total_rows} (${ratio})</td>
+        <td>${row.last_synced_at ? escapeHtml(row.last_synced_at) : "未同步"}</td>
+        <td><button data-lang="${escapeHtml(row.language)}" class="oc-btn-primary vl-sync-btn"
+              ${busy ? "disabled" : ""}>${busy && busyLang === row.language ? "同步中…" : (busy ? "排队中" : "同步")}</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll(".vl-sync-btn").forEach(btn => {
+      btn.addEventListener("click", () => triggerSync(btn.dataset.lang));
+    });
+    renderLive(status.current);
+  }
+
+  function renderLive(cur) {
+    const el = $("#voice-sync-live");
+    if (!cur) { el.hidden = true; return; }
+    el.hidden = false;
+    const pct = cur.total ? Math.round(cur.done / cur.total * 100) : 0;
+    const phase = cur.phase === "pull_metadata" ? "拉取元数据" :
+                  cur.phase === "embed" ? "生成声纹" : (cur.phase || "");
+    el.innerHTML = `
+      <div>${escapeHtml(cur.language)} · ${escapeHtml(phase)} · ${cur.done}/${cur.total || "?"}</div>
+      <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+      ${cur.error ? `<div style="color:var(--danger,#ef4444);margin-top:8px">${escapeHtml(cur.error)}</div>` : ""}
+    `;
+  }
+
+  async function triggerSync(lang) {
+    const r = await fetch(`/admin/voice-library/sync/${encodeURIComponent(lang)}`, {
+      method: "POST", credentials: "same-origin"
+    });
+    if (r.status === 409) { alert("已有另一个同步任务在运行"); return; }
+    if (!r.ok) { alert("启动同步失败"); return; }
+    refresh();
+  }
+
+  async function refresh() {
+    try { render(await fetchStatus()); } catch (e) { /* ignore */ }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function initSocket() {
+    if (!window.io) return;
+    const sock = window.io({transports: ["websocket", "polling"]});
+    sock.on("connect", () => sock.emit("join_admin"));
+    sock.on("voice_library.sync.progress", p => renderLive(p));
+    sock.on("voice_library.sync.summary", () => refresh());
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refresh();
+    initSocket();
+    setInterval(refresh, 10000);
+  });
+})()
