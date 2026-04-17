@@ -7,6 +7,7 @@
 {% set api_base = '/api/fr-translate' %}
 {% set url_for_detail = '/fr-translate/__TASK_ID__' %}
 {% set voice_language = 'fr' %}
+{% set default_source_language = 'en' %}
 {% endif %}
 {% block title %}{{ project.display_name or project.original_filename or project.id }} - 法语翻译{% endblock %}
 {% block page_title %}{{ project.display_name or project.original_filename or project.id }}（法语）{% endblock %}
