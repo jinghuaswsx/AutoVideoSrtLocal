@@ -3,13 +3,16 @@ ElevenLabs 共享音色库分页同步
 """
 import hashlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 import requests
 
 from appcore.db import execute, query
 from pipeline.voice_embedding import embed_audio_file, serialize_embedding
+
+log = logging.getLogger(__name__)
 
 SHARED_VOICES_URL = "https://api.elevenlabs.io/v1/shared-voices"
 DEFAULT_PAGE_SIZE = 100
@@ -95,10 +98,16 @@ def sync_all_shared_voices(
     gender: Optional[str] = None,
     category: Optional[str] = None,
     page_size: int = DEFAULT_PAGE_SIZE,
+    on_page: Optional[Callable[[int, List[Dict[str, Any]]], None]] = None,
 ) -> int:
-    """遍历所有分页，upsert 到数据库。返回处理的条目总数。"""
+    """遍历所有分页，upsert 到数据库。返回处理的条目总数。
+
+    on_page(page_index, voices)：每处理完一页后回调，page_index 从 0 开始。
+    回调抛异常只记 warning，不中断同步。
+    """
     total = 0
     next_token: Optional[str] = None
+    page_index = 0
     while True:
         voices, next_token = fetch_shared_voices_page(
             api_key=api_key,
@@ -113,6 +122,12 @@ def sync_all_shared_voices(
                 continue
             upsert_voice(voice)
             total += 1
+        if on_page is not None:
+            try:
+                on_page(page_index, voices)
+            except Exception as exc:
+                log.warning("on_page callback failed at page %s: %s", page_index, exc)
+        page_index += 1
         if not next_token:
             break
     return total
@@ -148,29 +163,49 @@ def _update_embedding(voice_id: str, blob: bytes) -> None:
     )
 
 
-def embed_missing_voices(cache_dir: str, limit: Optional[int] = None) -> int:
+def embed_missing_voices(
+    cache_dir: str,
+    limit: Optional[int] = None,
+    on_progress: Optional[Callable[[int, int, str, bool], None]] = None,
+) -> int:
     """批量下载 preview_url 并生成 embedding，回写到数据库。
 
     单条失败不中断整批（日志 warning）。
+    on_progress(done_index, total, voice_id, ok)：每处理完一条后回调，
+    done_index 从 1 开始。回调抛异常只记 warning，不中断批次。
     返回成功处理的条目数。
     """
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
 
+    rows = _list_voices_without_embedding(limit=limit)
+    total_rows = len(rows)
+
     count = 0
-    for row in _list_voices_without_embedding(limit=limit):
+    done_index = 0
+    for row in rows:
         voice_id = row["voice_id"]
         url = row.get("preview_url")
         if not url:
             continue
+        done_index += 1
         file_name = hashlib.sha1(voice_id.encode("utf-8")).hexdigest() + ".mp3"
         dest = cache_path / file_name
+        ok = False
         try:
             _download_preview(url, dest)
             vec = embed_audio_file(str(dest))
             _update_embedding(voice_id, serialize_embedding(vec))
             count += 1
+            ok = True
         except Exception as exc:
             # 容错：单条失败不影响批次
-            print(f"[embed_missing_voices] failed {voice_id}: {exc}")
+            log.warning("[embed_missing_voices] failed %s: %s", voice_id, exc)
+        if on_progress is not None:
+            try:
+                on_progress(done_index, total_rows, voice_id, ok)
+            except Exception as exc:
+                log.warning(
+                    "on_progress callback failed at %s: %s", voice_id, exc
+                )
     return count
