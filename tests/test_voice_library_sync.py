@@ -199,7 +199,7 @@ def test_embed_missing_invokes_on_progress(tmp_path, monkeypatch):
     ]
     monkeypatch.setattr(
         "pipeline.voice_library_sync._list_voices_without_embedding",
-        lambda limit=None: voices,
+        lambda limit=None, language=None: voices,
     )
     monkeypatch.setattr(
         "pipeline.voice_library_sync._download_preview",

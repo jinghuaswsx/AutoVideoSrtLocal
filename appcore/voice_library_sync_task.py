@@ -120,7 +120,7 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
             _set(phase="embed", done=done, total=total)
 
         cache_dir = os.path.join("uploads", "voice_preview_cache")
-        embed_missing_voices(cache_dir, on_progress=on_progress)
+        embed_missing_voices(cache_dir, on_progress=on_progress, language=language)
 
         _set(status="done", phase="done")
         _emit("voice_library.sync.summary", {"summary": summarize()})

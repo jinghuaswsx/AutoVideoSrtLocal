@@ -133,15 +133,22 @@ def sync_all_shared_voices(
     return total
 
 
-def _list_voices_without_embedding(limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    """查询尚未回写 embedding 的音色。"""
+def _list_voices_without_embedding(
+    limit: Optional[int] = None,
+    language: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """查询尚未回写 embedding 的音色；可按 language 过滤。"""
     sql = (
         "SELECT voice_id, preview_url FROM elevenlabs_voices "
         "WHERE preview_url IS NOT NULL AND audio_embedding IS NULL"
     )
+    params: tuple = ()
+    if language:
+        sql += " AND language = %s"
+        params = (language,)
     if limit:
         sql += f" LIMIT {int(limit)}"
-    return query(sql)
+    return query(sql, params) if params else query(sql)
 
 
 def _download_preview(url: str, dest_path) -> str:
@@ -167,10 +174,13 @@ def embed_missing_voices(
     cache_dir: str,
     limit: Optional[int] = None,
     on_progress: Optional[Callable[[int, int, str, bool], None]] = None,
+    *,
+    language: Optional[str] = None,
 ) -> int:
     """批量下载 preview_url 并生成 embedding，回写到数据库。
 
     单条失败不中断整批（日志 warning）。
+    language 过滤：仅处理该语种的音色。None 时处理全部语种。
     on_progress(done_index, total, voice_id, ok)：每处理完一条后回调，
     done_index 从 1 开始。回调抛异常只记 warning，不中断批次。
     返回成功处理的条目数。
@@ -178,7 +188,7 @@ def embed_missing_voices(
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
 
-    rows = _list_voices_without_embedding(limit=limit)
+    rows = _list_voices_without_embedding(limit=limit, language=language)
     total_rows = len(rows)
 
     count = 0

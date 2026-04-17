@@ -104,13 +104,16 @@
     card.innerHTML = `
       <div class="vl-card-title">
         <span>${escapeHtml(v.name)}</span>
-        <span class="vl-chip ${v.gender === "female" ? "is-female" : ""}">${v.gender || ""}</span>
+        <span class="vl-chip ${v.gender === "female" ? "is-female" : ""}">${escapeHtml(v.gender || "")}</span>
       </div>
       <div class="vl-chip-row">${chipsHtml}</div>
       <div class="vl-desc">${escapeHtml((v.description || "").slice(0, 80))}</div>
-      <button class="vl-play-btn" data-voice="${v.voice_id}" data-url="${v.preview_url || ""}">▶ 试听</button>
+      <button class="vl-play-btn">▶ 试听</button>
     `;
-    card.querySelector(".vl-play-btn").addEventListener("click", (e) => togglePlay(e.currentTarget));
+    const playBtn = card.querySelector(".vl-play-btn");
+    playBtn.dataset.voice = v.voice_id || "";
+    playBtn.dataset.url = v.preview_url || "";
+    playBtn.addEventListener("click", (e) => togglePlay(e.currentTarget));
     return card;
   }
 
