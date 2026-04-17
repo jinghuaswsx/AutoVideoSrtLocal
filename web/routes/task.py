@@ -275,8 +275,11 @@ def get_round_file(task_id: str, round_index: int, kind: str):
     if not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
 
+    # conditional=False 禁用 304，避免浏览器对 round 文件命中 If-None-Match 后
+    # 返回空 body，前端 res.json() 爆 "Unexpected end of JSON input"。
     return send_file(os.path.abspath(path), mimetype=mime,
-                     as_attachment=False, download_name=filename)
+                     as_attachment=False, download_name=filename,
+                     conditional=False)
 
 
 @bp.route("/<task_id>/start", methods=["POST"])

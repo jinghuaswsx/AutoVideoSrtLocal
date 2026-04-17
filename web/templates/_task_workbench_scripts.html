@@ -1219,7 +1219,7 @@
     window._durationPromptLoading[roundIndex] = true;
     renderTtsDurationLog();
     try {
-      const res = await fetch(_durationRoundFileUrl(roundIndex, 'localized_rewrite_messages'));
+      const res = await fetch(_durationRoundFileUrl(roundIndex, 'localized_rewrite_messages'), { cache: 'no-store' });
       const payload = await res.json();
       if (!res.ok) {
         throw new Error(payload.error || 'Prompt snapshot load failed');
