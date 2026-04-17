@@ -388,18 +388,24 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
 
 def build_tts_segments(tts_script: dict, script_segments: list[dict]) -> list[dict]:
     segments_by_index = {segment["index"]: segment for segment in script_segments}
+    if not segments_by_index:
+        return []
+    fallback_index = max(segments_by_index)
     result = []
 
     for block in tts_script.get("blocks", []):
         indices = block["source_segment_indices"]
-        covered = [segments_by_index[index] for index in indices]
+        valid = [i for i in indices if i in segments_by_index]
+        if not valid:
+            valid = [fallback_index]
+        covered = [segments_by_index[i] for i in valid]
         result.append(
             {
                 "index": block["index"],
                 "text": "\n".join(segment["text"] for segment in covered),
                 "translated": block["text"],
                 "tts_text": block["text"],
-                "source_segment_indices": indices,
+                "source_segment_indices": valid,
                 "start_time": min(segment["start_time"] for segment in covered),
                 "end_time": max(segment["end_time"] for segment in covered),
             }
