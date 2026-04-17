@@ -124,5 +124,6 @@ def complete_upload():
             "original_filename": original_filename,
             "uploaded_at": datetime.now().isoformat(timespec="seconds"),
         },
+        delivery_mode="pure_tos",
     )
     return jsonify({"task_id": task_id}), 201

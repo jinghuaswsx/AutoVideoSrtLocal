@@ -5,7 +5,6 @@
 不包含任何业务执行逻辑，执行逻辑在 services/pipeline_runner.py。
 """
 import os
-import uuid
 from datetime import datetime, timezone
 
 import mimetypes
@@ -171,31 +170,7 @@ def upload():
     if not validate_video_extension(file.filename):
         return jsonify({"error": "不支持的视频格式"}), 400
 
-    task_id = str(uuid.uuid4())
-    task_dir = os.path.join(OUTPUT_DIR, task_id)
-    os.makedirs(task_dir, exist_ok=True)
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-    ext = os.path.splitext(file.filename)[1].lower()
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
-    file.save(video_path)
-
-    user_id = current_user.id if current_user.is_authenticated else None
-    store.create(task_id, video_path, task_dir,
-                 original_filename=os.path.basename(file.filename),
-                 user_id=user_id)
-
-    if user_id is not None:
-        default_name = _default_display_name(os.path.basename(file.filename))
-        display_name = _resolve_name_conflict(user_id, default_name)
-        db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
-        store.update(task_id, display_name=display_name)
-
-    thumb = _extract_thumbnail(video_path, task_dir)
-    if thumb and user_id is not None:
-        db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
-
-    return jsonify({"task_id": task_id}), 201
+    return jsonify({"error": "新建翻译任务已切换为 TOS 直传，请先调用 bootstrap/complete 接口"}), 410
 
 
 @bp.route("/<task_id>", methods=["GET"])

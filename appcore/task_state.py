@@ -139,6 +139,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "subtitle_size": 14,
         "subtitle_position_y": 0.68,
         "interactive_review": False,
+        "delivery_mode": "",
         "source_tos_key": "",
         "source_object_info": {},
         "tos_uploads": {},
