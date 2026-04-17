@@ -238,6 +238,9 @@ def start(task_id):
         voice_gender=body.get("voice_gender", "male"),
         voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
         subtitle_position=body.get("subtitle_position", "bottom"),
+        subtitle_font=body.get("subtitle_font", "Impact"),
+        subtitle_size=body.get("subtitle_size", 14),
+        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
     )
 
