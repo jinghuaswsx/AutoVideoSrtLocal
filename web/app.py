@@ -281,4 +281,12 @@ def create_app() -> Flask:
                 and task.get("type") == "image_translate":
             join_room(task_id)
 
+    @socketio.on("join_admin")
+    def on_join_admin():
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        if getattr(current_user, "role", None) == "admin":
+            join_room("admin")
+
     return app
