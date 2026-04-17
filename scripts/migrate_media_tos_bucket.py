@@ -187,6 +187,16 @@ def save_report(report: dict[str, Any], report_path: Path) -> None:
     )
 
 
+def configure_cors(new_bucket: str, origins: list[str]) -> dict[str, Any]:
+    tos_clients.configure_media_bucket_cors(origins=origins, bucket=new_bucket)
+    return {
+        "mode": "configure-cors",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "new_bucket": new_bucket,
+        "origins": list(origins),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Migrate media objects to the dedicated TOS bucket.")
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -194,11 +204,19 @@ def build_parser() -> argparse.ArgumentParser:
     modes.add_argument("--apply", action="store_true")
     modes.add_argument("--cleanup-remote", action="store_true", dest="cleanup_remote")
     modes.add_argument("--cleanup-local", action="store_true", dest="cleanup_local")
+    modes.add_argument("--configure-cors", action="store_true", dest="configure_cors")
     parser.add_argument("--old-bucket", default=DEFAULT_OLD_MEDIA_BUCKET)
     parser.add_argument("--new-bucket", default=config.TOS_MEDIA_BUCKET)
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--temp-dir", default=str(DEFAULT_TEMP_DIR))
     parser.add_argument("--output-dir", default=config.OUTPUT_DIR)
+    parser.add_argument(
+        "--origin",
+        dest="origins",
+        action="append",
+        default=None,
+        help="允许的 CORS Origin，可重复（默认 http(s)://14.103.220.208:8888）",
+    )
     return parser
 
 
@@ -227,6 +245,15 @@ def main(argv: list[str] | None = None) -> int:
         save_report(report, report_path)
         print(json.dumps(report["summary"], ensure_ascii=False))
         return 0 if report["summary"]["failed"] == 0 else 1
+
+    if args.configure_cors:
+        origins = args.origins or [
+            "http://14.103.220.208:8888",
+            "https://14.103.220.208:8888",
+        ]
+        report = configure_cors(new_bucket=new_bucket, origins=origins)
+        print(json.dumps({"new_bucket": report["new_bucket"], "origins": report["origins"]}, ensure_ascii=False))
+        return 0
 
     if not report_path.exists():
         parser.error(f"report file not found: {report_path}")

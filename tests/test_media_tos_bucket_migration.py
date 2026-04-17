@@ -165,6 +165,85 @@ def test_cleanup_remote_objects_deletes_only_migrated(monkeypatch):
     assert deleted == [("video-save", "1/medias/7/demo.mp4")]
 
 
+def test_configure_media_bucket_cors_writes_rule(monkeypatch):
+    calls = {}
+
+    class _Client:
+        def put_bucket_cors(self, bucket, rules):
+            calls["bucket"] = bucket
+            calls["rules"] = rules
+
+    monkeypatch.setattr(tos_clients, "get_server_client", lambda: _Client())
+    monkeypatch.setattr(tos_clients.config, "TOS_MEDIA_BUCKET", "auto-video-srt-product-video-manage")
+
+    tos_clients.configure_media_bucket_cors(
+        origins=["http://14.103.220.208:8888", "https://14.103.220.208:8888"],
+    )
+
+    assert calls["bucket"] == "auto-video-srt-product-video-manage"
+    assert len(calls["rules"]) == 1
+    rule = calls["rules"][0]
+    assert rule.allowed_origins == [
+        "http://14.103.220.208:8888",
+        "https://14.103.220.208:8888",
+    ]
+    assert rule.allowed_methods == ["GET", "HEAD", "PUT", "POST", "DELETE"]
+    assert rule.allowed_headers == ["*"]
+    assert "ETag" in rule.expose_headers
+    assert rule.max_age_seconds == 3600
+
+
+def test_configure_media_bucket_cors_rejects_empty_origins(monkeypatch):
+    monkeypatch.setattr(tos_clients, "get_server_client", lambda: pytest.fail("must not call"))
+    with pytest.raises(ValueError):
+        tos_clients.configure_media_bucket_cors(origins=[])
+
+
+def test_migrate_script_configure_cors_subcommand(monkeypatch, capsys):
+    migration = importlib.import_module("scripts.migrate_media_tos_bucket")
+    captured = {}
+
+    def _fake_apply(origins, bucket=None, **_):
+        captured["origins"] = list(origins)
+        captured["bucket"] = bucket
+
+    monkeypatch.setattr(tos_clients, "configure_media_bucket_cors", _fake_apply)
+    monkeypatch.setattr(migration.tos_clients, "configure_media_bucket_cors", _fake_apply)
+    monkeypatch.setattr(migration.config, "TOS_MEDIA_BUCKET", "auto-video-srt-product-video-manage")
+
+    exit_code = migration.main(["--configure-cors"])
+
+    assert exit_code == 0
+    assert captured["bucket"] == "auto-video-srt-product-video-manage"
+    assert captured["origins"] == [
+        "http://14.103.220.208:8888",
+        "https://14.103.220.208:8888",
+    ]
+
+
+def test_migrate_script_configure_cors_accepts_custom_origin(monkeypatch):
+    migration = importlib.import_module("scripts.migrate_media_tos_bucket")
+    captured = {}
+
+    def _fake_apply(origins, bucket=None, **_):
+        captured["origins"] = list(origins)
+        captured["bucket"] = bucket
+
+    monkeypatch.setattr(tos_clients, "configure_media_bucket_cors", _fake_apply)
+    monkeypatch.setattr(migration.tos_clients, "configure_media_bucket_cors", _fake_apply)
+
+    exit_code = migration.main([
+        "--configure-cors",
+        "--new-bucket", "custom-bucket",
+        "--origin", "https://example.com",
+        "--origin", "https://example.org",
+    ])
+
+    assert exit_code == 0
+    assert captured["bucket"] == "custom-bucket"
+    assert captured["origins"] == ["https://example.com", "https://example.org"]
+
+
 def test_cleanup_local_cache_removes_media_thumbs(tmp_path):
     migration = importlib.import_module("scripts.migrate_media_tos_bucket")
     cache_file = tmp_path / "media_thumbs" / "7" / "thumb.jpg"

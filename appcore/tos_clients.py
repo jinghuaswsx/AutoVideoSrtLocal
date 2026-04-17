@@ -278,3 +278,31 @@ def upload_media_object(
         get_media_bucket(bucket), object_key,
         content=data, content_type=content_type,
     )
+
+
+def configure_media_bucket_cors(
+    origins: list[str],
+    bucket: str | None = None,
+    allowed_methods: list[str] | None = None,
+    allowed_headers: list[str] | None = None,
+    expose_headers: list[str] | None = None,
+    max_age_seconds: int = 3600,
+) -> None:
+    """给 media bucket 写入 CORS 规则，幂等。
+
+    新建 bucket 默认关闭 CORS，浏览器直传 PUT 会被 preflight 403 打回
+    （报 "Failed to fetch"）。迁移/初始化脚本调用此函数一次性把规则种进去。
+    """
+    from tos.models2 import CORSRule
+
+    if not origins:
+        raise ValueError("configure_media_bucket_cors requires at least one origin")
+
+    rule = CORSRule(
+        allowed_origins=list(origins),
+        allowed_methods=list(allowed_methods or ["GET", "HEAD", "PUT", "POST", "DELETE"]),
+        allowed_headers=list(allowed_headers or ["*"]),
+        expose_headers=list(expose_headers or ["ETag", "x-tos-request-id"]),
+        max_age_seconds=max_age_seconds,
+    )
+    get_server_client().put_bucket_cors(get_media_bucket(bucket), [rule])
