@@ -188,6 +188,83 @@ def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db
     assert "\"current_review_step\": \"alignment\"" in body.lower()
 
 
+def test_project_detail_page_defaults_source_language_to_zh(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-default-lang", "video.mp4", "output/task-project-default-lang")
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+
+    response = authed_client_no_db.get("/projects/task-project-default-lang")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-default-source-language="zh"' in body
+    assert 'data-lang="zh" class="sl-btn sl-active"' in body
+
+
+def test_de_translate_detail_page_defaults_source_language_to_en(authed_client_no_db, monkeypatch):
+    task = store.create("task-de-default-lang", "video.mp4", "output/task-de-default-lang", user_id=1)
+    store.update("task-de-default-lang", type="de_translate")
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get("task-de-default-lang"), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.de_translate.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.de_translate.db_query_one", lambda sql, args: row)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+
+    response = authed_client_no_db.get("/de-translate/task-de-default-lang")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-default-source-language="en"' in body
+    assert 'data-lang="en" class="sl-btn sl-active"' in body
+
+
+def test_fr_translate_detail_page_defaults_source_language_to_en(authed_client_no_db, monkeypatch):
+    task = store.create("task-fr-default-lang", "video.mp4", "output/task-fr-default-lang", user_id=1)
+    store.update("task-fr-default-lang", type="fr_translate")
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get("task-fr-default-lang"), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.fr_translate.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.fr_translate.db_query_one", lambda sql, args: row)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+
+    response = authed_client_no_db.get("/fr-translate/task-fr-default-lang")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-default-source-language="en"' in body
+    assert 'data-lang="en" class="sl-btn sl-active"' in body
+
+
 def test_subtitle_removal_pages_render(authed_client_no_db, monkeypatch):
     def fake_create_subtitle_removal(task_id, video_path, task_dir, original_filename=None, user_id=None):
         task = store.create(task_id, video_path, task_dir, original_filename=original_filename, user_id=user_id)

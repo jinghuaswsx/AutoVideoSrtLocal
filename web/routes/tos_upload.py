@@ -117,6 +117,7 @@ def complete_upload():
     store.update(
         task_id,
         display_name=display_name,
+        source_language="zh",
         source_tos_key=object_key,
         source_object_info={
             "file_size": object_size,

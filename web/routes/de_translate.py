@@ -171,6 +171,7 @@ def complete_upload():
         task_id,
         display_name=display_name,
         type="de_translate",
+        source_language="en",
         source_tos_key=object_key,
         source_object_info={
             "file_size": object_size,
