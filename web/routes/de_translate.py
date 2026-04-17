@@ -392,8 +392,14 @@ def get_artifact(task_id, name):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
+    variant = request.args.get("variant") or None
+
+    from web.services.artifact_download import preview_artifact_tos_redirect
+    tos_resp = preview_artifact_tos_redirect(task, name, variant=variant)
+    if tos_resp is not None:
+        return tos_resp
+
     preview_files = task.get("preview_files") or {}
-    variant = request.args.get("variant")
     if variant:
         preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
 

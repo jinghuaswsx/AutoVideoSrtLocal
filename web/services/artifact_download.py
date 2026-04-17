@@ -34,6 +34,29 @@ _ARTIFACT_KIND_MAP: dict[str, str] = {
     "capcut": "capcut_archive",
 }
 
+# /artifact/<name> 里前端请求的 name 本身就是 artifact_kind；仅对这几种产物做 TOS 重定向
+# （其它如 audio_extract / tts_full_audio 从未上传 TOS，继续走本地）
+_PREVIEW_NAME_TO_ARTIFACT_KIND: set[str] = {"hard_video", "soft_video", "srt"}
+
+
+def preview_artifact_tos_redirect(
+    task: dict, name: str, variant: str | None = None
+):
+    """若 task 在 tos_uploads 已登记对应成品，返回 302 到 TOS 签名 URL。
+
+    只处理 hard_video / soft_video / srt 三种产物；其它 name 返回 None，让
+    调用方落回本地 send_file。
+    """
+    if name not in _PREVIEW_NAME_TO_ARTIFACT_KIND:
+        return None
+    record = get_tos_upload_record(task, name, variant)
+    if not record:
+        return None
+    try:
+        return redirect(tos_clients.generate_signed_download_url(record["tos_key"]))
+    except Exception:
+        return None
+
 
 def _resolved_variant_key(variant: str | None) -> str:
     return variant or "normal"
