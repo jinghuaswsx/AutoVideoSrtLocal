@@ -102,6 +102,52 @@ def test_runtime_gives_up_after_3_retries(tmp_path):
     assert task["items"][0]["attempts"] == 3
 
 
+def test_runtime_circuit_breaks_under_429_storm(tmp_path):
+    """持续 429 时应熔断：剩余 items 不再发起 generate_image，全部置 failed。
+
+    生产事故复现：boot -1 死亡前 46 秒里 gemini-3-pro 收到 22+ 次 429，
+    runtime 没有任务级熔断，每个 item 都跑完 3 次 retry，触发硬件 watchdog。
+    """
+    from appcore import image_translate_runtime as rt
+    from web import store
+    from appcore.gemini_image import GeminiImageRetryable
+
+    task = _fake_task([_item(i) for i in range(5)])
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    call_count = [0]
+
+    def fake_gen(*a, **kw):
+        call_count[0] += 1
+        raise GeminiImageRetryable("429 Too Many Requests")
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt, "_sleep"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    # 没有熔断时应该是 5 items × 3 attempts = 15 次。熔断后远低于此。
+    assert call_count[0] < 10, (
+        f"circuit breaker should fire and stop further calls; got {call_count[0]} calls"
+    )
+    # 所有 items 必须是 failed（含未来得及尝试的 items）
+    for i in range(5):
+        assert task["items"][i]["status"] == "failed", (
+            f"item {i} status={task['items'][i]['status']}"
+        )
+    # 至少有一个 item 的 error 标明熔断原因（"限流"或"熔断"）
+    reasons = [it.get("error", "") for it in task["items"]]
+    assert any("限流" in r or "熔断" in r for r in reasons), (
+        f"no circuit-breaker reason in item errors: {reasons}"
+    )
+
+
 def test_runtime_non_retryable_marks_failed_immediately(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store

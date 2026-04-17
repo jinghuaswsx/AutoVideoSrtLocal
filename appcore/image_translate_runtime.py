@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 import time
+from collections import deque
 
 from appcore import gemini_image, tos_clients
 from appcore.events import Event, EventBus
@@ -15,6 +16,15 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
+
+# 任务级熔断：当上游持续返回 429/5xx 时，避免把所有 items 都跑完 3 次重试
+# 形成 retry 风暴，进而触发宿主机 watchdog 强制重启 VM（2026-04-17 事故）
+_RATE_LIMIT_THRESHOLD = 5
+_RATE_LIMIT_WINDOW_SEC = 60.0
+
+
+class _CircuitOpen(Exception):
+    """上游持续限流，任务级熔断信号；由 start() 在外层捕获。"""
 
 
 def _sleep(seconds: float) -> None:
@@ -34,6 +44,16 @@ class ImageTranslateRuntime:
     def __init__(self, *, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
         self.user_id = user_id
+        self._rate_limit_hits: deque[float] = deque()
+
+    def _record_rate_limit_hit(self) -> bool:
+        """记一次可重试错误（429/5xx），返回 True 表示应熔断整任务。"""
+        now = time.monotonic()
+        cutoff = now - _RATE_LIMIT_WINDOW_SEC
+        while self._rate_limit_hits and self._rate_limit_hits[0] < cutoff:
+            self._rate_limit_hits.popleft()
+        self._rate_limit_hits.append(now)
+        return len(self._rate_limit_hits) >= _RATE_LIMIT_THRESHOLD
 
     def start(self, task_id: str) -> None:
         task = store.get(task_id)
@@ -46,17 +66,31 @@ class ImageTranslateRuntime:
         store.update(task_id, status="running", steps=task["steps"])
 
         items = task.get("items") or []
-        for idx in range(len(items)):
-            if items[idx]["status"] in {"done", "failed"}:
-                continue
-            self._process_one(task, task_id, idx)
+        circuit_msg = ""
+        try:
+            for idx in range(len(items)):
+                if items[idx]["status"] in {"done", "failed"}:
+                    continue
+                self._process_one(task, task_id, idx)
+        except _CircuitOpen as exc:
+            circuit_msg = str(exc) or "上游持续限流，已熔断"
+            logger.warning(
+                "[image_translate] circuit breaker opened for task %s: %s",
+                task_id, circuit_msg,
+            )
+            self._abort_remaining_items(task, task_id, circuit_msg)
 
-        task["status"] = "done"
-        task["steps"]["process"] = "done"
+        if circuit_msg:
+            task["status"] = "error"
+            task["steps"]["process"] = "error"
+            task["error"] = circuit_msg
+        else:
+            task["status"] = "done"
+            task["steps"]["process"] = "done"
         _update_progress(task)
         store.update(
             task_id,
-            status="done",
+            status=task["status"],
             steps=task["steps"],
             progress=task["progress"],
             items=task["items"],
@@ -64,8 +98,18 @@ class ImageTranslateRuntime:
         self.bus.publish(Event(
             type="image_translate:task_done",
             task_id=task_id,
-            payload={"task_id": task_id, "status": "done"},
+            payload={"task_id": task_id, "status": task["status"]},
         ))
+
+    def _abort_remaining_items(self, task: dict, task_id: str, reason: str) -> None:
+        for it in task["items"]:
+            if it["status"] in {"done", "failed"}:
+                continue
+            it["status"] = "failed"
+            it["error"] = f"已熔断（上游持续限流）：{reason}"
+            self._emit_item(task_id, it)
+        _update_progress(task)
+        self._emit_progress(task_id, task["progress"])
 
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
@@ -127,6 +171,15 @@ class ImageTranslateRuntime:
                 self._emit_progress(task_id, task["progress"])
                 return
             except gemini_image.GeminiImageRetryable as e:
+                # 任务级熔断：先记一次速率事件，超阈值立刻终止整任务
+                if self._record_rate_limit_hit():
+                    item["status"] = "failed"
+                    item["error"] = f"已熔断（上游持续限流）：{e}"
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
+                    self._emit_item(task_id, item)
+                    self._emit_progress(task_id, task["progress"])
+                    raise _CircuitOpen(str(e)) from e
                 if attempts < _MAX_ATTEMPTS:
                     _sleep(_BACKOFF_BASE * (2 ** (attempts - 1)))
                     continue
