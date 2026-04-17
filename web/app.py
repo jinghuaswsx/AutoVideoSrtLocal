@@ -193,7 +193,11 @@ def create_app() -> Flask:
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
     app.register_blueprint(image_translate_bp)
-    _run_startup_recovery()
+    # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
+    # 三类任务并发拉起时把 CPU 打满到 100%，导致机器反复宕机。保留
+    # recover_all_interrupted_tasks() 仅将 running 状态回落为 error（不会启动任务），
+    # 不再自动续跑，需要用户在前端手动"重新处理"。
+    # _run_startup_recovery()
 
     recover_all_interrupted_tasks()
 
