@@ -1,3 +1,6 @@
+import re
+
+
 def test_page_renders(authed_client_no_db):
     resp = authed_client_no_db.get("/title-translate")
     assert resp.status_code == 200
@@ -5,6 +8,11 @@ def test_page_renders(authed_client_no_db):
     assert "多语言标题翻译" in html
     assert 'href="/title-translate"' in html
     assert 'class="active"' in html
+    assert re.search(
+        r'href="/title-translate"[^>]*>\s*<span class="nav-icon">.*?</span>\s*多语言标题翻译',
+        html,
+        re.S,
+    )
 
 
 def test_languages_api_returns_enabled_targets(authed_client_no_db, monkeypatch):
