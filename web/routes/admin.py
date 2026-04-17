@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required
 from web.auth import admin_required
 from appcore import medias
+from appcore import voice_library_sync_task as vlst
 from appcore.users import list_users, create_user, set_active, get_by_username
 from appcore.settings import (
     PROJECT_TYPE_LABELS,
@@ -211,3 +212,29 @@ def set_image_translate_prompt():
         return jsonify({"error": "value required"}), 400
     update_prompt(preset, lang, value)
     return jsonify({"ok": True})
+
+
+@bp.route("/voice-library/sync/<language>", methods=["POST"])
+@login_required
+@admin_required
+def voice_library_sync(language: str):
+    if language not in medias.list_enabled_language_codes():
+        return jsonify({"error": "language not enabled"}), 400
+    try:
+        sync_id = vlst.start_sync(language=language)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "another sync" in msg:
+            return jsonify({"error": msg}), 409
+        return jsonify({"error": msg}), 500
+    return jsonify({"sync_id": sync_id}), 202
+
+
+@bp.route("/voice-library/sync-status", methods=["GET"])
+@login_required
+@admin_required
+def voice_library_sync_status():
+    return jsonify({
+        "current": vlst.get_current(),
+        "summary": vlst.summarize(),
+    })
