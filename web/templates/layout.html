@@ -322,6 +322,9 @@
       <a href="{{ url_for('image_translate.page_list') }}" {% if request.path.startswith('/image-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🖼️</span> 图片翻译
       </a>
+      <a href="/voice-library" {% if request.path.startswith('/voice-library') %}class="active"{% endif %}>
+        <span class="nav-icon">🎙️</span> 声音仓库
+      </a>
       <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
         <span class="nav-icon">📦</span> 素材管理
       </a>

@@ -1226,6 +1226,15 @@ def test_medias_page_removes_admin_only_scope_toggle(authed_user_client_no_db):
     assert 'window.MEDIAS_IS_ADMIN' not in body
 
 
+def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
+    resp = authed_client_no_db.get("/voice-library")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "voice-library-root" in body
+    assert "/voice-library" in body
+    assert "声音仓库" in body
+
+
 def test_medias_scripts_do_not_use_admin_scope_switch():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
