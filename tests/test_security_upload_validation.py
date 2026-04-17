@@ -39,19 +39,12 @@ def client(monkeypatch, tmp_path):
 class TestTaskUploadValidation:
     """task 蓝图上传端点应该校验视频扩展名。"""
 
-    def test_accepts_mp4(self, client, monkeypatch, tmp_path):
-        monkeypatch.setattr("web.routes.task.store.create", lambda *a, **kw: {})
-        monkeypatch.setattr("web.routes.task.store.update", lambda *a, **kw: None)
-        monkeypatch.setattr("web.routes.task._extract_thumbnail", lambda *a, **kw: None)
-        monkeypatch.setattr("web.routes.task._resolve_name_conflict", lambda uid, name: name)
-        monkeypatch.setattr("web.routes.task.db_execute", lambda *a, **kw: None)
-        monkeypatch.setattr("web.routes.task.db_query_one", lambda *a, **kw: None)
-        monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path))
-        monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path))
-
+    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
         resp = client.post("/api/tasks", data={"video": _make_file("test.mp4")},
                            content_type="multipart/form-data")
-        assert resp.status_code == 201
+        assert resp.status_code == 410
+        data = resp.get_json()
+        assert "TOS" in data["error"]
 
     @pytest.mark.parametrize("ext", REJECTED_EXTS)
     def test_rejects_non_video_extensions(self, client, ext):
@@ -60,6 +53,26 @@ class TestTaskUploadValidation:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+
+class TestDeTranslateUploadValidation:
+
+    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
+        resp = client.post("/api/de-translate/start", data={"video": _make_file("test.mp4")},
+                           content_type="multipart/form-data")
+        assert resp.status_code == 410
+        data = resp.get_json()
+        assert "TOS" in data["error"]
+
+
+class TestFrTranslateUploadValidation:
+
+    def test_rejects_local_mp4_upload_and_requires_tos_direct_upload(self, client):
+        resp = client.post("/api/fr-translate/start", data={"video": _make_file("test.mp4")},
+                           content_type="multipart/form-data")
+        assert resp.status_code == 410
+        data = resp.get_json()
+        assert "TOS" in data["error"]
 
 
 # ── video_review upload (/api/video-review/upload) ──
