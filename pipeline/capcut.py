@@ -22,6 +22,9 @@ def export_capcut_project(
     draft_title: str | None = None,
     variant: str | None = None,
     jianying_project_root: str | None = None,
+    subtitle_font: str = "Impact",
+    subtitle_size=None,
+    subtitle_position_y: float | None = None,
 ) -> dict:
     source_name = draft_title or Path(video_path).name
     draft_name = build_capcut_draft_name(source_name, variant=variant)
@@ -40,6 +43,9 @@ def export_capcut_project(
             srt_path=Path(srt_path),
             timeline_manifest=timeline_manifest,
             subtitle_position=subtitle_position,
+            subtitle_font=subtitle_font,
+            subtitle_size=subtitle_size,
+            subtitle_position_y=subtitle_position_y,
         )
         export_backend = "pyJianYingDraft"
     except Exception as exc:
@@ -222,6 +228,9 @@ def _export_with_pyjianyingdraft(
     srt_path: Path,
     timeline_manifest: dict,
     subtitle_position: str,
+    subtitle_font: str = "Impact",
+    subtitle_size=None,
+    subtitle_position_y: float | None = None,
 ):
     draft = importlib.import_module("pyJianYingDraft")
     output_dir = project_dir.parent
@@ -283,19 +292,62 @@ def _export_with_pyjianyingdraft(
             prev_end_us = int((target_start + clip_duration) * 1_000_000)
             target_cursor += clip_duration
 
-    _import_srt_safe(draft, script, str(copied_srt), subtitle_position)
+    _import_srt_safe(
+        draft, script, str(copied_srt), subtitle_position,
+        subtitle_font=subtitle_font,
+        subtitle_size=subtitle_size,
+        subtitle_position_y=subtitle_position_y,
+    )
     script.save()
 
 
-def _import_srt_safe(draft, script, srt_path: str, subtitle_position: str) -> None:
+def _import_srt_safe(
+    draft, script, srt_path: str, subtitle_position: str,
+    subtitle_font: str = "Impact",
+    subtitle_size=None,
+    subtitle_position_y: float | None = None,
+) -> None:
     """Import SRT with overlap fix: sort entries and remove overlapping ones."""
     _fix_srt_overlaps(srt_path)
-    script.import_srt(
-        srt_path,
-        track_name="subtitle",
-        text_style=draft.TextStyle(size=5.6, color=(1.0, 1.0, 1.0), align=1, auto_wrapping=True, max_line_width=0.76),
-        clip_settings=draft.ClipSettings(transform_y=_subtitle_transform_y(subtitle_position)),
+    size = _resolve_capcut_font_size(subtitle_size) if subtitle_size is not None else 5.6
+    transform_y = _resolve_capcut_transform_y(subtitle_position_y, subtitle_position)
+    text_style = draft.TextStyle(
+        size=size, color=(1.0, 1.0, 1.0), align=1,
+        auto_wrapping=True, max_line_width=0.76,
     )
+    clip_settings = draft.ClipSettings(transform_y=transform_y)
+
+    # 字体：UI 字体在 CapCut 内置枚举里有对应才注入；Oswald/Bebas 等没有时
+    # 不传 font，剪映会使用默认字体（Concert One-Regular）。
+    # 整块包 try/except：老版 pyJianYingDraft 或测试替身可能没有 FontType/TextSegment，
+    # 这种情况下回退到无 style_reference 路径，保持字幕导入行为不倒退。
+    style_reference = None
+    try:
+        font_enum_name = _resolve_capcut_font_enum_name(subtitle_font)
+        font_type_enum = getattr(draft, "FontType", None)
+        text_segment_cls = getattr(draft, "TextSegment", None)
+        if font_enum_name and font_type_enum is not None and text_segment_cls is not None:
+            font_value = getattr(font_type_enum, font_enum_name, None)
+            if font_value is not None:
+                style_reference = text_segment_cls(
+                    "placeholder",
+                    draft.trange("0s", "1s"),
+                    font=font_value,
+                    style=text_style,
+                    clip_settings=clip_settings,
+                )
+    except Exception:
+        style_reference = None
+
+    kwargs = dict(
+        track_name="subtitle",
+        text_style=text_style,
+        clip_settings=clip_settings,
+    )
+    if style_reference is not None:
+        kwargs["style_reference"] = style_reference
+
+    script.import_srt(srt_path, **kwargs)
 
 
 def _fix_srt_overlaps(srt_path: str) -> None:
@@ -416,6 +468,51 @@ def _subtitle_transform_y(position: str) -> float:
         "bottom": -0.78,
     }
     return mapping.get(position, -0.78)
+
+
+# 硬字幕 UI 字体 → CapCut FontType 枚举名。没列进来的字体（Oswald、Bebas 等）
+# 剪映内置字体库里没有对应款，走剪映默认字体（Concert One-Regular）。
+_CAPCUT_FONT_ALIAS: dict[str, str] = {
+    "Impact": "Anton",              # 与硬字幕 Impact→Anton 保持一致
+    "Anton": "Anton",
+    "Poppins Bold": "Poppins_Bold",
+    "Poppins": "Poppins_Bold",
+    "Montserrat ExtraBold": "Montserrat_Black",
+    "Montserrat": "Montserrat_Black",
+}
+
+# 硬字幕 FontSize 14 视觉上对应 CapCut TextStyle.size 5.6（剪映里中等字号）。
+# 其他字号按线性缩放，保留 2 位小数。
+_CAPCUT_FONT_SIZE_PRESET: dict[str, float] = {
+    "small": 4.4,
+    "medium": 5.6,
+    "large": 7.2,
+}
+_CAPCUT_FONT_SIZE_BASELINE_PT = 14.0
+_CAPCUT_FONT_SIZE_BASELINE_UI = 5.6
+
+
+def _resolve_capcut_font_enum_name(font_name: str) -> str | None:
+    """把 UI 侧字体名映射到 CapCut FontType 枚举成员名；无匹配返回 None。"""
+    return _CAPCUT_FONT_ALIAS.get((font_name or "").strip())
+
+
+def _resolve_capcut_font_size(preset) -> float:
+    """把硬字幕字号预设（'small'/'medium'/'large' 或整数 pt）换算成剪映 UI 字号。"""
+    if isinstance(preset, (int, float)) and not isinstance(preset, bool):
+        return round(float(preset) / _CAPCUT_FONT_SIZE_BASELINE_PT * _CAPCUT_FONT_SIZE_BASELINE_UI, 2)
+    return _CAPCUT_FONT_SIZE_PRESET.get(preset, _CAPCUT_FONT_SIZE_BASELINE_UI)
+
+
+def _resolve_capcut_transform_y(position_y, legacy_position: str) -> float:
+    """把硬字幕「距顶百分比」换算成剪映 transform_y。
+
+    硬字幕坐标系：0 顶，1 底；剪映 transform_y：+1 顶，-1 底。
+    老任务没有 position_y 时回退到 top/middle/bottom 三档映射。
+    """
+    if position_y is None:
+        return _subtitle_transform_y(legacy_position)
+    return round(1.0 - 2.0 * float(position_y), 3)
 
 
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}

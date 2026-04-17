@@ -1225,6 +1225,10 @@ class PipelineRunner:
             variant=variant,
             draft_title=draft_title,
             jianying_project_root=jianying_project_root,
+            subtitle_position=task.get("subtitle_position", "bottom"),
+            subtitle_font=task.get("subtitle_font", "Impact"),
+            subtitle_size=task.get("subtitle_size", 14),
+            subtitle_position_y=float(task.get("subtitle_position_y", 0.68)),
         )
         exports = {
             "capcut_project": export_result["project_dir"],
