@@ -1,20 +1,35 @@
 import re
+from pathlib import Path
 from types import SimpleNamespace
 
 
-def test_page_renders(authed_client_no_db):
+def test_workspace_shell_renders_required_dom(authed_client_no_db):
     resp = authed_client_no_db.get("/title-translate")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "多语言标题翻译" in html
-    assert "入口路径" in html
-    assert 'href="/title-translate"' in html
-    assert 'class="active"' in html
+    assert 'id="titleTranslateApp"' in html
+    assert 'id="titleTranslateLangPills"' in html
+    assert 'id="titleTranslateSource"' in html
+    assert 'id="titleTranslateSourceError"' in html
+    assert 'id="titleTranslateTranslateBtn"' in html
+    assert 'id="titleTranslateResult"' in html
+    assert 'data-languages-url="/api/title-translate/languages"' in html
+    assert 'data-translate-url="/api/title-translate/translate"' in html
+    assert "title_translate.js" in html
     assert re.search(
         r'href="/title-translate"[^>]*>\s*<span class="nav-icon">.*?</span>\s*多语言标题翻译',
         html,
         re.S,
     )
+
+
+def test_static_script_contains_client_hooks():
+    js_path = Path("web/static/title_translate.js")
+    assert js_path.exists(), "web/static/title_translate.js should exist"
+    content = js_path.read_text(encoding="utf-8")
+    assert "function validateSourceText" in content
+    assert "请按“标题/文案/描述”三行格式输入" in content
+    assert "navigator.clipboard.writeText" in content
 
 
 def test_languages_api_returns_enabled_targets(authed_client_no_db, monkeypatch):
