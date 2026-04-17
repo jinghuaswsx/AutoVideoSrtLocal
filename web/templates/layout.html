@@ -291,6 +291,9 @@
       <span class="sidebar-brand-text">AutoVideoSrt</span>
     </a>
     <nav class="sidebar-nav">
+      <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
+        <span class="nav-icon">📦</span> 素材管理
+      </a>
       <a href="{{ url_for('projects.index') }}" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 视频翻译
       </a>
@@ -324,9 +327,6 @@
       </a>
       <a href="/voice-library" {% if request.path.startswith('/voice-library') %}class="active"{% endif %}>
         <span class="nav-icon">🎙️</span> 声音仓库
-      </a>
-      <a href="/medias" {% if request.path.startswith('/medias') %}class="active"{% endif %}>
-        <span class="nav-icon">📦</span> 素材管理
       </a>
       <a href="/prompt-library" {% if request.path.startswith('/prompt-library') %}class="active"{% endif %}>
         <span class="nav-icon">✨</span> 提示词典
