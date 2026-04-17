@@ -24,6 +24,17 @@ def test_workspace_shell_renders_required_dom(authed_client_no_db):
     )
 
 
+def test_dashboard_sidebar_places_title_translate_near_top(authed_client_no_db):
+    resp = authed_client_no_db.get("/title-translate")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+
+    title_idx = html.index('href="/title-translate"')
+    de_idx = html.index('href="/de-translate"')
+
+    assert title_idx < de_idx
+
+
 def test_static_script_contains_client_hooks():
     js_path = Path("web/static/title_translate.js")
     assert js_path.exists(), "web/static/title_translate.js should exist"
