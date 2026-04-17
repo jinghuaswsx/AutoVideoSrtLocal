@@ -1,6 +1,7 @@
 {% if show_back_link %}
 <a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 {% endif %}
+{% set _default_source_language = default_source_language|default('zh') %}
 
 
 {% if allow_upload %}
@@ -28,12 +29,12 @@
   </div>
 </div>
 
-<div class="card hidden" id="sourceLangPanel" style="display:none;">
+<div class="card hidden" id="sourceLangPanel" data-default-source-language="{{ _default_source_language }}" style="display:none;">
   <div style="display:flex;align-items:center;justify-content:center;gap:14px;">
     <span style="font-size:14px;font-weight:600;color:var(--text-main);">源语言</span>
     <div id="sourceLangToggle" style="display:inline-flex;border-radius:999px;overflow:hidden;border:2px solid #ef4444;background:#fff;">
-      <button type="button" data-lang="zh" class="sl-btn sl-active" style="padding:6px 20px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .15s;font-family:inherit;border-radius:999px;">中文</button>
-      <button type="button" data-lang="en" class="sl-btn" style="padding:6px 20px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .15s;font-family:inherit;border-radius:999px;">英文</button>
+      <button type="button" data-lang="zh" class="sl-btn{% if _default_source_language == 'zh' %} sl-active{% endif %}" style="padding:6px 20px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .15s;font-family:inherit;border-radius:999px;">中文</button>
+      <button type="button" data-lang="en" class="sl-btn{% if _default_source_language == 'en' %} sl-active{% endif %}" style="padding:6px 20px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .15s;font-family:inherit;border-radius:999px;">英文</button>
     </div>
     <span id="sourceLangMainHint" style="font-size:12px;color:#9ca3af;"></span>
   </div>

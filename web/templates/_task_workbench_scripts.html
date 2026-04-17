@@ -10,6 +10,7 @@
     detailUrlTemplate: {{ (url_for_detail|default(url_for('projects.detail', task_id='__TASK_ID__')))|tojson }},
     apiBase: {{ (api_base|default('/api/tasks'))|tojson }},
     voiceLanguage: {{ (voice_language|default('en'))|tojson }},
+    defaultSourceLanguage: {{ (default_source_language|default('zh'))|tojson }},
   };
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
@@ -240,10 +241,12 @@
   }
 
   function _syncSourceLangPanel() {
+    const panel = document.getElementById("sourceLangPanel");
     const toggle = document.getElementById("sourceLangToggle");
     const hint = document.getElementById("sourceLangMainHint");
     if (!toggle) return;
-    const lang = currentTask && currentTask.source_language;
+    const defaultLang = (panel && panel.dataset.defaultSourceLanguage) || TASK_WORKBENCH_CONFIG.defaultSourceLanguage || "zh";
+    const lang = (currentTask && currentTask.source_language) || defaultLang;
     if (lang) {
       toggle.querySelectorAll(".sl-btn").forEach(b => {
         b.classList.toggle("sl-active", b.dataset.lang === lang);

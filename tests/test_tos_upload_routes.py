@@ -56,6 +56,7 @@ def test_tos_upload_complete_creates_task_from_tos_object(tmp_path, authed_clien
     task = store.get("task-from-tos")
     assert task["source_tos_key"] == "uploads/1/task-from-tos/demo.mp4"
     assert task["delivery_mode"] == "pure_tos"
+    assert task["source_language"] == "zh"
     assert task["source_object_info"]["file_size"] == 4321
     assert Path(task["task_dir"]).exists()
     assert task["video_path"].endswith("task-from-tos.mp4")
@@ -87,6 +88,7 @@ def test_de_translate_complete_marks_task_as_pure_tos(tmp_path, authed_client_no
     task = store.get("de-task-from-tos")
     assert task["source_tos_key"] == "uploads/1/de-task-from-tos/demo.mp4"
     assert task["delivery_mode"] == "pure_tos"
+    assert task["source_language"] == "en"
     assert task["type"] == "de_translate"
 
 
@@ -114,4 +116,5 @@ def test_fr_translate_complete_marks_task_as_pure_tos(tmp_path, authed_client_no
     task = store.get("fr-task-from-tos")
     assert task["source_tos_key"] == "uploads/1/fr-task-from-tos/demo.mp4"
     assert task["delivery_mode"] == "pure_tos"
+    assert task["source_language"] == "en"
     assert task["type"] == "fr_translate"
