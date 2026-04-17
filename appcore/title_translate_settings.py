@@ -13,37 +13,37 @@ _SPECIAL_PROMPT_HINTS: dict[str, dict[str, str]] = {
         "expert": "德语本土化专家",
         "audience": "德国用户",
         "locale": "Bundesdeutsch",
-        "extra": "优先使用符合 Bundesdeutsch 的自然表达。",
+        "extra": "优先采用德国用户熟悉的自然表达，保持本土化、准确、克制。",
     },
     "fr": {
         "expert": "法语本土化专家",
         "audience": "法语用户",
         "locale": "français naturel",
-        "extra": "优先使用地道、自然、适合法国用户阅读的表达。",
+        "extra": "优先采用地道、自然、适合法语用户阅读的表达。",
     },
     "es": {
         "expert": "西班牙语本土化专家",
         "audience": "西语用户",
         "locale": "español natural",
-        "extra": "优先使用自然、口语化但不失准确的表达。",
+        "extra": "优先采用自然、口语化但不失准确的西语表达。",
     },
     "it": {
         "expert": "意大利语本土化专家",
         "audience": "意大利用户",
         "locale": "italiano naturale",
-        "extra": "优先使用自然、顺口、适合意大利用户阅读的表达。",
+        "extra": "优先采用自然、顺口、适合意大利用户阅读的表达。",
     },
     "ja": {
         "expert": "日语本土化专家",
         "audience": "日本用户",
         "locale": "自然な日本語",
-        "extra": "优先使用符合日语母语者阅读习惯的自然表达。",
+        "extra": "优先采用符合日语母语者阅读习惯的自然表达。",
     },
     "pt": {
         "expert": "葡萄牙语本土化专家",
         "audience": "葡语用户",
         "locale": "português natural",
-        "extra": "优先使用自然、流畅、符合葡语用户习惯的表达。",
+        "extra": "优先采用自然、流畅、符合葡语用户习惯的表达。",
     },
 }
 
@@ -85,33 +85,50 @@ def get_title_translate_language(code: str) -> dict:
     raise ValueError(f"unsupported language: {normalized}")
 
 
-def _build_special_prompt(lang_name: str, expert: str, audience: str, locale: str, extra: str) -> str:
-    return (
-        f"你是一位{expert}，专门把英文标题改写成适合{audience}阅读的自然标题。\n\n"
-        "任务\n"
-        f"将 `{{{{SOURCE_TEXT}}}}` 翻译并本土化为适合{audience}的标题。\n\n"
-        "要求\n"
-        f"- 使用符合 {locale} 的自然表达，避免逐字直译。\n"
-        "- 保留原意、关键信息和语气，但让标题更像母语者会写出来的版本。\n"
-        "- 如果原文偏长，优先压缩成更自然、更短的标题。\n"
-        f"- {extra}\n"
-        "- 只输出最终标题，不要解释、不要加引号、不要附加备注。\n"
-        f"- 必须包含 `{{{{SOURCE_TEXT}}}}` 作为输入占位符。\n"
+def _build_prompt(lang_name: str, *, intro: str, locale: str | None = None, extra: str | None = None) -> str:
+    lines = [
+        intro,
+        "",
+        "输入格式",
+        "请翻译并本土化 `{{SOURCE_TEXT}}` 中的固定三段内容：",
+        "标题: ...",
+        "文案: ...",
+        "描述: ...",
+        "",
+        "输出格式",
+        "必须严格输出三行，且只能使用下面格式：",
+        "标题:[...]",
+        "文案:[...]",
+        "描述:[...]",
+        "",
+        "要求",
+        "- 保留原意、关键信息和语气。",
+        f"- 语言要自然、准确，符合{lang_name}用户的阅读习惯。",
+    ]
+
+    if locale:
+        lines.append(f"- 优先采用符合 {locale} 的自然表达。")
+    if extra:
+        lines.append(f"- {extra}")
+
+    lines.extend(
+        [
+            "- 保持三段对应关系，分别处理标题、文案、描述。",
+            "- 不要解释，不要添加引号，不要输出多余内容。",
+            "- 必须保留 `{{SOURCE_TEXT}}` 作为输入占位符。",
+        ]
     )
+    return "\n".join(lines) + "\n"
+
+
+def _build_special_prompt(lang_name: str, expert: str, audience: str, locale: str, extra: str) -> str:
+    intro = f"你是一位{expert}，擅长将面向{audience}的内容翻译并本土化为自然的三段式文案。"
+    return _build_prompt(lang_name, intro=intro, locale=locale, extra=extra)
 
 
 def _build_generic_prompt(lang_name: str) -> str:
-    return (
-        f"你是一位专业的{lang_name}标题本土化专家，擅长把英文标题改写成自然、准确、适合{lang_name}用户阅读的版本。\n\n"
-        "任务\n"
-        f"将 `{{{{SOURCE_TEXT}}}}` 翻译并改写成适合{lang_name}用户阅读的标题。\n\n"
-        "要求\n"
-        "- 保留原意和关键信息，避免生硬直译。\n"
-        "- 语言要自然、简洁、像母语者会使用的标题表达。\n"
-        "- 如果原文信息很多，优先保留最重要的卖点或主题。\n"
-        "- 只输出最终标题，不要解释、不要附加其它内容。\n"
-        "- 必须包含 `{{SOURCE_TEXT}}` 作为输入占位符。\n"
-    )
+    intro = f"你是一位专业的{lang_name}翻译助手，擅长将内容翻译并本土化为自然的三段式文案。"
+    return _build_prompt(lang_name, intro=intro)
 
 
 def get_prompt(code: str) -> str:
