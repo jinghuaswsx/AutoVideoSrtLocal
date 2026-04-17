@@ -50,8 +50,8 @@ def _format_three_part_text(title: str, body: str, description: str) -> str:
 
 
 def _resolve_sonnet_client(user_id: int) -> OpenAI:
-    key = resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") or ""
-    extra = resolve_extra(user_id, "openrouter")
+    key = resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") or config.OPENROUTER_API_KEY
+    extra = resolve_extra(user_id, "openrouter") or {}
     base_url = (extra.get("base_url") or config.OPENROUTER_BASE_URL).strip()
     return OpenAI(api_key=key, base_url=base_url)
 
@@ -102,14 +102,18 @@ def api_translate():
         ),
     )
 
-    client = _resolve_sonnet_client(current_user.id)
     model = config.CLAUDE_MODEL
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=2048,
-    )
+    try:
+        client = _resolve_sonnet_client(current_user.id)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=2048,
+            extra_body={"plugins": [{"id": "response-healing"}]},
+        )
+    except Exception as exc:
+        return jsonify({"error": f"翻译失败: {exc}"}), 502
 
     try:
         raw_content = response.choices[0].message.content
