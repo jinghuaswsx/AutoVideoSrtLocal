@@ -407,9 +407,8 @@
   document.getElementById("startBtn").addEventListener("click", async () => {
     if (!taskId || startRequestInFlight) return;
     const isRestart = currentTask && (currentTask.status === "done" || currentTask.status === "error");
-    if (isRestart && !window.confirm("重新开始会清除上一轮的中间文件和结果（含 TOS 上传的产物），确定重跑吗？")) {
-      return;
-    }
+    // 不用 window.confirm — Chrome 对部分站点会默默阻止，导致按钮看似"点了没反应"。
+    // 重新开始处理按钮本身已经是显式意图；若用户想退出，刷新页面即可。
     clearError();
     startRequestInFlight = true;
     setStartButtonBusy(true, START_BUTTON_LOADING_LABEL);
