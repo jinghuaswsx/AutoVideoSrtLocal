@@ -101,7 +101,17 @@
 }
 .audio-play-btn:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-color); }
 .audio-play-btn:disabled { opacity: 0.4; cursor: default; }
-video.media-player { max-height: 320px; }
+video.media-player {
+  display: block;
+  width: 540px;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  background: #000;
+  margin: 0 auto;
+}
 .result-grid { display: flex; flex-wrap: wrap; gap: 10px; }
 .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 999px; border: 1.5px solid var(--btn-ghost-border); background: var(--btn-ghost-bg); color: var(--btn-ghost-text); text-decoration: none; cursor: pointer; font-weight: 600; font-size: 13px; transition: all .2s; }
 .download-btn:hover { border-color: var(--btn-ghost-hover-border); color: var(--btn-ghost-hover-text); box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
