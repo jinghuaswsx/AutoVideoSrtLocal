@@ -49,6 +49,14 @@
   let _previewAudio = null;
   let _previewAudioGid = null;
 
+  // TTS 轮次提示词面板状态——必须在 bootInitialTask() 之前初始化，
+  // 否则 renderTtsDurationLog → _renderDurationPromptPanel 会在读
+  // window._durationPromptOpen[round] 时抛 TypeError，导致后续 addEventListener
+  // 全部跑不到（字体/字号/位置/开始处理按钮点击都无响应）。
+  window._durationPromptCache = window._durationPromptCache || {};
+  window._durationPromptLoading = window._durationPromptLoading || {};
+  window._durationPromptOpen = window._durationPromptOpen || {};
+
   bootVoices();
   renderStepPreviews({});
   bootInitialTask();
@@ -1196,10 +1204,6 @@
     container.innerHTML = parts.join('');
     container.hidden = false;
   }
-
-  window._durationPromptCache = window._durationPromptCache || {};
-  window._durationPromptLoading = window._durationPromptLoading || {};
-  window._durationPromptOpen = window._durationPromptOpen || {};
 
   function _phaseLabel(phase) {
     return ({
