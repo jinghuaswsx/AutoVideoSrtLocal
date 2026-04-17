@@ -22,6 +22,7 @@
   let startRequestInFlight = false;
   let analysisStartInFlight = false;
   const START_BUTTON_DEFAULT_LABEL = "开始处理";
+  const START_BUTTON_RESTART_LABEL = "重新开始处理";
   const START_BUTTON_LOADING_LABEL = "加载视频中...";
 
   const uploadZone = document.getElementById("uploadZone");
@@ -405,6 +406,10 @@
 
   document.getElementById("startBtn").addEventListener("click", async () => {
     if (!taskId || startRequestInFlight) return;
+    const isRestart = currentTask && (currentTask.status === "done" || currentTask.status === "error");
+    if (isRestart && !window.confirm("重新开始会清除上一轮的中间文件和结果（含 TOS 上传的产物），确定重跑吗？")) {
+      return;
+    }
     clearError();
     startRequestInFlight = true;
     setStartButtonBusy(true, START_BUTTON_LOADING_LABEL);
@@ -412,7 +417,7 @@
     socket.emit("join_task", { task_id: taskId });
 
     try {
-      const response = await fetch(_apiUrl('/start'), {
+      const response = await fetch(_apiUrl(isRestart ? '/restart' : '/start'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -425,7 +430,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "启动失败");
+        throw new Error(payload.error || (isRestart ? "重跑失败" : "启动失败"));
       }
       if (payload.task) {
         currentTask = payload.task;
@@ -435,7 +440,7 @@
       restoreReviewState();
       scheduleRefreshTaskState(0);
     } catch (err) {
-      showError(err.message || "启动失败");
+      showError(err.message || (isRestart ? "重跑失败" : "启动失败"));
       resetStartButton();
     } finally {
       startRequestInFlight = false;
@@ -944,12 +949,13 @@
       setStartButtonBusy(true, START_BUTTON_DEFAULT_LABEL);
       return;
     }
-    const hasStarted = MAIN_STEPS.some(step => (currentTask.steps?.[step] || "pending") !== "pending");
     const isWaiting = MAIN_STEPS.some(step => currentTask.steps?.[step] === "waiting");
     const isRunning = MAIN_STEPS.some(step => currentTask.steps?.[step] === "running");
-    startBtn.disabled = startRequestInFlight || hasStarted || isWaiting || isRunning || currentTask.status === "done";
+    const canRestart = currentTask.status === "done" || currentTask.status === "error";
+    // done/error 时按钮保持可点；label 提示重跑语义
+    startBtn.disabled = startRequestInFlight || isWaiting || isRunning;
     if (!startRequestInFlight) {
-      startBtn.textContent = START_BUTTON_DEFAULT_LABEL;
+      startBtn.textContent = canRestart ? START_BUTTON_RESTART_LABEL : START_BUTTON_DEFAULT_LABEL;
     }
   }
 

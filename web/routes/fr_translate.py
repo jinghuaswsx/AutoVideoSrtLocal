@@ -196,6 +196,32 @@ def get_task(task_id):
     return jsonify(task)
 
 
+@bp.route("/api/fr-translate/<task_id>/restart", methods=["POST"])
+@login_required
+def restart(task_id):
+    """清上一轮产物，用新参数重跑法语翻译流水线。"""
+    recover_task_if_needed(task_id)
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    from web.services.task_restart import restart_task
+    updated = restart_task(
+        task_id,
+        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
+        voice_gender=body.get("voice_gender", "male"),
+        subtitle_font=body.get("subtitle_font", "Impact"),
+        subtitle_size=body.get("subtitle_size", 14),
+        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
+        subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
+        user_id=current_user.id,
+        runner=fr_pipeline_runner,
+    )
+    return jsonify({"status": "restarted", "task": updated})
+
+
 @bp.route("/api/fr-translate/<task_id>/start", methods=["POST"])
 @login_required
 def start(task_id):

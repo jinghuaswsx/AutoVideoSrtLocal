@@ -288,6 +288,31 @@ def get_round_file(task_id: str, round_index: int, kind: str):
                      conditional=False)
 
 
+@bp.route("/<task_id>/restart", methods=["POST"])
+@login_required
+def restart(task_id):
+    """清掉上一轮的中间/结果/TOS 产物，按新参数从头跑一遍。"""
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    from web.services.task_restart import restart_task
+    updated = restart_task(
+        task_id,
+        voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
+        voice_gender=body.get("voice_gender", "male"),
+        subtitle_font=body.get("subtitle_font", "Impact"),
+        subtitle_size=body.get("subtitle_size", 14),
+        subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
+        subtitle_position=body.get("subtitle_position", "bottom"),
+        interactive_review=_parse_bool(body.get("interactive_review", False)),
+        user_id=current_user.id if current_user.is_authenticated else None,
+        runner=pipeline_runner,
+    )
+    return jsonify({"status": "restarted", "task": updated})
+
+
 @bp.route("/<task_id>/start", methods=["POST"])
 @login_required
 def start(task_id):
