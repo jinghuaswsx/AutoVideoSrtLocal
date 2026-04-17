@@ -115,7 +115,6 @@ def _build_prompt(lang_name: str, *, intro: str, locale: str | None = None, extr
         [
             "- 保持三段对应关系，分别处理标题、文案、描述。",
             "- 不要解释，不要添加引号，不要输出多余内容。",
-            "- 必须保留 `{{SOURCE_TEXT}}` 作为输入占位符。",
         ]
     )
     return "\n".join(lines) + "\n"

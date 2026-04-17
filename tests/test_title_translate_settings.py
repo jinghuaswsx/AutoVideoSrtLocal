@@ -15,6 +15,7 @@ def _assert_structured_prompt(prompt):
     assert "文案:[...]" in prompt
     assert "描述:[...]" in prompt
     assert "{{SOURCE_TEXT}}" in prompt
+    assert prompt.count("{{SOURCE_TEXT}}") == 1
 
 
 def test_list_title_translate_languages_filters_out_en_and_disabled(monkeypatch):
