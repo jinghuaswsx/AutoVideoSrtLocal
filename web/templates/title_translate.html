@@ -1,0 +1,384 @@
+{% extends "layout.html" %}
+{% block title %}多语言标题翻译 - AutoVideoSrt{% endblock %}
+{% block page_title %}多语言标题翻译{% endblock %}
+{% block extra_style %}
+  .title-translate-app {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: var(--text-main);
+  }
+
+  .title-translate-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px 22px;
+    border: 1px solid var(--border-main);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(14, 165, 233, 0.04) 100%);
+  }
+
+  .title-translate-eyebrow {
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .title-translate-heading {
+    font-size: 22px;
+    line-height: 1.3;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .title-translate-desc {
+    margin-top: 8px;
+    color: #5b6472;
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 760px;
+  }
+
+  .title-translate-lang-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    min-height: 40px;
+    align-items: center;
+  }
+
+  .title-translate-pill {
+    border: 1px solid var(--border-main);
+    background: #fff;
+    color: #374151;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .12s ease, border-color .12s ease, background-color .12s ease, transform .12s ease;
+  }
+
+  .title-translate-pill:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    transform: translateY(-1px);
+  }
+
+  .title-translate-pill.is-active {
+    background: var(--primary-gradient);
+    border-color: transparent;
+    color: #fff;
+  }
+
+  .title-translate-pill.is-disabled {
+    cursor: wait;
+    opacity: .72;
+  }
+
+  .title-translate-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) 184px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  .title-translate-panel {
+    min-width: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-main);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+
+  .title-translate-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .title-translate-panel-title {
+    font-size: 15px;
+    line-height: 1.3;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  .title-translate-panel-subtitle {
+    margin-top: 4px;
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .title-translate-source {
+    width: 100%;
+    min-height: 260px;
+    resize: vertical;
+    border: 1.5px solid var(--border-main);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--text-main);
+    padding: 14px 15px;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.7;
+    outline: none;
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+
+  .title-translate-source:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+  }
+
+  .title-translate-source::placeholder {
+    color: #9ca3af;
+  }
+
+  .title-translate-source-error {
+    min-height: 20px;
+    margin-top: 10px;
+    color: #dc2626;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .title-translate-action {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .title-translate-translate-btn {
+    min-height: 44px;
+    border: none;
+    border-radius: 12px;
+    background: var(--primary-gradient);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+    transition: opacity .12s ease, transform .12s ease;
+  }
+
+  .title-translate-translate-btn:hover {
+    transform: translateY(-1px);
+  }
+
+  .title-translate-translate-btn:disabled {
+    cursor: not-allowed;
+    opacity: .7;
+    transform: none;
+  }
+
+  .title-translate-action-hint {
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .title-translate-result {
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .title-translate-state {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px dashed #cbd5e1;
+    background: #f8fbff;
+    color: #334155;
+    line-height: 1.7;
+    white-space: pre-wrap;
+  }
+
+  .title-translate-state--loading {
+    border-color: #bae6fd;
+    background: #f0f9ff;
+    color: #075985;
+  }
+
+  .title-translate-state--error {
+    border-color: #fecaca;
+    background: #fff7f7;
+    color: #991b1b;
+  }
+
+  .title-translate-result-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .title-translate-result-meta {
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-top: 4px;
+  }
+
+  .title-translate-copy-btn {
+    border: 1px solid var(--border-main);
+    background: #fff;
+    color: #334155;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .12s ease, border-color .12s ease, background-color .12s ease;
+    flex-shrink: 0;
+  }
+
+  .title-translate-copy-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  .title-translate-block {
+    padding-top: 14px;
+    border-top: 1px solid var(--border-main);
+  }
+
+  .title-translate-block:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .title-translate-block-label {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .title-translate-block-value {
+    color: var(--text-main);
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .title-translate-result-empty {
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  @media (max-width: 1100px) {
+    .title-translate-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .title-translate-action {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .title-translate-translate-btn {
+      min-width: 168px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .title-translate-hero {
+      flex-direction: column;
+    }
+
+    .title-translate-lang-pills {
+      justify-content: flex-start;
+    }
+
+    .title-translate-panel {
+      padding: 16px;
+    }
+
+    .title-translate-source {
+      min-height: 220px;
+    }
+
+    .title-translate-action {
+      flex-direction: column;
+    }
+  }
+{% endblock %}
+{% block content %}
+<div
+  id="titleTranslateApp"
+  class="title-translate-app"
+  data-languages-url="/api/title-translate/languages"
+  data-translate-url="/api/title-translate/translate"
+>
+  <section class="title-translate-hero">
+    <div>
+      <div class="title-translate-eyebrow">多语言标题翻译工作台</div>
+      <h1 class="title-translate-heading">多语言标题翻译</h1>
+      <p class="title-translate-desc">
+        左侧输入固定三段结构的原文，顶部选择目标语种，中间点击翻译，右侧查看结果并一键复制。
+      </p>
+    </div>
+    <div class="title-translate-lang-pills" id="titleTranslateLangPills" aria-label="目标语种"></div>
+  </section>
+
+  <section class="title-translate-grid" aria-label="标题翻译工作区">
+    <div class="title-translate-panel">
+      <div class="title-translate-panel-head">
+        <div>
+          <div class="title-translate-panel-title">英文原文</div>
+          <div class="title-translate-panel-subtitle">请按“标题 / 文案 / 描述”三行填写，三段都必须保留。</div>
+        </div>
+      </div>
+      <textarea
+        id="titleTranslateSource"
+        class="title-translate-source"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="标题: The future of video localization&#10;文案: Ship faster with a clearer workflow&#10;描述: Keep titles, copy, and descriptions in sync"
+      ></textarea>
+      <div id="titleTranslateSourceError" class="title-translate-source-error" aria-live="polite"></div>
+    </div>
+
+    <div class="title-translate-action">
+      <button type="button" id="titleTranslateTranslateBtn" class="title-translate-translate-btn">
+        翻译
+      </button>
+      <div class="title-translate-action-hint">
+        点击后会先校验三段结构，再调用 Claude Sonnet 生成目标语种的标题、文案和描述。
+      </div>
+    </div>
+
+    <div
+      class="title-translate-panel title-translate-result"
+      id="titleTranslateResult"
+      aria-live="polite"
+      data-state="empty"
+    >
+      <div class="title-translate-result-empty">结果将显示在这里</div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='title_translate.js') }}"></script>
+{% endblock %}

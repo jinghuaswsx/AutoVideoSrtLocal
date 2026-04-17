@@ -39,6 +39,7 @@ from web.routes.admin_usage import bp as admin_usage_bp, user_usage_bp
 from web.routes.tos_upload import bp as tos_upload_bp
 from web.routes.prompt import bp as prompt_bp
 from web.routes.text_translate import bp as text_translate_bp
+from web.routes.title_translate import bp as title_translate_bp
 from web.routes.video_creation import bp as video_creation_bp
 from web.routes.video_review import bp as video_review_bp
 from web.routes.subtitle_removal import bp as subtitle_removal_bp
@@ -181,6 +182,7 @@ def create_app() -> Flask:
     app.register_blueprint(prompt_bp)
     app.register_blueprint(copywriting_bp)
     app.register_blueprint(text_translate_bp)
+    app.register_blueprint(title_translate_bp)
     app.register_blueprint(video_creation_bp)
     app.register_blueprint(video_review_bp)
     app.register_blueprint(subtitle_removal_bp)
