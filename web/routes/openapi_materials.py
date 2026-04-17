@@ -118,3 +118,64 @@ def get_material(product_code: str):
         "items": _serialize_items(items),
         "expires_in": config.TOS_SIGNED_URL_EXPIRES,
     })
+
+
+@bp.route("/<product_code>/push-payload", methods=["GET"])
+def build_push_payload(product_code: str):
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    lang = (request.args.get("lang") or "").strip().lower()
+    if not lang:
+        return jsonify({"error": "missing lang"}), 400
+
+    code = (product_code or "").strip().lower()
+    product = medias.get_product_by_code(code)
+    if not product:
+        return jsonify({"error": "product not found"}), 404
+
+    product_id = product["id"]
+    items = medias.list_items(product_id, lang)
+
+    product_links = (
+        [f"https://newjoyloo.com/{lang}/products/{code}-rjc"]
+        if lang != "en" else []
+    )
+
+    texts = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
+
+    videos = []
+    for it in items:
+        object_key = it.get("object_key")
+        cover_object_key = it.get("cover_object_key")
+        videos.append({
+            "name": it.get("display_name") or it.get("filename") or "",
+            "size": int(it.get("file_size") or 0),
+            "width": 1080,
+            "height": 1920,
+            "url": (
+                tos_clients.generate_signed_media_download_url(object_key)
+                if object_key else None
+            ),
+            "image_url": (
+                tos_clients.generate_signed_media_download_url(cover_object_key)
+                if cover_object_key else None
+            ),
+        })
+
+    payload = {
+        "mode": "create",
+        "product_name": product.get("name") or "",
+        "texts": texts,
+        "product_links": product_links,
+        "videos": videos,
+        "source": 0,
+        "level": int(product.get("importance") or 3),
+        "author": "蔡靖华",
+        "push_admin": "蔡靖华",
+        "roas": 1.6,
+        "platforms": ["tiktok"],
+        "selling_point": product.get("selling_points") or "",
+        "tags": [],
+    }
+    return jsonify(payload)
