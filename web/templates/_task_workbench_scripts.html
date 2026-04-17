@@ -973,10 +973,9 @@
     e.stopPropagation();
     if (btn.disabled) return;
     const step = btn.dataset.step;
-    const stepContainer = btn.closest(".step");
-    const stepNameEl = stepContainer ? stepContainer.querySelector(".step-name") : null;
-    const stepName = stepNameEl ? stepNameEl.textContent : step;
-    if (!confirm(`从「${stepName}」步骤重新开始？前面已完成的结果保留不变。`)) return;
+    // 不再用 confirm：如果用户之前勾过"阻止此页面再创建对话框"，
+    // confirm 会静默返回 false，按钮点了就像没反应。按钮本身需要明确点击，
+    // 再多一道 confirm 属于多余。
     btn.disabled = true;
     const originalText = btn.textContent;
     btn.textContent = "启动中…";
@@ -1002,11 +1001,9 @@
         }
       }
       showError(message);
-      alert(message);
     } catch (err) {
       const message = (err && err.message) ? err.message : "启动失败（未知异常）";
       showError(message);
-      alert(message);
     } finally {
       btn.disabled = false;
       btn.textContent = originalText || "从此步继续";
