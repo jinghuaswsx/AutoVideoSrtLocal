@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block title %}翻译任务中心 · AutoVideoSrt{% endblock %}
+{% block page_title %}翻译任务中心{% endblock %}
+
+{% block extra_style %}
+<link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
+<style>
+  .bt-tasks { max-width: 1100px; margin: 0 auto; padding: 0 8px; }
+  .bt-tasks__tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .bt-tasks__tabs button {
+    background: none; border: 1px solid var(--border-strong, #cbd5e1);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .bt-tasks__tabs button.active {
+    background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
+  }
+  .bt-tasks__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .bt-tasks__table th, .bt-tasks__table td {
+    padding: 10px 12px; border-bottom: 1px solid oklch(94% 0.010 230); text-align: left;
+  }
+  .bt-tasks__table th { background: oklch(97% 0.006 230); font-weight: 600; color: var(--fg-muted, #64748b); }
+  .bt-tasks__table tr:hover td { background: oklch(99% 0.004 230); }
+  .bt-tasks__empty { padding: 40px; text-align: center; color: var(--fg-muted, #64748b); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bt-tasks">
+  <div class="bt-tasks__tabs">
+    <button class="active" data-tab="">全部</button>
+    <button data-tab="running">进行中</button>
+    <button data-tab="paused">已暂停</button>
+    <button data-tab="done">已完成</button>
+    <button data-tab="error">失败</button>
+    <button data-tab="cancelled">已取消</button>
+  </div>
+  <table class="bt-tasks__table">
+    <thead>
+      <tr>
+        <th>任务</th><th>产品</th><th>语言</th><th>发起人</th><th>时间</th>
+        <th>状态</th><th>进度</th><th>预估 / 实际</th><th></th>
+      </tr>
+    </thead>
+    <tbody data-rows></tbody>
+  </table>
+  <div class="bt-tasks__empty hidden" data-empty>🎈 没有翻译任务。</div>
+</div>
+
+{% include '_bulk_translate_dialog.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='bulk_translate_ui.js') }}"></script>
+<script>
+(function(){
+  const rowsBox = document.querySelector('[data-rows]');
+  const emptyBox = document.querySelector('[data-empty]');
+
+  async function load(tab) {
+    const url = '/api/bulk-translate/list' + (tab ? '?status=' + encodeURIComponent(tab) : '');
+    const r = await fetch(url);
+    if (!r.ok) { rowsBox.innerHTML = ''; emptyBox.classList.remove('hidden'); emptyBox.textContent = '加载失败'; return; }
+    const rows = await r.json();
+    emptyBox.classList.toggle('hidden', rows.length > 0);
+    rowsBox.innerHTML = rows.map(r => {
+      const p = r.progress || {};
+      const d = (p.done || 0) + (p.skipped || 0);
+      return `<tr>
+        <td><code>${r.id.slice(0, 8)}</code></td>
+        <td>#${r.product_id || '—'}</td>
+        <td>${(r.target_langs || []).map(flag).join(' ')}</td>
+        <td>${esc(r.initiator && r.initiator.user_name || '—')}</td>
+        <td>${esc(r.created_at || '—')}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td style="font-family:monospace">${d}/${p.total || 0}</td>
+        <td>¥${r.cost_estimate || 0} / ¥${r.cost_actual || 0}</td>
+        <td><a href="/tasks/${r.id}" class="bt-btn bt-btn--ghost" style="height:26px;padding:0 12px;font-size:12px">详情</a></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function flag(c) { return { de:'🇩🇪', fr:'🇫🇷', es:'🇪🇸', it:'🇮🇹', ja:'🇯🇵', pt:'🇵🇹' }[c] || c; }
+  function statusBadge(s) {
+    const color = { running:'#0369a1', done:'#047857', error:'#b91c1c', paused:'#64748b', cancelled:'#64748b', planning:'#64748b' }[s] || '#64748b';
+    const label = { running:'运行中', done:'✓ 完成', error:'❌ 失败', paused:'已暂停', cancelled:'已取消', planning:'待启动' }[s] || s;
+    return `<span style="color:${color};font-weight:500">${label}</span>`;
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+  document.querySelectorAll('[data-tab]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('[data-tab]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      load(b.dataset.tab);
+    });
+  });
+  load('');
+})();
+</script>
+{% endblock %}

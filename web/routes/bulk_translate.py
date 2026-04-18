@@ -16,7 +16,7 @@ Phase 5 会追加:
 from __future__ import annotations
 
 import eventlet
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from appcore.bulk_translate_estimator import estimate as do_estimate
@@ -42,6 +42,20 @@ from appcore.video_translate_defaults import (
 bp = Blueprint("bulk_translate", __name__, url_prefix="/api/bulk-translate")
 profile_bp = Blueprint("video_translate_profile", __name__,
                         url_prefix="/api/video-translate-profile")
+# 页面路由(非 API),没有 /api 前缀
+pages_bp = Blueprint("bulk_translate_pages", __name__)
+
+
+@pages_bp.get("/tasks")
+@login_required
+def tasks_list_page():
+    return render_template("bulk_translate_list.html")
+
+
+@pages_bp.get("/tasks/<task_id>")
+@login_required
+def tasks_detail_page(task_id):
+    return render_template("bulk_translate_detail.html", task_id=task_id)
 
 
 # ============================================================

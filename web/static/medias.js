@@ -317,6 +317,7 @@
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
           <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
+          <button class="bt-row-btn" data-bt-open="${p.id}" data-bt-name="${escapeHtml(p.name)}" title="一键翻译到多语言">🌐 翻译</button>
         </td>
       </tr>`;
   }
