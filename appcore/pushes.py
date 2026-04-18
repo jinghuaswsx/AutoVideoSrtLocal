@@ -68,3 +68,27 @@ def compute_status(item: dict, product: dict) -> str:
             return STATUS_FAILED if is_ready(readiness) else STATUS_NOT_READY
     readiness = compute_readiness(item, product)
     return STATUS_PENDING if is_ready(readiness) else STATUS_NOT_READY
+
+
+# ---------- 链接模板与探活 ----------
+
+def build_product_link(lang: str, product_code: str) -> str:
+    tpl = config.AD_URL_TEMPLATE or ""
+    return tpl.format(lang=lang, product_code=product_code)
+
+
+def probe_ad_url(url: str) -> tuple[bool, str | None]:
+    """HEAD 请求探活。返回 (ok, error_message)。"""
+    if not url:
+        return False, "empty url"
+    try:
+        resp = requests.head(
+            url,
+            timeout=config.AD_URL_PROBE_TIMEOUT,
+            allow_redirects=True,
+        )
+    except requests.RequestException as e:
+        return False, str(e)
+    if 200 <= resp.status_code < 400:
+        return True, None
+    return False, f"HTTP {resp.status_code}"

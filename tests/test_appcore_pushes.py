@@ -90,3 +90,49 @@ def test_compute_status_not_ready(product_with_item):
     item = medias.get_item(item_id)
     product = medias.get_product(pid)
     assert pushes.compute_status(item, product) == "not_ready"
+
+
+import requests
+
+
+def test_probe_ad_url_success(monkeypatch):
+    class FakeResp:
+        status_code = 200
+    monkeypatch.setattr(
+        "appcore.pushes.requests.head",
+        lambda url, timeout, allow_redirects: FakeResp(),
+    )
+    ok, err = pushes.probe_ad_url("https://example.com/x")
+    assert ok is True
+    assert err is None
+
+
+def test_probe_ad_url_404(monkeypatch):
+    class FakeResp:
+        status_code = 404
+    monkeypatch.setattr(
+        "appcore.pushes.requests.head",
+        lambda url, timeout, allow_redirects: FakeResp(),
+    )
+    ok, err = pushes.probe_ad_url("https://example.com/x")
+    assert ok is False
+    assert "404" in err
+
+
+def test_probe_ad_url_timeout(monkeypatch):
+    def boom(url, timeout, allow_redirects):
+        raise requests.Timeout("timed out")
+    monkeypatch.setattr("appcore.pushes.requests.head", boom)
+    ok, err = pushes.probe_ad_url("https://example.com/x")
+    assert ok is False
+    assert "timed out" in err.lower() or "timeout" in err.lower()
+
+
+def test_build_product_link():
+    import config
+    original = config.AD_URL_TEMPLATE
+    config.AD_URL_TEMPLATE = "https://x.com/{lang}/p/{product_code}"
+    try:
+        assert pushes.build_product_link("de", "abc") == "https://x.com/de/p/abc"
+    finally:
+        config.AD_URL_TEMPLATE = original
