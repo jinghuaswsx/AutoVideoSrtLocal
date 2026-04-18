@@ -16,6 +16,21 @@ from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
 from appcore import image_translate_settings as its
+
+_BACKEND_LABELS = {
+    "aistudio":   "Google AI Studio",
+    "cloud":      "Google Cloud (Vertex AI)",
+    "openrouter": "OpenRouter",
+}
+
+
+def _backend_badge() -> dict:
+    """读 system_settings 里的全局通道；DB 异常时回落 aistudio，避免页面 500。"""
+    try:
+        key = its.get_channel()
+    except Exception:
+        key = "aistudio"
+    return {"key": key, "label": _BACKEND_LABELS.get(key, key or "unknown")}
 from web import store
 from web.services import image_translate_runner
 
@@ -367,7 +382,11 @@ def page_list():
             "total": len(items),
             "done": done,
         })
-    return render_template("image_translate_list.html", history=history)
+    return render_template(
+        "image_translate_list.html",
+        history=history,
+        gemini_backend=_backend_badge(),
+    )
 
 
 @bp.route("/image-translate/<task_id>", methods=["GET"])
@@ -378,6 +397,7 @@ def page_detail(task_id: str):
         "image_translate_detail.html",
         task_id=task_id,
         state=_state_payload(task),
+        gemini_backend=_backend_badge(),
     )
 
 

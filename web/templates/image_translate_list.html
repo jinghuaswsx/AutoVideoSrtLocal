@@ -7,6 +7,12 @@
   <section class="card">
     <h2>新建图片翻译任务</h2>
 
+    <div class="it-backend-hint">
+      <span>当前通道</span>
+      <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
+      <span class="hint" style="margin-left:auto;color:var(--fg-subtle,#9ca3af)">全局配置，可在「系统设置 → 全局配置」修改</span>
+    </div>
+
     <div class="form-row">
       <label>场景预设</label>
       <div id="itPresetPills" class="it-pill-group" role="radiogroup">

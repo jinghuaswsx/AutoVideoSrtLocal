@@ -13,6 +13,10 @@
       <div><label>预设</label><strong id="itMetaPreset">{{ '封面图翻译' if state.preset == 'cover' else '产品详情图翻译' }}</strong></div>
       <div><label>目标语言</label><strong id="itMetaLang">{{ state.target_language_name }}</strong></div>
       <div><label>模型</label><strong id="itMetaModel">{{ state.model_id }}</strong></div>
+      <div>
+        <label>当前通道</label>
+        <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
+      </div>
     </div>
     <details class="it-prompt-snapshot" style="margin-top:12px">
       <summary>提示词快照</summary>

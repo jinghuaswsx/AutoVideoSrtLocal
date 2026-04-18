@@ -44,6 +44,13 @@
 .empty { padding:24px; text-align:center; color:#6b7280; }
 .chip { display:inline-block; padding:2px 8px; border-radius:999px;
         background:#eef6ff; color:#1d4ed8; font-size:12px; }
+.chip--backend { padding:3px 10px; font-weight:500; letter-spacing:.01em; }
+.chip--backend.is-cloud      { background:#e6f2ff; color:#0b4fb0; border:1px solid #bcd8ff; }
+.chip--backend.is-aistudio   { background:#e6fbff; color:#0b6b8a; border:1px solid #bfeaf3; }
+.chip--backend.is-openrouter { background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; }
+.it-backend-hint { display:flex; align-items:center; gap:8px; margin:-6px 0 14px;
+                   font-size:12px; color:var(--fg-muted,#64748b); }
+.it-backend-hint .chip--backend { font-size:12px; }
 .table { width:100%; border-collapse:collapse; }
 .table th, .table td { padding:10px 12px; border-bottom:1px solid var(--border-main,#e5e7eb); text-align:left; font-size:14px; }
 .table tbody tr:hover { background:#f8fbff; }
