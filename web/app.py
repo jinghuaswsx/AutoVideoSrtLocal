@@ -300,4 +300,26 @@ def create_app() -> Flask:
         if getattr(current_user, "role", None) == "admin":
             join_room("admin")
 
+    _seed_default_prompts()
+
     return app
+
+
+def _seed_default_prompts():
+    """启动时确保每个 (slot, lang) 都有一条 enabled 记录；没有就 seed default。
+
+    resolve_prompt_config 内部在 DB miss 时会自动回写 DEFAULTS。DB 不可达
+    时记 warning 但不影响 app 启动。
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from appcore.llm_prompt_configs import resolve_prompt_config
+        from pipeline.languages.prompt_defaults import DEFAULTS
+        for (slot, lang), _default in DEFAULTS.items():
+            try:
+                resolve_prompt_config(slot, lang)
+            except Exception as exc:
+                log.warning("seed prompt failed for (%s, %s): %s", slot, lang, exc)
+    except Exception as exc:
+        log.warning("_seed_default_prompts skipped: %s", exc)
