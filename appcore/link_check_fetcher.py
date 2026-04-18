@@ -44,7 +44,9 @@ def _locale_prefix(value: str) -> str:
 def _resolved_url_matches_locale(url: str, target_language: str) -> bool:
     normalized_target = _locale_prefix(target_language)
     segments = [segment.lower() for segment in urlparse(url).path.split("/") if segment]
-    return normalized_target in {_locale_prefix(segment) for segment in segments}
+    if not segments:
+        return False
+    return _locale_prefix(segments[0]) == normalized_target
 
 
 def _is_locale_locked(*, resolved_url: str, page_language: str, target_language: str) -> bool:

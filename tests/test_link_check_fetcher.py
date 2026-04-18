@@ -67,6 +67,30 @@ def test_fetch_page_rejects_wrong_html_lang_even_when_url_keeps_locale(monkeypat
         fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
 
 
+@pytest.mark.parametrize(
+    "resolved_url",
+    [
+        "https://shop.example.com/products/de-demo",
+        "https://shop.example.com/collections/de/summer",
+    ],
+)
+def test_fetch_page_rejects_locale_like_paths_without_html_lang(monkeypatch, resolved_url):
+    from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return SimpleNamespace(
+            url=resolved_url,
+            status_code=200,
+            text="<html><body></body></html>",
+        )
+
+    fetcher = LinkCheckFetcher()
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    with pytest.raises(LocaleLockError, match="locale lock"):
+        fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
+
+
 def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     from appcore.link_check_fetcher import extract_images_from_html
 
