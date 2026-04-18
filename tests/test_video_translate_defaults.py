@@ -71,3 +71,64 @@ def test_system_defaults_is_immutable_reference():
     import appcore.video_translate_defaults as mod
     reload(mod)
     assert mod.SYSTEM_DEFAULTS["subtitle_size"] == 14
+
+
+# ============================================================
+# resolve_default_voice — TTS 音色探测(Task 4)
+# ============================================================
+
+def test_resolve_default_voice_returns_none_when_list_empty(monkeypatch):
+    """该语种没有任何可用音色时,返回 None。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [])
+    assert mod.resolve_default_voice("de") is None
+
+
+def test_resolve_default_voice_prefers_mapped_name(monkeypatch):
+    """TTS_VOICE_DEFAULTS 映射的名字(Anke / Céline)能在列表里匹配到时,优先选中。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [
+        {"voice_id": "v_other", "name": "Random Voice"},
+        {"voice_id": "v_anke", "name": "Anke Müller"},
+        {"voice_id": "v_third", "name": "Other"},
+    ])
+    assert mod.resolve_default_voice("de") == "v_anke"
+
+
+def test_resolve_default_voice_falls_back_to_first_when_no_match(monkeypatch):
+    """映射名字在列表里找不到时,返回列表第一个。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [
+        {"voice_id": "v_first", "name": "First Voice"},
+        {"voice_id": "v_second", "name": "Second Voice"},
+    ])
+    assert mod.resolve_default_voice("de") == "v_first"
+
+
+def test_resolve_default_voice_is_case_insensitive(monkeypatch):
+    """名字匹配应该大小写不敏感。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [
+        {"voice_id": "v_celine", "name": "céline (female)"},
+    ])
+    assert mod.resolve_default_voice("fr") == "v_celine"
+
+
+def test_resolve_default_voice_handles_missing_name_gracefully(monkeypatch):
+    """voice dict 里 name 为 None 或缺失时不崩溃。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [
+        {"voice_id": "v_no_name", "name": None},
+        {"voice_id": "v_anke", "name": "Anke"},
+    ])
+    assert mod.resolve_default_voice("de") == "v_anke"
+
+
+def test_resolve_default_voice_unknown_lang_returns_first(monkeypatch):
+    """未在 TTS_VOICE_DEFAULTS 中的语种,直接取列表第一项。"""
+    from appcore import video_translate_defaults as mod
+    monkeypatch.setattr(mod, "_list_voices_by_lang", lambda lang: [
+        {"voice_id": "v1", "name": "Maria"},
+        {"voice_id": "v2", "name": "Sofia"},
+    ])
+    assert mod.resolve_default_voice("es") == "v1"

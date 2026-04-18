@@ -122,3 +122,43 @@ def save_profile(user_id, product_id, lang, params):
         """,
         (user_id, product_id, lang, payload),
     )
+
+
+# ============================================================
+# TTS 音色探测(Task 4)
+# ============================================================
+
+def _list_voices_by_lang(lang):
+    """查询某语言下所有可用 TTS 音色,返回 [{voice_id, name, ...}]。
+
+    复用 appcore.voice_library_browse.list_voices(language=...),
+    它返回 {total, items}。异常/空库时返回空列表。
+    """
+    try:
+        from appcore.voice_library_browse import list_voices
+        result = list_voices(language=lang, page=1, page_size=200)
+        return result.get("items") or []
+    except Exception:
+        return []
+
+
+def resolve_default_voice(lang):
+    """给定目标语言,返回推荐 voice_id:
+
+    1. 优先匹配 TTS_VOICE_DEFAULTS 里的名字(大小写不敏感 contains 匹配)
+    2. 名字不匹配时,取列表第一个
+    3. 列表为空时返回 None
+    """
+    voices = _list_voices_by_lang(lang)
+    if not voices:
+        return None
+
+    preferred = TTS_VOICE_DEFAULTS.get(lang)
+    if preferred:
+        key = preferred.lower()
+        for v in voices:
+            name = (v.get("name") or "").lower()
+            if name and key in name:
+                return v["voice_id"]
+
+    return voices[0]["voice_id"]
