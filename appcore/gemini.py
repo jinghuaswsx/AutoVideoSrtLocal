@@ -17,7 +17,13 @@ from google.genai import types as genai_types
 from google.genai import errors as genai_errors
 
 from appcore.api_keys import resolve_extra, resolve_key
-from config import GEMINI_API_KEY, GEMINI_BACKEND, GEMINI_MODEL
+from config import (
+    GEMINI_API_KEY,
+    GEMINI_BACKEND,
+    GEMINI_CLOUD_LOCATION,
+    GEMINI_CLOUD_PROJECT,
+    GEMINI_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +68,8 @@ def resolve_config(user_id: int | None = None, service: str = "gemini",
         key = (resolve_key(user_id, service, "GEMINI_API_KEY") or "").strip()
         if not key and service != "gemini":
             key = (resolve_key(user_id, "gemini", "GEMINI_API_KEY") or "").strip()
-    key = key or GEMINI_API_KEY
+    if GEMINI_BACKEND != "cloud":
+        key = key or GEMINI_API_KEY
 
     model = default_model or GEMINI_MODEL
     if user_id is not None:
@@ -73,13 +80,26 @@ def resolve_config(user_id: int | None = None, service: str = "gemini",
     return key, model
 
 
+def _client_cache_key(api_key: str) -> str:
+    if GEMINI_BACKEND == "cloud":
+        return f"cloud:{GEMINI_CLOUD_PROJECT}:{GEMINI_CLOUD_LOCATION}"
+    return f"aistudio:{api_key}"
+
+
 def _get_client(api_key: str) -> genai.Client:
-    if api_key not in _clients:
+    cache_key = _client_cache_key(api_key)
+    if cache_key not in _clients:
         if GEMINI_BACKEND == "cloud":
-            _clients[api_key] = genai.Client(vertexai=True, api_key=api_key)
+            if not GEMINI_CLOUD_PROJECT:
+                raise GeminiError("GEMINI_CLOUD_PROJECT 未配置，无法使用 Vertex AI")
+            _clients[cache_key] = genai.Client(
+                vertexai=True,
+                project=GEMINI_CLOUD_PROJECT,
+                location=GEMINI_CLOUD_LOCATION,
+            )
         else:
-            _clients[api_key] = genai.Client(api_key=api_key)
-    return _clients[api_key]
+            _clients[cache_key] = genai.Client(api_key=api_key)
+    return _clients[cache_key]
 
 
 def _guess_mime(path: Path) -> str:
@@ -243,7 +263,10 @@ def generate(
     default_model: 该业务的默认模型（当 service 未配 model_id 时使用）。
     """
     api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
-    if not api_key:
+    if GEMINI_BACKEND == "cloud":
+        if not GEMINI_CLOUD_PROJECT:
+            raise GeminiError("GEMINI_CLOUD_PROJECT 未配置，无法使用 Vertex AI")
+    elif not api_key:
         raise GeminiError("GEMINI_API_KEY 未配置（可在系统配置页设置，或设环境变量，或写入 google_api_key 文件）")
     client = _get_client(api_key)
     model_id = model or resolved_model
@@ -304,7 +327,10 @@ def generate_stream(
 ) -> Generator[str, None, None]:
     """流式生成，yield 文本片段。不支持 response_schema。"""
     api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
-    if not api_key:
+    if GEMINI_BACKEND == "cloud":
+        if not GEMINI_CLOUD_PROJECT:
+            raise GeminiError("GEMINI_CLOUD_PROJECT 未配置，无法使用 Vertex AI")
+    elif not api_key:
         raise GeminiError("GEMINI_API_KEY 未配置")
     client = _get_client(api_key)
     model_id = model or resolved_model
@@ -337,5 +363,7 @@ def generate_stream(
 
 
 def is_configured(user_id: int | None = None) -> bool:
+    if GEMINI_BACKEND == "cloud":
+        return bool(GEMINI_CLOUD_PROJECT)
     key, _ = resolve_config(user_id)
     return bool(key)
