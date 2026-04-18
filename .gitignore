@@ -58,6 +58,12 @@ testuser.md
 .omc/
 google_api_key
 
+# 本地备份（服务器漂移/snapshot 等不入仓）
+backup/
+
+# 个人调试 session（带硬编码 task_id 等）
+scripts/debug_workbench.mjs
+
 # Fonts — 项目必需的开源字体（OFL）需要 version；个人/商业字体仍然不 track。
 # 默认忽略全部字体，再用 ! 允许指定的开源字体文件。
 fonts/*.ttf
