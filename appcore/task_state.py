@@ -498,8 +498,10 @@ def create_image_translate(task_id: str, task_dir: str, *,
                             target_language_name: str,
                             model_id: str,
                             prompt: str,
-                            items: list[dict]) -> dict:
-    """创建图片翻译任务的初始状态。"""
+                            items: list[dict],
+                            product_name: str = "",
+                            project_name: str = "") -> dict:
+    """创建图片翻译任务的初始状态。product_name/project_name 作为存档标识写入 state。"""
     normalized_items = []
     for idx, raw in enumerate(items):
         normalized_items.append({
@@ -516,12 +518,14 @@ def create_image_translate(task_id: str, task_dir: str, *,
         "type": "image_translate",
         "status": "queued",
         "task_dir": task_dir,
+        "product_name": product_name or "",
+        "project_name": project_name or "",
         "preset": preset,
         "target_language": target_language,
         "target_language_name": target_language_name,
         "model_id": model_id,
         "prompt": prompt,
-        "display_name": "",
+        "display_name": project_name or "",
         "original_filename": "",
         "steps": {"prepare": "done", "process": "pending"},
         "step_messages": {"prepare": "", "process": ""},

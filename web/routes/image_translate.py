@@ -38,6 +38,21 @@ bp = Blueprint("image_translate", __name__)
 
 _MAX_ITEMS = 20
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_PRODUCT_NAME_MAX_LEN = 60
+_PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
+
+
+def _sanitize_product_name(value: str) -> str:
+    cleaned = "".join(ch for ch in (value or "") if ch not in _PROJECT_NAME_ILLEGAL)
+    return cleaned.strip()
+
+
+def _compose_project_name(product_name: str, preset: str, lang_name: str) -> str:
+    from datetime import datetime as _dt
+    today = _dt.now().strftime("%Y%m%d")
+    preset_label = "封面" if preset == "cover" else ("商品详情" if preset == "detail" else "")
+    parts = [product_name.strip(), preset_label, (lang_name or "").strip(), today]
+    return "-".join(p for p in parts if p)
 
 _upload_guard = threading.Lock()
 _upload_reservations: dict[str, dict] = {}
@@ -85,6 +100,8 @@ def _state_payload(task: dict) -> dict:
         "target_language_name": task.get("target_language_name") or "",
         "model_id": task.get("model_id") or "",
         "prompt": task.get("prompt") or "",
+        "product_name": task.get("product_name") or "",
+        "project_name": task.get("project_name") or "",
         "progress": dict(task.get("progress") or {}),
         "items": list(task.get("items") or []),
         "steps": dict(task.get("steps") or {}),
@@ -159,6 +176,7 @@ def api_upload_complete():
     lang_code = (body.get("target_language") or "").strip().lower()
     model_id = (body.get("model_id") or "").strip()
     prompt_tpl = (body.get("prompt") or "").strip()
+    product_name_raw = (body.get("product_name") or "").strip()
     uploaded = body.get("uploaded") or []
 
     with _upload_guard:
@@ -173,6 +191,11 @@ def api_upload_complete():
         return jsonify({"error": "模型不支持"}), 400
     if not prompt_tpl:
         return jsonify({"error": "prompt 不能为空"}), 400
+    product_name = _sanitize_product_name(product_name_raw)
+    if not product_name:
+        return jsonify({"error": "产品名不能为空"}), 400
+    if len(product_name) > _PRODUCT_NAME_MAX_LEN:
+        return jsonify({"error": f"产品名长度不能超过 {_PRODUCT_NAME_MAX_LEN} 字符"}), 400
     if not uploaded:
         return jsonify({"error": "uploaded 不能为空"}), 400
 
@@ -208,6 +231,7 @@ def api_upload_complete():
     # Prompts are language-specific (no placeholders). Use as-is.
     final_prompt = prompt_tpl
     task_dir = ""
+    project_name = _compose_project_name(product_name, preset, lang_name)
     task_state.create_image_translate(
         task_id,
         task_dir,
@@ -218,6 +242,8 @@ def api_upload_complete():
         model_id=model_id,
         prompt=final_prompt,
         items=items,
+        product_name=product_name,
+        project_name=project_name,
     )
     # 记用户偏好（容错，失败不影响提交）
     try:
@@ -305,6 +331,37 @@ def api_retry_item(task_id: str, idx: int):
     return jsonify({"task_id": task_id, "idx": idx, "status": "queued"}), 202
 
 
+@bp.route("/api/image-translate/<task_id>/retry-failed", methods=["POST"])
+@login_required
+def api_retry_failed(task_id: str):
+    """一键把该任务下所有 failed 项重置为 pending，重新入队跑一轮。"""
+    task = _get_owned_task(task_id)
+    items = task.get("items") or []
+    reset_count = 0
+    for item in items:
+        if item.get("status") == "failed":
+            item["status"] = "pending"
+            item["attempts"] = 0
+            item["error"] = ""
+            item["dst_tos_key"] = ""
+            reset_count += 1
+    if reset_count == 0:
+        return jsonify({"error": "当前没有失败项可重试"}), 409
+    total = len(items)
+    done = sum(1 for it in items if it["status"] == "done")
+    failed = sum(1 for it in items if it["status"] == "failed")
+    task["progress"] = {"total": total, "done": done, "failed": failed, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=items,
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, current_user.id)
+    return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
+
+
 @bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
 @login_required
 def api_download_zip(task_id: str):
@@ -378,6 +435,8 @@ def page_list():
             "preset": preset,
             "preset_label": preset_label,
             "target_language_name": state.get("target_language_name") or "",
+            "project_name": state.get("project_name") or "",
+            "product_name": state.get("product_name") or "",
             "model_id": state.get("model_id") or "",
             "total": len(items),
             "done": done,

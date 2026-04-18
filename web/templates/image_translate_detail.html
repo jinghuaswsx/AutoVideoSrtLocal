@@ -25,7 +25,10 @@
   </section>
 
   <section class="card">
-    <h2>进度</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px">
+      <h2 style="margin:0">进度</h2>
+      <button id="itRetryFailed" class="btn" type="button" hidden>一键重新生成失败项</button>
+    </div>
     <div id="itProgress" class="it-progress">
       <span id="itProgressText">{{ state.progress.done }} / {{ state.progress.total }} 完成，{{ state.progress.failed }} 失败</span>
       <div class="it-progress-bar"><div id="itProgressFill"></div></div>

@@ -31,10 +31,11 @@ def run_cleanup() -> None:
         except Exception as e:
             log.error("Cleanup failed for %s: %s", task_id, e)
 
-    # ── 僵尸项目兜底清理 ──
+    # ── 僵尸项目兜底清理 ── image_translate 作为永久存档不参与兜底清理
     zombie_rows = query(
         "SELECT id, task_dir, user_id, state_json FROM projects "
         "WHERE expires_at IS NULL "
+        "AND type != 'image_translate' "
         "AND status NOT IN ('uploaded', 'running') "
         "AND created_at < NOW() - INTERVAL 30 DAY "
         "AND deleted_at IS NULL"

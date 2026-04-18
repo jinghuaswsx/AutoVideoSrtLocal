@@ -144,6 +144,7 @@ def test_complete_creates_task(authed_client_no_db, monkeypatch):
         "target_language": "de",
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "把图中文字翻译成 {target_language_name}",
+        "product_name": "测试产品",
         "uploaded": [{"idx": 0, "object_key": key, "filename": "a.jpg", "size": 100}],
     })
     assert resp.status_code == 201
@@ -163,6 +164,7 @@ def test_complete_rejects_invalid_language(authed_client_no_db, monkeypatch):
         "target_language": "xx",
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "x {target_language_name}",
+        "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
     assert resp.status_code == 400
@@ -188,6 +190,7 @@ def test_complete_rejects_bad_uploaded_items(authed_client_no_db, monkeypatch):
             "target_language": "de",
             "model_id": "gemini-3-pro-image-preview",
             "prompt": "x {target_language_name}",
+            "product_name": "p",
             **payload,
         })
         assert resp.status_code == 400
@@ -211,6 +214,7 @@ def test_complete_rejects_missing_uploaded_item(authed_client_no_db, monkeypatch
         "target_language": "de",
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "x {target_language_name}",
+        "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
     assert resp.status_code == 400
@@ -234,6 +238,7 @@ def test_complete_rejects_duplicate_uploaded_idx(authed_client_no_db, monkeypatc
         "target_language": "de",
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "x {target_language_name}",
+        "product_name": "p",
         "uploaded": [
             {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
             {"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1},
@@ -253,6 +258,7 @@ def test_get_state(authed_client_no_db, monkeypatch):
         "task_id": b["task_id"], "preset": "cover", "target_language": "de",
         "model_id": "gemini-3-pro-image-preview",
         "prompt": "... {target_language_name} ...",
+        "product_name": "p",
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
     resp = authed_client_no_db.get(f"/api/image-translate/{b['task_id']}")
@@ -278,6 +284,7 @@ def _prep_task(client, monkeypatch, with_done=True):
         "task_id": tid, "preset":"cover","target_language":"de",
         "model_id":"gemini-3-pro-image-preview",
         "prompt":"... {target_language_name} ...",
+        "product_name": "p",
         "uploaded":[{"idx":0,"object_key":b["uploads"][0]["object_key"],"filename":"a.jpg","size":1}],
     })
     from web import store
@@ -376,6 +383,130 @@ def test_zip_download_404_when_no_done(authed_client_no_db, monkeypatch):
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/zip")
     assert resp.status_code == 404
+
+
+def test_complete_rejects_missing_product_name(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1, "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"], "preset": "cover", "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 400
+    assert "产品名" in resp.get_json().get("error", "")
+
+
+def test_complete_rejects_overlong_product_name(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1, "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"], "preset": "cover", "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "product_name": "x" * 61,
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 400
+
+
+def test_complete_generates_project_name_with_product_lang_date(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import task_state as ts
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    captured = {}
+
+    def fake_create(tid, task_dir, **kw):
+        captured.update(kw)
+        task = {"id": tid, "type": "image_translate", "status": "queued",
+                "_user_id": kw["user_id"],
+                **{k: v for k, v in kw.items() if k != "user_id"},
+                "items": [{"idx": it["idx"], "filename": it["filename"],
+                            "src_tos_key": it["src_tos_key"], "dst_tos_key": "",
+                            "status": "pending", "attempts": 0, "error": ""}
+                           for it in kw["items"]],
+                "progress": {"total": len(kw["items"]), "done": 0, "failed": 0, "running": 0},
+                "steps": {}, "step_messages": {}, "error": ""}
+        with ts._lock:
+            ts._tasks[tid] = task
+        return task
+
+    monkeypatch.setattr(ts, "create_image_translate", fake_create)
+    monkeypatch.setattr("appcore.api_keys.set_key", lambda *a, **kw: None)
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1, "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"], "preset": "cover", "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x {target_language_name}",
+        "product_name": "三轮童车",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+    assert resp.status_code == 201
+    from datetime import datetime as _dt
+    today = _dt.now().strftime("%Y%m%d")
+    assert captured["product_name"] == "三轮童车"
+    assert captured["project_name"] == f"三轮童车-封面-德语-{today}"
+
+
+def test_complete_sanitizes_product_name_illegal_chars(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    assert r._sanitize_product_name("ab/c\\d:e*f") == "abcdef"
+    assert r._sanitize_product_name("  三轮/童车  ") == "三轮童车"
+    # 全非法字符 → 空字符串（触发必填校验）
+    assert r._sanitize_product_name("///") == ""
+
+
+def test_retry_failed_route_resets_all_failed(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    from web import store
+    task = store.get(tid)
+    # 人为构造：一项 done、一项 failed、一项 pending
+    task["items"] = [
+        {"idx": 0, "filename": "a.jpg", "src_tos_key": "s/a", "dst_tos_key": "d/a",
+         "status": "done", "attempts": 1, "error": ""},
+        {"idx": 1, "filename": "b.jpg", "src_tos_key": "s/b", "dst_tos_key": "d/b-old",
+         "status": "failed", "attempts": 3, "error": "timeout"},
+        {"idx": 2, "filename": "c.jpg", "src_tos_key": "s/c", "dst_tos_key": "",
+         "status": "failed", "attempts": 3, "error": "rate limit"},
+    ]
+    task["progress"] = {"total": 3, "done": 1, "failed": 2, "running": 0}
+    task["status"] = "error"
+    monkeypatch.setattr(r, "_start_runner", lambda tid, uid: True)
+    monkeypatch.setattr(store, "update", lambda *a, **kw: None)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-failed")
+    assert resp.status_code == 202
+    data = resp.get_json()
+    assert data["reset"] == 2
+    assert task["items"][0]["status"] == "done"                 # done 保持
+    assert task["items"][1]["status"] == "pending"
+    assert task["items"][1]["dst_tos_key"] == ""
+    assert task["items"][1]["error"] == ""
+    assert task["items"][2]["status"] == "pending"
+    assert task["progress"]["failed"] == 0
+    assert task["status"] == "queued"
+
+
+def test_retry_failed_route_409_when_no_failed(authed_client_no_db, monkeypatch):
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-failed")
+    assert resp.status_code == 409
 
 
 def test_delete_task(authed_client_no_db, monkeypatch):
