@@ -4,6 +4,20 @@
   const taskId = root.dataset.taskId;
   const lang = root.dataset.lang;
 
+  // 把音色选择器挪到 ASR 步骤卡之后，跟业务顺序（上传→提取→ASR→选音色→后续）一致
+  function repositionAfterAsr() {
+    const anchor = document.getElementById("step-asr");
+    if (!anchor || !anchor.parentNode) return;
+    if (anchor.nextSibling !== root) {
+      anchor.parentNode.insertBefore(root, anchor.nextSibling);
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", repositionAfterAsr);
+  } else {
+    repositionAfterAsr();
+  }
+
   const summaryEl = document.getElementById("vs-summary");
   const listEl = document.getElementById("vs-list");
   const selectionText = document.getElementById("vs-selection-text");
