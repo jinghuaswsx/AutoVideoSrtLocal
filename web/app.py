@@ -45,6 +45,7 @@ from web.routes.video_review import bp as video_review_bp
 from web.routes.subtitle_removal import bp as subtitle_removal_bp
 from web.routes.copywriting import bp as copywriting_bp
 from web.routes.copywriting_translate import bp as copywriting_translate_bp
+from web.routes.bulk_translate import bp as bulk_translate_bp, profile_bp as video_translate_profile_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.translate_lab import bp as translate_lab_bp
@@ -183,6 +184,8 @@ def create_app() -> Flask:
     app.register_blueprint(prompt_bp)
     app.register_blueprint(copywriting_bp)
     app.register_blueprint(copywriting_translate_bp)
+    app.register_blueprint(bulk_translate_bp)
+    app.register_blueprint(video_translate_profile_bp)
     app.register_blueprint(text_translate_bp)
     app.register_blueprint(title_translate_bp)
     app.register_blueprint(video_creation_bp)
