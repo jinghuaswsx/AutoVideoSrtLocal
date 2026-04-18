@@ -45,6 +45,7 @@ from web.routes.subtitle_removal import bp as subtitle_removal_bp
 from web.routes.copywriting import bp as copywriting_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
+from web.routes.multi_translate import bp as multi_translate_bp
 from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
@@ -186,6 +187,7 @@ def create_app() -> Flask:
     app.register_blueprint(subtitle_removal_bp)
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
+    app.register_blueprint(multi_translate_bp)
     app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
@@ -243,6 +245,13 @@ def create_app() -> Flask:
             task = store.get(task_id)
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
+
+    @socketio.on("join_multi_translate_task")
+    def on_join_multi_translate(data):
+        from flask_socketio import join_room
+        tid = data.get("task_id")
+        if tid:
+            join_room(tid)
 
     @socketio.on("join_subtitle_removal_task")
     def on_join_subtitle_removal(data):
