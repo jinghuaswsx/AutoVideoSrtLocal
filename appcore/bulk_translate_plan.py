@@ -43,11 +43,11 @@ def generate_plan(
     plan: list[dict] = []
     idx_counter = _Counter()
 
-    # 1. 文案
+    # 1. 文案(media_copywritings 无 deleted_at,不加软删过滤)
     if "copy" in content_types:
         copy_rows = query(
             "SELECT id FROM media_copywritings "
-            "WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL "
+            "WHERE product_id = %s AND lang = 'en' "
             "ORDER BY idx ASC, id ASC",
             (product_id,),
         )
@@ -125,10 +125,14 @@ def _new_item(idx: int, kind: str, lang: str, ref: dict) -> dict:
     }
 
 
+_SOFT_DELETE_TABLES = {"media_items", "media_product_detail_images"}
+
+
 def _list_en_ids(product_id: int, table: str) -> list[int]:
+    where_del = " AND deleted_at IS NULL" if table in _SOFT_DELETE_TABLES else ""
     rows = query(
         f"SELECT id FROM {table} "
-        f"WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL "
+        f"WHERE product_id = %s AND lang = 'en'{where_del} "
         f"ORDER BY id ASC",
         (product_id,),
     )

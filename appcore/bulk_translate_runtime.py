@@ -566,13 +566,16 @@ _EXISTS_ALLOWED = {
     "media_product_covers",
 }
 
+_SOFT_DELETE_TABLES = {"media_items", "media_product_detail_images"}
+
 
 def _exists_one(table: str, *, source_ref_id: int, lang: str) -> bool:
     if table not in _EXISTS_ALLOWED:
         raise ValueError(f"Unsupported table: {table}")
+    where_del = " AND deleted_at IS NULL" if table in _SOFT_DELETE_TABLES else ""
     row = query_one(
         f"SELECT 1 AS x FROM {table} "
-        f"WHERE source_ref_id = %s AND lang = %s AND deleted_at IS NULL LIMIT 1",
+        f"WHERE source_ref_id = %s AND lang = %s{where_del} LIMIT 1",
         (source_ref_id, lang),
     )
     return row is not None

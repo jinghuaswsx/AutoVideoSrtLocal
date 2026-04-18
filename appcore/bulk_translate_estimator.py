@@ -81,6 +81,14 @@ _COPY_TEXT_FIELDS = (
     "ad_carrier", "ad_copy", "ad_keywords",
 )
 
+# 四张素材表里,只有这两张带 deleted_at 列(软删)。
+# copywritings 和 covers 是硬删表,SQL 不能引用 deleted_at。
+_SOFT_DELETE_TABLES = {"media_items", "media_product_detail_images"}
+
+
+def _del_clause(table: str) -> str:
+    return " AND deleted_at IS NULL" if table in _SOFT_DELETE_TABLES else ""
+
 
 def _estimate_copy(product_id, target_langs, force, skipped):
     """文案:一条英文源 × 一个目标语言 = 一个预估单元。"""
@@ -89,7 +97,7 @@ def _estimate_copy(product_id, target_langs, force, skipped):
             f"COALESCE(CHAR_LENGTH({f}), 0) AS len_{f}"
             for f in _COPY_TEXT_FIELDS
         ]) + " FROM media_copywritings "
-        "WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL",
+        "WHERE product_id = %s AND lang = 'en'",
         (product_id,),
     )
     if not rows:
@@ -109,8 +117,7 @@ def _estimate_copy(product_id, target_langs, force, skipped):
 def _translation_exists_copy(product_id, lang, source_ref_id):
     row = query_one(
         "SELECT 1 AS x FROM media_copywritings "
-        "WHERE product_id = %s AND lang = %s AND source_ref_id = %s "
-        "AND deleted_at IS NULL LIMIT 1",
+        "WHERE product_id = %s AND lang = %s AND source_ref_id = %s LIMIT 1",
         (product_id, lang, source_ref_id),
     )
     return row is not None
@@ -120,7 +127,7 @@ def _estimate_images(table, product_id, target_langs, force, skipped, key):
     """图片:一张英文 × 一个目标语言 = 一张。"""
     rows = query(
         f"SELECT id FROM {table} "
-        f"WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL",
+        f"WHERE product_id = %s AND lang = 'en'{_del_clause(table)}",
         (product_id,),
     )
     if not rows:
@@ -140,8 +147,8 @@ def _estimate_images(table, product_id, target_langs, force, skipped, key):
 def _translation_exists(table, product_id, lang, source_ref_id):
     row = query_one(
         f"SELECT 1 AS x FROM {table} "
-        f"WHERE product_id = %s AND lang = %s AND source_ref_id = %s "
-        f"AND deleted_at IS NULL LIMIT 1",
+        f"WHERE product_id = %s AND lang = %s AND source_ref_id = %s"
+        f"{_del_clause(table)} LIMIT 1",
         (product_id, lang, source_ref_id),
     )
     return row is not None
