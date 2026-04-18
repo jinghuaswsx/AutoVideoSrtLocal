@@ -142,13 +142,27 @@ def _list_voices_by_lang(lang):
         return []
 
 
-def resolve_default_voice(lang):
+def resolve_default_voice(lang, user_id=None):
     """给定目标语言,返回推荐 voice_id:
 
-    1. 优先匹配 TTS_VOICE_DEFAULTS 里的名字(大小写不敏感 contains 匹配)
-    2. 名字不匹配时,取列表第一个
-    3. 列表为空时返回 None
+    优先级：
+    1. 用户自己设置的默认（user_voice_defaults 表）
+    2. TTS_VOICE_DEFAULTS 里的名字匹配（Anke / Céline 等系统挑选）
+    3. 音色库里的第一个
+    4. 音色库为空 → None
     """
+    # 优先级 1：用户自定义默认
+    if user_id is not None:
+        try:
+            row = query_one(
+                "SELECT voice_id FROM user_voice_defaults WHERE user_id=%s AND lang=%s",
+                (user_id, lang),
+            )
+            if row and row.get("voice_id"):
+                return row["voice_id"]
+        except Exception:
+            pass  # 表不存在/查询失败时 fallback 到后面
+
     voices = _list_voices_by_lang(lang)
     if not voices:
         return None
@@ -162,3 +176,31 @@ def resolve_default_voice(lang):
                 return v["voice_id"]
 
     return voices[0]["voice_id"]
+
+
+# ============================================================
+# 用户自定义默认音色（每语言一个）
+# ============================================================
+
+def set_user_default_voice(user_id, lang, voice_id, voice_name=None):
+    """把 user 在某语言的默认音色 upsert 到 user_voice_defaults 表。"""
+    execute(
+        """
+        INSERT INTO user_voice_defaults (user_id, lang, voice_id, voice_name)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          voice_id = VALUES(voice_id),
+          voice_name = VALUES(voice_name)
+        """,
+        (user_id, lang, voice_id, voice_name),
+    )
+
+
+def get_user_default_voice(user_id, lang):
+    """返回该 user × lang 的自定义默认音色 {voice_id, voice_name} 或 None。"""
+    row = query_one(
+        "SELECT voice_id, voice_name FROM user_voice_defaults "
+        "WHERE user_id = %s AND lang = %s",
+        (user_id, lang),
+    )
+    return dict(row) if row else None

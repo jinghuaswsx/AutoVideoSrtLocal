@@ -228,7 +228,7 @@ class MultiTranslateRunner(PipelineRunner):
                 log.exception("voice match failed for %s: %s", task_id, exc)
                 candidates = []
 
-        fallback = None if candidates else resolve_default_voice(lang)
+        fallback = None if candidates else resolve_default_voice(lang, user_id=self.user_id)
 
         task_state.update(
             task_id,
@@ -256,7 +256,7 @@ class MultiTranslateRunner(PipelineRunner):
                 "name": task.get("selected_voice_name") or voice_id,
             }
         lang = self._resolve_target_lang(task)
-        fallback = resolve_default_voice(lang)
+        fallback = resolve_default_voice(lang, user_id=self.user_id)
         if fallback:
             return {"id": None, "elevenlabs_voice_id": fallback, "name": "Default"}
         return super()._resolve_voice(task, loc_mod)

@@ -543,6 +543,24 @@ def run_ai_analysis(task_id):
     return jsonify({"error": "analysis not supported for multi_translate"}), 501
 
 
+@bp.route("/api/multi-translate/user-default-voice", methods=["PUT"])
+@login_required
+def set_user_default_voice_route():
+    """把某条音色设为该用户 × 该语种的默认。下次新建同语种任务会置顶。"""
+    body = request.get_json() or {}
+    lang = (body.get("lang") or "").strip()
+    voice_id = (body.get("voice_id") or "").strip()
+    voice_name = (body.get("voice_name") or "").strip() or None
+    if lang not in SUPPORTED_LANGS:
+        return jsonify({"error": f"lang must be one of {list(SUPPORTED_LANGS)}"}), 400
+    if not voice_id:
+        return jsonify({"error": "voice_id required"}), 400
+
+    from appcore.video_translate_defaults import set_user_default_voice
+    set_user_default_voice(current_user.id, lang, voice_id, voice_name)
+    return jsonify({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
+
+
 @bp.route("/api/multi-translate/<task_id>/voice", methods=["PUT"])
 @login_required
 def update_voice(task_id: str):
@@ -603,9 +621,10 @@ def voice_library_for_task(task_id: str):
     voice_match_ready = vm_status in ("waiting", "done")
 
     # 默认音色：让前端把它置顶可预览 + 可选中
+    # 优先用 user_voice_defaults 里用户自己设的，没有就走 resolve_default_voice 兜底
     from appcore.video_translate_defaults import resolve_default_voice
     default_voice = None
-    default_voice_id = resolve_default_voice(lang) if lang else None
+    default_voice_id = resolve_default_voice(lang, user_id=current_user.id) if lang else None
     if default_voice_id:
         row2 = db_query_one(
             "SELECT voice_id, name, gender, accent, age, descriptive, preview_url "
@@ -646,10 +665,10 @@ def confirm_voice(task_id: str):
     state = json.loads(row["state_json"] or "{}")
     lang = state.get("target_lang")
 
-    # voice_id 为 "default" / 空 时：走 resolve_default_voice(lang)
+    # voice_id 为 "default" / 空 时：走 resolve_default_voice（含用户自定义默认）
     if not voice_id or voice_id == "default":
         from appcore.video_translate_defaults import resolve_default_voice
-        voice_id = resolve_default_voice(lang) if lang else None
+        voice_id = resolve_default_voice(lang, user_id=current_user.id) if lang else None
         if not voice_id:
             return jsonify({"error": "no default voice available for this language"}), 400
         voice_name = voice_name or "默认音色"

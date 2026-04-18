@@ -107,7 +107,7 @@
   }
 
   function rowHtml(v, opts) {
-    const { badge, pinClass, isSelected } = opts;
+    const { badge, pinClass, isSelected, isCurrentDefault } = opts;
     const classes = ["vs-row"];
     if (pinClass) classes.push(pinClass);
     if (isSelected) classes.push("selected");
@@ -116,6 +116,9 @@
     const preview = v.preview_url
       ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
       : "";
+    const setDefaultBtn = isCurrentDefault
+      ? `<button class="vs-row-default-btn is-current" type="button" disabled>默认</button>`
+      : `<button class="vs-row-default-btn" type="button" title="把此音色设为 ${lang.toUpperCase()} 的默认">设为默认</button>`;
     return `
       <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
            data-voice-name="${escapeHtml(v.name || '')}">
@@ -124,6 +127,7 @@
           <div class="vs-row-meta">${meta}</div>
         </div>
         ${preview}
+        ${setDefaultBtn}
         <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
       </div>
     `;
@@ -158,18 +162,19 @@
     });
 
     let html = "";
+    const currentDefaultId = defaultVoice ? defaultVoice.voice_id : null;
 
-    // 1. 默认音色置顶（永远显示，除非用户手动用了"只看推荐"过滤掉 → 其实默认音色也视为"系统推荐"，所以保留）
+    // 1. 默认音色置顶
     if (defaultVoice && applyFilter(defaultVoice)) {
       const isSelDefault = selectedVoiceId === defaultVoice.voice_id;
       const badge = `<span class="vs-row-sim" style="background:#4b5563;">默认</span>`;
       html += rowHtml(defaultVoice, {
         badge, pinClass: "pinned-default", isSelected: isSelDefault,
+        isCurrentDefault: true,
       });
     }
 
-    // 2. 向量推荐 + 全库（withSort 已按 similarity 排序）
-    //    但要排除 defaultVoice，避免重复出现
+    // 2. 向量推荐 + 全库
     const rest = filtered.filter(({ v }) =>
       !defaultVoice || v.voice_id !== defaultVoice.voice_id);
     rest.forEach(({ v, rec }) => {
@@ -182,6 +187,7 @@
         : "";
       html += rowHtml(v, {
         badge, pinClass: classes.join(" "), isSelected,
+        isCurrentDefault: v.voice_id === currentDefaultId,
       });
     });
 
@@ -198,9 +204,37 @@
     listEl.querySelectorAll(".vs-row").forEach(row => {
       row.addEventListener("click", e => {
         if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
+        // "设为默认" 按钮的点击不触发选中
+        if (e.target.classList.contains("vs-row-default-btn")) return;
         selectVoice(row.dataset.voiceId, row.dataset.voiceName);
       });
+      const defBtn = row.querySelector(".vs-row-default-btn");
+      if (defBtn && !defBtn.disabled) {
+        defBtn.addEventListener("click", async e => {
+          e.stopPropagation();
+          await setAsDefault(row.dataset.voiceId, row.dataset.voiceName);
+        });
+      }
     });
+  }
+
+  async function setAsDefault(voiceId, voiceName) {
+    try {
+      const resp = await fetch(`/api/multi-translate/user-default-voice`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify({ lang, voice_id: voiceId, voice_name: voiceName }),
+      });
+      if (!resp.ok) {
+        alert("设置默认失败：" + (await resp.text()));
+        return;
+      }
+      // 重新拉库 → 新的默认音色置顶 + 其他行的"设为默认"重新出现
+      loadLibrary();
+    } catch (err) {
+      console.error("[voice-selector] setAsDefault failed:", err);
+      alert("网络错误");
+    }
   }
 
   function selectVoice(voiceId, voiceName) {
