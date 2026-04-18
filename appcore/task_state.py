@@ -62,6 +62,8 @@ def _sync_task_to_db(task_id: str) -> None:
     task = _tasks.get(task_id)
     if not task:
         return
+    if task.get("_persist_state") is False:
+        return
     user_id = task.get("_user_id")
     if user_id is None:
         return
@@ -542,6 +544,48 @@ def create_image_translate(task_id: str, task_dir: str, *,
     with _lock:
         _tasks[task_id] = task
     _db_upsert(task_id, user_id, task, "")
+    return task
+
+
+def create_link_check(task_id: str, task_dir: str, *,
+                      user_id: int,
+                      link_url: str,
+                      target_language: str,
+                      target_language_name: str,
+                      reference_images: list[dict]) -> dict:
+    task = {
+        "id": task_id,
+        "type": "link_check",
+        "status": "queued",
+        "task_dir": task_dir,
+        "link_url": link_url,
+        "resolved_url": "",
+        "page_language": "",
+        "target_language": target_language,
+        "target_language_name": target_language_name,
+        "reference_images": reference_images,
+        "progress": {
+            "total": 0,
+            "downloaded": 0,
+            "analyzed": 0,
+            "compared": 0,
+            "failed": 0,
+        },
+        "summary": {
+            "pass_count": 0,
+            "no_text_count": 0,
+            "replace_count": 0,
+            "review_count": 0,
+            "reference_unmatched_count": 0,
+            "overall_decision": "running",
+        },
+        "items": [],
+        "error": "",
+        "_user_id": user_id,
+        "_persist_state": False,
+    }
+    with _lock:
+        _tasks[task_id] = task
     return task
 
 
