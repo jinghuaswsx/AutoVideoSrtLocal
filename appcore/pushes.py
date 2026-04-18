@@ -45,3 +45,26 @@ def compute_readiness(item: dict, product: dict) -> dict:
 
 def is_ready(readiness: dict) -> bool:
     return all(readiness.values())
+
+
+# ---------- 状态计算 ----------
+
+STATUS_PUSHED = "pushed"
+STATUS_FAILED = "failed"
+STATUS_PENDING = "pending"        # 就绪 + 未推送
+STATUS_NOT_READY = "not_ready"    # 任一就绪条件不满足
+
+
+def compute_status(item: dict, product: dict) -> str:
+    if (item or {}).get("pushed_at"):
+        return STATUS_PUSHED
+    latest_id = (item or {}).get("latest_push_id")
+    if latest_id:
+        row = query_one(
+            "SELECT status FROM media_push_logs WHERE id=%s", (latest_id,),
+        )
+        if (row or {}).get("status") == "failed":
+            readiness = compute_readiness(item, product)
+            return STATUS_FAILED if is_ready(readiness) else STATUS_NOT_READY
+    readiness = compute_readiness(item, product)
+    return STATUS_PENDING if is_ready(readiness) else STATUS_NOT_READY

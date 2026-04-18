@@ -54,3 +54,39 @@ def test_compute_readiness_lang_not_supported(product_with_item):
     product = medias.get_product(pid)
     r = pushes.compute_readiness(item, product)
     assert r["lang_supported"] is False
+
+
+def test_compute_status_pushed(product_with_item):
+    pid, item_id = product_with_item
+    db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    assert pushes.compute_status(item, product) == "pushed"
+
+
+def test_compute_status_failed(product_with_item):
+    pid, item_id = product_with_item
+    log_id = db_execute(
+        "INSERT INTO media_push_logs (item_id, operator_user_id, status, request_payload, error_message) "
+        "VALUES (%s, %s, 'failed', %s, %s)",
+        (item_id, 1, "{}", "timeout"),
+    )
+    db_execute("UPDATE media_items SET latest_push_id=%s WHERE id=%s", (log_id, item_id))
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    assert pushes.compute_status(item, product) == "failed"
+
+
+def test_compute_status_pending(product_with_item):
+    pid, item_id = product_with_item
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    assert pushes.compute_status(item, product) == "pending"
+
+
+def test_compute_status_not_ready(product_with_item):
+    pid, item_id = product_with_item
+    db_execute("UPDATE media_items SET cover_object_key=NULL WHERE id=%s", (item_id,))
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    assert pushes.compute_status(item, product) == "not_ready"
