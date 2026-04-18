@@ -4,63 +4,24 @@
   const taskId = root.dataset.taskId;
   const lang = root.dataset.lang;
 
+  const summaryEl = document.getElementById("vs-summary");
+  const listEl = document.getElementById("vs-list");
+  const footerEl = document.getElementById("vs-footer");
+  const searchInput = document.getElementById("vs-search");
+  const genderFilter = document.getElementById("vs-gender-filter");
+  const recommendedOnly = document.getElementById("vs-recommended-only");
+
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");
     return el ? el.content : "";
   };
 
-  async function loadInitial() {
-    try {
-      const resp = await fetch(`/api/multi-translate/${taskId}`);
-      if (!resp.ok) return;
-      const task = await resp.json();
-      const state = task.state || task;
-      const candidates = state.voice_match_candidates || [];
-      const fallbackId = state.voice_match_fallback_voice_id;
-
-      const sampleUrl = state.voice_match_sample_url;
-      if (sampleUrl) {
-        const audio = document.getElementById("vs-sample-audio");
-        if (audio) audio.src = sampleUrl;
-      }
-
-      if (candidates.length && candidates[0].similarity < 0.4) {
-        document.getElementById("vs-warning").style.display = "block";
-      }
-
-      renderCandidates(candidates, fallbackId);
-    } catch (err) {
-      console.error("[voice-selector] loadInitial failed:", err);
-    }
-  }
-
-  function renderCandidates(candidates, fallbackId) {
-    const box = document.getElementById("vs-candidates");
-    box.innerHTML = "";
-    if (!candidates.length) {
-      box.innerHTML = `<p style="grid-column:span 3;color:var(--text-user-badge);">
-        向量库暂无该语言的可匹配音色，系统将使用兜底音色 ${fallbackId || "（未配置）"}</p>`;
-      return;
-    }
-    candidates.forEach((c, i) => {
-      const card = document.createElement("div");
-      card.className = "vs-card";
-      card.dataset.voiceId = c.voice_id;
-      const sim = (c.similarity * 100).toFixed(1);
-      const gender = c.gender || "";
-      const accent = c.accent || "";
-      card.innerHTML = `
-        <div class="vs-sim">${sim}% 相似</div>
-        <div style="font-weight:600;margin:6px 0;">${escapeHtml(c.name || c.voice_id)}</div>
-        <div style="font-size:12px;color:var(--text-user-badge);">${gender}${gender && accent ? " · " : ""}${accent}</div>
-        ${c.preview_url ? `<audio controls style="width:100%;margin-top:8px;" src="${c.preview_url}"></audio>` : ""}
-        <button class="vs-select-btn">${i === 0 ? "使用此音色（推荐）" : "使用此音色"}</button>
-      `;
-      card.querySelector(".vs-select-btn").addEventListener("click", () =>
-        selectVoice(c.voice_id));
-      box.appendChild(card);
-    });
-  }
+  let allItems = [];
+  let candidatesMap = new Map();      // voice_id -> {similarity, ...}
+  let fallbackVoiceId = null;
+  let selectedVoiceId = null;
+  let selectedVoiceName = null;
+  let confirmed = false;              // 是否已经点过"确认并开始翻译"
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
@@ -68,57 +29,161 @@
     }[ch]));
   }
 
-  async function selectVoice(voiceId) {
+  async function loadLibrary() {
     try {
-      const resp = await fetch(`/api/multi-translate/${taskId}/voice`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": csrfToken(),
-        },
-        body: JSON.stringify({ voice_id: voiceId }),
-      });
+      const resp = await fetch(`/api/multi-translate/${taskId}/voice-library`);
       if (!resp.ok) {
-        alert("保存音色失败：" + (await resp.text()));
+        listEl.innerHTML = `<div class="vs-loading">加载失败：${await resp.text()}</div>`;
         return;
       }
-      document.querySelectorAll(".vs-card").forEach(el =>
-        el.classList.toggle("selected", el.dataset.voiceId === voiceId));
+      const data = await resp.json();
+      allItems = data.items || [];
+      candidatesMap.clear();
+      (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+      fallbackVoiceId = data.fallback_voice_id || null;
+      selectedVoiceId = data.selected_voice_id || null;
+
+      updateSummary(data.total || 0, (data.candidates || []).length);
+      render();
     } catch (err) {
-      console.error("[voice-selector] selectVoice failed:", err);
-      alert("网络错误，保存音色失败");
+      console.error("[voice-selector] load failed:", err);
+      listEl.innerHTML = `<div class="vs-loading">网络错误</div>`;
     }
   }
 
-  document.getElementById("vs-more").addEventListener("click", async () => {
-    const box = document.getElementById("vs-full-library");
-    if (box.style.display !== "none") {
-      box.style.display = "none";
+  function updateSummary(total, nCandidates) {
+    const parts = [`${lang.toUpperCase()} 音色库共 ${total} 个`];
+    if (nCandidates > 0) parts.push(`${nCandidates} 个向量匹配推荐置顶`);
+    else parts.push("暂无向量匹配推荐（可能该语种音色尚未生成 embedding）");
+    summaryEl.textContent = parts.join(" · ");
+  }
+
+  function render() {
+    const q = (searchInput.value || "").trim().toLowerCase();
+    const gender = genderFilter.value;
+    const onlyRec = recommendedOnly.checked;
+
+    // 排序：推荐项在前（按相似度降序），其余按 name
+    const withSort = allItems.map(v => {
+      const rec = candidatesMap.get(v.voice_id);
+      return { v, rec, sim: rec ? rec.similarity : -1 };
+    }).sort((a, b) => {
+      if (a.sim !== b.sim) return b.sim - a.sim;
+      return (a.v.name || "").localeCompare(b.v.name || "");
+    });
+
+    const filtered = withSort.filter(({ v, rec }) => {
+      if (onlyRec && !rec) return false;
+      if (gender && v.gender !== gender) return false;
+      if (q) {
+        const hay = [v.name, v.description, v.descriptive, v.accent, v.age]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="vs-loading">没有匹配的音色</div>`;
+      footerEl.textContent = "";
       return;
     }
-    box.style.display = "block";
-    try {
-      const resp = await fetch(`/voice-library/api/list?language=${encodeURIComponent(lang)}&page_size=200`);
-      const data = await resp.json();
-      const items = data.items || [];
-      box.innerHTML = items.map(v => `
-        <div class="vs-card" data-voice-id="${v.voice_id}" style="display:inline-block;margin:4px;min-width:200px;vertical-align:top;">
-          <div style="font-weight:600;">${escapeHtml(v.name || v.voice_id)}</div>
-          <div style="font-size:12px;color:var(--text-user-badge);">${v.gender || ""}${v.gender && v.accent ? " · " : ""}${v.accent || ""}</div>
-          ${v.preview_url ? `<audio controls style="width:100%;margin-top:6px;" src="${v.preview_url}"></audio>` : ""}
-          <button class="vs-select-btn">选此音色</button>
-        </div>`).join("");
-      box.querySelectorAll(".vs-select-btn").forEach(btn => {
-        btn.addEventListener("click", e => {
-          const card = e.target.closest(".vs-card");
-          if (card) selectVoice(card.dataset.voiceId);
-        });
-      });
-    } catch (err) {
-      console.error("[voice-selector] full library load failed:", err);
-      box.innerHTML = `<p style="color:var(--text-user-badge);">加载失败</p>`;
-    }
-  });
 
-  loadInitial();
+    listEl.innerHTML = filtered.map(({ v, rec }) => {
+      const isRec = !!rec;
+      const isSelected = selectedVoiceId === v.voice_id;
+      const classes = ["vs-row"];
+      if (isRec) classes.push("recommended");
+      if (isSelected) classes.push("selected");
+      const simBadge = isRec
+        ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
+        : "";
+      const meta = [
+        v.gender,
+        v.accent,
+        v.age,
+        v.description || v.descriptive || "",
+      ].filter(Boolean).map(escapeHtml).join(" · ");
+      const preview = v.preview_url
+        ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
+        : "";
+      return `
+        <div class="vs-row ${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
+             data-voice-name="${escapeHtml(v.name || '')}">
+          <div class="vs-row-main">
+            <div class="vs-row-name">${simBadge}${escapeHtml(v.name || v.voice_id)}</div>
+            <div class="vs-row-meta">${meta}</div>
+          </div>
+          ${preview}
+          <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
+        </div>
+      `;
+    }).join("");
+
+    // 行级点击选中（避免 audio 控件点击冒泡）
+    listEl.querySelectorAll(".vs-row").forEach(row => {
+      row.addEventListener("click", e => {
+        if (e.target.tagName === "AUDIO") return;
+        if (e.target.closest("audio")) return;
+        selectVoice(row.dataset.voiceId, row.dataset.voiceName);
+      });
+    });
+
+    footerEl.innerHTML = selectedVoiceId
+      ? `已选：${escapeHtml(selectedVoiceName || selectedVoiceId)}
+         <button id="vs-confirm-btn" style="margin-left:12px;padding:6px 16px;
+           background:oklch(56% 0.16 230);color:#fff;border:none;
+           border-radius:6px;cursor:pointer;font-weight:600;">
+           ${confirmed ? "✓ 已确认" : "确认并开始翻译"}
+         </button>`
+      : `请从列表里点选一个音色`;
+
+    const confirmBtn = document.getElementById("vs-confirm-btn");
+    if (confirmBtn && !confirmed) {
+      confirmBtn.addEventListener("click", confirmSelection);
+    }
+  }
+
+  function selectVoice(voiceId, voiceName) {
+    if (confirmed) return;
+    selectedVoiceId = voiceId;
+    selectedVoiceName = voiceName;
+    render();
+  }
+
+  async function confirmSelection() {
+    if (!selectedVoiceId || confirmed) return;
+    const btn = document.getElementById("vs-confirm-btn");
+    if (btn) { btn.disabled = true; btn.textContent = "提交中..."; }
+    try {
+      const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify({
+          voice_id: selectedVoiceId,
+          voice_name: selectedVoiceName || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        alert("确认失败：" + (await resp.text()));
+        if (btn) { btn.disabled = false; btn.textContent = "确认并开始翻译"; }
+        return;
+      }
+      confirmed = true;
+      render();
+      // 刷新页面让工作台进入下一步
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      console.error("[voice-selector] confirm failed:", err);
+      alert("网络错误");
+      if (btn) { btn.disabled = false; btn.textContent = "确认并开始翻译"; }
+    }
+  }
+
+  // 事件绑定
+  searchInput.addEventListener("input", render);
+  genderFilter.addEventListener("change", render);
+  recommendedOnly.addEventListener("change", render);
+
+  loadLibrary();
 })();

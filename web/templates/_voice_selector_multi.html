@@ -1,26 +1,36 @@
 <div id="voice-selector-multi" class="voice-selector"
      data-task-id="{{ task_id }}" data-lang="{{ voice_language }}">
   <div class="vs-heading">
-    <strong>🎤 向量匹配推荐音色</strong>
-    <span class="vs-hint">系统已从 {{ voice_language | upper }} 音色库中挑出与原视频声线最接近的 3 个</span>
+    <strong>🎤 选择 TTS 音色</strong>
+    <span class="vs-hint" id="vs-summary">正在加载音色库...</span>
   </div>
 
-  <div class="vs-sample" id="vs-sample">
-    <span>原视频采样：</span>
-    <audio controls id="vs-sample-audio"></audio>
+  <div class="vs-sample" id="vs-sample" style="display:none;">
+    <span style="font-size:13px;color:var(--text-user-badge);">原视频采样：</span>
+    <audio controls id="vs-sample-audio" style="height:32px;"></audio>
   </div>
 
   <div class="vs-warning" id="vs-warning" style="display:none;">
     ⚠️ 原声与库内音色差异较大，建议手动挑选
   </div>
 
-  <div class="vs-candidates" id="vs-candidates">
-    <!-- 由 JS 注入 3 张候选卡 -->
+  <div class="vs-toolbar">
+    <input id="vs-search" type="text" placeholder="搜索音色名或描述..."/>
+    <select id="vs-gender-filter">
+      <option value="">全部性别</option>
+      <option value="male">男声</option>
+      <option value="female">女声</option>
+    </select>
+    <label style="font-size:12px;color:var(--text-user-badge);margin-left:auto;">
+      <input type="checkbox" id="vs-recommended-only"/> 只看推荐
+    </label>
   </div>
 
-  <button class="vs-more" id="vs-more">🔍 查看全部 {{ voice_language | upper }} 音色</button>
+  <div class="vs-list-scroll" id="vs-list">
+    <div class="vs-loading">加载中...</div>
+  </div>
 
-  <div class="vs-full-library" id="vs-full-library" style="display:none;"></div>
+  <div class="vs-footer" id="vs-footer"></div>
 </div>
 
 <style>
@@ -29,21 +39,52 @@
     border-radius: 12px; }
   .vs-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .vs-hint { font-size: 12px; color: var(--text-user-badge); }
-  .vs-sample { display: flex; align-items: center; gap: 8px; margin: 8px 0 16px; }
+  .vs-sample { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; }
   .vs-warning { padding: 8px 12px; background: oklch(96% 0.05 85);
     border-left: 3px solid oklch(72% 0.14 80); border-radius: 6px;
     margin-bottom: 12px; font-size: 13px; }
-  .vs-candidates { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .vs-card { padding: 12px; border: 1.5px solid var(--border-main);
-    border-radius: 10px; cursor: pointer; transition: border-color 0.15s; }
-  .vs-card:hover { border-color: oklch(56% 0.16 230); }
-  .vs-card.selected { border-color: oklch(56% 0.16 230);
-    background: oklch(94% 0.04 225); }
-  .vs-card .vs-sim { font-weight: 600; color: oklch(56% 0.16 230); }
-  .vs-more { margin-top: 12px; padding: 8px 12px; background: transparent;
-    border: 1px solid var(--border-main); border-radius: 8px; cursor: pointer; }
-  .vs-select-btn { margin-top: 8px; width: 100%; padding: 6px 8px;
-    background: oklch(56% 0.16 230); color: #fff; border: none;
-    border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .vs-select-btn:hover { background: oklch(50% 0.17 230); }
+
+  .vs-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .vs-toolbar input[type=text], .vs-toolbar select {
+    padding: 6px 10px; border: 1px solid var(--border-main);
+    border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+  .vs-toolbar input[type=text] { flex: 1; min-width: 160px; }
+
+  .vs-list-scroll {
+    max-height: 420px; overflow-y: auto; padding: 4px;
+    border: 1px solid var(--border-main); border-radius: 8px;
+    background: var(--bg-body);
+  }
+  .vs-loading { padding: 24px; text-align: center; color: var(--text-user-badge); }
+
+  .vs-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    background: var(--bg-card); margin-bottom: 4px;
+    border: 1.5px solid transparent; transition: all 0.12s;
+  }
+  .vs-row:hover { border-color: oklch(56% 0.16 230); }
+  .vs-row.selected { border-color: oklch(56% 0.16 230); background: oklch(94% 0.04 225); }
+  .vs-row.recommended { background: linear-gradient(90deg, oklch(95% 0.04 225) 0%, var(--bg-card) 50%); }
+
+  .vs-row-main { flex: 1; min-width: 0; }
+  .vs-row-name { font-weight: 600; font-size: 14px; }
+  .vs-row-meta { font-size: 12px; color: var(--text-user-badge); margin-top: 2px; }
+  .vs-row-sim {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; background: oklch(56% 0.16 230); color: #fff;
+    margin-right: 6px;
+  }
+  .vs-row audio { height: 32px; max-width: 220px; }
+  .vs-row-select-btn {
+    padding: 6px 14px; border: 1px solid var(--border-main);
+    background: var(--bg-card); border-radius: 6px; cursor: pointer;
+    font-size: 12px; font-family: inherit; white-space: nowrap;
+  }
+  .vs-row.selected .vs-row-select-btn {
+    background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
+  }
+
+  .vs-footer { margin-top: 8px; font-size: 12px; color: var(--text-user-badge); text-align: right; }
 </style>

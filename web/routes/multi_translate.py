@@ -11,6 +11,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
+from appcore import task_state
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
@@ -554,8 +555,84 @@ def update_voice(task_id: str):
     if not voice_id:
         return jsonify({"error": "voice_id is required"}), 400
     state["selected_voice_id"] = voice_id
+    if body.get("voice_name"):
+        state["selected_voice_name"] = body["voice_name"]
     db_execute(
         "UPDATE projects SET state_json = %s WHERE id = %s",
         (json.dumps(state, ensure_ascii=False), task_id),
     )
+    return jsonify({"ok": True, "voice_id": voice_id})
+
+
+@bp.route("/api/multi-translate/<task_id>/voice-library", methods=["GET"])
+@login_required
+def voice_library_for_task(task_id: str):
+    """返回任务目标语言下的所有音色（给前端滚动列表铺全库用）。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+    lang = state.get("target_lang")
+    if not lang:
+        return jsonify({"error": "task has no target_lang"}), 400
+
+    from appcore.voice_library_browse import list_voices
+    gender = request.args.get("gender") or None
+    q = request.args.get("q") or None
+    try:
+        data = list_voices(language=lang, gender=gender, q=q,
+                             page=1, page_size=500)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({
+        "items": data.get("items", []),
+        "total": data.get("total", 0),
+        "candidates": state.get("voice_match_candidates", []),
+        "fallback_voice_id": state.get("voice_match_fallback_voice_id"),
+        "selected_voice_id": state.get("selected_voice_id"),
+    })
+
+
+@bp.route("/api/multi-translate/<task_id>/confirm-voice", methods=["POST"])
+@login_required
+def confirm_voice(task_id: str):
+    """用户在 UI 上选定 TTS 音色 → 写入 state + 内存 → 恢复 pipeline 跑 alignment。"""
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row:
+        abort(404)
+
+    body = request.get_json() or {}
+    voice_id = (body.get("voice_id") or "").strip()
+    if not voice_id:
+        return jsonify({"error": "voice_id required"}), 400
+    voice_name = (body.get("voice_name") or "").strip() or None
+
+    # 写 DB state_json
+    state = json.loads(row["state_json"] or "{}")
+    state["selected_voice_id"] = voice_id
+    if voice_name:
+        state["selected_voice_name"] = voice_name
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+
+    # 写内存 task_state + 把 voice_match 步骤标 done
+    update_kwargs = {"selected_voice_id": voice_id}
+    if voice_name:
+        update_kwargs["selected_voice_name"] = voice_name
+    task_state.update(task_id, **update_kwargs)
+    task_state.set_step(task_id, "voice_match", "done")
+    task_state.set_current_review_step(task_id, "")
+
+    # 从 alignment 恢复 pipeline
+    multi_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
+
     return jsonify({"ok": True, "voice_id": voice_id})
