@@ -551,3 +551,213 @@ def test_translation_exists_for_video(monkeypatch):
     item = {"kind": "video", "lang": "de",
             "ref": {"source_item_id": 7}}
     assert mod._translation_exists_for_item(item) is False
+
+
+# ============================================================
+# Task 20:人工恢复三路径
+# ============================================================
+
+def _mk_plan_with(statuses):
+    return [
+        {"idx": i, "kind": "copy", "lang": "de",
+         "ref": {"source_copy_id": 100 + i},
+         "sub_task_id": (f"sub_{i}" if s != "pending" else None),
+         "status": s, "error": ("old err" if s == "error" else None),
+         "started_at": None, "finished_at": None}
+        for i, s in enumerate(statuses)
+    ]
+
+
+def _create_task_with(fake_db, monkeypatch, plan, initial_status="error"):
+    """直接在 fake DB 里植入一个指定 plan 的父任务。"""
+    from appcore import bulk_translate_runtime as mod
+    monkeypatch.setattr(mod, "generate_plan", lambda *a, **kw: plan)
+    tid = mod.create_bulk_translate_task(
+        user_id=1, product_id=77, target_langs=["de"],
+        content_types=["copy"], force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    # 直接改 fake DB 的 status 绕过 state machine 校验
+    fake_db.rows[tid]["status"] = initial_status
+    return tid
+
+
+def test_pause_task_sets_status_paused(fake_db, monkeypatch):
+    plan = _mk_plan_with(["done", "running", "pending"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="running")
+
+    from appcore.bulk_translate_runtime import pause_task, get_task
+    pause_task(tid, user_id=1)
+
+    task = get_task(tid)
+    assert task["status"] == "paused"
+    actions = [e["action"] for e in task["state"]["audit_events"]]
+    assert "pause" in actions
+
+
+def test_cancel_task_sets_cancel_requested_flag(fake_db, monkeypatch):
+    plan = _mk_plan_with(["done", "running", "pending"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="running")
+
+    from appcore.bulk_translate_runtime import cancel_task, get_task
+    cancel_task(tid, user_id=1)
+
+    task = get_task(tid)
+    assert task["state"]["cancel_requested"] is True
+    actions = [e["action"] for e in task["state"]["audit_events"]]
+    assert "cancel" in actions
+
+
+def test_resume_reconciles_running_and_keeps_error(fake_db, monkeypatch):
+    """resume 对账:running→error 强制转;已有 error 保持 error。pending 不动。"""
+    plan = _mk_plan_with(["done", "running", "error", "pending"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="error")
+
+    from appcore.bulk_translate_runtime import resume_task, get_task
+    resume_task(tid, user_id=9)
+
+    task = get_task(tid)
+    assert task["status"] == "running"
+
+    statuses = [p["status"] for p in task["state"]["plan"]]
+    assert statuses[0] == "done"
+    assert statuses[1] == "error"      # running 对账 → error
+    assert statuses[2] == "error"      # 已 error 保持
+    assert statuses[3] == "pending"    # 不动
+
+    # running 项的 error 字段被标上 "Reconciled: process lost"
+    assert "Reconciled" in task["state"]["plan"][1]["error"]
+
+    # 审计事件
+    actions = [e["action"] for e in task["state"]["audit_events"]]
+    assert "resume" in actions
+
+
+def test_retry_failed_items_resets_all_errors(fake_db, monkeypatch):
+    plan = _mk_plan_with(["done", "error", "error", "pending"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="error")
+
+    from appcore.bulk_translate_runtime import retry_failed_items, get_task
+    retry_failed_items(tid, user_id=9)
+
+    task = get_task(tid)
+    assert task["status"] == "running"
+
+    statuses = [p["status"] for p in task["state"]["plan"]]
+    assert statuses == ["done", "pending", "pending", "pending"]
+
+    # 审计带 reset_count
+    audit = [e for e in task["state"]["audit_events"]
+              if e["action"] == "retry_failed"][0]
+    assert audit["detail"]["reset_count"] == 2
+
+    # error 字段被清
+    for p in task["state"]["plan"][1:3]:
+        assert p["error"] is None
+
+
+def test_retry_item_single(fake_db, monkeypatch):
+    """单项重跑 — idx=2 从 done → pending,其他不动。"""
+    plan = _mk_plan_with(["done", "done", "done"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="done")
+
+    from appcore.bulk_translate_runtime import retry_item, get_task
+    retry_item(tid, idx=2, user_id=9)
+
+    task = get_task(tid)
+    assert task["status"] == "running"   # 父任务从 done 回到 running
+
+    statuses = [p["status"] for p in task["state"]["plan"]]
+    assert statuses == ["done", "done", "pending"]
+
+    audit = [e for e in task["state"]["audit_events"]
+              if e["action"] == "retry_item"][0]
+    assert audit["detail"]["idx"] == 2
+
+
+def test_retry_item_invalid_idx_raises(fake_db, monkeypatch):
+    plan = _mk_plan_with(["done", "done"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="done")
+
+    from appcore.bulk_translate_runtime import retry_item
+    with pytest.raises(ValueError, match="Invalid idx"):
+        retry_item(tid, idx=99, user_id=1)
+
+
+def test_resume_clears_cancel_requested_flag(fake_db, monkeypatch):
+    """用户曾取消然后又点 resume,应清掉 cancel_requested。"""
+    plan = _mk_plan_with(["pending", "pending"])
+    tid = _create_task_with(fake_db, monkeypatch, plan,
+                             initial_status="error")
+
+    from appcore.bulk_translate_runtime import get_task, resume_task
+    task = get_task(tid)
+    task["state"]["cancel_requested"] = True
+    import json as _j
+    fake_db.rows[tid]["state_json"] = _j.dumps(task["state"])
+
+    resume_task(tid, user_id=9)
+
+    task2 = get_task(tid)
+    assert task2["state"]["cancel_requested"] is False
+
+
+# ============================================================
+# Task 21 铁律验证:绝不自动扫描/恢复
+# ============================================================
+
+def test_import_runtime_does_not_run_any_dispatch():
+    """导入模块时不应执行任何 DB 扫描 / dispatch / scheduler。"""
+    # 如果导入阶段触发了全表扫描,会连不上 DB 且崩溃。
+    # 这里直接 reload,验证无副作用。
+    import importlib
+    import appcore.bulk_translate_runtime as mod
+    importlib.reload(mod)
+    # 没异常即 pass
+    assert hasattr(mod, "run_scheduler")
+    assert hasattr(mod, "resume_task")
+
+
+def test_task_recovery_module_does_not_include_bulk_translate():
+    """task_recovery.py 中不得包含 bulk_translate 自动恢复逻辑(铁律 1)。"""
+    import appcore.task_recovery as tr
+    with open(tr.__file__, encoding="utf-8") as f:
+        source = f.read()
+    # 允许单纯注释里写 "NO_AUTO: bulk_translate" 这种锁定标记,
+    # 但不能出现会被 call 的代码里提到 bulk_translate。
+    lines = source.splitlines()
+    code_lines = [
+        line for line in lines
+        if "bulk_translate" in line
+        and not line.strip().startswith("#")
+        and "NO_AUTO" not in line
+    ]
+    assert not code_lines, (
+        "task_recovery.py 不得包含 bulk_translate 自动恢复逻辑:\n"
+        + "\n".join(code_lines)
+    )
+
+
+def test_no_module_level_scan_in_bulk_translate_runtime():
+    """bulk_translate_runtime 模块顶层不能调 execute/query。"""
+    import appcore.bulk_translate_runtime as mod
+    with open(mod.__file__, encoding="utf-8") as f:
+        source = f.read()
+
+    # 查找模块顶层(零缩进)出现 execute(...) 或 query(...) 的行
+    suspicious = []
+    for i, line in enumerate(source.splitlines(), 1):
+        if line.startswith(("execute(", "query(", "query_one(",
+                             "run_scheduler(", "resume_task(")):
+            suspicious.append(f"line {i}: {line}")
+    assert not suspicious, (
+        "bulk_translate_runtime.py 顶层不得调用 DB/调度函数:\n"
+        + "\n".join(suspicious)
+    )

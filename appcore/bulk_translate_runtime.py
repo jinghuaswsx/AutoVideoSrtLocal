@@ -596,3 +596,107 @@ def _emit(bus: EventBus | None, event_type: str, task_id: str,
         bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
     except Exception:
         log.exception("EventBus publish failed task_id=%s", task_id)
+
+
+# ============================================================
+# Task 20:人工恢复三路径 — 绝不自动触发
+# ============================================================
+def _reconcile_running_items(state: dict) -> None:
+    """把所有 running 项标 error(进程可能已丢失)。
+
+    仅在用户按按钮时调用。永远不在进程启动/定时任务里调。
+    """
+    for item in state["plan"]:
+        if item["status"] == "running":
+            item["status"] = "error"
+            item["error"] = item.get("error") or "Reconciled: process lost"
+
+
+def pause_task(task_id: str, user_id: int) -> None:
+    """用户点"⏸ 暂停"。当前 running 项跑完不再取下一个。
+    调度器主循环下一轮见 status != running 就退出。
+    """
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+    state = task["state"]
+    _append_audit(state, user_id, "pause")
+    _save_state(task_id, state, status="paused")
+
+
+def cancel_task(task_id: str, user_id: int) -> None:
+    """用户点"取消"。置 cancel_requested=True,调度器下一轮见状态转 cancelled。"""
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+    state = task["state"]
+    state["cancel_requested"] = True
+    _append_audit(state, user_id, "cancel")
+    _save_state(task_id, state)
+
+
+def resume_task(task_id: str, user_id: int) -> None:
+    """用户点"▶ 继续执行"。
+
+    流程:
+      1. 对账:把 running 项标 error(进程可能已丢失)
+      2. 仅恢复 pending 项为可执行(error 项保持 error,不自动重置)
+      3. status → running
+
+    调用方负责在本函数返回后 spawn 调度器。
+    """
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+    state = task["state"]
+    _reconcile_running_items(state)
+    state["cancel_requested"] = False
+    _append_audit(state, user_id, "resume")
+    _save_state(task_id, state, status="running")
+
+
+def retry_failed_items(task_id: str, user_id: int) -> None:
+    """用户点"🔁 重跑所有失败项"。
+
+    把所有 status=error 的 plan 项重置为 pending,然后 status=running。
+    """
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+    state = task["state"]
+    _reconcile_running_items(state)
+    reset_count = 0
+    for item in state["plan"]:
+        if item["status"] == "error":
+            item["status"] = "pending"
+            item["error"] = None
+            item["sub_task_id"] = None
+            item["started_at"] = None
+            item["finished_at"] = None
+            reset_count += 1
+    state["cancel_requested"] = False
+    _append_audit(state, user_id, "retry_failed", {"reset_count": reset_count})
+    _save_state(task_id, state, status="running")
+
+
+def retry_item(task_id: str, idx: int, user_id: int) -> None:
+    """单项重跑。支持把 done/error 项重置为 pending。
+
+    父任务若之前是 done,重跑后回到 running 状态。
+    """
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+    state = task["state"]
+    if idx < 0 or idx >= len(state["plan"]):
+        raise ValueError(f"Invalid idx={idx}, plan has {len(state['plan'])} items")
+
+    item = state["plan"][idx]
+    item["status"] = "pending"
+    item["error"] = None
+    item["sub_task_id"] = None
+    item["started_at"] = None
+    item["finished_at"] = None
+    state["cancel_requested"] = False
+    _append_audit(state, user_id, "retry_item", {"idx": idx})
+    _save_state(task_id, state, status="running")
