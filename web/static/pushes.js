@@ -166,6 +166,112 @@
     });
   }
 
+  async function doPush(itemId, btn) {
+    btn.disabled = true;
+    btn.textContent = '推送中…';
+    let payloadData;
+    try {
+      const data = await fetchJSON(`/pushes/api/items/${itemId}/payload`);
+      payloadData = data.payload;
+      const pushUrl = data.push_url;
+      if (!pushUrl) throw new Error('推送目标未配置');
+
+      let resp;
+      try {
+        resp = await fetch(pushUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadData),
+        });
+      } catch (e) {
+        await fetchJSON(`/pushes/api/items/${itemId}/mark-failed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_payload: payloadData,
+            error_message: `网络或 CORS 失败: ${e.message}`,
+          }),
+        });
+        alert(`推送失败（网络/CORS）：${e.message}`);
+        return load();
+      }
+      const body = await resp.text();
+      if (resp.ok) {
+        await fetchJSON(`/pushes/api/items/${itemId}/mark-pushed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_payload: payloadData, response_body: body }),
+        });
+        alert('推送成功');
+      } else {
+        await fetchJSON(`/pushes/api/items/${itemId}/mark-failed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_payload: payloadData,
+            response_body: body,
+            error_message: `HTTP ${resp.status}`,
+          }),
+        });
+        alert(`推送失败：HTTP ${resp.status}\n${body.slice(0, 200)}`);
+      }
+    } catch (e) {
+      if (e.status === 400 || e.status === 409) {
+        let info = '';
+        try { info = JSON.parse(e.body).error || ''; } catch (_) {}
+        alert(`无法推送：${info || e.message}`);
+      } else {
+        alert(`推送失败：${e.message}`);
+      }
+    } finally {
+      await load();
+    }
+  }
+
+  async function resetPush(itemId) {
+    if (!confirm('确认重置这条素材的推送状态？之前的历史记录会保留。')) return;
+    await fetchJSON(`/pushes/api/items/${itemId}/reset`, { method: 'POST' });
+    await load();
+  }
+
+  async function viewLogs(itemId) {
+    const drawer = document.getElementById('push-log-drawer');
+    const content = document.getElementById('drawer-content');
+    content.textContent = '加载中…';
+    drawer.hidden = false;
+    try {
+      const data = await fetchJSON(`/pushes/api/items/${itemId}/logs`);
+      if (!data.logs.length) {
+        content.innerHTML = '<p>暂无记录</p>';
+      } else {
+        content.innerHTML = data.logs.map(l => `
+          <div class="log-row">
+            <div><strong>${l.status === 'success' ? '✓ 成功' : '✗ 失败'}</strong>
+                 <span class="time">${l.created_at}</span></div>
+            ${l.error_message ? `<div class="err">${l.error_message}</div>` : ''}
+            ${l.response_body ? `<pre>${l.response_body.slice(0, 500)}</pre>` : ''}
+          </div>
+        `).join('');
+      }
+    } catch (e) {
+      content.textContent = '加载失败: ' + e.message;
+    }
+  }
+
+  document.getElementById('push-tbody').addEventListener('click', ev => {
+    const btn = ev.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    const id = Number(btn.getAttribute('data-id'));
+    if (action === 'push') doPush(id, btn);
+    else if (action === 'reset') resetPush(id);
+    else if (action === 'view-logs') viewLogs(id);
+  });
+
+  document.getElementById('drawer-close').addEventListener('click', () => {
+    document.getElementById('push-log-drawer').hidden = true;
+  });
+
   window._pushesLoad = load;
   loadLanguages().then(() => { bindFilters(); load(); });
 })();
