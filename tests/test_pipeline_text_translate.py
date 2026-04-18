@@ -75,8 +75,8 @@ def test_translate_builds_correct_prompt_and_parses_response(monkeypatch):
     assert "German" in system_msg
     user_msg = captured["messages"][1]["content"]
     assert user_msg == "Welcome to our product"
-    # 温度应该保守
-    assert captured["temperature"] == 0.2
+    # 温度应该保守(取零让翻译输出稳定、不瞎加前言)
+    assert captured["temperature"] == 0.0
 
 
 def test_translate_handles_missing_usage(monkeypatch):

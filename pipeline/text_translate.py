@@ -52,12 +52,25 @@ def translate_text(
         provider, user_id, api_key_override=openrouter_api_key,
     )
 
+    src_name = _lang_name(source_lang)
+    tgt_name = _lang_name(target_lang)
     system_prompt = (
-        f"You are a professional translator. "
-        f"Translate the user's {_lang_name(source_lang)} text into "
-        f"{_lang_name(target_lang)}. "
-        f"Preserve meaning, tone, and whitespace/paragraph structure. "
-        f"Output ONLY the translated text, no explanations or metadata."
+        f"You are a translation engine. Translate the user message into "
+        f"{tgt_name}.\n\n"
+        f"STRICT RULES (violation = task failure):\n"
+        f"1. Output ONLY the translation. No preamble, no disclaimer, "
+        f"   no meta commentary, no markdown code fences.\n"
+        f"2. Do NOT say 'I notice', 'The text', 'Note that', 'Here is', "
+        f"   'Translation:', or any similar preface. Just emit the "
+        f"   translated text directly.\n"
+        f"3. Preserve the original structure: line breaks, blank lines, "
+        f"   labels (e.g. 'Title:', '标题:', 'Body:'), lists, numbers.\n"
+        f"4. If a label is in a language other than {src_name} "
+        f"   (e.g. Chinese labels inside {src_name} marketing copy), "
+        f"   translate the label AND its content into {tgt_name}.\n"
+        f"5. If the input is already in {tgt_name}, return it unchanged.\n"
+        f"6. Never add explanations even if the input seems ambiguous — "
+        f"   produce your best translation silently."
     )
 
     response = client.chat.completions.create(
@@ -66,7 +79,7 @@ def translate_text(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ],
-        temperature=0.2,
+        temperature=0.0,
         max_tokens=4096,
     )
 
