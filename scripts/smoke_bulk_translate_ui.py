@@ -103,7 +103,101 @@ def main():
         else:
             print("[7] 跳过详情页测试(当前无任务)")
 
-        print("\n✅ 全部 UI 检查通过")
+        # ==============================================
+        # 8. 真实端到端:创建一个小翻译任务并等它完成
+        # ==============================================
+        print("\n[8] 端到端任务测试:回到 /medias 启动一个真实翻译任务...")
+        page.goto(f"{BASE}/medias")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_selector("table tbody tr")
+
+        # 挑一个"可堆叠棒球帽收纳盒" (product_id=6) 或首个
+        target_btn = page.locator('button.bt-row-btn[data-bt-open="6"]').first
+        if target_btn.count() == 0:
+            target_btn = page.locator("button.bt-row-btn[data-bt-open]").first
+        target_pid = target_btn.get_attribute("data-bt-open")
+        print(f"    选中产品 id={target_pid}")
+        target_btn.click()
+        page.wait_for_selector("#bt-dialog:not(.hidden)")
+
+        # 只勾德语 + 只勾文案,避免跑视频浪费钱
+        # 按 lang code 精准取消,避免动态索引问题
+        for code in ["fr", "es", "it", "ja", "pt"]:
+            chip = page.locator(f'[data-bt-langs] .bt-chip[data-lang="{code}"]')
+            cls = chip.get_attribute("class") or ""
+            if "bt-chip--active" in cls:
+                chip.click()
+        # 确保 de 是 active 的
+        de_chip = page.locator('[data-bt-langs] .bt-chip[data-lang="de"]')
+        cls = de_chip.get_attribute("class") or ""
+        if "bt-chip--active" not in cls:
+            de_chip.click()
+
+        # 内容只勾 copy,关掉其他
+        for ct in ["detail", "video", "cover"]:
+            cb = page.locator(f'[data-bt-content="{ct}"]')
+            if cb.is_checked():
+                cb.click()
+        copy_cb = page.locator('[data-bt-content="copy"]')
+        if not copy_cb.is_checked():
+            copy_cb.click()
+
+        # 勾强制重翻(避免"已存在"跳过)
+        page.locator("[data-bt-force]").click()
+
+        page.wait_for_timeout(800)  # 等预估
+        est_box = page.locator("[data-bt-estimate] .bt-estimate__body").inner_text()
+        print(f"    预估:\n      {est_box[:300]}")
+
+        # 处理二次确认 confirm 弹窗
+        page.on("dialog", lambda d: d.accept())
+
+        print("[9] 点击'开始翻译'...")
+        page.locator("[data-bt-start]").click()
+
+        # 等弹窗关闭 + 气泡出现
+        page.wait_for_selector("#bt-dialog", state="hidden", timeout=10000)
+        page.wait_for_selector("#bt-bubble:not(.hidden)", timeout=10000)
+        bubble_summary = page.locator("[data-bt-bubble-summary]").inner_text()
+        print(f"    气泡显示: {bubble_summary}")
+
+        # 展开气泡看任务
+        page.locator("[data-bt-bubble-compact]").click()
+        page.wait_for_selector("[data-bt-bubble-expanded]:not(.hidden)")
+        # 取气泡里第一个任务的详情链接
+        detail_link = page.locator(".bt-bubble-task__link").first
+        detail_href = detail_link.get_attribute("href")
+        print(f"    气泡任务链接: {detail_href}")
+
+        # 轮询 15 秒等任务跑完
+        print("[10] 等待任务完成(最多 30s)...")
+        import time
+        deadline = time.time() + 30
+        done = False
+        while time.time() < deadline:
+            resp = ctx.request.get(f"{BASE}/api/bulk-translate{detail_href.replace('/tasks', '')}")
+            j = resp.json()
+            status = j.get("status")
+            prog = j.get("state", {}).get("progress", {})
+            print(f"    [{int(time.time())}] status={status} progress={prog}")
+            if status in ("done", "error", "cancelled"):
+                done = status == "done"
+                final = j
+                break
+            time.sleep(3)
+
+        if not done:
+            print("❌ 任务未在 30s 内完成,可能需手工查看")
+        else:
+            print(f"    ✅ 任务完成,cost={final['state']['cost_tracking']['actual']}")
+
+            # 打开详情页验证
+            page.goto(BASE + detail_href)
+            page.wait_for_selector(".bt-detail__meta")
+            stats = page.locator("[data-bt-stats]").inner_text()
+            print(f"    详情页 Stats: {stats[:150]}")
+
+        print("\n✅ 全部 UI + 端到端检查通过")
         browser.close()
 
 
