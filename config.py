@@ -130,6 +130,8 @@ def _resolve_gemini_keys() -> tuple[str, str]:
 
 GEMINI_AISTUDIO_API_KEY, GEMINI_CLOUD_API_KEY = _resolve_gemini_keys()
 GEMINI_API_KEY = GEMINI_CLOUD_API_KEY if GEMINI_BACKEND == "cloud" else GEMINI_AISTUDIO_API_KEY
+GEMINI_CLOUD_PROJECT = _env("GEMINI_CLOUD_PROJECT")
+GEMINI_CLOUD_LOCATION = _env("GEMINI_CLOUD_LOCATION", "global")
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 
 # 路径

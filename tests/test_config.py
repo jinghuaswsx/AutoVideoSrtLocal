@@ -44,6 +44,24 @@ def test_materials_openapi_key_defaults_to_empty(monkeypatch):
     assert config.OPENAPI_MEDIA_API_KEY == ""
 
 
+def test_gemini_cloud_settings_defaults_and_overrides(monkeypatch):
+    monkeypatch.delenv("GEMINI_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GEMINI_CLOUD_LOCATION", raising=False)
+
+    config = importlib.import_module("config")
+    config = importlib.reload(config)
+
+    assert config.GEMINI_CLOUD_PROJECT == ""
+    assert config.GEMINI_CLOUD_LOCATION == "global"
+
+    monkeypatch.setenv("GEMINI_CLOUD_PROJECT", "demo-project")
+    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "us-central1")
+    config = importlib.reload(config)
+
+    assert config.GEMINI_CLOUD_PROJECT == "demo-project"
+    assert config.GEMINI_CLOUD_LOCATION == "us-central1"
+
+
 def test_subtitle_removal_provider_defaults(monkeypatch):
     monkeypatch.setenv("SUBTITLE_REMOVAL_PROVIDER_TOKEN", "test-token")
     monkeypatch.delenv("SUBTITLE_REMOVAL_PROVIDER_URL", raising=False)
