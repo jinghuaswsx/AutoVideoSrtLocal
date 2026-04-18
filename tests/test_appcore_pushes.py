@@ -136,3 +136,34 @@ def test_build_product_link():
         assert pushes.build_product_link("de", "abc") == "https://x.com/de/p/abc"
     finally:
         config.AD_URL_TEMPLATE = original
+
+
+def test_build_item_payload_basic(monkeypatch, product_with_item):
+    import config
+    pid, item_id = product_with_item
+    monkeypatch.setattr(
+        "appcore.pushes.tos_clients.generate_signed_media_download_url",
+        lambda key: f"https://signed/{key}",
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.medias.list_enabled_language_codes",
+        lambda: ["en", "de", "fr", "es", "pt", "ja", "it"],
+    )
+    monkeypatch.setattr(config, "AD_URL_TEMPLATE",
+                        "https://example.com/{lang}/products/{product_code}")
+
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    payload = pushes.build_item_payload(item, product)
+
+    assert payload["mode"] == "create"
+    assert payload["author"] == "蔡靖华"
+    assert payload["push_admin"] == "蔡靖华"
+    assert len(payload["videos"]) == 1
+    assert payload["videos"][0]["url"].startswith("https://signed/")
+    assert payload["videos"][0]["image_url"].startswith("https://signed/")
+    # 6 条非英文链接（排除 en）
+    assert len(payload["product_links"]) == 6
+    for link in payload["product_links"]:
+        assert "/en/" not in link
+        assert product["product_code"] in link

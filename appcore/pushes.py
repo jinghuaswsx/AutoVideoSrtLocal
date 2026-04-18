@@ -92,3 +92,47 @@ def probe_ad_url(url: str) -> tuple[bool, str | None]:
     if 200 <= resp.status_code < 400:
         return True, None
     return False, f"HTTP {resp.status_code}"
+
+
+# ---------- payload 组装 ----------
+
+_FIXED_AUTHOR = "蔡靖华"
+_FIXED_TEXTS = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
+
+
+def build_item_payload(item: dict, product: dict) -> dict:
+    """按设计文档组装单条 item 的推送 JSON。"""
+    object_key = item.get("object_key")
+    cover_object_key = item.get("cover_object_key")
+    product_code = (product.get("product_code") or "").strip().lower()
+
+    video = {
+        "name": item.get("display_name") or item.get("filename") or "",
+        "size": int(item.get("file_size") or 0),
+        "width": 1080,
+        "height": 1920,
+        "url": tos_clients.generate_signed_media_download_url(object_key) if object_key else None,
+        "image_url": (
+            tos_clients.generate_signed_media_download_url(cover_object_key)
+            if cover_object_key else None
+        ),
+    }
+
+    enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]
+    product_links = [build_product_link(lang, product_code) for lang in enabled_langs]
+
+    return {
+        "mode": "create",
+        "product_name": product.get("name") or "",
+        "texts": list(_FIXED_TEXTS),
+        "product_links": product_links,
+        "videos": [video],
+        "source": 0,
+        "level": int(product.get("importance") or 3),
+        "author": _FIXED_AUTHOR,
+        "push_admin": _FIXED_AUTHOR,
+        "roas": 1.6,
+        "platforms": ["tiktok"],
+        "selling_point": product.get("selling_points") or "",
+        "tags": [],
+    }
