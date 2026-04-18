@@ -250,10 +250,15 @@ def create_app() -> Flask:
 
     @socketio.on("join_multi_translate_task")
     def on_join_multi_translate(data):
-        from flask_socketio import join_room
-        tid = data.get("task_id")
-        if tid:
-            join_room(tid)
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = data.get("task_id")
+        if task_id:
+            from web import store
+            task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
 
     @socketio.on("join_subtitle_removal_task")
     def on_join_subtitle_removal(data):

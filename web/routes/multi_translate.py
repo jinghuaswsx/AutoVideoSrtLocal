@@ -391,7 +391,7 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+RESUMABLE_STEPS = ["extract", "asr", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/api/multi-translate/<task_id>/resume", methods=["POST"])
