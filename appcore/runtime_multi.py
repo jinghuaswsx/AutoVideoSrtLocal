@@ -25,6 +25,9 @@ from appcore.runtime import (
     _resolve_translate_provider,
 )
 from appcore.usage_log import record as _log_usage
+from appcore.video_translate_defaults import resolve_default_voice
+from pipeline.voice_embedding import embed_audio_file
+from pipeline.voice_match import extract_sample_from_utterances, match_candidates
 from pipeline.localization import build_source_full_text_zh
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from web.preview_artifacts import (
@@ -196,3 +199,41 @@ class MultiTranslateRunner(PipelineRunner):
         self._emit(task_id, EVT_ENGLISH_ASR_RESULT, {"english_asr_result": asr_result})
         self._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         self._set_step(task_id, "subtitle", "done", f"{lang.upper()} 字幕生成完成")
+
+    def _step_voice_match(self, task_id: str) -> None:
+        task = task_state.get(task_id)
+        lang = self._resolve_target_lang(task)
+        utterances = task.get("utterances") or []
+        video_path = task.get("video_path")
+
+        if not utterances or not video_path:
+            task_state.update(
+                task_id,
+                voice_match_candidates=[],
+                voice_match_fallback_voice_id=resolve_default_voice(lang),
+            )
+            return
+
+        try:
+            clip = extract_sample_from_utterances(
+                video_path, utterances, out_dir=task["task_dir"],
+                min_duration=8.0,
+            )
+            vec = embed_audio_file(clip)
+            candidates = match_candidates(vec, language=lang, top_k=3)
+        except Exception as exc:
+            log.exception("voice match failed for %s: %s", task_id, exc)
+            candidates = []
+
+        if not candidates:
+            task_state.update(
+                task_id,
+                voice_match_candidates=[],
+                voice_match_fallback_voice_id=resolve_default_voice(lang),
+            )
+            return
+
+        for c in candidates:
+            c["similarity"] = float(c.get("similarity", 0.0))
+
+        task_state.update(task_id, voice_match_candidates=candidates)
