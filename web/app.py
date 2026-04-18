@@ -50,6 +50,7 @@ from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
 from web.routes.openapi_materials import bp as openapi_materials_bp
+from web.routes.pushes import bp as pushes_bp
 from web.routes.image_translate import bp as image_translate_bp
 from web.routes.voice_library import bp as voice_library_bp
 
@@ -192,6 +193,7 @@ def create_app() -> Flask:
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
+    app.register_blueprint(pushes_bp)
     app.register_blueprint(image_translate_bp)
     # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
     # 三类任务并发拉起时把 CPU 打满到 100%，导致机器反复宕机。保留
