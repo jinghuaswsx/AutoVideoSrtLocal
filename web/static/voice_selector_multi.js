@@ -6,10 +6,18 @@
 
   const summaryEl = document.getElementById("vs-summary");
   const listEl = document.getElementById("vs-list");
-  const footerEl = document.getElementById("vs-footer");
+  const selectionText = document.getElementById("vs-selection-text");
+  const launchBtn = document.getElementById("vs-launch-btn");
+  const defaultBtn = document.getElementById("vs-use-default");
   const searchInput = document.getElementById("vs-search");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
+
+  // 字幕参数输入
+  const subFontEl = document.getElementById("vs-sub-font");
+  const subSizeEl = document.getElementById("vs-sub-size");
+  const subPosEl = document.getElementById("vs-sub-position");
+  const subPosYEl = document.getElementById("vs-sub-position-y");
 
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");
@@ -17,11 +25,11 @@
   };
 
   let allItems = [];
-  let candidatesMap = new Map();      // voice_id -> {similarity, ...}
-  let fallbackVoiceId = null;
+  let candidatesMap = new Map();
   let selectedVoiceId = null;
   let selectedVoiceName = null;
-  let confirmed = false;              // 是否已经点过"确认并开始翻译"
+  let useDefault = false;
+  let launched = false;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
@@ -40,22 +48,20 @@
       allItems = data.items || [];
       candidatesMap.clear();
       (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
-      fallbackVoiceId = data.fallback_voice_id || null;
       selectedVoiceId = data.selected_voice_id || null;
 
-      updateSummary(data.total || 0, (data.candidates || []).length);
+      const n = (data.candidates || []).length;
+      const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
+      if (n > 0) parts.push(`${n} 个向量匹配推荐置顶`);
+      else parts.push("暂无推荐（ASR 还在跑，或匹配失败）");
+      summaryEl.textContent = parts.join(" · ");
+
       render();
+      updateLaunchState();
     } catch (err) {
       console.error("[voice-selector] load failed:", err);
       listEl.innerHTML = `<div class="vs-loading">网络错误</div>`;
     }
-  }
-
-  function updateSummary(total, nCandidates) {
-    const parts = [`${lang.toUpperCase()} 音色库共 ${total} 个`];
-    if (nCandidates > 0) parts.push(`${nCandidates} 个向量匹配推荐置顶`);
-    else parts.push("暂无向量匹配推荐（可能该语种音色尚未生成 embedding）");
-    summaryEl.textContent = parts.join(" · ");
   }
 
   function render() {
@@ -63,7 +69,6 @@
     const gender = genderFilter.value;
     const onlyRec = recommendedOnly.checked;
 
-    // 排序：推荐项在前（按相似度降序），其余按 name
     const withSort = allItems.map(v => {
       const rec = candidatesMap.get(v.voice_id);
       return { v, rec, sim: rec ? rec.similarity : -1 };
@@ -85,30 +90,25 @@
 
     if (filtered.length === 0) {
       listEl.innerHTML = `<div class="vs-loading">没有匹配的音色</div>`;
-      footerEl.textContent = "";
       return;
     }
 
     listEl.innerHTML = filtered.map(({ v, rec }) => {
       const isRec = !!rec;
-      const isSelected = selectedVoiceId === v.voice_id;
+      const isSelected = !useDefault && selectedVoiceId === v.voice_id;
       const classes = ["vs-row"];
       if (isRec) classes.push("recommended");
       if (isSelected) classes.push("selected");
       const simBadge = isRec
         ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
         : "";
-      const meta = [
-        v.gender,
-        v.accent,
-        v.age,
-        v.description || v.descriptive || "",
-      ].filter(Boolean).map(escapeHtml).join(" · ");
+      const meta = [v.gender, v.accent, v.age, v.description || v.descriptive || ""]
+        .filter(Boolean).map(escapeHtml).join(" · ");
       const preview = v.preview_url
         ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
         : "";
       return `
-        <div class="vs-row ${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
+        <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
              data-voice-name="${escapeHtml(v.name || '')}">
           <div class="vs-row-main">
             <div class="vs-row-name">${simBadge}${escapeHtml(v.name || v.voice_id)}</div>
@@ -120,70 +120,87 @@
       `;
     }).join("");
 
-    // 行级点击选中（避免 audio 控件点击冒泡）
     listEl.querySelectorAll(".vs-row").forEach(row => {
       row.addEventListener("click", e => {
-        if (e.target.tagName === "AUDIO") return;
-        if (e.target.closest("audio")) return;
+        if (e.target.tagName === "AUDIO" || e.target.closest("audio")) return;
         selectVoice(row.dataset.voiceId, row.dataset.voiceName);
       });
     });
-
-    footerEl.innerHTML = selectedVoiceId
-      ? `已选：${escapeHtml(selectedVoiceName || selectedVoiceId)}
-         <button id="vs-confirm-btn" style="margin-left:12px;padding:6px 16px;
-           background:oklch(56% 0.16 230);color:#fff;border:none;
-           border-radius:6px;cursor:pointer;font-weight:600;">
-           ${confirmed ? "✓ 已确认" : "确认并开始翻译"}
-         </button>`
-      : `请从列表里点选一个音色`;
-
-    const confirmBtn = document.getElementById("vs-confirm-btn");
-    if (confirmBtn && !confirmed) {
-      confirmBtn.addEventListener("click", confirmSelection);
-    }
   }
 
   function selectVoice(voiceId, voiceName) {
-    if (confirmed) return;
+    if (launched) return;
     selectedVoiceId = voiceId;
     selectedVoiceName = voiceName;
+    useDefault = false;
     render();
+    updateLaunchState();
   }
 
-  async function confirmSelection() {
-    if (!selectedVoiceId || confirmed) return;
-    const btn = document.getElementById("vs-confirm-btn");
-    if (btn) { btn.disabled = true; btn.textContent = "提交中..."; }
-    try {
-      const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
-        body: JSON.stringify({
-          voice_id: selectedVoiceId,
-          voice_name: selectedVoiceName || undefined,
-        }),
-      });
-      if (!resp.ok) {
-        alert("确认失败：" + (await resp.text()));
-        if (btn) { btn.disabled = false; btn.textContent = "确认并开始翻译"; }
-        return;
-      }
-      confirmed = true;
-      render();
-      // 刷新页面让工作台进入下一步
-      setTimeout(() => window.location.reload(), 600);
-    } catch (err) {
-      console.error("[voice-selector] confirm failed:", err);
-      alert("网络错误");
-      if (btn) { btn.disabled = false; btn.textContent = "确认并开始翻译"; }
+  function chooseDefault() {
+    if (launched) return;
+    useDefault = true;
+    selectedVoiceId = null;
+    selectedVoiceName = null;
+    render();
+    updateLaunchState();
+  }
+
+  function updateLaunchState() {
+    const ready = launched ? false : (useDefault || !!selectedVoiceId);
+    launchBtn.disabled = !ready;
+    if (launched) {
+      selectionText.textContent = "✓ 已提交，pipeline 正在运行";
+    } else if (useDefault) {
+      selectionText.textContent = `✓ 将使用 ${lang.toUpperCase()} 默认音色`;
+    } else if (selectedVoiceId) {
+      selectionText.textContent = `✓ 已选：${selectedVoiceName || selectedVoiceId}`;
+    } else {
+      selectionText.textContent = "请从列表里选音色，或点「使用默认音色」";
     }
   }
 
-  // 事件绑定
+  async function launch() {
+    if (!launchBtn || launchBtn.disabled) return;
+    launchBtn.disabled = true;
+    launchBtn.textContent = "提交中...";
+    try {
+      const body = {
+        voice_id: useDefault ? "default" : selectedVoiceId,
+        voice_name: useDefault ? null : selectedVoiceName,
+        subtitle_font: subFontEl.value,
+        subtitle_size: parseInt(subSizeEl.value, 10) || 14,
+        subtitle_position: subPosEl.value,
+        subtitle_position_y: parseFloat(subPosYEl.value) || 0.68,
+      };
+      const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        alert("启动失败：" + (await resp.text()));
+        launchBtn.disabled = false;
+        launchBtn.textContent = "开始处理";
+        return;
+      }
+      launched = true;
+      launchBtn.textContent = "✓ 已启动";
+      updateLaunchState();
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      console.error("[voice-selector] launch failed:", err);
+      alert("网络错误");
+      launchBtn.disabled = false;
+      launchBtn.textContent = "开始处理";
+    }
+  }
+
   searchInput.addEventListener("input", render);
   genderFilter.addEventListener("change", render);
   recommendedOnly.addEventListener("change", render);
+  defaultBtn.addEventListener("click", chooseDefault);
+  launchBtn.addEventListener("click", launch);
 
   loadLibrary();
 })();
