@@ -11,7 +11,12 @@ import logging
 import os
 
 import appcore.task_state as task_state
-from appcore.events import EVT_TRANSLATE_RESULT
+from appcore.api_keys import resolve_key
+from appcore.events import EVT_ENGLISH_ASR_RESULT, EVT_SUBTITLE_READY, EVT_TRANSLATE_RESULT
+from pipeline.asr import transcribe_local_audio
+from pipeline.subtitle import build_srt_from_chunks, save_srt
+from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+from pipeline.tts import _get_audio_duration
 from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import (
     PipelineRunner,
@@ -123,3 +128,71 @@ class MultiTranslateRunner(PipelineRunner):
             "segments": review_segments,
             "requires_confirmation": requires_confirmation,
         })
+
+    def _step_subtitle(self, task_id: str, task_dir: str) -> None:
+        task = task_state.get(task_id)
+        lang = self._resolve_target_lang(task)
+        rules = self._get_lang_rules(lang)
+
+        self._set_step(task_id, "subtitle", "running",
+                       f"正在根据 {lang.upper()} 音频校正字幕...")
+
+        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get("normal", {}))
+        tts_audio_path = variant_state.get("tts_audio_path", "")
+
+        utterances = transcribe_local_audio(
+            tts_audio_path, prefix=f"tts-asr/{task_id}/normal",
+            volc_api_key=volc_api_key,
+        )
+        asr_result = {
+            "full_text": " ".join(u.get("text", "").strip()
+                                    for u in utterances if u.get("text")).strip(),
+            "utterances": utterances,
+        }
+        tts_script = variant_state.get("tts_script", {})
+        total_duration = _get_audio_duration(tts_audio_path) if tts_audio_path else 0.0
+        corrected_chunks = align_subtitle_chunks_to_asr(
+            tts_script.get("subtitle_chunks", []),
+            asr_result,
+            total_duration=total_duration,
+        )
+
+        srt_content = build_srt_from_chunks(
+            corrected_chunks,
+            weak_boundary_words=rules.WEAK_STARTERS,
+        )
+        srt_content = rules.post_process_srt(srt_content)
+
+        srt_path = save_srt(srt_content, os.path.join(task_dir, "subtitle.normal.srt"))
+
+        variant_state.update({
+            "english_asr_result": asr_result,
+            "corrected_subtitle": {"chunks": corrected_chunks,
+                                     "srt_content": srt_content},
+            "srt_path": srt_path,
+        })
+        task_state.set_preview_file(task_id, "srt", srt_path)
+        variants["normal"] = variant_state
+
+        task_state.update(
+            task_id, variants=variants,
+            english_asr_result=asr_result,
+            corrected_subtitle={"chunks": corrected_chunks,
+                                  "srt_content": srt_content},
+            srt_path=srt_path,
+        )
+        task_state.set_artifact(task_id, "subtitle",
+                                 build_subtitle_artifact(asr_result, corrected_chunks,
+                                                          srt_content,
+                                                          target_language=lang))
+
+        _save_json(task_dir, f"{lang}_asr_result.normal.json", asr_result)
+        _save_json(task_dir, "corrected_subtitle.normal.json",
+                   {"chunks": corrected_chunks, "srt_content": srt_content})
+
+        self._emit(task_id, EVT_ENGLISH_ASR_RESULT, {"english_asr_result": asr_result})
+        self._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
+        self._set_step(task_id, "subtitle", "done", f"{lang.upper()} 字幕生成完成")
