@@ -52,6 +52,8 @@ from web.routes.bulk_translate import (
 )
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
+from web.routes.multi_translate import bp as multi_translate_bp
+from web.routes.admin_prompts import bp as admin_prompts_bp
 from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
@@ -202,6 +204,8 @@ def create_app() -> Flask:
     app.register_blueprint(subtitle_removal_bp)
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
+    app.register_blueprint(multi_translate_bp)
+    app.register_blueprint(admin_prompts_bp)
     app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
@@ -264,6 +268,18 @@ def create_app() -> Flask:
             if task and task.get("_user_id") == current_user.id:
                 join_room(task_id)
 
+    @socketio.on("join_multi_translate_task")
+    def on_join_multi_translate(data):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return
+        task_id = data.get("task_id")
+        if task_id:
+            from web import store
+            task = store.get(task_id)
+            if task and task.get("_user_id") == current_user.id:
+                join_room(task_id)
+
     @socketio.on("join_subtitle_removal_task")
     def on_join_subtitle_removal(data):
         from flask_login import current_user
@@ -309,4 +325,26 @@ def create_app() -> Flask:
         if getattr(current_user, "role", None) == "admin":
             join_room("admin")
 
+    _seed_default_prompts()
+
     return app
+
+
+def _seed_default_prompts():
+    """启动时确保每个 (slot, lang) 都有一条 enabled 记录；没有就 seed default。
+
+    resolve_prompt_config 内部在 DB miss 时会自动回写 DEFAULTS。DB 不可达
+    时记 warning 但不影响 app 启动。
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from appcore.llm_prompt_configs import resolve_prompt_config
+        from pipeline.languages.prompt_defaults import DEFAULTS
+        for (slot, lang), _default in DEFAULTS.items():
+            try:
+                resolve_prompt_config(slot, lang)
+            except Exception as exc:
+                log.warning("seed prompt failed for (%s, %s): %s", slot, lang, exc)
+    except Exception as exc:
+        log.warning("_seed_default_prompts skipped: %s", exc)

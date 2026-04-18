@@ -127,3 +127,43 @@ def match_for_video(
     return match_candidates(
         query_vec, language=language, gender=gender, top_k=top_k,
     )
+
+
+def pick_utterance_window(utterances: list[dict], *,
+                           min_duration: float = 8.0) -> tuple[float, float]:
+    """从 ASR utterances 里挑一段作为音色采样窗口。
+
+    策略：
+      1. 若单个 utterance 时长 ≥ min_duration，直接用它
+      2. 否则按时间顺序拼接相邻 utterances，找到第一个累计时长 ≥ min_duration 的窗口
+      3. 若总时长仍不足，返回 [首个 utterance 起点, 末尾 utterance 终点]（整段）
+    """
+    if not utterances:
+        raise ValueError("utterances is empty")
+
+    # 策略 1：找最长单 utterance
+    longest = max(utterances, key=lambda u: u["end_time"] - u["start_time"])
+    if longest["end_time"] - longest["start_time"] >= min_duration:
+        return float(longest["start_time"]), float(longest["end_time"])
+
+    # 策略 2：滑动窗口拼接
+    sorted_utts = sorted(utterances, key=lambda u: u["start_time"])
+    for i in range(len(sorted_utts)):
+        window_start = sorted_utts[i]["start_time"]
+        for j in range(i, len(sorted_utts)):
+            window_end = sorted_utts[j]["end_time"]
+            if window_end - window_start >= min_duration:
+                return float(window_start), float(window_end)
+
+    # 策略 3：兜底，整段
+    return float(sorted_utts[0]["start_time"]), float(sorted_utts[-1]["end_time"])
+
+
+def extract_sample_from_utterances(video_path: str, utterances: list[dict],
+                                     *, out_dir: str,
+                                     min_duration: float = 8.0) -> str:
+    """从视频按 utterances 窗口切出纯人声采样片段。"""
+    start, end = pick_utterance_window(utterances, min_duration=min_duration)
+    full_wav = _extract_audio_track(video_path, out_dir)
+    return _cut_clip(full_wav, start, end,
+                     os.path.join(out_dir, "utt_sample"))

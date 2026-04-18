@@ -1,0 +1,388 @@
+{% extends "layout.html" %}
+{% block title %}多语种视频翻译 - AutoVideoSrt{% endblock %}
+{% block page_title %}多语种视频翻译{% endblock %}
+{% block extra_style %}
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
+.page-header-right { display: flex; align-items: center; gap: 10px; }
+.view-toggle { display: flex; border: 1.5px solid var(--border-main); border-radius: 8px; overflow: hidden; }
+.view-toggle-btn {
+  padding: 6px 10px; background: transparent; border: none; cursor: pointer;
+  color: #9ca3af; font-size: 16px; line-height: 1; transition: all .15s; font-family: inherit;
+}
+.view-toggle-btn.active { background: var(--primary-color); color: #fff; }
+.view-toggle-btn:hover:not(.active) { color: var(--text-main); background: var(--sidebar-hover-bg); }
+
+/* ── Language Pills ── */
+.lang-pills { display: flex; gap: 8px; margin: 16px 0 24px; flex-wrap: wrap; }
+.lang-pill {
+  padding: 6px 14px; border-radius: 9999px; font-size: 13px;
+  background: var(--bg-card); border: 1px solid var(--border-main);
+  color: var(--text-main); text-decoration: none; transition: all 0.15s;
+}
+.lang-pill:hover { border-color: oklch(56% 0.16 230); }
+.lang-pill.active {
+  background: oklch(56% 0.16 230); color: #fff;
+  border-color: oklch(56% 0.16 230);
+}
+
+/* ── Grid view ── */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; justify-content: start; }
+.project-card-wrap { position: relative; width: 100%; }
+.project-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-main);
+  border-radius: 14px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  display: flex; flex-direction: column;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  height: 100%;
+}
+.project-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15); background: var(--sidebar-hover-bg); }
+.project-card .thumb { width: 100%; padding-top: 177.78%; position: relative; background: var(--bg-body); overflow: hidden; flex-shrink: 0; }
+.project-card .thumb .thumb-inner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #d1d5db; font-size: 32px; }
+.project-card .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.project-card .info { padding: 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+.project-card .filename { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; min-height: 2.8em; }
+.project-card .meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
+.project-card .expire-row { margin-top: 6px; }
+
+/* ── List view ── */
+.list-view { display: none; flex-direction: column; gap: 8px; }
+.list-view.active { display: flex; }
+.grid.active { display: grid; }
+.grid:not(.active) { display: none; }
+.list-item {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
+  padding: 10px 14px; text-decoration: none; color: inherit;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  position: relative;
+}
+.list-item:hover { border-color: var(--primary-color); box-shadow: 0 2px 10px rgba(59, 130, 246, 0.12); background: var(--sidebar-hover-bg); }
+.list-item .list-thumb {
+  width: 48px; height: 48px; border-radius: 8px; background: var(--bg-body);
+  overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  color: #d1d5db; font-size: 20px;
+}
+.list-item .list-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.list-item .list-info { flex: 1; min-width: 0; }
+.list-item .list-filename { font-size: 14px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-item .list-meta { font-size: 12px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 10px; }
+.list-item .list-menu-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-main);
+  background: transparent; color: #9ca3af; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all .15s; font-family: inherit;
+}
+.list-item .list-menu-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.badge-done { background: #dcfce7; color: #16a34a; }
+.badge-running { background: #ede9fe; color: #7c3aed; }
+.badge-expired { background: #f3f4f6; color: #9ca3af; }
+.badge-uploaded { background: #dbeafe; color: #2563eb; }
+.badge-error { background: #fee2e2; color: #dc2626; }
+.empty { text-align: center; padding: 80px 0; color: #9ca3af; }
+.expire-tag {
+  display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+}
+.expire-tag.urgent { background: #fee2e2; color: #dc2626; }
+.expire-tag.warning { background: #fff7ed; color: #c2410c; }
+.expire-tag.normal { background: #f0fdf4; color: #16a34a; }
+.card-menu-btn {
+  position: absolute; top: 10px; right: 10px;
+  width: 32px; height: 32px;
+  background: rgba(0,0,0,0.55);
+  border: 1.5px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 18px; z-index: 2;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  font-family: inherit; color: #fff; transition: all 0.2s;
+}
+.card-menu-btn:hover { background: rgba(0,0,0,0.8); border-color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.card-menu {
+  display: none; position: absolute; top: 44px; right: 10px;
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10; min-width: 130px; overflow: hidden;
+}
+.card-menu.open { display: block; }
+.card-menu button {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 14px; font-size: 13px; color: var(--text-main);
+  background: none; border: none; cursor: pointer; font-family: inherit; transition: background 0.2s;
+}
+.card-menu button:hover { background: var(--sidebar-hover-bg); color: var(--primary-color); }
+.card-menu button.danger { color: var(--text-btn-danger); }
+.card-menu button.danger:hover { background: var(--bg-btn-danger); color: var(--text-btn-danger); }
+.list-item .card-menu { top: 40px; right: 0; }
+.expire-notice {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px;
+  padding: 12px 18px; margin-bottom: 18px; font-size: 14px; color: #795548;
+}
+.expire-notice .icon { font-size: 20px; flex-shrink: 0; }
+
+/* ── Upload modal ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.3); z-index: 200;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--bg-card); border-radius: 16px; padding: 28px;
+  width: 400px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  border: 1px solid var(--border-main);
+}
+.modal-box h3 { font-size: 16px; font-weight: 700; margin-bottom: 20px; color: var(--text-main); }
+.modal-field { margin-bottom: 16px; }
+.modal-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main); }
+.modal-field select, .modal-field input[type="file"] {
+  width: 100%; background: var(--bg-body); border: 1.5px solid var(--border-main);
+  border-radius: 10px; color: var(--text-main); padding: 10px 12px; font-size: 14px;
+  font-family: inherit; outline: none; box-sizing: border-box; transition: all 0.2s;
+}
+.modal-field select:focus, .modal-field input[type="file"]:focus { border-color: var(--primary-color); background: var(--bg-card); }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>多语种视频翻译</h1>
+  <div class="page-header-right">
+    <div class="view-toggle">
+      <button class="view-toggle-btn active" id="viewGrid" onclick="switchView('grid')" title="卡片视图">&#9638;</button>
+      <button class="view-toggle-btn" id="viewList" onclick="switchView('list')" title="列表视图">&#9776;</button>
+    </div>
+    <button class="btn btn-primary" onclick="openUpload()">+ 新建项目</button>
+  </div>
+</div>
+
+<div class="lang-pills">
+  <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="/multi-translate">全部</a>
+  {% for lang in supported_langs %}
+    {% set label = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语'}[lang] %}
+    <a class="lang-pill {{ 'active' if current_lang == lang else '' }}"
+       href="/multi-translate?lang={{ lang }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="expire-notice">
+  <span class="icon">⚠️</span>
+  <span>项目文件仅保留 <strong>{% if retention_hours >= 24 %}{{ (retention_hours / 24)|int }} 天{% else %}{{ retention_hours }} 小时{% endif %}</strong>，到期后将自动清理，请及时导出或下载所需内容。</span>
+</div>
+{% if projects %}
+<!-- Grid View -->
+<div class="grid active" id="gridView">
+  {% for p in projects %}
+  <div class="project-card-wrap">
+    <a class="project-card" href="/multi-translate/{{ p.id }}">
+      <div class="thumb">
+        {% if p.thumbnail_path %}
+          <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
+        {% else %}
+          <div class="thumb-inner">🌍</div>
+        {% endif %}
+      </div>
+      <div class="info">
+        <div class="filename">{{ p.display_name or (p.original_filename or p.id)[:10] }}</div>
+        <div class="meta">
+          <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
+          <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+        </div>
+        {% if p.expires_at %}
+        {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+        <div class="expire-row">
+          {% if hours_left <= 0 %}
+          <span class="expire-tag urgent">已过期</span>
+          {% elif hours_left <= 12 %}
+          <span class="expire-tag warning">剩余 {{ hours_left }}h</span>
+          {% else %}
+          <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </a>
+    <button class="card-menu-btn" onclick="toggleMenu(event,'menu-{{ p.id }}')">⋯</button>
+    <div class="card-menu" id="menu-{{ p.id }}">
+      <button class="danger" onclick="deleteTask(event,'{{ p.id }}')">删除</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<!-- List View -->
+<div class="list-view" id="listView">
+  {% for p in projects %}
+  <div class="list-item" style="position:relative">
+    <a href="/multi-translate/{{ p.id }}" style="display:contents;text-decoration:none;color:inherit">
+      <div class="list-thumb">
+        {% if p.thumbnail_path %}
+          <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
+        {% else %}
+          🌍
+        {% endif %}
+      </div>
+      <div class="list-info">
+        <div class="list-filename">{{ p.display_name or (p.original_filename or p.id)[:10] }}</div>
+        <div class="list-meta">
+          <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
+          <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+          {% if p.expires_at %}
+          {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
+          {% if hours_left <= 0 %}
+          <span class="expire-tag urgent">已过期</span>
+          {% elif hours_left <= 12 %}
+          <span class="expire-tag warning">剩余 {{ hours_left }}h</span>
+          {% else %}
+          <span class="expire-tag normal">剩余 {{ hours_left }}h</span>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </a>
+    <button class="list-menu-btn" onclick="toggleMenu(event,'lmenu-{{ p.id }}')">⋯</button>
+    <div class="card-menu" id="lmenu-{{ p.id }}">
+      <button class="danger" onclick="deleteTask(event,'{{ p.id }}')">删除</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  <p style="font-size:48px;margin-bottom:16px">🌍</p>
+  <p>还没有多语种翻译项目，点击右上角新建</p>
+</div>
+{% endif %}
+
+<!-- 上传弹窗 -->
+<div class="modal-overlay" id="uploadOverlay">
+  <div class="modal-box">
+    <h3>新建多语种翻译项目</h3>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="modal-field">
+        <label for="videoFile">选择视频</label>
+        <input type="file" id="videoFile" name="video" accept="video/*" required />
+      </div>
+      <p style="font-size:12px;color:#9ca3af;margin-bottom:16px;">上传后将自动识别视频源语言（中文/英文）</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
+        <button type="submit" class="btn btn-primary btn-sm" id="uploadBtn">上传并创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function switchView(mode) {
+  var grid = document.getElementById('gridView');
+  var list = document.getElementById('listView');
+  if (!grid || !list) return;
+  document.getElementById('viewGrid').classList.toggle('active', mode === 'grid');
+  document.getElementById('viewList').classList.toggle('active', mode === 'list');
+  grid.classList.toggle('active', mode === 'grid');
+  list.classList.toggle('active', mode === 'list');
+  try { localStorage.setItem('multiTranslateViewMode', mode); } catch {}
+}
+try {
+  var saved = localStorage.getItem('multiTranslateViewMode');
+  if (saved === 'list') switchView('list');
+} catch {}
+
+function toggleMenu(e, menuId) {
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.card-menu.open').forEach(function(m) {
+    if (m.id !== menuId) m.classList.remove('open');
+  });
+  document.getElementById(menuId).classList.toggle('open');
+}
+document.addEventListener('click', function() {
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+});
+
+async function deleteTask(e, taskId) {
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
+  if (!confirm('确定删除这个项目吗？此操作不可恢复。')) return;
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  var res = await fetch('/api/multi-translate/' + taskId, {
+    method: 'DELETE',
+    headers: { 'X-CSRFToken': csrfToken },
+  });
+  if (res.ok) { location.reload(); }
+  else { var data = await res.json(); alert(data.error || '删除失败'); }
+}
+
+function openUpload() { document.getElementById('uploadOverlay').classList.add('open'); }
+function closeUpload() { document.getElementById('uploadOverlay').classList.remove('open'); }
+document.getElementById('uploadOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeUpload();
+});
+
+document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var btn = document.getElementById('uploadBtn');
+  var fileInput = document.getElementById('videoFile');
+  if (!fileInput.files[0]) return;
+
+  var file = fileInput.files[0];
+  var sizeMB = (file.size / 1024 / 1024).toFixed(1);
+  btn.disabled = true;
+  btn.textContent = '准备中...';
+
+  try {
+    // Step 1: bootstrap — 拿 TOS 预签名 URL
+    var bootRes = await fetch('/api/multi-translate/bootstrap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ original_filename: file.name, content_type: file.type || 'application/octet-stream' }),
+    });
+    var boot = await bootRes.json();
+    if (!bootRes.ok) throw new Error(boot.error || '上传初始化失败');
+
+    // Step 2: xhr PUT 到 TOS
+    await new Promise(function(resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', boot.upload_url, true);
+      xhr.upload.onprogress = function(ev) {
+        if (ev.lengthComputable) {
+          var percent = Math.round((ev.loaded / ev.total) * 100);
+          btn.textContent = '上传中 ' + percent + '% (' + sizeMB + ' MB)';
+        }
+      };
+      xhr.onload = function() {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error('TOS 上传失败 HTTP ' + xhr.status));
+      };
+      xhr.onerror = function() { reject(new Error('网络错误，TOS 上传失败')); };
+      xhr.send(file);
+    });
+
+    btn.textContent = '创建任务...';
+
+    // Step 3: complete — 通知后端
+    var compRes = await fetch('/api/multi-translate/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: boot.task_id,
+        object_key: boot.object_key,
+        original_filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+      }),
+    });
+    var data = await compRes.json();
+    if (!compRes.ok) throw new Error(data.error || '创建任务失败 (HTTP ' + compRes.status + ')');
+    window.location.href = '/multi-translate/' + data.task_id;
+  } catch (err) {
+    alert(err.message);
+    btn.disabled = false;
+    btn.textContent = '上传并创建';
+  }
+});
+</script>
+{% endblock %}
