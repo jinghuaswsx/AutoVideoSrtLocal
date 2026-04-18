@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("multi_translate", __name__)
 
-SUPPORTED_LANGS = ("de", "fr")
+SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt")
 
 
 def _default_display_name(original_filename: str) -> str:

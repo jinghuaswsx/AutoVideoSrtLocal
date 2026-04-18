@@ -18,3 +18,14 @@ def test_each_entry_has_provider_model_content():
         assert "provider" in entry
         assert "model" in entry
         assert "content" in entry and entry["content"].strip()
+
+
+def test_defaults_cover_batch2_langs():
+    for lang in ("es", "it", "pt"):
+        for slot in ("base_translation", "base_tts_script", "base_rewrite"):
+            assert (slot, lang) in DEFAULTS, f"missing {lang} {slot}"
+
+
+def test_es_translation_mentions_inverted_punct():
+    entry = DEFAULTS[("base_translation", "es")]
+    assert "¿" in entry["content"] and "¡" in entry["content"]
