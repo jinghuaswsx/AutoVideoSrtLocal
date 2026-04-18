@@ -493,22 +493,46 @@ DEFAULT_PROMPTS = [
     {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
 ]
 
-LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a US short-video commerce copywriter REWRITING an existing English translation to match a target word count.
+LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a short-video commerce copywriter REWRITING an existing translation to match a target word count.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 
-REWRITE CONSTRAINTS (critical):
-- Target word count: approximately {target_words} words (±10%, counted as whitespace-separated tokens of full_text).
-- Direction: {direction}
-  * "shrink": remove modifiers, examples, and repetitions while preserving every factual claim and the core selling point.
-  * "expand": add natural elaborations, relatable details, or examples. Preserve all facts; never invent new claims.
-- Keep the same number of sentences as the previous translation when possible.
-- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+═══════════════════════════════════════════════════════════════════════
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE
+═══════════════════════════════════════════════════════════════════════
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words} − 5, {target_words} + 5]. That is a HARD CAP.
 
-STYLE (identical to original translation prompt):
-- Natural, native, sales-capable American English.
-- Keep each sentence concise and punchy for subtitles. Prefer 6-10 words.
-- Do not use em dashes or en dashes. Plain ASCII punctuation only, preferring commas, periods, and question marks.
+SELF-CHECK BEFORE RETURNING:
+  1. Count whitespace-separated tokens in full_text.
+  2. If count is outside [{target_words}−5, {target_words}+5], you MUST rewrite
+     to land inside the window BEFORE returning. Do not return a draft that misses
+     the window — doing so will break the downstream audio-length budget.
+  3. Do the self-check silently; return only the final JSON.
+
+COMMON FAILURE TO AVOID:
+  · Asked for 80 words, returning 100+ — this is FAILURE. Trim aggressively.
+  · Asked for 70 words, returning 55 — this is FAILURE. Expand with natural detail.
+  · Do NOT carry over optional material from the reference verbatim when expanding.
+  · Do NOT cut key facts when shrinking.
+
+═══════════════════════════════════════════════════════════════════════
+DIRECTION: {direction}
+═══════════════════════════════════════════════════════════════════════
+  · "shrink": remove modifiers, examples, and repetitions while preserving every
+    factual claim and the core selling point. Shorter sentences are fine.
+  · "expand": add natural elaborations, relatable details, or examples. Preserve
+    all facts; never invent new claims. A couple of extra adjectives or a short
+    aside is usually enough.
+
+STRUCTURAL CONSTRAINTS:
+- Keep the same number of sentences as the reference translation when possible.
+- Preserve every source_segment_indices mapping from the reference; do not reorder.
+
+STYLE (inherit from reference):
+- Natural, native, conversational for short-form commerce video.
+- Keep each sentence concise and punchy for subtitles. Prefer 6–10 words per sentence.
+- No em/en dashes. Plain ASCII punctuation only.
 - Preserve meaning — never drop key facts or invent new ones."""
 
 
