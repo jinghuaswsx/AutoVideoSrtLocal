@@ -211,3 +211,25 @@ def test_list_logs(product_with_item):
     # 按时间倒序
     assert logs[0]["status"] == "success"
     assert logs[1]["status"] == "failed"
+
+
+def test_list_items_for_push_default(product_with_item):
+    pid, item_id = product_with_item
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+    assert total >= 1
+    assert any(r["id"] == item_id for r in rows)
+
+
+def test_list_items_for_push_filter_by_lang(product_with_item):
+    pid, item_id = product_with_item
+    rows, total = pushes.list_items_for_push(langs=["fr"], offset=0, limit=20)
+    # 我们的 item 是 de，过滤 fr 应该不包含
+    assert all(r["id"] != item_id for r in rows)
+
+
+def test_list_items_for_push_filter_by_keyword(product_with_item):
+    pid, item_id = product_with_item
+    db_execute("UPDATE media_items SET display_name='UNIQUEMARKER' WHERE id=%s", (item_id,))
+    rows, _ = pushes.list_items_for_push(keyword="UNIQUEMARKER", offset=0, limit=20)
+    assert len(rows) == 1
+    assert rows[0]["id"] == item_id

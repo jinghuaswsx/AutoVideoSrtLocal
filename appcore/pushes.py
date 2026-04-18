@@ -187,3 +187,63 @@ def list_item_logs(item_id: int, limit: int = 50) -> list[dict]:
         "ORDER BY created_at DESC, id DESC LIMIT %s",
         (item_id, limit),
     )
+
+
+# ---------- 列表查询 ----------
+
+def list_items_for_push(
+    langs: list[str] | None = None,
+    keyword: str = "",
+    product_term: str = "",
+    date_from: str | None = None,
+    date_to: str | None = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> tuple[list[dict], int]:
+    """不过滤状态（状态在内存里算）。返回 (items join product 的原始行, total)。
+
+    说明：`media_items` 表没有 `updated_at` 列，排序与日期过滤均使用 `i.created_at`。
+    """
+    where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
+    args: list[Any] = []
+
+    if langs:
+        placeholders = ",".join(["%s"] * len(langs))
+        where.append(f"i.lang IN ({placeholders})")
+        args.extend(langs)
+    if keyword:
+        where.append("(i.display_name LIKE %s OR i.filename LIKE %s)")
+        like = f"%{keyword}%"
+        args.extend([like, like])
+    if product_term:
+        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
+        like = f"%{product_term}%"
+        args.extend([like, like])
+    if date_from:
+        where.append("i.created_at >= %s")
+        args.append(date_from)
+    if date_to:
+        where.append("i.created_at <= %s")
+        args.append(date_to)
+
+    where_sql = " AND ".join(where)
+
+    total_row = query_one(
+        f"SELECT COUNT(*) AS c FROM media_items i "
+        f"JOIN media_products p ON p.id = i.product_id "
+        f"WHERE {where_sql}",
+        tuple(args),
+    )
+    total = int((total_row or {}).get("c") or 0)
+
+    rows = query(
+        f"SELECT i.*, p.name AS product_name, p.product_code, "
+        f"       p.ad_supported_langs, p.selling_points, p.importance "
+        f"FROM media_items i "
+        f"JOIN media_products p ON p.id = i.product_id "
+        f"WHERE {where_sql} "
+        f"ORDER BY i.created_at DESC, i.id DESC "
+        f"LIMIT %s OFFSET %s",
+        tuple(args + [limit, offset]),
+    )
+    return rows, total
