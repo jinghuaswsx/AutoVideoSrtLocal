@@ -28,8 +28,39 @@
 
   // 字幕参数输入
   const subFontEl = document.getElementById("vs-sub-font");
-  const subSizeEl = document.getElementById("vs-sub-size");
+  const subFontPreview = document.getElementById("vs-sub-font-preview");
+  const subSizeGroup = document.getElementById("vs-size-group");
   const subPosYEl = document.getElementById("vs-sub-position-y");
+  const subPosHint = document.getElementById("vs-sub-pos-hint");
+
+  let subSize = 14;  // 字号状态（由按钮组驱动）
+
+  // 字体预览：下拉变化 → 预览文字换字体
+  function updateFontPreview() {
+    const val = subFontEl.value || "Impact";
+    const weight = subFontEl.selectedOptions[0]?.dataset?.weight || "700";
+    subFontPreview.style.fontFamily = `"${val}", sans-serif`;
+    subFontPreview.style.fontWeight = weight;
+  }
+  subFontEl.addEventListener("change", updateFontPreview);
+  updateFontPreview();
+
+  // 字号按钮组：点击切换 active
+  subSizeGroup.addEventListener("click", e => {
+    const btn = e.target.closest("button[data-size]");
+    if (!btn) return;
+    subSize = parseInt(btn.dataset.size, 10) || 14;
+    subSizeGroup.querySelectorAll("button").forEach(b =>
+      b.classList.toggle("active", b === btn));
+  });
+
+  // 位置滑块：实时回显百分比
+  function updatePosHint() {
+    const v = parseFloat(subPosYEl.value) || 0;
+    subPosHint.textContent = `${Math.round(v * 100)}%`;
+  }
+  subPosYEl.addEventListener("input", updatePosHint);
+  updatePosHint();
 
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");
@@ -270,7 +301,7 @@
         voice_id: selectedVoiceId,
         voice_name: selectedVoiceName,
         subtitle_font: subFontEl.value,
-        subtitle_size: parseInt(subSizeEl.value, 10) || 14,
+        subtitle_size: subSize,
         subtitle_position_y: parseFloat(subPosYEl.value) || 0.68,
       };
       const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {

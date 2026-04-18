@@ -32,26 +32,50 @@
 
   <details class="vs-subtitle-config" open>
     <summary><strong>🎬 字幕样式</strong> <span style="color:var(--text-user-badge);font-weight:normal;font-size:12px;">（可选，默认值够用）</span></summary>
-    <div class="vs-sub-grid">
-      <label>
-        字体
+
+    <!-- 字体：下拉 + 预览 -->
+    <div class="vs-sub-row">
+      <div class="vs-sub-row-label">字体</div>
+      <div class="vs-sub-row-body">
         <select id="vs-sub-font">
-          <option value="Impact">Impact</option>
-          <option value="Anton">Anton</option>
-          <option value="BebasNeue">BebasNeue</option>
-          <option value="Montserrat">Montserrat</option>
-          <option value="Oswald">Oswald</option>
-          <option value="Poppins">Poppins</option>
+          <option value="Impact" data-weight="900">Impact</option>
+          <option value="Oswald Bold" data-weight="700">Oswald Bold</option>
+          <option value="Bebas Neue" data-weight="900">Bebas Neue</option>
+          <option value="Montserrat ExtraBold" data-weight="800">Montserrat ExtraBold</option>
+          <option value="Poppins Bold" data-weight="700">Poppins Bold</option>
+          <option value="Anton" data-weight="900">Anton</option>
         </select>
-      </label>
-      <label>
-        大小
-        <input id="vs-sub-size" type="number" min="10" max="32" value="14"/>
-      </label>
-      <label>
-        垂直位置 (0=顶部, 1=底部)
-        <input id="vs-sub-position-y" type="number" min="0" max="1" step="0.01" value="0.68"/>
-      </label>
+        <span id="vs-sub-font-preview">TikTok And Facebook</span>
+      </div>
+    </div>
+
+    <!-- 字号：按钮行 -->
+    <div class="vs-sub-row">
+      <div class="vs-sub-row-label">字号</div>
+      <div class="vs-sub-row-body">
+        <div class="vs-size-group" id="vs-size-group">
+          <button type="button" data-size="8">8</button>
+          <button type="button" data-size="10">10</button>
+          <button type="button" data-size="12">12</button>
+          <button type="button" data-size="14" class="active">14</button>
+          <button type="button" data-size="16">16</button>
+          <button type="button" data-size="18">18</button>
+          <button type="button" data-size="20">20</button>
+          <button type="button" data-size="22">22</button>
+          <button type="button" data-size="24">24</button>
+          <button type="button" data-size="28">28</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 位置：滑块 + 百分比 -->
+    <div class="vs-sub-row">
+      <div class="vs-sub-row-label">位置</div>
+      <div class="vs-sub-row-body">
+        <input id="vs-sub-position-y" type="range" min="0" max="1" step="0.01" value="0.68"/>
+        <span id="vs-sub-pos-hint">68%</span>
+        <span style="color:var(--text-user-badge);font-size:11px;">（0=顶部 · 1=底部）</span>
+      </div>
     </div>
   </details>
 
@@ -146,19 +170,52 @@
   }
 
   .vs-subtitle-config {
-    margin-top: 16px; padding: 12px 14px;
+    margin-top: 16px; padding: 14px 16px;
     background: var(--bg-body); border: 1px solid var(--border-main);
     border-radius: 8px; font-size: 13px;
   }
   .vs-subtitle-config summary { cursor: pointer; user-select: none; }
-  .vs-sub-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px; margin-top: 10px;
+
+  .vs-sub-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 0; border-bottom: 1px dashed var(--border-main);
   }
-  .vs-sub-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-  .vs-sub-grid select, .vs-sub-grid input {
-    padding: 6px 8px; border: 1px solid var(--border-main);
-    border-radius: 6px; font-family: inherit; font-size: 13px;
+  .vs-sub-row:last-child { border-bottom: none; }
+  .vs-sub-row-label {
+    flex: 0 0 80px; font-weight: 600; font-size: 13px; color: var(--text-main);
+  }
+  .vs-sub-row-body {
+    flex: 1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+
+  /* 字体 */
+  #vs-sub-font {
+    padding: 6px 10px; border: 1px solid var(--border-main);
+    border-radius: 6px; font-family: inherit; font-size: 13px; min-width: 160px;
+  }
+  #vs-sub-font-preview {
+    font-size: 18px; letter-spacing: .01em;
+    color: var(--text-main); padding: 4px 12px;
+    background: var(--bg-card); border-radius: 6px;
+  }
+
+  /* 字号 */
+  .vs-size-group { display: flex; gap: 4px; flex-wrap: wrap; }
+  .vs-size-group button {
+    padding: 4px 10px; border: 1px solid var(--border-main);
+    background: var(--bg-card); border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 12px; min-width: 36px;
+  }
+  .vs-size-group button:hover { border-color: oklch(56% 0.16 230); }
+  .vs-size-group button.active {
+    background: oklch(56% 0.16 230); color: #fff;
+    border-color: oklch(56% 0.16 230); font-weight: 600;
+  }
+
+  /* 位置 */
+  #vs-sub-position-y { flex: 1; min-width: 200px; }
+  #vs-sub-pos-hint {
+    font-weight: 600; min-width: 44px; text-align: right; color: var(--text-main);
   }
 
   .vs-footer {
