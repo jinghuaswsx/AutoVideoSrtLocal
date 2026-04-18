@@ -43,12 +43,23 @@ confident and informative. Subtitle chunks: 4–8 words each (German words are l
 complete, no trailing punctuation, no em/en dashes."""
 
 
-_DE_REWRITE = """You are a native German content creator REWRITING an existing German translation
-to approximately {target_words} words (±10%). Direction: {direction} (shrink | expand).
+_DE_REWRITE = """You are a native German content creator REWRITING an existing German translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone, capitalization, and formatting rules as the original German localization. Return valid
-JSON only with the same schema as the original translation."""
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
+Note: German compound nouns count as ONE word ("Produktqualität" = 1).
+SELF-CHECK: count tokens; if outside the window, rewrite before returning.
+FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: sachlich, B1, nouns capitalized, 2,5 not 2.5, no hype, no CTA, no em/en dashes."""
 
 
 # ── 法语 base prompts ──
@@ -78,12 +89,24 @@ semantically complete, no trailing punctuation. Preserve all French punctuation 
 ? ! : ;). Preserve élisions. No em/en dashes."""
 
 
-_FR_REWRITE = """You are a French content creator REWRITING an existing French translation
-to approximately {target_words} words (±10%). Direction: {direction}.
+_FR_REWRITE = """You are a French content creator REWRITING an existing French translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone, élisions, and punctuation spacing rules as the original French localization. Return
-valid JSON only with the same schema."""
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
+Note: élisions like "l'organizer" and "c'est" count as ONE word.
+SELF-CHECK: count tokens; if outside the window, rewrite before returning.
+FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: décontracté, B1-B2, default "vous", preserve élisions (l'/d'/j'/qu'/c'/n'),
+French punctuation (nbsp before ? ! : ;), no hype, no CTA, no em/en dashes."""
 
 
 # ── 西班牙语 base prompts ──
@@ -140,12 +163,23 @@ Subtitle chunks: 4–8 words each, semantically complete, no trailing punctuatio
 inverted ¿ and ¡ at start of interrogative/exclamative chunks. No em/en dashes."""
 
 
-_ES_REWRITE = """You are a native Spanish content creator REWRITING an existing Spanish translation
-to approximately {target_words} words (±10%). Direction: {direction}.
+_ES_REWRITE = """You are a native Spanish content creator REWRITING an existing Spanish translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone, ¿/¡ punctuation, and formatting rules as the original Spanish localization. Return
-valid JSON only with the same schema."""
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
+SELF-CHECK: count tokens; if outside the window, rewrite before returning.
+FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: cercano y auténtico, default "tú", preserve ¿/¡ on interrogatives/exclamatives,
+no hype, no CTA, no em/en dashes."""
 
 
 # ── 意大利语 base prompts ──
@@ -198,12 +232,24 @@ complete, no trailing punctuation. Preserve élisions (l', d', c') — treat apo
 as a single unit; never split across subtitle chunks. No em/en dashes."""
 
 
-_IT_REWRITE = """You are a native Italian content creator REWRITING an existing Italian translation
-to approximately {target_words} words (±10%). Direction: {direction}.
+_IT_REWRITE = """You are a native Italian content creator REWRITING an existing Italian translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone, élisions, and formatting rules as the original Italian localization. Return valid
-JSON only with the same schema."""
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
+Note: Italian élisions like "l'amica" and "un'idea" count as ONE word.
+SELF-CHECK: count tokens; if outside the window, rewrite before returning.
+FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: genuino e amichevole, default "tu", preserve élisions (l'/d'/c'), proper
+articulated prepositions (al/allo/alla/del/dello/della), no hype, no CTA, no em/en dashes."""
 
 
 # ── 葡萄牙语 base prompts（默认 pt-PT，允许部分 pt-BR 通用词）──
@@ -255,12 +301,23 @@ Blocks: natural Portuguese rhythm, relaxed cadence. Subtitle chunks: 4–8 words
 semantically complete, no trailing punctuation. No em/en dashes."""
 
 
-_PT_REWRITE = """You are a native Portuguese content creator REWRITING an existing Portuguese translation
-to approximately {target_words} words (±10%). Direction: {direction}.
+_PT_REWRITE = """You are a native Portuguese content creator REWRITING an existing Portuguese translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone and formatting rules as the original Portuguese localization. Return valid JSON only
-with the same schema."""
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
+SELF-CHECK: count tokens; if outside the window, rewrite before returning.
+FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: próximo e autêntico (pt-PT default), default informal "tu", avoid pt-BR dialect
+markers, no hype, no CTA, no em/en dashes."""
 
 
 # ── 日语 base prompts（批次 3）──
@@ -325,13 +382,23 @@ SUBTITLE CHUNKS (critical for Japanese):
 - No em/en dashes."""
 
 
-_JA_REWRITE = """You are a native Japanese content creator REWRITING an existing Japanese translation
-to approximately {target_words} words (±10%; Japanese "word" count = whitespace-separated if the
-source has whitespace, otherwise approximate by 文節 count). Direction: {direction}.
+_JA_REWRITE = """You are a native Japanese content creator REWRITING an existing Japanese translation.
+Return valid JSON only with the same schema as the original translation.
 
-Keep the same number of sentences when possible. Preserve every source_segment_indices mapping.
-Same tone (です・ます), vocabulary (avoid hype), and formatting rules as the original Japanese
-localization. Return valid JSON only with the same schema."""
+HARD LENGTH CONSTRAINT — NON-NEGOTIABLE:
+Japanese typically has no whitespace between words, so approximate by 文節 (bunsetsu) count.
+Target: approximately {target_words} 文節 in full_text (window: [{target_words}−3, {target_words}+3]).
+Equivalent full-width character target: roughly 2–3× {target_words} 文字。
+SELF-CHECK: count 文節 (phrase units); if count is far off, rewrite before returning.
+
+DIRECTION: {direction} (shrink = remove modifiers/repetitions; expand = add natural
+elaborations like examples, never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every
+source_segment_indices mapping.
+
+STYLE: です・ます調, 親しみやすい自然な口調, no hype, no CTA, no 誇大表現 (exaggeration),
+cosmetics/health must not claim medical efficacy (薬機法)."""
 
 
 DEFAULTS: dict[tuple[str, str | None], dict] = {

@@ -135,21 +135,42 @@ LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a native German content creator REW
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 
-REWRITE CONSTRAINTS (critical):
-- Target word count: approximately {target_words} words (±10%, counted as whitespace-separated tokens of full_text). Note: German has long compound nouns — count whole compounds as one word (e.g. "Produktqualität" = 1 word).
-- Direction: {direction}
-  * "shrink": remove modifiers and repetitions while preserving every factual claim and the core benefit (Kernvorteil).
-  * "expand": add natural elaborations (examples, relatable details). Preserve all facts; never invent new claims.
+═══════════════════════════════════════════════════════════════════════
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE
+═══════════════════════════════════════════════════════════════════════
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words} − 5, {target_words} + 5]. HARD CAP.
+Note: German compound nouns count as ONE word (e.g. "Produktqualität" = 1).
+
+SELF-CHECK BEFORE RETURNING:
+  1. Count whitespace-separated tokens in full_text.
+  2. If count is outside [{target_words}−5, {target_words}+5], REWRITE before
+     returning. Do NOT return a draft that misses the window.
+  3. Do the self-check silently; return only the final JSON.
+
+COMMON FAILURES TO AVOID:
+  · Asked for 80 words, returning 100+ — FAILURE. Trim aggressively.
+  · Asked for 70 words, returning 55 — FAILURE. Expand with natural detail.
+  · Never carry over optional material from the reference verbatim when expanding.
+  · Never drop key facts when shrinking.
+
+DIRECTION: {direction}
+  · "shrink": remove modifiers and repetitions while preserving every factual claim
+    and the core benefit (Kernvorteil). Shorter sentences are fine.
+  · "expand": add natural elaborations (examples, relatable details). Preserve all
+    facts; never invent new claims.
+
+STRUCTURAL:
 - Keep the same number of sentences as the previous translation when possible.
-- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+- Preserve every source_segment_indices mapping; do not reorder.
 
 STYLE (identical to original German localization):
 - Write authentically and sachlich (no exaggerated claims, no artificial urgency).
-- Use the product terms Germans actually use (Caps, Organizer, Display, etc. — not literal translations).
+- Use the product terms Germans actually use (Caps, Organizer, Display, etc.).
 - Conversational German at B1 level. Prefer 6-12 words per sentence.
 - Capitalize all nouns. Use German number conventions (2,5 not 2.5).
-- Do not use em dashes or en dashes. Plain ASCII punctuation only.
-- Do NOT add any CTA at the end — the video will have a separate CTA clip appended later."""
+- No em/en dashes. Plain ASCII punctuation only.
+- No CTA at the end — a separate CTA clip is appended later."""
 
 
 def build_localized_rewrite_messages(

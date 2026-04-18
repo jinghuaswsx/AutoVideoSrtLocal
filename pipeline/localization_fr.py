@@ -160,24 +160,46 @@ LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a French content creator based in F
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
 
-REWRITE CONSTRAINTS (critical):
-- Target word count: approximately {target_words} words (±10%, counted as whitespace-separated tokens of full_text). Note: French élisions like "l'organizer" and "c'est" count as one word.
-- Direction: {direction}
-  * "shrink": remove modifiers, examples, and repetitions while preserving every factual claim and the core benefit.
-  * "expand": add natural elaborations (examples, relatable details, light context). Preserve all facts; never invent new claims.
+═══════════════════════════════════════════════════════════════════════
+HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE
+═══════════════════════════════════════════════════════════════════════
+Target: EXACTLY {target_words} whitespace-separated words in full_text.
+Allowed range: [{target_words} − 5, {target_words} + 5]. HARD CAP.
+Note: French élisions like "l'organizer" and "c'est" count as ONE word.
+
+SELF-CHECK BEFORE RETURNING:
+  1. Count whitespace-separated tokens in full_text.
+  2. If count is outside [{target_words}−5, {target_words}+5], REWRITE before
+     returning. Do NOT return a draft that misses the window.
+  3. Do the self-check silently; return only the final JSON.
+
+COMMON FAILURES TO AVOID:
+  · Asked for 80 words, returning 100+ — FAILURE. Trim aggressively.
+  · Asked for 70 words, returning 55 — FAILURE. Expand with natural detail.
+  · Never carry over optional material from the reference verbatim when expanding.
+  · Never drop key facts when shrinking.
+
+DIRECTION: {direction}
+  · "shrink": remove modifiers, examples, and repetitions while preserving every
+    factual claim and the core benefit.
+  · "expand": add natural elaborations (examples, relatable details, light context).
+    Preserve all facts; never invent new claims.
+
+STRUCTURAL:
 - Keep the same number of sentences as the previous translation when possible.
-- Preserve every source_segment_indices mapping from the previous translation's sentences; do not reorder.
+- Preserve every source_segment_indices mapping; do not reorder.
 
 STYLE (identical to original French localization):
-- Tone: décontracté et informatif (relaxed, informative). Like a friend casually recommending something.
-- No exaggerated claims, no hype. French audiences distrust aggressive selling.
-- Conversational French at B1-B2 level. Default to "vous" unless explicitly told otherwise.
-- Prefer 6-10 words per sentence. Avoid long subordinate clause chains.
-- Always apply mandatory French élision: l'organizer, d'abord, j'adore, qu'il, c'est, n'est. NEVER write "le organizer" or "de abord".
+- Tone: décontracté et informatif. Like a friend casually recommending something.
+- No exaggerated claims, no hype.
+- Conversational French at B1-B2 level. Default to "vous" unless instructed otherwise.
+- Prefer 6-10 words per sentence. Avoid long subordinate chains.
+- Apply mandatory French élision: l'organizer, d'abord, j'adore, qu'il, c'est, n'est.
 - Proper contractions: au / aux / du / des.
-- Preserve accents on uppercase letters. French punctuation: non-breaking space before ? ! : ; in the output.
-- Do not use em dashes or en dashes. Plain ASCII punctuation only (except the required French non-breaking spaces).
-- Do NOT add any CTA at the end — the video will have a separate CTA clip appended later."""
+- Accents on uppercase letters preserved. French punctuation: non-breaking space
+  before ? ! : ; in the output.
+- No em/en dashes. Plain ASCII punctuation only (except French nbsp).
+- No CTA at the end — a separate CTA clip is appended later."""
 
 
 def build_localized_rewrite_messages(
