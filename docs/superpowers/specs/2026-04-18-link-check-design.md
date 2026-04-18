@@ -1,0 +1,455 @@
+# 链接检查功能设计
+
+**日期**: 2026-04-18
+**状态**: 已确认，待进入实现计划
+
+## 1. 背景与目标
+
+当前站点基于 Shopify，多语种主体文案和菜单可由 Shopify 自带的翻译能力处理，但商品主图轮播图与详情页说明图中的嵌字内容，需要由运营人员手动替换为对应语种版本。现阶段缺少一个统一的检查入口，无法快速判断某个商品链接里的图片是否已经完成目标语种适配。
+
+第一版目标是新增一个后台菜单 **“链接检查”**，允许用户输入一个商品链接并选择目标语言，系统自动抓取当前页面里的商品相关图片，调用 Vertex AI 上的 Gemini Flash 做图片文字识别与语种判断，并在当前页可视化展示：
+
+- 抓取到了哪些图片
+- 每张图片的检测结果
+- 哪些图片仍然疑似未替换
+- 当前链接整体是否可以判定为“已完成归档”
+
+## 2. 范围与非目标
+
+### 2.1 范围
+
+- 左侧菜单新增一级入口“链接检查”，层级与“视频翻译”同级
+- 新增一个单页模块，页面内完成输入、执行、进度展示和结果展示
+- 输入项只有三项：
+  - 商品链接输入框
+  - 目标语言下拉框
+  - 检查按钮
+- 目标语言选项来自 `media_languages` 表中 `enabled=1` 的记录
+- 抓取范围限定为商品页当前可见的：
+  - 主图轮播图
+  - 商品详情说明区图片
+- 每张图片单独调用 Gemini Flash 做结构化分析
+- 页面给出整体判断：`已完成归档` 或 `未完成归档`
+
+### 2.2 非目标
+
+- 不与内部素材库、原图库做逐张比对
+- 不做图片自动替换，只做检测和标记
+- 不做历史记录列表，不进入 `projects` 表，不需要任务归档页
+- 不做跨站点通用爬虫平台，第一版优先覆盖 Shopify 商品详情页
+- 不做 OCR 引擎混合编排，第一版只接 Gemini Flash
+- 不做图片质量人工审核流
+
+## 3. 用户流程
+
+### 3.1 页面流程
+
+1. 用户进入“链接检查”页
+2. 输入商品链接
+3. 从下拉菜单选择目标语言
+4. 点击“开始检查”
+5. 页面原位进入检查中状态，展示任务进度
+6. 系统完成抓图后，逐张展示图片和检测结论
+7. 页面底部给出整体判断
+
+### 3.2 判断口径
+
+- 图片中 **没有可识别文字**：
+  - 记为“无需替换”
+  - 不计入错误
+- 图片中 **有可识别文字，但识别语言不是目标语言**：
+  - 记为“疑似未替换”
+  - 计入错误
+- 图片中 **有目标语言文字，但文案质量明显异常**：
+  - 记为“质量待确认”
+  - 默认计入未完成
+- 只有当全部“需要语言适配”的图片都通过时，整体才判定为 `已完成归档`
+
+## 4. 页面设计
+
+## 4.1 信息架构
+
+页面分为三块：
+
+- 顶部输入区
+- 中部任务进度区
+- 底部结果区
+
+不单独开详情页，不做历史列表，所有数据在当前页完成展示。
+
+## 4.2 输入区
+
+字段如下：
+
+- `link_url`
+  - 文本输入框
+  - 占位符示例：`https://example.com/products/xxx`
+- `target_language`
+  - 下拉框
+  - 数据来源：`media_languages.enabled=1`
+  - 显示值：`name_zh`
+  - 提交值：`code`
+- `开始检查`
+  - 主按钮
+  - 点击后禁用，直到任务结束或失败
+
+## 4.3 结果区
+
+结果区采用卡片化布局，每张图片一张卡片，字段如下：
+
+- 图片预览
+- 来源类型：`轮播图` / `详情图`
+- 原始图片 URL
+- 识别到的文字摘要
+- 模型判断的主要语言
+- 是否匹配目标语言
+- 文案质量评分
+- 文案质量说明
+- 最终状态：
+  - `通过`
+  - `无需替换`
+  - `疑似未替换`
+  - `质量待确认`
+  - `检测失败`
+
+页面顶部额外展示一个汇总卡片：
+
+- 抓取图片总数
+- 已分析张数
+- 通过数
+- 待处理数
+- 异常数
+- 整体结论
+
+## 4.4 三态
+
+页面必须覆盖三态：
+
+- `loading`
+  - 展示抓取和分析进度
+- `empty`
+  - 还未开始检查时显示引导文案
+- `error`
+  - 链接无法访问、页面抓图失败、模型调用失败时显示错误块
+
+## 4.5 视觉约束
+
+新页面遵循项目既有后台布局，并套用仓库里的 Ocean Blue Admin 设计约束：
+
+- 颜色、边框、圆角优先走现有 CSS 变量
+- 新页面不引入紫色或偏紫蓝色
+- 卡片与按钮风格对齐现有后台
+- 保留桌面双列和移动端单列适配
+
+## 5. 抓图策略
+
+## 5.1 站点假设
+
+第一版目标站点为 Shopify 商品页。对用户提供的示例页进行检查后，可以确认至少存在两类稳定内容：
+
+- 商品主图区域，包含多张产品轮播图
+- 商品描述区，呈现“说明标题 + 说明文案 + 配图”的详情图片
+
+因此第一版采用“优先规则 + 回退规则”的方式抓图。
+
+## 5.2 优先规则
+
+优先从以下区域提取图片：
+
+- 商品媒体区域
+  - 包含 `product__media`
+  - 包含 `featured_media`
+  - 常见商品图库节点
+- 商品描述区域
+  - 富文本内容区
+  - 商品描述节点中的 `img`
+
+## 5.3 回退规则
+
+如果优先规则未抓到足够图片，则回退扫描主内容区中的大图，并排除：
+
+- logo
+- icon
+- 支付图标
+- sprite
+- 过小图片
+- 站点装饰图
+
+排除条件建议：
+
+- 图片宽高任一边小于 200 像素
+- 文件名或 URL 包含 `icon`、`logo`、`payment`、`avatar`、`flag`
+
+## 5.4 去重规则
+
+同一图片可能同时出现在 `src`、`data-src`、`srcset` 中，抓取时需按规范化 URL 去重：
+
+- 移除 query 中与尺寸裁剪相关的冗余参数
+- 统一协议和主机写法
+- 同一主图只保留一份最高优先级 URL
+
+## 6. Gemini 检测设计
+
+## 6.1 模型选择
+
+第一版默认使用 Vertex AI 上的 `Gemini Flash` 做图像理解，不开放给业务用户切换模型。
+
+选择原因：
+
+- 单图识别延迟低
+- 成本更适合批量检查
+- 足以完成页面图片中的文字识别、语种判断和基础质量评估
+
+## 6.2 调用方式
+
+每张图片独立调用一次模型，不做多图合并请求。这样做的原因是：
+
+- 图片中的文字识别对单图请求更稳定
+- 每张图失败时容易单独标记
+- 前端更容易展示逐张进度
+
+## 6.3 输出结构
+
+模型输出要求为结构化 JSON，建议字段如下：
+
+```json
+{
+  "has_text": true,
+  "detected_language": "en",
+  "language_match": false,
+  "text_summary": "Organize Your Hat Collection Effortlessly",
+  "quality_score": 22,
+  "quality_reason": "图片里文案主体仍为英语，不符合目标语种页面要求",
+  "needs_replacement": true,
+  "decision": "replace"
+}
+```
+
+字段解释：
+
+- `has_text`: 是否有可识别文字
+- `detected_language`: 识别到的主要语言
+- `language_match`: 是否与目标语言一致
+- `text_summary`: 识别到的主要文本摘要
+- `quality_score`: 0-100 分
+- `quality_reason`: 评分原因
+- `needs_replacement`: 是否需要替换
+- `decision`: `pass | no_text | replace | review`
+
+## 6.4 评分口径
+
+建议采用简化评分：
+
+- 90-100：语种正确，文案自然，可直接通过
+- 60-89：语种正确，但存在轻微问题，建议人工复核
+- 0-59：语种错误、残留原文、拼写明显异常，视为未完成
+
+第一版整体判定规则：
+
+- `decision = replace` 或 `decision = review` 的图片任意存在一张，整体即为 `未完成归档`
+
+## 7. 任务与运行时设计
+
+## 7.1 任务类型
+
+第一版使用“轻量异步临时任务”，不入库，不写历史。
+
+任务仅保存在进程内存中，用于：
+
+- 前端轮询当前状态
+- Socket.IO 或接口返回增量结果
+- 当前页展示结果
+
+## 7.2 生命周期
+
+任务生命周期为：
+
+- 创建
+- 抓图中
+- 分析中
+- 已完成
+- 已失败
+
+默认不提供长期保留。页面刷新后允许通过临时 `task_id` 短暂恢复当前结果，但服务重启后任务即失效。
+
+## 7.3 状态结构
+
+建议任务状态结构如下：
+
+```json
+{
+  "id": "uuid",
+  "type": "link_check",
+  "status": "running",
+  "link_url": "https://example.com/products/demo",
+  "target_language": "de",
+  "target_language_name": "德语",
+  "progress": {
+    "total": 6,
+    "downloaded": 6,
+    "analyzed": 4,
+    "failed": 0
+  },
+  "summary": {
+    "pass_count": 2,
+    "no_text_count": 1,
+    "replace_count": 1,
+    "review_count": 1,
+    "overall_decision": "unfinished"
+  },
+  "items": []
+}
+```
+
+## 8. 后端设计
+
+## 8.1 新增模块
+
+建议新增：
+
+- `appcore/link_check_runtime.py`
+  - 任务状态维护
+  - 抓图与分析调度
+- `appcore/link_check_fetcher.py`
+  - 拉取页面
+  - 解析商品图与详情图
+  - 下载图片
+- `appcore/link_check_gemini.py`
+  - 构造 prompt
+  - 调用 Gemini
+  - 解析 JSON
+- `web/routes/link_check.py`
+  - 页面路由和 API
+- `web/services/link_check_runner.py`
+  - 后台线程启动与并发控制
+
+## 8.2 复用模块
+
+尽量复用：
+
+- `appcore.gemini`
+- `appcore.medias`
+- `web.store`
+- `web.app` 中现有的 Socket.IO join 模式
+
+## 8.3 Vertex AI 认证
+
+仓库现有 `appcore.gemini` 已具备 Gemini 通用封装，但第一版实现时应顺手修正 Vertex AI 初始化方式，改为贴近官方推荐做法：
+
+- `vertexai=True`
+- 显式传入 `project`
+- 显式传入 `location`
+- 使用 Google Cloud 凭证或 ADC
+
+不建议继续把 `api_key` 作为 Vertex AI 的主认证方式。
+
+## 9. API 设计
+
+## 9.1 页面
+
+- `GET /link-check`
+  - 返回“链接检查”页面
+
+## 9.2 数据接口
+
+- `GET /api/link-check/languages`
+  - 返回启用语言列表
+- `POST /api/link-check/tasks`
+  - 创建临时检查任务
+- `GET /api/link-check/tasks/<task_id>`
+  - 返回任务状态与结果
+
+建议响应格式：
+
+```json
+{
+  "id": "uuid",
+  "status": "running",
+  "progress": {},
+  "summary": {},
+  "items": []
+}
+```
+
+## 9.3 权限
+
+所有接口都要求：
+
+- `login_required`
+- 任务归属当前登录用户
+
+## 10. 错误处理
+
+| 场景 | 行为 |
+|---|---|
+| 链接为空或格式不合法 | 前端直接拦截 |
+| 页面拉取失败 | 任务进入失败状态，显示错误原因 |
+| 页面里未找到有效图片 | 返回空结果并标记失败 |
+| 单张图片下载失败 | 该图片标记 `检测失败`，其余继续 |
+| Gemini 调用失败 | 该图片标记 `检测失败`，其余继续 |
+| Gemini 返回非结构化结果 | 后端兜底为 `检测失败` |
+
+整体任务采用“单图失败不拖垮全任务”的策略。
+
+## 11. 测试策略
+
+### 11.1 路由测试
+
+新增 `tests/test_link_check_routes.py`，覆盖：
+
+- 页面可访问
+- 语言列表来自 `media_languages`
+- 创建任务参数校验
+- 获取任务状态权限校验
+
+### 11.2 抓图测试
+
+新增 `tests/test_link_check_fetcher.py`，覆盖：
+
+- 能识别商品主图区域
+- 能识别详情图区图片
+- URL 去重生效
+- 小图、logo、icon 被排除
+
+### 11.3 模型测试
+
+新增 `tests/test_link_check_gemini.py`，覆盖：
+
+- prompt 构造包含目标语言
+- Gemini 返回 JSON 时可正确解析
+- Gemini 返回异常内容时后端能兜底
+
+### 11.4 运行时测试
+
+新增 `tests/test_link_check_runtime.py`，覆盖：
+
+- 任务正常跑完
+- 某张图失败时其余继续
+- 汇总判断逻辑正确
+
+## 12. 风险与取舍
+
+- Shopify 主题结构并不完全统一
+  - 取舍：第一版优先支持常见商品媒体区与详情富文本区，保留回退规则
+- Gemini 对低清、模糊、倾斜图片的 OCR 可能不稳定
+  - 取舍：给出“质量待确认”而不是强行判定通过
+- 无历史记录意味着页面刷新或服务重启后不保证长期回看
+  - 取舍：符合第一版“先做简单可用”的要求
+- 单图逐张调用模型会增加总调用次数
+  - 取舍：换来更稳的 OCR 效果和更清晰的逐张结果展示
+
+## 13. 相关文件
+
+预计会新增或修改以下文件：
+
+- 新增：[appcore/link_check_runtime.py](/g:/Code/AutoVideoSrt/appcore/link_check_runtime.py)
+- 新增：[appcore/link_check_fetcher.py](/g:/Code/AutoVideoSrt/appcore/link_check_fetcher.py)
+- 新增：[appcore/link_check_gemini.py](/g:/Code/AutoVideoSrt/appcore/link_check_gemini.py)
+- 新增：[web/routes/link_check.py](/g:/Code/AutoVideoSrt/web/routes/link_check.py)
+- 新增：[web/services/link_check_runner.py](/g:/Code/AutoVideoSrt/web/services/link_check_runner.py)
+- 新增：[web/templates/link_check.html](/g:/Code/AutoVideoSrt/web/templates/link_check.html)
+- 新增：[web/static/link_check.js](/g:/Code/AutoVideoSrt/web/static/link_check.js)
+- 修改：[web/templates/layout.html](/g:/Code/AutoVideoSrt/web/templates/layout.html)
+- 修改：[web/app.py](/g:/Code/AutoVideoSrt/web/app.py)
+- 修改：[appcore/gemini.py](/g:/Code/AutoVideoSrt/appcore/gemini.py)
+
