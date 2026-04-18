@@ -29,3 +29,15 @@ def test_defaults_cover_batch2_langs():
 def test_es_translation_mentions_inverted_punct():
     entry = DEFAULTS[("base_translation", "es")]
     assert "¿" in entry["content"] and "¡" in entry["content"]
+
+
+def test_defaults_cover_ja():
+    for slot in ("base_translation", "base_tts_script", "base_rewrite"):
+        assert (slot, "ja") in DEFAULTS, f"missing ja {slot}"
+
+
+def test_ja_tts_script_mentions_particle_rule():
+    """日语 TTS 脚本 prompt 必须显式告诫 LLM：不要把助词放在 chunk 开头。"""
+    entry = DEFAULTS[("base_tts_script", "ja")]
+    # 必须提到助词（は・が・を…）和行首约束
+    assert "助詞" in entry["content"] or "particle" in entry["content"].lower()

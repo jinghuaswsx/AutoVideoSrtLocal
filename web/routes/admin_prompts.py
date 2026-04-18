@@ -24,7 +24,7 @@ def page():
     return render_template(
         "admin_prompts.html",
         slots=sorted(dao.VALID_SLOTS),
-        langs=["de", "fr", "es", "it", "pt"],
+        langs=["de", "fr", "es", "it", "pt", "ja"],
     )
 
 

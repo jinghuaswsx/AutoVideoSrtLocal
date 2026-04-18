@@ -60,3 +60,24 @@ def test_get_rules_it_and_pt_basic():
         assert rules.MAX_CHARS_PER_SECOND == 17
         sample = "1\n00:00:00,000 --> 00:00:01,000\nTest text.\n"
         assert rules.post_process_srt(sample) == sample
+
+
+# ── Batch 3：日语 ──────────────────────────────────────
+
+def test_supported_langs_includes_ja():
+    assert "ja" in registry.SUPPORTED_LANGS
+
+
+def test_get_rules_ja_has_full_width_line_width_and_slower_cps():
+    rules = registry.get_rules("ja")
+    assert rules.TTS_LANGUAGE_CODE == "ja"
+    # 日语按全角字符计，行宽比拉丁语族小很多
+    assert rules.MAX_CHARS_PER_LINE == 21
+    # 日语阅读速度比拉丁语族慢
+    assert rules.MAX_CHARS_PER_SECOND == 13
+    # 助词在 WEAK_STARTERS 中，不应作为行首
+    for particle in ("は", "が", "を", "に", "で", "と", "の", "も"):
+        assert particle in rules.WEAK_STARTERS, f"{particle} should be weak starter"
+    # 无特殊后处理
+    sample = "1\n00:00:00,000 --> 00:00:01,000\n日本語のテスト\n"
+    assert rules.post_process_srt(sample) == sample
