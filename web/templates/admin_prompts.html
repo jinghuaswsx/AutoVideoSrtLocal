@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+{% block title %}Prompt 管理 - AutoVideoSrt{% endblock %}
+{% block page_title %}Prompt 管理{% endblock %}
+{% block extra_style %}
+<style>
+  .prompt-grid { display: grid; grid-template-columns: 200px repeat({{ langs|length + 1 }}, 1fr); gap: 2px;
+          background: var(--border-main); padding: 2px; border-radius: 8px; margin: 24px 0; }
+  .prompt-cell { background: var(--bg-card); padding: 14px; }
+  .prompt-cell.header { background: var(--bg-user-badge); font-weight: 600; text-align: center; }
+  .prompt-cell.row-label { font-weight: 600; background: var(--bg-user-badge); }
+  .prompt-cell .btn-edit { font-size: 12px; color: oklch(56% 0.16 230); cursor: pointer;
+                    border: none; background: transparent; padding: 0; }
+  #editor-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                  background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+  #editor-modal.open { display: flex; }
+  #editor-panel { background: var(--bg-card); border-radius: 12px; padding: 24px;
+                  width: 80%; max-width: 1000px; max-height: 90vh; overflow: auto; }
+  #prompt-textarea { width: 100%; min-height: 360px; font-family: "JetBrains Mono", monospace;
+                     font-size: 13px; padding: 12px; border: 1px solid var(--border-main);
+                     border-radius: 6px; box-sizing: border-box; }
+  .editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .editor-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .editor-row select, .editor-row input { padding: 6px 8px; border: 1px solid var(--border-main);
+                                           border-radius: 6px; font-family: inherit; }
+  .editor-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .editor-actions button { padding: 8px 16px; border: 1px solid var(--border-main);
+                            background: var(--bg-card); border-radius: 6px; cursor: pointer; }
+  #btn-save { background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230); }
+  #btn-cancel { margin-left: auto; }
+</style>
+{% endblock %}
+{% block content %}
+<p class="page-subtitle">多语种视频翻译的 LLM prompt 和模型配置。改完立刻生效，无需重启。</p>
+
+<div class="prompt-grid">
+  <div class="prompt-cell header">槽位 \ 语言</div>
+  {% for lang in langs %}<div class="prompt-cell header">{{ lang | upper }}</div>{% endfor %}
+  <div class="prompt-cell header">共享（电商插件）</div>
+
+  {% for slot in slots %}
+    <div class="prompt-cell row-label">{{ slot }}</div>
+    {% for lang in langs %}
+      <div class="prompt-cell">
+        {% if slot == 'ecommerce_plugin' %}—{% else %}
+          <button class="btn-edit" data-slot="{{ slot }}" data-lang="{{ lang }}">✏️ 编辑</button>
+        {% endif %}
+      </div>
+    {% endfor %}
+    <div class="prompt-cell">
+      {% if slot == 'ecommerce_plugin' %}
+        <button class="btn-edit" data-slot="{{ slot }}" data-lang="">✏️ 编辑</button>
+      {% else %}—{% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<div id="editor-modal">
+  <div id="editor-panel">
+    <h2 id="editor-title">编辑</h2>
+    <div class="editor-row">
+      <label>供应商 <select id="sel-provider">
+        <option value="openrouter">openrouter</option>
+        <option value="doubao">doubao</option>
+        <option value="openai">openai</option>
+        <option value="anthropic">anthropic</option>
+      </select></label>
+      <label>模型 <input id="txt-model" type="text"></label>
+    </div>
+    <textarea id="prompt-textarea" placeholder="Prompt 内容..."></textarea>
+    <p style="font-size:12px;color:var(--text-user-badge);margin:8px 0;">
+      可用占位符（rewrite slot）：{target_words}, {direction}
+    </p>
+    <div class="editor-actions">
+      <button id="btn-save">保存</button>
+      <button id="btn-restore">恢复默认</button>
+      <button id="btn-cancel">取消</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_prompts.js') }}"></script>
+{% endblock %}
