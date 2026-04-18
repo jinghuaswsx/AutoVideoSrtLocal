@@ -48,6 +48,19 @@ def _make_text_variant(path: Path, *, text: str) -> Path:
     return path
 
 
+def _make_multiline_text_sample(path: Path, *, text: str) -> Path:
+    image = Image.new("RGB", (1200, 800), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((24, 24, 1176, 776), outline="navy", width=8)
+    draw.rectangle((120, 120, 1080, 680), outline="teal", width=6)
+    y = 220
+    for line in text.split("\n"):
+        draw.text((180, y), line, fill="black")
+        y += 70
+    image.save(path, quality=92)
+    return path
+
+
 def test_same_image_with_different_sizes_matches(tmp_path):
     from appcore.link_check_compare import compare_images
 
@@ -102,6 +115,24 @@ def test_same_layout_with_different_text_does_not_match(tmp_path):
 
     left = _make_text_variant(tmp_path / "left.jpg", text="SALE TODAY")
     right = _make_text_variant(tmp_path / "right.jpg", text="NEW ARRIVAL")
+
+    result = compare_images(left, right)
+
+    assert result["status"] != "matched"
+    assert result["score"] < 0.80
+
+
+def test_multiline_default_text_replacement_does_not_match(tmp_path):
+    from appcore.link_check_compare import compare_images
+
+    left = _make_multiline_text_sample(
+        tmp_path / "left.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
+    )
+    right = _make_multiline_text_sample(
+        tmp_path / "right.jpg",
+        text="ENGLISH HEADLINE CHANGED\nNEW SECOND LINE TEXT\nTOTALLY DIFFERENT WORDS",
+    )
 
     result = compare_images(left, right)
 

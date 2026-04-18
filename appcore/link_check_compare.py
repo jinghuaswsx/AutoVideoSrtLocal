@@ -7,6 +7,7 @@ from typing import Iterable
 import imagehash
 import numpy as np
 from PIL import Image, ImageOps
+from skimage.measure import label, regionprops
 from skimage.metrics import structural_similarity
 
 
@@ -56,11 +57,31 @@ def _compute_dark_area_penalty(candidate_path: str | Path, reference_path: str |
 
     high_diff = np.abs(candidate_gray - reference_gray) > 30.0
     high_diff_ratio = float(np.mean(high_diff[dark_mask]))
-    candidate_dark_coverage = float(np.mean(candidate_gray < 220.0))
-    reference_dark_coverage = float(np.mean(reference_gray < 220.0))
-    dark_coverage_delta = abs(candidate_dark_coverage - reference_dark_coverage)
-    coverage_gate = max(0.0, 1.0 - min(1.0, dark_coverage_delta / 0.01))
-    return high_diff_ratio * coverage_gate
+    if not np.any(high_diff):
+        return 0.0
+
+    labeled = label(high_diff)
+    small_area = 0.0
+    total_area = 0.0
+    height, width = high_diff.shape
+    for region in regionprops(labeled):
+        min_row, min_col, max_row, max_col = region.bbox
+        if min_row == 0 or min_col == 0 or max_row == height or max_col == width:
+            continue
+        area = float(region.area)
+        total_area += area
+        if area <= 100.0:
+            small_area += area
+
+    if total_area <= 0.0:
+        return 0.0
+
+    small_component_ratio = small_area / total_area
+    if high_diff_ratio >= 0.7:
+        return small_component_ratio * 0.25
+    if high_diff_ratio >= 0.25:
+        return high_diff_ratio
+    return small_component_ratio * max(0.0, 1.0 - high_diff_ratio)
 
 
 def _score_from_distance(distance: int) -> float:
@@ -99,7 +120,7 @@ def compare_images(candidate_path: str | Path, reference_path: str | Path) -> di
         + dhash_score * 0.25
         + ssim_score * 0.30
         + ratio_score * 0.05
-        - dark_area_penalty * 0.65
+        - dark_area_penalty * 0.50
     )
     score = round(max(0.0, score), 4)
 
