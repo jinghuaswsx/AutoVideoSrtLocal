@@ -19,6 +19,7 @@ EVT_SR_STEP_UPDATE = "sr_step_update"
 EVT_SR_DONE = "sr_done"
 EVT_SR_ERROR = "sr_error"
 EVT_TTS_DURATION_ROUND = "tts_duration_round"
+EVT_VOICE_MATCH_READY = "voice_match_ready"
 
 # ── 文案创作事件 ──────────────────────────────────────
 EVT_CW_STEP_UPDATE = "cw_step_update"

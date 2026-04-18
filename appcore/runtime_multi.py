@@ -201,42 +201,63 @@ class MultiTranslateRunner(PipelineRunner):
         self._set_step(task_id, "subtitle", "done", f"{lang.upper()} 字幕生成完成")
 
     def _step_voice_match(self, task_id: str) -> None:
+        """跑向量匹配写候选到 state，然后暂停 pipeline 等待用户在 UI 上选择音色。"""
+        from appcore.events import EVT_VOICE_MATCH_READY
+
         task = task_state.get(task_id)
         lang = self._resolve_target_lang(task)
         utterances = task.get("utterances") or []
         video_path = task.get("video_path")
 
-        if not utterances or not video_path:
-            task_state.update(
-                task_id,
-                voice_match_candidates=[],
-                voice_match_fallback_voice_id=resolve_default_voice(lang),
-            )
-            return
+        self._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
 
-        try:
-            clip = extract_sample_from_utterances(
-                video_path, utterances, out_dir=task["task_dir"],
-                min_duration=8.0,
-            )
-            vec = embed_audio_file(clip)
-            candidates = match_candidates(vec, language=lang, top_k=3)
-        except Exception as exc:
-            log.exception("voice match failed for %s: %s", task_id, exc)
-            candidates = []
+        candidates: list = []
+        if utterances and video_path:
+            try:
+                clip = extract_sample_from_utterances(
+                    video_path, utterances, out_dir=task["task_dir"],
+                    min_duration=8.0,
+                )
+                vec = embed_audio_file(clip)
+                candidates = match_candidates(vec, language=lang, top_k=3) or []
+                for c in candidates:
+                    c["similarity"] = float(c.get("similarity", 0.0))
+            except Exception as exc:
+                log.exception("voice match failed for %s: %s", task_id, exc)
+                candidates = []
 
-        if not candidates:
-            task_state.update(
-                task_id,
-                voice_match_candidates=[],
-                voice_match_fallback_voice_id=resolve_default_voice(lang),
-            )
-            return
+        fallback = None if candidates else resolve_default_voice(lang)
 
-        for c in candidates:
-            c["similarity"] = float(c.get("similarity", 0.0))
+        task_state.update(
+            task_id,
+            voice_match_candidates=candidates,
+            voice_match_fallback_voice_id=fallback,
+        )
 
-        task_state.update(task_id, voice_match_candidates=candidates)
+        # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice
+        task_state.set_current_review_step(task_id, "voice_match")
+        msg = f"{lang.upper()} 音色库已就绪，请选择 TTS 音色"
+        self._set_step(task_id, "voice_match", "waiting", msg)
+        self._emit(task_id, EVT_VOICE_MATCH_READY, {
+            "candidates": candidates,
+            "fallback_voice_id": fallback,
+            "target_lang": lang,
+        })
+
+    def _resolve_voice(self, task, loc_mod):
+        """多语种：优先用户确认的 selected_voice_id → fallback。"""
+        voice_id = task.get("selected_voice_id")
+        if voice_id:
+            return {
+                "id": None,
+                "elevenlabs_voice_id": voice_id,
+                "name": task.get("selected_voice_name") or voice_id,
+            }
+        lang = self._resolve_target_lang(task)
+        fallback = resolve_default_voice(lang)
+        if fallback:
+            return {"id": None, "elevenlabs_voice_id": fallback, "name": "Default"}
+        return super()._resolve_voice(task, loc_mod)
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
         """覆盖基类：在 asr 后、alignment 前插入 voice_match。"""
