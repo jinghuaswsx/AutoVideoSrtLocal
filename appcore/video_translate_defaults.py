@@ -52,3 +52,73 @@ TTS_VOICE_DEFAULTS = {
 # 其他语种(es/it/ja/pt 等)只翻译文案+图片,视频自动 skip
 # ============================================================
 VIDEO_SUPPORTED_LANGS = {"de", "fr"}
+
+
+# ============================================================
+# 三层回填 DAO(Task 3)
+# ============================================================
+import json as _json
+
+from appcore.db import query, query_one, execute
+
+
+def _fetch_params(user_id, product_id, lang):
+    """查询某一层 profile,返回 params dict 或 None。
+
+    MySQL 的 `<=>` 是 null-safe 相等,确保 (product_id IS NULL) 和
+    (product_id = 'xxx') 都能精确匹配 uk_scope 唯一索引。
+    """
+    row = query_one(
+        """
+        SELECT params_json
+        FROM media_video_translate_profiles
+        WHERE user_id = %s
+          AND (product_id <=> %s)
+          AND (lang <=> %s)
+        LIMIT 1
+        """,
+        (user_id, product_id, lang),
+    )
+    if row is None:
+        return None
+    raw = row["params_json"]
+    if isinstance(raw, dict):
+        return raw
+    return _json.loads(raw)
+
+
+def load_effective_params(user_id, product_id, lang):
+    """三层回填查询,返回合并后的完整参数 dict。
+
+    覆盖顺序(由粗到细,后覆盖前):
+        SYSTEM_DEFAULTS
+          ← (user_id, None, None)        -- 用户级
+          ← (user_id, product_id, None)  -- 产品级(忽略语言)
+          ← (user_id, product_id, lang)  -- 最细(产品 × 语言)
+    """
+    effective = dict(SYSTEM_DEFAULTS)
+    for scope in [
+        (user_id, None, None),
+        (user_id, product_id, None),
+        (user_id, product_id, lang),
+    ]:
+        params = _fetch_params(*scope)
+        if params:
+            effective.update(params)
+    return effective
+
+
+def save_profile(user_id, product_id, lang, params):
+    """upsert 一条 profile。params 必须是 dict。"""
+    if not isinstance(params, dict) or not params:
+        raise ValueError("params 必须是非空 dict")
+    payload = _json.dumps(params, ensure_ascii=False)
+    execute(
+        """
+        INSERT INTO media_video_translate_profiles
+            (user_id, product_id, lang, params_json)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE params_json = VALUES(params_json)
+        """,
+        (user_id, product_id, lang, payload),
+    )
