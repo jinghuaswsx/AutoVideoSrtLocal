@@ -268,13 +268,13 @@
       <table class="oc-table" style="table-layout:fixed;">
         <colgroup>
           <col style="width:48px">
-          <col style="width:128px">
-          <col style="width:240px">
-          <col style="width:240px">
-          <col style="width:72px">
-          <col style="width:220px">
-          <col style="width:128px">
-          <col style="width:88px">
+          <col style="width:96px">
+          <col style="width:120px">
+          <col style="width:120px">
+          <col style="width:60px">
+          <col style="width:200px">
+          <col style="width:108px">
+          <col style="width:160px">
         </colgroup>
         <thead>
           <tr>
@@ -310,8 +310,8 @@
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
-        <td class="name"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
-        <td class="mono ellipsis" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
+        <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
+        <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
