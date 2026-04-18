@@ -50,27 +50,8 @@ class MultiTranslateRunner(PipelineRunner):
             raise ValueError("task.target_lang is required for multi_translate")
         return lang
 
-    def _step_asr(self, task_id: str, task_dir: str) -> None:
-        """复用基类 ASR，然后根据识别文本自动判断源语言（zh/en）。"""
-        super()._step_asr(task_id, task_dir)
-        task = task_state.get(task_id)
-        if not task.get("source_language"):
-            try:
-                from pipeline.language_detect import detect_language
-                asr_text = " ".join(
-                    u.get("text", "") for u in task.get("utterances", []) if u.get("text")
-                ).strip()
-                if asr_text:
-                    detected = detect_language(asr_text)
-                    task_state.update(task_id, source_language=detected)
-                    log.info(
-                        "multi_translate: auto-detected source_language=%s (%s) for %s",
-                        detected,
-                        "中文" if detected == "zh" else "英文",
-                        task_id,
-                    )
-            except Exception as exc:
-                log.warning("source language detection failed for %s: %s", task_id, exc)
+    # 注：不做源语言判别。LLM 自己读原文就能判断；zh/en label 对翻译质量无影响。
+    # 任何后续流程都不 depend on source_language 的具体值。
 
     def _get_lang_rules(self, lang: str):
         from pipeline.languages.registry import get_rules
