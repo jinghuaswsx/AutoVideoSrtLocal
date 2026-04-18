@@ -162,18 +162,31 @@
   }
 
   .vs-footer {
-    margin-top: 16px; display: flex; align-items: center; gap: 12px;
-    padding-top: 12px; border-top: 1px solid var(--border-main);
+    margin-top: 16px; padding-top: 16px;
+    border-top: 1px solid var(--border-main);
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
   }
-  #vs-selection-text { flex: 1; font-size: 13px; color: var(--text-user-badge); }
+  #vs-selection-text {
+    width: 100%; text-align: center;
+    font-size: 13px; color: var(--text-user-badge);
+  }
   .vs-launch-btn {
-    padding: 10px 24px; background: oklch(56% 0.16 230); color: #fff;
-    border: none; border-radius: 8px; cursor: pointer; font-weight: 600;
-    font-family: inherit; font-size: 14px;
+    /* 关键主按钮：30% 宽、胶囊形、比原来高 1.5 倍、居中、醒目 */
+    width: 30%; min-width: 200px;
+    padding: 16px 24px; font-size: 16px; font-weight: 700;
+    background: oklch(56% 0.16 230); color: #fff;
+    border: none; border-radius: 9999px;
+    cursor: pointer; font-family: inherit;
+    box-shadow: 0 4px 12px oklch(56% 0.16 230 / 0.35);
+    transition: all 0.15s ease;
   }
   .vs-launch-btn:disabled {
     background: var(--bg-user-badge); color: var(--text-user-badge);
-    cursor: not-allowed;
+    cursor: not-allowed; box-shadow: none;
   }
-  .vs-launch-btn:not(:disabled):hover { background: oklch(50% 0.17 230); }
+  .vs-launch-btn:not(:disabled):hover {
+    background: oklch(50% 0.17 230);
+    box-shadow: 0 6px 16px oklch(56% 0.16 230 / 0.5);
+    transform: translateY(-1px);
+  }
 </style>
