@@ -24,9 +24,6 @@
     <label style="font-size:12px;color:var(--text-user-badge);margin-left:auto;">
       <input type="checkbox" id="vs-recommended-only"/> 只看推荐
     </label>
-    <button type="button" id="vs-use-default" class="vs-default-btn">
-      使用默认音色
-    </button>
   </div>
 
   <div class="vs-list-scroll" id="vs-list">
@@ -52,15 +49,7 @@
         <input id="vs-sub-size" type="number" min="10" max="32" value="14"/>
       </label>
       <label>
-        位置
-        <select id="vs-sub-position">
-          <option value="bottom">底部</option>
-          <option value="center">居中</option>
-          <option value="top">顶部</option>
-        </select>
-      </label>
-      <label>
-        垂直 (0-1)
+        垂直位置 (0=顶部, 1=底部)
         <input id="vs-sub-position-y" type="number" min="0" max="1" step="0.01" value="0.68"/>
       </label>
     </div>
@@ -115,6 +104,17 @@
   .vs-row:hover { border-color: oklch(56% 0.16 230); }
   .vs-row.selected { border-color: oklch(56% 0.16 230); background: oklch(94% 0.04 225); }
   .vs-row.recommended { background: linear-gradient(90deg, oklch(95% 0.04 225) 0%, var(--bg-card) 50%); }
+  .vs-row.pinned-default {
+    background: linear-gradient(90deg, oklch(94% 0.015 230) 0%, var(--bg-card) 60%);
+    border-color: oklch(84% 0.015 230);
+  }
+
+  .vs-waiting-banner {
+    padding: 10px 12px; margin-bottom: 8px;
+    background: oklch(96% 0.03 230); border-left: 3px solid oklch(56% 0.16 230);
+    border-radius: 6px; font-size: 13px;
+  }
+  .vs-waiting-banner small { display: block; margin-top: 2px; }
 
   .vs-row-main { flex: 1; min-width: 0; }
   .vs-row-name { font-weight: 600; font-size: 14px; }

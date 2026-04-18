@@ -208,7 +208,7 @@ def complete_upload():
         task_id,
         display_name=display_name,
         type="multi_translate",
-        source_language="en",
+        # source_language 不预设——由 _step_asr 后自动检测（zh/en）
         target_lang=target_lang,
         source_tos_key=object_key,
         source_object_info={
@@ -602,6 +602,20 @@ def voice_library_for_task(task_id: str):
     vm_status = pipeline["voice_match"]
     voice_match_ready = vm_status in ("waiting", "done")
 
+    # 默认音色：让前端把它置顶可预览 + 可选中
+    from appcore.video_translate_defaults import resolve_default_voice
+    default_voice = None
+    default_voice_id = resolve_default_voice(lang) if lang else None
+    if default_voice_id:
+        row2 = db_query_one(
+            "SELECT voice_id, name, gender, accent, age, descriptive, preview_url "
+            "FROM elevenlabs_voices WHERE voice_id = %s LIMIT 1",
+            (default_voice_id,),
+        )
+        if row2:
+            default_voice = dict(row2)
+            default_voice["description"] = row2.get("descriptive") or ""
+
     return jsonify({
         "items": data.get("items", []),
         "total": data.get("total", 0),
@@ -610,6 +624,7 @@ def voice_library_for_task(task_id: str):
         "selected_voice_id": state.get("selected_voice_id"),
         "pipeline": pipeline,
         "voice_match_ready": voice_match_ready,
+        "default_voice": default_voice,
     })
 
 
