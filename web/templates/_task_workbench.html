@@ -489,6 +489,10 @@
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
+            {% if api_base == '/api/multi-translate' %}
+            <span class="prompt-info" data-slot="base_translation" data-lang="{{ voice_language }}"
+                  style="margin-left:8px;cursor:help;opacity:0.7;font-size:14px;">ⓘ</span>
+            {% endif %}
             <button class="resume-btn hidden" id="resume-translate" data-step="translate">从此步继续</button>
           </div>
           <div class="step-msg" id="msg-translate">等待中...</div>
