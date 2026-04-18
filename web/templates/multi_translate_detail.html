@@ -40,10 +40,12 @@
 </p>
 {% endif %}
 {% include "_task_workbench.html" %}
+{% include "_voice_selector_multi.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}
 {% if not project.deleted_at %}
 {% include "_task_workbench_scripts.html" %}
+<script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
 {% endblock %}

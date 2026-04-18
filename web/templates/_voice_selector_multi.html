@@ -1,0 +1,49 @@
+<div id="voice-selector-multi" class="voice-selector"
+     data-task-id="{{ task_id }}" data-lang="{{ voice_language }}">
+  <div class="vs-heading">
+    <strong>🎤 向量匹配推荐音色</strong>
+    <span class="vs-hint">系统已从 {{ voice_language | upper }} 音色库中挑出与原视频声线最接近的 3 个</span>
+  </div>
+
+  <div class="vs-sample" id="vs-sample">
+    <span>原视频采样：</span>
+    <audio controls id="vs-sample-audio"></audio>
+  </div>
+
+  <div class="vs-warning" id="vs-warning" style="display:none;">
+    ⚠️ 原声与库内音色差异较大，建议手动挑选
+  </div>
+
+  <div class="vs-candidates" id="vs-candidates">
+    <!-- 由 JS 注入 3 张候选卡 -->
+  </div>
+
+  <button class="vs-more" id="vs-more">🔍 查看全部 {{ voice_language | upper }} 音色</button>
+
+  <div class="vs-full-library" id="vs-full-library" style="display:none;"></div>
+</div>
+
+<style>
+  .voice-selector { margin: 16px 0; padding: 16px;
+    background: var(--bg-card); border: 1px solid var(--border-main);
+    border-radius: 12px; }
+  .vs-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  .vs-hint { font-size: 12px; color: var(--text-user-badge); }
+  .vs-sample { display: flex; align-items: center; gap: 8px; margin: 8px 0 16px; }
+  .vs-warning { padding: 8px 12px; background: oklch(96% 0.05 85);
+    border-left: 3px solid oklch(72% 0.14 80); border-radius: 6px;
+    margin-bottom: 12px; font-size: 13px; }
+  .vs-candidates { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .vs-card { padding: 12px; border: 1.5px solid var(--border-main);
+    border-radius: 10px; cursor: pointer; transition: border-color 0.15s; }
+  .vs-card:hover { border-color: oklch(56% 0.16 230); }
+  .vs-card.selected { border-color: oklch(56% 0.16 230);
+    background: oklch(94% 0.04 225); }
+  .vs-card .vs-sim { font-weight: 600; color: oklch(56% 0.16 230); }
+  .vs-more { margin-top: 12px; padding: 8px 12px; background: transparent;
+    border: 1px solid var(--border-main); border-radius: 8px; cursor: pointer; }
+  .vs-select-btn { margin-top: 8px; width: 100%; padding: 6px 8px;
+    background: oklch(56% 0.16 230); color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .vs-select-btn:hover { background: oklch(50% 0.17 230); }
+</style>
