@@ -95,6 +95,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
         "source": p.get("source"),
+        "ad_supported_langs": p.get("ad_supported_langs") or "",
         "archived": bool(p.get("archived")),
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
         "updated_at": p["updated_at"].isoformat() if p.get("updated_at") else None,
@@ -226,6 +227,23 @@ def api_update_product(pid: int):
     # 允许先创建/保存产品基础信息，视频素材可在编辑弹窗后续补充，不做硬校验
 
     update_fields = {"name": name, "product_code": product_code}
+    if "ad_supported_langs" in body:
+        raw = body.get("ad_supported_langs") or ""
+        if isinstance(raw, list):
+            parts = [str(x).strip().lower() for x in raw if str(x).strip()]
+        else:
+            parts = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
+        # 过滤掉非法语种 & 去重 & 排除 en
+        seen: set[str] = set()
+        kept: list[str] = []
+        for code in parts:
+            if code == "en" or code in seen:
+                continue
+            if not medias.is_valid_language(code):
+                continue
+            seen.add(code)
+            kept.append(code)
+        update_fields["ad_supported_langs"] = ",".join(kept) if kept else None
     medias.update_product(pid, **update_fields)
 
     if isinstance(body.get("copywritings"), dict):
