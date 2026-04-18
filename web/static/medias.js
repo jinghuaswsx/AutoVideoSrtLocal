@@ -703,6 +703,26 @@
     return edDetailImagesCtrl;
   }
 
+  function edRenderAdSupportedLangs(selected) {
+    const box = $('edAdSupportedLangsBox');
+    if (!box) return;
+    const selectedSet = new Set(
+      (selected || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    );
+    const langs = (LANGUAGES || []).filter(l => l.code !== 'en');
+    if (!langs.length) {
+      box.innerHTML = '<span class="oc-hint">暂无可选语种</span>';
+      return;
+    }
+    box.innerHTML = langs.map(l => {
+      const checked = selectedSet.has(l.code) ? 'checked' : '';
+      return `<label class="oc-lang-checkbox">`
+           + `<input type="checkbox" name="ad_supported_langs" value="${escapeHtml(l.code)}" ${checked}/>`
+           + `<span>${escapeHtml(l.name_zh || l.code.toUpperCase())}</span>`
+           + `</label>`;
+    }).join('');
+  }
+
   async function openEditDetail(pid) {
     try {
       await ensureLanguages();
@@ -712,6 +732,7 @@
       edState.activeLang = 'en';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
+      edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
       $('edUploadProgress').innerHTML = '';
       edResetNewItemForm();
       edShow();
@@ -1320,10 +1341,15 @@
       cwDict[c.lang].push({ body: c.body });
     });
 
+    const adSupportedLangs = [...document.querySelectorAll(
+      '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
+    )].map(i => i.value).join(',');
+
     const payload = {
       name,
       product_code: code,
       copywritings: cwDict,
+      ad_supported_langs: adSupportedLangs,
     };
     try {
       await fetchJSON('/medias/api/products/' + pid, {

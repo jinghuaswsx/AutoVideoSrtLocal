@@ -60,3 +60,25 @@ def test_subtitle_removal_provider_defaults(monkeypatch):
     assert config.SUBTITLE_REMOVAL_POLL_FAST_SECONDS == 8
     assert config.SUBTITLE_REMOVAL_POLL_SLOW_SECONDS == 15
     assert config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS == 600
+
+
+def test_push_management_config_defaults(monkeypatch):
+    for k in ["PUSH_TARGET_URL", "AD_URL_TEMPLATE", "AD_URL_PROBE_TIMEOUT"]:
+        monkeypatch.delenv(k, raising=False)
+    import importlib, config as cfg
+    importlib.reload(cfg)
+    assert cfg.PUSH_TARGET_URL == ""
+    assert "{lang}" in cfg.AD_URL_TEMPLATE
+    assert "{product_code}" in cfg.AD_URL_TEMPLATE
+    assert cfg.AD_URL_PROBE_TIMEOUT == 5
+
+
+def test_push_management_config_override(monkeypatch):
+    monkeypatch.setenv("PUSH_TARGET_URL", "http://10.0.0.1/api/push")
+    monkeypatch.setenv("AD_URL_TEMPLATE", "https://x.com/{lang}/{product_code}")
+    monkeypatch.setenv("AD_URL_PROBE_TIMEOUT", "8")
+    import importlib, config as cfg
+    importlib.reload(cfg)
+    assert cfg.PUSH_TARGET_URL == "http://10.0.0.1/api/push"
+    assert cfg.AD_URL_TEMPLATE == "https://x.com/{lang}/{product_code}"
+    assert cfg.AD_URL_PROBE_TIMEOUT == 8
