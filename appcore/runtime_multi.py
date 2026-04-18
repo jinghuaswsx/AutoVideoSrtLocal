@@ -86,10 +86,9 @@ class MultiTranslateRunner(PipelineRunner):
         task_dir = task["task_dir"]
         lang = self._resolve_target_lang(task)
         source_language = task.get("source_language", "zh")
-        lang_label = "中文" if source_language == "zh" else "英文"
 
         self._set_step(task_id, "translate", "running",
-                       f"正在将{lang_label}翻译为 {lang.upper()}...")
+                       f"正在翻译为 {lang.upper()}...")
 
         provider = _resolve_translate_provider(self.user_id)
         script_segments = task.get("script_segments", [])

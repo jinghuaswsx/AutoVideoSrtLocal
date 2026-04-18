@@ -24,6 +24,8 @@
   #voicePanel { display: none !important; }
   /* 老的"生成配置 + 开始处理"面板也由新音色选择器的字幕参数 + 开始处理按钮取代 */
   #configPanel { display: none !important; }
+  /* 源语言 zh/en 由 ASR 后自动判别，不给用户看无意义的选择器 */
+  #sourceLangPanel { display: none !important; }
 </style>
 {% endblock %}
 {% block content %}
