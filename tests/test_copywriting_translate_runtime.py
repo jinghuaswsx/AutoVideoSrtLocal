@@ -268,3 +268,100 @@ def test_runner_missing_source_raises_before_insert(monkeypatch):
     assert fake.marks == []
     status_updates = [u for u in fake.updates if "SET STATUS" in u[0].upper()]
     assert status_updates[-1][1][0] == "error"
+
+
+# ============================================================
+# Task 9: SocketIO/EventBus 进度事件
+# ============================================================
+
+def test_runner_publishes_running_and_done_events(monkeypatch):
+    """happy path 应发 running + done 两条事件。"""
+    import json
+    from appcore.events import EventBus, Event, EVT_CT_PROGRESS
+
+    src = {
+        "id": 201, "product_id": 55, "idx": 1, "lang": "en",
+        "title": "Welcome", "body": None, "description": None,
+        "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+    }
+    state = json.dumps({
+        "source_copy_id": 201,
+        "source_lang": "en", "target_lang": "de",
+        "parent_task_id": "parent_abc",
+    })
+    _make_fake(monkeypatch, sources=[src], initial_state=state)
+
+    events = []
+    bus = EventBus()
+    bus.subscribe(lambda e: events.append(e))
+
+    from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+    CopywritingTranslateRunner("task_evt_1", bus=bus).start()
+
+    types_and_statuses = [(e.type, e.payload["status"]) for e in events]
+    assert (EVT_CT_PROGRESS, "running") in types_and_statuses
+    assert (EVT_CT_PROGRESS, "done") in types_and_statuses
+
+    # done 事件带 tokens_used / target_copy_id / target_lang / parent_task_id
+    done = next(e for e in events if e.payload["status"] == "done")
+    assert done.payload["target_lang"] == "de"
+    assert done.payload["parent_task_id"] == "parent_abc"
+    assert done.payload["tokens_used"] > 0
+    assert done.payload["target_copy_id"] > 0
+    assert done.task_id == "task_evt_1"
+
+
+def test_runner_publishes_error_event_on_failure(monkeypatch):
+    """失败时发 running + error 两条事件。"""
+    import json
+    from appcore.events import EventBus, EVT_CT_PROGRESS
+
+    src = {
+        "id": 202, "product_id": 55, "idx": 1, "lang": "en",
+        "title": "Welcome", "body": None, "description": None,
+        "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+    }
+    state = json.dumps({
+        "source_copy_id": 202,
+        "source_lang": "en", "target_lang": "de",
+        "parent_task_id": None,
+    })
+    _make_fake(monkeypatch, sources=[src], initial_state=state)
+
+    from appcore import copywriting_translate_runtime as mod
+    monkeypatch.setattr(mod, "translate_copy_text",
+                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("X")))
+
+    events = []
+    bus = EventBus()
+    bus.subscribe(lambda e: events.append(e))
+
+    with pytest.raises(RuntimeError):
+        mod.CopywritingTranslateRunner("task_evt_2", bus=bus).start()
+
+    statuses = [e.payload["status"] for e in events]
+    assert "running" in statuses
+    assert "error" in statuses
+
+    err = next(e for e in events if e.payload["status"] == "error")
+    assert err.payload["error"] == "X"
+
+
+def test_runner_without_bus_does_not_crash(monkeypatch):
+    """bus=None 时不发事件,跑正常流程不崩溃(父任务调度器有时不挂 bus)。"""
+    import json
+    src = {
+        "id": 203, "product_id": 55, "idx": 1, "lang": "en",
+        "title": "Welcome", "body": None, "description": None,
+        "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+    }
+    state = json.dumps({
+        "source_copy_id": 203,
+        "source_lang": "en", "target_lang": "de",
+        "parent_task_id": None,
+    })
+    _make_fake(monkeypatch, sources=[src], initial_state=state)
+
+    from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+    CopywritingTranslateRunner("task_no_bus", bus=None).start()
+    # 没 crash 就 pass

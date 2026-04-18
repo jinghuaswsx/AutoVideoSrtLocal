@@ -17,15 +17,35 @@ from flask_login import current_user, login_required
 
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
 from appcore.db import execute as db_execute
+from appcore.events import Event, EventBus, EVT_CT_PROGRESS
 
 bp = Blueprint("copywriting_translate", __name__,
                 url_prefix="/api/copywriting-translate")
 
 
+def _subscribe_socketio(bus: EventBus, socketio) -> None:
+    """把 bus 上的 CT 事件桥接到 SocketIO。事件按 task_id 分房间推送。"""
+    def handler(event: Event) -> None:
+        if event.type != EVT_CT_PROGRESS:
+            return
+        try:
+            socketio.emit(
+                EVT_CT_PROGRESS,
+                {"task_id": event.task_id, **event.payload},
+                room=event.task_id,
+            )
+        except Exception:
+            pass
+    bus.subscribe(handler)
+
+
 def _spawn_runner(task_id: str) -> None:
     """在 eventlet 绿色线程里跑子任务,失败时状态已在 Runner 内标记。"""
+    from web.extensions import socketio
+    bus = EventBus()
+    _subscribe_socketio(bus, socketio)
     try:
-        CopywritingTranslateRunner(task_id).start()
+        CopywritingTranslateRunner(task_id, bus=bus).start()
     except Exception:
         # 错误状态已写入 projects 行,异常吞掉防 greenthread 崩溃日志刷屏。
         pass

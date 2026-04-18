@@ -14,6 +14,7 @@ import logging
 
 from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, query_one
+from appcore.events import Event, EventBus, EVT_CT_PROGRESS
 from pipeline.text_translate import translate_text
 
 log = logging.getLogger(__name__)
@@ -59,9 +60,29 @@ class CopywritingTranslateRunner:
         - 更新本子任务 projects.status / state_json
     """
 
-    def __init__(self, task_id: str):
+    def __init__(self, task_id: str, bus: EventBus | None = None):
         self.task_id = task_id
+        self.bus = bus
         self.state = self._load_state()
+
+    def _emit(self, status: str, **extra) -> None:
+        """发一条 CT 进度事件(给 SocketIO 桥接),bus 未挂接时静默。"""
+        if self.bus is None:
+            return
+        payload = {
+            "status": status,
+            "parent_task_id": self.state.get("parent_task_id"),
+            "target_lang": self.state.get("target_lang"),
+            **extra,
+        }
+        try:
+            self.bus.publish(Event(
+                type=EVT_CT_PROGRESS,
+                task_id=self.task_id,
+                payload=payload,
+            ))
+        except Exception:
+            log.exception("EventBus publish failed task_id=%s", self.task_id)
 
     # --- DB 读/写 ---
 
@@ -95,6 +116,7 @@ class CopywritingTranslateRunner:
 
     def start(self) -> None:
         self._set_status("running")
+        self._emit("running")
         try:
             src = self._load_source_copy()
             translated, tokens = self._translate_fields(src)
@@ -110,6 +132,7 @@ class CopywritingTranslateRunner:
                 "tokens_used": tokens,
             })
             self._set_status("done")
+            self._emit("done", tokens_used=tokens, target_copy_id=target_id)
             log.info(
                 "copywriting_translate done task_id=%s src=%d tgt=%d tokens=%d",
                 self.task_id, src["id"], target_id, tokens,
@@ -117,6 +140,7 @@ class CopywritingTranslateRunner:
         except Exception as e:
             self._save_state({"last_error": str(e)})
             self._set_status("error")
+            self._emit("error", error=str(e))
             log.exception("copywriting_translate failed task_id=%s", self.task_id)
             raise
 
