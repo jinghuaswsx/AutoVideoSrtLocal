@@ -240,7 +240,7 @@ class MultiTranslateRunner(PipelineRunner):
                     min_duration=8.0,
                 )
                 vec = embed_audio_file(clip)
-                candidates = match_candidates(vec, language=lang, top_k=3) or []
+                candidates = match_candidates(vec, language=lang, top_k=10) or []
                 for c in candidates:
                     c["similarity"] = float(c.get("similarity", 0.0))
             except Exception as exc:
