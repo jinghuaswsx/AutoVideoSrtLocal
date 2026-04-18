@@ -136,3 +136,54 @@ def build_item_payload(item: dict, product: dict) -> dict:
         "selling_point": product.get("selling_points") or "",
         "tags": [],
     }
+
+
+# ---------- 推送日志与状态变更 ----------
+
+def record_push_success(item_id: int, operator_user_id: int,
+                        payload: dict, response_body: str | None) -> int:
+    log_id = execute(
+        "INSERT INTO media_push_logs "
+        "(item_id, operator_user_id, status, request_payload, response_body) "
+        "VALUES (%s, %s, 'success', %s, %s)",
+        (item_id, operator_user_id, json.dumps(payload, ensure_ascii=False), response_body),
+    )
+    execute(
+        "UPDATE media_items SET pushed_at=NOW(), latest_push_id=%s WHERE id=%s",
+        (log_id, item_id),
+    )
+    return log_id
+
+
+def record_push_failure(item_id: int, operator_user_id: int,
+                        payload: dict, error_message: str | None,
+                        response_body: str | None) -> int:
+    log_id = execute(
+        "INSERT INTO media_push_logs "
+        "(item_id, operator_user_id, status, request_payload, response_body, error_message) "
+        "VALUES (%s, %s, 'failed', %s, %s, %s)",
+        (item_id, operator_user_id,
+         json.dumps(payload, ensure_ascii=False), response_body, error_message),
+    )
+    execute(
+        "UPDATE media_items SET latest_push_id=%s WHERE id=%s",
+        (log_id, item_id),
+    )
+    return log_id
+
+
+def reset_push_state(item_id: int) -> None:
+    execute(
+        "UPDATE media_items SET pushed_at=NULL, latest_push_id=NULL WHERE id=%s",
+        (item_id,),
+    )
+
+
+def list_item_logs(item_id: int, limit: int = 50) -> list[dict]:
+    return query(
+        "SELECT id, item_id, operator_user_id, status, request_payload, "
+        "response_body, error_message, created_at "
+        "FROM media_push_logs WHERE item_id=%s "
+        "ORDER BY created_at DESC, id DESC LIMIT %s",
+        (item_id, limit),
+    )

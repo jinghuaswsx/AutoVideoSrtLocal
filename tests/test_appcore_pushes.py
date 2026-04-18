@@ -167,3 +167,47 @@ def test_build_item_payload_basic(monkeypatch, product_with_item):
     for link in payload["product_links"]:
         assert "/en/" not in link
         assert product["product_code"] in link
+
+
+def test_record_success_and_reset(product_with_item):
+    pid, item_id = product_with_item
+    log_id = pushes.record_push_success(
+        item_id=item_id, operator_user_id=1,
+        payload={"a": 1}, response_body="ok",
+    )
+    assert log_id > 0
+    it = medias.get_item(item_id)
+    assert it["pushed_at"] is not None
+    assert it["latest_push_id"] == log_id
+
+    pushes.reset_push_state(item_id)
+    it2 = medias.get_item(item_id)
+    assert it2["pushed_at"] is None
+    assert it2["latest_push_id"] is None
+    # 历史保留
+    row = query_one("SELECT COUNT(*) AS c FROM media_push_logs WHERE item_id=%s", (item_id,))
+    assert row["c"] == 1
+
+
+def test_record_failure_does_not_mark_pushed(product_with_item):
+    pid, item_id = product_with_item
+    log_id = pushes.record_push_failure(
+        item_id=item_id, operator_user_id=1,
+        payload={"a": 1}, error_message="boom", response_body=None,
+    )
+    it = medias.get_item(item_id)
+    assert it["pushed_at"] is None
+    assert it["latest_push_id"] == log_id
+
+
+def test_list_logs(product_with_item):
+    pid, item_id = product_with_item
+    pushes.record_push_failure(item_id=item_id, operator_user_id=1,
+                               payload={}, error_message="e1", response_body=None)
+    pushes.record_push_success(item_id=item_id, operator_user_id=1,
+                               payload={}, response_body="ok")
+    logs = pushes.list_item_logs(item_id)
+    assert len(logs) == 2
+    # 按时间倒序
+    assert logs[0]["status"] == "success"
+    assert logs[1]["status"] == "failed"
