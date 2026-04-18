@@ -254,7 +254,7 @@ def get_endpoint(task_id):
         "user_id": task["user_id"],
         "state": task["state"],
         "created_at": task["created_at"].isoformat() if task["created_at"] else None,
-        "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None,
+        "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None,  # updated_at 可能为 None
     }), 200
 
 
@@ -272,7 +272,7 @@ def list_endpoint():
         args.append(status)
 
     rows = query(
-        f"SELECT id, status, state_json, created_at, updated_at "
+        f"SELECT id, status, state_json, created_at "
         f"FROM projects WHERE {where} ORDER BY created_at DESC LIMIT 200",
         tuple(args),
     )

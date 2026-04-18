@@ -117,7 +117,7 @@ def get_task(task_id: str) -> dict | None:
     调度器/API 层都用这个统一入口。
     """
     row = query_one(
-        "SELECT id, user_id, status, state_json, created_at, updated_at "
+        "SELECT id, user_id, status, state_json, created_at "
         "FROM projects WHERE id = %s AND type = 'bulk_translate'",
         (task_id,),
     )
@@ -131,7 +131,7 @@ def get_task(task_id: str) -> dict | None:
         "status": row["status"],
         "state": state,
         "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
+        "updated_at": None,
     }
 
 
