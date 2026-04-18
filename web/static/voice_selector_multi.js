@@ -22,7 +22,6 @@
   const listEl = document.getElementById("vs-list");
   const selectionText = document.getElementById("vs-selection-text");
   const launchBtn = document.getElementById("vs-launch-btn");
-  const defaultBtn = document.getElementById("vs-use-default");
   const searchInput = document.getElementById("vs-search");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
@@ -30,7 +29,6 @@
   // 字幕参数输入
   const subFontEl = document.getElementById("vs-sub-font");
   const subSizeEl = document.getElementById("vs-sub-size");
-  const subPosEl = document.getElementById("vs-sub-position");
   const subPosYEl = document.getElementById("vs-sub-position-y");
 
   const csrfToken = () => {
@@ -40,9 +38,9 @@
 
   let allItems = [];
   let candidatesMap = new Map();
+  let defaultVoice = null;       // {voice_id, name, preview_url, gender, accent, description}
   let selectedVoiceId = null;
   let selectedVoiceName = null;
-  let useDefault = false;
   let launched = false;
   let pollHandle = null;
 
@@ -53,9 +51,8 @@
   }
 
   function describePipeline(pipeline) {
-    // 返回当前 pipeline 阶段的中文状态，用于 summary 文案
     const { extract, asr, voice_match } = pipeline || {};
-    if (voice_match === "waiting" || voice_match === "done") return null;  // ready
+    if (voice_match === "waiting" || voice_match === "done") return null;
     if (voice_match === "running") return "正在向量匹配中…";
     if (asr === "running") return "🎙️ 语音识别中（ASR）…";
     if (asr === "done") return "ASR 完成，等待向量匹配启动…";
@@ -75,6 +72,7 @@
       allItems = data.items || [];
       candidatesMap.clear();
       (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+      defaultVoice = data.default_voice || null;
       selectedVoiceId = data.selected_voice_id || null;
 
       const n = (data.candidates || []).length;
@@ -82,21 +80,16 @@
       const progress = describePipeline(data.pipeline);
 
       if (!ready) {
-        // 管道还没跑到 voice_match，显示进度并继续轮询
         summaryEl.textContent = `${lang.toUpperCase()} 音色库共 ${data.total || 0} 个 · ${progress}`;
-        listEl.innerHTML = `<div class="vs-loading">${progress || "等待中..."}<br>
-          <small style="color:var(--text-user-badge);">音色库已可浏览，但向量推荐需等 ASR 完成</small></div>`;
-        // 先把列表渲染出来（无推荐），用户可以边等边浏览/试听
-        setTimeout(() => render(), 0);
+        setTimeout(() => render(progress), 0);
         schedulePoll();
       } else {
-        // Ready — 停止轮询
         if (pollHandle) { clearTimeout(pollHandle); pollHandle = null; }
         const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
-        if (n > 0) parts.push(`${n} 个向量匹配推荐置顶`);
-        else parts.push("向量匹配未找到相似音色（可手动挑选或用默认）");
+        if (n > 0) parts.push(`${n} 个向量匹配推荐`);
+        else parts.push("向量匹配未找到相似音色");
         summaryEl.textContent = parts.join(" · ");
-        render();
+        render(null);
       }
 
       updateLaunchState();
@@ -113,10 +106,43 @@
     pollHandle = setTimeout(loadLibrary, delay);
   }
 
-  function render() {
+  function rowHtml(v, opts) {
+    const { badge, pinClass, isSelected } = opts;
+    const classes = ["vs-row"];
+    if (pinClass) classes.push(pinClass);
+    if (isSelected) classes.push("selected");
+    const meta = [v.gender, v.accent, v.age, v.description || v.descriptive || ""]
+      .filter(Boolean).map(escapeHtml).join(" · ");
+    const preview = v.preview_url
+      ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
+      : "";
+    return `
+      <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
+           data-voice-name="${escapeHtml(v.name || '')}">
+        <div class="vs-row-main">
+          <div class="vs-row-name">${badge || ""}${escapeHtml(v.name || v.voice_id)}</div>
+          <div class="vs-row-meta">${meta}</div>
+        </div>
+        ${preview}
+        <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
+      </div>
+    `;
+  }
+
+  function render(waitingProgress) {
     const q = (searchInput.value || "").trim().toLowerCase();
     const gender = genderFilter.value;
     const onlyRec = recommendedOnly.checked;
+
+    const applyFilter = (v) => {
+      if (gender && v.gender !== gender) return false;
+      if (q) {
+        const hay = [v.name, v.description, v.descriptive, v.accent, v.age]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    };
 
     const withSort = allItems.map(v => {
       const rec = candidatesMap.get(v.voice_id);
@@ -128,46 +154,46 @@
 
     const filtered = withSort.filter(({ v, rec }) => {
       if (onlyRec && !rec) return false;
-      if (gender && v.gender !== gender) return false;
-      if (q) {
-        const hay = [v.name, v.description, v.descriptive, v.accent, v.age]
-          .filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+      return applyFilter(v);
     });
 
-    if (filtered.length === 0) {
-      listEl.innerHTML = `<div class="vs-loading">没有匹配的音色</div>`;
-      return;
+    let html = "";
+
+    // 1. 默认音色置顶（永远显示，除非用户手动用了"只看推荐"过滤掉 → 其实默认音色也视为"系统推荐"，所以保留）
+    if (defaultVoice && applyFilter(defaultVoice)) {
+      const isSelDefault = selectedVoiceId === defaultVoice.voice_id;
+      const badge = `<span class="vs-row-sim" style="background:#4b5563;">默认</span>`;
+      html += rowHtml(defaultVoice, {
+        badge, pinClass: "pinned-default", isSelected: isSelDefault,
+      });
     }
 
-    listEl.innerHTML = filtered.map(({ v, rec }) => {
+    // 2. 向量推荐 + 全库（withSort 已按 similarity 排序）
+    //    但要排除 defaultVoice，避免重复出现
+    const rest = filtered.filter(({ v }) =>
+      !defaultVoice || v.voice_id !== defaultVoice.voice_id);
+    rest.forEach(({ v, rec }) => {
       const isRec = !!rec;
-      const isSelected = !useDefault && selectedVoiceId === v.voice_id;
-      const classes = ["vs-row"];
+      const isSelected = selectedVoiceId === v.voice_id;
+      const classes = [];
       if (isRec) classes.push("recommended");
-      if (isSelected) classes.push("selected");
-      const simBadge = isRec
+      const badge = isRec
         ? `<span class="vs-row-sim">${(rec.similarity * 100).toFixed(1)}% 相似</span>`
         : "";
-      const meta = [v.gender, v.accent, v.age, v.description || v.descriptive || ""]
-        .filter(Boolean).map(escapeHtml).join(" · ");
-      const preview = v.preview_url
-        ? `<audio controls preload="none" src="${escapeHtml(v.preview_url)}"></audio>`
-        : "";
-      return `
-        <div class="${classes.join(" ")}" data-voice-id="${escapeHtml(v.voice_id)}"
-             data-voice-name="${escapeHtml(v.name || '')}">
-          <div class="vs-row-main">
-            <div class="vs-row-name">${simBadge}${escapeHtml(v.name || v.voice_id)}</div>
-            <div class="vs-row-meta">${meta}</div>
-          </div>
-          ${preview}
-          <button class="vs-row-select-btn" type="button">${isSelected ? "已选" : "选此音色"}</button>
-        </div>
-      `;
-    }).join("");
+      html += rowHtml(v, {
+        badge, pinClass: classes.join(" "), isSelected,
+      });
+    });
+
+    if (!html) {
+      html = `<div class="vs-loading">${waitingProgress || "没有匹配的音色"}</div>`;
+    } else if (waitingProgress) {
+      // 等待期提示条
+      html = `<div class="vs-waiting-banner">⏳ ${waitingProgress}
+        <small style="color:var(--text-user-badge);">（可先浏览/试听；向量推荐将在 ASR 完成后自动出现）</small></div>` + html;
+    }
+
+    listEl.innerHTML = html;
 
     listEl.querySelectorAll(".vs-row").forEach(row => {
       row.addEventListener("click", e => {
@@ -181,31 +207,23 @@
     if (launched) return;
     selectedVoiceId = voiceId;
     selectedVoiceName = voiceName;
-    useDefault = false;
-    render();
-    updateLaunchState();
-  }
-
-  function chooseDefault() {
-    if (launched) return;
-    useDefault = true;
-    selectedVoiceId = null;
-    selectedVoiceName = null;
     render();
     updateLaunchState();
   }
 
   function updateLaunchState() {
-    const ready = launched ? false : (useDefault || !!selectedVoiceId);
+    const ready = launched ? false : !!selectedVoiceId;
     launchBtn.disabled = !ready;
     if (launched) {
       selectionText.textContent = "✓ 已提交，pipeline 正在运行";
-    } else if (useDefault) {
-      selectionText.textContent = `✓ 将使用 ${lang.toUpperCase()} 默认音色`;
     } else if (selectedVoiceId) {
-      selectionText.textContent = `✓ 已选：${selectedVoiceName || selectedVoiceId}`;
+      const isDefault = defaultVoice && selectedVoiceId === defaultVoice.voice_id;
+      const label = selectedVoiceName || selectedVoiceId;
+      selectionText.textContent = isDefault
+        ? `✓ 已选默认音色：${label}`
+        : `✓ 已选：${label}`;
     } else {
-      selectionText.textContent = "请从列表里选音色，或点「使用默认音色」";
+      selectionText.textContent = "请从列表里选一个音色（可选默认，也可从推荐里选）";
     }
   }
 
@@ -215,11 +233,10 @@
     launchBtn.textContent = "提交中...";
     try {
       const body = {
-        voice_id: useDefault ? "default" : selectedVoiceId,
-        voice_name: useDefault ? null : selectedVoiceName,
+        voice_id: selectedVoiceId,
+        voice_name: selectedVoiceName,
         subtitle_font: subFontEl.value,
         subtitle_size: parseInt(subSizeEl.value, 10) || 14,
-        subtitle_position: subPosEl.value,
         subtitle_position_y: parseFloat(subPosYEl.value) || 0.68,
       };
       const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {
@@ -245,10 +262,9 @@
     }
   }
 
-  searchInput.addEventListener("input", render);
-  genderFilter.addEventListener("change", render);
-  recommendedOnly.addEventListener("change", render);
-  defaultBtn.addEventListener("click", chooseDefault);
+  searchInput.addEventListener("input", () => render());
+  genderFilter.addEventListener("change", () => render());
+  recommendedOnly.addEventListener("change", () => render());
   launchBtn.addEventListener("click", launch);
 
   loadLibrary();
