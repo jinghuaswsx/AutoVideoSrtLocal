@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
-from flask import Blueprint, render_template, request, jsonify, abort, send_file
+from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file
 from flask_login import login_required, current_user
 
 from appcore import medias, tos_clients
@@ -676,3 +676,197 @@ def api_play_url(item_id: int):
 @login_required
 def api_list_languages():
     return jsonify({"items": medias.list_languages()})
+
+
+# ======================================================================
+# 商品详情图（product detail images）
+# ----------------------------------------------------------------------
+# 第一轮只在英语语种暴露入口，其他语种的版本将由后续图片翻译集成自动生成。
+# ======================================================================
+
+_DETAIL_IMAGES_MAX_BATCH = 20
+
+
+def _serialize_detail_image(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "product_id": row["product_id"],
+        "lang": row["lang"],
+        "sort_order": int(row.get("sort_order") or 0),
+        "object_key": row["object_key"],
+        "content_type": row.get("content_type"),
+        "file_size": row.get("file_size"),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "thumbnail_url": f"/medias/detail-image/{row['id']}",
+    }
+
+
+@bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
+@login_required
+def api_detail_images_list(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    lang = (request.args.get("lang") or "en").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+    rows = medias.list_detail_images(pid, lang)
+    return jsonify({"items": [_serialize_detail_image(r) for r in rows]})
+
+
+@bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])
+@login_required
+def api_detail_images_bootstrap(pid: int):
+    """批量申请 TOS 签名直传 URL。"""
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
+
+    files = body.get("files") or []
+    if not isinstance(files, list) or not files:
+        return jsonify({"error": "files required"}), 400
+    if len(files) > _DETAIL_IMAGES_MAX_BATCH:
+        return jsonify({"error": f"单次最多上传 {_DETAIL_IMAGES_MAX_BATCH} 张"}), 400
+
+    uploads = []
+    for idx, f in enumerate(files):
+        if not isinstance(f, dict):
+            return jsonify({"error": f"files[{idx}] 格式错误"}), 400
+        raw_name = (f.get("filename") or "").strip()
+        if not raw_name:
+            return jsonify({"error": f"files[{idx}].filename required"}), 400
+        filename = os.path.basename(raw_name)
+        if not filename:
+            return jsonify({"error": f"files[{idx}].filename 非法"}), 400
+        ct = (f.get("content_type") or "").strip().lower()
+        if ct not in _ALLOWED_IMAGE_TYPES:
+            return jsonify({"error": f"files[{idx}] 不支持的图片格式: {ct}"}), 400
+        try:
+            size = int(f.get("size") or 0)
+        except (TypeError, ValueError):
+            size = 0
+        if size and size > _MAX_IMAGE_BYTES:
+            return jsonify({"error": f"files[{idx}] 超过 15MB"}), 400
+
+        object_key = tos_clients.build_media_object_key(
+            current_user.id, pid, f"detail_{lang}_{idx:02d}_{filename}",
+        )
+        uploads.append({
+            "idx": idx,
+            "object_key": object_key,
+            "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        })
+
+    return jsonify({
+        "uploads": uploads,
+        "expires_in": TOS_SIGNED_URL_EXPIRES,
+    })
+
+
+@bp.route("/api/products/<int:pid>/detail-images/complete", methods=["POST"])
+@login_required
+def api_detail_images_complete(pid: int):
+    """浏览器直传完成后通知后端落库。"""
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
+
+    images = body.get("images") or []
+    if not isinstance(images, list) or not images:
+        return jsonify({"error": "images required"}), 400
+    if len(images) > _DETAIL_IMAGES_MAX_BATCH:
+        return jsonify({"error": f"单次最多 {_DETAIL_IMAGES_MAX_BATCH} 张"}), 400
+
+    created: list[dict] = []
+    for idx, img in enumerate(images):
+        if not isinstance(img, dict):
+            return jsonify({"error": f"images[{idx}] 格式错误"}), 400
+        object_key = (img.get("object_key") or "").strip()
+        if not object_key:
+            return jsonify({"error": f"images[{idx}].object_key required"}), 400
+        if not tos_clients.media_object_exists(object_key):
+            return jsonify({"error": f"images[{idx}] 对象不存在: {object_key}"}), 400
+
+        def _opt_int(v):
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        new_id = medias.add_detail_image(
+            pid, lang, object_key,
+            content_type=(img.get("content_type") or "").strip().lower() or None,
+            file_size=_opt_int(img.get("file_size") or img.get("size")),
+            width=_opt_int(img.get("width")),
+            height=_opt_int(img.get("height")),
+        )
+        row = medias.get_detail_image(new_id)
+        if row:
+            created.append(_serialize_detail_image(row))
+
+    return jsonify({"items": created}), 201
+
+
+@bp.route("/api/products/<int:pid>/detail-images/<int:image_id>", methods=["DELETE"])
+@login_required
+def api_detail_images_delete(pid: int, image_id: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    row = medias.get_detail_image(image_id)
+    if not row or int(row["product_id"]) != pid or row.get("deleted_at") is not None:
+        abort(404)
+
+    medias.soft_delete_detail_image(image_id)
+    try:
+        tos_clients.delete_media_object(row["object_key"])
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/products/<int:pid>/detail-images/reorder", methods=["POST"])
+@login_required
+def api_detail_images_reorder(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
+    ids = body.get("ids") or []
+    if not isinstance(ids, list):
+        return jsonify({"error": "ids must be list"}), 400
+    try:
+        ids_int = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "ids must be integers"}), 400
+    updated = medias.reorder_detail_images(pid, lang, ids_int)
+    return jsonify({"ok": True, "updated": updated})
+
+
+@bp.route("/detail-image/<int:image_id>", methods=["GET"])
+@login_required
+def detail_image_proxy(image_id: int):
+    """返回详情图的签名下载 URL（302 重定向）。"""
+    row = medias.get_detail_image(image_id)
+    if not row or row.get("deleted_at") is not None:
+        abort(404)
+    p = medias.get_product(int(row["product_id"]))
+    if not _can_access_product(p):
+        abort(404)
+    url = tos_clients.generate_signed_media_download_url(row["object_key"])
+    return redirect(url, code=302)

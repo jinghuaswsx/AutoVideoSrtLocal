@@ -74,6 +74,26 @@
         </section>
       </div>
 
+      <!-- 商品详情图（仅英语可编辑，其他语种后续由翻译流程生成） -->
+      <section class="oc-section oc-section-card" id="edDetailImagesSection" hidden>
+        <div class="oc-section-title">
+          <span>商品详情图</span>
+          <span class="optional">(英文原始版，用于后续图片翻译)</span>
+          <span class="count" id="edDetailImagesBadge">0</span>
+        </div>
+        <div id="edDetailImagesGrid" class="oc-detail-images-grid"></div>
+        <div class="oc-detail-images-actions">
+          <button type="button" class="oc-btn ghost sm" id="edDetailImagesPickBtn">
+            <svg width="14" height="14"><use href="#ic-upload"/></svg>
+            <span>选择图片批量上传</span>
+          </button>
+          <span class="oc-hint">JPG / PNG / WebP，单次 ≤ 20 张，单张 ≤ 15MB</span>
+        </div>
+        <input type="file" id="edDetailImagesInput"
+               accept="image/jpeg,image/png,image/webp" multiple hidden>
+        <div id="edDetailImagesProgress" class="oc-upload-list" hidden></div>
+      </section>
+
       <!-- 视频素材（JS 按 activeLang 过滤渲染） -->
       <section class="oc-section oc-section-card" id="edItemsSection">
         <div class="oc-section-title">

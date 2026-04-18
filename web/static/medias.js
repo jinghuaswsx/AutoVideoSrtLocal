@@ -54,6 +54,170 @@
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // ---------- 商品详情图（通用控制器） ----------
+  // 在"添加产品"与"编辑产品"两个弹窗里都复用。
+  function createDetailImagesController(opts) {
+    const section = $(opts.section);
+    const grid    = $(opts.grid);
+    const input   = $(opts.input);
+    const pickBtn = $(opts.pickBtn);
+    const badge   = $(opts.badge);
+    const progressBox = $(opts.progress);
+    const getLang   = opts.getLang   || (() => 'en');
+    const ensurePid = opts.ensurePid || (async () => null);
+    let items = [];
+
+    function show() { if (section) section.hidden = false; }
+    function hide() { if (section) section.hidden = true; }
+
+    function renderGrid() {
+      if (!grid) return;
+      if (!items.length) {
+        grid.innerHTML = '<div class="oc-detail-images-empty">尚未上传详情图</div>';
+      } else {
+        grid.innerHTML = items.map((it, idx) => `
+          <div class="oc-detail-image" data-id="${it.id}">
+            <img src="${escapeHtml(it.thumbnail_url)}" alt="详情图 ${idx + 1}" loading="lazy">
+            <span class="oc-detail-image-idx">${idx + 1}</span>
+            <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round">
+                <path d="M3 3l8 8M11 3l-8 8"></path>
+              </svg>
+            </button>
+          </div>
+        `).join('');
+        grid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
+          btn.addEventListener('click', onDelete);
+        });
+      }
+      if (badge) badge.textContent = String(items.length);
+    }
+
+    async function onDelete(e) {
+      e.stopPropagation();
+      const card = e.currentTarget.closest('.oc-detail-image');
+      if (!card) return;
+      const imgId = parseInt(card.dataset.id, 10);
+      if (!imgId) return;
+      if (!window.confirm('确定删除这张详情图？')) return;
+      const pid = await ensurePid({ allowCreate: false });
+      if (!pid) return;
+      try {
+        await fetchJSON(`/medias/api/products/${pid}/detail-images/${imgId}`, {
+          method: 'DELETE',
+        });
+        items = items.filter(x => x.id !== imgId);
+        renderGrid();
+      } catch (err) {
+        alert('删除失败：' + (err.message || err));
+      }
+    }
+
+    function setProgress(text) {
+      if (!progressBox) return;
+      if (!text) { progressBox.hidden = true; progressBox.textContent = ''; return; }
+      progressBox.hidden = false;
+      progressBox.textContent = text;
+    }
+
+    async function uploadFiles(rawFiles) {
+      if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+      const files = [...(rawFiles || [])]
+        .filter(f => /^image\/(jpeg|png|webp)$/i.test(f.type));
+      if (!files.length) { alert('请选择 JPG / PNG / WebP 图片'); return; }
+      if (files.length > 20) {
+        alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
+        files.length = 20;
+      }
+      const pid = await ensurePid({ allowCreate: true });
+      if (!pid) return;
+      const lang = getLang();
+
+      setProgress(`准备上传 ${files.length} 张…`);
+      try {
+        const boot = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images/bootstrap`,
+          {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lang,
+              files: files.map(f => ({
+                filename: f.name, content_type: f.type, size: f.size,
+              })),
+            }),
+          });
+        if (!boot.uploads || boot.uploads.length !== files.length) {
+          throw new Error('后端返回的上传位数量不匹配');
+        }
+
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const u = boot.uploads[i];
+          setProgress(`上传中 ${i + 1} / ${files.length}：${f.name}`);
+          const putRes = await fetch(u.upload_url, {
+            method: 'PUT',
+            headers: { 'Content-Type': f.type || 'image/jpeg' },
+            body: f,
+          });
+          if (!putRes.ok) throw new Error(`TOS 上传失败 (${i + 1}/${files.length})`);
+        }
+
+        setProgress('登记中…');
+        const done = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images/complete`,
+          {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lang,
+              images: boot.uploads.map((u, i) => ({
+                object_key: u.object_key,
+                content_type: files[i].type,
+                file_size: files[i].size,
+              })),
+            }),
+          });
+        items = items.concat(done.items || []);
+        renderGrid();
+        setProgress('');
+      } catch (err) {
+        setProgress('上传失败：' + (err.message || err));
+        setTimeout(() => setProgress(''), 3500);
+      }
+    }
+
+    async function load(pid) {
+      items = [];
+      renderGrid();
+      if (!pid) return;
+      try {
+        const lang = getLang();
+        const data = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images?lang=${encodeURIComponent(lang)}`,
+        );
+        items = data.items || [];
+        renderGrid();
+      } catch (err) {
+        console.error('[detail-images] load failed', err);
+      }
+    }
+
+    function reset() {
+      items = [];
+      renderGrid();
+      setProgress('');
+    }
+
+    if (pickBtn) pickBtn.addEventListener('click', () => input && input.click());
+    if (input) input.addEventListener('change', (e) => {
+      const files = e.target.files;
+      e.target.value = '';
+      uploadFiles(files);
+    });
+
+    return { load, reset, show, hide };
+  }
+
   // ---------- List ----------
   async function loadList() {
     const kw = $('kw').value.trim();
@@ -183,8 +347,34 @@
   }
 
   // ---------- Modal ----------
+  let mDetailImagesCtrl = null;
+
+  function ensureMDetailImagesCtrl() {
+    if (mDetailImagesCtrl) return mDetailImagesCtrl;
+    mDetailImagesCtrl = createDetailImagesController({
+      section: 'mDetailImagesSection', // 外层 section 无需 hidden 切换，保持可见即可
+      grid:    'mDetailImagesGrid',
+      input:   'mDetailImagesInput',
+      pickBtn: 'mDetailImagesPickBtn',
+      badge:   'mDetailImagesBadge',
+      progress:'mDetailImagesProgress',
+      getLang: () => 'en',
+      ensurePid: async (arg) => {
+        const cur = state.current && state.current.product;
+        if (cur && cur.id) return cur.id;
+        if (arg && arg.allowCreate === false) return null;
+        return await ensureProductIdForUpload();
+      },
+    });
+    return mDetailImagesCtrl;
+  }
+
   function showModal() { $('editMask').hidden = false; }
-  function hideModal() { $('editMask').hidden = true; state.current = null; }
+  function hideModal() {
+    $('editMask').hidden = true;
+    state.current = null;
+    if (mDetailImagesCtrl) mDetailImagesCtrl.reset();
+  }
 
   function openCreate() {
     state.current = { product: null, copywritings: [], items: [] };
@@ -197,6 +387,8 @@
     renderCopywritings([]);
     renderItems([]);
     $('uploadProgress').innerHTML = '';
+    const ctrl = ensureMDetailImagesCtrl();
+    ctrl.reset();
     showModal();
     setTimeout(() => $('mName').focus(), 80);
   }
@@ -490,6 +682,26 @@
     edResetNewItemForm();
   }
 
+  let edDetailImagesCtrl = null;
+
+  function ensureEdDetailImagesCtrl() {
+    if (edDetailImagesCtrl) return edDetailImagesCtrl;
+    edDetailImagesCtrl = createDetailImagesController({
+      section: 'edDetailImagesSection',
+      grid:    'edDetailImagesGrid',
+      input:   'edDetailImagesInput',
+      pickBtn: 'edDetailImagesPickBtn',
+      badge:   'edDetailImagesBadge',
+      progress:'edDetailImagesProgress',
+      getLang: () => edState.activeLang,
+      ensurePid: async () => {
+        const p = edState.productData && edState.productData.product;
+        return p ? p.id : null;
+      },
+    });
+    return edDetailImagesCtrl;
+  }
+
   async function openEditDetail(pid) {
     try {
       await ensureLanguages();
@@ -504,6 +716,15 @@
       edShow();
       edRenderLangTabs();
       edRenderActiveLangView();
+      // 详情图区块：仅英语加载
+      const ctrl = ensureEdDetailImagesCtrl();
+      ctrl.reset();
+      if (edState.activeLang === 'en') {
+        ctrl.show();
+        await ctrl.load(pid);
+      } else {
+        ctrl.hide();
+      }
     } catch (e) {
       alert('加载失败：' + (e.message || e));
     }
@@ -565,6 +786,16 @@
     edRenderCoverBlock(lang);
     edRenderItemsBlock(lang);
     edRenderCopyBlock(lang);
+
+    // 商品详情图：仅英语显示入口；切换到其他语种时隐藏，切回英语时重新加载
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    const ctrl = ensureEdDetailImagesCtrl();
+    if (lang === 'en') {
+      ctrl.show();
+      if (pid) ctrl.load(pid);
+    } else {
+      ctrl.hide();
+    }
 
     // EN 主图校验 + 保存按钮
     const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);

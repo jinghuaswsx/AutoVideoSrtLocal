@@ -387,6 +387,10 @@ def collect_media_object_references() -> list[dict[str, object]]:
         "SELECT 'legacy_product_cover' AS source, cover_object_key AS object_key "
         "FROM media_products WHERE deleted_at IS NULL"
     ))
+    rows.extend(query(
+        "SELECT 'product_detail_image' AS source, object_key "
+        "FROM media_product_detail_images WHERE deleted_at IS NULL"
+    ))
 
     grouped: dict[str, set[str]] = {}
     for row in rows:
@@ -476,3 +480,76 @@ def lang_coverage_by_product(product_ids: list[int]) -> dict[int, dict[str, dict
         if pid in out and lang in out[pid]:
             out[pid][lang]["cover"] = True
     return out
+
+
+# ---------- 商品详情图 ----------
+
+def _next_detail_image_sort_order(product_id: int, lang: str) -> int:
+    row = query_one(
+        "SELECT COALESCE(MAX(sort_order), -1) AS m "
+        "FROM media_product_detail_images "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL",
+        (product_id, lang),
+    ) or {}
+    return int(row.get("m") or -1) + 1
+
+
+def add_detail_image(
+    product_id: int,
+    lang: str,
+    object_key: str,
+    *,
+    content_type: str | None = None,
+    file_size: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> int:
+    sort_order = _next_detail_image_sort_order(product_id, lang)
+    return execute(
+        "INSERT INTO media_product_detail_images "
+        "(product_id, lang, sort_order, object_key, content_type, file_size, width, height) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        (product_id, lang, sort_order, object_key, content_type, file_size, width, height),
+    )
+
+
+def list_detail_images(product_id: int, lang: str) -> list[dict]:
+    return query(
+        "SELECT id, product_id, lang, sort_order, object_key, "
+        "  content_type, file_size, width, height, created_at "
+        "FROM media_product_detail_images "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "ORDER BY sort_order ASC, id ASC",
+        (product_id, lang),
+    )
+
+
+def get_detail_image(image_id: int) -> dict | None:
+    return query_one(
+        "SELECT id, product_id, lang, sort_order, object_key, "
+        "  content_type, file_size, width, height, created_at, deleted_at "
+        "FROM media_product_detail_images WHERE id=%s",
+        (image_id,),
+    )
+
+
+def soft_delete_detail_image(image_id: int) -> int:
+    return execute(
+        "UPDATE media_product_detail_images "
+        "SET deleted_at=NOW() WHERE id=%s AND deleted_at IS NULL",
+        (image_id,),
+    )
+
+
+def reorder_detail_images(product_id: int, lang: str, ids: list[int]) -> int:
+    """按传入顺序更新 sort_order（0 起）。返回更新行数。"""
+    if not ids:
+        return 0
+    updated = 0
+    for idx, img_id in enumerate(ids):
+        updated += execute(
+            "UPDATE media_product_detail_images "
+            "SET sort_order=%s WHERE id=%s AND product_id=%s AND lang=%s",
+            (idx, int(img_id), product_id, lang),
+        )
+    return updated
