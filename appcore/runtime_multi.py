@@ -237,3 +237,33 @@ class MultiTranslateRunner(PipelineRunner):
             c["similarity"] = float(c.get("similarity", 0.0))
 
         task_state.update(task_id, voice_match_candidates=candidates)
+
+    def _run(self, task_id: str) -> None:
+        """覆盖基类 _run，在 ASR 后、translate 前插入 voice_match。
+
+        显式列出 step 以便该 Runner 独立演进；其它逻辑（cancelled/异常兜底）
+        沿用基类模式。
+        """
+        task = task_state.get(task_id)
+        video_path = task["video_path"]
+        task_dir = task["task_dir"]
+
+        steps = [
+            ("asr", lambda: self._step_asr(task_id, task_dir)),
+            ("voice_match", lambda: self._step_voice_match(task_id)),
+            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir)),
+            ("translate", lambda: self._step_translate(task_id)),
+            ("tts", lambda: self._step_tts(task_id, task_dir)),
+            ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
+            ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
+        ]
+
+        for name, fn in steps:
+            if task_state.get(task_id).get("status") == "cancelled":
+                return
+            try:
+                fn()
+            except Exception as exc:
+                log.exception("step %s failed for %s", name, task_id)
+                self._set_step(task_id, name, "failed", str(exc))
+                return
