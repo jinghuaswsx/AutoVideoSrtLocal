@@ -818,9 +818,28 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
+{% include "_bulk_translate_dialog.html" %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
 
 <script>
   window.MEDIAS_TOS_READY = {{ 'true' if tos_ready else 'false' }};
 </script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
+<script src="{{ url_for('static', filename='bulk_translate_ui.js') }}"></script>
+<script>
+  // 素材管理行内"🌐 一键翻译"按钮点击事件
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-bt-open]');
+    if (!btn) return;
+    e.preventDefault();
+    if (window.BulkTranslate) {
+      window.BulkTranslate.open({
+        mode: 'multi-lang',
+        productId: parseInt(btn.dataset.btOpen, 10),
+        productName: btn.dataset.btName || ('产品 #' + btn.dataset.btOpen),
+      });
+    }
+  });
+</script>
 {% endblock %}

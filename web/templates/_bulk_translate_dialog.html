@@ -1,0 +1,63 @@
+{# 一键从英文翻译 · 弹窗组件(多处复用) #}
+<div id="bt-dialog" class="bt-dialog hidden" role="dialog" aria-labelledby="bt-dialog-title">
+  <div class="bt-dialog__backdrop" data-bt-close></div>
+  <div class="bt-dialog__panel">
+    <header class="bt-dialog__header">
+      <h2 id="bt-dialog-title">🌐 一键从英文翻译 — <span data-bt-product-name>—</span></h2>
+      <button class="bt-dialog__close" data-bt-close aria-label="关闭">×</button>
+    </header>
+    <div class="bt-dialog__body">
+      <section class="bt-section">
+        <div class="bt-section__label">源语言</div>
+        <div><span class="bt-badge bt-badge--primary">🇬🇧 英文(固定)</span></div>
+      </section>
+
+      <section class="bt-section">
+        <div class="bt-section__label">目标语言(默认全选)</div>
+        <div data-bt-langs class="bt-chip-row"></div>
+      </section>
+
+      <section class="bt-section">
+        <div class="bt-section__label">翻译内容</div>
+        <label class="bt-check"><input type="checkbox" data-bt-content="copy" checked> 商品文案</label>
+        <label class="bt-check"><input type="checkbox" data-bt-content="cover"> 商品主图</label>
+        <label class="bt-check"><input type="checkbox" data-bt-content="detail" checked> 商品详情图</label>
+        <label class="bt-check"><input type="checkbox" data-bt-content="video" checked> 视频素材</label>
+        <div class="bt-hint">ℹ️ 视频翻译仅支持 德语 / 法语,其他语言会自动跳过视频</div>
+      </section>
+
+      <section class="bt-section">
+        <label class="bt-check"><input type="checkbox" data-bt-force> <strong>强制重新翻译</strong>(默认跳过已存在译本)</label>
+      </section>
+
+      <section class="bt-section bt-estimate" data-bt-estimate>
+        <div class="bt-section__label">📊 预估消耗</div>
+        <div class="bt-estimate__body">计算中…</div>
+      </section>
+    </div>
+    <footer class="bt-dialog__footer">
+      <button class="bt-btn bt-btn--ghost" data-bt-close>取消</button>
+      <button class="bt-btn bt-btn--primary" data-bt-start>
+        <span class="bt-btn__spinner hidden"></span>
+        <span class="bt-btn__text">▶ 开始翻译</span>
+      </button>
+    </footer>
+  </div>
+</div>
+
+{# 右下角浮动进度气泡 #}
+<div id="bt-bubble" class="bt-bubble hidden">
+  <div class="bt-bubble__compact" data-bt-bubble-compact>
+    🌐 <span data-bt-bubble-summary>0 个任务</span>
+  </div>
+  <div class="bt-bubble__expanded hidden" data-bt-bubble-expanded>
+    <header class="bt-bubble__header">
+      <span>🌐 翻译任务</span>
+      <button class="bt-bubble__min" data-bt-bubble-min aria-label="收起">▾</button>
+    </header>
+    <div data-bt-bubble-list></div>
+    <footer class="bt-bubble__footer">
+      <a href="/tasks">全部任务 →</a>
+    </footer>
+  </div>
+</div>

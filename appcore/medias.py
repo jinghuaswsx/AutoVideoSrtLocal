@@ -221,20 +221,62 @@ def list_copywritings(product_id: int, lang: str | None = None) -> list[dict]:
 
 
 def replace_copywritings(product_id: int, items: list[dict], lang: str = "en") -> None:
-    """整体替换某语种的文案列表。"""
+    """整体替换某语种的文案列表。
+
+    如果传入 item 只带 body(前端编辑弹窗的行为),按 idx 匹配现有记录保留:
+      - 其他文本字段(title/description/ad_*)
+      - 自动翻译关联(source_ref_id/bulk_task_id/auto_translated)
+
+    如果用户修改了 body 且该行原本是 auto_translated=1,
+    则把 manually_edited_at 设为 NOW() 标记为"已人工修改"。
+    """
+    existing = {
+        row["idx"]: row for row in query(
+            "SELECT * FROM media_copywritings WHERE product_id=%s AND lang=%s",
+            (product_id, lang),
+        )
+    }
+
     execute(
         "DELETE FROM media_copywritings WHERE product_id=%s AND lang=%s",
         (product_id, lang),
     )
     for idx, item in enumerate(items, start=1):
-        execute(
-            "INSERT INTO media_copywritings "
-            "(product_id, lang, idx, title, body, description, ad_carrier, ad_copy, ad_keywords) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            (product_id, lang, idx,
-             item.get("title"), item.get("body"), item.get("description"),
-             item.get("ad_carrier"), item.get("ad_copy"), item.get("ad_keywords")),
-        )
+        prev = existing.get(idx)
+        # 优先用新 item 的字段,缺字段时回退到旧记录
+        def pick(field: str):
+            return item.get(field) if field in item else (prev.get(field) if prev else None)
+
+        new_body = item.get("body") if "body" in item else (prev.get("body") if prev else None)
+        source_ref_id = prev.get("source_ref_id") if prev else None
+        bulk_task_id = prev.get("bulk_task_id") if prev else None
+        auto_translated = prev.get("auto_translated") if prev else 0
+        manually_edited_at = prev.get("manually_edited_at") if prev else None
+
+        # 如果 body 被用户改了,且原记录是自动翻译的 → 打上"已人工修改"
+        body_changed = prev is not None and (prev.get("body") or "") != (new_body or "")
+        if body_changed and auto_translated:
+            execute(
+                "INSERT INTO media_copywritings "
+                "(product_id, lang, idx, title, body, description, ad_carrier, ad_copy, ad_keywords, "
+                " source_ref_id, bulk_task_id, auto_translated, manually_edited_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s, NOW())",
+                (product_id, lang, idx,
+                 pick("title"), new_body, pick("description"),
+                 pick("ad_carrier"), pick("ad_copy"), pick("ad_keywords"),
+                 source_ref_id, bulk_task_id, auto_translated),
+            )
+        else:
+            execute(
+                "INSERT INTO media_copywritings "
+                "(product_id, lang, idx, title, body, description, ad_carrier, ad_copy, ad_keywords, "
+                " source_ref_id, bulk_task_id, auto_translated, manually_edited_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s)",
+                (product_id, lang, idx,
+                 pick("title"), new_body, pick("description"),
+                 pick("ad_carrier"), pick("ad_copy"), pick("ad_keywords"),
+                 source_ref_id, bulk_task_id, auto_translated, manually_edited_at),
+            )
 
 
 # ---------- 素材 ----------

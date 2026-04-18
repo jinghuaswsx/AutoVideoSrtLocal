@@ -41,6 +41,14 @@ EVT_LAB_PIPELINE_DONE = "lab_pipeline_done"
 EVT_LAB_PIPELINE_ERROR = "lab_pipeline_error"
 
 
+# --- copywriting_translate (bulk_translate 子任务) ---
+EVT_CT_PROGRESS = "copywriting_translate_progress"
+
+# --- bulk_translate 父任务 ---
+EVT_BT_PROGRESS = "bulk_translate_progress"
+EVT_BT_DONE = "bulk_translate_done"
+
+
 @dataclass
 class Event:
     type: str

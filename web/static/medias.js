@@ -317,6 +317,7 @@
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
           <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
+          <button class="bt-row-btn" data-bt-open="${p.id}" data-bt-name="${escapeHtml(p.name)}" title="一键翻译到多语言">🌐 翻译</button>
         </td>
       </tr>`;
   }
@@ -1158,9 +1159,14 @@
   function edCwCard(c, idx) {
     const d = document.createElement('div');
     d.className = 'oc-cw';
+    const autoBadge = c && c.auto_translated ? (
+      c.manually_edited_at
+        ? `<span class="bt-row-btn" title="来自英文自动翻译,已人工修改" style="margin-left:6px;cursor:default">🔗 英文译本 · ✏️</span>`
+        : `<span class="bt-row-btn" title="来自英文自动翻译" style="margin-left:6px;cursor:default">🔗 英文译本</span>`
+    ) : '';
     d.innerHTML = `
       <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
-      <div class="idx">#${idx}</div>
+      <div class="idx">#${idx}${autoBadge}</div>
       <div class="stack">
         <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
       </div>
