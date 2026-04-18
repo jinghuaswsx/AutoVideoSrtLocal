@@ -106,3 +106,97 @@ def api_list():
         "page": page,
         "page_size": limit,
     })
+
+
+@bp.route("/api/items/<int:item_id>/payload", methods=["GET"])
+@login_required
+@admin_required
+def api_build_payload(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item_not_found"}), 404
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return jsonify({"error": "product_not_found"}), 404
+    if item.get("pushed_at"):
+        return jsonify({"error": "already_pushed"}), 409
+
+    readiness = pushes.compute_readiness(item, product)
+    if not pushes.is_ready(readiness):
+        missing = [k for k, v in readiness.items() if not v]
+        return jsonify({"error": "not_ready", "missing": missing}), 400
+
+    lang = item.get("lang") or "en"
+    product_code = (product.get("product_code") or "").strip().lower()
+    ad_url = pushes.build_product_link(lang, product_code)
+    ok, err = pushes.probe_ad_url(ad_url)
+    if not ok:
+        return jsonify({
+            "error": "link_not_adapted",
+            "url": ad_url,
+            "detail": err,
+        }), 400
+
+    payload = pushes.build_item_payload(item, product)
+    return jsonify({
+        "payload": payload,
+        "push_url": config.PUSH_TARGET_URL,
+    })
+
+
+@bp.route("/api/items/<int:item_id>/mark-pushed", methods=["POST"])
+@login_required
+@admin_required
+def api_mark_pushed(item_id: int):
+    body = request.get_json(silent=True) or {}
+    payload = body.get("request_payload") or {}
+    response_body = body.get("response_body")
+    pushes.record_push_success(
+        item_id=item_id,
+        operator_user_id=current_user.id,
+        payload=payload,
+        response_body=response_body,
+    )
+    return ("", 204)
+
+
+@bp.route("/api/items/<int:item_id>/mark-failed", methods=["POST"])
+@login_required
+@admin_required
+def api_mark_failed(item_id: int):
+    body = request.get_json(silent=True) or {}
+    payload = body.get("request_payload") or {}
+    pushes.record_push_failure(
+        item_id=item_id,
+        operator_user_id=current_user.id,
+        payload=payload,
+        error_message=body.get("error_message"),
+        response_body=body.get("response_body"),
+    )
+    return ("", 204)
+
+
+@bp.route("/api/items/<int:item_id>/reset", methods=["POST"])
+@login_required
+@admin_required
+def api_reset(item_id: int):
+    pushes.reset_push_state(item_id)
+    return ("", 204)
+
+
+@bp.route("/api/items/<int:item_id>/logs", methods=["GET"])
+@login_required
+def api_logs(item_id: int):
+    logs = pushes.list_item_logs(item_id)
+    serialized = []
+    for row in logs:
+        serialized.append({
+            "id": row["id"],
+            "operator_user_id": row["operator_user_id"],
+            "status": row["status"],
+            "request_payload": row["request_payload"],
+            "response_body": row["response_body"],
+            "error_message": row["error_message"],
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        })
+    return jsonify({"logs": serialized})

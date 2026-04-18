@@ -194,6 +194,9 @@ def create_app() -> Flask:
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
     app.register_blueprint(pushes_bp)
+    # 推送管理蓝图的 mark-pushed / mark-failed / reset 是纯 JSON POST API，
+    # 前端走 cookie session 认证，不需要 CSRF 表单 token；整蓝图豁免。
+    csrf.exempt(pushes_bp)
     app.register_blueprint(image_translate_bp)
     # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
     # 三类任务并发拉起时把 CPU 打满到 100%，导致机器反复宕机。保留
