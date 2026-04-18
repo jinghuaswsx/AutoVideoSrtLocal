@@ -24,6 +24,11 @@
 {% else %}
 <a class="back-link" href="/de-translate">← 返回德语翻译列表</a>
 <p class="page-subtitle">中文/英文 → 德语本土化翻译。每一步都会把关键中间产物留在页面里。</p>
+{% if state and state.parent_task_id %}
+<p style="margin:-4px 0 12px; font-size:13px;">
+  🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
+</p>
+{% endif %}
 {% include "_task_workbench.html" %}
 {% endif %}
 {% endblock %}
