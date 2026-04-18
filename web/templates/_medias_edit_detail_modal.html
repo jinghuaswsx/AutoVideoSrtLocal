@@ -111,6 +111,33 @@
         <div id="edDetailImagesProgress" class="oc-upload-list" hidden></div>
       </section>
 
+      <!-- 从 URL 一键下载 进度弹窗 -->
+      <div class="oc-modal-mask oc" id="edFromUrlMask" hidden>
+        <div class="oc-modal oc-modal-narrow" role="dialog" aria-modal="true">
+          <div class="oc-modal-head">
+            <h3 id="edFromUrlTitle">从商品链接一键下载</h3>
+            <button class="oc-icon-btn" id="edFromUrlClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body" style="padding:var(--oc-sp-5);">
+            <div style="margin-bottom:var(--oc-sp-4);">
+              <div id="edFromUrlMsg" style="font-size:13px;color:var(--oc-fg);margin-bottom:6px;">准备中...</div>
+              <div style="background:var(--oc-bg-muted);height:6px;border-radius:3px;overflow:hidden;">
+                <div id="edFromUrlBar" style="background:var(--oc-accent,#2563eb);height:100%;width:0%;transition:width .25s;"></div>
+              </div>
+              <div id="edFromUrlSub" style="font-size:12px;color:var(--oc-fg-muted);margin-top:6px;"></div>
+            </div>
+            <div id="edFromUrlImages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:var(--oc-sp-3);">
+              <div class="oc-detail-images-empty" style="grid-column:1/-1;">等待开始...</div>
+            </div>
+          </div>
+          <div class="oc-modal-foot" style="justify-content:flex-end;">
+            <button class="oc-btn primary" id="edFromUrlDoneBtn" disabled>关闭（下载完成后可关）</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 视频素材（JS 按 activeLang 过滤渲染） -->
       <section class="oc-section oc-section-card" id="edItemsSection">
         <div class="oc-section-title">

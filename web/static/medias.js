@@ -1528,13 +1528,95 @@
       });
     }
 
-    // 商品详情图：从商品链接一键下载（复用 link_check_fetcher 的选择器）
+    // 商品详情图：从商品链接一键下载（后台任务 + 进度弹窗）
     const edFromUrlBtn = $('edDetailImagesFromUrlBtn');
     if (edFromUrlBtn) {
+      let pollHandle = null;
+
+      function renderFromUrlProgress(task) {
+        const msg = $('edFromUrlMsg');
+        const bar = $('edFromUrlBar');
+        const sub = $('edFromUrlSub');
+        const imgGrid = $('edFromUrlImages');
+        const doneBtn = $('edFromUrlDoneBtn');
+        if (!msg || !bar || !sub || !imgGrid || !doneBtn) return;
+
+        msg.textContent = task.message || task.status;
+        const total = task.total || 0;
+        const progress = task.progress || 0;
+        const percent = total ? Math.round((progress / total) * 100) : (task.status === 'fetching' ? 5 : 0);
+        bar.style.width = percent + '%';
+        if (task.current_url) {
+          sub.textContent = `正在下载：${task.current_url}`;
+        } else if (total) {
+          sub.textContent = `${progress} / ${total}`;
+        } else {
+          sub.textContent = '';
+        }
+
+        const inserted = task.inserted || [];
+        if (inserted.length) {
+          imgGrid.innerHTML = inserted.map((it, i) => `
+            <div style="border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;">
+              <img src="${escapeHtml(it.thumbnail_url)}" alt="图 ${i+1}" loading="lazy"
+                   style="width:100%;height:120px;object-fit:cover;display:block;">
+              <div style="padding:4px 6px;font-size:11px;color:var(--oc-fg-muted);text-align:center;">#${i + 1}</div>
+            </div>
+          `).join('');
+        } else if (task.status === 'failed') {
+          imgGrid.innerHTML = `<div class="oc-detail-images-empty" style="grid-column:1/-1;color:var(--danger-color,#dc2626);">${escapeHtml(task.error || '抓取失败')}</div>`;
+        } else if (task.status === 'done' && !inserted.length) {
+          imgGrid.innerHTML = `<div class="oc-detail-images-empty" style="grid-column:1/-1;">未下载到任何图片</div>`;
+        }
+
+        if (task.status === 'done' || task.status === 'failed') {
+          doneBtn.disabled = false;
+          doneBtn.textContent = task.status === 'failed' ? '关闭' : '完成，关闭并刷新';
+        }
+      }
+
+      async function pollFromUrlTask(pid, taskId) {
+        try {
+          const resp = await fetch(`/medias/api/products/${pid}/detail-images/from-url/status/${taskId}`);
+          if (!resp.ok) throw new Error(await resp.text());
+          const task = await resp.json();
+          renderFromUrlProgress(task);
+          if (task.status === 'done' || task.status === 'failed') {
+            pollHandle = null;
+            return;
+          }
+        } catch (e) {
+          console.error('[from-url] poll failed:', e);
+        }
+        pollHandle = setTimeout(() => pollFromUrlTask(pid, taskId), 1000);
+      }
+
+      function openFromUrlModal() {
+        $('edFromUrlMask').hidden = false;
+        $('edFromUrlMsg').textContent = '正在启动任务...';
+        $('edFromUrlBar').style.width = '0%';
+        $('edFromUrlSub').textContent = '';
+        $('edFromUrlImages').innerHTML = '<div class="oc-detail-images-empty" style="grid-column:1/-1;">等待开始...</div>';
+        $('edFromUrlDoneBtn').disabled = true;
+        $('edFromUrlDoneBtn').textContent = '关闭（下载完成后可关）';
+      }
+
+      function closeFromUrlModal() {
+        if (pollHandle) { clearTimeout(pollHandle); pollHandle = null; }
+        $('edFromUrlMask').hidden = true;
+        // 关闭时强制刷新素材编辑页的详情图
+        if (edDetailImagesCtrl) edDetailImagesCtrl.load();
+      }
+
+      $('edFromUrlClose').addEventListener('click', closeFromUrlModal);
+      $('edFromUrlDoneBtn').addEventListener('click', closeFromUrlModal);
+      $('edFromUrlMask').addEventListener('click', (e) => {
+        if (e.target.id === 'edFromUrlMask') closeFromUrlModal();
+      });
+
       edFromUrlBtn.addEventListener('click', async () => {
         const pid = edState.productData && edState.productData.product && edState.productData.product.id;
         if (!pid) return;
-        // 用户如果改了产品链接，先 flush 再读取
         edFlushProductUrl();
         const lang = edState.activeLang;
         const links = (edState.productData.product.localized_links) || {};
@@ -1543,10 +1625,8 @@
         const def = _defaultProductUrl(lang, code);
         const url = override || def;
         if (!url) { alert('请先填写产品 ID 或产品链接'); return; }
-        if (!confirm(`将从 ${url} 抓取轮播+详情图并作为 ${lang.toUpperCase()} 详情图保存，继续？`)) return;
-        const origHtml = edFromUrlBtn.innerHTML;
-        edFromUrlBtn.disabled = true;
-        edFromUrlBtn.innerHTML = '<span>抓取中...</span>';
+
+        openFromUrlModal();
         try {
           const resp = await fetch(`/medias/api/products/${pid}/detail-images/from-url`, {
             method: 'POST',
@@ -1555,18 +1635,20 @@
           });
           const data = await resp.json();
           if (!resp.ok) {
-            alert('抓取失败：' + (data.error || resp.status));
-          } else {
-            const msg = `抓取完成：识别 ${data.total_detected} 张，入库 ${data.total_inserted} 张` +
-                        (data.errors && data.errors.length ? `（${data.errors.length} 张失败）` : '');
-            alert(msg);
-            if (edDetailImagesCtrl) await edDetailImagesCtrl.load();
+            renderFromUrlProgress({
+              status: 'failed',
+              error: data.error || ('HTTP ' + resp.status),
+              message: data.error || ('启动失败：HTTP ' + resp.status),
+            });
+            return;
           }
+          pollFromUrlTask(pid, data.task_id);
         } catch (e) {
-          alert('网络错误：' + (e.message || e));
-        } finally {
-          edFromUrlBtn.disabled = false;
-          edFromUrlBtn.innerHTML = origHtml;
+          renderFromUrlProgress({
+            status: 'failed',
+            error: e.message || String(e),
+            message: '网络错误：' + (e.message || e),
+          });
         }
       });
     }

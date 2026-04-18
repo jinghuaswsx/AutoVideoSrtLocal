@@ -761,11 +761,7 @@ def api_detail_images_list(pid: int):
 @bp.route("/api/products/<int:pid>/detail-images/from-url", methods=["POST"])
 @login_required
 def api_detail_images_from_url(pid: int):
-    """从商品链接一键抓取轮播/详情图，下载后作为 detail_images 落库。
-
-    复用 link_check_fetcher 的 Shopify 选择器（轮播 + 详情）逻辑。
-    默认 lang=en；如果用户在 localized_links_json 里自定义了 en 链接则优先用。
-    """
+    """启动后台抓取任务，立即返回 task_id。前端用 /status 轮询进度。"""
     if not tos_clients.is_media_bucket_configured():
         return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
@@ -777,7 +773,7 @@ def api_detail_images_from_url(pid: int):
     if not medias.is_valid_language(lang):
         return jsonify({"error": f"不支持的语种: {lang}"}), 400
 
-    # 解析商品链接：body.url → localized_links_json[lang] → 默认模板
+    # 解析商品链接
     url = (body.get("url") or "").strip()
     if not url:
         raw_links = p.get("localized_links_json")
@@ -799,59 +795,95 @@ def api_detail_images_from_url(pid: int):
             url = (f"https://newjoyloo.com/products/{code}" if lang == "en"
                    else f"https://newjoyloo.com/{lang}/products/{code}")
 
-    try:
+    uid = current_user.id
+
+    def _worker(task_id: str, update):
+        """在后台线程跑：fetch → 逐张下载 → update 进度。"""
         from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
-        fetcher = LinkCheckFetcher()
-        page = fetcher.fetch_page(url, lang)
-    except LocaleLockError as e:
-        return jsonify({"error": f"语种锁失败（页面语言不匹配）：{e}"}), 400
-    except requests.HTTPError as e:
-        status = getattr(getattr(e, "response", None), "status_code", None)
-        if status == 404:
-            return jsonify({
-                "error": (
-                    f"链接 404：{url} 不存在。\n"
-                    f"多半是产品 ID（{p.get('product_code')}）与 Shopify 店铺的真实 handle 不一致。\n"
-                    f"请在「产品链接」字段填入商城里真实的商品 URL 后重试。"
-                ),
-                "tried_url": url,
-            }), 400
-        return jsonify({"error": f"抓取失败：HTTP {status}", "tried_url": url}), 502
-    except requests.RequestException as e:
-        return jsonify({"error": f"抓取失败：{e}", "tried_url": url}), 502
-    except Exception as e:
-        return jsonify({"error": f"抓取异常：{e}", "tried_url": url}), 500
+        update(status="fetching", message=f"正在抓取页面 {url}")
+        try:
+            fetcher = LinkCheckFetcher()
+            page = fetcher.fetch_page(url, lang)
+        except LocaleLockError as e:
+            update(status="failed", error=str(e),
+                   message=f"语种锁失败：{e}")
+            return
+        except requests.HTTPError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 404:
+                update(status="failed",
+                       error=f"链接 404：{url} 不存在",
+                       message=(
+                           f"链接 404：{url} 不存在。\n"
+                           f"产品 ID（{p.get('product_code')}）与 Shopify handle 可能不一致。\n"
+                           "请到「产品链接」字段填入真实 URL 后重试。"
+                       ))
+            else:
+                update(status="failed",
+                       error=f"HTTP {status}",
+                       message=f"抓取失败：HTTP {status}")
+            return
+        except requests.RequestException as e:
+            update(status="failed", error=str(e),
+                   message=f"抓取失败：{e}")
+            return
 
-    images = page.images or []
-    if not images:
-        return jsonify({"error": "未在页面上识别到任何轮播/详情图"}), 400
-    if len(images) > _DETAIL_IMAGES_MAX_BATCH:
-        images = images[:_DETAIL_IMAGES_MAX_BATCH]
+        images = page.images or []
+        if not images:
+            update(status="failed",
+                   error="no images found",
+                   message="页面上未识别到任何轮播/详情图")
+            return
+        if len(images) > _DETAIL_IMAGES_MAX_BATCH:
+            images = images[:_DETAIL_IMAGES_MAX_BATCH]
 
-    created: list[dict] = []
-    errors: list[str] = []
-    for idx, img in enumerate(images):
-        src = img.get("source_url") or ""
-        filename = f"from_url_{lang}_{idx:02d}"
-        obj_key, data, err = _download_image_to_tos(src, pid, filename)
-        if err and not obj_key:
-            errors.append(f"{src}: {err}")
-            continue
-        new_id = medias.add_detail_image(
-            pid, lang, obj_key,
-            content_type=None, file_size=len(data) if data else None,
-        )
-        row = medias.get_detail_image(new_id)
-        if row:
-            created.append(_serialize_detail_image(row))
+        update(status="downloading", total=len(images),
+               message=f"共识别到 {len(images)} 张，开始下载...")
 
-    return jsonify({
-        "inserted": created,
-        "errors": errors,
-        "total_detected": len(page.images or []),
-        "total_inserted": len(created),
-        "url": url,
-    })
+        created: list[dict] = []
+        errors: list[str] = []
+        for idx, img in enumerate(images):
+            src = img.get("source_url") or ""
+            update(progress=idx, current_url=src,
+                   message=f"下载中 {idx + 1}/{len(images)}")
+            filename = f"from_url_{lang}_{idx:02d}"
+            try:
+                obj_key, data, err = _download_image_to_tos(src, pid, filename)
+                if err and not obj_key:
+                    errors.append(f"{src}: {err}")
+                    continue
+                new_id = medias.add_detail_image(
+                    pid, lang, obj_key,
+                    content_type=None, file_size=len(data) if data else None,
+                )
+                row = medias.get_detail_image(new_id)
+                if row:
+                    created.append(_serialize_detail_image(row))
+            except Exception as exc:
+                errors.append(f"{src}: {exc}")
+
+        update(status="done",
+               progress=len(images),
+               inserted=created,
+               errors=errors,
+               current_url="",
+               message=f"完成：识别 {len(images)} 张，入库 {len(created)} 张" +
+                       (f"，失败 {len(errors)} 张" if errors else ""))
+
+    from appcore import medias_detail_fetch_tasks as mdf
+    task_id = mdf.create(user_id=uid, product_id=pid, url=url, lang=lang, worker=_worker)
+    return jsonify({"task_id": task_id, "url": url}), 202
+
+
+@bp.route("/api/products/<int:pid>/detail-images/from-url/status/<task_id>", methods=["GET"])
+@login_required
+def api_detail_images_from_url_status(pid: int, task_id: str):
+    """轮询抓取任务进度。"""
+    from appcore import medias_detail_fetch_tasks as mdf
+    t = mdf.get(task_id, user_id=current_user.id)
+    if not t or t.get("product_id") != pid:
+        return jsonify({"error": "task not found"}), 404
+    return jsonify(t)
 
 
 @bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])
