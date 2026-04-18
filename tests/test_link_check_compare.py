@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 from PIL import Image, ImageDraw
 
 
@@ -15,6 +14,15 @@ def _make_sample(path: Path, *, size: tuple[int, int], quality: int = 95) -> Pat
     return path
 
 
+def _draw_scaled_text(image: Image.Image, text: str, *, box: tuple[int, int, int, int]) -> None:
+    x0, y0, x1, y1 = box
+    base = Image.new("L", (max(1, x1 - x0), max(1, y1 - y0)), 255)
+    base_draw = ImageDraw.Draw(base)
+    base_draw.text((10, 8), text, fill=0)
+    scaled = base.resize((base.width * 8, base.height * 8), Image.Resampling.NEAREST)
+    image.paste(Image.merge("RGB", (scaled, scaled, scaled)), (x0, y0))
+
+
 def _make_rotated_sample(path: Path) -> Path:
     image = Image.new("RGB", (600, 900), "white")
     draw = ImageDraw.Draw(image)
@@ -26,6 +34,17 @@ def _make_rotated_sample(path: Path) -> Path:
     exif = image.getexif()
     exif[274] = 8  # Orientation: rotate 90 degrees counter-clockwise to restore base image.
     stored.save(path, exif=exif.tobytes(), quality=92)
+    return path
+
+
+def _make_text_variant(path: Path, *, text: str) -> Path:
+    image = Image.new("RGB", (1200, 800), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((24, 24, 1176, 776), outline="navy", width=8)
+    draw.ellipse((360, 180, 840, 560), outline="teal", width=6)
+    draw.line((32, 720, 1168, 80), fill="black", width=5)
+    _draw_scaled_text(image, text, box=(260, 260, 940, 540))
+    image.save(path, quality=90)
     return path
 
 
@@ -76,6 +95,18 @@ def test_different_images_do_not_match(tmp_path):
 
     assert result["status"] == "not_matched"
     assert result["score"] < 0.65
+
+
+def test_same_layout_with_different_text_does_not_match(tmp_path):
+    from appcore.link_check_compare import compare_images
+
+    left = _make_text_variant(tmp_path / "left.jpg", text="SALE TODAY")
+    right = _make_text_variant(tmp_path / "right.jpg", text="NEW ARRIVAL")
+
+    result = compare_images(left, right)
+
+    assert result["status"] != "matched"
+    assert result["score"] < 0.80
 
 
 def test_best_reference_uses_highest_score(tmp_path):
