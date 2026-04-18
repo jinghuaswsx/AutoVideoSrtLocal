@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -88,6 +89,18 @@ def _serialize_product(p: dict, items_count: int | None = None,
     cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
         f"/medias/thumb/{cover_item_id}" if cover_item_id else None
     )
+    # localized_links_json 可能是 str / dict / None
+    raw_links = p.get("localized_links_json")
+    localized_links: dict = {}
+    if isinstance(raw_links, dict):
+        localized_links = raw_links
+    elif isinstance(raw_links, str):
+        try:
+            parsed = json.loads(raw_links)
+            if isinstance(parsed, dict):
+                localized_links = parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
     return {
         "id": p["id"],
         "name": p["name"],
@@ -103,6 +116,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "items_filenames": items_filenames or [],
         "cover_thumbnail_url": cover_url,
         "lang_coverage": lang_coverage or {},
+        "localized_links": localized_links,
     }
 
 
@@ -227,6 +241,16 @@ def api_update_product(pid: int):
     # 允许先创建/保存产品基础信息，视频素材可在编辑弹窗后续补充，不做硬校验
 
     update_fields = {"name": name, "product_code": product_code}
+
+    # 可选：localized_links — 每语言覆盖商品链接（dict {lang: url}）
+    if isinstance(body.get("localized_links"), dict):
+        cleaned = {}
+        for lang, url in body["localized_links"].items():
+            url = (url or "").strip()
+            if url and medias.is_valid_language(lang):
+                cleaned[lang] = url
+        update_fields["localized_links_json"] = cleaned
+
     if "ad_supported_langs" in body:
         raw = body.get("ad_supported_langs") or ""
         if isinstance(raw, list):

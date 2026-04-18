@@ -187,15 +187,22 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
 
 
 def update_product(product_id: int, **fields) -> int:
+    import json as _json
     allowed = {"name", "color_people", "source", "archived",
                "importance", "trend_score", "selling_points",
                "product_code", "cover_object_key",
-               "ad_supported_langs"}
+               "localized_links_json", "ad_supported_langs"}
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
+    # localized_links_json：支持 dict 输入，自动序列化为 JSON 字符串
+    def _val(k):
+        v = fields[k]
+        if k == "localized_links_json" and isinstance(v, dict):
+            return _json.dumps(v, ensure_ascii=False)
+        return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)
-    args = tuple(fields[k] for k in keys) + (product_id,)
+    args = tuple(_val(k) for k in keys) + (product_id,)
     return execute(f"UPDATE media_products SET {set_sql} WHERE id=%s", args)
 
 

@@ -789,11 +789,54 @@
   function edSwitchLang(lang) {
     // 切换前保存当前语种文案到 productData（从 DOM 读取）
     edFlushCopywritings();
+    edFlushProductUrl();
     edState.activeLang = lang;
     // 切语言时重置"新增素材"大框的待上传状态
     edResetNewItemForm();
     edRenderLangTabs();
     edRenderActiveLangView();
+  }
+
+  // --- 产品链接（按 activeLang）---
+  function _defaultProductUrl(lang, code) {
+    if (!code) return '';
+    if (lang === 'en') return `https://newjoyloo.com/products/${code}`;
+    return `https://newjoyloo.com/${lang}/products/${code}`;
+  }
+
+  function edRenderProductUrl(lang) {
+    const input = $('edProductUrl');
+    const hint = $('edProductUrlHint');
+    if (!input) return;
+    const code = ($('edCode').value || '').trim();
+    const links = (edState.productData && edState.productData.product
+                   && edState.productData.product.localized_links) || {};
+    const override = links[lang];
+    const def = _defaultProductUrl(lang, code);
+    input.value = override || def || '';
+    input.placeholder = def || '留空则用默认模板';
+    if (hint) {
+      const label = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+      hint.textContent = override
+        ? `（${label} · 已自定义）`
+        : `（${label} · 使用默认：${def || '未设置产品 ID'}）`;
+    }
+  }
+
+  function edFlushProductUrl() {
+    const input = $('edProductUrl');
+    if (!input || !edState.productData || !edState.productData.product) return;
+    const lang = edState.activeLang;
+    const code = ($('edCode').value || '').trim();
+    const def = _defaultProductUrl(lang, code);
+    const val = (input.value || '').trim();
+    if (!edState.productData.product.localized_links) {
+      edState.productData.product.localized_links = {};
+    }
+    const links = edState.productData.product.localized_links;
+    // 如果用户输入的就是默认值或留空 → 不保存（避免冗余写入）
+    if (!val || val === def) delete links[lang];
+    else links[lang] = val;
   }
 
   function edRenderActiveLangView() {
@@ -808,6 +851,7 @@
     edRenderCoverBlock(lang);
     edRenderItemsBlock(lang);
     edRenderCopyBlock(lang);
+    edRenderProductUrl(lang);
 
     // 商品详情图：仅英语显示入口；切换到其他语种时隐藏，切回英语时重新加载
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
@@ -1325,8 +1369,9 @@
     const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
     if (!hasEn) { alert('必须先上传英文（EN）产品主图才能保存'); return; }
 
-    // 保存前 flush 当前语种文案
+    // 保存前 flush 当前语种文案 + 产品链接
     edFlushCopywritings();
+    edFlushProductUrl();
 
     const pid = edState.productData.product.id;
 
@@ -1349,6 +1394,7 @@
       name,
       product_code: code,
       copywritings: cwDict,
+      localized_links: edState.productData.product.localized_links || {},
       ad_supported_langs: adSupportedLangs,
     };
     try {
@@ -1468,6 +1514,19 @@
     $('edSaveBtn').addEventListener('click', edSave);
     $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('edMask').hidden) edHide(); });
+
+    // 产品链接：输入变化时 flush 到内存；产品 ID 改了需刷新 placeholder/hint
+    const edCodeInput = $('edCode');
+    const edUrlInput = $('edProductUrl');
+    if (edCodeInput) {
+      edCodeInput.addEventListener('input', () => edRenderProductUrl(edState.activeLang));
+    }
+    if (edUrlInput) {
+      edUrlInput.addEventListener('blur', () => {
+        edFlushProductUrl();
+        edRenderProductUrl(edState.activeLang);  // 刷新 hint（是否已自定义）
+      });
+    }
 
     // edCwAddBtn：按当前 activeLang 添加文案条目
     $('edCwAddBtn').addEventListener('click', () => {
