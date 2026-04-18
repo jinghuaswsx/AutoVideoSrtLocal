@@ -323,6 +323,14 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeUpload();
 });
 
+// 从 URL 查询串拿当前选中的语言；若缺失，默认 de
+function _getTargetLang() {
+  var params = new URLSearchParams(window.location.search);
+  var lang = (params.get('lang') || '').trim();
+  var supported = ['de', 'fr', 'es', 'it', 'pt', 'ja'];
+  return supported.indexOf(lang) >= 0 ? lang : 'de';
+}
+
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
   var btn = document.getElementById('uploadBtn');
@@ -331,6 +339,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
 
   var file = fileInput.files[0];
   var sizeMB = (file.size / 1024 / 1024).toFixed(1);
+  var targetLang = _getTargetLang();
   btn.disabled = true;
   btn.textContent = '准备中...';
 
@@ -339,7 +348,11 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var bootRes = await fetch('/api/multi-translate/bootstrap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ original_filename: file.name, content_type: file.type || 'application/octet-stream' }),
+      body: JSON.stringify({
+        original_filename: file.name,
+        content_type: file.type || 'application/octet-stream',
+        target_lang: targetLang,
+      }),
     });
     var boot = await bootRes.json();
     if (!bootRes.ok) throw new Error(boot.error || '上传初始化失败');
@@ -373,6 +386,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
         object_key: boot.object_key,
         original_filename: file.name,
         content_type: file.type || 'application/octet-stream',
+        target_lang: targetLang,
       }),
     });
     var data = await compRes.json();
