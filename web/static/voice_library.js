@@ -8,16 +8,22 @@
   const audio = new Audio();
   let playingVoiceId = null;
 
+  const GENDER_LABEL = { male: "男声", female: "女声", neutral: "中性" };
+
   function $(sel) { return document.querySelector(sel); }
   function $all(sel) { return [...document.querySelectorAll(sel)]; }
-
-  function setActiveTab(name) {
-    state.tab = name;
-    $all(".oc-tab").forEach(el => el.classList.toggle("is-active", el.getAttribute("href") === "#" + name));
-    $("#tab-browse").hidden = name !== "browse";
-    $("#tab-match").hidden = name !== "match";
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
   }
 
+  // ─────────── Tabs ───────────
+  function setActiveTab(name) {
+    state.tab = name;
+    $all(".oc-tab").forEach(el => el.classList.toggle("active", el.dataset.tab === name));
+    $all("[data-panel]").forEach(el => el.hidden = el.dataset.panel !== name);
+  }
   function syncTabFromHash() {
     const want = (location.hash || "#browse").slice(1);
     setActiveTab(want === "match" ? "match" : "browse");
@@ -42,21 +48,24 @@
     return "/voice-library/api/list?" + q.toString();
   }
 
+  // ─────────── Pill rendering ───────────
+  function makePill(label, isActive, onClick) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "vl-pill" + (isActive ? " active" : "");
+    b.textContent = label;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
   function renderLangPills(langs) {
     const box = $("#vl-browse-languages");
     box.innerHTML = "";
     langs.forEach(l => {
-      const b = document.createElement("button");
-      b.className = "vl-pill";
-      b.textContent = l.name_zh;
-      b.dataset.code = l.code;
-      if (l.code === state.language) b.classList.add("is-active");
-      b.addEventListener("click", () => {
-        state.language = l.code;
-        state.page = 1;
+      box.appendChild(makePill(l.name_zh, l.code === state.language, () => {
+        state.language = l.code; state.page = 1;
         refreshFiltersAndList();
-      });
-      box.appendChild(b);
+      }));
     });
   }
 
@@ -64,52 +73,93 @@
     const box = $("#vl-browse-gender");
     box.innerHTML = "";
     [["", "全部"], ["male", "男"], ["female", "女"]].forEach(([val, label]) => {
-      const b = document.createElement("button");
-      b.className = "vl-pill";
-      b.textContent = label;
-      if (val === state.gender) b.classList.add("is-active");
-      b.addEventListener("click", () => {
-        state.gender = val; state.page = 1; loadList();
+      box.appendChild(makePill(label, val === state.gender, () => {
+        state.gender = val; state.page = 1;
         renderGenderPills();
-      });
-      box.appendChild(b);
+        loadList();
+      }));
     });
   }
 
-  function renderMultiSelect(id, values, stateKey) {
-    const sel = $("#" + id);
-    sel.innerHTML = "";
+  function renderMultiPills(containerId, values, stateKey) {
+    const box = $("#" + containerId);
+    box.innerHTML = "";
+    if (!values || !values.length) {
+      const span = document.createElement("span");
+      span.className = "vl-field-empty";
+      span.style.cssText = "font-size:11px;color:var(--oc-fg-subtle);font-style:italic";
+      span.textContent = "暂无可选项";
+      box.appendChild(span);
+      return;
+    }
     values.forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v; opt.textContent = v;
-      if (state[stateKey].includes(v)) opt.selected = true;
-      sel.appendChild(opt);
+      const isOn = state[stateKey].includes(v);
+      box.appendChild(makePill(v, isOn, () => {
+        if (isOn) {
+          state[stateKey] = state[stateKey].filter(x => x !== v);
+        } else {
+          state[stateKey] = [...state[stateKey], v];
+        }
+        state.page = 1;
+        renderMultiPills(containerId, values, stateKey);
+        loadList();
+      }));
     });
-    sel.onchange = () => {
-      state[stateKey] = [...sel.selectedOptions].map(o => o.value);
-      state.page = 1; loadList();
-    };
+  }
+
+  // ─────────── Card rendering ───────────
+  function splitName(raw) {
+    const s = String(raw || "").trim();
+    // "Name - Subtitle" or "Name – Subtitle" or "Name | Subtitle"
+    const m = s.match(/^(.+?)\s+[-–|]\s+(.+)$/);
+    if (m) return { name: m[1].trim(), subtitle: m[2].trim() };
+    return { name: s, subtitle: "" };
   }
 
   function renderCard(v) {
     const card = document.createElement("article");
     card.className = "vl-card";
-    const chips = [];
-    if (v.accent) chips.push(["accent", v.accent]);
-    if (v.age) chips.push(["age", v.age]);
-    if (v.descriptive) chips.push(["descriptive", v.descriptive]);
-    if (v.use_case) chips.push(["use_case", v.use_case]);
-    const chipsHtml = chips.map(([k, val]) =>
-      `<span class="vl-chip">${escapeHtml(val)}</span>`).join("");
+
+    const { name, subtitle } = splitName(v.name);
+    const gender = (v.gender || "").toLowerCase();
+    const genderLabel = GENDER_LABEL[gender] || (gender || "—");
+    const genderCls = gender === "female" ? "vl-gender-female"
+                    : gender === "male"   ? "vl-gender-male"
+                    : "vl-gender-neutral";
+
+    const tagDefs = [
+      { k: "accent",      cls: "" },
+      { k: "age",         cls: "" },
+      { k: "descriptive", cls: "cyan" },
+      { k: "use_case",    cls: "primary" },
+    ];
+    const tagsHtml = tagDefs
+      .filter(t => v[t.k])
+      .map(t => `<span class="vl-tag ${t.cls}">${escapeHtml(v[t.k])}</span>`)
+      .join("");
+
+    const subtitleHtml = subtitle
+      ? `<p class="vl-desc" style="min-height:0;margin:0;-webkit-line-clamp:1;color:var(--oc-fg-subtle);font-size:11px;">${escapeHtml(subtitle)}</p>`
+      : "";
+
     card.innerHTML = `
-      <div class="vl-card-title">
-        <span>${escapeHtml(v.name)}</span>
-        <span class="vl-chip ${v.gender === "female" ? "is-female" : ""}">${escapeHtml(v.gender || "")}</span>
+      <div class="vl-card-head">
+        <h3 class="vl-card-name" title="${escapeHtml(v.name)}">${escapeHtml(name)}</h3>
+        <span class="vl-gender ${genderCls}">${escapeHtml(genderLabel)}</span>
       </div>
-      <div class="vl-chip-row">${chipsHtml}</div>
-      <div class="vl-desc">${escapeHtml((v.description || "").slice(0, 80))}</div>
-      <button class="vl-play-btn">▶ 试听</button>
+      ${subtitleHtml}
+      <div class="vl-tag-row">${tagsHtml}</div>
+      <p class="vl-desc">${escapeHtml((v.description || "").slice(0, 120))}</p>
+      <div class="vl-card-foot">
+        <button class="vl-play-btn" type="button">
+          <svg class="icon" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+            <polygon points="2,1 11,6 2,11"></polygon>
+          </svg>
+          <span class="vl-play-label">试听</span>
+        </button>
+      </div>
     `;
+
     const playBtn = card.querySelector(".vl-play-btn");
     playBtn.dataset.voice = v.voice_id || "";
     playBtn.dataset.url = v.preview_url || "";
@@ -117,8 +167,18 @@
     return card;
   }
 
-  function escapeHtml(s) {
-    return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  function setPlayVisual(btn, playing) {
+    const label = btn.querySelector(".vl-play-label");
+    const icon  = btn.querySelector(".icon");
+    if (playing) {
+      btn.classList.add("playing");
+      if (label) label.textContent = "停止";
+      if (icon)  icon.innerHTML = '<rect x="2" y="2" width="8" height="8" rx="1"></rect>';
+    } else {
+      btn.classList.remove("playing");
+      if (label) label.textContent = "试听";
+      if (icon)  icon.innerHTML = '<polygon points="2,1 11,6 2,11"></polygon>';
+    }
   }
 
   function togglePlay(btn) {
@@ -127,28 +187,43 @@
     if (!url) return;
     if (playingVoiceId === vid) {
       audio.pause(); audio.src = "";
-      btn.classList.remove("is-playing");
-      btn.textContent = "▶ 试听";
+      setPlayVisual(btn, false);
       playingVoiceId = null;
       return;
     }
-    $all(".vl-play-btn.is-playing").forEach(b => {
-      b.classList.remove("is-playing");
-      b.textContent = "▶ 试听";
-    });
-    audio.src = url; audio.play();
-    btn.classList.add("is-playing"); btn.textContent = "■ 停止";
+    $all(".vl-play-btn.playing").forEach(b => setPlayVisual(b, false));
+    audio.src = url;
+    audio.play().catch(() => {});
+    setPlayVisual(btn, true);
     playingVoiceId = vid;
   }
 
+  audio.addEventListener("ended", () => {
+    $all(".vl-play-btn.playing").forEach(b => setPlayVisual(b, false));
+    playingVoiceId = null;
+  });
+
+  // ─────────── List ───────────
   async function loadList() {
+    if (!state.language) return;
     const data = await fetchJSON(buildListUrl());
     const grid = $("#vl-grid"); grid.innerHTML = "";
-    $("#vl-empty").hidden = data.total > 0;
-    if (data.total === 0) $("#vl-empty").textContent = "没有匹配当前筛选的音色";
+    const empty = $("#vl-empty");
+    $("#vl-count").innerHTML = `共 <strong>${data.total}</strong> 条音色`;
+
+    if (data.total === 0) {
+      empty.hidden = false;
+      $("#vl-empty-title").textContent = "没有匹配的音色";
+      $("#vl-empty-desc").textContent = "换一组筛选条件，或重置后再试。";
+      $("#vl-page-info").textContent = "—";
+      $("#vl-prev").disabled = true;
+      $("#vl-next").disabled = true;
+      return;
+    }
+    empty.hidden = true;
     data.items.forEach(v => grid.appendChild(renderCard(v)));
     const pages = Math.max(1, Math.ceil(data.total / data.page_size));
-    $("#vl-page-info").textContent = `第 ${data.page} / ${pages} 页（共 ${data.total}）`;
+    $("#vl-page-info").textContent = `第 ${data.page} / ${pages} 页`;
     $("#vl-prev").disabled = data.page <= 1;
     $("#vl-next").disabled = data.page >= pages;
   }
@@ -158,37 +233,33 @@
     const opts = await fetchJSON("/voice-library/api/filters?language=" + encodeURIComponent(state.language));
     renderLangPills(opts.languages);
     renderGenderPills();
-    renderMultiSelect("vl-use-case", opts.use_cases, "use_case");
-    renderMultiSelect("vl-accent", opts.accents, "accent");
-    renderMultiSelect("vl-age", opts.ages, "age");
-    renderMultiSelect("vl-descriptive", opts.descriptives, "descriptive");
+    renderMultiPills("vl-use-case",    opts.use_cases,    "use_case");
+    renderMultiPills("vl-accent",      opts.accents,      "accent");
+    renderMultiPills("vl-age",         opts.ages,         "age");
+    renderMultiPills("vl-descriptive", opts.descriptives, "descriptive");
     await loadList();
   }
 
+  // ─────────── Match tab ───────────
   const match = { language: "", gender: "", taskId: null, pollTimer: null };
 
   function renderMatchLangs(langs) {
     const box = $("#vl-match-languages");
     box.innerHTML = "";
     langs.forEach(l => {
-      const b = document.createElement("button");
-      b.className = "vl-pill"; b.textContent = l.name_zh;
-      if (l.code === match.language) b.classList.add("is-active");
-      b.addEventListener("click", () => {
+      box.appendChild(makePill(l.name_zh, l.code === match.language, () => {
         match.language = l.code; renderMatchLangs(langs);
-      });
-      box.appendChild(b);
+      }));
     });
   }
 
   function renderMatchGender() {
-    const box = $("#vl-match-gender"); box.innerHTML = "";
+    const box = $("#vl-match-gender");
+    box.innerHTML = "";
     [["male", "男"], ["female", "女"]].forEach(([v, t]) => {
-      const b = document.createElement("button");
-      b.className = "vl-pill"; b.textContent = t;
-      if (v === match.gender) b.classList.add("is-active");
-      b.addEventListener("click", () => { match.gender = v; renderMatchGender(); });
-      box.appendChild(b);
+      box.appendChild(makePill(t, v === match.gender, () => {
+        match.gender = v; renderMatchGender();
+      }));
     });
   }
 
@@ -248,7 +319,7 @@
       const tag = document.createElement("span");
       tag.className = "vl-similarity";
       tag.textContent = `相似度 ${(v.similarity * 100).toFixed(1)}%`;
-      card.querySelector(".vl-card-title").appendChild(tag);
+      card.querySelector(".vl-card-foot").prepend(tag);
       grid.appendChild(card);
     });
   }
@@ -281,9 +352,11 @@
       if (e.target.files.length) startMatch(e.target.files[0]);
     });
     const zone = $("#vl-upload-zone");
-    zone.addEventListener("dragover", e => { e.preventDefault(); });
+    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
     zone.addEventListener("drop", e => {
       e.preventDefault();
+      zone.classList.remove("dragover");
       if (e.dataTransfer.files.length) startMatch(e.dataTransfer.files[0]);
     });
     $("#vl-match-reset").addEventListener("click", () => {
@@ -298,21 +371,25 @@
   async function bootstrap() {
     const opts = await fetchJSON("/voice-library/api/filters");
     if (!opts.languages.length) {
-      $("#vl-empty").hidden = false;
-      $("#vl-empty").textContent = "系统尚未配置任何启用的小语种";
+      const empty = $("#vl-empty");
+      empty.hidden = false;
+      $("#vl-empty-title").textContent = "尚未配置启用的小语种";
+      $("#vl-empty-desc").textContent = "请让管理员在后台启用至少一个小语种，再回到这里浏览音色。";
+      $("#vl-count").textContent = "—";
       return;
     }
     state.language = opts.languages[0].code;
     await refreshFiltersAndList();
     renderMatchLangs(opts.languages);
     renderMatchGender();
-    if (opts.languages.length) match.language = opts.languages[0].code;
+    match.language = opts.languages[0].code;
   }
 
   function bindEvents() {
-    $all(".oc-tab").forEach(a => a.addEventListener("click", () => {
-      history.replaceState(null, "", a.getAttribute("href"));
-      syncTabFromHash();
+    $all(".oc-tab").forEach(btn => btn.addEventListener("click", () => {
+      const name = btn.dataset.tab;
+      history.replaceState(null, "", "#" + name);
+      setActiveTab(name);
     }));
     window.addEventListener("hashchange", syncTabFromHash);
     $("#vl-prev").addEventListener("click", () => { state.page--; loadList(); });
@@ -321,6 +398,7 @@
       state.gender = ""; state.q = "";
       state.use_case = []; state.accent = []; state.age = []; state.descriptive = [];
       state.page = 1;
+      $("#vl-q").value = "";
       refreshFiltersAndList();
     });
     const qInput = $("#vl-q");
