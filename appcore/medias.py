@@ -189,7 +189,8 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
 def update_product(product_id: int, **fields) -> int:
     allowed = {"name", "color_people", "source", "archived",
                "importance", "trend_score", "selling_points",
-               "product_code", "cover_object_key"}
+               "product_code", "cover_object_key",
+               "ad_supported_langs"}
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
@@ -202,6 +203,13 @@ def soft_delete_product(product_id: int) -> int:
     execute("UPDATE media_items SET deleted_at=NOW() WHERE product_id=%s AND deleted_at IS NULL",
             (product_id,))
     return execute("UPDATE media_products SET deleted_at=NOW() WHERE id=%s", (product_id,))
+
+
+def parse_ad_supported_langs(value: str | None) -> list[str]:
+    """将 'de,fr,ja' 类逗号字符串规范化为 ['de','fr','ja']。空串 / None 返回 []。"""
+    if not value:
+        return []
+    return [p.strip().lower() for p in value.split(",") if p.strip()]
 
 
 # ---------- 文案 ----------

@@ -119,3 +119,20 @@ def test_get_product_by_code(user_id):
         assert medias.get_product_by_code("nope-xxxx") is None
     finally:
         _hard_delete_by_code(code)
+
+
+def test_update_product_ad_supported_langs(user_id):
+    pid = medias.create_product(user_id, "适配语种测试")
+    try:
+        medias.update_product(pid, ad_supported_langs="de,fr,ja")
+        p = medias.get_product(pid)
+        assert p["ad_supported_langs"] == "de,fr,ja"
+    finally:
+        medias.soft_delete_product(pid)
+
+
+def test_parse_ad_supported_langs():
+    assert medias.parse_ad_supported_langs(None) == []
+    assert medias.parse_ad_supported_langs("") == []
+    assert medias.parse_ad_supported_langs("de,fr, ja") == ["de", "fr", "ja"]
+    assert medias.parse_ad_supported_langs(" DE , FR ") == ["de", "fr"]
