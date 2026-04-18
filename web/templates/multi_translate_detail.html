@@ -19,6 +19,9 @@
     color: oklch(22% 0.02 235); border-radius: 6px; font-size: 12px;
     font-weight: 600; margin-left: 8px;
   }
+  /* 多语种视频翻译：隐藏 _task_workbench.html 里老的 voicePanel（仅 2 个默认音色），
+     由新的 _voice_selector_multi.html 全库选择器取代 */
+  #voicePanel { display: none !important; }
 </style>
 {% endblock %}
 {% block content %}
@@ -39,8 +42,9 @@
   🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
 </p>
 {% endif %}
-{% include "_task_workbench.html" %}
+{# 新音色选择器放到工作台前面，用户一进来就能看到 #}
 {% include "_voice_selector_multi.html" %}
+{% include "_task_workbench.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}
