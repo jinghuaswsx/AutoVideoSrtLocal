@@ -231,3 +231,304 @@ def test_put_profile_rejects_bad_product_id(client):
         "params": {"subtitle_size": 20},
     })
     assert resp.status_code == 400
+
+
+# ============================================================
+# Phase 5 — 父任务生命周期 API
+# ============================================================
+
+@pytest.fixture
+def phase5_client(client, monkeypatch):
+    """在 client 上追加 stub: create/start/pause/resume/cancel/retry_item/
+    retry_failed_items 等 runtime 函数 + run_scheduler spawn,都 patch 成记录器。"""
+    spawn_log = []
+    action_log = []
+
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.eventlet.spawn",
+        lambda fn, *a, **k: spawn_log.append((fn.__name__, a, k)),
+    )
+    client._spawn_log = spawn_log
+    client._action_log = action_log
+    return client
+
+
+def _install_fake_task(monkeypatch, *, task_id="bt_xxx", status="planning",
+                        user_id=1, state=None):
+    """返回一个 get_task 桩,给 _load_and_check_ownership 用。"""
+    task = {
+        "id": task_id,
+        "user_id": user_id,
+        "status": status,
+        "state": state or {"plan": [], "progress": {"total": 0}},
+        "created_at": None,
+        "updated_at": None,
+    }
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.get_task",
+        lambda tid: task if tid == task_id else None,
+    )
+    return task
+
+
+# ----- create -----
+
+def test_create_endpoint_returns_task_id(phase5_client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.create_bulk_translate_task",
+        lambda **kw: "bt_new_xxx",
+    )
+    resp = phase5_client.post("/api/bulk-translate/create", json={
+        "product_id": 77,
+        "target_langs": ["de"],
+        "content_types": ["copy"],
+    })
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["task_id"] == "bt_new_xxx"
+    assert data["status"] == "planning"
+
+
+def test_create_endpoint_validation(phase5_client):
+    """缺 product_id / target_langs / content_types 都应该 400。"""
+    resp = phase5_client.post("/api/bulk-translate/create", json={
+        "target_langs": ["de"], "content_types": ["copy"],
+    })
+    assert resp.status_code == 400
+    resp = phase5_client.post("/api/bulk-translate/create", json={
+        "product_id": 77, "content_types": ["copy"],
+    })
+    assert resp.status_code == 400
+    resp = phase5_client.post("/api/bulk-translate/create", json={
+        "product_id": 77, "target_langs": ["de"],
+    })
+    assert resp.status_code == 400
+
+
+def test_create_captures_initiator_info(phase5_client, monkeypatch):
+    """initiator 包含 user_id/user_name/ip/user_agent。"""
+    captured = {}
+
+    def fake_create(**kw):
+        captured.update(kw)
+        return "bt_xxx"
+
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.create_bulk_translate_task", fake_create,
+    )
+    resp = phase5_client.post(
+        "/api/bulk-translate/create",
+        json={"product_id": 77, "target_langs": ["de"],
+              "content_types": ["copy"]},
+        headers={"User-Agent": "pytest-UA"},
+    )
+    assert resp.status_code == 201
+    assert captured["user_id"] == 1
+    assert captured["initiator"]["user_id"] == 1
+    assert captured["initiator"]["user_agent"] == "pytest-UA"
+
+
+# ----- start -----
+
+def test_start_endpoint_spawns_scheduler(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="planning")
+    monkeypatch.setattr("web.routes.bulk_translate.start_task",
+                         lambda *a, **k: None)
+
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/start")
+    assert resp.status_code == 202
+    # eventlet.spawn 被调用,调度 _spawn_scheduler
+    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+
+
+def test_start_not_found(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, task_id="other_id")
+    resp = phase5_client.post("/api/bulk-translate/nonexistent/start")
+    assert resp.status_code == 404
+
+
+def test_start_forbidden_other_user(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, user_id=2)   # 不是当前用户
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/start")
+    assert resp.status_code == 403
+
+
+def test_start_already_running_value_error(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch)
+
+    def fake_start(*a, **k):
+        raise ValueError("Cannot start running task")
+
+    monkeypatch.setattr("web.routes.bulk_translate.start_task", fake_start)
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/start")
+    assert resp.status_code == 400
+    assert "Cannot start" in resp.get_json()["error"]
+
+
+# ----- get / list -----
+
+def test_get_endpoint_returns_state(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="running",
+                        state={"plan": [{"idx": 0}],
+                               "progress": {"total": 1, "done": 0}})
+    resp = phase5_client.get("/api/bulk-translate/bt_xxx")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["id"] == "bt_xxx"
+    assert data["status"] == "running"
+    assert data["state"]["progress"]["total"] == 1
+
+
+def test_list_endpoint_filters_by_user(phase5_client, monkeypatch):
+    """list 只返回当前用户的 bulk_translate 任务。"""
+    import json as _j
+
+    captured_args = {}
+
+    def fake_query(sql, args=None):
+        captured_args["sql"] = sql
+        captured_args["args"] = args
+        return [{
+            "id": "t1", "status": "running",
+            "state_json": _j.dumps({
+                "product_id": 77, "target_langs": ["de"],
+                "content_types": ["copy"],
+                "progress": {"total": 3, "done": 1},
+                "cost_tracking": {
+                    "estimate": {"estimated_cost_cny": 5.5},
+                    "actual": {"actual_cost_cny": 2.1},
+                },
+                "initiator": {"user_name": "t"},
+            }),
+            "created_at": None, "updated_at": None,
+        }]
+
+    monkeypatch.setattr("web.routes.bulk_translate.query", fake_query)
+
+    resp = phase5_client.get("/api/bulk-translate/list")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data) == 1
+    assert data[0]["id"] == "t1"
+    assert data[0]["progress"]["total"] == 3
+    assert data[0]["cost_estimate"] == 5.5
+    # SQL 里有 user_id 过滤
+    assert "user_id" in captured_args["sql"]
+    assert captured_args["args"][0] == 1
+
+
+def test_list_endpoint_status_filter(phase5_client, monkeypatch):
+    captured_args = {}
+
+    def fake_query(sql, args=None):
+        captured_args["args"] = args
+        return []
+
+    monkeypatch.setattr("web.routes.bulk_translate.query", fake_query)
+    phase5_client.get("/api/bulk-translate/list?status=error")
+    assert captured_args["args"] == (1, "error")
+
+
+# ----- pause / cancel -----
+
+def test_pause_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="running")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.pause_task",
+        lambda tid, user_id: called.append((tid, user_id)),
+    )
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/pause")
+    assert resp.status_code == 200
+    assert called == [("bt_xxx", 1)]
+
+
+def test_cancel_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch)
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.cancel_task",
+        lambda tid, user_id: called.append((tid, user_id)),
+    )
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/cancel")
+    assert resp.status_code == 200
+    assert called == [("bt_xxx", 1)]
+
+
+# ----- resume -----
+
+def test_resume_endpoint_spawns_scheduler(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    monkeypatch.setattr("web.routes.bulk_translate.resume_task",
+                         lambda *a, **k: None)
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/resume")
+    assert resp.status_code == 202
+    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+
+
+# ----- retry-item / retry-failed -----
+
+def test_retry_item_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.retry_item",
+        lambda task_id, idx, user_id: called.append((task_id, idx, user_id)),
+    )
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/retry-item",
+                               json={"idx": 2})
+    assert resp.status_code == 202
+    assert called == [("bt_xxx", 2, 1)]
+    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+
+
+def test_retry_item_requires_idx(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/retry-item", json={})
+    assert resp.status_code == 400
+
+
+def test_retry_failed_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.retry_failed_items",
+        lambda tid, user_id: called.append((tid, user_id)),
+    )
+    resp = phase5_client.post("/api/bulk-translate/bt_xxx/retry-failed")
+    assert resp.status_code == 202
+    assert called == [("bt_xxx", 1)]
+    assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
+
+
+# ----- audit -----
+
+def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
+    events = [
+        {"ts": "2026-04-18T10:00:00Z", "user_id": 1, "action": "create"},
+        {"ts": "2026-04-18T11:00:00Z", "user_id": 1, "action": "start"},
+    ]
+    _install_fake_task(monkeypatch,
+                        state={"audit_events": events, "plan": [], "progress": {}})
+    resp = phase5_client.get("/api/bulk-translate/bt_xxx/audit")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data) == 2
+    assert data[0]["action"] == "create"
+
+
+# ----- ownership 一致性测试(抽检) -----
+
+@pytest.mark.parametrize("path,method", [
+    ("/api/bulk-translate/bt_xxx/start", "post"),
+    ("/api/bulk-translate/bt_xxx/pause", "post"),
+    ("/api/bulk-translate/bt_xxx/resume", "post"),
+    ("/api/bulk-translate/bt_xxx/cancel", "post"),
+    ("/api/bulk-translate/bt_xxx/retry-failed", "post"),
+    ("/api/bulk-translate/bt_xxx", "get"),
+    ("/api/bulk-translate/bt_xxx/audit", "get"),
+])
+def test_endpoints_enforce_ownership(phase5_client, monkeypatch, path, method):
+    _install_fake_task(monkeypatch, user_id=999)  # 不同用户
+    resp = getattr(phase5_client, method)(path, json={"idx": 0})
+    assert resp.status_code == 403

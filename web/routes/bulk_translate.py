@@ -15,10 +15,24 @@ Phase 5 会追加:
 """
 from __future__ import annotations
 
+import eventlet
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore.bulk_translate_estimator import estimate as do_estimate
+from appcore.bulk_translate_runtime import (
+    cancel_task,
+    create_bulk_translate_task,
+    get_task,
+    pause_task,
+    resume_task,
+    retry_failed_items,
+    retry_item,
+    run_scheduler,
+    start_task,
+)
+from appcore.db import query
+from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
 from appcore.video_translate_defaults import (
     SYSTEM_DEFAULTS,
     load_effective_params,
@@ -128,3 +142,255 @@ def put_profile():
 
     save_profile(current_user.id, product_id, lang, params)
     return jsonify({"ok": True}), 200
+
+
+# ============================================================
+# Phase 5:父任务生命周期 API
+# ============================================================
+
+def _subscribe_socketio(bus: EventBus, socketio) -> None:
+    """把父任务 bus 事件桥到 socketio.emit,按 task_id 分房间。"""
+    def handler(event: Event) -> None:
+        if event.type not in (EVT_BT_PROGRESS, EVT_BT_DONE):
+            return
+        try:
+            socketio.emit(
+                event.type,
+                {"task_id": event.task_id, **event.payload},
+                room=event.task_id,
+            )
+        except Exception:
+            pass
+    bus.subscribe(handler)
+
+
+def _spawn_scheduler(task_id: str) -> None:
+    """在 eventlet 绿色线程跑父任务调度循环。铁律:所有调度必须经过这里,
+    绝不在进程启动或定时器里触发。"""
+    from web.extensions import socketio
+    bus = EventBus()
+    _subscribe_socketio(bus, socketio)
+    try:
+        run_scheduler(task_id, bus=bus)
+    except Exception:
+        # 父任务出错状态由 runtime 内部已写;吞异常避免 greenthread 刷屏。
+        pass
+
+
+def _load_and_check_ownership(task_id: str):
+    """加载父任务并做 owner 校验。返回 task dict 或 Flask Response。"""
+    task = get_task(task_id)
+    if not task:
+        return None, (jsonify({"error": "Task not found"}), 404)
+    if task["user_id"] != current_user.id:
+        return None, (jsonify({"error": "Forbidden"}), 403)
+    return task, None
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/create  — planning 态,尚未启动
+# ------------------------------------------------------------
+@bp.post("/create")
+@login_required
+def create_endpoint():
+    payload = request.get_json(force=True, silent=True) or {}
+    product_id = payload.get("product_id")
+    target_langs = payload.get("target_langs") or []
+    content_types = payload.get("content_types") or []
+    force = bool(payload.get("force_retranslate", False))
+    video_params = payload.get("video_params") or {}
+
+    if not isinstance(product_id, int):
+        return jsonify({"error": "product_id 必填且为 int"}), 400
+    if not target_langs or not isinstance(target_langs, list):
+        return jsonify({"error": "target_langs 必填且为非空数组"}), 400
+    if not content_types or not isinstance(content_types, list):
+        return jsonify({"error": "content_types 必填且为非空数组"}), 400
+
+    initiator = {
+        "user_id": current_user.id,
+        "user_name": getattr(current_user, "username", "") or "",
+        "ip": request.remote_addr or "",
+        "user_agent": request.headers.get("User-Agent", "") or "",
+    }
+    task_id = create_bulk_translate_task(
+        user_id=current_user.id, product_id=product_id,
+        target_langs=target_langs, content_types=content_types,
+        force_retranslate=force, video_params=video_params,
+        initiator=initiator,
+    )
+    return jsonify({"task_id": task_id, "status": "planning"}), 201
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/start  — planning → running + spawn 调度器
+# ------------------------------------------------------------
+@bp.post("/<task_id>/start")
+@login_required
+def start_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    try:
+        start_task(task_id, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    eventlet.spawn(_spawn_scheduler, task_id)
+    return jsonify({"ok": True}), 202
+
+
+# ------------------------------------------------------------
+# GET /api/bulk-translate/<id>  — 详情
+# ------------------------------------------------------------
+@bp.get("/<task_id>")
+@login_required
+def get_endpoint(task_id):
+    task, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    return jsonify({
+        "id": task["id"],
+        "status": task["status"],
+        "user_id": task["user_id"],
+        "state": task["state"],
+        "created_at": task["created_at"].isoformat() if task["created_at"] else None,
+        "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None,
+    }), 200
+
+
+# ------------------------------------------------------------
+# GET /api/bulk-translate/list  — 当前用户的任务列表(支持 status 筛选)
+# ------------------------------------------------------------
+@bp.get("/list")
+@login_required
+def list_endpoint():
+    status = request.args.get("status")
+    where = "user_id = %s AND type = 'bulk_translate'"
+    args: list = [current_user.id]
+    if status:
+        where += " AND status = %s"
+        args.append(status)
+
+    rows = query(
+        f"SELECT id, status, state_json, created_at, updated_at "
+        f"FROM projects WHERE {where} ORDER BY created_at DESC LIMIT 200",
+        tuple(args),
+    )
+
+    result = []
+    for r in rows:
+        import json as _j
+        raw = r["state_json"]
+        state = raw if isinstance(raw, dict) else _j.loads(raw or "{}")
+        result.append({
+            "id": r["id"],
+            "status": r["status"],
+            "product_id": state.get("product_id"),
+            "target_langs": state.get("target_langs"),
+            "content_types": state.get("content_types"),
+            "progress": state.get("progress"),
+            "cost_estimate": state.get("cost_tracking", {}).get("estimate", {}).get("estimated_cost_cny"),
+            "cost_actual": state.get("cost_tracking", {}).get("actual", {}).get("actual_cost_cny"),
+            "initiator": state.get("initiator"),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        })
+    return jsonify(result), 200
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/pause
+# ------------------------------------------------------------
+@bp.post("/<task_id>/pause")
+@login_required
+def pause_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    try:
+        pause_task(task_id, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True}), 200
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/resume  — 对账 + 继续调度
+# ------------------------------------------------------------
+@bp.post("/<task_id>/resume")
+@login_required
+def resume_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    try:
+        resume_task(task_id, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    eventlet.spawn(_spawn_scheduler, task_id)
+    return jsonify({"ok": True}), 202
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/cancel
+# ------------------------------------------------------------
+@bp.post("/<task_id>/cancel")
+@login_required
+def cancel_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    try:
+        cancel_task(task_id, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True}), 200
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/retry-item
+# ------------------------------------------------------------
+@bp.post("/<task_id>/retry-item")
+@login_required
+def retry_item_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    idx = payload.get("idx")
+    if not isinstance(idx, int):
+        return jsonify({"error": "idx 必填且为 int"}), 400
+    try:
+        retry_item(task_id, idx=idx, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    eventlet.spawn(_spawn_scheduler, task_id)
+    return jsonify({"ok": True}), 202
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/retry-failed
+# ------------------------------------------------------------
+@bp.post("/<task_id>/retry-failed")
+@login_required
+def retry_failed_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    try:
+        retry_failed_items(task_id, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    eventlet.spawn(_spawn_scheduler, task_id)
+    return jsonify({"ok": True}), 202
+
+
+# ------------------------------------------------------------
+# GET /api/bulk-translate/<id>/audit  — audit_events 时间线
+# ------------------------------------------------------------
+@bp.get("/<task_id>/audit")
+@login_required
+def audit_endpoint(task_id):
+    task, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    return jsonify(task["state"].get("audit_events", [])), 200
