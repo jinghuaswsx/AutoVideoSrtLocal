@@ -251,3 +251,303 @@ def test_compute_progress_mixed_statuses():
         "total": 6, "done": 2, "running": 1,
         "failed": 1, "skipped": 1, "pending": 1,
     }
+
+
+# ============================================================
+# Task 17-18-19:run_scheduler 调度器行为
+# ============================================================
+
+def _prepare_running_task(fake_db, monkeypatch, plan, force=False):
+    """准备一个已经处于 running 状态的父任务,plan 自定义。"""
+    from appcore import bulk_translate_runtime as mod
+    monkeypatch.setattr(mod, "generate_plan", lambda *a, **kw: plan)
+
+    tid = mod.create_bulk_translate_task(
+        user_id=1, product_id=77, target_langs=["de"],
+        content_types=["copy"], force_retranslate=force,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    mod.start_task(tid, user_id=1)
+    return tid
+
+
+def _mk_pending(idx, kind="copy", lang="de", ref=None):
+    return {
+        "idx": idx, "kind": kind, "lang": lang,
+        "ref": ref or {"source_copy_id": 100 + idx},
+        "sub_task_id": None, "status": "pending",
+        "error": None, "started_at": None, "finished_at": None,
+    }
+
+
+def test_scheduler_runs_all_items_serially(fake_db, monkeypatch):
+    """3 项全部成功 → 父任务 done。dispatch 被调 3 次,顺序 0-1-2。"""
+    plan = [_mk_pending(0), _mk_pending(1), _mk_pending(2)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    call_order = []
+    from appcore import bulk_translate_runtime as mod
+
+    def fake_dispatch(parent_id, item, parent_state, bus=None):
+        call_order.append(item["idx"])
+        return mod.SubTaskResult(
+            sub_task_id=f"sub_{item['idx']}", status="done",
+            tokens_used=10,
+        )
+
+    monkeypatch.setattr(mod, "_dispatch_sub_task", fake_dispatch)
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert final["status"] == "done"
+    assert call_order == [0, 1, 2]
+    for p in final["state"]["plan"]:
+        assert p["status"] == "done"
+    # cost 累加:3 × 10 tokens = 30 tokens
+    assert final["state"]["cost_tracking"]["actual"]["copy_tokens_used"] == 30
+
+
+def test_scheduler_stops_on_first_failure(fake_db, monkeypatch):
+    """第 2 项失败 → 父任务 error,第 3 项仍 pending,调度器退出。"""
+    plan = [_mk_pending(0), _mk_pending(1), _mk_pending(2)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    from appcore import bulk_translate_runtime as mod
+    calls = []
+
+    def fake_dispatch(parent_id, item, parent_state, bus=None):
+        calls.append(item["idx"])
+        if item["idx"] == 1:
+            return mod.SubTaskResult(
+                sub_task_id="sub_1", status="error",
+                error="LLM timeout",
+            )
+        return mod.SubTaskResult(
+            sub_task_id=f"sub_{item['idx']}", status="done",
+            tokens_used=10,
+        )
+
+    monkeypatch.setattr(mod, "_dispatch_sub_task", fake_dispatch)
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert final["status"] == "error"
+    assert calls == [0, 1]        # 第 3 项未派发
+    assert final["state"]["plan"][0]["status"] == "done"
+    assert final["state"]["plan"][1]["status"] == "error"
+    assert final["state"]["plan"][1]["error"] == "LLM timeout"
+    assert final["state"]["plan"][2]["status"] == "pending"  # 铁律 2
+
+
+def test_scheduler_skips_video_non_de_fr(fake_db, monkeypatch):
+    """视频 × es/it 语种 → 自动 skipped,不调 dispatch。"""
+    plan = [
+        {**_mk_pending(0, kind="video", lang="es"),
+         "ref": {"source_item_id": 1}},
+        {**_mk_pending(1, kind="video", lang="de"),
+         "ref": {"source_item_id": 1}},
+    ]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    from appcore import bulk_translate_runtime as mod
+    calls = []
+
+    def fake_dispatch(parent_id, item, parent_state, bus=None):
+        calls.append(item["idx"])
+        return mod.SubTaskResult(
+            sub_task_id="sub_x", status="done",
+            video_minutes=1.5,
+        )
+
+    monkeypatch.setattr(mod, "_dispatch_sub_task", fake_dispatch)
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert final["status"] == "done"
+    assert calls == [1]   # 只派发了 de,es 被 skipped
+    assert final["state"]["plan"][0]["status"] == "skipped"
+    assert final["state"]["plan"][0]["error"] == "video_lang_not_supported"
+    assert final["state"]["plan"][1]["status"] == "done"
+    # skipped 不计 cost,done 的 1.5 分钟计入
+    assert final["state"]["cost_tracking"]["actual"]["video_minutes_processed"] == 1.5
+
+
+def test_scheduler_skips_existing_when_not_force(fake_db, monkeypatch):
+    """已存在译本且 force=False → skipped。"""
+    plan = [_mk_pending(0), _mk_pending(1)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan, force=False)
+
+    from appcore import bulk_translate_runtime as mod
+    calls = []
+
+    def fake_dispatch(parent_id, item, parent_state, bus=None):
+        calls.append(item["idx"])
+        return mod.SubTaskResult(sub_task_id="sub_x", status="done",
+                                    tokens_used=5)
+
+    # 第一项已存在
+    monkeypatch.setattr(mod, "_dispatch_sub_task", fake_dispatch)
+    monkeypatch.setattr(
+        mod, "_translation_exists_for_item",
+        lambda item: item["idx"] == 0,
+    )
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert final["state"]["plan"][0]["status"] == "skipped"
+    assert final["state"]["plan"][0]["error"] == "already_exists"
+    assert final["state"]["plan"][1]["status"] == "done"
+    assert calls == [1]
+
+
+def test_scheduler_force_ignores_existing(fake_db, monkeypatch):
+    """force=True 时即使存在也重翻。"""
+    plan = [_mk_pending(0)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan, force=True)
+
+    from appcore import bulk_translate_runtime as mod
+    calls = []
+
+    def fake_dispatch(parent_id, item, parent_state, bus=None):
+        calls.append(item["idx"])
+        return mod.SubTaskResult(sub_task_id="x", status="done",
+                                    tokens_used=5)
+
+    monkeypatch.setattr(mod, "_dispatch_sub_task", fake_dispatch)
+    # 模拟译本已存在
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: True)
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert calls == [0]   # force=True 仍派发
+    assert final["state"]["plan"][0]["status"] == "done"
+
+
+def test_scheduler_cancel_exits(fake_db, monkeypatch):
+    """cancel_requested=True 时,下次循环开始就转 cancelled。"""
+    plan = [_mk_pending(0), _mk_pending(1)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    # 直接改 state 模拟取消
+    from appcore import bulk_translate_runtime as mod
+    task = mod.get_task(tid)
+    task["state"]["cancel_requested"] = True
+    import json as _j
+    fake_db.rows[tid]["state_json"] = _j.dumps(task["state"])
+
+    monkeypatch.setattr(mod, "_dispatch_sub_task",
+                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("应不调")))
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid)
+
+    final = mod.get_task(tid)
+    assert final["status"] == "cancelled"
+
+
+def test_scheduler_emits_events_when_bus_provided(fake_db, monkeypatch):
+    """bus 提供时,每步至少发一条事件。"""
+    plan = [_mk_pending(0)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    from appcore.events import EventBus, EVT_BT_DONE, EVT_BT_PROGRESS
+    from appcore import bulk_translate_runtime as mod
+
+    events = []
+    bus = EventBus()
+    bus.subscribe(lambda e: events.append(e))
+
+    monkeypatch.setattr(
+        mod, "_dispatch_sub_task",
+        lambda *a, **kw: mod.SubTaskResult(
+            sub_task_id="x", status="done", tokens_used=3,
+        ),
+    )
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid, bus=bus)
+
+    types = [e.type for e in events]
+    assert EVT_BT_PROGRESS in types
+    assert EVT_BT_DONE in types
+    # done event payload
+    done_evt = next(e for e in events if e.type == EVT_BT_DONE)
+    assert done_evt.task_id == tid
+    assert done_evt.payload["status"] == "done"
+    assert done_evt.payload["progress"]["done"] == 1
+
+
+def test_scheduler_bus_none_does_not_crash(fake_db, monkeypatch):
+    """bus=None 时调度器不发事件且不崩溃。"""
+    plan = [_mk_pending(0)]
+    tid = _prepare_running_task(fake_db, monkeypatch, plan)
+
+    from appcore import bulk_translate_runtime as mod
+    monkeypatch.setattr(
+        mod, "_dispatch_sub_task",
+        lambda *a, **kw: mod.SubTaskResult(
+            sub_task_id="x", status="done", tokens_used=1,
+        ),
+    )
+    monkeypatch.setattr(mod, "_translation_exists_for_item", lambda item: False)
+
+    mod.run_scheduler(tid, bus=None)
+
+    final = mod.get_task(tid)
+    assert final["status"] == "done"
+
+
+# ============================================================
+# _translation_exists_for_item 每种 kind 的行为
+# ============================================================
+
+def test_translation_exists_for_copy(monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["args"] = args
+        return {"x": 1} if "media_copywritings" in sql else None
+
+    monkeypatch.setattr(mod, "query_one", fake_query_one)
+
+    item = {"kind": "copy", "lang": "de",
+            "ref": {"source_copy_id": 123}}
+    assert mod._translation_exists_for_item(item) is True
+    assert captured["args"] == (123, "de")
+
+
+def test_translation_exists_for_detail_any_match(monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+    seen = []
+
+    def fake_query_one(sql, args):
+        seen.append(args)
+        # 只有第 2 个 id 返回命中
+        return {"x": 1} if args[0] == 102 else None
+
+    monkeypatch.setattr(mod, "query_one", fake_query_one)
+
+    item = {"kind": "detail", "lang": "de",
+            "ref": {"source_detail_ids": [101, 102, 103]}}
+    assert mod._translation_exists_for_item(item) is True
+    # 找到 102 就短路,不必查 103
+    assert [a[0] for a in seen] == [101, 102]
+
+
+def test_translation_exists_for_video(monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+    monkeypatch.setattr(mod, "query_one", lambda sql, args: None)
+
+    item = {"kind": "video", "lang": "de",
+            "ref": {"source_item_id": 7}}
+    assert mod._translation_exists_for_item(item) is False
