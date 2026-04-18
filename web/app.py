@@ -46,6 +46,7 @@ from web.routes.copywriting import bp as copywriting_bp
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.multi_translate import bp as multi_translate_bp
+from web.routes.admin_prompts import bp as admin_prompts_bp
 from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
@@ -188,6 +189,7 @@ def create_app() -> Flask:
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
     app.register_blueprint(multi_translate_bp)
+    app.register_blueprint(admin_prompts_bp)
     app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
