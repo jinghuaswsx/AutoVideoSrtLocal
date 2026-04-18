@@ -21,15 +21,39 @@ def _accept_language(code: str) -> str:
     return mapping.get(code, f"{code};q=0.9,en;q=0.8")
 
 
-def _normalize_image_url(raw_url: str, base_url: str) -> str:
+def _absolute_image_url(raw_url: str, base_url: str) -> str:
     absolute = urljoin(base_url, raw_url)
     parsed = urlparse(absolute)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+
+
+def _image_dedupe_key(image_url: str) -> str:
+    parsed = urlparse(image_url)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
 
 def _page_lang(soup: BeautifulSoup) -> str:
     html = soup.find("html")
     return (html.get("lang") or "").strip().lower() if html else ""
+
+
+def _locale_prefix(value: str) -> str:
+    return value.strip().lower().split("-", 1)[0]
+
+
+def _resolved_url_matches_locale(url: str, target_language: str) -> bool:
+    normalized_target = _locale_prefix(target_language)
+    segments = [segment.lower() for segment in urlparse(url).path.split("/") if segment]
+    return normalized_target in {_locale_prefix(segment) for segment in segments}
+
+
+def _is_locale_locked(*, resolved_url: str, page_language: str, target_language: str) -> bool:
+    normalized_target = _locale_prefix(target_language)
+    page_language = page_language.strip().lower()
+    page_matches = bool(page_language) and _locale_prefix(page_language) == normalized_target
+    if page_language and not page_matches:
+        return False
+    return page_matches or _resolved_url_matches_locale(resolved_url, normalized_target)
 
 
 def _raise_for_status(response) -> None:
@@ -78,22 +102,24 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             src = _image_source(node)
             if not src:
                 continue
-            normalized = _normalize_image_url(src, base_url)
-            if normalized in seen:
+            absolute = _absolute_image_url(src, base_url)
+            dedupe_key = _image_dedupe_key(absolute)
+            if dedupe_key in seen:
                 continue
-            seen.add(normalized)
-            items.append({"kind": "carousel", "source_url": normalized})
+            seen.add(dedupe_key)
+            items.append({"kind": "carousel", "source_url": absolute})
 
     for selector in detail_selectors:
         for node in soup.select(selector):
             src = _image_source(node)
             if not src:
                 continue
-            normalized = _normalize_image_url(src, base_url)
-            if normalized in seen:
+            absolute = _absolute_image_url(src, base_url)
+            dedupe_key = _image_dedupe_key(absolute)
+            if dedupe_key in seen:
                 continue
-            seen.add(normalized)
-            items.append({"kind": "detail", "source_url": normalized})
+            seen.add(dedupe_key)
+            items.append({"kind": "detail", "source_url": absolute})
 
     return items
 
@@ -121,7 +147,11 @@ class LinkCheckFetcher:
         _raise_for_status(response)
         soup = BeautifulSoup(response.text, "html.parser")
         lang = _page_lang(soup)
-        if not (f"/{target_language}/" in response.url or lang.startswith(target_language)):
+        if not _is_locale_locked(
+            resolved_url=response.url,
+            page_language=lang,
+            target_language=target_language,
+        ):
             raise LocaleLockError(
                 f"locale lock failed: target={target_language} resolved_url={response.url} page_lang={lang or 'unknown'}"
             )

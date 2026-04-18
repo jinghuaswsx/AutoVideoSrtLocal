@@ -50,6 +50,23 @@ def test_fetch_page_rejects_wrong_locale_even_when_redirected(monkeypatch):
         fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
 
 
+def test_fetch_page_rejects_wrong_html_lang_even_when_url_keeps_locale(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return SimpleNamespace(
+            url="https://shop.example.com/de/products/demo",
+            status_code=200,
+            text="<html lang='en'><body></body></html>",
+        )
+
+    fetcher = LinkCheckFetcher()
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    with pytest.raises(LocaleLockError, match="locale lock"):
+        fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
+
+
 def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     from appcore.link_check_fetcher import extract_images_from_html
 
@@ -75,19 +92,21 @@ def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     items = extract_images_from_html(html, base_url="https://shop.example.com/de/products/demo")
 
     assert [item["kind"] for item in items] == ["carousel", "detail"]
-    assert items[0]["source_url"] == "https://img.example.com/hero.jpg"
-    assert items[1]["source_url"] == "https://img.example.com/detail.jpg"
+    assert items[0]["source_url"] == "https://img.example.com/hero.jpg?width=640"
+    assert items[1]["source_url"] == "https://img.example.com/detail.jpg?width=800"
 
 
 def test_download_images_writes_files_into_task_directory(monkeypatch, tmp_path):
     from appcore.link_check_fetcher import LinkCheckFetcher
 
     payloads = {
-        "https://img.example.com/hero.jpg": b"hero-bytes",
-        "https://img.example.com/detail.png": b"detail-bytes",
+        "https://img.example.com/hero.jpg?width=640": b"hero-bytes",
+        "https://img.example.com/detail.png?format=webp": b"detail-bytes",
     }
+    requested_urls = []
 
     def fake_get(url, *, headers, allow_redirects, timeout):
+        requested_urls.append(url)
         return SimpleNamespace(
             url=url,
             status_code=200,
@@ -100,13 +119,17 @@ def test_download_images_writes_files_into_task_directory(monkeypatch, tmp_path)
 
     result = fetcher.download_images(
         [
-            {"kind": "carousel", "source_url": "https://img.example.com/hero.jpg"},
-            {"kind": "detail", "source_url": "https://img.example.com/detail.png"},
+            {"kind": "carousel", "source_url": "https://img.example.com/hero.jpg?width=640"},
+            {"kind": "detail", "source_url": "https://img.example.com/detail.png?format=webp"},
         ],
         tmp_path,
     )
 
     assert [item["kind"] for item in result] == ["carousel", "detail"]
+    assert requested_urls == [
+        "https://img.example.com/hero.jpg?width=640",
+        "https://img.example.com/detail.png?format=webp",
+    ]
     assert Path(result[0]["local_path"]).read_bytes() == b"hero-bytes"
     assert Path(result[1]["local_path"]).read_bytes() == b"detail-bytes"
     assert Path(result[0]["local_path"]).parent == tmp_path / "site_images"
