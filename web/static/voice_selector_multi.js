@@ -44,11 +44,24 @@
   let selectedVoiceName = null;
   let useDefault = false;
   let launched = false;
+  let pollHandle = null;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[ch]));
+  }
+
+  function describePipeline(pipeline) {
+    // 返回当前 pipeline 阶段的中文状态，用于 summary 文案
+    const { extract, asr, voice_match } = pipeline || {};
+    if (voice_match === "waiting" || voice_match === "done") return null;  // ready
+    if (voice_match === "running") return "正在向量匹配中…";
+    if (asr === "running") return "🎙️ 语音识别中（ASR）…";
+    if (asr === "done") return "ASR 完成，等待向量匹配启动…";
+    if (extract === "running") return "🔈 音频提取中…";
+    if (extract === "done") return "音频提取完成，等 ASR 启动…";
+    return "管道等待启动…";
   }
 
   async function loadLibrary() {
@@ -65,17 +78,39 @@
       selectedVoiceId = data.selected_voice_id || null;
 
       const n = (data.candidates || []).length;
-      const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
-      if (n > 0) parts.push(`${n} 个向量匹配推荐置顶`);
-      else parts.push("暂无推荐（ASR 还在跑，或匹配失败）");
-      summaryEl.textContent = parts.join(" · ");
+      const ready = !!data.voice_match_ready;
+      const progress = describePipeline(data.pipeline);
 
-      render();
+      if (!ready) {
+        // 管道还没跑到 voice_match，显示进度并继续轮询
+        summaryEl.textContent = `${lang.toUpperCase()} 音色库共 ${data.total || 0} 个 · ${progress}`;
+        listEl.innerHTML = `<div class="vs-loading">${progress || "等待中..."}<br>
+          <small style="color:var(--text-user-badge);">音色库已可浏览，但向量推荐需等 ASR 完成</small></div>`;
+        // 先把列表渲染出来（无推荐），用户可以边等边浏览/试听
+        setTimeout(() => render(), 0);
+        schedulePoll();
+      } else {
+        // Ready — 停止轮询
+        if (pollHandle) { clearTimeout(pollHandle); pollHandle = null; }
+        const parts = [`${lang.toUpperCase()} 音色库共 ${data.total || 0} 个`];
+        if (n > 0) parts.push(`${n} 个向量匹配推荐置顶`);
+        else parts.push("向量匹配未找到相似音色（可手动挑选或用默认）");
+        summaryEl.textContent = parts.join(" · ");
+        render();
+      }
+
       updateLaunchState();
     } catch (err) {
       console.error("[voice-selector] load failed:", err);
-      listEl.innerHTML = `<div class="vs-loading">网络错误</div>`;
+      listEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
+      schedulePoll(5000);
     }
+  }
+
+  function schedulePoll(delay = 3000) {
+    if (launched) return;
+    if (pollHandle) clearTimeout(pollHandle);
+    pollHandle = setTimeout(loadLibrary, delay);
   }
 
   function render() {

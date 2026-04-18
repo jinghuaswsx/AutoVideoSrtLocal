@@ -591,12 +591,25 @@ def voice_library_for_task(task_id: str):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    # 管道状态 —— 前端据此决定是否显示"等 ASR 中"
+    steps = state.get("steps", {}) or {}
+    pipeline = {
+        "extract": steps.get("extract", "pending"),
+        "asr": steps.get("asr", "pending"),
+        "voice_match": steps.get("voice_match", "pending"),
+    }
+    # voice_match 处于 waiting 或 done 才表示候选已就绪
+    vm_status = pipeline["voice_match"]
+    voice_match_ready = vm_status in ("waiting", "done")
+
     return jsonify({
         "items": data.get("items", []),
         "total": data.get("total", 0),
         "candidates": state.get("voice_match_candidates", []),
         "fallback_voice_id": state.get("voice_match_fallback_voice_id"),
         "selected_voice_id": state.get("selected_voice_id"),
+        "pipeline": pipeline,
+        "voice_match_ready": voice_match_ready,
     })
 
 
