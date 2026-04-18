@@ -2006,3 +2006,30 @@
     });
   })();
 </script>
+
+<script>
+  // ⓘ prompt info tooltip (multi_translate only)
+  document.querySelectorAll(".prompt-info").forEach(el => {
+    el.addEventListener("mouseenter", async () => {
+      if (el.dataset.loaded === "1") return;
+      const slot = el.dataset.slot;
+      const lang = el.dataset.lang || "";
+      const qs = new URLSearchParams({ slot });
+      if (lang) qs.set("lang", lang);
+      try {
+        const resp = await fetch(`/admin/api/prompts/resolve?${qs}`);
+        if (resp.ok) {
+          const cfg = await resp.json();
+          const preview = (cfg.content || "").slice(0, 400);
+          el.title = `模型：${cfg.provider} / ${cfg.model}\nPrompt 预览：\n${preview}${cfg.content && cfg.content.length > 400 ? "..." : ""}`;
+          el.dataset.loaded = "1";
+        } else {
+          el.title = "无权查看（仅管理员）";
+          el.dataset.loaded = "1";
+        }
+      } catch {
+        el.title = "加载失败";
+      }
+    });
+  });
+</script>

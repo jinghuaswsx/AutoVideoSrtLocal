@@ -207,28 +207,42 @@ def save_srt(content: str, output_path: str) -> str:
     return output_path
 
 
-def apply_french_punctuation(text: str) -> str:
-    """Apply French punctuation spacing rules to SRT content.
+def apply_punctuation_spacing(srt_content: str, rules: dict) -> str:
+    """按 rules 对 SRT 文本行做标点空格后处理（跳过时间戳行与序号行）。
 
-    Only modifies subtitle text lines — timestamp and sequence-number lines
-    are left untouched so ffmpeg can parse the SRT correctly.
-
-    Rules applied to text lines:
-    - Non-breaking space (U+00A0) before ? ! : ;
-    - « text » with non-breaking spaces inside guillemets
+    rules 字段：
+      - nbsp_before: list[str]，这些标点前加 U+00A0
+      - guillemets: bool，True 时 « » 内侧加 U+00A0
     """
     nbsp = "\u00A0"
-    lines = text.split("\n")
-    result = []
+    nbsp_before = set(rules.get("nbsp_before") or [])
+    handle_guillemets = bool(rules.get("guillemets"))
+
+    lines = srt_content.split("\n")
+    out: list[str] = []
     for line in lines:
         stripped = line.strip()
-        # Skip empty lines, sequence numbers, and timestamp lines
         if not stripped or stripped.isdigit() or "-->" in stripped:
-            result.append(line)
+            out.append(line)
             continue
-        # Apply French punctuation rules only to subtitle text lines
-        line = re.sub(r'\s*([?!;:])', rf'{nbsp}\1', line)
-        line = re.sub(r'«\s*', f'«{nbsp}', line)
-        line = re.sub(r'\s*»', f'{nbsp}»', line)
-        result.append(line)
-    return "\n".join(result)
+        if nbsp_before:
+            # 构造字符类；转义正则元字符
+            escaped = "".join(re.escape(ch) for ch in nbsp_before)
+            line = re.sub(rf"\s*([{escaped}])", rf"{nbsp}\1", line)
+        if handle_guillemets:
+            line = re.sub(r"«\s*", f"«{nbsp}", line)
+            line = re.sub(r"\s*»", f"{nbsp}»", line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def apply_french_punctuation(text: str) -> str:
+    """向后兼容薄包装：等价于 apply_punctuation_spacing(text, 法语规则)。
+
+    Old callers that already use apply_french_punctuation(text) continue to
+    work unchanged — signature and behaviour are preserved.
+    """
+    return apply_punctuation_spacing(text, {
+        "nbsp_before": ["?", "!", ":", ";"],
+        "guillemets": True,
+    })

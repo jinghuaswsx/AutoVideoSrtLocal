@@ -691,6 +691,27 @@ class PipelineRunner:
     def resume(self, task_id: str, start_step: str) -> None:
         self._run(task_id, start_step=start_step)
 
+    def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
+        """Return ordered [(step_name, callable), ...] for the pipeline.
+
+        Subclasses can override to insert or remove steps while keeping
+        all of _run()'s error handling, resume, and waiting-pause behavior.
+        """
+        steps = [
+            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
+            ("asr", lambda: self._step_asr(task_id, task_dir)),
+            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir)),
+            ("translate", lambda: self._step_translate(task_id)),
+            ("tts", lambda: self._step_tts(task_id, task_dir)),
+            ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
+            ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
+            ("analysis", lambda: self._step_analysis(task_id)),
+            ("export", lambda: self._step_export(task_id, video_path, task_dir)),
+        ]
+        if not self.include_analysis_in_main_flow:
+            steps = [s for s in steps if s[0] != "analysis"]
+        return steps
+
     def _run(self, task_id: str, start_step: str = "extract") -> None:
         # Make sure the source video is present locally before any step runs.
         # If it was orphaned (e.g. uploads dir cleanup) but we have a TOS backup,
@@ -707,19 +728,7 @@ class PipelineRunner:
         task = task_state.get(task_id)
         video_path = task["video_path"]
         task_dir = task["task_dir"]
-        steps = [
-            ("extract", lambda: self._step_extract(task_id, video_path, task_dir)),
-            ("asr", lambda: self._step_asr(task_id, task_dir)),
-            ("alignment", lambda: self._step_alignment(task_id, video_path, task_dir)),
-            ("translate", lambda: self._step_translate(task_id)),
-            ("tts", lambda: self._step_tts(task_id, task_dir)),
-            ("subtitle", lambda: self._step_subtitle(task_id, task_dir)),
-            ("compose", lambda: self._step_compose(task_id, video_path, task_dir)),
-            ("analysis", lambda: self._step_analysis(task_id)),
-            ("export", lambda: self._step_export(task_id, video_path, task_dir)),
-        ]
-        if not self.include_analysis_in_main_flow:
-            steps = [s for s in steps if s[0] != "analysis"]
+        steps = self._get_pipeline_steps(task_id, video_path, task_dir)
 
         try:
             should_run = False
