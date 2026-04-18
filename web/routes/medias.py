@@ -804,11 +804,23 @@ def api_detail_images_from_url(pid: int):
         fetcher = LinkCheckFetcher()
         page = fetcher.fetch_page(url, lang)
     except LocaleLockError as e:
-        return jsonify({"error": f"语种锁失败：{e}"}), 400
+        return jsonify({"error": f"语种锁失败（页面语言不匹配）：{e}"}), 400
+    except requests.HTTPError as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status == 404:
+            return jsonify({
+                "error": (
+                    f"链接 404：{url} 不存在。\n"
+                    f"多半是产品 ID（{p.get('product_code')}）与 Shopify 店铺的真实 handle 不一致。\n"
+                    f"请在「产品链接」字段填入商城里真实的商品 URL 后重试。"
+                ),
+                "tried_url": url,
+            }), 400
+        return jsonify({"error": f"抓取失败：HTTP {status}", "tried_url": url}), 502
     except requests.RequestException as e:
-        return jsonify({"error": f"抓取失败：{e}"}), 502
+        return jsonify({"error": f"抓取失败：{e}", "tried_url": url}), 502
     except Exception as e:
-        return jsonify({"error": f"抓取异常：{e}"}), 500
+        return jsonify({"error": f"抓取异常：{e}", "tried_url": url}), 500
 
     images = page.images or []
     if not images:
