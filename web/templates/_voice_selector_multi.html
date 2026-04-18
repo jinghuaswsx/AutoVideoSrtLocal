@@ -134,6 +134,17 @@
     background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
   }
 
+  .vs-row-default-btn {
+    padding: 6px 10px; border: 1px dashed var(--border-strong, #cbd5e1);
+    background: transparent; color: var(--text-user-badge); border-radius: 6px;
+    cursor: pointer; font-size: 12px; font-family: inherit; white-space: nowrap;
+  }
+  .vs-row-default-btn:hover { color: oklch(56% 0.16 230); border-color: oklch(56% 0.16 230); }
+  .vs-row-default-btn.is-current {
+    border-style: solid; background: #4b5563; color: #fff;
+    cursor: default; border-color: #4b5563;
+  }
+
   .vs-subtitle-config {
     margin-top: 16px; padding: 12px 14px;
     background: var(--bg-body); border: 1px solid var(--border-main);
