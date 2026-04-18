@@ -18,12 +18,16 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 .divider { border: none; border-top: 1px dashed #e5e7eb; margin: 16px 0; }
 {% endblock %}
 {% block content %}
-<h1 style="font-size:20px;font-weight:700;color:#111827;margin-bottom:20px">API Key 配置</h1>
-{% with messages = get_flashed_messages() %}
-  {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
-{% endwith %}
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:#111827;margin:0">API Key 配置</h1>
+    <button class="btn btn-primary" type="submit">保存配置</button>
+  </div>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
+  {% endwith %}
 
   {# ── 导出目录设置 ── #}
   <div class="settings-card">
