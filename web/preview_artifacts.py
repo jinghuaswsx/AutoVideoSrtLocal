@@ -36,13 +36,13 @@ def build_extract_artifact() -> dict:
 
 
 def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "", source_language: str = "zh") -> dict:
-    sl = _lang(source_language)
+    # 标签不再硬编码源语言（LLM 看文本自己能辨）——避免英文视频被标"中文识别分段"
     left = {
         "type": "utterances",
-        "label": f"{sl}识别分段",
+        "label": "识别分段",
         "utterances": utterances or [],
     }
-    right = text_item(f"整段{sl}", source_full_text_zh)
+    right = text_item("整段识别文本", source_full_text_zh)
     if source_full_text_zh:
         return {"title": "语音识别", "items": [{"type": "side_by_side", "left": left, "right": right}]}
     return {"title": "语音识别", "items": [left]}
