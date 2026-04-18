@@ -35,6 +35,24 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
   </div>
 
+  {# ── 全局配置（所有用户共用） ── #}
+  <div class="settings-card">
+    <h2>全局配置</h2>
+    <p class="step-desc">对所有用户生效，非管理员也可修改</p>
+
+    <label>图片翻译通道</label>
+    <select name="image_translate_channel">
+      {% for code, label in image_translate_channels %}
+      <option value="{{ code }}" {{ 'selected' if image_translate_channel == code }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <p class="hint">
+      选择图片翻译走哪个通道调用 Gemini 图像模型。
+      AI Studio / Google Cloud 使用环境变量中的 <code>GEMINI_API_KEY</code> / <code>GEMINI_CLOUD_API_KEY</code>；
+      OpenRouter 自动复用上方「OpenRouter」已配置的 Key（环境变量 <code>OPENROUTER_API_KEY</code>），模型 ID 会自动补齐 <code>google/</code> 前缀。
+    </p>
+  </div>
+
   {# ── 第一步：语音识别 ── #}
   <div class="settings-card">
     <h2>第一步：语音识别</h2>

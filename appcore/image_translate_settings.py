@@ -13,6 +13,16 @@ from appcore import medias
 SUPPORTED_LANGS: tuple[str, ...] = ("de", "fr", "es", "it", "ja", "pt")
 PRESETS: tuple[str, ...] = ("cover", "detail")
 
+# 图片翻译 Gemini 通道（全局配置，存 system_settings）
+CHANNELS: tuple[str, ...] = ("aistudio", "cloud", "openrouter")
+CHANNEL_LABELS: dict[str, str] = {
+    "aistudio": "Google AI Studio",
+    "cloud": "Google Cloud (Vertex AI)",
+    "openrouter": "OpenRouter",
+}
+_CHANNEL_KEY = "image_translate.channel"
+_DEFAULT_CHANNEL = "aistudio"
+
 
 def _key(preset: str, lang: str) -> str:
     return f"image_translate.prompt_{preset}_{lang}"
@@ -454,6 +464,19 @@ def update_prompt(preset: str, lang: str, value: str) -> None:
     normalized_lang = _normalize_language_code(lang)
     _get_language_info(normalized_lang)
     _write(_key(preset, normalized_lang), value)
+
+
+def get_channel() -> str:
+    """返回当前图片翻译通道。未配置或不合法时回退到默认 aistudio。"""
+    value = (_read(_CHANNEL_KEY) or "").strip().lower()
+    return value if value in CHANNELS else _DEFAULT_CHANNEL
+
+
+def set_channel(value: str) -> None:
+    normalized = (value or "").strip().lower()
+    if normalized not in CHANNELS:
+        raise ValueError(f"unsupported channel: {value}")
+    _write(_CHANNEL_KEY, normalized)
 
 
 def list_all_prompts() -> dict[str, dict[str, str]]:

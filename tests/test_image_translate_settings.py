@@ -230,6 +230,53 @@ def test_update_prompt_rejects_invalid(monkeypatch):
         its.update_prompt("cover", "xx", "x")
 
 
+def _patch_store(monkeypatch, store):
+    from appcore import image_translate_settings as its
+
+    def fake_query_one(sql, params):
+        key = params[0]
+        return {"value": store[key]} if key in store else None
+
+    def fake_execute(sql, params):
+        store[params[0]] = params[1]
+
+    monkeypatch.setattr(its, "query_one", fake_query_one)
+    monkeypatch.setattr(its, "execute", fake_execute)
+
+
+def test_get_channel_returns_default_when_unset(monkeypatch):
+    from appcore import image_translate_settings as its
+    _patch_store(monkeypatch, {})
+    assert its.get_channel() == "aistudio"
+
+
+def test_get_channel_returns_persisted_value(monkeypatch):
+    from appcore import image_translate_settings as its
+    _patch_store(monkeypatch, {"image_translate.channel": "openrouter"})
+    assert its.get_channel() == "openrouter"
+
+
+def test_get_channel_falls_back_on_invalid_value(monkeypatch):
+    from appcore import image_translate_settings as its
+    _patch_store(monkeypatch, {"image_translate.channel": "mystery"})
+    assert its.get_channel() == "aistudio"
+
+
+def test_set_channel_writes_valid_value(monkeypatch):
+    from appcore import image_translate_settings as its
+    store = {}
+    _patch_store(monkeypatch, store)
+    its.set_channel("CLOUD")
+    assert store["image_translate.channel"] == "cloud"
+
+
+def test_set_channel_rejects_invalid(monkeypatch):
+    from appcore import image_translate_settings as its
+    _patch_store(monkeypatch, {})
+    with pytest.raises(ValueError):
+        its.set_channel("gpt-router")
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 

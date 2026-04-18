@@ -1,3 +1,4 @@
+import base64
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +27,8 @@ def test_generate_image_returns_bytes_and_mime():
     client = MagicMock()
     client.models.generate_content.return_value = _fake_response(b"PNG-BYTES", "image/png")
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
-         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")):
+         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"):
         out, mime = gemini_image.generate_image(
             prompt="翻译",
             source_image=b"RAW",
@@ -35,6 +37,110 @@ def test_generate_image_returns_bytes_and_mime():
         )
     assert out == b"PNG-BYTES"
     assert mime == "image/png"
+
+
+def test_generate_image_cloud_channel_uses_vertex_backend():
+    from appcore import gemini_image
+
+    client = MagicMock()
+    client.models.generate_content.return_value = _fake_response(b"PNG", "image/png")
+    recorded = {}
+
+    def fake_get(api_key, *, backend="aistudio"):
+        recorded["api_key"] = api_key
+        recorded["backend"] = backend
+        return client
+
+    with patch.object(gemini_image, "_get_image_client", side_effect=fake_get), \
+         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="cloud"), \
+         patch.object(gemini_image, "GEMINI_CLOUD_API_KEY", "CLOUD-KEY"):
+        out, mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="gemini-3-pro-image-preview",
+        )
+    assert out == b"PNG"
+    assert mime == "image/png"
+    assert recorded == {"api_key": "CLOUD-KEY", "backend": "cloud"}
+
+
+def test_generate_image_cloud_channel_errors_without_key():
+    from appcore import gemini_image
+
+    with patch.object(gemini_image, "resolve_config", return_value=("", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="cloud"), \
+         patch.object(gemini_image, "GEMINI_CLOUD_API_KEY", ""):
+        with pytest.raises(gemini_image.GeminiImageError) as exc:
+            gemini_image.generate_image(
+                prompt="x",
+                source_image=b"RAW",
+                source_mime="image/jpeg",
+                model="gemini-3-pro-image-preview",
+            )
+        assert "Cloud" in str(exc.value)
+
+
+def test_generate_image_openrouter_channel_returns_decoded_image():
+    from appcore import gemini_image
+
+    raw = b"FAKE-PNG-BYTES"
+    data_url = f"data:image/png;base64,{base64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0)
+
+    created_kwargs: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            created_kwargs["api_key"] = api_key
+            created_kwargs["base_url"] = base_url
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+            self.chat.completions.create = MagicMock(return_value=or_resp)
+
+    with patch("openai.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"):
+        out, mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"SRC",
+            source_mime="image/jpeg",
+            model="gemini-3-pro-image-preview",
+        )
+    assert out == raw
+    assert mime == "image/png"
+    assert created_kwargs["api_key"] == "OR-KEY"
+
+
+def test_generate_image_openrouter_channel_errors_without_key():
+    from appcore import gemini_image
+
+    with patch.object(gemini_image, "resolve_config", return_value=("", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "OPENROUTER_API_KEY", ""):
+        with pytest.raises(gemini_image.GeminiImageError) as exc:
+            gemini_image.generate_image(
+                prompt="x",
+                source_image=b"S",
+                source_mime="image/jpeg",
+                model="gemini-3-pro-image-preview",
+            )
+        assert "OpenRouter" in str(exc.value)
+
+
+def test_to_openrouter_model_adds_google_prefix():
+    from appcore import gemini_image
+    assert gemini_image._to_openrouter_model("gemini-3-pro-image-preview") == "google/gemini-3-pro-image-preview"
+    assert gemini_image._to_openrouter_model("google/gemini-3-pro-image-preview") == "google/gemini-3-pro-image-preview"
 
 
 def test_generate_image_raises_when_no_image_part():
@@ -55,7 +161,8 @@ def test_generate_image_raises_when_no_image_part():
     client = MagicMock()
     client.models.generate_content.return_value = resp
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
-         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")):
+         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"):
         with pytest.raises(gemini_image.GeminiImageError) as exc:
             gemini_image.generate_image(
                 prompt="翻译",

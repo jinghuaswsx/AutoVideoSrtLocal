@@ -3,6 +3,12 @@ from flask_login import current_user, login_required
 
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT, get_all, set_key
 from appcore.gemini import VIDEO_CAPABLE_MODELS
+from appcore.image_translate_settings import (
+    CHANNEL_LABELS as IMAGE_TRANSLATE_CHANNEL_LABELS,
+    CHANNELS as IMAGE_TRANSLATE_CHANNELS,
+    get_channel as get_image_translate_channel,
+    set_channel as set_image_translate_channel,
+)
 
 bp = Blueprint("settings", __name__)
 
@@ -40,12 +46,21 @@ def index():
         jianying_project_root = request.form.get("jianying_project_root", "").strip() or DEFAULT_JIANYING_PROJECT_ROOT
         set_key(current_user.id, "jianying", "", {"project_root": jianying_project_root})
 
+        # 图片翻译通道（全局配置，保存到 system_settings）
+        image_translate_channel = request.form.get("image_translate_channel", "").strip().lower()
+        if image_translate_channel in IMAGE_TRANSLATE_CHANNELS:
+            set_image_translate_channel(image_translate_channel)
+
         flash("配置已保存")
         return redirect(url_for("settings.index"))
 
     keys = get_all(current_user.id)
     jianying_project_root = keys.get("jianying", {}).get("extra", {}).get("project_root") or DEFAULT_JIANYING_PROJECT_ROOT
     translate_pref = keys.get("translate_pref", {}).get("key_value", "") or "openrouter"
+    try:
+        current_image_channel = get_image_translate_channel()
+    except Exception:
+        current_image_channel = "aistudio"
     return render_template(
         "settings.html",
         keys=keys,
@@ -54,4 +69,9 @@ def index():
         default_jianying_project_root=DEFAULT_JIANYING_PROJECT_ROOT,
         translate_pref=translate_pref,
         video_analysis_models=VIDEO_CAPABLE_MODELS,
+        image_translate_channel=current_image_channel,
+        image_translate_channels=[
+            (code, IMAGE_TRANSLATE_CHANNEL_LABELS.get(code, code))
+            for code in IMAGE_TRANSLATE_CHANNELS
+        ],
     )
