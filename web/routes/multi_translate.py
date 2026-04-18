@@ -234,6 +234,9 @@ def complete_upload():
         (json.dumps(state, ensure_ascii=False), task_id),
     )
 
+    # 自动启动 pipeline：跑到 voice_match 会自动暂停等用户选音色
+    multi_pipeline_runner.start(task_id, user_id=current_user.id)
+
     return jsonify({"task_id": task_id}), 201
 
 
@@ -610,29 +613,59 @@ def confirm_voice(task_id: str):
 
     body = request.get_json() or {}
     voice_id = (body.get("voice_id") or "").strip()
-    if not voice_id:
-        return jsonify({"error": "voice_id required"}), 400
     voice_name = (body.get("voice_name") or "").strip() or None
 
-    # 写 DB state_json
     state = json.loads(row["state_json"] or "{}")
+    lang = state.get("target_lang")
+
+    # voice_id 为 "default" / 空 时：走 resolve_default_voice(lang)
+    if not voice_id or voice_id == "default":
+        from appcore.video_translate_defaults import resolve_default_voice
+        voice_id = resolve_default_voice(lang) if lang else None
+        if not voice_id:
+            return jsonify({"error": "no default voice available for this language"}), 400
+        voice_name = voice_name or "默认音色"
+
+    # 收可选字幕参数（都有默认值）
+    subtitle_font = (body.get("subtitle_font") or "Impact").strip()
+    try:
+        subtitle_size = int(body.get("subtitle_size") or 14)
+    except (TypeError, ValueError):
+        subtitle_size = 14
+    try:
+        subtitle_position_y = float(body.get("subtitle_position_y") or 0.68)
+    except (TypeError, ValueError):
+        subtitle_position_y = 0.68
+    subtitle_position = (body.get("subtitle_position") or "bottom").strip()
+
+    # 写 DB state_json
     state["selected_voice_id"] = voice_id
     if voice_name:
         state["selected_voice_name"] = voice_name
+    state["subtitle_font"] = subtitle_font
+    state["subtitle_size"] = subtitle_size
+    state["subtitle_position_y"] = subtitle_position_y
+    state["subtitle_position"] = subtitle_position
     db_execute(
         "UPDATE projects SET state_json = %s WHERE id = %s",
         (json.dumps(state, ensure_ascii=False), task_id),
     )
 
-    # 写内存 task_state + 把 voice_match 步骤标 done
-    update_kwargs = {"selected_voice_id": voice_id}
-    if voice_name:
-        update_kwargs["selected_voice_name"] = voice_name
-    task_state.update(task_id, **update_kwargs)
+    # 写内存 task_state
+    task_state.update(
+        task_id,
+        selected_voice_id=voice_id,
+        selected_voice_name=voice_name,
+        voice_id=voice_id,  # 基类 _resolve_voice 也能兜底用
+        subtitle_font=subtitle_font,
+        subtitle_size=subtitle_size,
+        subtitle_position_y=subtitle_position_y,
+        subtitle_position=subtitle_position,
+    )
     task_state.set_step(task_id, "voice_match", "done")
     task_state.set_current_review_step(task_id, "")
 
     # 从 alignment 恢复 pipeline
     multi_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
 
-    return jsonify({"ok": True, "voice_id": voice_id})
+    return jsonify({"ok": True, "voice_id": voice_id, "voice_name": voice_name})
