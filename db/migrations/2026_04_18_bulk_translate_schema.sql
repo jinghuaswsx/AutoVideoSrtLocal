@@ -16,7 +16,7 @@ ALTER TABLE projects
 
 -- ========== 2. 四张素材表加关联追踪字段 ==========
 ALTER TABLE media_copywritings
-  ADD COLUMN source_ref_id      VARCHAR(64)  NULL        COMMENT '指向源英文条目 id',
+  ADD COLUMN source_ref_id      INT          NULL        COMMENT '指向同表的英文源条目 id(素材表主键都是 INT)',
   ADD COLUMN bulk_task_id       VARCHAR(64)  NULL        COMMENT '指向父任务 projects.id',
   ADD COLUMN auto_translated    TINYINT(1)   NOT NULL DEFAULT 0,
   ADD COLUMN manually_edited_at TIMESTAMP    NULL DEFAULT NULL
@@ -25,7 +25,7 @@ ALTER TABLE media_copywritings
   ADD INDEX idx_cw_bulk_task   (bulk_task_id);
 
 ALTER TABLE media_product_detail_images
-  ADD COLUMN source_ref_id      VARCHAR(64)  NULL,
+  ADD COLUMN source_ref_id      INT          NULL,
   ADD COLUMN bulk_task_id       VARCHAR(64)  NULL,
   ADD COLUMN auto_translated    TINYINT(1)   NOT NULL DEFAULT 0,
   ADD COLUMN manually_edited_at TIMESTAMP    NULL DEFAULT NULL,
@@ -33,7 +33,7 @@ ALTER TABLE media_product_detail_images
   ADD INDEX idx_detail_bulk_task  (bulk_task_id);
 
 ALTER TABLE media_items
-  ADD COLUMN source_ref_id      VARCHAR(64)  NULL,
+  ADD COLUMN source_ref_id      INT          NULL,
   ADD COLUMN bulk_task_id       VARCHAR(64)  NULL,
   ADD COLUMN auto_translated    TINYINT(1)   NOT NULL DEFAULT 0,
   ADD COLUMN manually_edited_at TIMESTAMP    NULL DEFAULT NULL,
@@ -41,7 +41,7 @@ ALTER TABLE media_items
   ADD INDEX idx_item_bulk_task  (bulk_task_id);
 
 ALTER TABLE media_product_covers
-  ADD COLUMN source_ref_id      VARCHAR(64)  NULL,
+  ADD COLUMN source_ref_id      INT          NULL,
   ADD COLUMN bulk_task_id       VARCHAR(64)  NULL,
   ADD COLUMN auto_translated    TINYINT(1)   NOT NULL DEFAULT 0,
   ADD COLUMN manually_edited_at TIMESTAMP    NULL DEFAULT NULL,
