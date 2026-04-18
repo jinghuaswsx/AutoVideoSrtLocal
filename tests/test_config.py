@@ -44,6 +44,24 @@ def test_materials_openapi_key_defaults_to_empty(monkeypatch):
     assert config.OPENAPI_MEDIA_API_KEY == ""
 
 
+def test_gemini_cloud_settings_defaults_and_overrides(monkeypatch):
+    monkeypatch.delenv("GEMINI_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GEMINI_CLOUD_LOCATION", raising=False)
+
+    config = importlib.import_module("config")
+    config = importlib.reload(config)
+
+    assert config.GEMINI_CLOUD_PROJECT == ""
+    assert config.GEMINI_CLOUD_LOCATION == "global"
+
+    monkeypatch.setenv("GEMINI_CLOUD_PROJECT", "demo-project")
+    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "us-central1")
+    config = importlib.reload(config)
+
+    assert config.GEMINI_CLOUD_PROJECT == "demo-project"
+    assert config.GEMINI_CLOUD_LOCATION == "us-central1"
+
+
 def test_subtitle_removal_provider_defaults(monkeypatch):
     monkeypatch.setenv("SUBTITLE_REMOVAL_PROVIDER_TOKEN", "test-token")
     monkeypatch.delenv("SUBTITLE_REMOVAL_PROVIDER_URL", raising=False)
@@ -60,3 +78,25 @@ def test_subtitle_removal_provider_defaults(monkeypatch):
     assert config.SUBTITLE_REMOVAL_POLL_FAST_SECONDS == 8
     assert config.SUBTITLE_REMOVAL_POLL_SLOW_SECONDS == 15
     assert config.SUBTITLE_REMOVAL_MAX_DURATION_SECONDS == 600
+
+
+def test_push_management_config_defaults(monkeypatch):
+    for k in ["PUSH_TARGET_URL", "AD_URL_TEMPLATE", "AD_URL_PROBE_TIMEOUT"]:
+        monkeypatch.delenv(k, raising=False)
+    import importlib, config as cfg
+    importlib.reload(cfg)
+    assert cfg.PUSH_TARGET_URL == ""
+    assert "{lang}" in cfg.AD_URL_TEMPLATE
+    assert "{product_code}" in cfg.AD_URL_TEMPLATE
+    assert cfg.AD_URL_PROBE_TIMEOUT == 5
+
+
+def test_push_management_config_override(monkeypatch):
+    monkeypatch.setenv("PUSH_TARGET_URL", "http://10.0.0.1/api/push")
+    monkeypatch.setenv("AD_URL_TEMPLATE", "https://x.com/{lang}/{product_code}")
+    monkeypatch.setenv("AD_URL_PROBE_TIMEOUT", "8")
+    import importlib, config as cfg
+    importlib.reload(cfg)
+    assert cfg.PUSH_TARGET_URL == "http://10.0.0.1/api/push"
+    assert cfg.AD_URL_TEMPLATE == "https://x.com/{lang}/{product_code}"
+    assert cfg.AD_URL_PROBE_TIMEOUT == 8

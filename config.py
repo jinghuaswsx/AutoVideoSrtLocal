@@ -59,6 +59,11 @@ TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS = int(_env("TOS_UPLOAD_CLEANUP_MAX_AGE_SECOND
 # OpenRouter Claude
 OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
 OPENAPI_MEDIA_API_KEY = _env("OPENAPI_MEDIA_API_KEY")
+# 推送管理
+PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")
+AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
+                       "https://newjoyloo.com/{lang}/products/{product_code}-rjc")
+AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")
 
@@ -125,6 +130,8 @@ def _resolve_gemini_keys() -> tuple[str, str]:
 
 GEMINI_AISTUDIO_API_KEY, GEMINI_CLOUD_API_KEY = _resolve_gemini_keys()
 GEMINI_API_KEY = GEMINI_CLOUD_API_KEY if GEMINI_BACKEND == "cloud" else GEMINI_AISTUDIO_API_KEY
+GEMINI_CLOUD_PROJECT = _env("GEMINI_CLOUD_PROJECT")
+GEMINI_CLOUD_LOCATION = _env("GEMINI_CLOUD_LOCATION", "global")
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 
 # 路径

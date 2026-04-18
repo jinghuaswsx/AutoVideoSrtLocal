@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+{% block title %}推送管理{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🚀 推送管理</h1>
+  {% if not push_target_configured %}
+  <div class="warning-banner">
+    推送目标 URL 未配置（PUSH_TARGET_URL），推送按钮已禁用。请联系管理员在 .env 中配置后重启。
+  </div>
+  {% endif %}
+</div>
+
+<div class="push-toolbar">
+  <div class="filter-group">
+    <label>状态</label>
+    <select id="f-status" multiple size="4">
+      <option value="not_ready">未就绪</option>
+      <option value="pending" selected>待推送</option>
+      <option value="pushed">已推送</option>
+      <option value="failed">推送失败</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>语种</label>
+    <select id="f-lang" multiple size="4"></select>
+  </div>
+  <div class="filter-group">
+    <label>产品</label>
+    <input id="f-product" type="text" placeholder="产品名或 code" />
+  </div>
+  <div class="filter-group">
+    <label>关键词</label>
+    <input id="f-keyword" type="text" placeholder="素材文件名" />
+  </div>
+  <div class="filter-group">
+    <label>更新时间</label>
+    <input id="f-date-from" type="date" />
+    <span>至</span>
+    <input id="f-date-to" type="date" />
+  </div>
+  <div class="filter-actions">
+    <button id="btn-apply" type="button">筛选</button>
+    <button id="btn-reset" type="button">重置</button>
+  </div>
+</div>
+
+<table class="push-table">
+  <thead>
+    <tr>
+      <th>缩略图</th>
+      <th>产品</th>
+      <th>素材</th>
+      <th>语种</th>
+      <th>就绪</th>
+      <th>状态</th>
+      <th>创建时间</th>
+      {% if is_admin %}<th>操作</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody id="push-tbody"><tr><td colspan="8">加载中…</td></tr></tbody>
+</table>
+
+<div class="pagination" id="push-pagination"></div>
+
+<div id="push-log-drawer" class="drawer" hidden>
+  <div class="drawer-inner">
+    <h3>推送历史</h3>
+    <button class="drawer-close" id="drawer-close">×</button>
+    <div id="drawer-content"></div>
+  </div>
+</div>
+
+<script>
+  window.PUSH_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+  window.PUSH_TARGET_CONFIGURED = {{ 'true' if push_target_configured else 'false' }};
+</script>
+<link rel="stylesheet" href="/static/pushes.css">
+<script src="/static/pushes.js"></script>
+{% endblock %}
