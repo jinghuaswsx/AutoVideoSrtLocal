@@ -758,6 +758,90 @@ def api_detail_images_list(pid: int):
     return jsonify({"items": [_serialize_detail_image(r) for r in rows]})
 
 
+@bp.route("/api/products/<int:pid>/detail-images/from-url", methods=["POST"])
+@login_required
+def api_detail_images_from_url(pid: int):
+    """从商品链接一键抓取轮播/详情图，下载后作为 detail_images 落库。
+
+    复用 link_check_fetcher 的 Shopify 选择器（轮播 + 详情）逻辑。
+    默认 lang=en；如果用户在 localized_links_json 里自定义了 en 链接则优先用。
+    """
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    body = request.get_json(silent=True) or {}
+    lang = (body.get("lang") or "en").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    # 解析商品链接：body.url → localized_links_json[lang] → 默认模板
+    url = (body.get("url") or "").strip()
+    if not url:
+        raw_links = p.get("localized_links_json")
+        links: dict = {}
+        if isinstance(raw_links, dict):
+            links = raw_links
+        elif isinstance(raw_links, str):
+            try:
+                parsed = json.loads(raw_links)
+                if isinstance(parsed, dict):
+                    links = parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+        url = (links.get(lang) or "").strip()
+        if not url:
+            code = (p.get("product_code") or "").strip()
+            if not code:
+                return jsonify({"error": "产品未设置 product_code，无法生成默认链接"}), 400
+            url = (f"https://newjoyloo.com/products/{code}" if lang == "en"
+                   else f"https://newjoyloo.com/{lang}/products/{code}")
+
+    try:
+        from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
+        fetcher = LinkCheckFetcher()
+        page = fetcher.fetch_page(url, lang)
+    except LocaleLockError as e:
+        return jsonify({"error": f"语种锁失败：{e}"}), 400
+    except requests.RequestException as e:
+        return jsonify({"error": f"抓取失败：{e}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"抓取异常：{e}"}), 500
+
+    images = page.images or []
+    if not images:
+        return jsonify({"error": "未在页面上识别到任何轮播/详情图"}), 400
+    if len(images) > _DETAIL_IMAGES_MAX_BATCH:
+        images = images[:_DETAIL_IMAGES_MAX_BATCH]
+
+    created: list[dict] = []
+    errors: list[str] = []
+    for idx, img in enumerate(images):
+        src = img.get("source_url") or ""
+        filename = f"from_url_{lang}_{idx:02d}"
+        obj_key, data, err = _download_image_to_tos(src, pid, filename)
+        if err and not obj_key:
+            errors.append(f"{src}: {err}")
+            continue
+        new_id = medias.add_detail_image(
+            pid, lang, obj_key,
+            content_type=None, file_size=len(data) if data else None,
+        )
+        row = medias.get_detail_image(new_id)
+        if row:
+            created.append(_serialize_detail_image(row))
+
+    return jsonify({
+        "inserted": created,
+        "errors": errors,
+        "total_detected": len(page.images or []),
+        "total_inserted": len(created),
+        "url": url,
+    })
+
+
 @bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])
 @login_required
 def api_detail_images_bootstrap(pid: int):

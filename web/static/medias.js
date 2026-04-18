@@ -1528,6 +1528,49 @@
       });
     }
 
+    // 商品详情图：从商品链接一键下载（复用 link_check_fetcher 的选择器）
+    const edFromUrlBtn = $('edDetailImagesFromUrlBtn');
+    if (edFromUrlBtn) {
+      edFromUrlBtn.addEventListener('click', async () => {
+        const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+        if (!pid) return;
+        // 用户如果改了产品链接，先 flush 再读取
+        edFlushProductUrl();
+        const lang = edState.activeLang;
+        const links = (edState.productData.product.localized_links) || {};
+        const override = links[lang];
+        const code = ($('edCode').value || '').trim();
+        const def = _defaultProductUrl(lang, code);
+        const url = override || def;
+        if (!url) { alert('请先填写产品 ID 或产品链接'); return; }
+        if (!confirm(`将从 ${url} 抓取轮播+详情图并作为 ${lang.toUpperCase()} 详情图保存，继续？`)) return;
+        const origHtml = edFromUrlBtn.innerHTML;
+        edFromUrlBtn.disabled = true;
+        edFromUrlBtn.innerHTML = '<span>抓取中...</span>';
+        try {
+          const resp = await fetch(`/medias/api/products/${pid}/detail-images/from-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, lang }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            alert('抓取失败：' + (data.error || resp.status));
+          } else {
+            const msg = `抓取完成：识别 ${data.total_detected} 张，入库 ${data.total_inserted} 张` +
+                        (data.errors && data.errors.length ? `（${data.errors.length} 张失败）` : '');
+            alert(msg);
+            if (edDetailImagesCtrl) await edDetailImagesCtrl.load();
+          }
+        } catch (e) {
+          alert('网络错误：' + (e.message || e));
+        } finally {
+          edFromUrlBtn.disabled = false;
+          edFromUrlBtn.innerHTML = origHtml;
+        }
+      });
+    }
+
     // edCwAddBtn：按当前 activeLang 添加文案条目
     $('edCwAddBtn').addEventListener('click', () => {
       $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
