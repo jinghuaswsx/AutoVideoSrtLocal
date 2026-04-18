@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% if not project.deleted_at %}
+{% set allow_upload = false %}
+{% set show_back_link = false %}
+{% set task_id = project.id %}
+{% set initial_task = state %}
+{% set api_base = '/api/multi-translate' %}
+{% set url_for_detail = '/multi-translate/__TASK_ID__' %}
+{% set voice_language = target_lang %}
+{% set default_source_language = 'en' %}
+{% endif %}
+{% block title %}{{ project.display_name or project.original_filename or project.id }} - {{ target_lang | upper }} 翻译{% endblock %}
+{% block page_title %}{{ project.display_name or project.original_filename or project.id }}（{{ target_lang | upper }}）{% endblock %}
+{% block extra_style %}
+{% include "_task_workbench_styles.html" %}
+<style>
+  .target-lang-badge {
+    display: inline-block; padding: 4px 10px; background: oklch(94% 0.04 225);
+    color: oklch(22% 0.02 235); border-radius: 6px; font-size: 12px;
+    font-weight: 600; margin-left: 8px;
+  }
+</style>
+{% endblock %}
+{% block content %}
+{% if project.deleted_at %}
+<a class="back-link" href="/multi-translate">← 返回多语种视频翻译列表</a>
+<div class="expired-notice">
+  <p style="font-size: 32px; margin-bottom: 12px;">任务已过期</p>
+  <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
+</div>
+{% else %}
+<a class="back-link" href="/multi-translate">← 返回多语种视频翻译列表</a>
+<p class="page-subtitle">
+  中文/英文 → {{ target_lang | upper }} 本土化翻译
+  <span class="target-lang-badge">目标语言：{{ target_lang | upper }}</span>
+</p>
+{% if state and state.parent_task_id %}
+<p style="margin:-4px 0 12px; font-size:13px;">
+  🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
+</p>
+{% endif %}
+{% include "_task_workbench.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if not project.deleted_at %}
+{% include "_task_workbench_scripts.html" %}
+{% endif %}
+{% endblock %}
