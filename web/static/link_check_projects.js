@@ -64,14 +64,6 @@
     return String(segment || "").trim().toLowerCase();
   }
 
-  function isLocaleCode(segment) {
-    return /^[a-z]{2,3}$/.test(segment);
-  }
-
-  function isLanguageCountryPair(segment) {
-    return /^[a-z]{2,3}-[a-z]{2,3}$/.test(segment);
-  }
-
   function detectTargetLanguageFromUrl(url, enabledLanguages) {
     if (!url) {
       return "";
@@ -87,11 +79,11 @@
       const candidates = stopIndex >= 0 ? segments.slice(0, stopIndex) : segments;
 
       for (const segment of candidates) {
-        if (isLocaleCode(segment) && enabledLanguages.has(segment)) {
+        if (enabledLanguages.has(segment)) {
           return segment;
         }
-        if (isLanguageCountryPair(segment)) {
-          const primary = segment.split("-")[0];
+        if (segment.includes("-")) {
+          const primary = segment.split("-", 1)[0];
           if (enabledLanguages.has(primary)) {
             return primary;
           }
