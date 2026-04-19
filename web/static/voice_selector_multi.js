@@ -74,6 +74,8 @@
   let selectedVoiceName = null;
   let launched = false;
   let pollHandle = null;
+  let activeGender = null;       // null | "male" | "female"（由胶囊按钮驱动）
+  let rematching = false;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, ch => ({
@@ -166,7 +168,7 @@
 
   function render(waitingProgress) {
     const q = (searchInput.value || "").trim().toLowerCase();
-    const gender = genderFilter.value;
+    const gender = activeGender;
     const onlyRec = recommendedOnly.checked;
 
     const applyFilter = (v) => {
@@ -328,8 +330,53 @@
   }
 
   searchInput.addEventListener("input", () => render());
-  genderFilter.addEventListener("change", () => render());
   recommendedOnly.addEventListener("change", () => render());
+
+  // 性别胶囊：toggle + 触发后端重算 top-10（不重新 embed，走 /rematch）
+  async function onGenderPillClick(btn) {
+    if (rematching) return;
+    const clicked = btn.dataset.gender;
+    activeGender = (activeGender === clicked) ? null : clicked;
+
+    genderFilter.querySelectorAll(".vs-pill").forEach(b => {
+      const on = b.dataset.gender === activeGender;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+
+    render();  // 先本地渲染一次（按 activeGender 过滤）
+
+    const hint = document.getElementById("vs-rematching");
+    rematching = true;
+    genderFilter.querySelectorAll(".vs-pill").forEach(b => { b.disabled = true; });
+    if (hint) hint.style.display = "inline-flex";
+    try {
+      const resp = await fetch(`/api/multi-translate/${taskId}/rematch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
+        body: JSON.stringify({ gender: activeGender }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        candidatesMap.clear();
+        (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+        render();
+      } else if (resp.status !== 409) {
+        console.warn("rematch failed:", await resp.text());
+      }
+      // 409 = voice_match 尚未完成，静默忽略
+    } catch (err) {
+      console.error("rematch error:", err);
+    } finally {
+      rematching = false;
+      genderFilter.querySelectorAll(".vs-pill").forEach(b => { b.disabled = false; });
+      if (hint) hint.style.display = "none";
+    }
+  }
+
+  genderFilter.querySelectorAll(".vs-pill").forEach(btn => {
+    btn.addEventListener("click", () => onGenderPillClick(btn));
+  });
   launchBtn.addEventListener("click", launch);
 
   loadLibrary();
