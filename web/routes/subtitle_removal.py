@@ -37,17 +37,21 @@ def _default_display_name(original_filename: str) -> str:
     return name[:10] or "未命名"
 
 
-def _get_owned_task(task_id: str) -> dict:
+def _get_task(task_id: str) -> dict:
+    """字幕移除任务全局可见，不按 user_id 过滤。"""
     task = store.get(task_id)
     if (
         not task
-        or task.get("_user_id") != current_user.id
         or task.get("type") != "subtitle_removal"
         or (task.get("status") or "").strip() == "deleted"
         or task.get("deleted_at")
     ):
         abort(404)
     return task
+
+
+# 兼容旧调用名；全局可见后语义变了，但名字里"owned"不再贴切
+_get_owned_task = _get_task
 
 
 def _media_info_is_ready(media_info: dict | None) -> bool:
@@ -335,6 +339,12 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
 
 @bp.route("/subtitle-removal")
 @login_required
+def list_page():
+    return render_template("subtitle_removal_list.html")
+
+
+@bp.route("/subtitle-removal/new")
+@login_required
 def upload_page():
     return render_template("subtitle_removal_upload.html")
 
@@ -343,8 +353,8 @@ def upload_page():
 @login_required
 def detail_page(task_id: str):
     row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND type = 'subtitle_removal' AND deleted_at IS NULL",
-        (task_id, current_user.id),
+        "SELECT * FROM projects WHERE id = %s AND type = 'subtitle_removal' AND deleted_at IS NULL",
+        (task_id,),
     )
     if not row:
         abort(404)
@@ -365,8 +375,47 @@ def detail_page(task_id: str):
 @bp.route("/api/subtitle-removal/<task_id>", methods=["GET"])
 @login_required
 def get_state(task_id: str):
-    task = _get_owned_task(task_id)
+    task = _get_task(task_id)
     return jsonify(_subtitle_removal_state_payload(task, task_id))
+
+
+@bp.route("/api/subtitle-removal/list", methods=["GET"])
+@login_required
+def list_tasks():
+    """全局可见：所有字幕移除任务（不按 user_id 过滤）。"""
+    rows = db_query(
+        "SELECT p.id, p.user_id, p.status, p.state_json, p.created_at, u.username "
+        "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
+        "WHERE p.type = 'subtitle_removal' AND p.deleted_at IS NULL "
+        "ORDER BY p.created_at DESC"
+    )
+    items = []
+    for row in rows or []:
+        state = {}
+        if row.get("state_json"):
+            try:
+                state = json.loads(row["state_json"])
+            except Exception:
+                state = {}
+        media_info = state.get("media_info") or {}
+        items.append(
+            {
+                "id": row.get("id"),
+                "status": state.get("status") or row.get("status") or "",
+                "display_name": state.get("display_name") or state.get("original_filename") or row.get("id"),
+                "original_filename": state.get("original_filename") or "",
+                "resolution": media_info.get("resolution") or "",
+                "duration": media_info.get("duration") or 0,
+                "provider_status": state.get("provider_status") or "",
+                "provider_result_url": state.get("provider_result_url") or "",
+                "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=row.get("id")) if state.get("thumbnail_path") else "",
+                "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
+                "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),
+                "created_at": row.get("created_at").isoformat() if row.get("created_at") else "",
+                "created_by": row.get("username") or "",
+            }
+        )
+    return jsonify({"items": items})
 
 
 @bp.route("/api/subtitle-removal/upload/bootstrap", methods=["POST"])

@@ -295,9 +295,9 @@ def create_app() -> Flask:
             return
         task_id = data.get("task_id")
         if task_id:
-            # subtitle_removal joins should work even when the process memory is cold.
+            # 字幕移除任务全局可见，任何登录用户都可订阅（不再按 _user_id 过滤）
             task = task_state.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if task and task.get("type") == "subtitle_removal":
                 join_room(task_id)
 
     @socketio.on("join_translate_lab_task")
