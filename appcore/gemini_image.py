@@ -279,7 +279,7 @@ def generate_image(
     model: str,
     user_id: int | None = None,
     project_id: str | None = None,
-    service: str = "image_translate",
+    service: str = "image_translate.generate",
 ) -> tuple[bytes, str]:
     """调用 Gemini 图像模型，返回 (译图 bytes, mime)。
 

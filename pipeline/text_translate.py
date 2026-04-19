@@ -4,13 +4,19 @@
 翻译到目标语言。不做 JSON 分段/rewrite 等视频字幕专用处理——那些在
 pipeline.translate.generate_localized_translation / generate_localized_rewrite 里。
 
+provider 参数支持两种格式（2026-04-19 LLM 统一重构）：
+  - 老风格: 'openrouter' | 'doubao' | 'vertex_*' 等（直达 resolve_provider_config）
+  - 新风格: UseCase code 如 'text_translate.generate'（走 llm_use_case_bindings 表）
+    新风格需要先经过 pipeline.translate._resolve_use_case_provider 再调 resolve_provider_config
+
 设计文档: docs/superpowers/specs/2026-04-18-bulk-translate-design.md 第 1.2 节
+         docs/superpowers/plans/2026-04-19-llm-call-unification.md (Task 13)
 """
 from __future__ import annotations
 
 import logging
 
-from pipeline.translate import resolve_provider_config
+from pipeline.translate import _resolve_use_case_provider, resolve_provider_config
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +54,7 @@ def translate_text(
     if not text or not text.strip():
         return {"text": "", "input_tokens": 0, "output_tokens": 0}
 
+    provider = _resolve_use_case_provider(provider)
     client, model = resolve_provider_config(
         provider, user_id, api_key_override=openrouter_api_key,
     )

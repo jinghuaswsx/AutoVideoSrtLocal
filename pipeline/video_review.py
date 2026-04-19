@@ -212,7 +212,7 @@ def review_video(
 
     file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
     _, resolved_model = gemini_api.resolve_config(
-        user_id, service="gemini_video_analysis", default_model=model,
+        user_id, service="video_review.analyze", default_model=model,
     )
     log.info("[VideoReview] 开始评估: model=%s, video=%s (%.1fMB)",
              resolved_model, video_path, file_size_mb)
@@ -222,7 +222,7 @@ def review_video(
         system=system,
         media=video_path,
         user_id=user_id,
-        service="gemini_video_analysis",
+        service="video_review.analyze",
         default_model=model,
         temperature=0.3,
         max_output_tokens=4096,
