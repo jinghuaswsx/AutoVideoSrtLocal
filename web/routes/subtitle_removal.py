@@ -398,10 +398,21 @@ def list_tasks():
             except Exception:
                 state = {}
         media_info = state.get("media_info") or {}
+        status = state.get("status") or row.get("status") or ""
+        elapsed_seconds = None
+        if status == "done":
+            created_at = row.get("created_at")
+            fetched_at_raw = ((state.get("result_object_info") or {}).get("fetched_at") or "").strip()
+            if created_at and fetched_at_raw:
+                try:
+                    fetched_at = datetime.fromisoformat(fetched_at_raw)
+                    elapsed_seconds = max(0, int((fetched_at - created_at).total_seconds()))
+                except Exception:
+                    elapsed_seconds = None
         items.append(
             {
                 "id": row.get("id"),
-                "status": state.get("status") or row.get("status") or "",
+                "status": status,
                 "display_name": state.get("display_name") or state.get("original_filename") or row.get("id"),
                 "original_filename": state.get("original_filename") or "",
                 "resolution": media_info.get("resolution") or "",
@@ -413,6 +424,7 @@ def list_tasks():
                 "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),
                 "created_at": row.get("created_at").isoformat() if row.get("created_at") else "",
                 "created_by": row.get("username") or "",
+                "elapsed_seconds": elapsed_seconds,
             }
         )
     return jsonify({"items": items})

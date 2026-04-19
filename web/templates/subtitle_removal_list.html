@@ -70,6 +70,19 @@
       return m + "m" + rs + "s";
     }
 
+    function fmtElapsed(s) {
+      if (s === null || s === undefined) return "";
+      var n = Number(s);
+      if (!isFinite(n) || n < 0) return "";
+      if (n < 60) return n + "s";
+      var m = Math.floor(n / 60);
+      var rs = n % 60;
+      if (m < 60) return m + "m " + rs + "s";
+      var h = Math.floor(m / 60);
+      var rm = m % 60;
+      return h + "h " + rm + "m";
+    }
+
     function fmtDate(iso) {
       if (!iso) return "-";
       var d = new Date(iso);
@@ -93,6 +106,7 @@
         if (showDownload) {
           actions += '<a class="btn btn-primary" href="' + escapeHtml(it.download_url) + '" target="_blank">下载</a>';
         }
+        var elapsedLabel = fmtElapsed(it.elapsed_seconds);
         return (
           '<div class="sr-list-row">' +
           '<div>' + thumb + '</div>' +
@@ -100,7 +114,10 @@
             '<div class="sr-list-name" title="' + escapeHtml(it.original_filename || it.display_name) + '">' + escapeHtml(it.display_name || it.original_filename || it.id) + '</div>' +
             '<div class="sr-list-meta">ID: ' + escapeHtml(it.id) + '</div>' +
           '</div>' +
-          '<div><span class="sr-list-status is-' + escapeHtml(status) + '">' + escapeHtml(status || "-") + '</span></div>' +
+          '<div>' +
+            '<span class="sr-list-status is-' + escapeHtml(status) + '">' + escapeHtml(status || "-") + '</span>' +
+            (elapsedLabel ? '<div class="sr-list-meta">耗时 ' + escapeHtml(elapsedLabel) + '</div>' : '') +
+          '</div>' +
           '<div>' +
             '<div>' + escapeHtml(it.resolution || "-") + '</div>' +
             '<div class="sr-list-meta">' + fmtDuration(it.duration) + '</div>' +
