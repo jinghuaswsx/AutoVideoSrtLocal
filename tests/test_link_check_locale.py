@@ -32,3 +32,21 @@ def test_build_display_name_prefers_product_handle_and_language():
         "https://newjoyloo.com/fr/products/baseball-cap-organizer?variant=1",
         "fr",
     ) == "baseball-cap-organizer · FR"
+
+
+def test_detect_target_language_does_not_treat_product_handle_as_locale():
+    from appcore.link_check_locale import detect_target_language_from_url
+
+    assert detect_target_language_from_url(
+        "https://newjoyloo.com/products/de-sign-tool",
+        {"de", "fr", "ja", "en"},
+    ) == ""
+
+
+def test_detect_target_language_supports_language_country_pair_before_products():
+    from appcore.link_check_locale import detect_target_language_from_url
+
+    assert detect_target_language_from_url(
+        "https://newjoyloo.com/en-de/products/demo",
+        {"de", "fr", "ja", "en"},
+    ) == "en"

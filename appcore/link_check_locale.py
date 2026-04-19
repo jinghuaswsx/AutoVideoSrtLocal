@@ -10,6 +10,8 @@ def _path_segments(link_url: str) -> list[str]:
 
 def detect_target_language_from_url(link_url: str, enabled_codes: set[str]) -> str:
     for segment in _path_segments(link_url):
+        if segment == "products":
+            break
         if segment in enabled_codes:
             return segment
         if "-" in segment:
