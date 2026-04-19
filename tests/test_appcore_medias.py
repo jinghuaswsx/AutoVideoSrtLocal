@@ -136,3 +136,41 @@ def test_parse_ad_supported_langs():
     assert medias.parse_ad_supported_langs("") == []
     assert medias.parse_ad_supported_langs("de,fr, ja") == ["de", "fr", "ja"]
     assert medias.parse_ad_supported_langs(" DE , FR ") == ["de", "fr"]
+
+
+def test_update_product_link_check_tasks_json(monkeypatch):
+    payload = {
+        "de": {
+            "task_id": "task-de-1",
+            "status": "review_ready",
+            "link_url": "https://newjoyloo.com/de/products/demo",
+            "checked_at": "2026-04-19T22:10:00",
+            "summary": {
+                "overall_decision": "unfinished",
+                "pass_count": 3,
+                "replace_count": 1,
+                "review_count": 0,
+            },
+        }
+    }
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    medias.update_product(7, link_check_tasks_json=payload)
+
+    assert "link_check_tasks_json=%s" in captured["sql"]
+    assert '"task-de-1"' in captured["args"][0]
+    assert captured["args"][-1] == 7
+
+
+def test_parse_link_check_tasks_json_handles_str_dict_and_none():
+    assert medias.parse_link_check_tasks_json(None) == {}
+    assert medias.parse_link_check_tasks_json("") == {}
+    assert medias.parse_link_check_tasks_json({"de": {"task_id": "x"}}) == {"de": {"task_id": "x"}}
+    assert medias.parse_link_check_tasks_json('{"de":{"task_id":"x"}}') == {"de": {"task_id": "x"}}

@@ -13,7 +13,9 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
-RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review"} | PIPELINE_PROJECT_TYPES
+RUNNING_RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review"} | PIPELINE_PROJECT_TYPES
+LINK_CHECK_INTERRUPTED_STATUSES = {"queued", "locking_locale", "downloading", "analyzing"}
+RECOVERABLE_PROJECT_TYPES = RUNNING_RECOVERABLE_PROJECT_TYPES | {"link_check"}
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -67,9 +69,20 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         if recovered.get("current_review_step"):
             recovered["current_review_step"] = ""
             changed = True
+    elif project_type == "link_check":
+        if recovered.get("status") in LINK_CHECK_INTERRUPTED_STATUSES:
+            recovered["status"] = "failed"
+            recovered["error"] = RECOVERY_ERROR_MESSAGE
+            summary = recovered.setdefault("summary", {})
+            if summary.get("overall_decision") == "running":
+                summary["overall_decision"] = "unfinished"
+            changed = True
 
     if not changed:
         return False, recovered, None
+
+    if project_type == "link_check":
+        return True, recovered, "failed"
 
     recovered["status"] = "error"
     recovered["error"] = RECOVERY_ERROR_MESSAGE
@@ -116,12 +129,16 @@ def recover_task_if_needed(task_id: str) -> dict | None:
 
 
 def recover_all_interrupted_tasks() -> int:
-    placeholders = ", ".join(["%s"] * len(RECOVERABLE_PROJECT_TYPES))
+    running_placeholders = ", ".join(["%s"] * len(RUNNING_RECOVERABLE_PROJECT_TYPES))
+    link_check_status_placeholders = ", ".join(["%s"] * len(LINK_CHECK_INTERRUPTED_STATUSES))
     try:
         rows = db_query(
             f"SELECT id, type, status, state_json FROM projects "
-            f"WHERE deleted_at IS NULL AND status = 'running' AND type IN ({placeholders})",
-            tuple(sorted(RECOVERABLE_PROJECT_TYPES)),
+            f"WHERE deleted_at IS NULL AND ("
+            f"(status = 'running' AND type IN ({running_placeholders})) "
+            f"OR (type = 'link_check' AND status IN ({link_check_status_placeholders}))"
+            f")",
+            tuple(sorted(RUNNING_RECOVERABLE_PROJECT_TYPES)) + tuple(sorted(LINK_CHECK_INTERRUPTED_STATUSES)),
         )
     except Exception:
         log.warning("[task_recovery] startup recovery query failed", exc_info=True)

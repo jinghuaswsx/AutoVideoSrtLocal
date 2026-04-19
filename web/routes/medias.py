@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 import requests
@@ -12,6 +14,8 @@ from appcore import medias, tos_clients
 from appcore.db import execute as db_execute
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
+from web import store
+from web.services import link_check_runner
 
 import re
 
@@ -101,6 +105,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
                 localized_links = parsed
         except (json.JSONDecodeError, ValueError):
             pass
+    link_check_tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
     return {
         "id": p["id"],
         "name": p["name"],
@@ -117,6 +122,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "cover_thumbnail_url": cover_url,
         "lang_coverage": lang_coverage or {},
         "localized_links": localized_links,
+        "link_check_tasks": link_check_tasks,
     }
 
 
@@ -138,6 +144,75 @@ def _serialize_item(it: dict) -> dict:
         "file_size": it.get("file_size"),
         "created_at": it["created_at"].isoformat() if it.get("created_at") else None,
     }
+
+
+def _serialize_link_check_task(task: dict) -> dict:
+    return {
+        "id": task["id"],
+        "type": task["type"],
+        "status": task["status"],
+        "link_url": task["link_url"],
+        "resolved_url": task.get("resolved_url", ""),
+        "page_language": task.get("page_language", ""),
+        "target_language": task["target_language"],
+        "target_language_name": task["target_language_name"],
+        "progress": dict(task.get("progress") or {}),
+        "summary": dict(task.get("summary") or {}),
+        "error": task.get("error", ""),
+        "reference_images": [
+            {
+                "id": ref["id"],
+                "filename": ref["filename"],
+                "preview_url": f"/api/link-check/tasks/{task['id']}/images/reference/{ref['id']}",
+            }
+            for ref in task.get("reference_images", [])
+        ],
+        "items": [
+            {
+                "id": item["id"],
+                "kind": item["kind"],
+                "source_url": item["source_url"],
+                "site_preview_url": f"/api/link-check/tasks/{task['id']}/images/site/{item['id']}",
+                "analysis": dict(item.get("analysis") or {}),
+                "reference_match": dict(item.get("reference_match") or {}),
+                "binary_quick_check": dict(item.get("binary_quick_check") or {}),
+                "same_image_llm": dict(item.get("same_image_llm") or {}),
+                "status": item.get("status") or "pending",
+                "error": item.get("error") or "",
+            }
+            for item in task.get("items", [])
+        ],
+    }
+
+
+def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) -> list[dict]:
+    references: list[dict] = []
+    ref_dir = task_dir / "reference"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+
+    cover_key = medias.get_product_covers(pid).get(lang)
+    if cover_key:
+        cover_suffix = Path(cover_key).suffix or ".jpg"
+        cover_local = ref_dir / f"cover_{lang}{cover_suffix}"
+        tos_clients.download_media_file(cover_key, cover_local)
+        references.append({
+            "id": f"cover-{lang}",
+            "filename": f"cover_{lang}{cover_suffix}",
+            "local_path": str(cover_local),
+        })
+
+    for idx, row in enumerate(medias.list_detail_images(pid, lang), start=1):
+        object_key = row.get("object_key") or ""
+        detail_suffix = Path(object_key).suffix or ".jpg"
+        detail_local = ref_dir / f"detail_{idx:03d}{detail_suffix}"
+        tos_clients.download_media_file(object_key, detail_local)
+        references.append({
+            "id": f"detail-{row['id']}",
+            "filename": f"detail_{idx:03d}{detail_suffix}",
+            "local_path": str(detail_local),
+        })
+
+    return references
 
 
 # ---------- 页面 ----------
@@ -277,6 +352,117 @@ def api_update_product(pid: int):
             if isinstance(lang_items, list):
                 medias.replace_copywritings(pid, lang_items, lang=lang_code)
     return jsonify({"ok": True})
+
+
+@bp.route("/api/products/<int:pid>/link-check", methods=["POST"])
+@login_required
+def api_product_link_check_create(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    body = request.get_json(silent=True) or {}
+    lang = (body.get("lang") or "").strip().lower()
+    if not lang or not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    link_url = (body.get("link_url") or "").strip()
+    if not link_url.startswith(("http://", "https://")):
+        return jsonify({"error": "请先填写有效的商品链接"}), 400
+
+    language = medias.get_language(lang)
+    if not language or not language.get("enabled"):
+        return jsonify({"error": "target_language 非法"}), 400
+
+    task_id = str(uuid.uuid4())
+    task_dir = Path(OUTPUT_DIR) / "link_check" / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
+    references = _collect_link_check_reference_images(pid, lang, task_dir)
+    if not references:
+        return jsonify({"error": "当前语种缺少参考图，至少需要主图或详情图之一"}), 400
+
+    store.create_link_check(
+        task_id,
+        str(task_dir),
+        user_id=current_user.id,
+        link_url=link_url,
+        target_language=lang,
+        target_language_name=language.get("name_zh") or lang,
+        reference_images=references,
+    )
+    medias.set_product_link_check_task(pid, lang, {
+        "task_id": task_id,
+        "status": "queued",
+        "link_url": link_url,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "summary": {
+            "overall_decision": "running",
+            "pass_count": 0,
+            "replace_count": 0,
+            "review_count": 0,
+        },
+    })
+    link_check_runner.start(task_id)
+    return jsonify({"task_id": task_id, "status": "queued", "reference_count": len(references)}), 202
+
+
+@bp.route("/api/products/<int:pid>/link-check/<lang>", methods=["GET"])
+@login_required
+def api_product_link_check_get(pid: int, lang: str):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
+    meta = tasks.get(lang)
+    if not meta:
+        return jsonify({"task": None})
+
+    task = store.get(meta.get("task_id", ""))
+    if not task or task.get("_user_id") != current_user.id or task.get("type") != "link_check":
+        return jsonify({"task": None})
+
+    refreshed = {
+        "task_id": meta.get("task_id", ""),
+        "status": task.get("status", meta.get("status", "")),
+        "link_url": meta.get("link_url", ""),
+        "checked_at": meta.get("checked_at", ""),
+        "summary": dict(task.get("summary") or meta.get("summary") or {}),
+        "progress": dict(task.get("progress") or {}),
+        "has_detail": True,
+        "resolved_url": task.get("resolved_url", ""),
+        "page_language": task.get("page_language", ""),
+    }
+    medias.set_product_link_check_task(pid, lang, {
+        "task_id": refreshed["task_id"],
+        "status": refreshed["status"],
+        "link_url": refreshed["link_url"],
+        "checked_at": refreshed["checked_at"],
+        "summary": refreshed["summary"],
+    })
+    return jsonify({"task": refreshed})
+
+
+@bp.route("/api/products/<int:pid>/link-check/<lang>/detail", methods=["GET"])
+@login_required
+def api_product_link_check_detail(pid: int, lang: str):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
+    meta = tasks.get(lang)
+    if not meta:
+        return jsonify({"error": "task not found"}), 404
+
+    task = store.get(meta.get("task_id", ""))
+    if not task or task.get("_user_id") != current_user.id or task.get("type") != "link_check":
+        return jsonify({"error": "task not found"}), 404
+    return jsonify(_serialize_link_check_task(task))
 
 
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])

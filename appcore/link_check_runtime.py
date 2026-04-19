@@ -170,8 +170,10 @@ class LinkCheckRuntime:
                 progress=task["progress"],
                 summary=task["summary"],
             )
+            task_state.set_expires_at(task_id, "link_check")
         except Exception as exc:
             task_state.update(task_id, status="failed", error=str(exc))
+            task_state.set_expires_at(task_id, "link_check")
 
     def _finalize(self, task: dict) -> None:
         summary = {

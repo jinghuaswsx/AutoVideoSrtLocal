@@ -191,14 +191,15 @@ def update_product(product_id: int, **fields) -> int:
     allowed = {"name", "color_people", "source", "archived",
                "importance", "trend_score", "selling_points",
                "product_code", "cover_object_key",
-               "localized_links_json", "ad_supported_langs"}
+               "localized_links_json", "ad_supported_langs",
+               "link_check_tasks_json"}
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
     # localized_links_json：支持 dict 输入，自动序列化为 JSON 字符串
     def _val(k):
         v = fields[k]
-        if k == "localized_links_json" and isinstance(v, dict):
+        if k in {"localized_links_json", "link_check_tasks_json"} and isinstance(v, dict):
             return _json.dumps(v, ensure_ascii=False)
         return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)
@@ -610,3 +611,32 @@ def reorder_detail_images(product_id: int, lang: str, ids: list[int]) -> int:
             (idx, int(img_id), product_id, lang),
         )
     return updated
+
+
+def parse_link_check_tasks_json(value: str | dict | None) -> dict:
+    """Normalize link_check_tasks_json to a dict."""
+    import json as _json
+
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = _json.loads(value)
+    except (_json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def get_product_link_check_tasks(product_id: int) -> dict:
+    row = get_product(product_id) or {}
+    return parse_link_check_tasks_json(row.get("link_check_tasks_json"))
+
+
+def set_product_link_check_task(product_id: int, lang: str, payload: dict | None) -> int:
+    tasks = get_product_link_check_tasks(product_id)
+    if payload:
+        tasks[lang] = payload
+    else:
+        tasks.pop(lang, None)
+    return update_product(product_id, link_check_tasks_json=(tasks or None))
