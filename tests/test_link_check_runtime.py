@@ -389,7 +389,7 @@ def test_runtime_persists_step_flow_and_summary_during_success(monkeypatch):
     )
 
 
-def test_runtime_marks_current_step_error_and_keeps_partial_results(monkeypatch):
+def test_runtime_continues_after_item_failure_and_persists_full_results(monkeypatch):
     from appcore.link_check_runtime import LinkCheckRuntime
 
     task_dir = _workspace_tmp()
@@ -438,17 +438,17 @@ def test_runtime_marks_current_step_error_and_keeps_partial_results(monkeypatch)
 
     def fake_analyze(local_path, **kwargs):
         if local_path == str(first_path):
-            return {
-                "decision": "pass",
-                "has_text": True,
-                "detected_language": "de",
-                "language_match": True,
-                "text_summary": "Hallo",
-                "quality_score": 92,
-                "quality_reason": "ok",
-                "needs_replacement": False,
-            }
-        raise RuntimeError("gemini exploded")
+            raise RuntimeError("gemini exploded")
+        return {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "Hallo",
+            "quality_score": 92,
+            "quality_reason": "ok",
+            "needs_replacement": False,
+        }
 
     monkeypatch.setattr("appcore.link_check_runtime.analyze_image", fake_analyze)
 
@@ -466,11 +466,13 @@ def test_runtime_marks_current_step_error_and_keeps_partial_results(monkeypatch)
     assert saved["progress"]["downloaded"] == 2
     assert saved["progress"]["analyzed"] == 1
     assert saved["progress"]["failed"] == 1
-    assert len(saved["items"]) == 2
-    assert saved["items"][0]["status"] == "done"
-    assert saved["items"][0]["analysis"]["decision"] == "pass"
-    assert saved["items"][1]["status"] == "failed"
-    assert "gemini exploded" in saved["items"][1]["error"]
+    assert saved["progress"]["total"] == 2
+    assert len(saved["items"]) == saved["progress"]["total"] == 2
+    assert saved["items"][0]["status"] == "failed"
+    assert "gemini exploded" in saved["items"][0]["error"]
+    assert saved["items"][1]["status"] == "done"
+    assert saved["items"][1]["analysis"]["decision"] == "pass"
     assert saved["summary"]["pass_count"] == 1
     assert saved["summary"]["review_count"] == 1
     assert saved["summary"]["overall_decision"] == "unfinished"
+    assert "失败项" in saved["step_messages"]["analyze"]

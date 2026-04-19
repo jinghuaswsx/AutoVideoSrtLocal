@@ -146,47 +146,37 @@ class LinkCheckRuntime:
             reference_paths = [ref["local_path"] for ref in references]
             reference_index = {ref["local_path"]: ref for ref in references}
 
-            analyze_error: Exception | None = None
+            analyze_failed = False
             for item in downloaded:
                 result = self._build_item_result(item, reference_paths)
                 try:
-                    self._analyze_one(
-                        task,
-                        result,
-                        item,
-                        reference_paths,
-                        reference_index,
-                    )
+                    self._analyze_one(task, result, item, reference_paths, reference_index)
                     task["progress"]["analyzed"] += 1
                     result["status"] = "done"
                 except Exception as exc:
                     task["progress"]["failed"] += 1
                     result["status"] = "failed"
                     result["error"] = str(exc)
-                    analyze_error = exc
+                    analyze_failed = True
 
                 task["items"].append(result)
                 task["summary"] = _build_summary(task["items"])
                 self._persist(task_id, task)
 
-                if analyze_error is not None:
-                    break
-
-            if analyze_error is None:
+            if analyze_failed:
+                task["status"] = "failed"
+                task["steps"]["analyze"] = "error"
+                task["step_messages"]["analyze"] = "分析阶段存在失败项，已继续完成全部图片处理"
+            else:
                 task["steps"]["analyze"] = "done"
                 task["step_messages"]["analyze"] = "图片分析完成"
-            else:
-                task["status"] = "failed"
-                task["error"] = str(analyze_error)
-                task["steps"]["analyze"] = "error"
-                task["step_messages"]["analyze"] = f"图片分析失败: {analyze_error}"
 
             self._start_summarize(task_id, task)
             task["summary"] = _build_summary(task["items"])
             task["steps"]["summarize"] = "done"
             task["step_messages"]["summarize"] = "结果汇总完成"
 
-            if analyze_error is None:
+            if not analyze_failed:
                 task["status"] = (
                     "done" if task["summary"]["overall_decision"] == "done" else "review_ready"
                 )
@@ -195,6 +185,8 @@ class LinkCheckRuntime:
             self._fail_current_step(task_id, task, str(exc))
 
     def _build_item_result(self, item: dict, reference_paths: list[str]) -> dict:
+        waiting_binary = "等待参考图匹配结果" if reference_paths else "未提供参考图，跳过二值快检"
+        waiting_same = "等待参考图匹配结果" if reference_paths else "未提供参考图，跳过同图判断"
         return {
             "id": item["id"],
             "kind": item["kind"],
@@ -202,19 +194,8 @@ class LinkCheckRuntime:
             "_local_path": item["local_path"],
             "analysis": {},
             "reference_match": {"status": "not_provided", "score": 0.0},
-            "binary_quick_check": _skipped_binary("未提供参考图，跳过二值快检"),
-            "same_image_llm": _skipped_same_image("未提供参考图，跳过同图判断"),
-            "status": "running",
-            "error": "",
-        } if not reference_paths else {
-            "id": item["id"],
-            "kind": item["kind"],
-            "source_url": item["source_url"],
-            "_local_path": item["local_path"],
-            "analysis": {},
-            "reference_match": {"status": "not_provided", "score": 0.0},
-            "binary_quick_check": _skipped_binary("等待参考图匹配结果"),
-            "same_image_llm": _skipped_same_image("等待参考图匹配结果"),
+            "binary_quick_check": _skipped_binary(waiting_binary),
+            "same_image_llm": _skipped_same_image(waiting_same),
             "status": "running",
             "error": "",
         }
@@ -321,7 +302,8 @@ class LinkCheckRuntime:
         self._persist(task_id, task)
 
     def _start_summarize(self, task_id: str, task: dict) -> None:
-        task["status"] = "summarizing" if task.get("status") != "failed" else "failed"
+        if task.get("status") != "failed":
+            task["status"] = "summarizing"
         task["steps"]["summarize"] = "running"
         task["step_messages"]["summarize"] = "正在汇总结果"
         self._persist(task_id, task)
