@@ -113,6 +113,51 @@ def test_link_check_detail_page_bootstraps_state_from_projects_row(authed_user_c
     assert "https://shop.example.com/de/products/demo" in body
 
 
+def test_link_check_detail_page_uses_project_row_metadata_when_store_hits(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": "lc-store-1",
+            "type": "link_check",
+            "display_name": "Store-backed Link Check",
+            "status": "running",
+            "state_json": "",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.link_check.store.get",
+        lambda task_id: {
+            "id": "lc-store-1",
+            "type": "link_check",
+            "status": "running",
+            "link_url": "https://shop.example.com/de/products/demo",
+            "target_language": "de",
+            "target_language_name": "德语",
+            "progress": {},
+            "summary": {},
+            "reference_images": [],
+            "items": [],
+        },
+    )
+
+    response = authed_user_client_no_db.get("/link-check/lc-store-1")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Store-backed Link Check" in body
+    assert "lc-store-1" in body
+
+
+def test_link_check_api_rejects_deleted_project_even_if_store_has_task(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: {"id": task_id, "type": "link_check"})
+    monkeypatch.setattr("web.routes.link_check.query_one", lambda sql, args: None)
+
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-deleted-1")
+
+    assert response.status_code == 404
+
+
 def test_link_check_rename_route_updates_global_project(authed_user_client_no_db, monkeypatch):
     calls = {}
 
