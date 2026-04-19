@@ -9,4 +9,6 @@ def get_scheduler() -> BackgroundScheduler:
         _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
         from appcore.cleanup import run_cleanup
         _scheduler.add_job(run_cleanup, "interval", hours=1, id="cleanup")
+        from appcore import subtitle_removal_vod_scheduler
+        subtitle_removal_vod_scheduler.register(_scheduler)
     return _scheduler

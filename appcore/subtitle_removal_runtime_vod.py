@@ -52,6 +52,8 @@ class SubtitleRemovalVodRuntime:
         self._emit(task_id, EVT_SR_STEP_UPDATE, {"step": step, "status": status, "message": message})
 
     def start(self, task_id: str) -> None:
+        """Runner 只负责 submit（UploadMediaByUrl → StartExecution），
+        拿到 RunId 后立即退出；后续 poll 与 GetPlayInfo 由 scheduler 接力。"""
         task = task_state.get(task_id)
         if not task:
             return
@@ -61,18 +63,12 @@ class SubtitleRemovalVodRuntime:
             task_state.update(task_id, status="running", error="")
             if not task.get("provider_task_id"):
                 self._submit(task_id)
-            self._poll_until_success(task_id)
-            self._fetch_play_url(task_id)
-            if _task_is_deleted(task_id):
-                return
-            task_state.set_expires_at(task_id, "subtitle_removal")
         except SubtitleRemovalTaskDeleted:
             return
         except Exception as exc:
-            log.exception("[subtitle_removal_vod] runtime failed task_id=%s", task_id)
+            log.exception("[subtitle_removal_vod] runtime submit failed task_id=%s", task_id)
             task_state.update(task_id, status="error", error=str(exc))
-            task_state.set_step(task_id, "poll", "error")
-            task_state.set_expires_at(task_id, "subtitle_removal")
+            task_state.set_step(task_id, "submit", "error")
             self._emit(task_id, EVT_SR_ERROR, {"message": str(exc)})
 
     def _submit(self, task_id: str) -> None:
