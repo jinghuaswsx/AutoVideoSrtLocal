@@ -15,6 +15,7 @@ RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
 LINK_CHECK_RUNNING_STATUSES = {"queued", "locking_locale", "downloading", "analyzing"}
 RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check"} | PIPELINE_PROJECT_TYPES
+LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -122,12 +123,17 @@ def recover_task_if_needed(task_id: str) -> dict | None:
 
 
 def recover_all_interrupted_tasks() -> int:
-    placeholders = ", ".join(["%s"] * len(RECOVERABLE_PROJECT_TYPES))
+    non_link_check_types = tuple(sorted(RECOVERABLE_PROJECT_TYPES - {"link_check"}))
+    placeholders = ", ".join(["%s"] * len(non_link_check_types))
+    link_check_statuses = ", ".join(f"'{status}'" for status in LINK_CHECK_STARTUP_RECOVERY_STATUSES)
     try:
         rows = db_query(
             f"SELECT id, type, status, state_json FROM projects "
-            f"WHERE deleted_at IS NULL AND status = 'running' AND type IN ({placeholders})",
-            tuple(sorted(RECOVERABLE_PROJECT_TYPES)),
+            f"WHERE deleted_at IS NULL AND ("
+            f"(type = 'link_check' AND status IN ({link_check_statuses})) "
+            f"OR (status = 'running' AND type IN ({placeholders}))"
+            f")",
+            non_link_check_types,
         )
     except Exception:
         log.warning("[task_recovery] startup recovery query failed", exc_info=True)

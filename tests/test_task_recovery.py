@@ -174,6 +174,45 @@ def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     assert writes[0][1][2] == "vc-orphan"
 
 
+def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "lc-boot",
+        "type": "link_check",
+        "status": "analyzing",
+        "state_json": json.dumps(
+            {
+                "status": "analyzing",
+                "steps": {"analyze": "running"},
+                "items": [{"id": "site-1", "status": "done"}],
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    def fake_db_query(sql, args=()):
+        if "'link_check'" in sql and "'analyzing'" in sql:
+            return [row]
+        return []
+
+    monkeypatch.setattr(task_recovery, "db_query", fake_db_query)
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert persisted[0][0] == "lc-boot"
+    assert persisted[0][2] == "failed"
+    assert persisted[0][1]["steps"]["analyze"] == "error"
+
+
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 

@@ -27,7 +27,7 @@ def test_create_persists_to_db(user_id, tmp_path):
     assert row is not None
     assert row["user_id"] == user_id
     assert row["status"] == "uploaded"
-    assert row["expires_at"] is None
+    assert row["expires_at"] is not None
 
 
 def test_get_falls_back_to_db(user_id, tmp_path):
