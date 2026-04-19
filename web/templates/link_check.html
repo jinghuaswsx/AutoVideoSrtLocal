@@ -19,42 +19,40 @@
       </div>
     </div>
 
-    <div id="linkCheckForm">
-      <form id="linkCheckProjectForm" class="lc-form" enctype="multipart/form-data">
+    <form id="linkCheckProjectForm" class="lc-form" enctype="multipart/form-data">
+      <label class="lc-field">
+        <span>检查链接</span>
+        <input
+          id="linkUrl"
+          name="link_url"
+          type="url"
+          placeholder="https://example.com/fr/products/demo"
+          autocomplete="url"
+          required
+        >
+      </label>
+
+      <div class="lc-form-grid">
         <label class="lc-field">
-          <span>检查链接</span>
-          <input
-            id="linkUrl"
-            name="link_url"
-            type="url"
-            placeholder="https://example.com/fr/products/demo"
-            autocomplete="url"
-            required
-          >
+          <span>目标语言</span>
+          <select id="targetLanguage" name="target_language">
+            <option value="">自动识别或手动选择</option>
+          </select>
+          <small id="linkCheckLanguageHint">可从链接路径自动识别，也可以手动覆盖。</small>
         </label>
 
-        <div class="lc-form-grid">
-          <label class="lc-field">
-            <span>目标语言</span>
-            <select id="targetLanguage" name="target_language">
-              <option value="">自动识别或手动选择</option>
-            </select>
-            <small id="linkCheckLanguageHint">可从链接路径自动识别，也可以手动覆盖。</small>
-          </label>
+        <label class="lc-field">
+          <span>参考图片（可选）</span>
+          <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <small>支持 JPG、PNG、WEBP。未上传时仅检查页面抓取图片的语言与匹配情况。</small>
+        </label>
+      </div>
 
-          <label class="lc-field">
-            <span>参考图片（可选）</span>
-            <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-            <small>支持 JPG、PNG、WEBP。未上传时仅检查页面抓取图片的语言与匹配情况。</small>
-          </label>
-        </div>
-
-        <div class="lc-actions">
-          <button id="linkCheckSubmit" class="btn btn-primary" type="submit">创建项目</button>
-          <div id="linkCheckStatus" class="lc-status-text">等待创建</div>
-        </div>
-      </form>
-    </div>
+      <div class="lc-actions">
+        <button id="linkCheckSubmit" class="btn btn-primary" type="submit">创建项目</button>
+        <div id="linkCheckStatus" class="lc-status-text">等待创建</div>
+      </div>
+    </form>
 
     <div id="linkCheckError" class="lc-error" hidden></div>
   </section>
@@ -91,32 +89,6 @@
       {% endif %}
     </div>
   </section>
-
-  <section id="linkCheckSummary" class="lc-panel lc-panel--placeholder">
-    <div class="lc-empty">
-      创建成功后会跳转到详情页，这里不再承载旧版单页结果面板。
-    </div>
-  </section>
-
-  <section id="linkCheckResults" class="lc-panel lc-panel--placeholder">
-    <div class="lc-empty">
-      详情页会展示抓取结果、参考图匹配与逐图判断信息。
-    </div>
-  </section>
-</div>
-
-<div id="linkCheckDetailDialog" class="lc-detail-dialog" hidden aria-hidden="true">
-  <div class="lc-detail-backdrop" data-dialog-close></div>
-  <div class="lc-detail-panel" role="dialog" aria-modal="true" aria-labelledby="linkCheckDetailTitle">
-    <div class="lc-detail-toolbar">
-      <div>
-        <h3 id="linkCheckDetailTitle">任务详情</h3>
-        <p>列表页创建成功后会自动跳转，详情查看以项目详情页为准。</p>
-      </div>
-      <button type="button" class="lc-detail-close" data-dialog-close>关闭</button>
-    </div>
-    <div id="linkCheckDetailBody"></div>
-  </div>
 </div>
 
 <script src="{{ url_for('static', filename='link_check_projects.js') }}"></script>

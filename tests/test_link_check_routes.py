@@ -9,18 +9,22 @@ def test_link_check_page_renders_form(authed_user_client_no_db, monkeypatch):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert 'id="linkCheckForm"' in html
+    assert 'id="linkCheckProjectForm"' in html
     assert 'name="reference_images"' in html
 
 
-def test_link_check_page_contains_progress_and_results_shell(authed_user_client_no_db, monkeypatch):
+def test_link_check_page_renders_project_list_contract_without_legacy_shell(authed_user_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.link_check.query", lambda sql, args=(): [])
 
     response = authed_user_client_no_db.get("/link-check")
     html = response.get_data(as_text=True)
 
-    assert 'id="linkCheckSummary"' in html
-    assert 'id="linkCheckResults"' in html
+    assert 'id="linkCheckProjectList"' in html
+    assert 'id="linkCheckError"' in html
+    assert 'id="linkCheckStatus"' in html
+    assert 'id="linkCheckSummary"' not in html
+    assert 'id="linkCheckResults"' not in html
+    assert 'id="linkCheckDetailDialog"' not in html
 
 
 def test_create_link_check_task_accepts_optional_reference_images(authed_user_client_no_db, monkeypatch):
