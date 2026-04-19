@@ -2,6 +2,10 @@
 {% block title %}API 配置 - AutoVideoSrt{% endblock %}
 {% block page_title %}API 配置{% endblock %}
 {% block extra_style %}
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-main, #e5e7eb); margin-bottom: 20px; }
+.settings-tab { padding: 10px 16px; font-size: 14px; color: var(--text-muted, #6b7280); text-decoration: none; border-bottom: 2px solid transparent; transition: color 120ms, border-color 120ms; }
+.settings-tab:hover { color: var(--text-main, #111827); }
+.settings-tab.active { color: #4361ee; border-bottom-color: #4361ee; font-weight: 600; }
 .settings-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 24px; margin-bottom: 16px; }
 .settings-card h2 { font-size: 15px; font-weight: 700; color: var(--text-main, #111827); margin-bottom: 4px; }
 .settings-card .step-desc { font-size: 13px; color: var(--text-muted, #6b7280); margin-bottom: 16px; }
@@ -11,39 +15,67 @@
 .service-tag.green { background: #e8f5e9; color: #2e7d32; }
 label { display: block; color: var(--text-muted, #6b7280); font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; margin-top: 14px; }
 input[type=text], input[type=password], select { width: 100%; background: var(--bg-input, #f9fafb); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 10px; color: var(--text-main, #111827); padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none; }
-input[type=text]:focus, input[type=password]:focus, select:focus { border-color: #7c6fe0; background: var(--bg-card, #fff); }
+input[type=text]:focus, input[type=password]:focus, select:focus { border-color: #4361ee; background: var(--bg-card, #fff); }
 .save-btn { margin-top: 24px; }
 .success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
 .hint { color: #9ca3af; font-size: 12px; margin-top: 4px; }
 .divider { border: none; border-top: 1px dashed #e5e7eb; margin: 16px 0; }
+
+/* Tab 2: Bindings */
+.bindings-module { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 20px 24px; margin-bottom: 16px; }
+.bindings-module h3 { font-size: 14px; font-weight: 700; color: var(--text-main, #111827); margin: 0 0 14px 0; }
+.binding-row { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(170px, 1fr) minmax(220px, 1.4fr) auto; gap: 12px; align-items: end; padding: 12px 0; border-top: 1px dashed #eef0f4; }
+.binding-row:first-child { border-top: none; padding-top: 4px; }
+.binding-label { font-size: 14px; font-weight: 500; color: var(--text-main, #111827); line-height: 1.35; }
+.binding-desc { font-size: 12px; color: var(--text-muted, #6b7280); margin-top: 2px; }
+.binding-code { font-size: 11px; color: #9ca3af; font-family: ui-monospace, Consolas, monospace; margin-top: 2px; }
+.custom-tag { display: inline-block; background: #eef2ff; color: #4361ee; font-size: 11px; padding: 1px 8px; border-radius: 6px; margin-left: 8px; vertical-align: middle; }
+.binding-row label { margin-top: 0; }
+.binding-row select, .binding-row input[type=text] { padding: 7px 10px; font-size: 13px; }
+.bindings-hint { background: #fff8e1; border: 1px solid #ffe4a0; border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #8a6300; margin-bottom: 16px; }
+.restore-btn { height: 32px; padding: 0 12px; font-size: 12px; background: #f5f5f7; color: #555; border: 1px solid #dcdcdc; border-radius: 8px; cursor: pointer; }
+.restore-btn:hover { background: #e9e9ed; }
+.restore-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 {% endblock %}
 {% block content %}
+{# ── Tab 切换栏 ── #}
+<div class="settings-tabs">
+  <a href="{{ url_for('settings.index', tab='providers') }}"
+     class="settings-tab {{ 'active' if active_tab != 'bindings' }}">服务商接入</a>
+  <a href="{{ url_for('settings.index', tab='bindings') }}"
+     class="settings-tab {{ 'active' if active_tab == 'bindings' }}">模块模型分配</a>
+</div>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
+{% endwith %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab 1 · 服务商接入（与主线保持一致，字段全部沿用）
+   ═════════════════════════════════════════════════════════════ #}
+{% if active_tab != 'bindings' %}
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="providers">
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
-    <h1 style="font-size:20px;font-weight:700;color:#111827;margin:0">API Key 配置</h1>
+    <h1 style="font-size:20px;font-weight:700;color:#111827;margin:0">服务商接入</h1>
     <button class="btn btn-primary" type="submit">保存配置</button>
   </div>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
-  {% endwith %}
 
   {# ── 导出目录设置 ── #}
   <div class="settings-card">
     <h2>导出目录设置</h2>
     <p class="step-desc">导出到剪映项目</p>
     <label>剪映项目根目录</label>
-    <input type="text" name="jianying_project_root"
-           value="{{ jianying_project_root }}">
+    <input type="text" name="jianying_project_root" value="{{ jianying_project_root }}">
     <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
   </div>
 
-  {# ── 全局配置（所有用户共用） ── #}
+  {# ── 全局配置 ── #}
   <div class="settings-card">
     <h2>全局配置</h2>
     <p class="step-desc">对所有用户生效，非管理员也可修改</p>
-
     <label>图片翻译通道</label>
     <select name="image_translate_channel">
       {% for code, label in image_translate_channels %}
@@ -77,7 +109,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <div class="settings-card">
     <h2>第二步：翻译与本土化</h2>
     <p class="step-desc">将中文内容翻译为地道的英文</p>
-
     <label>默认翻译模型</label>
     <div style="display:flex;gap:8px">
       <select id="translate_provider_group" style="flex:0 0 200px">
@@ -86,22 +117,20 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         <option value="doubao">火山引擎 (豆包)</option>
       </select>
       <select id="translate_pref_select" name="translate_pref" style="flex:1">
-        {# 所有选项一次性写死，JS 按分组隐藏 #}
         <option value="vertex_gemini_31_flash_lite" data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_flash_lite' }}>Gemini 3.1 Flash-Lite (默认)</option>
         <option value="vertex_gemini_3_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_3_flash' }}>Gemini 3 Flash</option>
         <option value="vertex_gemini_31_pro"         data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_pro' }}>Gemini 3.1 Pro</option>
-
         <option value="gemini_31_flash" data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash-Lite</option>
         <option value="gemini_3_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash</option>
         <option value="gemini_31_pro"   data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro</option>
         <option value="claude_sonnet"   data-group="openrouter" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6</option>
-
         <option value="doubao" data-group="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
       </select>
     </div>
     <p class="hint">
       Vertex AI 复用「图片翻译通道 · Google Cloud」的 <code>GEMINI_CLOUD_API_KEY</code>；
       OpenRouter 复用下方 OpenRouter 的 Key；豆包走 ARK。
+      更细粒度的"每模块选模型"见「模块模型分配」Tab。
     </p>
     <script>
       (function() {
@@ -120,7 +149,6 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
             if (firstVisible) firstVisible.selected = true;
           }
         }
-        // 根据当前选中值推断初始分组
         var initial = sel.selectedOptions[0];
         var initialGroup = initial ? (initial.getAttribute('data-group') || 'vertex') : 'vertex';
         grp.value = initialGroup;
@@ -189,6 +217,70 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
            value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
   </div>
 
-<button class="btn btn-primary save-btn" type="submit">保存配置</button>
+  <button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab 2 · 模块模型分配（UseCase × Provider × Model）
+   ═════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'bindings' %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="bindings">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:#111827;margin:0">模块模型分配</h1>
+    <button class="btn btn-primary" type="submit">保存分配</button>
+  </div>
+
+  <div class="bindings-hint">
+    每个业务功能指定使用哪个供应商和模型。<br>
+    留空保持当前。想恢复某行默认值，点右侧「恢复默认」。
+    修改对所有用户生效（全局配置）。
+  </div>
+
+  {% for module_code, module_label in module_labels.items() %}
+    {% if bindings_grouped.get(module_code) %}
+    <div class="bindings-module">
+      <h3>{{ module_label }}</h3>
+      {% for row in bindings_grouped[module_code] %}
+      <div class="binding-row">
+        <div>
+          <div class="binding-label">
+            {{ row.label }}
+            {% if row.is_custom %}<span class="custom-tag">已自定义</span>{% endif %}
+          </div>
+          <div class="binding-desc">{{ row.description }}</div>
+          <div class="binding-code">{{ row.code }}</div>
+        </div>
+        <div>
+          <label>Provider</label>
+          <select name="binding_{{ row.code }}_provider">
+            {% for p in binding_allowed_providers %}
+            <option value="{{ p }}" {{ 'selected' if row.provider == p }}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Model ID</label>
+          <input type="text" name="binding_{{ row.code }}_model" value="{{ row.model }}">
+        </div>
+        <div>
+          <button class="restore-btn" type="submit" name="restore_default" value="{{ row.code }}"
+                  {% if not row.is_custom %}disabled{% endif %}
+                  title="{% if row.is_custom %}恢复到 USE_CASES 里的默认值{% else %}当前即默认值{% endif %}">
+            恢复默认
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <button class="btn btn-primary save-btn" type="submit">保存分配</button>
+</form>
+{% endif %}
+
 {% endblock %}
