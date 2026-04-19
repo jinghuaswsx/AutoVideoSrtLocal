@@ -8,8 +8,39 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 
 logger = logging.getLogger(__name__)
+
+
+def _run_ffmpeg(cmd: list, error_prefix: str) -> None:
+    """运行 ffmpeg 命令；stderr 写临时文件再读取（避免 eventlet + PIPE 死锁）。
+
+    在 gunicorn + eventlet 环境下，subprocess.run(capture_output=True) 对长时间
+    ffmpeg 进程会因 PIPE 缓冲区满导致进程被提前 kill。所以改成把 stderr
+    落到磁盘临时文件，等进程退出后再读回来。
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w+", suffix=".log", delete=False,
+        encoding="utf-8", errors="replace",
+    ) as stderr_fp:
+        stderr_path = stderr_fp.name
+    try:
+        with open(stderr_path, "wb") as err_w:
+            rc = subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=err_w)
+        if rc != 0:
+            try:
+                with open(stderr_path, "r", encoding="utf-8", errors="replace") as f:
+                    err_text = f.read()
+            except Exception:
+                err_text = f"<failed to read {stderr_path}>"
+            # 只保留 stderr 最后 4000 字符，足够定位且不撑爆日志
+            raise RuntimeError(f"{error_prefix}: {err_text[-4000:]}")
+    finally:
+        try:
+            os.unlink(stderr_path)
+        except OSError:
+            pass
 
 _FONT_SIZE_BASE: dict[str, int] = {"small": 11, "medium": 14, "large": 18}
 _VALID_FONT_NAME = re.compile(r'^[A-Za-z0-9 \-_]+$')
@@ -147,9 +178,7 @@ def _compose_soft_from_manifest(video_path: str, audio_path: str, manifest: dict
         "-movflags", "+faststart",
         output_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"软字幕版合成失败: {result.stderr}")
+    _run_ffmpeg(cmd, "软字幕版合成失败")
 
 
 def _compose_soft_legacy(video_path: str, audio_path: str, duration: float, output_path: str):
@@ -167,9 +196,7 @@ def _compose_soft_legacy(video_path: str, audio_path: str, duration: float, outp
         "-movflags", "+faststart",
         output_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"软字幕版合成失败: {result.stderr}")
+    _run_ffmpeg(cmd, "软字幕版合成失败")
 
 
 def _compose_hard(
@@ -195,9 +222,7 @@ def _compose_hard(
         "-movflags", "+faststart",
         output_path,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"硬字幕版合成失败: {result.stderr}")
+    _run_ffmpeg(cmd, "硬字幕版合成失败")
 
 
 def _build_subtitle_filter(srt_path: str, font_name: str, font_size_pt: int, margin_v: int) -> str:
