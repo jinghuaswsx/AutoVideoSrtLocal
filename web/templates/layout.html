@@ -314,9 +314,6 @@
       <a href="{{ url_for('title_translate.page') }}" {% if request.path.startswith('/title-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🏷️</span> 多语言标题翻译
       </a>
-      <a href="/translate-lab" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
-        <span class="nav-icon">🧪</span> 视频翻译（测试）
-      </a>
       <a href="/copywriting" class="nav-link{% if request.path.startswith('/copywriting') %} active{% endif %}">
           <span class="nav-icon">✍️</span>
           <span class="nav-label">文案创作</span>
@@ -360,6 +357,9 @@
         <span class="nav-icon">⚙️</span> 系统设置
       </a>
       {% endif %}
+      <a href="/translate-lab" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
+        <span class="nav-icon">🧪</span> 视频翻译（测试）
+      </a>
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-user">

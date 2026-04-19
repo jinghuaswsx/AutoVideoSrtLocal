@@ -1,12 +1,14 @@
 {% extends "layout.html" %}
 {% set lab_steps = [
-  ('extract', '提取音频'),
-  ('shot_decompose', '镜头分解'),
+  ('extract', '音频提取'),
+  ('asr', '语音识别'),
+  ('shot_decompose', '分镜分析'),
   ('voice_match', '音色匹配'),
-  ('translate', '翻译'),
-  ('tts_verify', 'TTS 校验'),
+  ('translate', '分镜翻译'),
+  ('tts', '语音生成'),
   ('subtitle', '字幕生成'),
-  ('compose', '合成输出'),
+  ('compose', '视频合成'),
+  ('export', 'CapCut 导出'),
 ] %}
 {% block title %}{{ project.display_name or project.original_filename or project.id }} - 视频翻译（测试）{% endblock %}
 {% block page_title %}{{ project.display_name or project.original_filename or project.id }}（视频翻译（测试）） {% endblock %}

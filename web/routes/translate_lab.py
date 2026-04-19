@@ -302,8 +302,8 @@ def resume_task(task_id: str):
         return jsonify({"error": "not found"}), 404
     payload = request.get_json(silent=True) or {}
     start_step = payload.get("start_step", "extract")
-    _VALID_STEPS = {"extract", "shot_decompose", "voice_match",
-                    "translate", "tts_verify", "subtitle", "compose"}
+    _VALID_STEPS = {"extract", "asr", "shot_decompose", "voice_match",
+                    "translate", "tts", "subtitle", "compose", "export"}
     if start_step not in _VALID_STEPS:
         return jsonify({"error": f"start_step must be one of {sorted(_VALID_STEPS)}"}), 400
     task_state.update(task_id, status="running")

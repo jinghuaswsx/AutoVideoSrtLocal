@@ -232,8 +232,8 @@ def test_detail_page_contains_7_step_indicators(
     resp = authed_client_no_db.get("/translate-lab/lab-1")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    for step in ["extract", "shot_decompose", "voice_match",
-                 "translate", "tts_verify", "subtitle", "compose"]:
+    for step in ["extract", "asr", "shot_decompose", "voice_match",
+                 "translate", "tts", "subtitle", "compose", "export"]:
         assert step in body, f"missing step {step}"
 
 

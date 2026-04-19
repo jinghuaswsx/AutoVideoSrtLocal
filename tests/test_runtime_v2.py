@@ -7,15 +7,15 @@ from appcore.events import EventBus
 from appcore.runtime_v2 import PipelineRunnerV2
 
 
-def test_runner_defines_seven_steps():
+def test_runner_defines_nine_steps():
     bus = EventBus()
     runner = PipelineRunnerV2(bus=bus, user_id=1)
     names = [name for name, _fn in runner._build_steps(
         task_id="t1", video_path="/v.mp4", task_dir="/d",
     )]
     assert names == [
-        "extract", "shot_decompose", "voice_match",
-        "translate", "tts_verify", "subtitle", "compose",
+        "extract", "asr", "shot_decompose", "voice_match",
+        "translate", "tts", "subtitle", "compose", "export",
     ]
 
 
