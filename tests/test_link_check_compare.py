@@ -163,3 +163,53 @@ def test_best_reference_rejects_empty_input():
 
     assert result["status"] == "not_provided"
     assert result["score"] == 0.0
+
+
+def test_binary_quick_check_passes_same_layout_after_resize(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
+
+    left = _make_multiline_text_sample(
+        tmp_path / "left.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
+    )
+    base = _make_multiline_text_sample(
+        tmp_path / "right_base.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
+    )
+    right = tmp_path / "right_resized.jpg"
+    Image.open(base).resize((900, 600)).save(right, quality=60)
+
+    result = run_binary_quick_check(left, right)
+
+    assert result["status"] == "pass"
+    assert result["binary_similarity"] >= 0.90
+    assert result["foreground_overlap"] >= 0.85
+    assert result["threshold"] == 0.90
+    assert "阈值" not in result["reason"] or result["reason"]
+
+
+def test_binary_quick_check_fails_when_text_changes(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
+
+    left = _make_text_variant(tmp_path / "left.jpg", text="SALE TODAY")
+    right = _make_text_variant(tmp_path / "right.jpg", text="NEW ARRIVAL")
+
+    result = run_binary_quick_check(left, right)
+
+    assert result["status"] == "fail"
+    assert result["foreground_overlap"] < 0.90
+
+
+def test_binary_quick_check_reports_error_for_broken_input(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
+
+    broken = tmp_path / "broken.jpg"
+    broken.write_bytes(b"not-an-image")
+    valid = _make_sample(tmp_path / "valid.jpg", size=(1200, 800))
+
+    result = run_binary_quick_check(broken, valid)
+
+    assert result["status"] == "error"
+    assert result["binary_similarity"] == 0.0
+    assert result["foreground_overlap"] == 0.0
+    assert "失败" in result["reason"]
