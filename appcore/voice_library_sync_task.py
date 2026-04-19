@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 _CURRENT: dict[str, Any] = {"task": None, "summary": {}}
 _LOCK = threading.Lock()
 
+MAX_VOICES_PER_LANGUAGE = 300
+
 
 def _get_api_key() -> str:
     key = os.getenv("ELEVENLABS_API_KEY") or ""
@@ -69,23 +71,30 @@ def get_current() -> Optional[dict]:
 
 def summarize() -> list[dict]:
     from appcore import medias
-    rows = query(
+    voice_rows = query(
         "SELECT language, "
         "  COUNT(*) AS total_rows, "
         "  SUM(CASE WHEN audio_embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded_rows, "
         "  MAX(synced_at) AS last_synced_at "
         "FROM elevenlabs_voices GROUP BY language"
     )
-    stats = {r["language"]: r for r in rows}
+    stats_rows = query(
+        "SELECT language, total_available, last_counted_at "
+        "FROM elevenlabs_voice_library_stats"
+    )
+    voice_stats = {r["language"]: r for r in voice_rows}
+    avail_stats = {r["language"]: r for r in stats_rows}
     out: list[dict] = []
     for code, name in medias.list_enabled_languages_kv():
-        s = stats.get(code, {})
-        last_synced = s.get("last_synced_at") if s else None
+        s = voice_stats.get(code, {}) or {}
+        a = avail_stats.get(code, {}) or {}
+        last_synced = s.get("last_synced_at")
         out.append({
             "language": code,
             "name_zh": name,
             "total_rows": int(s.get("total_rows") or 0),
             "embedded_rows": int(s.get("embedded_rows") or 0),
+            "total_available": int(a.get("total_available") or 0),
             "last_synced_at": last_synced.isoformat() if last_synced else None,
         })
     return out
@@ -106,21 +115,44 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
     from pipeline.voice_library_sync import (
         sync_all_shared_voices,
         embed_missing_voices,
+        upsert_library_stats,
     )
     try:
         total_pulled = [0]
+        total_available_holder = [0]
+
+        def on_total_count(n: int) -> None:
+            total_available_holder[0] = int(n)
+            try:
+                upsert_library_stats(language, int(n))
+            except Exception as exc:
+                log.warning("upsert_library_stats failed: %s", exc)
+            cap = min(MAX_VOICES_PER_LANGUAGE, int(n)) if n else 0
+            _set(phase="pull_metadata", done=total_pulled[0], total=cap)
 
         def on_page(idx, voices):
             total_pulled[0] += len(voices)
-            _set(phase="pull_metadata", done=total_pulled[0], total=total_pulled[0])
+            cap = min(
+                MAX_VOICES_PER_LANGUAGE,
+                total_available_holder[0] or total_pulled[0],
+            )
+            _set(phase="pull_metadata", done=total_pulled[0], total=cap)
 
-        sync_all_shared_voices(api_key=api_key, language=language, on_page=on_page)
+        sync_all_shared_voices(
+            api_key=api_key,
+            language=language,
+            max_voices=MAX_VOICES_PER_LANGUAGE,
+            on_page=on_page,
+            on_total_count=on_total_count,
+        )
 
         def on_progress(done, total, voice_id, ok):
             _set(phase="embed", done=done, total=total)
 
         cache_dir = os.path.join("uploads", "voice_preview_cache")
-        embed_missing_voices(cache_dir, on_progress=on_progress, language=language)
+        embed_missing_voices(
+            cache_dir, on_progress=on_progress, language=language,
+        )
 
         _set(status="done", phase="done")
         _emit("voice_library.sync.summary", {"summary": summarize()})
