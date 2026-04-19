@@ -178,3 +178,57 @@
 - [ ] 三态齐全？
 - [ ] 键盘可达（Tab / focus / Esc）？
 - [ ] 和现有页面风格一致？
+
+---
+
+# LLM 统一调用（2026-04-19 重构）
+
+所有新代码调用大模型时**一律走 `appcore.llm_client`**，不要直接 `from openai import OpenAI` 或 `from appcore import gemini`。旧调用路径保留兼容但不推荐新增。
+
+## 用法
+
+```python
+from appcore import llm_client
+
+# Chat 风格（翻译、文案、结构化 JSON 输出）
+result = llm_client.invoke_chat(
+    "video_translate.localize",                   # use_case code
+    messages=[{"role": "system", "content": "..."},
+              {"role": "user",   "content": "..."}],
+    user_id=42, project_id="task-xxx",
+    temperature=0.2, max_tokens=4096,
+    response_format={"type": "json_schema", ...},
+)
+
+# Generate 风格（视频 / 图片多模态 + 可选 JSON schema）
+result = llm_client.invoke_generate(
+    "video_score.run",
+    prompt="评估视频", media=[video_path],
+    user_id=42, project_id="task-xxx",
+    system="你是带货视频评委",
+    response_schema={...}, temperature=0.2,
+)
+```
+
+## 三层架构
+
+| 层 | 职责 | 定义 |
+|----|------|------|
+| UseCase | 业务功能 → 默认 provider/model/usage_log service | `appcore/llm_use_cases.py` |
+| Binding | UseCase → Provider × Model 运行时绑定（DB 可覆盖） | `appcore/llm_bindings.py` + `llm_use_case_bindings` 表 |
+| Adapter | Provider → 具体 SDK 调用（4 种） | `appcore/llm_providers/` |
+
+Adapter `provider_code` 枚举：`openrouter` / `doubao` / `gemini_aistudio` / `gemini_vertex`。
+
+## 新增业务功能的步骤
+
+1. 在 `appcore/llm_use_cases.py` 里 `USE_CASES` 字典加一条 `_uc(...)`，包含默认 provider + model + usage_log service
+2. 业务代码里 `llm_client.invoke_chat("module.function", ...)` 调用
+3. 管理员可在 `/settings?tab=bindings` 覆盖默认绑定；点「恢复默认」回到注册表值
+
+## 老调用路径的兼容
+
+- `pipeline/translate.py` 的 `generate_localized_translation(provider=...)` 等三个函数：`provider` 可以传 use_case code，`_resolve_use_case_provider` 会映射到老式 `vertex_* / openrouter / doubao`
+- `appcore/gemini.py` 的 `resolve_config(service=...)`：`service` 传 use_case code 且 `binding.provider=gemini_aistudio` 时覆盖 model
+
+完整实施细节：`docs/superpowers/plans/2026-04-19-llm-call-unification.md`
