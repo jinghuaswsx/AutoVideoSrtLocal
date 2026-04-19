@@ -6,8 +6,9 @@ import os
 import tempfile
 import time
 from collections import deque
+from datetime import datetime
 
-from appcore import gemini_image, tos_clients
+from appcore import gemini_image, medias, tos_clients
 from appcore.events import Event, EventBus
 from web import store
 
@@ -91,6 +92,14 @@ class ImageTranslateRuntime:
         else:
             task["status"] = "done"
             task["steps"]["process"] = "done"
+        try:
+            self._finalize_auto_apply(task)
+        except Exception as exc:
+            ctx = dict(task.get("medias_context") or {})
+            if ctx:
+                ctx["apply_status"] = "apply_error"
+                ctx["last_apply_error"] = str(exc)
+                task["medias_context"] = ctx
         _update_progress(task)
         store.update(
             task_id,
@@ -98,6 +107,7 @@ class ImageTranslateRuntime:
             steps=task["steps"],
             progress=task["progress"],
             items=task["items"],
+            medias_context=task.get("medias_context") or {},
         )
         self.bus.publish(Event(
             type="image_translate:task_done",
@@ -133,7 +143,7 @@ class ImageTranslateRuntime:
                 src_suffix = self._ext_from_key(item["src_tos_key"]) or ".jpg"
                 src_fd, src_path = tempfile.mkstemp(suffix=src_suffix, prefix="it_src_")
                 os.close(src_fd)
-                tos_clients.download_file(item["src_tos_key"], src_path)
+                self._download_source_image(task, item, src_path)
                 with open(src_path, "rb") as f:
                     src_bytes = f.read()
                 mime = self._guess_mime(item["src_tos_key"])
@@ -212,6 +222,77 @@ class ImageTranslateRuntime:
                             os.unlink(p)
                         except OSError:
                             pass
+
+    def _download_source_image(self, task: dict, item: dict, local_path: str) -> str:
+        source_bucket = (
+            item.get("source_bucket")
+            or (task.get("medias_context") or {}).get("source_bucket")
+            or "upload"
+        ).strip().lower()
+        if source_bucket == "media":
+            return tos_clients.download_media_file(item["src_tos_key"], local_path)
+        return tos_clients.download_file(item["src_tos_key"], local_path)
+
+    def _finalize_auto_apply(self, task: dict) -> None:
+        ctx = dict(task.get("medias_context") or {})
+        if not ctx.get("auto_apply_detail_images"):
+            return
+        items = task.get("items") or []
+        if any((item.get("status") or "") != "done" for item in items):
+            ctx["apply_status"] = "skipped_failed"
+            task["medias_context"] = ctx
+            store.update(task["id"], medias_context=ctx)
+            return
+
+        created_images = []
+        created_ids: list[int] = []
+        for item in items:
+            dst_key = (item.get("dst_tos_key") or "").strip()
+            if not dst_key:
+                raise ValueError(f"任务项 {item.get('idx')} 缺少输出文件")
+            ext = self._ext_from_key(dst_key) or ".png"
+            download_fd, download_path = tempfile.mkstemp(suffix=ext, prefix="it_apply_")
+            os.close(download_fd)
+            try:
+                tos_clients.download_file(dst_key, download_path)
+                with open(download_path, "rb") as f:
+                    data = f.read()
+            finally:
+                if os.path.exists(download_path):
+                    try:
+                        os.unlink(download_path)
+                    except OSError:
+                        pass
+
+            base_name = os.path.splitext(os.path.basename(item.get("filename") or f"detail_{item.get('idx') or 0}"))[0]
+            filename = f"{base_name or 'detail'}{ext}"
+            object_key = tos_clients.build_media_object_key(
+                task.get("_user_id") or self.user_id or 0,
+                int(ctx["product_id"]),
+                filename,
+            )
+            content_type = self._guess_mime(dst_key)
+            tos_clients.upload_media_object(object_key, data, content_type=content_type)
+            created_images.append({
+                "object_key": object_key,
+                "content_type": content_type,
+                "file_size": len(data),
+                "origin_type": "image_translate",
+                "source_detail_image_id": item.get("source_detail_image_id"),
+                "image_translate_task_id": task["id"],
+            })
+
+        created_ids = medias.replace_detail_images_for_lang(
+            int(ctx["product_id"]),
+            str(ctx["target_lang"]),
+            created_images,
+        )
+        ctx["apply_status"] = "applied"
+        ctx["applied_at"] = datetime.now().isoformat()
+        ctx["applied_detail_image_ids"] = created_ids
+        ctx["last_apply_error"] = ""
+        task["medias_context"] = ctx
+        store.update(task["id"], medias_context=ctx)
 
     @staticmethod
     def _ext_from_key(key: str) -> str:

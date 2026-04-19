@@ -94,6 +94,8 @@
           <span class="optional">(英文原始版，用于后续图片翻译)</span>
           <span class="count" id="edDetailImagesBadge">0</span>
         </div>
+        <div id="edDetailTranslateStatus" class="oc-hint" hidden
+             style="margin-bottom:var(--oc-sp-3);padding:10px 12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);color:var(--oc-fg);"></div>
         <div id="edDetailImagesGrid" class="oc-detail-images-grid"></div>
         <div class="oc-detail-images-actions">
           <button type="button" class="oc-btn ghost sm" id="edDetailImagesPickBtn">
@@ -106,9 +108,20 @@
           </button>
           <span class="oc-hint">JPG / PNG / WebP，单次 ≤ 20 张，单张 ≤ 15MB</span>
         </div>
+        <div style="display:flex;align-items:center;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);flex-wrap:wrap;">
+          <button type="button" class="oc-btn ghost sm" id="edDetailImagesTranslateBtn" hidden>
+            <svg width="14" height="14"><use href="#ic-languages"/></svg>
+            <span>从英语版一键翻译</span>
+          </button>
+        </div>
         <input type="file" id="edDetailImagesInput"
                accept="image/jpeg,image/png,image/webp" multiple hidden>
         <div id="edDetailImagesProgress" class="oc-upload-list" hidden></div>
+        <div id="edDetailTranslateHistoryWrap" hidden
+             style="margin-top:var(--oc-sp-4);padding-top:var(--oc-sp-4);border-top:1px solid var(--oc-border);">
+          <div style="font-size:13px;font-weight:600;color:var(--oc-fg);margin-bottom:var(--oc-sp-3);">翻译任务记录</div>
+          <div id="edDetailTranslateHistory"></div>
+        </div>
       </section>
 
       <!-- 从 URL 一键下载 进度弹窗 -->
@@ -139,6 +152,24 @@
       </div>
 
       <!-- 视频素材（JS 按 activeLang 过滤渲染） -->
+      <div class="oc-modal-mask oc" id="edDetailTranslateTaskMask" hidden>
+        <div class="oc-modal oc-modal-narrow" role="dialog" aria-modal="true" aria-labelledby="edDetailTranslateTaskTitle">
+          <div class="oc-modal-head">
+            <h3 id="edDetailTranslateTaskTitle">从英语版一键翻译</h3>
+            <button class="oc-icon-btn" id="edDetailTranslateTaskClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body" style="padding:var(--oc-sp-5);display:grid;gap:var(--oc-sp-3);">
+            <div id="edDetailTranslateTaskMsg" style="font-size:14px;color:var(--oc-fg);">准备中...</div>
+            <div id="edDetailTranslateTaskMeta" class="oc-hint"></div>
+            <div style="display:flex;justify-content:flex-end;gap:var(--oc-sp-2);flex-wrap:wrap;">
+              <a class="oc-btn primary" id="edDetailTranslateTaskLink" href="#" target="_blank" rel="noopener" hidden>查看任务详情</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <section class="oc-section oc-section-card" id="edItemsSection">
         <div class="oc-section-title">
           <span>视频素材</span>

@@ -85,6 +85,10 @@ def _start_runner(task_id: str, uid: int) -> bool:
     return image_translate_runner.start(task_id, user_id=uid)
 
 
+def start_image_translate_runner(task_id: str, uid: int) -> bool:
+    return _start_runner(task_id, uid)
+
+
 def _build_source_object_key(user_id: int, task_id: str, idx: int, ext: str) -> str:
     ext = ext.lower().lstrip(".") or "jpg"
     return f"uploads/image_translate/{user_id}/{task_id}/src_{idx}.{ext}"
@@ -104,6 +108,7 @@ def _state_payload(task: dict) -> dict:
         "project_name": task.get("project_name") or "",
         "progress": dict(task.get("progress") or {}),
         "items": list(task.get("items") or []),
+        "medias_context": dict(task.get("medias_context") or {}),
         "steps": dict(task.get("steps") or {}),
         "error": task.get("error") or "",
     }
