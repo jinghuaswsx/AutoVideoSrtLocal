@@ -21,20 +21,19 @@ REQUEST_TIMEOUT = 30
 
 def fetch_shared_voices_page(
     api_key: str,
+    page: int = 0,
     page_size: int = DEFAULT_PAGE_SIZE,
-    next_page_token: Optional[str] = None,
     language: Optional[str] = None,
     gender: Optional[str] = None,
     category: Optional[str] = None,
-) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """抓取一页共享音色。返回 (voices, next_page_token)。
+) -> Tuple[List[Dict[str, Any]], bool, int]:
+    """抓取一页共享音色。返回 (voices, has_more, total_count)。
 
-    当 has_more 为 False 时，next_page_token 返回 None。
+    page: 0-based。ElevenLabs API 用 page 整数参数翻页，不是 next_page_token。
+    total_count: 该 filter 下的远端总量（每次请求都会返回；首次请求取值写 stats 表）。
     """
     headers = {"xi-api-key": api_key}
-    params: Dict[str, Any] = {"page_size": page_size}
-    if next_page_token:
-        params["next_page_token"] = next_page_token
+    params: Dict[str, Any] = {"page": int(page), "page_size": int(page_size)}
     if language:
         params["language"] = language
     if gender:
@@ -49,8 +48,8 @@ def fetch_shared_voices_page(
     data = resp.json()
     voices = data.get("voices") or []
     has_more = bool(data.get("has_more"))
-    next_token = data.get("next_page_token") if has_more else None
-    return voices, next_token
+    total_count = int(data.get("total_count") or 0)
+    return voices, has_more, total_count
 
 
 def upsert_voice(voice: Dict[str, Any]) -> None:

@@ -2,42 +2,48 @@ from unittest.mock import patch, MagicMock
 from pipeline.voice_library_sync import fetch_shared_voices_page, sync_all_shared_voices
 
 
-def test_fetch_shared_voices_page_returns_voices_and_next_token():
+def test_fetch_shared_voices_page_uses_page_param():
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "voices": [
             {"voice_id": "v1", "name": "Rachel", "gender": "female",
              "language": "en", "preview_url": "http://a.mp3",
-             "labels": {"accent": "american"}, "category": "professional"}
+             "use_case": "news", "category": "professional"}
         ],
         "has_more": True,
-        "next_page_token": "token-next",
+        "total_count": 6308,
     }
-    with patch("pipeline.voice_library_sync.requests.get", return_value=mock_response):
-        voices, next_token = fetch_shared_voices_page(
-            api_key="dummy",
-            page_size=100,
-            next_page_token=None,
-            language=None,
+    with patch("pipeline.voice_library_sync.requests.get",
+               return_value=mock_response) as getter:
+        voices, has_more, total_count = fetch_shared_voices_page(
+            api_key="dummy", page=2, page_size=100, language="en",
         )
-    assert len(voices) == 1
+    call_kwargs = getter.call_args.kwargs
+    assert call_kwargs["params"]["page"] == 2
+    assert call_kwargs["params"]["page_size"] == 100
+    assert call_kwargs["params"]["language"] == "en"
     assert voices[0]["voice_id"] == "v1"
-    assert next_token == "token-next"
+    assert has_more is True
+    assert total_count == 6308
 
 
-def test_fetch_shared_voices_page_returns_none_when_no_more():
+def test_fetch_shared_voices_page_stops_when_no_more():
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "voices": [],
         "has_more": False,
-        "next_page_token": None,
+        "total_count": 100,
     }
-    with patch("pipeline.voice_library_sync.requests.get", return_value=mock_response):
-        voices, next_token = fetch_shared_voices_page(api_key="dummy")
+    with patch("pipeline.voice_library_sync.requests.get",
+               return_value=mock_response):
+        voices, has_more, total_count = fetch_shared_voices_page(
+            api_key="dummy", page=4,
+        )
     assert voices == []
-    assert next_token is None
+    assert has_more is False
+    assert total_count == 100
 
 
 def test_sync_all_iterates_pages_until_no_more():
