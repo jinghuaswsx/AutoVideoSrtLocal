@@ -243,3 +243,18 @@ def embed_missing_voices(
                     "on_progress callback failed at %s: %s", voice_id, exc
                 )
     return count
+
+
+def upsert_library_stats(language: str, total_available: int) -> None:
+    """写入/更新某语种的远端共享库总量（来自 API total_count）。"""
+    execute(
+        """
+        INSERT INTO elevenlabs_voice_library_stats
+          (language, total_available, last_counted_at)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          total_available=VALUES(total_available),
+          last_counted_at=VALUES(last_counted_at)
+        """,
+        (language, int(total_available), datetime.utcnow()),
+    )

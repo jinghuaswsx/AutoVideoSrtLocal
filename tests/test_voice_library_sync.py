@@ -322,3 +322,21 @@ def test_sync_all_stops_when_has_more_false():
         total = sync_all_shared_voices(api_key="k")
     assert total == 4
     assert upsert.call_count == 4
+
+
+def test_upsert_library_stats_calls_execute_with_upsert_sql():
+    from pipeline.voice_library_sync import upsert_library_stats
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_library_stats("en", 6308)
+    assert "elevenlabs_voice_library_stats" in captured["sql"]
+    assert "ON DUPLICATE KEY UPDATE" in captured["sql"]
+    assert captured["params"][0] == "en"
+    assert captured["params"][1] == 6308
+    from datetime import datetime
+    assert isinstance(captured["params"][2], datetime)
