@@ -52,7 +52,7 @@ def analyze_image(image_path: str | Path, *, target_language: str, target_langua
         media=[media_path],
         response_schema=_RESPONSE_SCHEMA,
         temperature=0,
-        service="gemini",
+        service="link_check.analyze",
         default_model=_FLASH_MODEL,
     )
     payload = raw if isinstance(raw, dict) else {}

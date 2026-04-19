@@ -65,7 +65,7 @@ def score_video(video_path: str | Path, *, user_id: int | None = None,
         max_output_tokens=4096,
         user_id=user_id,
         project_id=project_id,
-        service="gemini_video_analysis",
+        service="video_score.run",
         default_model=SCORE_MODEL,
     )
     if isinstance(raw, dict):

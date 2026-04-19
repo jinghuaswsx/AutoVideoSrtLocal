@@ -68,7 +68,7 @@ def decompose_shots(
         user_id=user_id,
         model=model,
         response_schema=SHOT_DECOMPOSE_SCHEMA,
-        service="gemini_video_analysis",
+        service="shot_decompose.run",
         default_model=model,
     )
     shots = (response or {}).get("shots") or []
