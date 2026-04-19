@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, render_template, request, send_file
+from flask import Blueprint, abort, jsonify, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from appcore import medias
+from appcore import cleanup, medias
+from appcore.db import execute, query, query_one
+from appcore.link_check_locale import build_link_check_display_name, detect_target_language_from_url
+from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from config import OUTPUT_DIR
 from web import store
 from web.services import link_check_runner
@@ -16,17 +21,151 @@ bp = Blueprint("link_check", __name__)
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def _get_owned_task(task_id: str) -> dict:
+def _enabled_language_map() -> dict[str, dict]:
+    try:
+        rows = medias.list_languages() or []
+    except Exception:
+        rows = []
+    mapping: dict[str, dict] = {}
+    for row in rows:
+        code = (row.get("code") or "").strip().lower()
+        if code and row.get("enabled", 1):
+            mapping[code] = row
+    return mapping
+
+
+def _load_task_from_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+
+    task_id = row.get("id") or ""
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id or task.get("type") != "link_check":
+    if task and task.get("type") == "link_check":
+        return task
+
+    state: dict = {}
+    raw = row.get("state_json") or ""
+    if raw:
+        try:
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                state = loaded
+        except Exception:
+            state = {}
+
+    state.setdefault("id", task_id)
+    state.setdefault("type", "link_check")
+    state.setdefault("status", row.get("status") or "queued")
+    state.setdefault("display_name", row.get("display_name") or "")
+    state.setdefault("original_filename", row.get("original_filename") or "")
+    state.setdefault("task_dir", row.get("task_dir") or "")
+    state.setdefault("link_url", "")
+    state.setdefault("resolved_url", "")
+    state.setdefault("page_language", "")
+    state.setdefault("target_language", "")
+    state.setdefault("target_language_name", "")
+    state.setdefault("progress", {})
+    state.setdefault("summary", {})
+    state.setdefault("error", "")
+    state.setdefault("reference_images", [])
+    state.setdefault("items", [])
+    return state
+
+
+def _get_project_row(task_id: str) -> dict:
+    try:
+        row = query_one(
+            "SELECT * FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
+            (task_id,),
+        )
+    except Exception:
+        row = None
+    if not row:
         abort(404)
-    return task
+    return row
+
+
+def _get_task(task_id: str) -> tuple[dict, dict]:
+    task = store.get(task_id)
+    if task and task.get("type") == "link_check":
+        return {}, task
+
+    row = _get_project_row(task_id)
+    task = _load_task_from_row(row)
+    if not task:
+        abort(404)
+    return row, task
+
+
+def _serialize_task(task_id: str, task: dict) -> dict:
+    return {
+        "id": task["id"],
+        "type": task["type"],
+        "status": task["status"],
+        "display_name": task.get("display_name", ""),
+        "link_url": task["link_url"],
+        "resolved_url": task.get("resolved_url", ""),
+        "page_language": task.get("page_language", ""),
+        "target_language": task["target_language"],
+        "target_language_name": task["target_language_name"],
+        "progress": dict(task.get("progress") or {}),
+        "summary": dict(task.get("summary") or {}),
+        "error": task.get("error", ""),
+        "reference_images": [
+            {
+                "id": ref["id"],
+                "filename": ref["filename"],
+                "preview_url": f"/api/link-check/tasks/{task_id}/images/reference/{ref['id']}",
+            }
+            for ref in task.get("reference_images", [])
+        ],
+        "items": [
+            {
+                "id": item["id"],
+                "kind": item["kind"],
+                "source_url": item["source_url"],
+                "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
+                "analysis": dict(item.get("analysis") or {}),
+                "reference_match": dict(item.get("reference_match") or {}),
+                "binary_quick_check": dict(item.get("binary_quick_check") or {}),
+                "same_image_llm": dict(item.get("same_image_llm") or {}),
+                "status": item.get("status") or "pending",
+                "error": item.get("error") or "",
+            }
+            for item in task.get("items", [])
+        ],
+    }
 
 
 @bp.route("/link-check")
 @login_required
 def page():
-    return render_template("link_check.html")
+    recover_all_interrupted_tasks()
+    try:
+        rows = query(
+            """SELECT id, display_name, original_filename, status, created_at
+               FROM projects
+               WHERE type = 'link_check' AND deleted_at IS NULL
+               ORDER BY created_at DESC
+               LIMIT 200""",
+            (),
+        )
+    except Exception:
+        rows = []
+    return render_template("link_check.html", projects=rows or [])
+
+
+@bp.route("/link-check/<task_id>")
+@login_required
+def detail_page(task_id: str):
+    recover_project_if_needed(task_id, "link_check")
+    row, task = _get_task(task_id)
+    return render_template(
+        "link_check_detail.html",
+        project=row,
+        task=task,
+        initial_task_json=json.dumps(task, ensure_ascii=False),
+    )
 
 
 @bp.route("/api/link-check/tasks", methods=["POST"])
@@ -34,10 +173,18 @@ def page():
 def create_task():
     link_url = (request.form.get("link_url") or "").strip()
     target_language = (request.form.get("target_language") or "").strip().lower()
-    if not link_url or not target_language:
-        return jsonify({"error": "link_url 和 target_language 必填"}), 400
+    if not link_url:
+        return jsonify({"error": "link_url 必填"}), 400
 
-    language = medias.get_language(target_language)
+    enabled_languages = _enabled_language_map()
+    if not target_language:
+        target_language = detect_target_language_from_url(link_url, set(enabled_languages))
+    if not target_language:
+        return jsonify({"error": "target_language 必填"}), 400
+
+    language = enabled_languages.get(target_language)
+    if not language:
+        language = medias.get_language(target_language)
     if not language or not language.get("enabled"):
         return jsonify({"error": "target_language 非法"}), 400
 
@@ -71,58 +218,81 @@ def create_task():
         target_language=target_language,
         target_language_name=language.get("name_zh") or target_language,
         reference_images=references,
+        display_name=build_link_check_display_name(link_url, target_language),
     )
     link_check_runner.start(task_id)
-    return jsonify({"task_id": task_id}), 202
+    return jsonify(
+        {
+            "task_id": task_id,
+            "detail_url": url_for("link_check.detail_page", task_id=task_id),
+        }
+    ), 202
 
 
 @bp.route("/api/link-check/tasks/<task_id>")
 @login_required
 def get_task(task_id: str):
-    task = _get_owned_task(task_id)
-    payload = {
-        "id": task["id"],
-        "type": task["type"],
-        "status": task["status"],
-        "link_url": task["link_url"],
-        "resolved_url": task.get("resolved_url", ""),
-        "page_language": task.get("page_language", ""),
-        "target_language": task["target_language"],
-        "target_language_name": task["target_language_name"],
-        "progress": dict(task.get("progress") or {}),
-        "summary": dict(task.get("summary") or {}),
-        "error": task.get("error", ""),
-        "reference_images": [
-            {
-                "id": ref["id"],
-                "filename": ref["filename"],
-                "preview_url": f"/api/link-check/tasks/{task_id}/images/reference/{ref['id']}",
-            }
-            for ref in task.get("reference_images", [])
-        ],
-        "items": [
-            {
-                "id": item["id"],
-                "kind": item["kind"],
-                "source_url": item["source_url"],
-                "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
-                "analysis": dict(item.get("analysis") or {}),
-                "reference_match": dict(item.get("reference_match") or {}),
-                "binary_quick_check": dict(item.get("binary_quick_check") or {}),
-                "same_image_llm": dict(item.get("same_image_llm") or {}),
-                "status": item.get("status") or "pending",
-                "error": item.get("error") or "",
-            }
-            for item in task.get("items", [])
-        ],
-    }
-    return jsonify(payload)
+    _row, task = _get_task(task_id)
+    return jsonify(_serialize_task(task_id, task))
+
+
+@bp.route("/api/link-check/tasks/<task_id>", methods=["PATCH"])
+@login_required
+def rename_task(task_id: str):
+    row = query_one(
+        "SELECT id FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
+        (task_id,),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    new_name = (body.get("display_name") or "").strip()
+    if not new_name:
+        return jsonify({"error": "display_name required"}), 400
+    if len(new_name) > 50:
+        return jsonify({"error": "名称不能超过50个字符"}), 400
+
+    execute("UPDATE projects SET display_name=%s WHERE id=%s", (new_name, task_id))
+    task = store.get(task_id)
+    if task and task.get("type") == "link_check":
+        store.update(task_id, display_name=new_name)
+    return jsonify({"status": "ok", "display_name": new_name})
+
+
+@bp.route("/api/link-check/tasks/<task_id>", methods=["DELETE"])
+@login_required
+def delete_task(task_id: str):
+    row = query_one(
+        "SELECT id, task_dir, state_json FROM projects WHERE id=%s AND type = 'link_check' AND deleted_at IS NULL",
+        (task_id,),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = store.get(task_id) or {}
+    cleanup_payload = dict(task)
+    cleanup_payload["task_dir"] = row.get("task_dir") or cleanup_payload.get("task_dir", "")
+    cleanup_payload["state_json"] = row.get("state_json") or ""
+    cleanup_payload["tos_keys"] = cleanup.collect_task_tos_keys(cleanup_payload)
+    try:
+        cleanup.delete_task_storage(cleanup_payload)
+    except Exception:
+        pass
+
+    execute(
+        "UPDATE projects SET deleted_at=%s WHERE id=%s",
+        (datetime.now(timezone.utc), task_id),
+    )
+    if task and task.get("type") == "link_check":
+        store.update(task_id, status="deleted")
+    return jsonify({"status": "ok"})
 
 
 @bp.route("/api/link-check/tasks/<task_id>/images/site/<image_id>")
 @login_required
 def get_site_image(task_id: str, image_id: str):
-    task = _get_owned_task(task_id)
+    _row, task = _get_task(task_id)
     item = next((it for it in task.get("items", []) if it["id"] == image_id), None)
     if not item:
         abort(404)
@@ -132,7 +302,7 @@ def get_site_image(task_id: str, image_id: str):
 @bp.route("/api/link-check/tasks/<task_id>/images/reference/<reference_id>")
 @login_required
 def get_reference_image(task_id: str, reference_id: str):
-    task = _get_owned_task(task_id)
+    _row, task = _get_task(task_id)
     ref = next((it for it in task.get("reference_images", []) if it["id"] == reference_id), None)
     if not ref:
         abort(404)

@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}{{ project.display_name or project.id }} - 链接检查{% endblock %}
+{% block page_title %}{{ project.display_name or project.id }}{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('link_check.page') }}">← 返回链接检查列表</a>
+
+<section class="card" style="padding:16px;">
+  <h2 style="margin:0 0 8px;">{{ project.display_name or project.id }}</h2>
+  <p style="margin:0 0 12px;color:var(--fg-muted, #667085);">任务 ID: {{ project.id }}</p>
+  <div id="linkCheckTaskMeta">
+    <div>状态: {{ task.status }}</div>
+    <div>链接: {{ task.link_url }}</div>
+    <div>目标语言: {{ task.target_language_name or task.target_language }}</div>
+  </div>
+</section>
+
+<section class="card" style="padding:16px;margin-top:16px;">
+  <h3 style="margin-top:0;">初始任务 JSON</h3>
+  <script id="linkCheckInitialTask" type="application/json">{{ initial_task_json|safe }}</script>
+  <pre id="linkCheckInitialTaskPreview" style="white-space:pre-wrap;word-break:break-word;">{{ initial_task_json }}</pre>
+</section>
+{% endblock %}

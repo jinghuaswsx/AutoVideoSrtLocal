@@ -9,8 +9,8 @@
   <section class="lc-panel">
     <div class="lc-panel-head">
       <div>
-        <h2>检查商品链接</h2>
-        <p>输入 Shopify 小语种商品链接，系统会抓取轮播图和详情图，判断是否已经替换成对应语种。</p>
+        <h2>新建链接检查</h2>
+        <p>输入商品链接并上传参考图，可快速创建全局链接检查项目。</p>
       </div>
     </div>
 
@@ -22,15 +22,15 @@
 
       <label class="lc-field">
         <span>目标语言</span>
-        <select id="targetLanguage" name="target_language" required>
-          <option value="">请选择语言</option>
+        <select id="targetLanguage" name="target_language">
+          <option value="">自动推断或手动选择</option>
         </select>
       </label>
 
       <label class="lc-field">
         <span>参考图片（可选）</span>
         <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-        <small>如果上传参考图，系统会额外判断网站图片是否和你提供的原图属于同一张图。</small>
+        <small>不上传时仅做站点图片语言检查，上传后会额外做参考图比对。</small>
       </label>
 
       <div class="lc-actions">
@@ -42,12 +42,33 @@
     <div id="linkCheckError" class="lc-error" hidden></div>
   </section>
 
+  <section class="lc-panel lc-panel--summary">
+    <div class="lc-panel-head">
+      <div>
+        <h2>全局项目列表</h2>
+        <p>这里展示所有未删除的 link_check 项目。</p>
+      </div>
+    </div>
+    {% if projects %}
+      <div class="lc-project-list">
+        {% for project in projects %}
+          <a class="project-card" href="{{ url_for('link_check.detail_page', task_id=project.id) }}">
+            <strong>{{ project.display_name or project.original_filename or project.id }}</strong>
+            <span>{{ project.status or "queued" }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="lc-empty">还没有链接检查项目。</div>
+    {% endif %}
+  </section>
+
   <section id="linkCheckSummary" class="lc-panel lc-panel--summary">
-    <div class="lc-empty">提交链接后，这里会显示抓取进度、页面语种和最终判断。</div>
+    <div class="lc-empty">提交链接后，这里会显示抓取进度、页面语言和最终判断。</div>
   </section>
 
   <section id="linkCheckResults" class="lc-panel">
-    <div class="lc-empty">结果区会按图片卡片展示抓取到的轮播图和详情图。</div>
+    <div class="lc-empty">结果区域会按图片卡片展示抓取到的轮播图和详情图。</div>
   </section>
 </div>
 
