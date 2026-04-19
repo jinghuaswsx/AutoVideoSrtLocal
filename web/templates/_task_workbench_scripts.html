@@ -1164,33 +1164,46 @@
         : '';
 
       // 文案收敛内循环（rewrite_attempts）：每轮内部最多 5 次 rewrite
+      // 每个 attempt 有独立 JSON，可预览前 200 字符，也可点链接看完整译文
       let attemptsHtml = '';
       if (Array.isArray(r.rewrite_attempts) && r.rewrite_attempts.length) {
         const rows = r.rewrite_attempts.map(a => {
           const ok = a.accepted
             ? '<span style="color:#16a34a;">✓ 命中</span>'
             : '<span style="color:#9ca3af;">✗ 超差</span>';
+          const used = a.is_used_for_tts
+            ? '<span style="color:#2563eb;font-weight:600;">（本轮采用）</span>'
+            : '';
+          const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase)
+            || '/api/tasks';
+          const attemptUrl = `${base}/${taskId}/round-file/${r.round}/attempt/${a.attempt}`;
+          const preview = a.preview_text
+            ? `<div style="margin-top:4px;padding:6px 8px;background:var(--bg-muted,#f3f4f6);border-radius:4px;font-size:11px;color:var(--fg,#374151);line-height:1.5;max-width:600px;">${escapeHtml(a.preview_text)}${a.preview_text.length >= 200 ? '...' : ''}</div>`
+            : '';
           return `<tr>
-            <td style="padding:2px 10px;">#${a.attempt}</td>
-            <td style="padding:2px 10px;">${a.words} 词</td>
-            <td style="padding:2px 10px;">偏差 ${a.diff}</td>
-            <td style="padding:2px 10px;">${ok}</td>
-          </tr>`;
+            <td style="padding:4px 10px;vertical-align:top;">#${a.attempt} ${used}</td>
+            <td style="padding:4px 10px;vertical-align:top;">${a.words} 词</td>
+            <td style="padding:4px 10px;vertical-align:top;">偏差 ${a.diff}</td>
+            <td style="padding:4px 10px;vertical-align:top;">${ok}</td>
+            <td style="padding:4px 10px;vertical-align:top;"><a href="${attemptUrl}" target="_blank">查看译文 JSON</a></td>
+          </tr>
+          <tr><td colspan="5" style="padding:0 10px 8px;">${preview}</td></tr>`;
         }).join('');
         const pickInfo = r.rewrite_converged === false
           ? `（5 次都未落入 ±10% 窗口，挑最接近目标的第 ${r.rewrite_attempt_used} 次：${r.rewrite_words_actual} 词）`
           : `（第 ${r.rewrite_attempt_used} 次命中，${r.rewrite_words_actual} 词）`;
         attemptsHtml = `
-          <details class="duration-round-attempts" style="margin-top:4px;font-size:12px;">
+          <details class="duration-round-attempts" style="margin-top:4px;font-size:12px;" open>
             <summary style="cursor:pointer;color:var(--text-user-badge,#6b7280);">
               文案收敛：${r.rewrite_attempts.length} 次 rewrite ${pickInfo}
             </summary>
-            <table style="margin-top:4px;border-collapse:collapse;font-size:11px;">
+            <table style="margin-top:6px;border-collapse:collapse;font-size:11px;">
               <thead><tr style="color:#9ca3af;">
                 <th style="padding:2px 10px;text-align:left;">尝试</th>
                 <th style="padding:2px 10px;text-align:left;">实际字数</th>
                 <th style="padding:2px 10px;text-align:left;">偏差</th>
                 <th style="padding:2px 10px;text-align:left;">结果</th>
+                <th style="padding:2px 10px;text-align:left;">完整译文</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table>
