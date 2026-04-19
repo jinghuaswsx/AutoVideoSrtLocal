@@ -56,14 +56,46 @@ def model_display_name(model_id: str) -> str:
     return model_id or ""
 
 
+def _binding_lookup(service: str) -> dict | None:
+    """若 service 像 use_case code（含 '.'），查 bindings；否则 None。"""
+    if not isinstance(service, str) or "." not in service:
+        return None
+    try:
+        from appcore import llm_bindings
+        return llm_bindings.resolve(service)
+    except KeyError:
+        return None
+
+
 def resolve_config(user_id: int | None = None, service: str = "gemini",
                    default_model: str | None = None) -> tuple[str, str]:
     """返回 (api_key, model_id)。
 
+    service 支持两种入参：
+      1) 老风格服务名: "gemini" / "gemini_video_analysis" —— 读 api_keys 里该服务的配置
+      2) UseCase code（含 '.'）如 "video_score.run" —— 查 bindings 表；
+         仅当 binding.provider == "gemini_aistudio" 时覆盖 model，
+         key 仍走 gemini AI Studio 通道。
+
     key 解析顺序：该 service 的用户配置 → 默认 "gemini" service 的用户配置
                 → 环境变量 → google_api_key 文件。
-    model 解析顺序：该 service 配置的 model_id → default_model 参数 → GEMINI_MODEL。
+    model 解析顺序：bindings 覆盖 → 该 service 配置的 model_id
+                  → default_model 参数 → GEMINI_MODEL。
     """
+    # 新路径：use_case code → bindings（仅 gemini_aistudio 在此分支覆盖 model）
+    binding = _binding_lookup(service)
+    if binding and binding.get("provider") == "gemini_aistudio":
+        key = ""
+        if user_id is not None:
+            key = (resolve_key(user_id, "gemini", "GEMINI_API_KEY") or "").strip()
+        if GEMINI_BACKEND == "cloud":
+            key = key or GEMINI_CLOUD_API_KEY
+        else:
+            key = key or GEMINI_API_KEY
+        chosen = (binding.get("model") or "").strip()
+        return key, chosen or (default_model or GEMINI_MODEL)
+
+    # ── 以下是完全保留的老代码 ──
     key = ""
     if user_id is not None:
         key = (resolve_key(user_id, service, "GEMINI_API_KEY") or "").strip()
