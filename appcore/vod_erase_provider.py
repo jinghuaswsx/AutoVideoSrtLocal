@@ -59,7 +59,7 @@ def upload_media_by_url(
             }
         ],
     }
-    result = call(action="UploadMediaByUrl", version="2023-01-01", body=body)
+    result = call(action="UploadMediaByUrl", version="2020-08-01", body=body)
     data = result.get("Data") or result
     jobs = data.get("JobIds") if isinstance(data, dict) else None
     if jobs and isinstance(jobs, list):
@@ -75,7 +75,7 @@ def query_upload_task_info(job_id: str) -> dict:
         "SpaceName": _space_name(),
         "JobIds": job_id,
     }
-    result = call(action="QueryUploadTaskInfo", version="2023-01-01", method="GET", body=body)
+    result = call(action="QueryUploadTaskInfo", version="2020-08-01", method="GET", body=body)
     data = result.get("Data") or result
     media_list = data.get("MediaInfoList") if isinstance(data, dict) else None
     if media_list:
