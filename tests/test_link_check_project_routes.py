@@ -158,6 +158,33 @@ def test_link_check_api_rejects_deleted_project_even_if_store_has_task(authed_us
     assert response.status_code == 404
 
 
+def test_link_check_api_does_not_fallback_to_store_when_project_query_errors(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.link_check.store.get",
+        lambda task_id: {
+            "id": task_id,
+            "type": "link_check",
+            "status": "done",
+            "link_url": "https://shop.example.com/de/products/demo",
+            "target_language": "de",
+            "target_language_name": "德语",
+            "progress": {},
+            "summary": {},
+            "reference_images": [],
+            "items": [],
+        },
+    )
+
+    def _boom(sql, args):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("web.routes.link_check.query_one", _boom)
+
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-db-error-1")
+
+    assert response.status_code == 500
+
+
 def test_link_check_rename_route_updates_global_project(authed_user_client_no_db, monkeypatch):
     calls = {}
 
@@ -241,3 +268,38 @@ def test_link_check_delete_route_soft_deletes_global_project(authed_user_client_
     assert calls["cleanup"]["task_dir"] == "C:/tmp/lc-delete-1"
     assert calls["cleanup"]["tos_keys"] == ["collected-key"]
     assert calls["update"]["fields"]["status"] == "deleted"
+
+
+def test_link_check_detail_page_bootstrap_json_escapes_script_terminator(authed_user_client_no_db, monkeypatch):
+    state = {
+        "id": "lc-xss-1",
+        "type": "link_check",
+        "status": "done",
+        "link_url": "https://shop.example.com/de/products/demo",
+        "target_language": "de",
+        "target_language_name": "德语",
+        "summary": {"note": "x</script><div>boom</div>"},
+        "progress": {},
+        "reference_images": [],
+        "items": [],
+    }
+
+    monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: None)
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": "lc-xss-1",
+            "type": "link_check",
+            "display_name": "Safe Link Check",
+            "status": "done",
+            "state_json": json.dumps(state, ensure_ascii=False),
+        },
+    )
+
+    response = authed_user_client_no_db.get("/link-check/lc-xss-1")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "x</script><div>boom</div>" not in body
+    assert "\\u003c/script\\u003e\\u003cdiv\\u003eboom\\u003c/div\\u003e" in body

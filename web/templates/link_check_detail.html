@@ -16,7 +16,7 @@
 
 <section class="card" style="padding:16px;margin-top:16px;">
   <h3 style="margin-top:0;">初始任务 JSON</h3>
-  <script id="linkCheckInitialTask" type="application/json">{{ initial_task_json|safe }}</script>
-  <pre id="linkCheckInitialTaskPreview" style="white-space:pre-wrap;word-break:break-word;">{{ initial_task_json }}</pre>
+  <script id="linkCheckInitialTask" type="application/json">{{ initial_task|tojson }}</script>
+  <pre id="linkCheckInitialTaskPreview" style="white-space:pre-wrap;word-break:break-word;">{{ initial_task|tojson(indent=2) }}</pre>
 </section>
 {% endblock %}

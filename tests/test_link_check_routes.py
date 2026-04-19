@@ -1,7 +1,10 @@
 import io
+import json
 
 
-def test_link_check_page_renders_form(authed_user_client_no_db):
+def test_link_check_page_renders_form(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.link_check.query", lambda sql, args=(): [])
+
     response = authed_user_client_no_db.get("/link-check")
 
     assert response.status_code == 200
@@ -10,7 +13,9 @@ def test_link_check_page_renders_form(authed_user_client_no_db):
     assert 'name="reference_images"' in html
 
 
-def test_link_check_page_contains_progress_and_results_shell(authed_user_client_no_db):
+def test_link_check_page_contains_progress_and_results_shell(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.link_check.query", lambda sql, args=(): [])
+
     response = authed_user_client_no_db.get("/link-check")
     html = response.get_data(as_text=True)
 
@@ -28,6 +33,7 @@ def test_create_link_check_task_accepts_optional_reference_images(authed_user_cl
         return {"id": task_id, "type": "link_check", "_user_id": 2}
 
     monkeypatch.setattr(store, "create_link_check", fake_create)
+    monkeypatch.setattr("web.routes.link_check.medias.list_languages", lambda: [])
     monkeypatch.setattr(
         "web.routes.link_check.medias.get_language",
         lambda code: {"code": "de", "name_zh": "德语", "enabled": 1},
@@ -52,6 +58,16 @@ def test_create_link_check_task_accepts_optional_reference_images(authed_user_cl
 def test_get_task_serializes_preview_urls(authed_user_client_no_db, monkeypatch):
     from web import store
 
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "display_name": "Demo Link Check",
+            "status": "done",
+            "state_json": json.dumps({}, ensure_ascii=False),
+        },
+    )
     monkeypatch.setattr(
         store,
         "get",

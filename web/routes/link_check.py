@@ -7,8 +7,6 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
-from werkzeug.exceptions import HTTPException
-
 from appcore import cleanup, medias
 from appcore.db import execute, query, query_one
 from appcore.link_check_locale import build_link_check_display_name, detect_target_language_from_url
@@ -74,40 +72,21 @@ def _load_task_from_row(row: dict | None) -> dict | None:
 
 
 def _get_project_row(task_id: str) -> dict:
-    try:
-        row = query_one(
-            "SELECT * FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
-            (task_id,),
-        )
-    except Exception:
-        raise
+    row = query_one(
+        "SELECT * FROM projects WHERE id = %s AND type = 'link_check' AND deleted_at IS NULL",
+        (task_id,),
+    )
     if not row:
         abort(404)
     return row
 
 
 def _get_task(task_id: str) -> tuple[dict, dict]:
+    row = _get_project_row(task_id)
+
     store_task = store.get(task_id)
     if store_task and store_task.get("type") != "link_check":
         store_task = None
-
-    try:
-        row = _get_project_row(task_id)
-    except HTTPException:
-        raise
-    except Exception:
-        if store_task:
-            fallback_row = {
-                "id": store_task.get("id") or task_id,
-                "type": "link_check",
-                "display_name": store_task.get("display_name") or "",
-                "original_filename": store_task.get("original_filename") or "",
-                "status": store_task.get("status") or "",
-                "task_dir": store_task.get("task_dir") or "",
-                "state_json": "",
-            }
-            return fallback_row, store_task
-        raise
 
     if store_task:
         merged_task = dict(store_task)
@@ -192,7 +171,7 @@ def detail_page(task_id: str):
         "link_check_detail.html",
         project=row,
         task=task,
-        initial_task_json=json.dumps(task, ensure_ascii=False),
+        initial_task=task,
     )
 
 
