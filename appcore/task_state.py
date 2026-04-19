@@ -527,7 +527,8 @@ def create_image_translate(task_id: str, task_dir: str, *,
                             prompt: str,
                             items: list[dict],
                             product_name: str = "",
-                            project_name: str = "") -> dict:
+                            project_name: str = "",
+                            medias_context: dict | None = None) -> dict:
     """创建图片翻译任务的初始状态。product_name/project_name 作为存档标识写入 state。"""
     normalized_items = []
     for idx, raw in enumerate(items):
@@ -535,6 +536,8 @@ def create_image_translate(task_id: str, task_dir: str, *,
             "idx": int(raw.get("idx", idx)),
             "filename": str(raw.get("filename") or ""),
             "src_tos_key": str(raw.get("src_tos_key") or ""),
+            "source_bucket": str(raw.get("source_bucket") or "upload"),
+            "source_detail_image_id": raw.get("source_detail_image_id"),
             "dst_tos_key": "",
             "status": "pending",
             "attempts": 0,
@@ -564,6 +567,7 @@ def create_image_translate(task_id: str, task_dir: str, *,
             "running": 0,
         },
         "items": normalized_items,
+        "medias_context": dict(medias_context or {}),
         "error": "",
         "_user_id": user_id,
     }

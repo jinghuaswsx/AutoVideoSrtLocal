@@ -215,7 +215,7 @@
       uploadFiles(files);
     });
 
-    return { load, reset, show, hide };
+    return { load, reset, show, hide, items: () => items.slice() };
   }
 
   // ---------- List ----------
@@ -672,14 +672,19 @@
     pendingItemCover: null,
     // 新增素材提交大框 - 待提交的视频 File 对象
     pendingVideoFile: null,
+    // 小语种详情图翻译任务历史（按语种缓存）
+    detailTranslateTasks: {},
   };
 
   function edShow() { $('edMask').hidden = false; }
   function edHide() {
     $('edMask').hidden = true;
+    if ($('edFromUrlMask')) $('edFromUrlMask').hidden = true;
+    if ($('edDetailTranslateTaskMask')) $('edDetailTranslateTaskMask').hidden = true;
     edState.current = null;
     edState.activeLang = 'en';
     edState.productData = null;
+    edState.detailTranslateTasks = {};
     edResetNewItemForm();
   }
 
@@ -737,16 +742,7 @@
       edResetNewItemForm();
       edShow();
       edRenderLangTabs();
-      edRenderActiveLangView();
-      // 详情图区块：仅英语加载
-      const ctrl = ensureEdDetailImagesCtrl();
-      ctrl.reset();
-      if (edState.activeLang === 'en') {
-        ctrl.show();
-        await ctrl.load(pid);
-      } else {
-        ctrl.hide();
-      }
+      await edRenderActiveLangView();
     } catch (e) {
       alert('加载失败：' + (e.message || e));
     }
@@ -839,7 +835,201 @@
     else links[lang] = val;
   }
 
-  function edRenderActiveLangView() {
+  function edDetailTranslateStatusLabel(status) {
+    switch ((status || '').toLowerCase()) {
+      case 'done': return '已完成';
+      case 'running': return '进行中';
+      case 'queued': return '排队中';
+      case 'failed': return '已失败';
+      default: return status || '待处理';
+    }
+  }
+
+  function edDetailTranslateApplyLabel(status) {
+    switch ((status || '').toLowerCase()) {
+      case 'applied': return '已回填';
+      case 'skipped_failed': return '未回填';
+      case 'apply_error': return '回填失败';
+      case 'pending': return '待回填';
+      default: return status || '待回填';
+    }
+  }
+
+  async function edLoadDetailTranslateTasks(pid, lang) {
+    if (!pid || !lang || lang === 'en') {
+      edState.detailTranslateTasks[lang] = [];
+      return [];
+    }
+    const data = await fetchJSON(`/medias/api/products/${pid}/detail-image-translate-tasks?lang=${encodeURIComponent(lang)}`);
+    const tasks = Array.isArray(data.items) ? data.items : [];
+    edState.detailTranslateTasks[lang] = tasks;
+    return tasks;
+  }
+
+  function edRenderDetailTranslateHistory(tasks) {
+    const wrap = $('edDetailTranslateHistoryWrap');
+    const box = $('edDetailTranslateHistory');
+    if (!wrap || !box) return;
+    if (edState.activeLang === 'en') {
+      wrap.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    wrap.hidden = false;
+    if (!tasks.length) {
+      box.innerHTML = '<div class="oc-hint" style="padding:10px 12px;border:1px dashed var(--oc-border);border-radius:10px;">暂无翻译任务记录</div>';
+      return;
+    }
+    box.innerHTML = tasks.map(task => {
+      const progress = task.progress || {};
+      const detailUrl = escapeHtml(task.detail_url || `/image-translate/${task.task_id}`);
+      const taskId = escapeHtml(task.task_id || '');
+      const status = escapeHtml(edDetailTranslateStatusLabel(task.status));
+      const applyStatus = escapeHtml(edDetailTranslateApplyLabel(task.apply_status));
+      const updatedAt = escapeHtml(fmtDate(task.updated_at || task.created_at || ''));
+      const progressText = `${progress.done || 0}/${progress.total || 0}`;
+      return `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);margin-top:8px;">
+          <div style="display:grid;gap:4px;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <strong style="color:var(--oc-fg);">任务 ${taskId || '-'}</strong>
+              <span class="oc-hint">状态：${status}</span>
+              <span class="oc-hint">回填：${applyStatus}</span>
+              <span class="oc-hint">进度：${progressText}</span>
+            </div>
+            <div class="oc-hint">更新时间：${updatedAt || '-'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+            <a class="oc-btn ghost sm" href="${detailUrl}" target="_blank" rel="noopener">查看详情</a>
+            <button type="button" class="oc-btn ghost sm" data-retranslate-lang="${escapeHtml(edState.activeLang)}">重新翻译</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function edRenderDetailTranslateState(lang, tasks, detailItems) {
+    const section = $('edDetailImagesSection');
+    const status = $('edDetailTranslateStatus');
+    const translateBtn = $('edDetailImagesTranslateBtn');
+    const title = section && section.querySelector('.oc-section-title > span');
+    const subtitle = section && section.querySelector('.oc-section-title .optional');
+    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    if (section) section.hidden = false;
+    if (title) title.textContent = '商品详情图';
+    if (subtitle) {
+      subtitle.textContent = lang === 'en'
+        ? '英文原始版，用于后续图片翻译'
+        : `${langName} 版本，可自行上传、从商品链接下载，或从英语版一键翻译`;
+    }
+    if (translateBtn) translateBtn.hidden = lang === 'en';
+    if (!status) return;
+    if (lang === 'en') {
+      status.hidden = true;
+      return;
+    }
+
+    const items = Array.isArray(detailItems) ? detailItems : [];
+    const appliedImage = items.find(item => item && item.origin_type === 'image_translate');
+    const appliedTaskId = appliedImage && appliedImage.image_translate_task_id ? String(appliedImage.image_translate_task_id) : '';
+    const appliedTask = appliedTaskId
+      ? (tasks.find(task => String(task.task_id || '') === appliedTaskId) || { task_id: appliedTaskId, detail_url: `/image-translate/${encodeURIComponent(appliedTaskId)}` })
+      : null;
+    const latest = tasks[0] || null;
+    let html = '';
+    if (appliedTask) {
+      const detailUrl = escapeHtml(appliedTask.detail_url || `/image-translate/${appliedTask.task_id}`);
+      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填。<a href="${detailUrl}" target="_blank" rel="noopener">查看关联任务</a>`;
+    } else if (latest) {
+      const detailUrl = escapeHtml(latest.detail_url || `/image-translate/${latest.task_id}`);
+      html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${detailUrl}" target="_blank" rel="noopener">查看任务详情</a>`;
+    } else {
+      html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
+    }
+    status.hidden = false;
+    status.innerHTML = html;
+  }
+
+  async function edRefreshDetailImagesPanel(lang) {
+    const ctrl = ensureEdDetailImagesCtrl();
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    ctrl.show();
+    if (!pid) {
+      ctrl.reset();
+      edRenderDetailTranslateState(lang, [], []);
+      edRenderDetailTranslateHistory([]);
+      return;
+    }
+    await ctrl.load(pid);
+    try {
+      const tasks = await edLoadDetailTranslateTasks(pid, lang);
+      const detailItems = ctrl.items ? ctrl.items() : [];
+      edRenderDetailTranslateState(lang, tasks, detailItems);
+      edRenderDetailTranslateHistory(tasks);
+    } catch (err) {
+      const status = $('edDetailTranslateStatus');
+      if (status && lang !== 'en') {
+        status.hidden = false;
+        status.textContent = '翻译任务记录加载失败：' + (err.message || err);
+      }
+      edRenderDetailTranslateHistory([]);
+    }
+  }
+
+  function edOpenDetailTranslateTaskModal() {
+    const mask = $('edDetailTranslateTaskMask');
+    if (mask) mask.hidden = false;
+  }
+
+  function edCloseDetailTranslateTaskModal() {
+    const mask = $('edDetailTranslateTaskMask');
+    if (mask) mask.hidden = true;
+  }
+
+  async function edStartDetailTranslate(langOverride) {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    const lang = (langOverride || edState.activeLang || '').trim().toLowerCase();
+    if (!pid || !lang || lang === 'en') return;
+
+    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    const msg = $('edDetailTranslateTaskMsg');
+    const meta = $('edDetailTranslateTaskMeta');
+    const link = $('edDetailTranslateTaskLink');
+
+    edOpenDetailTranslateTaskModal();
+    if (msg) msg.textContent = '正在创建翻译任务...';
+    if (meta) meta.textContent = `${langName} · 商品详情图`;
+    if (link) {
+      link.hidden = true;
+      link.removeAttribute('href');
+      delete link.dataset.taskId;
+    }
+
+    try {
+      const data = await fetchJSON(`/medias/api/products/${pid}/detail-images/translate-from-en`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang }),
+      });
+      if (msg) msg.textContent = '翻译任务已创建，可以留在当前页查看历史记录，也可以打开详情页跟踪进度。';
+      if (meta) meta.textContent = `任务 ID：${data.task_id} · ${langName}`;
+      if (link) {
+        link.href = data.detail_url || `/image-translate/${data.task_id}`;
+        link.dataset.taskId = data.task_id || '';
+        link.hidden = false;
+      }
+      await edRefreshDetailImagesPanel(lang);
+    } catch (err) {
+      if (msg) msg.textContent = '创建翻译任务失败';
+      if (meta) meta.textContent = err.message || String(err);
+      if (link) {
+        link.hidden = true;
+        link.removeAttribute('href');
+      }
+    }
+  }
+
+  async function edRenderActiveLangView() {
     const lang = edState.activeLang;
     // 更新语种标签提示
     const cwLabel = $('edCwLangLabel');
@@ -853,15 +1043,7 @@
     edRenderCopyBlock(lang);
     edRenderProductUrl(lang);
 
-    // 商品详情图：仅英语显示入口；切换到其他语种时隐藏，切回英语时重新加载
-    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
-    const ctrl = ensureEdDetailImagesCtrl();
-    if (lang === 'en') {
-      ctrl.show();
-      if (pid) ctrl.load(pid);
-    } else {
-      ctrl.hide();
-    }
+    await edRefreshDetailImagesPanel(lang);
 
     // EN 主图校验 + 保存按钮
     const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
@@ -1604,8 +1786,9 @@
       function closeFromUrlModal() {
         if (pollHandle) { clearTimeout(pollHandle); pollHandle = null; }
         $('edFromUrlMask').hidden = true;
-        // 关闭时强制刷新素材编辑页的详情图
-        if (edDetailImagesCtrl) edDetailImagesCtrl.load();
+        edRefreshDetailImagesPanel(edState.activeLang).catch((err) => {
+          console.error('[detail-images] refresh after from-url failed:', err);
+        });
       }
 
       $('edFromUrlClose').addEventListener('click', closeFromUrlModal);
@@ -1654,6 +1837,23 @@
     }
 
     // edCwAddBtn：按当前 activeLang 添加文案条目
+    $('edDetailImagesTranslateBtn') && $('edDetailImagesTranslateBtn').addEventListener('click', () => {
+      edStartDetailTranslate().catch((err) => {
+        console.error('[detail-images] start translate failed:', err);
+      });
+    });
+    $('edDetailTranslateTaskClose') && $('edDetailTranslateTaskClose').addEventListener('click', edCloseDetailTranslateTaskModal);
+    $('edDetailTranslateTaskMask') && $('edDetailTranslateTaskMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edDetailTranslateTaskMask') edCloseDetailTranslateTaskModal();
+    });
+    $('edDetailTranslateHistory') && $('edDetailTranslateHistory').addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest('[data-retranslate-lang]');
+      if (!btn) return;
+      edStartDetailTranslate(btn.getAttribute('data-retranslate-lang') || edState.activeLang).catch((err) => {
+        console.error('[detail-images] retranslate failed:', err);
+      });
+    });
+
     $('edCwAddBtn').addEventListener('click', () => {
       $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
       $('edCwBadge').textContent = $('edCwList').children.length;

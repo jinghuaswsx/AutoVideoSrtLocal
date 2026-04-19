@@ -4,14 +4,19 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlparse
+import uuid
 import requests
 from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file
 from flask_login import login_required, current_user
 
-from appcore import medias, tos_clients
+from appcore import medias, task_state, tos_clients
+from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
+from appcore.db import query as db_query
+from appcore.gemini_image import IMAGE_MODELS
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
+from web.routes import image_translate as image_translate_routes
 
 import re
 
@@ -76,6 +81,25 @@ THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
 def _can_access_product(product: dict | None) -> bool:
     # 共享媒体库：只要产品存在就允许访问。
     return product is not None
+
+
+def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
+    return image_translate_routes.start_image_translate_runner(task_id, user_id)
+
+
+def _default_image_translate_model_id() -> str:
+    try:
+        from appcore.api_keys import resolve_extra
+
+        extra = resolve_extra(current_user.id, "image_translate") or {}
+        preferred = (extra.get("default_model_id") or "").strip()
+        if preferred:
+            return preferred
+    except Exception:
+        pass
+    if IMAGE_MODELS:
+        return IMAGE_MODELS[0][0]
+    return "gemini-3-pro-image-preview"
 
 
 def _serialize_product(p: dict, items_count: int | None = None,
@@ -740,6 +764,9 @@ def _serialize_detail_image(row: dict) -> dict:
         "file_size": row.get("file_size"),
         "width": row.get("width"),
         "height": row.get("height"),
+        "origin_type": row.get("origin_type") or "manual",
+        "source_detail_image_id": row.get("source_detail_image_id"),
+        "image_translate_task_id": row.get("image_translate_task_id"),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "thumbnail_url": f"/medias/detail-image/{row['id']}",
     }
@@ -855,6 +882,7 @@ def api_detail_images_from_url(pid: int):
                 new_id = medias.add_detail_image(
                     pid, lang, obj_key,
                     content_type=None, file_size=len(data) if data else None,
+                    origin_type="from_url",
                 )
                 row = medias.get_detail_image(new_id)
                 if row:
@@ -981,6 +1009,7 @@ def api_detail_images_complete(pid: int):
             file_size=_opt_int(img.get("file_size") or img.get("size")),
             width=_opt_int(img.get("width")),
             height=_opt_int(img.get("height")),
+            origin_type="manual",
         )
         row = medias.get_detail_image(new_id)
         if row:
@@ -1026,6 +1055,119 @@ def api_detail_images_reorder(pid: int):
         return jsonify({"error": "ids must be integers"}), 400
     updated = medias.reorder_detail_images(pid, lang, ids_int)
     return jsonify({"ok": True, "updated": updated})
+
+
+@bp.route("/api/products/<int:pid>/detail-images/translate-from-en", methods=["POST"])
+@login_required
+def api_detail_images_translate_from_en(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+
+    body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body, default="")
+    if err:
+        return jsonify({"error": err}), 400
+    if lang == "en":
+        return jsonify({"error": "英文详情图不需要从英语版翻译"}), 400
+
+    source_rows = medias.list_detail_images(pid, "en")
+    if not source_rows:
+        return jsonify({"error": "请先准备英语版商品详情图"}), 409
+
+    prompt_tpl = (its.get_prompts_for_lang(lang).get("detail") or "").strip()
+    if not prompt_tpl:
+        return jsonify({"error": "当前语种未配置详情图翻译 prompt"}), 409
+    lang_name = medias.get_language_name(lang)
+    task_id = uuid.uuid4().hex
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    items = []
+    for idx, row in enumerate(source_rows):
+        items.append({
+            "idx": idx,
+            "filename": os.path.basename(row.get("object_key") or "") or f"detail_{idx}.png",
+            "src_tos_key": row["object_key"],
+            "source_bucket": "media",
+            "source_detail_image_id": row["id"],
+        })
+    medias_context = {
+        "entry": "medias_edit_detail",
+        "product_id": pid,
+        "source_lang": "en",
+        "target_lang": lang,
+        "source_bucket": "media",
+        "source_detail_image_ids": [row["id"] for row in source_rows],
+        "auto_apply_detail_images": True,
+        "apply_status": "pending",
+        "applied_at": "",
+        "applied_detail_image_ids": [],
+        "last_apply_error": "",
+    }
+    task_state.create_image_translate(
+        task_id,
+        task_dir,
+        user_id=current_user.id,
+        preset="detail",
+        target_language=lang,
+        target_language_name=lang_name,
+        model_id=(body.get("model_id") or "").strip() or _default_image_translate_model_id(),
+        prompt=prompt_tpl.replace("{target_language_name}", lang_name),
+        items=items,
+        product_name=(p.get("name") or "").strip(),
+        project_name=image_translate_routes._compose_project_name((p.get("name") or "").strip(), "detail", lang_name),
+        medias_context=medias_context,
+    )
+    _start_image_translate_runner(task_id, current_user.id)
+    return jsonify({"task_id": task_id, "detail_url": f"/image-translate/{task_id}"}), 201
+
+
+@bp.route("/api/products/<int:pid>/detail-image-translate-tasks", methods=["GET"])
+@login_required
+def api_detail_image_translate_tasks(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    lang = (request.args.get("lang") or "").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    rows = db_query(
+        "SELECT id, created_at, updated_at, state_json "
+        "FROM projects "
+        "WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL "
+        "ORDER BY created_at DESC LIMIT 50",
+        (current_user.id,),
+    )
+    items = []
+    for row in rows:
+        try:
+            state = json.loads(row.get("state_json") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        ctx = state.get("medias_context") or {}
+        if state.get("preset") != "detail":
+            continue
+        if ctx.get("entry") != "medias_edit_detail":
+            continue
+        if int(ctx.get("product_id") or 0) != pid:
+            continue
+        if (ctx.get("target_lang") or "") != lang:
+            continue
+        progress = dict(state.get("progress") or {})
+        items.append({
+            "task_id": row["id"],
+            "status": state.get("status") or "queued",
+            "apply_status": ctx.get("apply_status") or "",
+            "applied_detail_image_ids": list(ctx.get("applied_detail_image_ids") or []),
+            "last_apply_error": ctx.get("last_apply_error") or "",
+            "progress": progress,
+            "detail_url": f"/image-translate/{row['id']}",
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        })
+    return jsonify({"items": items})
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])

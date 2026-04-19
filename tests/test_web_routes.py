@@ -1323,3 +1323,26 @@ def test_medias_scripts_do_not_use_admin_scope_switch():
     assert "params.set('scope', 'all')" not in load_list_block
     assert "syncChip('chipScope', 'scopeAll')" not in events_block
     assert "chipScope" not in events_block
+
+
+def test_image_translate_detail_template_contains_medias_context_block():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "image_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+
+    assert "itMediasContextCard" in template
+    assert "商品素材编辑页" in template
+    assert "window.renderImageTranslateMediasContext" in scripts
+    assert "medias_context" in scripts
+
+
+def test_medias_edit_modal_contains_detail_image_translation_controls():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'id="edDetailImagesTranslateBtn"' in template
+    assert 'id="edDetailTranslateStatus"' in template
+    assert 'id="edDetailTranslateHistory"' in template
+    assert "detail-image-translate-tasks" in scripts
+    assert "detail-images/translate-from-en" in scripts

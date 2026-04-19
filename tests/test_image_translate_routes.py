@@ -270,6 +270,40 @@ def test_get_state(authed_client_no_db, monkeypatch):
     assert len(state["items"]) == 1
 
 
+def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    task = {
+        "id": "img-state-1",
+        "type": "image_translate",
+        "status": "done",
+        "preset": "detail",
+        "target_language": "de",
+        "target_language_name": "德语",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "x",
+        "product_name": "测试商品",
+        "project_name": "测试项目",
+        "items": [],
+        "progress": {"total": 0, "done": 0, "failed": 0, "running": 0},
+        "steps": {"prepare": "done", "process": "done"},
+        "error": "",
+        "medias_context": {
+            "entry": "medias_edit_detail",
+            "product_id": 123,
+            "target_lang": "de",
+            "apply_status": "pending",
+        },
+        "_user_id": 1,
+    }
+
+    monkeypatch.setattr(r, "_get_owned_task", lambda task_id: task)
+
+    resp = authed_client_no_db.get("/api/image-translate/img-state-1")
+    assert resp.status_code == 200
+    assert resp.get_json()["medias_context"]["product_id"] == 123
+
+
 def _prep_task(client, monkeypatch, with_done=True):
     """建完整任务，并可选标 done。返回 task_id。"""
     _patch_tos_and_runner(monkeypatch)

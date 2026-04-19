@@ -275,6 +275,47 @@ def test_create_image_translate_minimal(tmp_path):
     assert got["preset"] == "cover"
 
 
+def test_create_image_translate_persists_medias_context(tmp_path):
+    task_id = "tid-img-medias-1"
+    task_dir = str(tmp_path / task_id)
+    task = ts.create_image_translate(
+        task_id,
+        task_dir,
+        user_id=1,
+        preset="detail",
+        target_language="de",
+        target_language_name="德语",
+        model_id="gemini-3-pro-image-preview",
+        prompt="translate to de",
+        items=[
+            {
+                "idx": 0,
+                "filename": "en_1.jpg",
+                "src_tos_key": "1/medias/1/en_1.jpg",
+                "source_bucket": "media",
+                "source_detail_image_id": 11,
+            }
+        ],
+        medias_context={
+            "entry": "medias_edit_detail",
+            "product_id": 123,
+            "source_lang": "en",
+            "target_lang": "de",
+            "source_bucket": "media",
+            "auto_apply_detail_images": True,
+            "apply_status": "pending",
+            "source_detail_image_ids": [11],
+        },
+    )
+
+    assert task["items"][0]["source_bucket"] == "media"
+    assert task["items"][0]["source_detail_image_id"] == 11
+    assert task["medias_context"]["product_id"] == 123
+    assert task["medias_context"]["apply_status"] == "pending"
+    got = ts.get(task_id)
+    assert got["medias_context"]["target_lang"] == "de"
+
+
 def test_create_task_initializes_tts_duration_fields(tmp_path):
     from appcore import task_state
     task_id = "test-duration-init"

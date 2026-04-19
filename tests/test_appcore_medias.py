@@ -136,3 +136,84 @@ def test_parse_ad_supported_langs():
     assert medias.parse_ad_supported_langs("") == []
     assert medias.parse_ad_supported_langs("de,fr, ja") == ["de", "fr", "ja"]
     assert medias.parse_ad_supported_langs(" DE , FR ") == ["de", "fr"]
+
+
+def test_add_detail_image_records_translate_provenance(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(medias, "_next_detail_image_sort_order", lambda product_id, lang: 3)
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 88
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    image_id = medias.add_detail_image(
+        101,
+        "de",
+        "1/medias/101/de_1.png",
+        content_type="image/png",
+        origin_type="image_translate",
+        source_detail_image_id=11,
+        image_translate_task_id="img-task-1",
+    )
+
+    assert image_id == 88
+    assert "origin_type" in captured["sql"]
+    assert "source_detail_image_id" in captured["sql"]
+    assert "image_translate_task_id" in captured["sql"]
+    assert captured["args"] == (
+        101, "de", 3, "1/medias/101/de_1.png", "image/png", None, None, None,
+        "image_translate", 11, "img-task-1",
+    )
+
+
+def test_replace_detail_images_for_lang_recreates_rows_with_provenance(monkeypatch):
+    deleted = []
+    inserted = []
+
+    monkeypatch.setattr(
+        medias,
+        "soft_delete_detail_images_by_lang",
+        lambda product_id, lang: deleted.append((product_id, lang)) or 1,
+        raising=False,
+    )
+
+    next_id = {"value": 500}
+
+    def fake_add_detail_image(product_id, lang, object_key, **kwargs):
+        next_id["value"] += 1
+        inserted.append((product_id, lang, object_key, kwargs))
+        return next_id["value"]
+
+    monkeypatch.setattr(medias, "add_detail_image", fake_add_detail_image)
+
+    new_ids = medias.replace_detail_images_for_lang(
+        101,
+        "de",
+        [
+            {
+                "object_key": "1/medias/101/de_1.png",
+                "content_type": "image/png",
+                "origin_type": "image_translate",
+                "source_detail_image_id": 11,
+                "image_translate_task_id": "img-task-1",
+            },
+            {
+                "object_key": "1/medias/101/de_2.png",
+                "content_type": "image/png",
+                "origin_type": "image_translate",
+                "source_detail_image_id": 12,
+                "image_translate_task_id": "img-task-1",
+            },
+        ],
+    )
+
+    assert deleted == [(101, "de")]
+    assert new_ids == [501, 502]
+    assert inserted[0][2] == "1/medias/101/de_1.png"
+    assert inserted[0][3]["origin_type"] == "image_translate"
+    assert inserted[0][3]["source_detail_image_id"] == 11
+    assert inserted[1][3]["image_translate_task_id"] == "img-task-1"

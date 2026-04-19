@@ -272,7 +272,38 @@
       }
     }
 
+    function describeMediasApplyStatus(ctx){
+      if (!ctx || !ctx.auto_apply_detail_images) return "未启用自动回填";
+      if (ctx.apply_status === "applied") return "已回填到当前语种详情图";
+      if (ctx.apply_status === "skipped_failed") return "任务未全部成功，未回填";
+      if (ctx.apply_status === "apply_error") {
+        return "回填失败" + (ctx.last_apply_error ? "：" + ctx.last_apply_error : "");
+      }
+      return "等待任务完成后自动回填";
+    }
+
+    window.renderImageTranslateMediasContext = function renderImageTranslateMediasContext(state){
+      var ctx = (state && state.medias_context) || {};
+      var card = document.getElementById("itMediasContextCard");
+      if (!card) return;
+      if ((ctx.entry || "") !== "medias_edit_detail") {
+        card.hidden = true;
+        return;
+      }
+      card.hidden = false;
+      var productName = (state && state.product_name) || "";
+      var productId = ctx.product_id ? ("#" + ctx.product_id) : "";
+      var productLabel = productName || productId || "-";
+      if (productName && productId) productLabel = productName + " (" + productId + ")";
+      document.getElementById("itMediasEntry").textContent = "商品素材编辑页";
+      document.getElementById("itMediasProductName").textContent = productLabel;
+      document.getElementById("itMediasTargetLang").textContent =
+        (state && state.target_language_name) || (state && state.target_language) || ctx.target_lang || "-";
+      document.getElementById("itMediasApplyStatus").textContent = describeMediasApplyStatus(ctx);
+    };
+
     function renderAll(state){
+      window.renderImageTranslateMediasContext(state);
       renderItems(state);
       renderProgress(state);
     }

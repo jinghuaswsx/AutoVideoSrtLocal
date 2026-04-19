@@ -49,6 +49,11 @@ def list_enabled_languages_kv() -> list[tuple[str, str]]:
     return [(r["code"], r["name_zh"]) for r in rows]
 
 
+def get_language_name(code: str) -> str:
+    row = get_language((code or "").strip().lower())
+    return (row or {}).get("name_zh") or (code or "").strip().lower()
+
+
 def get_language_usage(code: str) -> dict:
     item_row = query_one(
         "SELECT COUNT(*) AS c FROM media_items WHERE lang=%s AND deleted_at IS NULL",
@@ -560,20 +565,28 @@ def add_detail_image(
     file_size: int | None = None,
     width: int | None = None,
     height: int | None = None,
+    origin_type: str = "manual",
+    source_detail_image_id: int | None = None,
+    image_translate_task_id: str | None = None,
 ) -> int:
     sort_order = _next_detail_image_sort_order(product_id, lang)
     return execute(
         "INSERT INTO media_product_detail_images "
-        "(product_id, lang, sort_order, object_key, content_type, file_size, width, height) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-        (product_id, lang, sort_order, object_key, content_type, file_size, width, height),
+        "(product_id, lang, sort_order, object_key, content_type, file_size, width, height, "
+        " origin_type, source_detail_image_id, image_translate_task_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (
+            product_id, lang, sort_order, object_key, content_type, file_size, width, height,
+            origin_type, source_detail_image_id, image_translate_task_id,
+        ),
     )
 
 
 def list_detail_images(product_id: int, lang: str) -> list[dict]:
     return query(
         "SELECT id, product_id, lang, sort_order, object_key, "
-        "  content_type, file_size, width, height, created_at "
+        "  content_type, file_size, width, height, origin_type, "
+        "  source_detail_image_id, image_translate_task_id, created_at "
         "FROM media_product_detail_images "
         "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
         "ORDER BY sort_order ASC, id ASC",
@@ -584,7 +597,8 @@ def list_detail_images(product_id: int, lang: str) -> list[dict]:
 def get_detail_image(image_id: int) -> dict | None:
     return query_one(
         "SELECT id, product_id, lang, sort_order, object_key, "
-        "  content_type, file_size, width, height, created_at, deleted_at "
+        "  content_type, file_size, width, height, origin_type, "
+        "  source_detail_image_id, image_translate_task_id, created_at, deleted_at "
         "FROM media_product_detail_images WHERE id=%s",
         (image_id,),
     )
@@ -596,6 +610,36 @@ def soft_delete_detail_image(image_id: int) -> int:
         "SET deleted_at=NOW() WHERE id=%s AND deleted_at IS NULL",
         (image_id,),
     )
+
+
+def soft_delete_detail_images_by_lang(product_id: int, lang: str) -> int:
+    return execute(
+        "UPDATE media_product_detail_images "
+        "SET deleted_at=NOW() "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL",
+        (product_id, lang),
+    )
+
+
+def replace_detail_images_for_lang(product_id: int, lang: str, images: list[dict]) -> list[int]:
+    soft_delete_detail_images_by_lang(product_id, lang)
+    created_ids: list[int] = []
+    for image in images:
+        created_ids.append(
+            add_detail_image(
+                product_id,
+                lang,
+                image["object_key"],
+                content_type=image.get("content_type"),
+                file_size=image.get("file_size"),
+                width=image.get("width"),
+                height=image.get("height"),
+                origin_type=image.get("origin_type") or "manual",
+                source_detail_image_id=image.get("source_detail_image_id"),
+                image_translate_task_id=image.get("image_translate_task_id"),
+            )
+        )
+    return created_ids
 
 
 def reorder_detail_images(product_id: int, lang: str, ids: list[int]) -> int:
