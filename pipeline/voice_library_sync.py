@@ -21,20 +21,19 @@ REQUEST_TIMEOUT = 30
 
 def fetch_shared_voices_page(
     api_key: str,
+    page: int = 0,
     page_size: int = DEFAULT_PAGE_SIZE,
-    next_page_token: Optional[str] = None,
     language: Optional[str] = None,
     gender: Optional[str] = None,
     category: Optional[str] = None,
-) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    """抓取一页共享音色。返回 (voices, next_page_token)。
+) -> Tuple[List[Dict[str, Any]], bool, int]:
+    """抓取一页共享音色。返回 (voices, has_more, total_count)。
 
-    当 has_more 为 False 时，next_page_token 返回 None。
+    page: 0-based。ElevenLabs API 用 page 整数参数翻页，不是 next_page_token。
+    total_count: 该 filter 下的远端总量（每次请求都会返回；首次请求取值写 stats 表）。
     """
     headers = {"xi-api-key": api_key}
-    params: Dict[str, Any] = {"page_size": page_size}
-    if next_page_token:
-        params["next_page_token"] = next_page_token
+    params: Dict[str, Any] = {"page": int(page), "page_size": int(page_size)}
     if language:
         params["language"] = language
     if gender:
@@ -49,28 +48,34 @@ def fetch_shared_voices_page(
     data = resp.json()
     voices = data.get("voices") or []
     has_more = bool(data.get("has_more"))
-    next_token = data.get("next_page_token") if has_more else None
-    return voices, next_token
+    total_count = int(data.get("total_count") or 0)
+    return voices, has_more, total_count
 
 
 def upsert_voice(voice: Dict[str, Any]) -> None:
-    """将单条音色写入（或更新）elevenlabs_voices 表。"""
+    """将单条音色写入（或更新）elevenlabs_voices 表。
+
+    兼容两种 API 响应格式：
+    - 新版：所有字段（use_case/accent/age/descriptive/gender/language）都在顶层
+    - 旧版：嵌套在 `labels` 对象里
+    labels_json 列存储整条原始 voice dict，便于未来扩展（verified_languages 等）。
+    """
     labels = voice.get("labels") or {}
     now = datetime.utcnow()
     execute(
         """
         INSERT INTO elevenlabs_voices
           (voice_id, name, gender, age, language, accent, category,
-           descriptive, preview_url, labels_json, public_owner_id,
+           descriptive, use_case, preview_url, labels_json, public_owner_id,
            synced_at, updated_at)
         VALUES
-          (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           name=VALUES(name), gender=VALUES(gender), age=VALUES(age),
           language=VALUES(language), accent=VALUES(accent),
           category=VALUES(category), descriptive=VALUES(descriptive),
-          preview_url=VALUES(preview_url), labels_json=VALUES(labels_json),
-          public_owner_id=VALUES(public_owner_id),
+          use_case=VALUES(use_case), preview_url=VALUES(preview_url),
+          labels_json=VALUES(labels_json), public_owner_id=VALUES(public_owner_id),
           synced_at=VALUES(synced_at)
         """,
         (
@@ -82,8 +87,9 @@ def upsert_voice(voice: Dict[str, Any]) -> None:
             voice.get("accent") or labels.get("accent"),
             voice.get("category"),
             voice.get("descriptive") or labels.get("descriptive"),
+            voice.get("use_case") or labels.get("use_case"),
             voice.get("preview_url"),
-            json.dumps(labels),
+            json.dumps(voice, ensure_ascii=False),
             voice.get("public_owner_id"),
             now,
             now,
@@ -98,38 +104,56 @@ def sync_all_shared_voices(
     gender: Optional[str] = None,
     category: Optional[str] = None,
     page_size: int = DEFAULT_PAGE_SIZE,
+    max_voices: Optional[int] = None,
     on_page: Optional[Callable[[int, List[Dict[str, Any]]], None]] = None,
+    on_total_count: Optional[Callable[[int], None]] = None,
 ) -> int:
-    """遍历所有分页，upsert 到数据库。返回处理的条目总数。
+    """翻页 upsert 到数据库。返回实际 upsert 的条目数。
 
-    on_page(page_index, voices)：每处理完一页后回调，page_index 从 0 开始。
-    回调抛异常只记 warning，不中断同步。
+    - page 用 0-based 整数递增（ElevenLabs API 真实分页方式）。
+    - max_voices 达到即 break，超量不再 upsert。
+    - on_total_count：仅在 page_index=0 时回调一次，传远端 total_count。
+    - on_page：每处理完一页后回调 (page_index, voices)。回调异常仅记 warning。
     """
     total = 0
-    next_token: Optional[str] = None
     page_index = 0
     while True:
-        voices, next_token = fetch_shared_voices_page(
+        voices, has_more, total_count = fetch_shared_voices_page(
             api_key=api_key,
+            page=page_index,
             page_size=page_size,
-            next_page_token=next_token,
             language=language,
             gender=gender,
             category=category,
         )
+        if page_index == 0 and on_total_count is not None:
+            try:
+                on_total_count(total_count)
+            except Exception as exc:
+                log.warning("on_total_count callback failed: %s", exc)
+
+        reached_cap = False
         for voice in voices:
             if not voice.get("voice_id"):
                 continue
             upsert_voice(voice)
             total += 1
+            if max_voices is not None and total >= max_voices:
+                reached_cap = True
+                break
+
         if on_page is not None:
             try:
                 on_page(page_index, voices)
             except Exception as exc:
-                log.warning("on_page callback failed at page %s: %s", page_index, exc)
-        page_index += 1
-        if not next_token:
+                log.warning("on_page callback failed at page %s: %s",
+                            page_index, exc)
+
+        if reached_cap:
             break
+        if not has_more:
+            break
+        page_index += 1
     return total
 
 
@@ -219,3 +243,18 @@ def embed_missing_voices(
                     "on_progress callback failed at %s: %s", voice_id, exc
                 )
     return count
+
+
+def upsert_library_stats(language: str, total_available: int) -> None:
+    """写入/更新某语种的远端共享库总量（来自 API total_count）。"""
+    execute(
+        """
+        INSERT INTO elevenlabs_voice_library_stats
+          (language, total_available, last_counted_at)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          total_available=VALUES(total_available),
+          last_counted_at=VALUES(last_counted_at)
+        """,
+        (language, int(total_available), datetime.utcnow()),
+    )

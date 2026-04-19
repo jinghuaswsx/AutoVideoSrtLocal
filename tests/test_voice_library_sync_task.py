@@ -97,3 +97,35 @@ def test_summary_counts_from_db():
     assert fr["embedded_rows"] == 0
     assert fr["name_zh"] == "法语"
     assert fr["last_synced_at"] is None
+
+
+def test_summarize_includes_total_available(monkeypatch):
+    """summarize 应联表 elevenlabs_voice_library_stats 拿 total_available。"""
+    from appcore import voice_library_sync_task as vlst
+    voices_rows = [
+        {"language": "en", "total_rows": 100, "embedded_rows": 14,
+         "last_synced_at": None}
+    ]
+    stats_rows = [
+        {"language": "en", "total_available": 6308, "last_counted_at": None}
+    ]
+
+    def fake_query(sql, *args):
+        if "elevenlabs_voice_library_stats" in sql:
+            return stats_rows
+        return voices_rows
+
+    monkeypatch.setattr(vlst, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_languages_kv",
+        lambda: [("en", "英语")],
+    )
+    out = vlst.summarize()
+    assert out[0]["language"] == "en"
+    assert out[0]["total_available"] == 6308
+    assert out[0]["total_rows"] == 100
+
+
+def test_max_voices_per_language_constant():
+    from appcore.voice_library_sync_task import MAX_VOICES_PER_LANGUAGE
+    assert MAX_VOICES_PER_LANGUAGE == 300

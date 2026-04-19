@@ -2,69 +2,48 @@ from unittest.mock import patch, MagicMock
 from pipeline.voice_library_sync import fetch_shared_voices_page, sync_all_shared_voices
 
 
-def test_fetch_shared_voices_page_returns_voices_and_next_token():
+def test_fetch_shared_voices_page_uses_page_param():
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "voices": [
             {"voice_id": "v1", "name": "Rachel", "gender": "female",
              "language": "en", "preview_url": "http://a.mp3",
-             "labels": {"accent": "american"}, "category": "professional"}
+             "use_case": "news", "category": "professional"}
         ],
         "has_more": True,
-        "next_page_token": "token-next",
+        "total_count": 6308,
     }
-    with patch("pipeline.voice_library_sync.requests.get", return_value=mock_response):
-        voices, next_token = fetch_shared_voices_page(
-            api_key="dummy",
-            page_size=100,
-            next_page_token=None,
-            language=None,
+    with patch("pipeline.voice_library_sync.requests.get",
+               return_value=mock_response) as getter:
+        voices, has_more, total_count = fetch_shared_voices_page(
+            api_key="dummy", page=2, page_size=100, language="en",
         )
-    assert len(voices) == 1
+    call_kwargs = getter.call_args.kwargs
+    assert call_kwargs["params"]["page"] == 2
+    assert call_kwargs["params"]["page_size"] == 100
+    assert call_kwargs["params"]["language"] == "en"
     assert voices[0]["voice_id"] == "v1"
-    assert next_token == "token-next"
+    assert has_more is True
+    assert total_count == 6308
 
 
-def test_fetch_shared_voices_page_returns_none_when_no_more():
+def test_fetch_shared_voices_page_stops_when_no_more():
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "voices": [],
         "has_more": False,
-        "next_page_token": None,
+        "total_count": 100,
     }
-    with patch("pipeline.voice_library_sync.requests.get", return_value=mock_response):
-        voices, next_token = fetch_shared_voices_page(api_key="dummy")
+    with patch("pipeline.voice_library_sync.requests.get",
+               return_value=mock_response):
+        voices, has_more, total_count = fetch_shared_voices_page(
+            api_key="dummy", page=4,
+        )
     assert voices == []
-    assert next_token is None
-
-
-def test_sync_all_iterates_pages_until_no_more():
-    pages = [
-        {"voices": [{"voice_id": "v1", "name": "A", "labels": {}}],
-         "has_more": True, "next_page_token": "t2"},
-        {"voices": [{"voice_id": "v2", "name": "B", "labels": {}}],
-         "has_more": False, "next_page_token": None},
-    ]
-    call_count = {"i": 0}
-
-    def fake_get(url, headers, params, timeout):
-        i = call_count["i"]
-        call_count["i"] += 1
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.json.return_value = pages[i]
-        resp.raise_for_status = MagicMock()
-        return resp
-
-    stored = []
-    with patch("pipeline.voice_library_sync.requests.get", side_effect=fake_get), \
-         patch("pipeline.voice_library_sync.upsert_voice",
-               side_effect=lambda v: stored.append(v)):
-        total = sync_all_shared_voices(api_key="dummy")
-    assert total == 2
-    assert [v["voice_id"] for v in stored] == ["v1", "v2"]
+    assert has_more is False
+    assert total_count == 100
 
 
 def test_sync_all_forwards_language_filter():
@@ -74,7 +53,7 @@ def test_sync_all_forwards_language_filter():
         resp = MagicMock()
         resp.status_code = 200
         resp.json.return_value = {"voices": [], "has_more": False,
-                                   "next_page_token": None}
+                                   "total_count": 0}
         resp.raise_for_status = MagicMock()
         return resp
 
@@ -168,8 +147,8 @@ def test_embed_missing_voices_continues_on_single_failure(tmp_path):
 
 def test_sync_all_invokes_on_page(monkeypatch):
     pages = [
-        ([{"voice_id": "v1", "name": "A", "labels": {}}], "t2"),
-        ([{"voice_id": "v2", "name": "B", "labels": {}}], None),
+        ([{"voice_id": "v1", "name": "A", "labels": {}}], True, 2),
+        ([{"voice_id": "v2", "name": "B", "labels": {}}], False, 2),
     ]
     calls = iter(pages)
 
@@ -227,3 +206,137 @@ def test_embed_missing_invokes_on_progress(tmp_path, monkeypatch):
         (1, 2, "v1", True),
         (2, 2, "v2", True),
     ]
+
+
+def test_upsert_voice_writes_use_case_from_top_level():
+    from pipeline.voice_library_sync import upsert_voice
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    voice = {
+        "voice_id": "v1",
+        "name": "Rachel",
+        "gender": "female",
+        "age": "middle_aged",
+        "language": "en",
+        "accent": "american",
+        "category": "professional",
+        "descriptive": "calm",
+        "use_case": "informative_educational",
+        "preview_url": "http://a.mp3",
+        "public_owner_id": "abc",
+    }
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_voice(voice)
+
+    params = captured["params"]
+    # params layout: (voice_id, name, gender, age, language, accent, category,
+    #                 descriptive, use_case, preview_url, labels_json, public_owner_id,
+    #                 synced_at, updated_at)
+    assert params[0] == "v1"
+    assert params[8] == "informative_educational"
+    import json as _json
+    labels_json_str = params[10]
+    payload = _json.loads(labels_json_str)
+    assert payload["voice_id"] == "v1"
+    assert payload["use_case"] == "informative_educational"
+
+
+def test_upsert_voice_fallback_use_case_from_labels():
+    """Legacy API shape: use_case nested inside labels dict."""
+    from pipeline.voice_library_sync import upsert_voice
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["params"] = params
+
+    voice = {
+        "voice_id": "v2",
+        "name": "Bob",
+        "labels": {"use_case": "narration"},
+    }
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_voice(voice)
+    assert captured["params"][8] == "narration"
+
+
+def test_sync_all_respects_max_voices():
+    """max_voices=300 时，翻 3 页 × 每页 150 条，应在达到 300 时停止。"""
+    from pipeline.voice_library_sync import sync_all_shared_voices
+    pages = [
+        ([{"voice_id": f"p0_{i}", "name": "x"} for i in range(150)], True, 500),
+        ([{"voice_id": f"p1_{i}", "name": "x"} for i in range(150)], True, 500),
+        ([{"voice_id": f"p2_{i}", "name": "x"} for i in range(150)], False, 500),
+    ]
+    calls = {"i": 0}
+
+    def fake_fetch(**kw):
+        i = calls["i"]; calls["i"] += 1
+        return pages[i]
+
+    with patch("pipeline.voice_library_sync.fetch_shared_voices_page",
+               side_effect=fake_fetch), \
+         patch("pipeline.voice_library_sync.upsert_voice") as upsert:
+        total = sync_all_shared_voices(api_key="k", language="en", max_voices=300)
+    assert total == 300
+    assert upsert.call_count == 300
+
+
+def test_sync_all_invokes_on_total_count_first_page():
+    from pipeline.voice_library_sync import sync_all_shared_voices
+    pages = [([{"voice_id": "v1"}], False, 42)]
+    calls = {"i": 0}
+
+    def fake_fetch(**kw):
+        i = calls["i"]; calls["i"] += 1
+        return pages[i]
+
+    received = {}
+    def on_total(n): received["n"] = n
+
+    with patch("pipeline.voice_library_sync.fetch_shared_voices_page",
+               side_effect=fake_fetch), \
+         patch("pipeline.voice_library_sync.upsert_voice"):
+        sync_all_shared_voices(api_key="k", language="en",
+                               on_total_count=on_total)
+    assert received["n"] == 42
+
+
+def test_sync_all_stops_when_has_more_false():
+    from pipeline.voice_library_sync import sync_all_shared_voices
+    pages = [
+        ([{"voice_id": "v1"}, {"voice_id": "v2"}], True, 4),
+        ([{"voice_id": "v3"}, {"voice_id": "v4"}], False, 4),
+    ]
+    calls = {"i": 0}
+    def fake_fetch(**kw):
+        i = calls["i"]; calls["i"] += 1
+        return pages[i]
+
+    with patch("pipeline.voice_library_sync.fetch_shared_voices_page",
+               side_effect=fake_fetch), \
+         patch("pipeline.voice_library_sync.upsert_voice") as upsert:
+        total = sync_all_shared_voices(api_key="k")
+    assert total == 4
+    assert upsert.call_count == 4
+
+
+def test_upsert_library_stats_calls_execute_with_upsert_sql():
+    from pipeline.voice_library_sync import upsert_library_stats
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_library_stats("en", 6308)
+    assert "elevenlabs_voice_library_stats" in captured["sql"]
+    assert "ON DUPLICATE KEY UPDATE" in captured["sql"]
+    assert captured["params"][0] == "en"
+    assert captured["params"][1] == 6308
+    from datetime import datetime
+    assert isinstance(captured["params"][2], datetime)

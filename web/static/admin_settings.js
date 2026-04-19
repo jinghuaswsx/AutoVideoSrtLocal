@@ -300,9 +300,14 @@
     (status.summary || []).forEach(row => {
       const tr = document.createElement("tr");
       const ratio = row.total_rows ? ((row.embedded_rows / row.total_rows * 100).toFixed(1) + "%") : "-";
+      const entryCell = row.total_available
+        ? `${row.total_rows} / ${row.total_available}`
+        : `${row.total_rows}`;
+      const availCell = row.total_available || "-";
       tr.innerHTML = `
         <td>${escapeHtml(row.name_zh)} (${escapeHtml(row.language)})</td>
-        <td>${row.total_rows}</td>
+        <td>${entryCell}</td>
+        <td>${availCell}</td>
         <td>${row.embedded_rows}/${row.total_rows} (${ratio})</td>
         <td>${row.last_synced_at ? escapeHtml(row.last_synced_at) : "未同步"}</td>
         <td><button data-lang="${escapeHtml(row.language)}" class="oc-btn-primary vl-sync-btn"
