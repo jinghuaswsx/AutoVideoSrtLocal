@@ -53,23 +53,29 @@ def fetch_shared_voices_page(
 
 
 def upsert_voice(voice: Dict[str, Any]) -> None:
-    """将单条音色写入（或更新）elevenlabs_voices 表。"""
+    """将单条音色写入（或更新）elevenlabs_voices 表。
+
+    兼容两种 API 响应格式：
+    - 新版：所有字段（use_case/accent/age/descriptive/gender/language）都在顶层
+    - 旧版：嵌套在 `labels` 对象里
+    labels_json 列存储整条原始 voice dict，便于未来扩展（verified_languages 等）。
+    """
     labels = voice.get("labels") or {}
     now = datetime.utcnow()
     execute(
         """
         INSERT INTO elevenlabs_voices
           (voice_id, name, gender, age, language, accent, category,
-           descriptive, preview_url, labels_json, public_owner_id,
+           descriptive, use_case, preview_url, labels_json, public_owner_id,
            synced_at, updated_at)
         VALUES
-          (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           name=VALUES(name), gender=VALUES(gender), age=VALUES(age),
           language=VALUES(language), accent=VALUES(accent),
           category=VALUES(category), descriptive=VALUES(descriptive),
-          preview_url=VALUES(preview_url), labels_json=VALUES(labels_json),
-          public_owner_id=VALUES(public_owner_id),
+          use_case=VALUES(use_case), preview_url=VALUES(preview_url),
+          labels_json=VALUES(labels_json), public_owner_id=VALUES(public_owner_id),
           synced_at=VALUES(synced_at)
         """,
         (
@@ -81,8 +87,9 @@ def upsert_voice(voice: Dict[str, Any]) -> None:
             voice.get("accent") or labels.get("accent"),
             voice.get("category"),
             voice.get("descriptive") or labels.get("descriptive"),
+            voice.get("use_case") or labels.get("use_case"),
             voice.get("preview_url"),
-            json.dumps(labels),
+            json.dumps(voice, ensure_ascii=False),
             voice.get("public_owner_id"),
             now,
             now,

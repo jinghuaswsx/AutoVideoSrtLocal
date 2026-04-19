@@ -233,3 +233,58 @@ def test_embed_missing_invokes_on_progress(tmp_path, monkeypatch):
         (1, 2, "v1", True),
         (2, 2, "v2", True),
     ]
+
+
+def test_upsert_voice_writes_use_case_from_top_level():
+    from pipeline.voice_library_sync import upsert_voice
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    voice = {
+        "voice_id": "v1",
+        "name": "Rachel",
+        "gender": "female",
+        "age": "middle_aged",
+        "language": "en",
+        "accent": "american",
+        "category": "professional",
+        "descriptive": "calm",
+        "use_case": "informative_educational",
+        "preview_url": "http://a.mp3",
+        "public_owner_id": "abc",
+    }
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_voice(voice)
+
+    params = captured["params"]
+    # params layout: (voice_id, name, gender, age, language, accent, category,
+    #                 descriptive, use_case, preview_url, labels_json, public_owner_id,
+    #                 synced_at, updated_at)
+    assert params[0] == "v1"
+    assert params[8] == "informative_educational"
+    import json as _json
+    labels_json_str = params[10]
+    payload = _json.loads(labels_json_str)
+    assert payload["voice_id"] == "v1"
+    assert payload["use_case"] == "informative_educational"
+
+
+def test_upsert_voice_fallback_use_case_from_labels():
+    """Legacy API shape: use_case nested inside labels dict."""
+    from pipeline.voice_library_sync import upsert_voice
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["params"] = params
+
+    voice = {
+        "voice_id": "v2",
+        "name": "Bob",
+        "labels": {"use_case": "narration"},
+    }
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        upsert_voice(voice)
+    assert captured["params"][8] == "narration"
