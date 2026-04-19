@@ -1163,6 +1163,40 @@
         ? `✂️ 尾部裁剪：删除 ${r.removed_count} 个朗读块（${(r.removed_duration || 0).toFixed(1)}s）→ 最终 ${r.final_duration.toFixed(1)}s`
         : '';
 
+      // 文案收敛内循环（rewrite_attempts）：每轮内部最多 5 次 rewrite
+      let attemptsHtml = '';
+      if (Array.isArray(r.rewrite_attempts) && r.rewrite_attempts.length) {
+        const rows = r.rewrite_attempts.map(a => {
+          const ok = a.accepted
+            ? '<span style="color:#16a34a;">✓ 命中</span>'
+            : '<span style="color:#9ca3af;">✗ 超差</span>';
+          return `<tr>
+            <td style="padding:2px 10px;">#${a.attempt}</td>
+            <td style="padding:2px 10px;">${a.words} 词</td>
+            <td style="padding:2px 10px;">偏差 ${a.diff}</td>
+            <td style="padding:2px 10px;">${ok}</td>
+          </tr>`;
+        }).join('');
+        const pickInfo = r.rewrite_converged === false
+          ? `（5 次都未落入 ±10% 窗口，挑最接近目标的第 ${r.rewrite_attempt_used} 次：${r.rewrite_words_actual} 词）`
+          : `（第 ${r.rewrite_attempt_used} 次命中，${r.rewrite_words_actual} 词）`;
+        attemptsHtml = `
+          <details class="duration-round-attempts" style="margin-top:4px;font-size:12px;">
+            <summary style="cursor:pointer;color:var(--text-user-badge,#6b7280);">
+              文案收敛：${r.rewrite_attempts.length} 次 rewrite ${pickInfo}
+            </summary>
+            <table style="margin-top:4px;border-collapse:collapse;font-size:11px;">
+              <thead><tr style="color:#9ca3af;">
+                <th style="padding:2px 10px;text-align:left;">尝试</th>
+                <th style="padding:2px 10px;text-align:left;">实际字数</th>
+                <th style="padding:2px 10px;text-align:left;">偏差</th>
+                <th style="padding:2px 10px;text-align:left;">结果</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </details>`;
+      }
+
       parts.push(`
         <div class="duration-round">
           <div class="duration-round-title">
@@ -1171,6 +1205,7 @@
           </div>
           <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
           ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
+          ${attemptsHtml}
           ${trimInfo ? `<div class="duration-round-meta">${trimInfo}</div>` : ''}
           ${files.length ? `<div class="duration-round-files">${files.join('')}</div>` : ''}
         </div>
