@@ -219,6 +219,19 @@ def _run_link_check_detail_harness(scenario: dict) -> dict:
           return String(text).split(pattern).length - 1;
         }
 
+        function extractAlertLabels(resultsHtml, matchers) {
+          const labels = [];
+          const regex = /<div class="lc-meta-card lc-meta-card--alert">[\\s\\S]*?<strong class="lc-meta-label">([^<]+)<\\/strong>[\\s\\S]*?<span class="[^"]*">([^<]*)<\\/span>[\\s\\S]*?<\\/div>/g;
+          let found;
+          while ((found = regex.exec(resultsHtml)) !== null) {
+            const label = found[1];
+            if (matchers.some((matcher) => label.includes(matcher))) {
+              labels.push(label);
+            }
+          }
+          return labels;
+        }
+
         (async function () {
           await runDomReady();
 
@@ -242,6 +255,8 @@ def _run_link_check_detail_harness(scenario: dict) -> dict:
             intervalCount: intervals.size,
             resultAlertCount: countOccurrences(resultsHtml, "lc-result-card--alert"),
             metaAlertCount: countOccurrences(resultsHtml, "lc-meta-card--alert"),
+            binaryErrorAlertLabels: extractAlertLabels(resultsHtml, ["二值快检结果", "二值快检说明"]),
+            sameImageErrorAlertLabels: extractAlertLabels(resultsHtml, ["大模型同图判断"]),
           }));
         })().catch((error) => {
           console.error(error && error.stack ? error.stack : String(error));
@@ -438,6 +453,8 @@ def test_link_check_detail_renders_alerts_for_key_non_pass_states():
 
     assert rendered["resultAlertCount"] == 3
     assert rendered["metaAlertCount"] >= 7
+    assert rendered["binaryErrorAlertLabels"] == ["二值快检结果", "二值快检说明"]
+    assert rendered["sameImageErrorAlertLabels"] == ["大模型同图判断"]
     assert "lc-result-card--alert" in rendered["resultsHtml"]
     assert "lc-meta-card--alert" in rendered["resultsHtml"]
     assert "review-source" in rendered["resultsHtml"]
