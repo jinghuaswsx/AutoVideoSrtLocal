@@ -2,6 +2,7 @@
   const state = {
     pollTimer: null,
     taskId: "",
+    isSubmitting: false,
   };
 
   const overallDecisionLabels = {
@@ -68,6 +69,21 @@
 
   function setStatus(text) {
     $("linkCheckStatus").textContent = text;
+  }
+
+  function setSubmitting(isSubmitting, statusText, buttonText) {
+    state.isSubmitting = isSubmitting;
+    const submitButton = $("linkCheckSubmit");
+    if (!submitButton) {
+      return;
+    }
+    submitButton.disabled = isSubmitting;
+    submitButton.classList.toggle("is-loading", isSubmitting);
+    submitButton.setAttribute("aria-busy", isSubmitting ? "true" : "false");
+    submitButton.textContent = buttonText || (isSubmitting ? "检查中..." : "开始检查");
+    if (statusText) {
+      setStatus(statusText);
+    }
   }
 
   function showError(message) {
@@ -241,8 +257,11 @@
 
   async function onSubmit(event) {
     event.preventDefault();
+    if (state.isSubmitting) {
+      return;
+    }
     showError("");
-    setStatus("正在提交任务...");
+    setSubmitting(true, "正在创建任务...", "检查中...");
     if (state.pollTimer) {
       window.clearInterval(state.pollTimer);
       state.pollTimer = null;
@@ -254,17 +273,20 @@
         body: new FormData($("linkCheckForm")),
       });
       state.taskId = payload.task_id;
-      setStatus("任务已创建，开始抓取页面...");
+      setSubmitting(true, "正在获取首批进度...", "检查中...");
       await pollTask(state.taskId);
+      setSubmitting(false, "", "开始检查");
       state.pollTimer = window.setInterval(() => {
         pollTask(state.taskId).catch((error) => {
           window.clearInterval(state.pollTimer);
           state.pollTimer = null;
+          setSubmitting(false, "", "开始检查");
           showError(error.message || "轮询失败");
           setStatus("任务状态获取失败");
         });
       }, 1500);
     } catch (error) {
+      setSubmitting(false, "", "开始检查");
       showError(error.message || "创建任务失败");
       setStatus("提交失败");
     }
