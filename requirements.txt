@@ -26,3 +26,5 @@ scikit-image>=0.22.0,<1.0
 numpy>=1.24
 resemblyzer>=0.1.1
 librosa>=0.10.0
+gunicorn>=21.2.0,<26.0
+volcengine-python-sdk>=5.0.0,<6.0

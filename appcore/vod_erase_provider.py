@@ -26,6 +26,7 @@ __all__ = [
     "start_erase_execution",
     "get_execution",
     "get_play_info",
+    "update_media_publish_status",
     "wait_for_upload",
     "wait_for_execution",
 ]
@@ -213,3 +214,16 @@ def get_play_info(vid: str) -> dict:
     """拿播放信息（URL 列表等）。需要 VOD 空间已配置加速域名。"""
     body = {"Vid": vid}
     return call(action="GetPlayInfo", version="2020-08-01", method="GET", body=body)
+
+
+def update_media_publish_status(vid: str, status: str = "Published") -> dict:
+    """把 Vid 的发布状态设为 Published（或 Unpublished）。
+
+    字幕擦除产生的 NewVid 默认是 Unpublished，空间里的工作流只对新上传的视频触发，
+    不会自动发布擦除产物。需要主动调这个接口让产物进入 CDN 分发。
+    """
+    return call(
+        action="UpdateMediaPublishStatus",
+        version="2020-08-01",
+        body={"Vid": vid, "Status": status},
+    )

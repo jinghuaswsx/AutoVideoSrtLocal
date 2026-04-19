@@ -120,6 +120,9 @@ def call(
             response = json.loads(response)
         except Exception as exc:
             raise VodClientError(f"VOD {action} response decode failed: {exc}") from exc
+    if response is None:
+        # 某些 update 类接口成功但不返回响应体
+        return {}
     if not isinstance(response, dict):
         raise VodClientError(f"VOD {action} response is not a dict: {type(response).__name__}")
 

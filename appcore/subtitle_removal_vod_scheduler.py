@@ -19,6 +19,7 @@ from appcore.vod_erase_provider import (
     VodEraseError,
     get_execution,
     get_play_info,
+    update_media_publish_status,
 )
 
 log = logging.getLogger(__name__)
@@ -62,16 +63,23 @@ def _advance_poll(task_id: str, state: dict) -> None:
     if status == "success":
         erase = (((result.get("Output") or {}).get("Task") or {}).get("Erase") or {})
         file_info = erase.get("File") or {}
+        new_vid = file_info.get("Vid") or ""
         task_state.update(
             task_id,
             provider_raw=result,
-            vod_result_vid=file_info.get("Vid") or "",
+            vod_result_vid=new_vid,
             vod_result_file_name=file_info.get("FileName") or "",
             vod_result_size=int(file_info.get("Size") or 0),
             vod_result_duration=float(erase.get("Duration") or 0.0),
         )
         task_state.set_step(task_id, "poll", "done")
         task_state.set_step_message(task_id, "poll", "字幕擦除完成")
+        # 字幕擦除产生的 NewVid 默认 Unpublished，主动发布以便进入 CDN 分发 + 触发转码
+        if new_vid:
+            try:
+                update_media_publish_status(new_vid, "Published")
+            except VodEraseError as exc:
+                log.warning("[sr_vod_scheduler] publish failed task_id=%s vid=%s: %s", task_id, new_vid, exc)
     elif status in {"failed", "cancelled", "canceled", "error"}:
         task_state.update(task_id, status="error", error=f"GetExecution terminal {status}")
         task_state.set_step(task_id, "poll", "error")
