@@ -50,6 +50,27 @@ def test_link_check_projects_css_focuses_on_create_and_list_page():
     assert ".lc-form-grid" in style
     assert ".lc-panel-tip" in style
 
-    assert ".lc-result-layout" not in style
-    assert ".lc-detail-dialog" not in style
-    assert ".lc-detail-panel" not in style
+    assert ".lc-result-card--alert" in style
+    assert ".lc-meta-card--alert" in style
+    assert ".lc-issue-summary" in style
+
+
+def test_link_check_detail_template_bootstraps_persisted_task_for_detail_page():
+    template = Path("web/templates/link_check_detail.html").read_text(encoding="utf-8")
+
+    assert 'id="linkCheckDetailPage"' in template
+    assert "__LINK_CHECK_TASK__" in template
+    assert 'id="linkCheckSummary"' in template
+    assert 'id="linkCheckResults"' in template
+    assert "link_check.css" in template
+    assert "link_check.js" in template
+
+
+def test_link_check_detail_script_supports_bootstrap_and_issue_alert_rendering():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+
+    assert "function getBootstrappedTask" in script
+    assert "window.__LINK_CHECK_TASK__" in script
+    assert "function collectIssueSummary(" in script
+    assert "lc-result-card--alert" in script
+    assert "lc-meta-card--alert" in script

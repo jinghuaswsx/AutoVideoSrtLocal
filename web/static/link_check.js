@@ -1,26 +1,29 @@
 (function () {
   const state = {
-    pollTimer: null,
-    taskId: "",
-    isSubmitting: false,
     currentTask: null,
-    detailIndex: null,
+    pollTimer: null,
+  };
+
+  const TERMINAL_STATUSES = new Set(["done", "failed", "review_ready", "deleted"]);
+
+  const taskStatusLabels = {
+    queued: "排队中",
+    locking_locale: "锁定目标语言页面",
+    downloading: "下载图片中",
+    analyzing: "分析图片中",
+    review_ready: "待复核",
+    done: "已完成",
+    failed: "失败",
+    deleted: "已删除",
   };
 
   const overallDecisionLabels = {
     running: "检查中",
     done: "已完成",
     unfinished: "未完成",
-  };
-
-  const taskStatusLabels = {
-    queued: "排队中",
-    locking_locale: "锁定目标语种页面",
-    downloading: "下载图片中",
-    analyzing: "分析图片中",
-    review_ready: "待复核",
-    done: "已完成",
-    failed: "失败",
+    pass: "通过",
+    review: "待复核",
+    replace: "需替换",
   };
 
   const decisionLabels = {
@@ -40,7 +43,7 @@
 
   const binaryStatusLabels = {
     pass: "通过",
-    fail: "不通过",
+    fail: "未通过",
     skipped: "未执行",
     error: "执行失败",
   };
@@ -76,21 +79,6 @@
     }
   }
 
-  function setSubmitting(isSubmitting, statusText, buttonText) {
-    state.isSubmitting = isSubmitting;
-    const submitButton = $("linkCheckSubmit");
-    if (!submitButton) {
-      return;
-    }
-    submitButton.disabled = isSubmitting;
-    submitButton.classList.toggle("is-loading", isSubmitting);
-    submitButton.setAttribute("aria-busy", isSubmitting ? "true" : "false");
-    submitButton.textContent = buttonText || (isSubmitting ? "检查中..." : "开始检查");
-    if (statusText) {
-      setStatus(statusText);
-    }
-  }
-
   function showError(message) {
     const node = $("linkCheckError");
     if (!node) {
@@ -114,18 +102,20 @@
     return payload;
   }
 
-  async function loadLanguages() {
-    const data = await fetchJSON("/medias/api/languages");
-    const select = $("targetLanguage");
-    if (!select) {
-      return;
+  function getBootstrappedTask() {
+    if (window.__LINK_CHECK_TASK__ && typeof window.__LINK_CHECK_TASK__ === "object") {
+      return window.__LINK_CHECK_TASK__;
     }
-    select.innerHTML = '<option value="">请选择语言</option>';
-    for (const item of data.items || []) {
-      const option = document.createElement("option");
-      option.value = item.code;
-      option.textContent = item.name_zh || item.code;
-      select.appendChild(option);
+
+    const node = $("linkCheckInitialTask");
+    if (!node || !node.textContent) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(node.textContent);
+    } catch (_error) {
+      return null;
     }
   }
 
@@ -136,32 +126,18 @@
     return `${(value * 100).toFixed(1)}%`;
   }
 
+  function formatValue(value) {
+    if (value == null || value === "") {
+      return "-";
+    }
+    return value;
+  }
+
   function summaryCard(label, value) {
     return `
       <div class="lc-summary-card">
         <strong>${escapeHtml(label)}</strong>
-        <span>${escapeHtml(value)}</span>
-      </div>
-    `;
-  }
-
-  function renderSummary(task) {
-    const summary = task.summary || {};
-    const progress = task.progress || {};
-    $("linkCheckSummary").innerHTML = `
-      <div class="lc-summary-grid">
-        ${summaryCard("抓取图片", progress.total ?? 0)}
-        ${summaryCard("已分析", progress.analyzed ?? 0)}
-        ${summaryCard("参考图比对", progress.compared ?? 0)}
-        ${summaryCard("二值快检", progress.binary_checked ?? 0)}
-        ${summaryCard("同图大模型", progress.same_image_llm_done ?? 0)}
-        ${summaryCard("整体结论", overallDecisionLabels[summary.overall_decision] || taskStatusLabels[task.status] || "-")}
-      </div>
-      <div class="lc-summary-meta">
-        <div>目标语言：${escapeHtml(task.target_language_name || task.target_language || "-")}</div>
-        <div>页面语言：${escapeHtml(task.page_language || "-")}</div>
-        <div class="lc-summary-meta-wide">最终地址：${escapeHtml(task.resolved_url || "-")}</div>
-        <div>参考图已匹配：${escapeHtml(summary.reference_matched_count ?? 0)}</div>
+        <span>${escapeHtml(formatValue(value))}</span>
       </div>
     `;
   }
@@ -170,38 +146,135 @@
     return `<span class="lc-badge${kind ? ` ${kind}` : ""}">${escapeHtml(label)}</span>`;
   }
 
+  function isLowQuality(score) {
+    return typeof score === "number" && score < 60;
+  }
+
+  function isForegroundOverlapBelowThreshold(binary) {
+    return (
+      typeof binary.foreground_overlap === "number" &&
+      typeof binary.threshold === "number" &&
+      binary.foreground_overlap < binary.threshold
+    );
+  }
+
+  function isSameImageRejected(sameImage) {
+    if (sameImage.status !== "done") {
+      return false;
+    }
+    const answer = String(sameImage.answer || "").trim().toLowerCase();
+    return ["不是", "否", "no", "false", "different"].includes(answer);
+  }
+
+  function collectIssueSummary(item, task) {
+    const issues = [];
+    const analysis = item.analysis || {};
+    const binary = item.binary_quick_check || {};
+    const sameImage = item.same_image_llm || {};
+
+    if (item.status === "failed" || analysis.decision === "failed") {
+      issues.push("图片处理失败");
+    }
+    if (analysis.decision === "replace") {
+      issues.push("最终判定需替换");
+    }
+    if (analysis.language_match === false) {
+      issues.push("识别语言与目标语言不匹配");
+    } else if (
+      analysis.detected_language &&
+      task &&
+      task.target_language &&
+      analysis.detected_language !== task.target_language
+    ) {
+      issues.push("识别语言与目标语言不匹配");
+    }
+    if (isLowQuality(analysis.quality_score)) {
+      issues.push("质量分过低");
+    }
+    if (binary.status === "fail") {
+      issues.push("二值快检未通过");
+    }
+    if (isForegroundOverlapBelowThreshold(binary)) {
+      issues.push("前景重合度低于阈值");
+    }
+    if (isSameImageRejected(sameImage)) {
+      issues.push("大模型判定不是同图");
+    }
+
+    return issues;
+  }
+
   function buildMetaField(label, value, options) {
     const settings = options || {};
+    const cardClasses = ["lc-meta-card"];
     const valueClasses = ["lc-meta-value"];
-    if (settings.clamp !== false) {
-      valueClasses.push("lc-clamp-2");
+
+    if (settings.isAlert) {
+      cardClasses.push("lc-meta-card--alert");
+      valueClasses.push("lc-meta-value--alert");
     }
     if (settings.mono) {
       valueClasses.push("lc-mono");
     }
+    if (settings.clamp !== false) {
+      valueClasses.push("lc-clamp-2");
+    }
 
     return `
-      <div class="lc-meta-card${settings.detail ? " lc-meta-card--detail" : ""}">
+      <div class="${cardClasses.join(" ")}">
         <strong class="lc-meta-label">${escapeHtml(label)}</strong>
-        <span class="${valueClasses.join(" ")}">${escapeHtml(value)}</span>
+        <span class="${valueClasses.join(" ")}">${escapeHtml(formatValue(value))}</span>
       </div>
     `;
   }
 
-  function resolveReferencePreviewUrl(reference, taskId) {
-    return reference.reference_id
-      ? `/api/link-check/tasks/${taskId}/images/reference/${reference.reference_id}`
-      : "";
+  function getDecisionClass(decision, itemStatus) {
+    if (decision === "pass") {
+      return "is-success";
+    }
+    if (decision === "replace" || decision === "failed" || itemStatus === "failed") {
+      return "is-danger";
+    }
+    return "";
   }
 
-  function shouldShowReferencePreview(reference, referencePreview) {
-    return reference.status === "matched" && Boolean(referencePreview);
+  function getSameImageValue(sameImage) {
+    return sameImage.status === "done"
+      ? formatValue(sameImage.answer)
+      : (sameImageStatusLabels[sameImage.status] || sameImage.status || "-");
+  }
+
+  function resolveSitePreviewUrl(task, item) {
+    if (item.site_preview_url) {
+      return item.site_preview_url;
+    }
+    if (task && task.id && item.id) {
+      return `/api/link-check/tasks/${task.id}/images/site/${item.id}`;
+    }
+    return "";
+  }
+
+  function resolveReferencePreviewUrl(task, reference) {
+    if (reference.preview_url) {
+      return reference.preview_url;
+    }
+    if (task && task.id && reference.reference_id) {
+      return `/api/link-check/tasks/${task.id}/images/reference/${reference.reference_id}`;
+    }
+    if (task && task.id && reference.id) {
+      return `/api/link-check/tasks/${task.id}/images/reference/${reference.id}`;
+    }
+    return "";
+  }
+
+  function shouldShowReferencePreview(reference, previewUrl) {
+    return reference.status === "matched" && Boolean(previewUrl);
   }
 
   function getReferenceMatchValue(reference) {
     const scoreSuffix = reference.score != null ? `（分数 ${reference.score}）` : "";
     if (reference.status === "matched") {
-      return `${reference.reference_filename || "-"}${scoreSuffix}`;
+      return `${reference.reference_filename || reference.filename || "-"}${scoreSuffix}`;
     }
     if (reference.status === "weak_match") {
       return `存在弱匹配候选${scoreSuffix}`;
@@ -213,47 +286,6 @@
       return "未提供参考图";
     }
     return referenceStatusLabels[reference.status] || "-";
-  }
-
-  function getDecisionClass(decision, itemStatus) {
-    if (decision === "pass") {
-      return "is-success";
-    }
-    if (decision === "replace" || itemStatus === "failed") {
-      return "is-danger";
-    }
-    return "";
-  }
-
-  function getSameImageValue(sameImage) {
-    return sameImage.status === "done"
-      ? (sameImage.answer || "-")
-      : (sameImageStatusLabels[sameImage.status] || sameImage.status || "-");
-  }
-
-  function getItemMetaEntries(item) {
-    const analysis = item.analysis || {};
-    const reference = item.reference_match || {};
-    const binary = item.binary_quick_check || {};
-    const sameImage = item.same_image_llm || {};
-
-    return [
-      { label: "图片来源", value: item.source_url || "-", mono: true },
-      { label: "最终判定来源", value: decisionSourceLabels[analysis.decision_source] || analysis.decision_source || "-" },
-      { label: "识别语言", value: analysis.detected_language || "-" },
-      { label: "提取文字", value: analysis.text_summary || "-" },
-      { label: "质量分", value: analysis.quality_score ?? "-" },
-      { label: "模型说明", value: analysis.quality_reason || item.error || "-" },
-      { label: "参考图匹配", value: getReferenceMatchValue(reference) },
-      { label: "二值快检结果", value: binaryStatusLabels[binary.status] || binary.status || "-" },
-      { label: "二值相似度", value: formatPercent(binary.binary_similarity) },
-      { label: "前景重合度", value: formatPercent(binary.foreground_overlap) },
-      { label: "当前阈值", value: formatPercent(binary.threshold) },
-      { label: "二值快检说明", value: binary.reason || "-" },
-      { label: "大模型相同图片判断", value: getSameImageValue(sameImage) },
-      { label: "大模型判断通道", value: sameImage.channel_label || "-" },
-      { label: "大模型判断模型", value: sameImage.model || "-" },
-    ];
   }
 
   function renderPreviewPanel(title, imageUrl, emptyText) {
@@ -269,49 +301,142 @@
     `;
   }
 
-  function buildPreviewStack(item, taskId, options) {
-    const settings = options || {};
+  function buildPreviewStack(task, item) {
     const reference = item.reference_match || {};
-    const referencePreview = resolveReferencePreviewUrl(reference, taskId);
-    const previewPanels = [
-      renderPreviewPanel("网站抓取图", item.site_preview_url, "暂无网站图"),
+    const referencePreview = resolveReferencePreviewUrl(task, reference);
+    const panels = [
+      renderPreviewPanel("网站抓取图", resolveSitePreviewUrl(task, item), "暂未生成网站抓取图"),
     ];
 
     if (shouldShowReferencePreview(reference, referencePreview)) {
-      previewPanels.push(renderPreviewPanel("参考图", referencePreview, "未提供参考图"));
+      panels.push(renderPreviewPanel("参考图", referencePreview, "未提供参考图"));
     }
 
-    const baseClass = settings.baseClass || "lc-preview-stack";
-    const stackClass = previewPanels.length === 1
-      ? `${baseClass} lc-preview-stack--single`
-      : baseClass;
+    const stackClass = panels.length === 1
+      ? "lc-preview-stack lc-preview-stack--single"
+      : "lc-preview-stack";
 
-    return `
-      <div class="${stackClass}">
-        ${previewPanels.join("")}
+    return `<div class="${stackClass}">${panels.join("")}</div>`;
+  }
+
+  function getItemMetaEntries(item, task) {
+    const analysis = item.analysis || {};
+    const reference = item.reference_match || {};
+    const binary = item.binary_quick_check || {};
+    const sameImage = item.same_image_llm || {};
+    const languageMismatch = analysis.language_match === false
+      || (
+        analysis.detected_language &&
+        task &&
+        task.target_language &&
+        analysis.detected_language !== task.target_language
+      );
+
+    return [
+      { label: "图片来源", value: item.source_url || "-", mono: true },
+      {
+        label: "最终判定来源",
+        value: decisionSourceLabels[analysis.decision_source] || analysis.decision_source || "-",
+      },
+      {
+        label: "识别语言",
+        value: analysis.detected_language || "-",
+        isAlert: languageMismatch,
+      },
+      { label: "提取文字", value: analysis.text_summary || "-" },
+      {
+        label: "质量分",
+        value: analysis.quality_score ?? "-",
+        isAlert: isLowQuality(analysis.quality_score),
+      },
+      { label: "模型说明", value: analysis.quality_reason || item.error || "-" },
+      { label: "参考图匹配", value: getReferenceMatchValue(reference) },
+      {
+        label: "二值快检结果",
+        value: binaryStatusLabels[binary.status] || binary.status || "-",
+        isAlert: binary.status === "fail",
+      },
+      { label: "二值相似度", value: formatPercent(binary.binary_similarity) },
+      {
+        label: "前景重合度",
+        value: formatPercent(binary.foreground_overlap),
+        isAlert: isForegroundOverlapBelowThreshold(binary),
+      },
+      {
+        label: "当前阈值",
+        value: formatPercent(binary.threshold),
+        isAlert: isForegroundOverlapBelowThreshold(binary),
+      },
+      {
+        label: "二值快检说明",
+        value: binary.reason || "-",
+        isAlert: binary.status === "fail",
+      },
+      {
+        label: "大模型同图判断",
+        value: getSameImageValue(sameImage),
+        isAlert: isSameImageRejected(sameImage),
+      },
+      { label: "大模型判断通道", value: sameImage.channel_label || "-" },
+      { label: "大模型模型", value: sameImage.model || "-" },
+    ];
+  }
+
+  function renderSummary(task) {
+    const summary = task.summary || {};
+    const progress = task.progress || {};
+    $("linkCheckSummary").innerHTML = `
+      <div class="lc-panel-head">
+        <span class="lc-kicker">Summary</span>
+        <h2>任务摘要</h2>
+        <p>详情页直接使用已保存任务状态渲染，并在任务仍活跃时继续轮询。</p>
+      </div>
+      <div class="lc-summary-grid">
+        ${summaryCard("抓取图片", progress.total ?? 0)}
+        ${summaryCard("已分析", progress.analyzed ?? 0)}
+        ${summaryCard("参考图比对", progress.compared ?? 0)}
+        ${summaryCard("二值快检", progress.binary_checked ?? 0)}
+        ${summaryCard("同图大模型", progress.same_image_llm_done ?? 0)}
+        ${summaryCard("整体结论", overallDecisionLabels[summary.overall_decision] || taskStatusLabels[task.status] || "-")}
+      </div>
+      <div class="lc-summary-meta">
+        <div class="lc-meta-chip"><strong>目标语言</strong><span>${escapeHtml(formatValue(task.target_language_name || task.target_language))}</span></div>
+        <div class="lc-meta-chip"><strong>页面语言</strong><span>${escapeHtml(formatValue(task.page_language))}</span></div>
+        <div class="lc-meta-chip"><strong>任务状态</strong><span>${escapeHtml(taskStatusLabels[task.status] || task.status || "-")}</span></div>
+        <div class="lc-meta-chip lc-meta-chip--wide"><strong>链接</strong><span class="lc-clamp-2 lc-mono">${escapeHtml(formatValue(task.resolved_url || task.link_url))}</span></div>
       </div>
     `;
   }
 
-  function renderItem(item, taskId, index) {
+  function renderItem(item, task, index) {
     const analysis = item.analysis || {};
     const reference = item.reference_match || {};
     const decision = analysis.decision || item.status || "-";
     const decisionClass = getDecisionClass(decision, item.status);
-    const metaEntries = getItemMetaEntries(item);
+    const issues = collectIssueSummary(item, task);
+    const cardClasses = ["lc-result-card"];
+    const metaEntries = getItemMetaEntries(item, task);
+
+    if (issues.length) {
+      cardClasses.push("lc-result-card--alert");
+    }
 
     return `
-      <article class="lc-result-card">
+      <article class="${cardClasses.join(" ")}" data-item-index="${index}">
         <div class="lc-result-head">
           <div class="lc-badges">
             ${badge(item.kind === "detail" ? "详情图" : "轮播图")}
             ${badge(`最终判定：${decisionLabels[decision] || decision}`, decisionClass)}
             ${badge(`参考图：${referenceStatusLabels[reference.status] || reference.status || "未提供"}`)}
           </div>
-          <button type="button" class="lc-detail-trigger" data-item-index="${index}">查看任务详情</button>
         </div>
+        ${issues.length ? `
+          <div class="lc-issue-summary" aria-label="问题摘要">
+            ${issues.map((issue) => `<span class="lc-issue-pill">${escapeHtml(issue)}</span>`).join("")}
+          </div>
+        ` : ""}
         <div class="lc-result-layout">
-          ${buildPreviewStack(item, taskId)}
+          ${buildPreviewStack(task, item)}
           <div class="lc-result-side">
             <div class="lc-meta-grid">
               ${metaEntries.map((entry) => buildMetaField(entry.label, entry.value, entry)).join("")}
@@ -322,196 +447,89 @@
     `;
   }
 
-  function renderDetailDialog(item, taskId) {
-    const analysis = item.analysis || {};
-    const reference = item.reference_match || {};
-    const binary = item.binary_quick_check || {};
-    const sameImage = item.same_image_llm || {};
-    const decision = analysis.decision || item.status || "-";
-    const decisionClass = getDecisionClass(decision, item.status);
-    const detailEntries = [
-      { label: "图片类型", value: item.kind === "detail" ? "详情图" : "轮播图", detail: true },
-      { label: "任务状态", value: taskStatusLabels[item.status] || item.status || "-", detail: true },
-      { label: "最终判定", value: decisionLabels[decision] || decision, detail: true },
-      { label: "参考图状态", value: referenceStatusLabels[reference.status] || reference.status || "-", detail: true },
-      { label: "二值快检状态", value: binaryStatusLabels[binary.status] || binary.status || "-", detail: true },
-      { label: "大模型相同图片判断", value: getSameImageValue(sameImage), detail: true },
-      ...getItemMetaEntries(item).map((entry) => ({
-        ...entry,
-        detail: true,
-        clamp: false,
-      })),
-    ];
-
-    return `
-      <div class="lc-detail-content">
-        <div class="lc-detail-badges">
-          ${badge(item.kind === "detail" ? "详情图" : "轮播图")}
-          ${badge(`最终判定：${decisionLabels[decision] || decision}`, decisionClass)}
-          ${badge(`参考图：${referenceStatusLabels[reference.status] || reference.status || "未提供"}`)}
-        </div>
-        ${buildPreviewStack(item, taskId, { baseClass: "lc-detail-media" })}
-        <div class="lc-detail-meta-grid">
-          ${detailEntries.map((entry) => buildMetaField(entry.label, entry.value, entry)).join("")}
-        </div>
-      </div>
-    `;
-  }
-
-  function closeDetailDialog() {
-    const dialog = $("linkCheckDetailDialog");
-    const body = $("linkCheckDetailBody");
-    if (!dialog || !body) {
-      return;
-    }
-    dialog.hidden = true;
-    dialog.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("lc-modal-open");
-    body.innerHTML = "";
-    state.detailIndex = null;
-  }
-
-  function renderOpenDetailDialog() {
-    const dialog = $("linkCheckDetailDialog");
-    const body = $("linkCheckDetailBody");
-    if (!dialog || !body || state.detailIndex == null || !state.currentTask) {
-      return;
-    }
-
-    const item = (state.currentTask.items || [])[state.detailIndex];
-    if (!item) {
-      closeDetailDialog();
-      return;
-    }
-
-    body.innerHTML = renderDetailDialog(item, state.currentTask.id);
-  }
-
-  function openDetailDialog(index) {
-    const dialog = $("linkCheckDetailDialog");
-    if (!dialog || !state.currentTask) {
-      return;
-    }
-    state.detailIndex = index;
-    renderOpenDetailDialog();
-    dialog.hidden = false;
-    dialog.setAttribute("aria-hidden", "false");
-    document.body.classList.add("lc-modal-open");
-  }
-
   function renderResults(task) {
     const items = task.items || [];
+    const container = $("linkCheckResults");
+
     if (!items.length) {
-      closeDetailDialog();
-      $("linkCheckResults").innerHTML = '<div class="lc-empty">还没有图片结果，系统正在处理。</div>';
+      container.innerHTML = `
+        <div class="lc-panel-head">
+          <span class="lc-kicker">Results</span>
+          <h2>图片结果</h2>
+          <p>任务已保存，但目前还没有可展示的图片结果。</p>
+        </div>
+        <div class="lc-empty lc-empty--panel">
+          <strong>还没有图片结果</strong>
+          <span>系统会在抓取和分析完成后持续更新这里。</span>
+        </div>
+      `;
       return;
     }
 
-    $("linkCheckResults").innerHTML = `
+    container.innerHTML = `
+      <div class="lc-panel-head">
+        <span class="lc-kicker">Results</span>
+        <h2>图片结果</h2>
+        <p>失败项会以红色告警卡片和字段强调，方便直接定位问题依据。</p>
+      </div>
       <div class="lc-result-list">
-        ${items.map((item, index) => renderItem(item, task.id, index)).join("")}
+        ${items.map((item, index) => renderItem(item, task, index)).join("")}
       </div>
     `;
+  }
 
-    if (state.detailIndex != null) {
-      renderOpenDetailDialog();
+  function renderTask(task) {
+    state.currentTask = task;
+    renderSummary(task);
+    renderResults(task);
+    showError(task.error || "");
+    setStatus(`当前状态：${taskStatusLabels[task.status] || task.status || "-"}`);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) {
+      window.clearInterval(state.pollTimer);
+      state.pollTimer = null;
     }
   }
 
   async function pollTask(taskId) {
     const task = await fetchJSON(`/api/link-check/tasks/${taskId}`);
-    state.currentTask = task;
-    renderSummary(task);
-    renderResults(task);
-    setStatus(`当前状态：${taskStatusLabels[task.status] || task.status}`);
-    if (task.error) {
-      showError(task.error);
-    }
-    if (["done", "failed", "review_ready"].includes(task.status)) {
-      window.clearInterval(state.pollTimer);
-      state.pollTimer = null;
+    renderTask(task);
+    if (TERMINAL_STATUSES.has(task.status)) {
+      stopPolling();
     }
   }
 
-  async function onSubmit(event) {
-    event.preventDefault();
-    if (state.isSubmitting) {
+  function startPollingIfNeeded(task) {
+    if (!task || !task.id || TERMINAL_STATUSES.has(task.status)) {
       return;
     }
 
-    closeDetailDialog();
-    state.currentTask = null;
-    showError("");
-    setSubmitting(true, "正在创建任务...", "检查中...");
-    if (state.pollTimer) {
-      window.clearInterval(state.pollTimer);
-      state.pollTimer = null;
-    }
-
-    try {
-      const payload = await fetchJSON("/api/link-check/tasks", {
-        method: "POST",
-        body: new FormData($("linkCheckForm")),
+    stopPolling();
+    state.pollTimer = window.setInterval(() => {
+      pollTask(task.id).catch((error) => {
+        stopPolling();
+        showError(error.message || "轮询失败");
+        setStatus("任务状态获取失败");
       });
-      state.taskId = payload.task_id;
-      setSubmitting(true, "正在获取首批进度...", "检查中...");
-      await pollTask(state.taskId);
-      setSubmitting(false, "", "开始检查");
-      state.pollTimer = window.setInterval(() => {
-        pollTask(state.taskId).catch((error) => {
-          window.clearInterval(state.pollTimer);
-          state.pollTimer = null;
-          setSubmitting(false, "", "开始检查");
-          showError(error.message || "轮询失败");
-          setStatus("任务状态获取失败");
-        });
-      }, 1500);
-    } catch (error) {
-      setSubmitting(false, "", "开始检查");
-      showError(error.message || "创建任务失败");
-      setStatus("提交失败");
-    }
+    }, 1500);
   }
 
-  function onResultsClick(event) {
-    const trigger = event.target.closest(".lc-detail-trigger");
-    if (!trigger) {
+  document.addEventListener("DOMContentLoaded", function () {
+    const page = $("linkCheckDetailPage");
+    if (!page) {
       return;
     }
 
-    const itemIndex = Number(trigger.dataset.itemIndex);
-    if (!Number.isFinite(itemIndex)) {
-      return;
-    }
-
-    openDetailDialog(itemIndex);
-  }
-
-  function onDialogClick(event) {
-    if (event.target.closest("[data-dialog-close]")) {
-      closeDetailDialog();
-    }
-  }
-
-  function onKeyDown(event) {
-    const dialog = $("linkCheckDetailDialog");
-    if (event.key === "Escape" && dialog && !dialog.hidden) {
-      closeDetailDialog();
-    }
-  }
-
-  document.addEventListener("DOMContentLoaded", async function () {
-    try {
-      await loadLanguages();
-    } catch (error) {
-      showError(error.message || "语言列表加载失败");
+    const task = getBootstrappedTask();
+    if (!task || !task.id) {
+      showError("初始化任务数据缺失");
       setStatus("初始化失败");
       return;
     }
 
-    $("linkCheckForm").addEventListener("submit", onSubmit);
-    $("linkCheckResults").addEventListener("click", onResultsClick);
-    $("linkCheckDetailDialog").addEventListener("click", onDialogClick);
-    document.addEventListener("keydown", onKeyDown);
+    renderTask(task);
+    startPollingIfNeeded(task);
   });
 })();
