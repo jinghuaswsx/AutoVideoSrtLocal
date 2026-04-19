@@ -70,9 +70,36 @@ def test_link_check_detail_script_supports_bootstrap_and_issue_alert_rendering()
     script = Path("web/static/link_check.js").read_text(encoding="utf-8")
 
     assert "function getBootstrappedTask" in script
-    assert "window.__LINK_CHECK_TASK__" in script
+    assert 'if (window.__LINK_CHECK_TASK__ && typeof window.__LINK_CHECK_TASK__ === "object")' in script
+    assert 'const node = $("linkCheckInitialTask")' in script
+    assert "JSON.parse(node.textContent)" in script
     assert "function collectIssueSummary(" in script
     assert "lc-result-card--alert" in script
     assert "lc-meta-card--alert" in script
     assert 'binary.status === "error"' in script
     assert 'sameImage.status === "error"' in script
+    assert 'analysis.decision === "review"' in script
+    assert 'analysis.decision === "no_text"' in script
+
+
+def test_link_check_detail_script_keeps_polling_after_transient_failures_until_threshold():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+
+    assert "const MAX_POLL_FAILURES = 3" in script
+    assert "consecutivePollFailures" in script
+    assert "state.consecutivePollFailures = 0;" in script
+    assert "state.consecutivePollFailures += 1;" in script
+    assert "if (state.consecutivePollFailures >= MAX_POLL_FAILURES)" in script
+    assert 'showError(error.message || "轮询失败")' in script
+    assert 'if (!task || !task.id || TERMINAL_STATUSES.has(task.status))' in script
+
+
+def test_link_check_detail_script_marks_key_non_pass_states_as_alerts():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+
+    assert "function isNonPassDecision" in script
+    assert '["review", "replace", "no_text", "failed"]' in script
+    assert 'label: "最终判定"' in script
+    assert "isAlert: isNonPassDecision(decision)" in script
+    assert 'decision === "review"' in script
+    assert 'decision === "no_text"' in script

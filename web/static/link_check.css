@@ -397,6 +397,11 @@
   color: var(--success-fg, #067647);
 }
 
+.lc-badge.is-warning {
+  background: var(--warning-bg, rgba(245, 158, 11, 0.14));
+  color: var(--warning-fg, #9a6700);
+}
+
 .lc-badge.is-danger {
   background: var(--danger-bg, rgba(220, 38, 38, 0.08));
   color: var(--danger-fg, #b42318);

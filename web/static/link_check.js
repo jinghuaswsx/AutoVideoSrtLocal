@@ -2,8 +2,10 @@
   const state = {
     currentTask: null,
     pollTimer: null,
+    consecutivePollFailures: 0,
   };
 
+  const MAX_POLL_FAILURES = 3;
   const TERMINAL_STATUSES = new Set(["done", "failed", "review_ready", "deleted"]);
 
   const taskStatusLabels = {
@@ -146,6 +148,10 @@
     return `<span class="lc-badge${kind ? ` ${kind}` : ""}">${escapeHtml(label)}</span>`;
   }
 
+  function isNonPassDecision(decision) {
+    return ["review", "replace", "no_text", "failed"].includes(decision);
+  }
+
   function isLowQuality(score) {
     return typeof score === "number" && score < 60;
   }
@@ -182,6 +188,12 @@
 
     if (item.status === "failed" || analysis.decision === "failed") {
       issues.push("图片处理失败");
+    }
+    if (analysis.decision === "review") {
+      issues.push("最终判定待复核");
+    }
+    if (analysis.decision === "no_text") {
+      issues.push("未识别到有效文字");
     }
     if (analysis.decision === "replace") {
       issues.push("最终判定需替换");
@@ -245,6 +257,9 @@
   function getDecisionClass(decision, itemStatus) {
     if (decision === "pass") {
       return "is-success";
+    }
+    if (decision === "review" || decision === "no_text") {
+      return "is-warning";
     }
     if (decision === "replace" || decision === "failed" || itemStatus === "failed") {
       return "is-danger";
@@ -338,6 +353,7 @@
     const reference = item.reference_match || {};
     const binary = item.binary_quick_check || {};
     const sameImage = item.same_image_llm || {};
+    const decision = analysis.decision || item.status || "-";
     const languageMismatch = analysis.language_match === false
       || (
         analysis.detected_language &&
@@ -349,8 +365,14 @@
     return [
       { label: "图片来源", value: item.source_url || "-", mono: true },
       {
+        label: "最终判定",
+        value: decisionLabels[decision] || decision,
+        isAlert: isNonPassDecision(decision),
+      },
+      {
         label: "最终判定来源",
         value: decisionSourceLabels[analysis.decision_source] || analysis.decision_source || "-",
+        isAlert: isNonPassDecision(decision),
       },
       {
         label: "识别语言",
@@ -494,6 +516,7 @@
 
   function renderTask(task) {
     state.currentTask = task;
+    state.consecutivePollFailures = 0;
     renderSummary(task);
     renderResults(task);
     showError(task.error || "");
@@ -517,15 +540,22 @@
 
   function startPollingIfNeeded(task) {
     if (!task || !task.id || TERMINAL_STATUSES.has(task.status)) {
+      stopPolling();
       return;
     }
 
     stopPolling();
+    state.consecutivePollFailures = 0;
     state.pollTimer = window.setInterval(() => {
       pollTask(task.id).catch((error) => {
-        stopPolling();
+        state.consecutivePollFailures += 1;
         showError(error.message || "轮询失败");
-        setStatus("任务状态获取失败");
+        if (state.consecutivePollFailures >= MAX_POLL_FAILURES) {
+          stopPolling();
+          setStatus("任务状态获取失败，已停止自动轮询");
+          return;
+        }
+        setStatus(`任务状态获取失败，正在重试（${state.consecutivePollFailures}/${MAX_POLL_FAILURES}）`);
       });
     }, 1500);
   }
