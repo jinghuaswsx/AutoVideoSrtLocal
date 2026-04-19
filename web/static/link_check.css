@@ -231,6 +231,10 @@
   gap: 16px;
 }
 
+.lc-preview-stack--single {
+  grid-template-columns: 200px;
+}
+
 .lc-preview-panel {
   display: grid;
   gap: 10px;
@@ -389,6 +393,10 @@ body.lc-modal-open {
   grid-template-columns: repeat(2, 200px);
   gap: 16px;
   justify-content: start;
+}
+
+.lc-detail-media.lc-preview-stack--single {
+  grid-template-columns: 200px;
 }
 
 @keyframes lc-spin {

@@ -31,3 +31,10 @@ def test_link_check_assets_include_compact_result_card_and_detail_dialog():
     assert ".lc-meta-grid" in style
     assert "-webkit-line-clamp: 2;" in style
     assert ".lc-detail-dialog" in style
+
+
+def test_link_check_assets_hide_reference_preview_when_not_matched():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+
+    assert 'reference.status === "matched"' in script
+    assert "未匹配到参考图" in script

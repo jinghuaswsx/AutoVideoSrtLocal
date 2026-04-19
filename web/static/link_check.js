@@ -194,6 +194,27 @@
       : "";
   }
 
+  function shouldShowReferencePreview(reference, referencePreview) {
+    return reference.status === "matched" && Boolean(referencePreview);
+  }
+
+  function getReferenceMatchValue(reference) {
+    const scoreSuffix = reference.score != null ? `（分数 ${reference.score}）` : "";
+    if (reference.status === "matched") {
+      return `${reference.reference_filename || "-"}${scoreSuffix}`;
+    }
+    if (reference.status === "weak_match") {
+      return `存在弱匹配候选${scoreSuffix}`;
+    }
+    if (reference.status === "not_matched") {
+      return "未匹配到参考图";
+    }
+    if (reference.status === "not_provided") {
+      return "未提供参考图";
+    }
+    return referenceStatusLabels[reference.status] || "-";
+  }
+
   function getDecisionClass(decision, itemStatus) {
     if (decision === "pass") {
       return "is-success";
@@ -223,10 +244,7 @@
       { label: "提取文字", value: analysis.text_summary || "-" },
       { label: "质量分", value: analysis.quality_score ?? "-" },
       { label: "模型说明", value: analysis.quality_reason || item.error || "-" },
-      {
-        label: "参考图匹配",
-        value: `${reference.reference_filename || "-"}${reference.score != null ? `（分数 ${reference.score}）` : ""}`,
-      },
+      { label: "参考图匹配", value: getReferenceMatchValue(reference) },
       { label: "二值快检结果", value: binaryStatusLabels[binary.status] || binary.status || "-" },
       { label: "二值相似度", value: formatPercent(binary.binary_similarity) },
       { label: "前景重合度", value: formatPercent(binary.foreground_overlap) },
@@ -251,12 +269,35 @@
     `;
   }
 
+  function buildPreviewStack(item, taskId, options) {
+    const settings = options || {};
+    const reference = item.reference_match || {};
+    const referencePreview = resolveReferencePreviewUrl(reference, taskId);
+    const previewPanels = [
+      renderPreviewPanel("网站抓取图", item.site_preview_url, "暂无网站图"),
+    ];
+
+    if (shouldShowReferencePreview(reference, referencePreview)) {
+      previewPanels.push(renderPreviewPanel("参考图", referencePreview, "未提供参考图"));
+    }
+
+    const baseClass = settings.baseClass || "lc-preview-stack";
+    const stackClass = previewPanels.length === 1
+      ? `${baseClass} lc-preview-stack--single`
+      : baseClass;
+
+    return `
+      <div class="${stackClass}">
+        ${previewPanels.join("")}
+      </div>
+    `;
+  }
+
   function renderItem(item, taskId, index) {
     const analysis = item.analysis || {};
     const reference = item.reference_match || {};
     const decision = analysis.decision || item.status || "-";
     const decisionClass = getDecisionClass(decision, item.status);
-    const referencePreview = resolveReferencePreviewUrl(reference, taskId);
     const metaEntries = getItemMetaEntries(item);
 
     return `
@@ -270,10 +311,7 @@
           <button type="button" class="lc-detail-trigger" data-item-index="${index}">查看任务详情</button>
         </div>
         <div class="lc-result-layout">
-          <div class="lc-preview-stack">
-            ${renderPreviewPanel("网站抓取图", item.site_preview_url, "暂无网站图")}
-            ${renderPreviewPanel("参考图", referencePreview, "未提供参考图")}
-          </div>
+          ${buildPreviewStack(item, taskId)}
           <div class="lc-result-side">
             <div class="lc-meta-grid">
               ${metaEntries.map((entry) => buildMetaField(entry.label, entry.value, entry)).join("")}
@@ -291,7 +329,6 @@
     const sameImage = item.same_image_llm || {};
     const decision = analysis.decision || item.status || "-";
     const decisionClass = getDecisionClass(decision, item.status);
-    const referencePreview = resolveReferencePreviewUrl(reference, taskId);
     const detailEntries = [
       { label: "图片类型", value: item.kind === "detail" ? "详情图" : "轮播图", detail: true },
       { label: "任务状态", value: taskStatusLabels[item.status] || item.status || "-", detail: true },
@@ -313,10 +350,7 @@
           ${badge(`最终判定：${decisionLabels[decision] || decision}`, decisionClass)}
           ${badge(`参考图：${referenceStatusLabels[reference.status] || reference.status || "未提供"}`)}
         </div>
-        <div class="lc-detail-media">
-          ${renderPreviewPanel("网站抓取图", item.site_preview_url, "暂无网站图")}
-          ${renderPreviewPanel("参考图", referencePreview, "未提供参考图")}
-        </div>
+        ${buildPreviewStack(item, taskId, { baseClass: "lc-detail-media" })}
         <div class="lc-detail-meta-grid">
           ${detailEntries.map((entry) => buildMetaField(entry.label, entry.value, entry)).join("")}
         </div>

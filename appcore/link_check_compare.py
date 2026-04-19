@@ -64,12 +64,22 @@ def _prepare_binary_mask(path: str | Path) -> np.ndarray:
     return (gray <= threshold).astype(np.uint8)
 
 
+def _normalize_gray_for_penalty(gray: np.ndarray) -> np.ndarray:
+    gray = gray.astype(np.float32)
+    low = float(np.percentile(gray, 1))
+    high = float(np.percentile(gray, 99))
+    if high - low < 1e-6:
+        return gray
+    normalized = np.clip((gray - low) / (high - low), 0.0, 1.0)
+    return normalized * 255.0
+
+
 def _compute_dark_area_penalty(candidate_path: str | Path, reference_path: str | Path) -> float:
     candidate = _prepare_image(candidate_path, target_size=_PENALTY_TARGET_SIZE)
     reference = _prepare_image(reference_path, target_size=_PENALTY_TARGET_SIZE)
 
-    candidate_gray = np.asarray(candidate.image.convert("L"), dtype=np.float32)
-    reference_gray = np.asarray(reference.image.convert("L"), dtype=np.float32)
+    candidate_gray = _normalize_gray_for_penalty(np.asarray(candidate.image.convert("L"), dtype=np.float32))
+    reference_gray = _normalize_gray_for_penalty(np.asarray(reference.image.convert("L"), dtype=np.float32))
     dark_mask = (candidate_gray < 220.0) | (reference_gray < 220.0)
     if not np.any(dark_mask):
         return 0.0

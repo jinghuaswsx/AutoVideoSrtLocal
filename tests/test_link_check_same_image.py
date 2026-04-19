@@ -81,3 +81,14 @@ def test_same_image_judgment_returns_error_without_crashing(monkeypatch, tmp_pat
     assert result["channel_label"] == "Google AI Studio"
     assert result["model"] == "gemini-3.1-flash-lite-preview"
     assert "provider down" in result["reason"]
+
+
+def test_same_image_prompt_requires_text_match_before_same_image_check():
+    from appcore import link_check_same_image as module
+
+    prompt = module._build_prompt()
+
+    assert "先分别提取两张图片中的全部可见文字" in prompt
+    assert "只要任意一张图能提取出文字且两张图文字不一致，就直接返回“不是”" in prompt
+    assert "如果两张图都没有可识别文字，继续判断它们是否属于同一张基础图片" in prompt
+    assert "只返回“是”或“不是”" in prompt

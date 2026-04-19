@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 
 def _make_sample(path: Path, *, size: tuple[int, int], quality: int = 95) -> Path:
@@ -138,6 +138,28 @@ def test_multiline_default_text_replacement_does_not_match(tmp_path):
 
     assert result["status"] != "matched"
     assert result["score"] < 0.80
+
+
+def test_same_image_with_color_filter_still_matches(tmp_path):
+    from appcore.link_check_compare import compare_images
+
+    base = Image.new("RGB", (900, 900), "black")
+    draw = ImageDraw.Draw(base)
+    draw.rectangle((40, 40, 860, 860), outline="white", width=5)
+    draw.rectangle((140, 140, 760, 620), fill=(40, 40, 40))
+    draw.ellipse((220, 230, 680, 650), outline="silver", width=10)
+    draw.line((150, 720, 780, 180), fill="white", width=4)
+    draw.text((120, 90), "36MM", fill="white")
+    draw.text((120, 700), "90MM", fill="white")
+    left = tmp_path / "base.jpg"
+    right = tmp_path / "sepia.jpg"
+    base.save(left, quality=95)
+    ImageOps.colorize(ImageOps.grayscale(base), "#2b1a0f", "#f4d8b8").convert("RGB").save(right, quality=68)
+
+    result = compare_images(left, right)
+
+    assert result["status"] == "matched"
+    assert result["score"] >= 0.80
 
 
 def test_best_reference_uses_highest_score(tmp_path):
