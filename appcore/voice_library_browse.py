@@ -21,10 +21,10 @@ from appcore.db import query, query_one
 
 _SELECT_FIELDS = (
     "voice_id, name, gender, language, age, accent, category, "
-    "descriptive, preview_url, labels_json"
+    "descriptive, use_case, preview_url, labels_json"
 )
 
-_LABEL_FIELDS = frozenset({"use_case", "accent", "age", "descriptive"})
+_LABEL_FIELDS = frozenset({"accent", "age", "descriptive"})
 
 
 def _escape_like(value: str) -> str:
@@ -49,7 +49,7 @@ def _row_to_dict(row: dict) -> dict:
     out = dict(row)
     out["labels"] = labels
     out.pop("labels_json", None)
-    out["use_case"] = labels.get("use_case")
+    out["use_case"] = row.get("use_case") or labels.get("use_case")
     out["description"] = labels.get("description") or row.get("descriptive") or ""
     return out
 
@@ -88,7 +88,9 @@ def list_voices(
         params.extend(values)
 
     if use_cases:
-        _json_in("use_case", use_cases)
+        marks = ",".join(["%s"] * len(use_cases))
+        where.append(f"use_case IN ({marks})")
+        params.extend(use_cases)
     if accents:
         _json_in("accent", accents)
     if ages:
@@ -131,21 +133,24 @@ def list_filter_options(*, language: str) -> dict:
     if not language:
         raise ValueError("language is required")
 
+    # use_case 走独立列
+    uc_rows = query(
+        "SELECT DISTINCT use_case FROM elevenlabs_voices "
+        "WHERE language = %s AND use_case IS NOT NULL AND use_case <> ''",
+        (language,),
+    )
+    use_cases: set[str] = {r["use_case"] for r in uc_rows if r.get("use_case")}
+
+    # 其他三个字段仍从 labels_json 读（保留现有兼容逻辑）
     rows = query(
         "SELECT labels_json FROM elevenlabs_voices WHERE language = %s",
         (language,),
     )
-
-    use_cases: set[str] = set()
     accents: set[str] = set()
     ages: set[str] = set()
     descriptives: set[str] = set()
-
     for r in rows:
         labels = _parse_labels(r.get("labels_json"))
-        v = labels.get("use_case")
-        if v:
-            use_cases.add(v)
         v = labels.get("accent")
         if v:
             accents.add(v)

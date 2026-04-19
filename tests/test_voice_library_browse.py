@@ -87,10 +87,9 @@ def test_multi_select_use_case():
 
     count_sql = cap.query_one_calls[0][0]
     count_args = cap.query_one_calls[0][1]
-    assert (
-        "JSON_UNQUOTE(JSON_EXTRACT(labels_json, '$.use_case')) IN (%s,%s)"
-        in count_sql
-    )
+    # use_case 已迁到独立列，不再走 JSON_EXTRACT
+    assert "use_case IN (%s,%s)" in count_sql
+    assert "JSON_EXTRACT(labels_json, '$.use_case')" not in count_sql
     # 参数顺序：language, narration, characters
     assert count_args == ("en", "narration", "characters")
 
@@ -270,32 +269,40 @@ def test_list_filter_options_language_required():
 
 def test_list_filter_options_returns_sorted_unique():
     from appcore import voice_library_browse
-    fake_rows = [
+
+    # labels_json 行（use_case 已迁到独立列，这里只覆盖 accent/age/descriptive）
+    labels_rows = [
         {"labels_json": json.dumps({
-            "use_case": "narration", "accent": "american",
-            "age": "middle-aged", "descriptive": "warm",
+            "accent": "american", "age": "middle-aged", "descriptive": "warm",
         })},
         {"labels_json": json.dumps({
-            "use_case": "characters", "accent": "british",
-            "age": "young", "descriptive": "bright",
+            "accent": "british", "age": "young", "descriptive": "bright",
         })},
         # 重复项：应该被去重
         {"labels_json": json.dumps({
-            "use_case": "narration", "accent": "american",
-            "age": "middle-aged", "descriptive": "warm",
+            "accent": "american", "age": "middle-aged", "descriptive": "warm",
         })},
         # dict 形式（兼容 DB driver 自动解析）
         {"labels_json": {
-            "use_case": "advertisement", "accent": "american",
-            "age": "old", "descriptive": "deep",
+            "accent": "american", "age": "old", "descriptive": "deep",
         }},
         # 非法 / 空值
         {"labels_json": None},
         {"labels_json": "not-json"},
     ]
-    cap = _DBCapture(rows=fake_rows, total=0)
-    with patch("appcore.voice_library_browse.query", side_effect=cap.query), \
-         patch("appcore.voice_library_browse.query_one", side_effect=cap.query_one):
+    # use_case 列直接返回去重后的值
+    use_case_rows = [
+        {"use_case": "narration"},
+        {"use_case": "characters"},
+        {"use_case": "advertisement"},
+    ]
+
+    def fake_query(sql, args=()):
+        if "DISTINCT use_case" in sql:
+            return use_case_rows
+        return labels_rows
+
+    with patch("appcore.voice_library_browse.query", side_effect=fake_query):
         opts = voice_library_browse.list_filter_options(language="en")
 
     assert opts["use_cases"] == sorted({"narration", "characters", "advertisement"})
@@ -303,8 +310,58 @@ def test_list_filter_options_returns_sorted_unique():
     assert opts["ages"] == sorted({"middle-aged", "young", "old"})
     assert opts["descriptives"] == sorted({"warm", "bright", "deep"})
 
-    # SQL 断言
-    sql = cap.query_calls[0][0]
-    args = cap.query_calls[0][1]
-    assert "SELECT labels_json FROM elevenlabs_voices WHERE language = %s" in sql
-    assert args == ("en",)
+
+def test_list_voices_filters_use_case_via_column(monkeypatch):
+    """use_cases 过滤应使用独立列 use_case = %s 而非 JSON_EXTRACT。"""
+    from appcore import voice_library_browse as vlb
+    captured = {}
+
+    def fake_query_one(sql, params):
+        captured["count_sql"] = sql
+        captured["count_params"] = params
+        return {"c": 0}
+
+    def fake_query(sql, params):
+        captured["list_sql"] = sql
+        captured["list_params"] = params
+        return []
+
+    monkeypatch.setattr(vlb, "query_one", fake_query_one)
+    monkeypatch.setattr(vlb, "query", fake_query)
+
+    vlb.list_voices(language="en", use_cases=["news", "narration"])
+
+    assert "use_case IN" in captured["count_sql"]
+    assert "JSON_EXTRACT(labels_json, '$.use_case')" not in captured["count_sql"]
+    assert "news" in captured["count_params"]
+    assert "narration" in captured["count_params"]
+
+
+def test_list_filter_options_use_cases_via_distinct_column(monkeypatch):
+    from appcore import voice_library_browse as vlb
+    captured = {}
+
+    def fake_query(sql, params):
+        captured.setdefault("sqls", []).append(sql)
+        if "DISTINCT use_case" in sql:
+            return [{"use_case": "news"}, {"use_case": "narration"}]
+        return []
+
+    monkeypatch.setattr(vlb, "query", fake_query)
+
+    result = vlb.list_filter_options(language="en")
+    assert any("DISTINCT use_case" in s for s in captured["sqls"])
+    assert result["use_cases"] == ["narration", "news"]
+
+
+def test_row_to_dict_uses_column_use_case_over_labels(monkeypatch):
+    """_row_to_dict 读到 row 里的 use_case 独立列时优先于 labels_json。"""
+    from appcore import voice_library_browse as vlb
+    row = {
+        "voice_id": "v1", "name": "x", "gender": "male", "language": "en",
+        "age": None, "accent": None, "category": None, "descriptive": "",
+        "preview_url": "", "use_case": "news",
+        "labels_json": '{"use_case": "ignored"}',
+    }
+    out = vlb._row_to_dict(row)
+    assert out["use_case"] == "news"
