@@ -12,9 +12,10 @@
     <div class="cw-steps">
         {% for step_key, step_label in [("keyframe", "抽帧"), ("copywrite", "文案"), ("tts", "语音"), ("compose", "合成")] %}
         {% set ss = task.steps.get(step_key, 'pending') %}
+        {% set mtag = (task.step_model_tags or {}).get(step_key, '') %}
         <div class="cw-step {% if ss == 'done' %}done{% elif ss == 'running' %}active{% elif ss == 'error' %}error{% endif %}"
-             id="step-{{ step_key }}" data-status="{{ ss }}">
-            {{ step_label }}
+             id="step-{{ step_key }}" data-status="{{ ss }}"{% if mtag %} title="{{ mtag }}"{% endif %}>
+            {{ step_label }}{% if mtag %}<span class="step-model-tag" style="margin-left:4px;padding:0 5px;font-size:10px;font-family:var(--font-mono,monospace);color:oklch(38% 0.09 215);background:oklch(94% 0.04 215);border:1px solid oklch(88% 0.06 215);border-radius:3px;">{{ mtag }}</span>{% endif %}
         </div>
         {% endfor %}
     </div>

@@ -286,10 +286,16 @@ class PipelineRunner:
     def _emit(self, task_id: str, event_type: str, payload: dict) -> None:
         self.bus.publish(Event(type=event_type, task_id=task_id, payload=payload))
 
-    def _set_step(self, task_id: str, step: str, status: str, message: str = "") -> None:
+    def _set_step(self, task_id: str, step: str, status: str, message: str = "", *, model_tag: str = "") -> None:
         task_state.set_step(task_id, step, status)
         task_state.set_step_message(task_id, step, message)
-        self._emit(task_id, EVT_STEP_UPDATE, {"step": step, "status": status, "message": message})
+        if model_tag:
+            task_state.set_step_model_tag(task_id, step, model_tag)
+        payload = {"step": step, "status": status, "message": message}
+        existing_tag = model_tag or (task_state.get(task_id) or {}).get("step_model_tags", {}).get(step, "")
+        if existing_tag:
+            payload["model_tag"] = existing_tag
+        self._emit(task_id, EVT_STEP_UPDATE, payload)
 
     def _emit_duration_round(self, task_id: str, round_index: int,
                              phase: str, record: dict) -> None:
@@ -989,11 +995,14 @@ class PipelineRunner:
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
-        self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...")
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
 
         provider = _resolve_translate_provider(self.user_id)
+        from pipeline.translate import get_model_display_name as _get_model_name
+        _model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
+        self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...", model_tag=_model_tag)
+
         script_segments = task.get("script_segments", [])
         source_full_text_zh = build_source_full_text_zh(script_segments)
 
@@ -1068,12 +1077,14 @@ class PipelineRunner:
         loc_mod = importlib.import_module(self.localization_module)
 
         lang_display = _lang_display(self.target_language_label)
-        self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...")
 
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
 
         provider = _resolve_translate_provider(self.user_id)
+        from pipeline.translate import get_model_display_name as _get_model_name
+        _tts_model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
+        self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...", model_tag=_tts_model_tag)
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
         voice = self._resolve_voice(task, loc_mod)
 
@@ -1326,7 +1337,6 @@ class PipelineRunner:
         from pipeline import video_csk, video_score
         from appcore.gemini import resolve_config, model_display_name
 
-        self._set_step(task_id, "analysis", "running", "AI 分析中（评分 + CSK）...")
         task = task_state.get(task_id) or {}
         variants = task.get("variants") or {}
         variant_state = variants.get("normal") or {}
@@ -1337,6 +1347,8 @@ class PipelineRunner:
             default_model=video_score.SCORE_MODEL,
         )
         model_label = model_display_name(resolved_model)
+        _analysis_model_tag = f"gemini · {resolved_model}"
+        self._set_step(task_id, "analysis", "running", "AI 分析中（评分 + CSK）...", model_tag=_analysis_model_tag)
 
         score_result = None
         csk_result = None

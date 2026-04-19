@@ -283,6 +283,7 @@
     setStatusTag(D.status);
 
     // 步骤状态与消息
+    D.stepModelTags = task.step_model_tags || {};
     var steps = task.steps || {};
     Object.keys(steps).forEach(function (code) {
       setStepState(code, steps[code], (task.step_messages || {})[code]);
@@ -368,6 +369,10 @@
     // Covers extract/compose and any step without a dedicated event.
     socket.on("step_update", function (payload) {
       if (payload && payload.step) {
+        if (payload.model_tag) {
+          D.stepModelTags = D.stepModelTags || {};
+          D.stepModelTags[payload.step] = payload.model_tag;
+        }
         setStepState(payload.step, payload.status, payload.message);
       }
     });
@@ -448,6 +453,14 @@
     var msgEl = item.querySelector('[data-step-msg="' + code + '"]');
     if (msgEl && message !== undefined && message !== null) {
       msgEl.textContent = message;
+      // 重新追加模型标签
+      var tagText = (D.stepModelTags || {})[code] || "";
+      if (tagText) {
+        var span = document.createElement("span");
+        span.className = "step-model-tag";
+        span.textContent = tagText;
+        msgEl.appendChild(span);
+      }
     }
   }
 

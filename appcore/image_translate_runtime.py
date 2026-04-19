@@ -63,7 +63,11 @@ class ImageTranslateRuntime:
 
         task["status"] = "running"
         task["steps"]["process"] = "running"
-        store.update(task_id, status="running", steps=task["steps"])
+        # 记录图片翻译使用的模型
+        _it_model = task.get("model_id") or "gemini-2.5-flash"
+        task.setdefault("step_model_tags", {})["process"] = f"gemini · {_it_model}"
+        store.update(task_id, status="running", steps=task["steps"],
+                     step_model_tags=task.get("step_model_tags", {}))
 
         items = task.get("items") or []
         circuit_msg = ""

@@ -35,13 +35,17 @@ class CopywritingRunner:
         self._bus.publish(Event(type=event_type, task_id=task_id,
                                 payload=payload or {}))
 
-    def _set_step(self, task_id: str, step: str, status: str, message: str = ""):
+    def _set_step(self, task_id: str, step: str, status: str, message: str = "", *, model_tag: str = ""):
         task_state.set_step(task_id, step, status)
         if message:
             task_state.set_step_message(task_id, step, message)
-        self._emit(task_id, EVT_CW_STEP_UPDATE, {
-            "step": step, "status": status, "message": message,
-        })
+        if model_tag:
+            task_state.set_step_model_tag(task_id, step, model_tag)
+        payload = {"step": step, "status": status, "message": message}
+        existing_tag = model_tag or (task_state.get(task_id) or {}).get("step_model_tags", {}).get(step, "")
+        if existing_tag:
+            payload["model_tag"] = existing_tag
+        self._emit(task_id, EVT_CW_STEP_UPDATE, payload)
 
     # ── 公开接口 ─────────────────────────────────────
 
@@ -111,7 +115,6 @@ class CopywritingRunner:
     def _step_copywrite(self, task_id: str):
         from pipeline.copywriting import generate_copy
 
-        self._set_step(task_id, "copywrite", "running", "正在生成文案...")
         task = task_state.get(task_id)
         keyframes = task.get("keyframes", [])
         video_path = task.get("video_path")
@@ -128,6 +131,9 @@ class CopywritingRunner:
 
         # 模型覆盖（如 Gemini）
         model_override = task.get("cw_model")
+        _cw_model_label = model_override or provider
+        self._set_step(task_id, "copywrite", "running", "正在生成文案...",
+                       model_tag=f"{provider} · {_cw_model_label}")
 
         result = generate_copy(
             keyframe_paths=keyframes,
@@ -141,12 +147,15 @@ class CopywritingRunner:
         )
 
         task_state.set_copy(task_id, result)
+        # 用实际返回的 model 更新 tag
+        _actual_model = (result.get("_debug") or {}).get("model") or model_override or provider
         self._set_step(task_id, "copywrite", "done",
-                       f"文案生成完成: {len(result.get('segments', []))} 段")
+                       f"文案生成完成: {len(result.get('segments', []))} 段",
+                       model_tag=f"{provider} · {_actual_model}")
         # 记录 token 用量
         from appcore.usage_log import record as _log_usage
         _cw_usage = result.get("_usage") or {}
-        _model_name = (result.get("_debug") or {}).get("model") or model_override or provider
+        _model_name = _actual_model
         _log_usage(self._user_id, task_id, f"copywriting:{provider}",
                    model_name=_model_name,
                    success=True,
