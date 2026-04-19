@@ -110,6 +110,31 @@ def test_recover_project_state_keeps_active_task_running():
     assert status is None
 
 
+def test_recover_project_state_marks_orphaned_link_check_as_failed():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        "link_check",
+        "lc-orphan",
+        {
+            "status": "analyzing",
+            "steps": {
+                "lock_locale": "done",
+                "download": "done",
+                "analyze": "running",
+                "summarize": "pending",
+            },
+            "items": [{"id": "site-1", "status": "done"}],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "failed"
+    assert recovered["items"][0]["id"] == "site-1"
+    assert recovered["steps"]["analyze"] == "error"
+
+
 def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     from appcore import task_recovery
 

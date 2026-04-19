@@ -552,18 +552,33 @@ def create_link_check(task_id: str, task_dir: str, *,
                       link_url: str,
                       target_language: str,
                       target_language_name: str,
-                      reference_images: list[dict]) -> dict:
+                      reference_images: list[dict],
+                      display_name: str = "") -> dict:
     task = {
         "id": task_id,
         "type": "link_check",
         "status": "queued",
         "task_dir": task_dir,
+        "display_name": display_name,
+        "original_filename": "",
         "link_url": link_url,
         "resolved_url": "",
         "page_language": "",
         "target_language": target_language,
         "target_language_name": target_language_name,
         "reference_images": reference_images,
+        "steps": {
+            "lock_locale": "pending",
+            "download": "pending",
+            "analyze": "pending",
+            "summarize": "pending",
+        },
+        "step_messages": {
+            "lock_locale": "",
+            "download": "",
+            "analyze": "",
+            "summarize": "",
+        },
         "progress": {
             "total": 0,
             "downloaded": 0,
@@ -590,10 +605,10 @@ def create_link_check(task_id: str, task_dir: str, *,
         "items": [],
         "error": "",
         "_user_id": user_id,
-        "_persist_state": False,
     }
     with _lock:
         _tasks[task_id] = task
+    _db_upsert(task_id, user_id, task, "")
     return task
 
 

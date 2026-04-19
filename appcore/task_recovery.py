@@ -13,7 +13,8 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
-RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review"} | PIPELINE_PROJECT_TYPES
+LINK_CHECK_RUNNING_STATUSES = {"queued", "locking_locale", "downloading", "analyzing"}
+RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check"} | PIPELINE_PROJECT_TYPES
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -62,6 +63,11 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         steps["review"] = "error"
         recovered["review_started_at"] = None
         changed = True
+    elif project_type == "link_check" and recovered.get("status") in LINK_CHECK_RUNNING_STATUSES:
+        changed = _mark_running_steps_as_error(recovered) or changed
+        recovered["status"] = "failed"
+        recovered["error"] = RECOVERY_ERROR_MESSAGE
+        return True, recovered, "failed"
     elif project_type in PIPELINE_PROJECT_TYPES:
         changed = _mark_running_steps_as_error(recovered)
         if recovered.get("current_review_step"):

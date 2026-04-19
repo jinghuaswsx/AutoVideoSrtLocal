@@ -8,7 +8,9 @@ from appcore.db import execute, query_one
 def cleanup():
     execute("DELETE FROM users WHERE username = %s", ("_test_ts_user_",))
     yield
-    execute("DELETE FROM projects WHERE id IN ('test_ts_001','test_ts_002','test_ts_003')")
+    execute(
+        "DELETE FROM projects WHERE id IN ('test_ts_001','test_ts_002','test_ts_003','test_ts_link_check')"
+    )
     execute("DELETE FROM users WHERE username = %s", ("_test_ts_user_",))
 
 
@@ -25,7 +27,7 @@ def test_create_persists_to_db(user_id, tmp_path):
     assert row is not None
     assert row["user_id"] == user_id
     assert row["status"] == "uploaded"
-    assert row["expires_at"] is not None
+    assert row["expires_at"] is None
 
 
 def test_get_falls_back_to_db(user_id, tmp_path):
@@ -48,3 +50,25 @@ def test_set_step_updates_db(user_id, tmp_path):
     import json
     state = json.loads(row["state_json"])
     assert state["steps"]["extract"] == "done"
+
+
+def test_create_link_check_persists_to_db_with_null_expires_at(user_id, tmp_path):
+    ts.create_link_check(
+        "test_ts_link_check",
+        task_dir=str(tmp_path),
+        user_id=user_id,
+        link_url="https://newjoyloo.com/fr/products/demo",
+        target_language="fr",
+        target_language_name="法语",
+        reference_images=[],
+        display_name="demo · FR",
+    )
+
+    row = query_one(
+        "SELECT status, type, expires_at FROM projects WHERE id = %s",
+        ("test_ts_link_check",),
+    )
+
+    assert row["type"] == "link_check"
+    assert row["status"] == "queued"
+    assert row["expires_at"] is None

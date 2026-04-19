@@ -35,7 +35,7 @@ def run_cleanup() -> None:
     zombie_rows = query(
         "SELECT id, task_dir, user_id, state_json FROM projects "
         "WHERE expires_at IS NULL "
-        "AND type != 'image_translate' "
+        "AND type NOT IN ('image_translate', 'link_check') "
         "AND status NOT IN ('uploaded', 'running') "
         "AND created_at < NOW() - INTERVAL 30 DAY "
         "AND deleted_at IS NULL"

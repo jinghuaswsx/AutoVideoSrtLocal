@@ -82,3 +82,19 @@ def test_run_cleanup_handles_zombie_projects(monkeypatch):
     cleanup.run_cleanup()
 
     assert any("zombie-task" in str(a) for a in updated)
+
+
+def test_run_cleanup_skips_link_check_from_null_expiry_cleanup(monkeypatch):
+    captured_sql = []
+
+    def fake_query(sql, args=()):
+        captured_sql.append(sql)
+        return []
+
+    monkeypatch.setattr(cleanup, "query", fake_query)
+    monkeypatch.setattr(cleanup.tos_clients, "is_tos_configured", lambda: False)
+
+    cleanup.run_cleanup()
+
+    zombie_sql = next(sql for sql in captured_sql if "expires_at IS NULL" in sql)
+    assert "type NOT IN ('image_translate', 'link_check')" in zombie_sql
