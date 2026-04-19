@@ -456,13 +456,17 @@
     scheduleRefreshTaskState(200);
   });
 
-  socket.on("step_update", ({ step, status, message }) => {
+  socket.on("step_update", ({ step, status, message, model_tag }) => {
     if (!taskId) return;
     if (currentTask) {
       currentTask.steps = currentTask.steps || {};
       currentTask.steps[step] = status;
       currentTask.step_messages = currentTask.step_messages || {};
       currentTask.step_messages[step] = message || "";
+      if (model_tag) {
+        currentTask.step_model_tags = currentTask.step_model_tags || {};
+        currentTask.step_model_tags[step] = model_tag;
+      }
     }
     renderTaskState();
     scheduleRefreshTaskState();
@@ -589,6 +593,14 @@
       iconEl.className = `step-icon ${status}`;
       iconEl.innerHTML = status === "running" ? '<span class="spinner"></span>' : (stepIcons[status] || "·");
       msgEl.textContent = message;
+      // 模型标签
+      const modelTag = currentTask?.step_model_tags?.[step] || "";
+      if (modelTag) {
+        const span = document.createElement("span");
+        span.className = "step-model-tag";
+        span.textContent = modelTag;
+        msgEl.appendChild(span);
+      }
     });
     updateAnalysisButton();
   }

@@ -68,10 +68,10 @@ class MultiTranslateRunner(PipelineRunner):
         lang = self._resolve_target_lang(task)
         source_language = task.get("source_language", "zh")
 
-        self._set_step(task_id, "translate", "running",
-                       f"正在翻译为 {lang.upper()}...")
-
         provider = _resolve_translate_provider(self.user_id)
+        _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
+        self._set_step(task_id, "translate", "running",
+                       f"正在翻译为 {lang.upper()}...", model_tag=_model_tag)
         script_segments = task.get("script_segments", [])
         source_full_text = build_source_full_text_zh(script_segments)
 

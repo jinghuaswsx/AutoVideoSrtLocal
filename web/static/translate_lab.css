@@ -386,6 +386,8 @@
   font-size: 11px; color: #9ca3af; margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.lab-step-msg .step-model-tag { display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 10px; font-family: var(--font-mono, monospace); color: oklch(38% 0.09 215); background: oklch(94% 0.04 215); border: 1px solid oklch(88% 0.06 215); border-radius: 3px; vertical-align: middle; }
+.lab-step-msg .step-model-tag.hidden { display: none !important; }
 .lab-step-status {
   font-size: 11px; font-weight: 600;
   padding: 2px 8px; border-radius: 6px;

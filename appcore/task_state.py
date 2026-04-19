@@ -122,6 +122,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
             "compose": "",
             "export": "",
         },
+        "step_model_tags": {},
         "current_review_step": "",
         "utterances": [],
         "scene_cuts": [],
@@ -227,6 +228,15 @@ def set_step_message(task_id: str, step: str, message: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("step_messages", {})[step] = message
+    if task:
+        _sync_task_to_db(task_id)
+
+
+def set_step_model_tag(task_id: str, step: str, tag: str):
+    with _lock:
+        task = _tasks.get(task_id)
+        if task:
+            task.setdefault("step_model_tags", {})[step] = tag
     if task:
         _sync_task_to_db(task_id)
 
@@ -365,6 +375,7 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
             "compose": "pending",
         },
         "step_messages": {},
+        "step_model_tags": {},
         "keyframes": [],
         "copy": {},
         "copy_history": [],
@@ -421,6 +432,7 @@ def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
             "subtitle": "",
             "compose": "",
         },
+        "step_model_tags": {},
         "current_review_step": "",
         "shot_decompose": {},
         "voice_match": {},
@@ -471,6 +483,7 @@ def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
             "upload_result": "pending",
         },
         "step_messages": {},
+        "step_model_tags": {},
         "remove_mode": "",
         "selection_box": None,
         "position_payload": None,
@@ -531,6 +544,7 @@ def create_image_translate(task_id: str, task_dir: str, *,
         "original_filename": "",
         "steps": {"prepare": "done", "process": "pending"},
         "step_messages": {"prepare": "", "process": ""},
+        "step_model_tags": {},
         "progress": {
             "total": len(normalized_items),
             "done": 0,

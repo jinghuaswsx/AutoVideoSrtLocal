@@ -125,7 +125,11 @@ class PipelineRunnerV2(PipelineRunner):
         from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
         from pipeline.storage import delete_file, upload_file
 
-        self._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...")
+        from appcore.gemini import resolve_config as _resolve_gemini
+        _, _sd_model = _resolve_gemini(self.user_id, service="shot_decompose.run",
+                                        default_model="gemini-3.1-pro-preview")
+        self._set_step(task_id, "shot_decompose", "running", "Gemini 分镜分析中...",
+                       model_tag=f"gemini · {_sd_model}")
         task = task_state.get(task_id) or {}
         duration = float(task.get("video_duration") or 0.0)
         audio_path = task.get("audio_path", "")
@@ -262,7 +266,10 @@ class PipelineRunnerV2(PipelineRunner):
         from pipeline.speech_rate_model import get_rate
         from pipeline.translate_v2 import compute_char_limit, translate_shot
 
-        self._set_step(task_id, "translate", "running", "正在翻译分镜...")
+        from appcore.gemini import resolve_config as _resolve_gemini
+        _, _tr_model = _resolve_gemini(self.user_id, service="gemini_translate_v2")
+        self._set_step(task_id, "translate", "running", "正在翻译分镜...",
+                       model_tag=f"gemini · {_tr_model}")
         task = task_state.get(task_id) or {}
         shots: List[Dict[str, Any]] = task.get("shots") or []
         voice = task.get("chosen_voice") or {}

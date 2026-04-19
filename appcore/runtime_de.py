@@ -58,8 +58,6 @@ class DeTranslateRunner(PipelineRunner):
         task_dir = task["task_dir"]
         source_language = task.get("source_language", "zh")
         lang_label = "中文" if source_language == "zh" else "英文"
-        self._set_step(task_id, "translate", "running", f"正在将{lang_label}翻译为德语...")
-
         from pipeline.localization_de import (
             build_source_full_text_zh,
             LOCALIZED_TRANSLATION_SYSTEM_PROMPT as DE_PROMPT,
@@ -70,6 +68,8 @@ class DeTranslateRunner(PipelineRunner):
         )
 
         provider = _resolve_translate_provider(self.user_id)
+        _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
+        self._set_step(task_id, "translate", "running", f"正在将{lang_label}翻译为德语...", model_tag=_model_tag)
         script_segments = task.get("script_segments", [])
         source_full_text = build_source_full_text_zh(script_segments)
 

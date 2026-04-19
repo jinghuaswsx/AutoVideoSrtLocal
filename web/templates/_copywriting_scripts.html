@@ -19,7 +19,7 @@ let rewriteIndex = -1;
 
 socket.on("cw_step_update", function(data) {
     if (data.task_id !== TASK_ID) return;
-    updateStepUI(data.step, data.status, data.message);
+    updateStepUI(data.step, data.status, data.message, data.model_tag);
 });
 
 socket.on("cw_keyframes_ready", function(data) {
@@ -87,13 +87,26 @@ function hideOverlay() {
     document.getElementById("editorOverlay").classList.remove("active");
 }
 
-function updateStepUI(step, status, message) {
+function updateStepUI(step, status, message, modelTag) {
     const el = document.getElementById("step-" + step);
     if (!el) return;
     el.className = "cw-step";
     if (status === "done") el.classList.add("done");
     else if (status === "running") el.classList.add("active");
     else if (status === "error") el.classList.add("error");
+
+    // 模型标签
+    if (modelTag) {
+        el.title = modelTag;
+        let tagSpan = el.querySelector(".step-model-tag");
+        if (!tagSpan) {
+            tagSpan = document.createElement("span");
+            tagSpan.className = "step-model-tag";
+            tagSpan.style.cssText = "margin-left:4px;padding:0 5px;font-size:10px;font-family:var(--font-mono,monospace);color:oklch(38% 0.09 215);background:oklch(94% 0.04 215);border:1px solid oklch(88% 0.06 215);border-radius:3px;";
+            el.appendChild(tagSpan);
+        }
+        tagSpan.textContent = modelTag;
+    }
 
     // 遮罩控制
     if (step === "keyframe" && status === "running") {

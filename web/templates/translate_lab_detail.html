@@ -64,7 +64,7 @@
         <span class="lab-step-index">{{ loop.index }}</span>
         <div class="lab-step-text">
           <div class="lab-step-label">{{ label }}</div>
-          <div class="lab-step-msg" data-step-msg="{{ code }}">{{ (state.step_messages or {}).get(code, '') }}</div>
+          <div class="lab-step-msg" data-step-msg="{{ code }}">{{ (state.step_messages or {}).get(code, '') }}<span class="step-model-tag hidden" data-model-tag="{{ code }}">{{ (state.step_model_tags or {}).get(code, '') }}</span></div>
         </div>
         <span class="lab-step-status" data-step-status="{{ code }}">{{ status }}</span>
       </li>
