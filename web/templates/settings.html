@@ -264,7 +264,9 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         </div>
         <div>
           <label>Model ID</label>
-          <input type="text" name="binding_{{ row.code }}_model" value="{{ row.model }}">
+          <input type="text" name="binding_{{ row.code }}_model" value="{{ row.model }}"
+                 list="models-{{ row.code }}" autocomplete="off">
+          <datalist id="models-{{ row.code }}"></datalist>
         </div>
         <div>
           <button class="restore-btn" type="submit" name="restore_default" value="{{ row.code }}"
@@ -280,6 +282,62 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   {% endfor %}
 
   <button class="btn btn-primary save-btn" type="submit">保存分配</button>
+
+  <script>
+    // 项目里实际用过的 model ID —— 后续有新增直接加到这里
+    const PROVIDER_MODELS = {
+      "openrouter": [
+        "google/gemini-3.1-flash-lite-preview",
+        "google/gemini-3.1-pro-preview",
+        "google/gemini-3-flash-preview",
+        "anthropic/claude-sonnet-4.6",
+        "openai/gpt-4o-mini",
+      ],
+      "doubao": [
+        "doubao-seed-2-0-pro-260215",
+      ],
+      "gemini_aistudio": [
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
+      ],
+      "gemini_vertex": [
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
+      ],
+    };
+
+    (function () {
+      document.querySelectorAll('.binding-row').forEach(function (row) {
+        var providerSel = row.querySelector('select[name$="_provider"]');
+        var modelInput = row.querySelector('input[name$="_model"]');
+        if (!providerSel || !modelInput) return;
+        var dlId = modelInput.getAttribute('list');
+        var datalist = document.getElementById(dlId);
+        if (!datalist) return;
+
+        function refreshOptions() {
+          var models = PROVIDER_MODELS[providerSel.value] || [];
+          datalist.innerHTML = models
+            .map(function (m) { return '<option value="' + m + '"></option>'; })
+            .join('');
+        }
+        providerSel.addEventListener('change', function () {
+          refreshOptions();
+          // 切换 provider 后：如果当前 model 在新 provider 的候选里就保留；否则清空等用户选
+          var models = PROVIDER_MODELS[providerSel.value] || [];
+          if (modelInput.value && models.indexOf(modelInput.value) === -1) {
+            modelInput.value = '';
+          }
+        });
+        refreshOptions();
+      });
+    })();
+  </script>
 </form>
 {% endif %}
 
