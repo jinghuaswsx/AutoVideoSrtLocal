@@ -276,3 +276,201 @@ def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypat
     assert item["analysis"]["decision_source"] == "gemini_language_check"
     assert saved["summary"]["reference_unmatched_count"] == 1
     assert saved["summary"]["binary_checked_count"] == 0
+
+
+def test_runtime_persists_step_flow_and_summary_during_success(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    site_path = task_dir / "site.jpg"
+    site_path.write_bytes(b"site")
+
+    task_state.create_link_check(
+        "lc-success-persist",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url + "?locked=1",
+                    "page_language": "de",
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site.jpg",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    monkeypatch.setattr(
+        "appcore.link_check_runtime.analyze_image",
+        lambda *args, **kwargs: {
+            "decision": "pass",
+            "has_text": True,
+            "detected_language": "de",
+            "language_match": True,
+            "text_summary": "Hallo",
+            "quality_score": 96,
+            "quality_reason": "ok",
+            "needs_replacement": False,
+        },
+    )
+
+    updates = []
+    original_update = task_state.update
+
+    def tracking_update(task_id, **kwargs):
+        original_update(task_id, **kwargs)
+        if task_id == "lc-success-persist":
+            current = task_state.get(task_id)
+            updates.append(
+                {
+                    "status": current["status"],
+                    "steps": dict(current["steps"]),
+                    "progress": dict(current["progress"]),
+                    "summary": dict(current["summary"]),
+                    "items_len": len(current["items"]),
+                }
+            )
+
+    monkeypatch.setattr(task_state, "update", tracking_update)
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-success-persist")
+
+    saved = task_state.get("lc-success-persist")
+    assert saved["status"] == "done"
+    assert saved["steps"] == {
+        "lock_locale": "done",
+        "download": "done",
+        "analyze": "done",
+        "summarize": "done",
+    }
+    assert saved["summary"]["pass_count"] == 1
+    assert saved["summary"]["overall_decision"] == "done"
+    assert saved["progress"]["downloaded"] == 1
+    assert saved["progress"]["analyzed"] == 1
+    assert any(
+        u["steps"]["lock_locale"] == "done" and u["steps"]["download"] == "running"
+        for u in updates
+    )
+    assert any(
+        u["steps"]["download"] == "done"
+        and u["steps"]["analyze"] == "running"
+        and u["progress"]["downloaded"] == 1
+        for u in updates
+    )
+    assert any(
+        u["steps"]["analyze"] == "running"
+        and u["items_len"] == 1
+        and u["progress"]["analyzed"] == 1
+        and u["summary"]["pass_count"] == 1
+        for u in updates
+    )
+    assert any(
+        u["steps"]["summarize"] == "done"
+        and u["summary"]["overall_decision"] == "done"
+        for u in updates
+    )
+
+
+def test_runtime_marks_current_step_error_and_keeps_partial_results(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    first_path = task_dir / "site-1.jpg"
+    second_path = task_dir / "site-2.jpg"
+    first_path.write_bytes(b"site-1")
+    second_path.write_bytes(b"site-2")
+
+    task_state.create_link_check(
+        "lc-failure-persist",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url + "?locked=1",
+                    "page_language": "de",
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site-1.jpg",
+                            "local_path": str(first_path),
+                        },
+                        {
+                            "id": "site-2",
+                            "kind": "detail",
+                            "source_url": "https://img/site-2.jpg",
+                            "local_path": str(second_path),
+                        },
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    def fake_analyze(local_path, **kwargs):
+        if local_path == str(first_path):
+            return {
+                "decision": "pass",
+                "has_text": True,
+                "detected_language": "de",
+                "language_match": True,
+                "text_summary": "Hallo",
+                "quality_score": 92,
+                "quality_reason": "ok",
+                "needs_replacement": False,
+            }
+        raise RuntimeError("gemini exploded")
+
+    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", fake_analyze)
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-failure-persist")
+
+    saved = task_state.get("lc-failure-persist")
+    assert saved["status"] == "failed"
+    assert saved["steps"] == {
+        "lock_locale": "done",
+        "download": "done",
+        "analyze": "error",
+        "summarize": "done",
+    }
+    assert saved["progress"]["downloaded"] == 2
+    assert saved["progress"]["analyzed"] == 1
+    assert saved["progress"]["failed"] == 1
+    assert len(saved["items"]) == 2
+    assert saved["items"][0]["status"] == "done"
+    assert saved["items"][0]["analysis"]["decision"] == "pass"
+    assert saved["items"][1]["status"] == "failed"
+    assert "gemini exploded" in saved["items"][1]["error"]
+    assert saved["summary"]["pass_count"] == 1
+    assert saved["summary"]["review_count"] == 1
+    assert saved["summary"]["overall_decision"] == "unfinished"
