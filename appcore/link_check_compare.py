@@ -7,12 +7,15 @@ from typing import Iterable
 import imagehash
 import numpy as np
 from PIL import Image, ImageOps
+from skimage import filters
 from skimage.measure import label, regionprops
 from skimage.metrics import structural_similarity
 
 
 _TARGET_SIZE = 256
 _PENALTY_TARGET_SIZE = 512
+_BINARY_SIZE = 100
+_BINARY_THRESHOLD = 0.90
 _MATCH_THRESHOLD = 0.80
 _WEAK_MATCH_THRESHOLD = 0.65
 
@@ -43,6 +46,22 @@ def _prepare_image(path: str | Path, *, target_size: int = _TARGET_SIZE) -> _Pre
     canvas.paste(fitted, (offset_x, offset_y))
 
     return _PreparedImage(image=canvas, width=width, height=height)
+
+
+def _prepare_binary_mask(path: str | Path) -> np.ndarray:
+    image = Image.open(path)
+    image = ImageOps.exif_transpose(image)
+    image = image.convert("RGB")
+    image.thumbnail((_BINARY_SIZE, _BINARY_SIZE), Image.Resampling.LANCZOS)
+
+    canvas = Image.new("RGB", (_BINARY_SIZE, _BINARY_SIZE), "white")
+    offset_x = (_BINARY_SIZE - image.width) // 2
+    offset_y = (_BINARY_SIZE - image.height) // 2
+    canvas.paste(image, (offset_x, offset_y))
+
+    gray = np.asarray(canvas.convert("L"), dtype=np.uint8)
+    threshold = filters.threshold_local(gray, block_size=21, offset=8)
+    return (gray <= threshold).astype(np.uint8)
 
 
 def _compute_dark_area_penalty(candidate_path: str | Path, reference_path: str | Path) -> float:
@@ -131,6 +150,45 @@ def compare_images(candidate_path: str | Path, reference_path: str | Path) -> di
         "dhash_distance": dhash_distance,
         "ssim": round(ssim_score, 4),
         "ratio_delta": round(ratio_delta, 4),
+    }
+
+
+def run_binary_quick_check(candidate_path: str | Path, reference_path: str | Path) -> dict:
+    try:
+        candidate = _prepare_binary_mask(candidate_path)
+        reference = _prepare_binary_mask(reference_path)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "binary_similarity": 0.0,
+            "foreground_overlap": 0.0,
+            "threshold": _BINARY_THRESHOLD,
+            "reason": f"二值快检执行失败：{exc}",
+        }
+
+    binary_similarity = float(np.mean(candidate == reference))
+    foreground_union = (candidate == 1) | (reference == 1)
+    if np.any(foreground_union):
+        overlap = float(np.sum((candidate == 1) & (reference == 1)) / np.sum(foreground_union))
+    else:
+        overlap = 1.0
+
+    status = (
+        "pass"
+        if binary_similarity >= _BINARY_THRESHOLD and overlap >= _BINARY_THRESHOLD
+        else "fail"
+    )
+    reason = (
+        "参考图已匹配，二值相似度达到阈值，直接通过"
+        if status == "pass"
+        else "参考图已匹配，但二值相似度低于阈值，判定需要替换"
+    )
+    return {
+        "status": status,
+        "binary_similarity": round(binary_similarity, 4),
+        "foreground_overlap": round(overlap, 4),
+        "threshold": _BINARY_THRESHOLD,
+        "reason": reason,
     }
 
 

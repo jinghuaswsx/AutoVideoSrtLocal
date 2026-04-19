@@ -1,1404 +1,627 @@
-# Link Check Implementation Plan
+# Link Check Binary Review Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a first-version “链接检查” module that accepts a localized Shopify product URL, verifies the page stays on the requested locale, downloads localized product/detail images, analyzes image language with Gemini Flash on Vertex AI, and optionally matches downloaded site images against uploaded reference images using deterministic image fingerprints.
+**Goal:** Upgrade the existing `link-check` module so matched reference-image pairs use binary quick-check for final pass/fail, expose the exact quick-check metrics in the UI, and add a same-image Gemini judgment through the image-translation channel chain.
 
-**Architecture:** The feature is a non-persistent, in-memory background task that reuses `appcore.task_state` / `web.store` for ownership and polling, but does not write to `projects`. The backend is split into four focused units: locale-locked page fetching, deterministic reference-image matching, Gemini-based language analysis, and a runtime/runner that orchestrates them. The UI is a single page under a new `link_check` blueprint and polls task state from the backend; it reuses the existing `/api/languages` endpoint instead of creating a duplicate language API.
+**Architecture:** Keep the current locale-lock + Shopify image fetch + optional reference-match pipeline, but split the post-match path into two branches. `matched` pairs go through deterministic binary quick-check plus a display-only same-image LLM check; unmatched pairs continue to use the existing single-image language/quality Gemini analysis. Runtime remains in-memory and non-persistent, with the page polling the task status API.
 
-**Tech Stack:** Flask, Jinja, existing `web.store` / `appcore.task_state`, `requests`, `beautifulsoup4`, `Pillow`, `ImageHash`, `scikit-image`, `google-genai`, pytest.
+**Tech Stack:** Flask, Jinja, vanilla JS, Pillow, NumPy, scikit-image, ImageHash, existing `appcore.gemini`, existing `appcore.image_translate_settings`, pytest.
 
 ---
 
 ## File Structure
 
 **Create**
-- `appcore/link_check_compare.py`
-  - Normalize two images and compute `pHash` / `dHash` / `SSIM`-based match scores.
-- `appcore/link_check_fetcher.py`
-  - Lock the requested locale, parse Shopify product/detail images, and download them to a task directory.
-- `appcore/link_check_gemini.py`
-  - Build the structured Gemini prompt and parse the JSON result for one image.
-- `appcore/link_check_runtime.py`
-  - Orchestrate locale locking, image download, optional reference matching, Gemini analysis, and summary aggregation.
-- `web/services/link_check_runner.py`
-  - Background thread launcher for one in-memory link-check task.
-- `web/routes/link_check.py`
-  - Page route, task create/status routes, and authenticated preview-image routes.
-- `web/templates/link_check.html`
-  - Page shell for the create form, progress section, and results cards.
-- `web/static/link_check.css`
-  - Ocean Blue–aligned page styles for the new page.
-- `web/static/link_check.js`
-  - Form submission, polling, and result rendering logic.
-- `tests/test_gemini_client.py`
-  - Vertex client initialization tests for `appcore.gemini`.
-- `tests/test_link_check_compare.py`
-  - Unit tests for fingerprint-based image matching.
-- `tests/test_link_check_fetcher.py`
-  - Unit tests for locale locking, HTML parsing, and image extraction.
-- `tests/test_link_check_gemini.py`
-  - Unit tests for structured Gemini image analysis.
-- `tests/test_link_check_runtime.py`
-  - Runtime orchestration tests.
-- `tests/test_link_check_routes.py`
-  - Flask route tests for page render, task creation, status polling, and preview authorization.
+- `appcore/link_check_same_image.py`
+  - Reuse `image_translate.channel` routing and call Gemini 3.1 Flash-Lite Preview for yes/no same-image judgment.
+- `tests/test_link_check_same_image.py`
+  - Verify channel routing, prompt/output parsing, and failure fallback for same-image LLM checks.
 
 **Modify**
-- `requirements.txt`
-  - Add explicit runtime dependencies for HTML parsing and image comparison.
-- `config.py:83-128`
-  - Add Vertex AI project/location settings and stop treating cloud mode like API-key auth.
-- `appcore/gemini.py:47-80`
-  - Initialize Vertex clients with `vertexai=True`, `project`, and `location`.
-- `appcore/task_state.py:494-539`
-  - Add a `create_link_check()` task constructor that stores in-memory state without DB upsert.
-- `web/store.py:1-31`
-  - Export `create_link_check`.
-- `web/app.py:32-55`
-  - Import the new blueprint.
-- `web/app.py:172-198`
-  - Register the new blueprint.
-- `web/templates/layout.html:293-336`
-  - Add the new “链接检查” sidebar entry.
-- `tests/test_config.py`
-  - Assert the new Vertex config variables are parsed correctly.
+- `appcore/link_check_compare.py`
+  - Keep current reference matching and add binary quick-check helpers plus structured metric output.
+- `appcore/link_check_runtime.py`
+  - Route `matched` pairs through binary quick-check + same-image LLM, and keep the original Gemini path for unmatched images.
+- `appcore/link_check_gemini.py`
+  - Keep the current single-image analysis contract, but normalize the returned shape so runtime can merge binary/LLM shortcuts cleanly.
+- `appcore/task_state.py`
+  - Expand link-check task progress and summary counters for binary checks and same-image LLM results.
+- `web/routes/link_check.py`
+  - Serialize `binary_quick_check` and `same_image_llm` in API payloads.
+- `web/static/link_check.js`
+  - Render quick-check metrics, same-image LLM result, and the final decision source on each card.
+- `web/templates/link_check.html`
+  - Add result shell copy where needed for the new metrics.
+- `tests/test_link_check_compare.py`
+  - Cover binary quick-check pass/fail/error scenarios and exact metric fields.
+- `tests/test_link_check_runtime.py`
+  - Cover the new matched/unmatched execution branches and summary counters.
+- `tests/test_link_check_routes.py`
+  - Assert the API exposes quick-check and same-image LLM payloads.
 
-## Task 1: Vertex AI Configuration and Dependencies
-
-**Files:**
-- Modify: `requirements.txt`
-- Modify: `config.py:83-128`
-- Modify: `appcore/gemini.py:47-80`
-- Modify: `tests/test_config.py`
-- Create: `tests/test_gemini_client.py`
-
-- [ ] **Step 1: Write the failing config and Vertex-client tests**
-
-```python
-# tests/test_config.py
-def test_gemini_cloud_project_location_defaults(monkeypatch):
-    monkeypatch.setenv("AUTOVIDEOSRT_DISABLE_DOTENV", "1")
-    monkeypatch.setenv("GEMINI_BACKEND", "cloud")
-    monkeypatch.setenv("GEMINI_CLOUD_PROJECT", "demo-project")
-    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "global")
-
-    import importlib
-    config = importlib.import_module("config")
-    config = importlib.reload(config)
-
-    assert config.GEMINI_CLOUD_PROJECT == "demo-project"
-    assert config.GEMINI_CLOUD_LOCATION == "global"
-```
-
-```python
-# tests/test_gemini_client.py
-import importlib
-
-
-def test_get_client_uses_vertex_project_location(monkeypatch):
-    gemini = importlib.import_module("appcore.gemini")
-    gemini = importlib.reload(gemini)
-    gemini._clients.clear()
-
-    created = {}
-
-    class DummyClient:
-        pass
-
-    def fake_client(**kwargs):
-        created.update(kwargs)
-        return DummyClient()
-
-    monkeypatch.setattr(gemini, "GEMINI_BACKEND", "cloud")
-    monkeypatch.setattr(gemini, "GEMINI_CLOUD_PROJECT", "demo-project")
-    monkeypatch.setattr(gemini, "GEMINI_CLOUD_LOCATION", "global")
-    monkeypatch.setattr(gemini.genai, "Client", fake_client)
-
-    client = gemini._get_client("")
-
-    assert isinstance(client, DummyClient)
-    assert created["vertexai"] is True
-    assert created["project"] == "demo-project"
-    assert created["location"] == "global"
-```
-
-- [ ] **Step 2: Run the tests to verify they fail for the right reason**
-
-Run: `pytest tests/test_config.py::test_gemini_cloud_project_location_defaults tests/test_gemini_client.py::test_get_client_uses_vertex_project_location -v`
-
-Expected: `FAIL` because `config.py` does not expose `GEMINI_CLOUD_PROJECT` / `GEMINI_CLOUD_LOCATION`, and `appcore.gemini._get_client()` still constructs `genai.Client(vertexai=True, api_key=...)`.
-
-- [ ] **Step 3: Add the new config values and fix cloud client initialization**
-
-```python
-# requirements.txt
-beautifulsoup4>=4.12,<5.0
-Pillow>=10.4,<11.0
-ImageHash>=4.3,<5.0
-scikit-image>=0.24,<1.0
-```
-
-```python
-# config.py
-GEMINI_CLOUD_PROJECT = _env("GEMINI_CLOUD_PROJECT")
-GEMINI_CLOUD_LOCATION = _env("GEMINI_CLOUD_LOCATION", "global")
-```
-
-```python
-# appcore/gemini.py
-from config import (
-    GEMINI_API_KEY,
-    GEMINI_BACKEND,
-    GEMINI_MODEL,
-    GEMINI_CLOUD_PROJECT,
-    GEMINI_CLOUD_LOCATION,
-)
-
-
-def _client_cache_key(api_key: str) -> str:
-    if GEMINI_BACKEND == "cloud":
-        return f"cloud:{GEMINI_CLOUD_PROJECT}:{GEMINI_CLOUD_LOCATION}"
-    return f"aistudio:{api_key}"
-
-
-def _get_client(api_key: str) -> genai.Client:
-    cache_key = _client_cache_key(api_key)
-    if cache_key not in _clients:
-        if GEMINI_BACKEND == "cloud":
-            if not GEMINI_CLOUD_PROJECT:
-                raise GeminiError("GEMINI_CLOUD_PROJECT 未配置，无法使用 Vertex AI")
-            _clients[cache_key] = genai.Client(
-                vertexai=True,
-                project=GEMINI_CLOUD_PROJECT,
-                location=GEMINI_CLOUD_LOCATION,
-            )
-        else:
-            _clients[cache_key] = genai.Client(api_key=api_key)
-    return _clients[cache_key]
-```
-
-- [ ] **Step 4: Re-run the focused tests and confirm they pass**
-
-Run: `pytest tests/test_config.py::test_gemini_cloud_project_location_defaults tests/test_gemini_client.py::test_get_client_uses_vertex_project_location -v`
-
-Expected: both tests `PASS`.
-
-- [ ] **Step 5: Commit the foundation changes**
-
-```bash
-git add requirements.txt config.py appcore/gemini.py tests/test_config.py tests/test_gemini_client.py
-git commit -m "feat: configure vertex ai client for link check"
-```
-
-### Task 2: Deterministic Reference-Image Matching
+## Task 1: Add Binary Quick-Check to the Comparison Layer
 
 **Files:**
-- Create: `appcore/link_check_compare.py`
-- Create: `tests/test_link_check_compare.py`
+- Modify: `appcore/link_check_compare.py`
+- Modify: `tests/test_link_check_compare.py`
 
-- [ ] **Step 1: Write the failing comparison tests**
-
-```python
-# tests/test_link_check_compare.py
-from pathlib import Path
-
-from PIL import Image, ImageDraw
-
-
-def _make_sample(path: Path, *, size: tuple[int, int], quality: int = 95) -> Path:
-    image = Image.new("RGB", size, "white")
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((24, 24, size[0] - 24, size[1] - 24), outline="navy", width=6)
-    draw.text((40, 40), "DE SAMPLE", fill="black")
-    image.save(path, quality=quality)
-    return path
-
-
-def test_same_image_with_different_sizes_matches(tmp_path):
-    from appcore.link_check_compare import compare_images
-
-    left = _make_sample(tmp_path / "left.jpg", size=(1200, 800))
-    right = _make_sample(tmp_path / "right.jpg", size=(600, 400))
-
-    result = compare_images(left, right)
-
-    assert result["status"] == "matched"
-    assert result["score"] >= 0.85
-
-
-def test_same_image_with_different_compression_matches(tmp_path):
-    from appcore.link_check_compare import compare_images
-
-    left = _make_sample(tmp_path / "left.jpg", size=(1200, 800), quality=95)
-    right = _make_sample(tmp_path / "right.jpg", size=(1200, 800), quality=35)
-
-    result = compare_images(left, right)
-
-    assert result["status"] == "matched"
-    assert result["score"] >= 0.80
-
-
-def test_different_images_do_not_match(tmp_path):
-    from appcore.link_check_compare import compare_images
-
-    left = _make_sample(tmp_path / "left.jpg", size=(1200, 800))
-    other = Image.new("RGB", (1200, 800), "red")
-    other.save(tmp_path / "other.jpg")
-
-    result = compare_images(left, tmp_path / "other.jpg")
-
-    assert result["status"] == "not_matched"
-    assert result["score"] < 0.60
-```
-
-- [ ] **Step 2: Run the comparison tests to confirm the module is missing**
-
-Run: `pytest tests/test_link_check_compare.py -v`
-
-Expected: `FAIL` with `ModuleNotFoundError: No module named 'appcore.link_check_compare'`.
-
-- [ ] **Step 3: Implement image normalization, fingerprinting, and scoring**
+- [ ] **Step 1: Write the failing binary quick-check tests**
 
 ```python
-# appcore/link_check_compare.py
-from __future__ import annotations
+def test_binary_quick_check_passes_same_layout_after_resize(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
 
-from pathlib import Path
-
-import imagehash
-import numpy as np
-from PIL import Image, ImageOps
-from skimage.metrics import structural_similarity
-
-
-def _normalize(path: str | Path, *, size: int = 256) -> Image.Image:
-    image = Image.open(path).convert("RGB")
-    image = ImageOps.exif_transpose(image)
-    image.thumbnail((size, size))
-    canvas = Image.new("RGB", (size, size), "white")
-    offset = ((size - image.width) // 2, (size - image.height) // 2)
-    canvas.paste(image, offset)
-    return canvas
-
-
-def compare_images(candidate_path: str | Path, reference_path: str | Path) -> dict:
-    left = _normalize(candidate_path)
-    right = _normalize(reference_path)
-
-    phash_distance = imagehash.phash(left) - imagehash.phash(right)
-    dhash_distance = imagehash.dhash(left) - imagehash.dhash(right)
-    ssim_score = structural_similarity(
-        np.asarray(left.convert("L")),
-        np.asarray(right.convert("L")),
+    left = _make_multiline_text_sample(
+        tmp_path / "left.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
     )
-    ratio_delta = abs((left.width / left.height) - (right.width / right.height))
+    right = _make_multiline_text_sample(
+        tmp_path / "right.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
+    ).with_name("right_resized.jpg")
+    Image.open(tmp_path / "right.jpg").resize((900, 600)).save(right, quality=60)
 
-    phash_score = max(0.0, 1.0 - (phash_distance / 64.0))
-    dhash_score = max(0.0, 1.0 - (dhash_distance / 64.0))
-    ratio_score = max(0.0, 1.0 - min(ratio_delta, 1.0))
-    score = round(phash_score * 0.40 + dhash_score * 0.25 + ssim_score * 0.30 + ratio_score * 0.05, 4)
+    result = run_binary_quick_check(left, right)
 
-    status = "matched" if score >= 0.80 else "weak_match" if score >= 0.65 else "not_matched"
+    assert result["status"] == "pass"
+    assert result["binary_similarity"] >= 0.90
+    assert result["foreground_overlap"] >= 0.85
+    assert result["threshold"] == 0.90
+
+
+def test_binary_quick_check_fails_when_text_changes(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
+
+    left = _make_multiline_text_sample(
+        tmp_path / "left.jpg",
+        text="GERMAN TEXT LARGE BLOCK\nSECOND LINE COPY\nTHIRD LINE HERE",
+    )
+    right = _make_multiline_text_sample(
+        tmp_path / "right.jpg",
+        text="ENGLISH HEADLINE CHANGED\nNEW SECOND LINE TEXT\nTOTALLY DIFFERENT WORDS",
+    )
+
+    result = run_binary_quick_check(left, right)
+
+    assert result["status"] == "fail"
+    assert result["binary_similarity"] < 0.90
+
+
+def test_binary_quick_check_reports_error_for_broken_input(tmp_path):
+    from appcore.link_check_compare import run_binary_quick_check
+
+    broken = tmp_path / "broken.jpg"
+    broken.write_bytes(b"not-an-image")
+    valid = _make_sample(tmp_path / "valid.jpg", size=(1200, 800))
+
+    result = run_binary_quick_check(broken, valid)
+
+    assert result["status"] == "error"
+    assert "失败" in result["reason"]
+```
+
+- [ ] **Step 2: Run the focused test file and confirm the new helper is missing**
+
+Run: `pytest tests/test_link_check_compare.py -q`
+
+Expected: `FAIL` because `run_binary_quick_check` does not exist yet.
+
+- [ ] **Step 3: Implement the in-memory `100x100` binary quick-check**
+
+```python
+_BINARY_SIZE = 100
+_BINARY_THRESHOLD = 0.90
+
+
+def _prepare_binary_image(path: str | Path) -> np.ndarray:
+    image = Image.open(path)
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    image.thumbnail((_BINARY_SIZE, _BINARY_SIZE), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (_BINARY_SIZE, _BINARY_SIZE), "white")
+    offset = ((_BINARY_SIZE - image.width) // 2, (_BINARY_SIZE - image.height) // 2)
+    canvas.paste(image, offset)
+    gray = np.asarray(canvas.convert("L"), dtype=np.uint8)
+    threshold = filters.threshold_local(gray, 21, offset=8)
+    return (gray <= threshold).astype(np.uint8)
+
+
+def run_binary_quick_check(candidate_path: str | Path, reference_path: str | Path) -> dict:
+    try:
+        candidate = _prepare_binary_image(candidate_path)
+        reference = _prepare_binary_image(reference_path)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "binary_similarity": 0.0,
+            "foreground_overlap": 0.0,
+            "threshold": _BINARY_THRESHOLD,
+            "reason": f"二值快检执行失败：{exc}",
+        }
+
+    identical = float(np.mean(candidate == reference))
+    foreground_union = (candidate == 1) | (reference == 1)
+    if np.any(foreground_union):
+        overlap = float(np.sum((candidate == 1) & (reference == 1)) / np.sum(foreground_union))
+    else:
+        overlap = 1.0
+    status = "pass" if identical >= _BINARY_THRESHOLD else "fail"
     return {
         "status": status,
-        "score": score,
-        "phash_distance": phash_distance,
-        "dhash_distance": dhash_distance,
-        "ssim": round(float(ssim_score), 4),
-        "ratio_delta": round(ratio_delta, 4),
+        "binary_similarity": round(identical, 4),
+        "foreground_overlap": round(overlap, 4),
+        "threshold": _BINARY_THRESHOLD,
+        "reason": (
+            "参考图已匹配，二值相似度达到阈值，直接通过"
+            if status == "pass"
+            else "参考图已匹配，但二值相似度低于阈值，判定需要替换"
+        ),
     }
-
-
-def find_best_reference(candidate_path: str | Path, reference_paths: list[str | Path]) -> dict:
-    best = None
-    for ref_path in reference_paths:
-        current = compare_images(candidate_path, ref_path)
-        current["reference_path"] = str(ref_path)
-        if best is None or current["score"] > best["score"]:
-            best = current
-    return best or {"status": "not_provided", "score": 0.0, "reference_path": ""}
 ```
 
 - [ ] **Step 4: Re-run the comparison tests and confirm they pass**
 
-Run: `pytest tests/test_link_check_compare.py -v`
+Run: `pytest tests/test_link_check_compare.py -q`
 
-Expected: all three tests `PASS`.
+Expected: all tests `PASS`, including the existing deterministic match tests.
 
-- [ ] **Step 5: Commit the comparison engine**
+- [ ] **Step 5: Commit the comparison-layer upgrade**
 
 ```bash
 git add appcore/link_check_compare.py tests/test_link_check_compare.py
-git commit -m "feat: add deterministic link check image matching"
+git commit -m "feat: add binary quick check for link check"
 ```
 
-### Task 3: Locale-Locked Shopify Fetcher
+## Task 2: Add Same-Image Gemini Routing Through Image Translation Channels
 
 **Files:**
-- Create: `appcore/link_check_fetcher.py`
-- Create: `tests/test_link_check_fetcher.py`
+- Create: `appcore/link_check_same_image.py`
+- Modify: `appcore/gemini_image.py`
+- Modify: `tests/test_gemini_image.py`
+- Create: `tests/test_link_check_same_image.py`
 
-- [ ] **Step 1: Write the failing locale-locking and extraction tests**
-
-```python
-# tests/test_link_check_fetcher.py
-from types import SimpleNamespace
-
-import pytest
-
-
-def test_fetch_page_sets_accept_language(monkeypatch):
-    from appcore.link_check_fetcher import LinkCheckFetcher
-
-    captured = {}
-
-    def fake_get(url, *, headers, allow_redirects, timeout):
-        captured["headers"] = headers
-        return SimpleNamespace(
-            url=url,
-            status_code=200,
-            text="<html lang='de'><body><img src='https://img.example.com/a.jpg'></body></html>",
-        )
-
-    fetcher = LinkCheckFetcher()
-    monkeypatch.setattr(fetcher.session, "get", fake_get)
-    fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
-
-    assert captured["headers"]["Accept-Language"].startswith("de-DE")
-
-
-def test_fetch_page_rejects_wrong_html_lang(monkeypatch):
-    from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
-
-    def fake_get(url, *, headers, allow_redirects, timeout):
-        return SimpleNamespace(
-            url="https://shop.example.com/products/demo",
-            status_code=200,
-            text="<html lang='en'><body></body></html>",
-        )
-
-    fetcher = LinkCheckFetcher()
-    monkeypatch.setattr(fetcher.session, "get", fake_get)
-
-    with pytest.raises(LocaleLockError):
-        fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
-
-
-def test_extract_images_dedupes_and_labels_sections():
-    from appcore.link_check_fetcher import extract_images_from_html
-
-    html = '''
-    <html lang="de">
-      <body>
-        <div class="product__media"><img src="https://img.example.com/hero.jpg?width=640"></div>
-        <div class="product__media"><img src="https://img.example.com/hero.jpg?width=1280"></div>
-        <div class="rte"><img src="https://img.example.com/detail.jpg"></div>
-      </body>
-    </html>
-    '''
-
-    items = extract_images_from_html(html, base_url="https://shop.example.com/de/products/demo")
-
-    assert [item["kind"] for item in items] == ["carousel", "detail"]
-```
-
-- [ ] **Step 2: Run the fetcher tests to verify they fail because the module does not exist**
-
-Run: `pytest tests/test_link_check_fetcher.py -v`
-
-Expected: `FAIL` with `ModuleNotFoundError: No module named 'appcore.link_check_fetcher'`.
-
-- [ ] **Step 3: Implement locale locking, Shopify parsing, dedupe, and image download**
+- [ ] **Step 1: Write the failing same-image LLM tests**
 
 ```python
-# appcore/link_check_fetcher.py
-from __future__ import annotations
+def test_same_image_judgment_uses_image_translate_channel(monkeypatch, tmp_path):
+    from appcore import link_check_same_image as module
 
-from dataclasses import dataclass
-from pathlib import Path
-from urllib.parse import urljoin, urlparse, urlunparse
+    site = tmp_path / "site.jpg"
+    ref = tmp_path / "ref.jpg"
+    site.write_bytes(b"site")
+    ref.write_bytes(b"ref")
 
-import requests
-from bs4 import BeautifulSoup
+    monkeypatch.setattr(module, "_resolve_channel", lambda: "cloud")
+    monkeypatch.setattr(
+        module,
+        "_call_same_image_model",
+        lambda **kwargs: {"status": "done", "answer": "是", "model": kwargs["model"], "channel": kwargs["channel"]},
+    )
 
+    result = module.judge_same_image(site, ref)
 
-class LocaleLockError(RuntimeError):
-    pass
-
-
-def _accept_language(code: str) -> str:
-    mapping = {
-        "de": "de-DE,de;q=0.9,en;q=0.8",
-        "fr": "fr-FR,fr;q=0.9,en;q=0.8",
-        "pt": "pt-PT,pt;q=0.9,en;q=0.8",
-    }
-    return mapping.get(code, f"{code};q=0.9,en;q=0.8")
-
-
-def _normalize_image_url(raw_url: str, base_url: str) -> str:
-    absolute = urljoin(base_url, raw_url)
-    parsed = urlparse(absolute)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+    assert result["status"] == "done"
+    assert result["answer"] == "是"
+    assert result["channel"] == "cloud"
+    assert result["model"] == "gemini-3.1-flash-lite-preview"
 
 
-def _page_lang(soup: BeautifulSoup) -> str:
-    html = soup.find("html")
-    return (html.get("lang") or "").strip().lower() if html else ""
+def test_same_image_judgment_returns_error_without_crashing(monkeypatch, tmp_path):
+    from appcore import link_check_same_image as module
 
+    site = tmp_path / "site.jpg"
+    ref = tmp_path / "ref.jpg"
+    site.write_bytes(b"site")
+    ref.write_bytes(b"ref")
 
-def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
-    soup = BeautifulSoup(html, "html.parser")
-    items = []
-    seen = set()
+    monkeypatch.setattr(module, "_resolve_channel", lambda: "openrouter")
+    monkeypatch.setattr(module, "_call_same_image_model", side_effect=RuntimeError("provider down"))
 
-    for node in soup.select(".product__media img, [data-media-id] img, .featured img"):
-        src = node.get("src") or node.get("data-src")
-        if not src:
-            continue
-        normalized = _normalize_image_url(src, base_url)
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        items.append({"kind": "carousel", "source_url": normalized})
+    result = module.judge_same_image(site, ref)
 
-    for node in soup.select(".rte img, .product__description img, [class*='description'] img"):
-        src = node.get("src") or node.get("data-src")
-        if not src:
-            continue
-        normalized = _normalize_image_url(src, base_url)
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        items.append({"kind": "detail", "source_url": normalized})
-
-    return items
-
-
-@dataclass
-class FetchedPage:
-    requested_url: str
-    resolved_url: str
-    page_language: str
-    html: str
-    images: list[dict]
-
-
-class LinkCheckFetcher:
-    def __init__(self) -> None:
-        self.session = requests.Session()
-
-    def fetch_page(self, url: str, target_language: str) -> FetchedPage:
-        response = self.session.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0", "Accept-Language": _accept_language(target_language)},
-            allow_redirects=True,
-            timeout=20,
-        )
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        lang = _page_lang(soup)
-        if target_language != "en" and not (
-            f"/{target_language}/" in response.url or lang.startswith(target_language)
-        ):
-            raise LocaleLockError(
-                f"目标语种页面锁定失败：target={target_language} resolved_url={response.url} page_lang={lang or 'unknown'}"
-            )
-        return FetchedPage(
-            requested_url=url,
-            resolved_url=response.url,
-            page_language=lang,
-            html=response.text,
-            images=extract_images_from_html(response.text, base_url=response.url),
-        )
-
-    def download_images(self, images: list[dict], task_dir: str | Path) -> list[dict]:
-        output_dir = Path(task_dir) / "site_images"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        downloaded = []
-        for index, item in enumerate(images):
-            response = self.session.get(item["source_url"], headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True, timeout=20)
-            response.raise_for_status()
-            suffix = Path(urlparse(item["source_url"]).path).suffix or ".jpg"
-            local_path = output_dir / f"site_{index:03d}{suffix}"
-            local_path.write_bytes(response.content)
-            downloaded.append({**item, "id": f"site-{index}", "local_path": str(local_path)})
-        return downloaded
+    assert result["status"] == "error"
+    assert result["answer"] == ""
+    assert "provider down" in result["reason"]
 ```
 
-- [ ] **Step 4: Run the fetcher tests and confirm they pass**
+- [ ] **Step 2: Run the same-image tests and confirm the new module is missing**
 
-Run: `pytest tests/test_link_check_fetcher.py -v`
+Run: `pytest tests/test_link_check_same_image.py -q`
 
-Expected: all tests `PASS`.
+Expected: `FAIL` with `ModuleNotFoundError`.
 
-- [ ] **Step 5: Commit the locale-aware fetcher**
-
-```bash
-git add appcore/link_check_fetcher.py tests/test_link_check_fetcher.py
-git commit -m "feat: add locale locked link check fetcher"
-```
-
-### Task 4: Gemini Image Analysis Wrapper
-
-**Files:**
-- Create: `appcore/link_check_gemini.py`
-- Create: `tests/test_link_check_gemini.py`
-
-- [ ] **Step 1: Write the failing Gemini analysis tests**
+- [ ] **Step 3: Add a reusable two-image Gemini helper and the same-image module**
 
 ```python
-# tests/test_link_check_gemini.py
-from pathlib import Path
+# appcore/gemini_image.py
+def analyze_images(
+    prompt: str,
+    *,
+    media_paths: list[str | Path],
+    model: str,
+    service: str,
+) -> dict:
+    channel = _resolve_channel()
+    # Reuse existing channel selection and return {"text": "...", "channel": channel, "model": resolved_model}
+```
+
+```python
+# appcore/link_check_same_image.py
+_AISTUDIO_MODEL = "gemini-3.1-flash-lite-preview"
+_CLOUD_MODEL = "gemini-3.1-flash-lite-preview"
+_OPENROUTER_MODEL = "google/gemini-3.1-flash-lite-preview"
 
 
-def test_analyze_image_passes_media_and_schema(monkeypatch, tmp_path):
-    from appcore import link_check_gemini as lcg
+def _build_prompt() -> str:
+    return (
+        "你会收到两张图片：第一张是网站抓取图，第二张是参考图。"
+        "忽略尺寸差异、压缩差异、导出格式差异，只判断视觉上它们是否属于同一张基础图片。"
+        "不要做语言质量分析，不要解释原因，只返回“是”或“不是”。"
+    )
 
-    image_path = tmp_path / "sample.jpg"
-    image_path.write_bytes(b"fake")
-    captured = {}
 
-    def fake_generate(prompt, **kwargs):
-        captured["prompt"] = prompt
-        captured["kwargs"] = kwargs
+def judge_same_image(site_path: str | Path, reference_path: str | Path) -> dict:
+    channel = _resolve_channel()
+    model = _OPENROUTER_MODEL if channel == "openrouter" else _CLOUD_MODEL if channel == "cloud" else _AISTUDIO_MODEL
+    try:
+        raw = analyze_images(
+            _build_prompt(),
+            media_paths=[site_path, reference_path],
+            model=model,
+            service="link_check_same_image",
+        )
+    except Exception as exc:
         return {
-            "has_text": True,
-            "detected_language": "de",
-            "language_match": True,
-            "text_summary": "Hallo Welt",
-            "quality_score": 95,
-            "quality_reason": "ok",
-            "needs_replacement": False,
-            "decision": "pass",
+            "status": "error",
+            "answer": "",
+            "channel": channel,
+            "channel_label": CHANNEL_LABELS.get(channel, channel),
+            "model": model,
+            "reason": str(exc),
         }
 
-    monkeypatch.setattr(lcg.gemini, "generate", fake_generate)
-    result = lcg.analyze_image(image_path, target_language="de", target_language_name="德语")
-
-    assert result["decision"] == "pass"
-    assert captured["kwargs"]["media"] == [image_path]
-    assert captured["kwargs"]["response_schema"]["type"] == "object"
-
-
-def test_analyze_image_normalizes_missing_keys(monkeypatch, tmp_path):
-    from appcore import link_check_gemini as lcg
-
-    image_path = tmp_path / "sample.jpg"
-    image_path.write_bytes(b"fake")
-    monkeypatch.setattr(lcg.gemini, "generate", lambda *args, **kwargs: {"decision": "replace"})
-
-    result = lcg.analyze_image(image_path, target_language="de", target_language_name="德语")
-
-    assert result["needs_replacement"] is True
-    assert result["detected_language"] == ""
-```
-
-- [ ] **Step 2: Run the Gemini tests and verify they fail because the module is missing**
-
-Run: `pytest tests/test_link_check_gemini.py -v`
-
-Expected: `FAIL` with `ModuleNotFoundError: No module named 'appcore.link_check_gemini'`.
-
-- [ ] **Step 3: Implement the structured analysis helper**
-
-```python
-# appcore/link_check_gemini.py
-from __future__ import annotations
-
-from pathlib import Path
-
-from appcore import gemini
-
-_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "has_text": {"type": "boolean"},
-        "detected_language": {"type": "string"},
-        "language_match": {"type": "boolean"},
-        "text_summary": {"type": "string"},
-        "quality_score": {"type": "integer"},
-        "quality_reason": {"type": "string"},
-        "needs_replacement": {"type": "boolean"},
-        "decision": {"type": "string"},
-    },
-    "required": ["decision"],
-}
-
-
-def analyze_image(image_path: str | Path, *, target_language: str, target_language_name: str) -> dict:
-    prompt = (
-        "请只返回 JSON。分析这张商品图片中的可见文字，并判断其是否已经适配为目标语种。"
-        f"目标语言代码：{target_language}；目标语言名称：{target_language_name}。"
-        "如果图片没有文字，decision 返回 no_text。"
-        "如果主要文字不是目标语种，decision 返回 replace。"
-        "如果是目标语种但质量明显不自然，decision 返回 review。"
-        "如果可以通过，decision 返回 pass。"
-    )
-    raw = gemini.generate(
-        prompt,
-        media=[Path(image_path)],
-        response_schema=_RESPONSE_SCHEMA,
-        temperature=0,
-        service="gemini",
-        default_model="gemini-2.5-flash",
-    )
+    answer = "是" if "是" in (raw.get("text") or "") else "不是"
     return {
-        "has_text": bool(raw.get("has_text", False)),
-        "detected_language": str(raw.get("detected_language") or ""),
-        "language_match": bool(raw.get("language_match", False)),
-        "text_summary": str(raw.get("text_summary") or ""),
-        "quality_score": int(raw.get("quality_score") or 0),
-        "quality_reason": str(raw.get("quality_reason") or ""),
-        "needs_replacement": bool(raw.get("needs_replacement", raw.get("decision") in {"replace", "review"})),
-        "decision": str(raw.get("decision") or "review"),
+        "status": "done",
+        "answer": answer,
+        "channel": channel,
+        "channel_label": CHANNEL_LABELS.get(channel, channel),
+        "model": model,
+        "reason": "",
     }
 ```
 
-- [ ] **Step 4: Re-run the Gemini tests and confirm they pass**
+- [ ] **Step 4: Re-run the same-image and Gemini image tests**
 
-Run: `pytest tests/test_link_check_gemini.py -v`
+Run: `pytest tests/test_link_check_same_image.py tests/test_gemini_image.py -q`
 
-Expected: both tests `PASS`.
+Expected: all targeted tests `PASS`.
 
-- [ ] **Step 5: Commit the Gemini wrapper**
+- [ ] **Step 5: Commit the same-image LLM layer**
 
 ```bash
-git add appcore/link_check_gemini.py tests/test_link_check_gemini.py
-git commit -m "feat: add link check gemini analyzer"
+git add appcore/gemini_image.py appcore/link_check_same_image.py tests/test_gemini_image.py tests/test_link_check_same_image.py
+git commit -m "feat: add same image llm judgment for link check"
 ```
 
-### Task 5: In-Memory Task State, Runtime, and Background Runner
+## Task 3: Rewire Runtime for Matched vs. Unmatched Branches
 
 **Files:**
-- Modify: `appcore/task_state.py:494-539`
-- Modify: `web/store.py:1-31`
-- Create: `appcore/link_check_runtime.py`
-- Create: `web/services/link_check_runner.py`
-- Create: `tests/test_link_check_runtime.py`
+- Modify: `appcore/link_check_runtime.py`
+- Modify: `appcore/link_check_gemini.py`
+- Modify: `appcore/task_state.py`
+- Modify: `tests/test_link_check_runtime.py`
 
-- [ ] **Step 1: Write the failing runtime tests**
+- [ ] **Step 1: Write the failing runtime tests for the new branches**
 
 ```python
-# tests/test_link_check_runtime.py
-from appcore import task_state
-
-
-def test_runtime_marks_locale_failure(monkeypatch, tmp_path):
+def test_runtime_uses_binary_pass_for_matched_reference(monkeypatch):
     from appcore.link_check_runtime import LinkCheckRuntime
 
-    task = task_state.create_link_check(
-        "lc-1",
-        task_dir=str(tmp_path),
-        user_id=1,
-        link_url="https://shop.example.com/de/products/demo",
-        target_language="de",
-        target_language_name="德语",
-        reference_images=[],
-    )
-
-    class DummyFetcher:
-        def fetch_page(self, url, target_language):
-            raise RuntimeError("locale lock failed")
-
-    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
-    runtime.start("lc-1")
-
-    saved = task_state.get("lc-1")
-    assert saved["status"] == "failed"
-    assert "locale lock failed" in saved["error"]
-
-
-def test_runtime_records_best_reference_match(monkeypatch, tmp_path):
-    from appcore.link_check_runtime import LinkCheckRuntime
-
-    ref_path = tmp_path / "ref.jpg"
-    ref_path.write_bytes(b"ref")
-    site_path = tmp_path / "site.jpg"
-    site_path.write_bytes(b"site")
-
-    task = task_state.create_link_check(
-        "lc-2",
-        task_dir=str(tmp_path),
-        user_id=1,
-        link_url="https://shop.example.com/de/products/demo",
-        target_language="de",
-        target_language_name="德语",
-        reference_images=[{"id": "ref-1", "filename": "ref.jpg", "local_path": str(ref_path)}],
-    )
-
-    class DummyFetcher:
-        def fetch_page(self, url, target_language):
-            return type("Page", (), {
-                "resolved_url": url,
-                "page_language": "de",
-                "images": [{"id": "site-1", "kind": "carousel", "source_url": "https://img/site.jpg", "local_path": str(site_path)}],
-            })()
-
-        def download_images(self, images, task_dir):
-            return images
-
-    monkeypatch.setattr("appcore.link_check_runtime.find_best_reference", lambda *args, **kwargs: {
+    # setup task omitted for brevity
+    monkeypatch.setattr("appcore.link_check_runtime.find_best_reference", lambda *a, **k: {
         "status": "matched",
-        "score": 0.91,
+        "score": 0.93,
         "reference_path": str(ref_path),
     })
-    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", lambda *args, **kwargs: {
-        "decision": "pass",
+    monkeypatch.setattr("appcore.link_check_runtime.run_binary_quick_check", lambda *a, **k: {
+        "status": "pass",
+        "binary_similarity": 0.94,
+        "foreground_overlap": 0.90,
+        "threshold": 0.90,
+        "reason": "ok",
+    })
+    monkeypatch.setattr("appcore.link_check_runtime.judge_same_image", lambda *a, **k: {
+        "status": "done",
+        "answer": "是",
+        "channel": "cloud",
+        "channel_label": "Google Cloud (Vertex AI)",
+        "model": "gemini-3.1-flash-lite-preview",
+        "reason": "",
+    })
+    analyze = monkeypatch.patch("appcore.link_check_runtime.analyze_image")
+
+    LinkCheckRuntime(fetcher=DummyFetcher()).start("lc-binary-pass")
+
+    saved = task_state.get("lc-binary-pass")
+    assert saved["items"][0]["analysis"]["decision"] == "pass"
+    assert saved["items"][0]["analysis"]["decision_source"] == "binary_quick_check"
+    assert saved["items"][0]["same_image_llm"]["answer"] == "是"
+    analyze.assert_not_called()
+
+
+def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypatch):
+    monkeypatch.setattr("appcore.link_check_runtime.find_best_reference", lambda *a, **k: {
+        "status": "not_matched",
+        "score": 0.42,
+        "reference_path": "",
+    })
+    monkeypatch.setattr("appcore.link_check_runtime.analyze_image", lambda *a, **k: {
+        "decision": "replace",
         "has_text": True,
-        "detected_language": "de",
-        "language_match": True,
-        "text_summary": "Hallo",
-        "quality_score": 95,
-        "quality_reason": "ok",
-        "needs_replacement": False,
+        "detected_language": "en",
+        "language_match": False,
+        "text_summary": "English text",
+        "quality_score": 15,
+        "quality_reason": "wrong language",
+        "needs_replacement": True,
     })
 
-    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
-    runtime.start("lc-2")
+    LinkCheckRuntime(fetcher=DummyFetcher()).start("lc-unmatched")
 
-    saved = task_state.get("lc-2")
-    assert saved["items"][0]["reference_match"]["status"] == "matched"
-    assert saved["items"][0]["reference_match"]["reference_id"] == "ref-1"
-    assert saved["summary"]["overall_decision"] == "done"
+    saved = task_state.get("lc-unmatched")
+    assert saved["items"][0]["binary_quick_check"]["status"] == "skipped"
+    assert saved["items"][0]["same_image_llm"]["status"] == "skipped"
+    assert saved["items"][0]["analysis"]["decision_source"] == "gemini_language_check"
 ```
 
-- [ ] **Step 2: Run the runtime tests to confirm the new state/runtime pieces do not exist yet**
+- [ ] **Step 2: Run the runtime tests and confirm they fail on missing fields/logic**
 
-Run: `pytest tests/test_link_check_runtime.py -v`
+Run: `pytest tests/test_link_check_runtime.py -q`
 
-Expected: `FAIL` because `create_link_check()` and `LinkCheckRuntime` do not exist.
+Expected: `FAIL` because runtime does not populate `binary_quick_check`, `same_image_llm`, or `decision_source`.
 
-- [ ] **Step 3: Add `create_link_check()` to task state and export it via `web.store`**
+- [ ] **Step 3: Update task defaults, runtime branching, and normalized analysis payloads**
 
 ```python
 # appcore/task_state.py
-def create_link_check(task_id: str, task_dir: str, *, user_id: int,
-                      link_url: str, target_language: str,
-                      target_language_name: str,
-                      reference_images: list[dict]) -> dict:
-    task = {
-        "id": task_id,
-        "type": "link_check",
-        "status": "queued",
-        "task_dir": task_dir,
-        "link_url": link_url,
-        "resolved_url": "",
-        "page_language": "",
-        "target_language": target_language,
-        "target_language_name": target_language_name,
-        "reference_images": reference_images,
-        "progress": {"total": 0, "downloaded": 0, "analyzed": 0, "compared": 0, "failed": 0},
-        "summary": {
-            "pass_count": 0,
-            "no_text_count": 0,
-            "replace_count": 0,
-            "review_count": 0,
-            "reference_unmatched_count": 0,
-            "overall_decision": "running",
-        },
-        "items": [],
-        "error": "",
-        "_user_id": user_id,
-    }
-    with _lock:
-        _tasks[task_id] = task
-    return task
+"progress": {
+    "total": 0,
+    "downloaded": 0,
+    "analyzed": 0,
+    "compared": 0,
+    "binary_checked": 0,
+    "same_image_llm_done": 0,
+    "failed": 0,
+},
+"summary": {
+    "pass_count": 0,
+    "no_text_count": 0,
+    "replace_count": 0,
+    "review_count": 0,
+    "reference_unmatched_count": 0,
+    "reference_matched_count": 0,
+    "binary_checked_count": 0,
+    "binary_direct_pass_count": 0,
+    "binary_direct_replace_count": 0,
+    "same_image_llm_done_count": 0,
+    "same_image_llm_yes_count": 0,
+    "overall_decision": "running",
+}
 ```
-
-```python
-# web/store.py
-from appcore.task_state import create_link_check
-
-__all__.append("create_link_check")
-```
-
-- [ ] **Step 4: Implement the runtime and thread runner**
 
 ```python
 # appcore/link_check_runtime.py
-from __future__ import annotations
-
-from pathlib import Path
-
-from appcore.link_check_compare import find_best_reference
-from appcore.link_check_fetcher import LinkCheckFetcher
-from appcore.link_check_gemini import analyze_image
-from web import store
-
-
-class LinkCheckRuntime:
-    def __init__(self, *, fetcher: LinkCheckFetcher | None = None) -> None:
-        self.fetcher = fetcher or LinkCheckFetcher()
-
-    def start(self, task_id: str) -> None:
-        task = store.get(task_id)
-        if not task or task.get("type") != "link_check":
-            return
-        try:
-            store.update(task_id, status="locking_locale")
-            page = self.fetcher.fetch_page(task["link_url"], task["target_language"])
-            downloaded = self.fetcher.download_images(page.images, task["task_dir"])
-
-            task["resolved_url"] = page.resolved_url
-            task["page_language"] = page.page_language
-            task["items"] = []
-            task["progress"]["total"] = len(downloaded)
-            task["progress"]["downloaded"] = len(downloaded)
-
-            references = task.get("reference_images") or []
-            reference_paths = [ref["local_path"] for ref in references]
-            reference_index = {ref["local_path"]: ref for ref in references}
-
-            for item in downloaded:
-                result = {
-                    "id": item["id"],
-                    "kind": item["kind"],
-                    "source_url": item["source_url"],
-                    "_local_path": item["local_path"],
-                    "analysis": {},
-                    "reference_match": {"status": "not_provided", "score": 0.0},
-                    "status": "running",
-                    "error": "",
-                }
-                if reference_paths:
-                    best_reference = find_best_reference(item["local_path"], reference_paths)
-                    reference_meta = reference_index.get(best_reference.get("reference_path", ""), {})
-                    result["reference_match"] = {
-                        **best_reference,
-                        "reference_id": reference_meta.get("id", ""),
-                        "reference_filename": reference_meta.get("filename", ""),
-                    }
-                    task["progress"]["compared"] += 1
-
-                result["analysis"] = analyze_image(
-                    item["local_path"],
-                    target_language=task["target_language"],
-                    target_language_name=task["target_language_name"],
-                )
-                task["progress"]["analyzed"] += 1
-                result["status"] = "done"
-                task["items"].append(result)
-
-            self._finalize(task)
-            store.update(task_id, **task)
-        except Exception as exc:
-            store.update(task_id, status="failed", error=str(exc))
-
-    def _finalize(self, task: dict) -> None:
-        summary = {
-            "pass_count": 0,
-            "no_text_count": 0,
-            "replace_count": 0,
-            "review_count": 0,
-            "reference_unmatched_count": 0,
-            "overall_decision": "done",
+if reference_match["status"] == "matched":
+    result["binary_quick_check"] = run_binary_quick_check(item["local_path"], reference_path)
+    task["progress"]["binary_checked"] += 1
+    result["same_image_llm"] = judge_same_image(item["local_path"], reference_path)
+    if result["same_image_llm"]["status"] == "done":
+        task["progress"]["same_image_llm_done"] += 1
+    if result["binary_quick_check"]["status"] == "pass":
+        result["analysis"] = {
+            "decision": "pass",
+            "decision_source": "binary_quick_check",
+            "quality_reason": "参考图已匹配且二值快检通过，跳过语言模型",
+            "needs_replacement": False,
         }
-        for item in task["items"]:
-            decision = item["analysis"].get("decision")
-            if decision == "pass":
-                summary["pass_count"] += 1
-            elif decision == "no_text":
-                summary["no_text_count"] += 1
-            elif decision == "replace":
-                summary["replace_count"] += 1
-                summary["overall_decision"] = "unfinished"
-            else:
-                summary["review_count"] += 1
-                summary["overall_decision"] = "unfinished"
-            if item["reference_match"]["status"] == "not_matched":
-                summary["reference_unmatched_count"] += 1
-                summary["overall_decision"] = "unfinished"
-        task["summary"] = summary
-        task["status"] = "done" if summary["overall_decision"] == "done" else "review_ready"
+    elif result["binary_quick_check"]["status"] == "fail":
+        result["analysis"] = {
+            "decision": "replace",
+            "decision_source": "binary_quick_check",
+            "quality_reason": "参考图已匹配但二值快检未通过，判定需要替换",
+            "needs_replacement": True,
+        }
+    else:
+        result["analysis"] = analyze_image(...)
+        result["analysis"]["decision_source"] = "gemini_language_check"
+else:
+    result["binary_quick_check"] = {"status": "skipped", "binary_similarity": 0.0, "foreground_overlap": 0.0, "threshold": 0.90, "reason": "未匹配到参考图，跳过二值快检"}
+    result["same_image_llm"] = {"status": "skipped", "answer": "", "channel": "", "channel_label": "", "model": "", "reason": "未匹配到参考图，跳过同图判断"}
+    result["analysis"] = analyze_image(...)
+    result["analysis"]["decision_source"] = "gemini_language_check"
 ```
 
-```python
-# web/services/link_check_runner.py
-from __future__ import annotations
+- [ ] **Step 4: Re-run the runtime tests and confirm they pass**
 
-import threading
+Run: `pytest tests/test_link_check_runtime.py -q`
 
-from appcore.link_check_runtime import LinkCheckRuntime
+Expected: all runtime tests `PASS`.
 
-_running: set[str] = set()
-_lock = threading.Lock()
-
-
-def start(task_id: str) -> bool:
-    with _lock:
-        if task_id in _running:
-            return False
-        _running.add(task_id)
-
-    runtime = LinkCheckRuntime()
-
-    def run() -> None:
-        try:
-            runtime.start(task_id)
-        finally:
-            with _lock:
-                _running.discard(task_id)
-
-    threading.Thread(target=run, daemon=True).start()
-    return True
-```
-
-- [ ] **Step 5: Re-run the runtime tests and confirm they pass**
-
-Run: `pytest tests/test_link_check_runtime.py -v`
-
-Expected: both tests `PASS`.
-
-- [ ] **Step 6: Commit the task-state/runtime work**
+- [ ] **Step 5: Commit the runtime orchestration changes**
 
 ```bash
-git add appcore/task_state.py web/store.py appcore/link_check_runtime.py web/services/link_check_runner.py tests/test_link_check_runtime.py
-git commit -m "feat: add in-memory runtime for link check tasks"
+git add appcore/link_check_runtime.py appcore/link_check_gemini.py appcore/task_state.py tests/test_link_check_runtime.py
+git commit -m "feat: route matched link check pairs through binary review"
 ```
 
-### Task 6: Routes, Preview Endpoints, and Blueprint Registration
+## Task 4: Expose the New Fields Through Routes and the UI
 
 **Files:**
-- Create: `web/routes/link_check.py`
-- Modify: `web/app.py:32-55`
-- Modify: `web/app.py:172-198`
-- Create: `tests/test_link_check_routes.py`
+- Modify: `web/routes/link_check.py`
+- Modify: `web/static/link_check.js`
+- Modify: `web/templates/link_check.html`
+- Modify: `tests/test_link_check_routes.py`
 
-- [ ] **Step 1: Write the failing route tests**
+- [ ] **Step 1: Write the failing API/UI assertions**
 
 ```python
-# tests/test_link_check_routes.py
-import io
-
-
-def test_link_check_page_renders_form(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
-    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
-
-    response = authed_client_no_db.get("/link-check")
-
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert 'id="linkCheckForm"' in html
-    assert 'name="reference_images"' in html
-
-
-def test_create_link_check_task_accepts_optional_reference_images(authed_client_no_db, monkeypatch, tmp_path):
-    from web import store
-
-    created = {}
-
-    def fake_create(task_id, task_dir, **kwargs):
-        created.update({"task_id": task_id, "task_dir": task_dir, **kwargs})
-        return {"id": task_id, "type": "link_check", "_user_id": 1}
-
-    monkeypatch.setattr(store, "create_link_check", fake_create)
-    monkeypatch.setattr("web.routes.link_check.medias.get_language", lambda code: {"code": "de", "name_zh": "德语"})
-    monkeypatch.setattr("web.routes.link_check.link_check_runner.start", lambda tid: True)
-
-    response = authed_client_no_db.post(
-        "/api/link-check/tasks",
-        data={
+def test_get_task_serializes_binary_and_same_image_sections(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "get",
+        lambda task_id: {
+            "id": task_id,
+            "type": "link_check",
+            "_user_id": 2,
+            "status": "done",
             "link_url": "https://shop.example.com/de/products/demo",
             "target_language": "de",
-            "reference_images": [(io.BytesIO(b"fake-image"), "ref-1.jpg")],
+            "target_language_name": "德语",
+            "progress": {"total": 1, "downloaded": 1, "analyzed": 1, "compared": 1, "binary_checked": 1, "same_image_llm_done": 1, "failed": 0},
+            "summary": {"overall_decision": "done"},
+            "reference_images": [{"id": "ref-1", "filename": "ref.jpg", "local_path": "C:/tmp/ref.jpg"}],
+            "items": [{
+                "id": "site-1",
+                "kind": "carousel",
+                "source_url": "https://img/site.jpg",
+                "_local_path": "C:/tmp/site.jpg",
+                "analysis": {"decision": "pass", "decision_source": "binary_quick_check"},
+                "reference_match": {"status": "matched", "score": 0.9, "reference_id": "ref-1"},
+                "binary_quick_check": {"status": "pass", "binary_similarity": 0.93, "foreground_overlap": 0.89, "threshold": 0.90, "reason": "ok"},
+                "same_image_llm": {"status": "done", "answer": "是", "channel": "cloud", "channel_label": "Google Cloud (Vertex AI)", "model": "gemini-3.1-flash-lite-preview", "reason": ""},
+                "status": "done",
+                "error": "",
+            }],
         },
-        content_type="multipart/form-data",
     )
 
-    assert response.status_code == 202
-    assert created["target_language"] == "de"
-    assert len(created["reference_images"]) == 1
+    payload = authed_user_client_no_db.get("/api/link-check/tasks/lc-1").get_json()
 
-
-def test_get_task_serializes_preview_urls(authed_client_no_db, monkeypatch):
-    from web import store
-
-    monkeypatch.setattr(store, "get", lambda task_id: {
-        "id": task_id,
-        "type": "link_check",
-        "_user_id": 1,
-        "status": "done",
-        "progress": {"total": 1, "downloaded": 1, "analyzed": 1, "compared": 1, "failed": 0},
-        "summary": {"overall_decision": "done"},
-        "reference_images": [{"id": "ref-1", "filename": "ref.jpg", "local_path": "C:/tmp/ref.jpg"}],
-        "items": [{
-            "id": "site-1",
-            "kind": "carousel",
-            "source_url": "https://img/site.jpg",
-            "_local_path": "C:/tmp/site.jpg",
-            "analysis": {"decision": "pass"},
-            "reference_match": {"status": "matched", "score": 0.9, "reference_id": "ref-1"},
-            "status": "done",
-            "error": "",
-        }],
-    })
-
-    response = authed_client_no_db.get("/api/link-check/tasks/lc-1")
-    payload = response.get_json()
-
-    assert payload["items"][0]["site_preview_url"].endswith("/api/link-check/tasks/lc-1/images/site/site-1")
-    assert payload["reference_images"][0]["preview_url"].endswith("/api/link-check/tasks/lc-1/images/reference/ref-1")
+    assert payload["items"][0]["binary_quick_check"]["binary_similarity"] == 0.93
+    assert payload["items"][0]["same_image_llm"]["answer"] == "是"
 ```
 
-- [ ] **Step 2: Run the route tests to confirm the blueprint is missing**
+- [ ] **Step 2: Run the route test file and confirm the new assertions fail**
 
-Run: `pytest tests/test_link_check_routes.py -v`
+Run: `pytest tests/test_link_check_routes.py -q`
 
-Expected: `FAIL` with `404` or import errors because `/link-check` and `/api/link-check/tasks` do not exist.
+Expected: `FAIL` because the serializer and frontend do not expose the new sections yet.
 
-- [ ] **Step 3: Implement the blueprint, task creation, polling, and preview-image routes**
+- [ ] **Step 3: Serialize and render quick-check + same-image data**
 
 ```python
 # web/routes/link_check.py
-from __future__ import annotations
-
-import os
-import uuid
-from pathlib import Path
-
-from flask import Blueprint, abort, jsonify, render_template, request, send_file
-from flask_login import current_user, login_required
-
-from appcore import medias
-from config import OUTPUT_DIR
-from web import store
-from web.services import link_check_runner
-
-bp = Blueprint("link_check", __name__)
-
-
-def _get_owned_task(task_id: str) -> dict:
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id or task.get("type") != "link_check":
-        abort(404)
-    return task
-
-
-@bp.route("/link-check")
-@login_required
-def page():
-    return render_template("link_check.html")
-
-
-@bp.route("/api/link-check/tasks", methods=["POST"])
-@login_required
-def create_task():
-    link_url = (request.form.get("link_url") or "").strip()
-    target_language = (request.form.get("target_language") or "").strip().lower()
-    if not link_url or not target_language:
-        return jsonify({"error": "link_url 和 target_language 必填"}), 400
-    language = medias.get_language(target_language)
-    if not language or not language.get("enabled"):
-        return jsonify({"error": "target_language 非法"}), 400
-
-    task_id = str(uuid.uuid4())
-    task_dir = Path(OUTPUT_DIR) / "link_check" / task_id
-    task_dir.mkdir(parents=True, exist_ok=True)
-
-    references = []
-    for index, storage in enumerate(request.files.getlist("reference_images")):
-        if not storage or not storage.filename:
-            continue
-        suffix = Path(storage.filename).suffix.lower()
-        local_path = task_dir / "reference" / f"ref_{index:03d}{suffix}"
-        local_path.parent.mkdir(parents=True, exist_ok=True)
-        storage.save(local_path)
-        references.append({"id": f"ref-{index}", "filename": storage.filename, "local_path": str(local_path)})
-
-    store.create_link_check(
-        task_id,
-        str(task_dir),
-        user_id=current_user.id,
-        link_url=link_url,
-        target_language=target_language,
-        target_language_name=language.get("name_zh") or target_language,
-        reference_images=references,
-    )
-    link_check_runner.start(task_id)
-    return jsonify({"task_id": task_id}), 202
-
-
-@bp.route("/api/link-check/tasks/<task_id>")
-@login_required
-def get_task(task_id: str):
-    task = _get_owned_task(task_id)
-    payload = {
-        "id": task["id"],
-        "type": task["type"],
-        "status": task["status"],
-        "link_url": task["link_url"],
-        "resolved_url": task.get("resolved_url", ""),
-        "page_language": task.get("page_language", ""),
-        "target_language": task["target_language"],
-        "target_language_name": task["target_language_name"],
-        "progress": task["progress"],
-        "summary": task["summary"],
-        "error": task.get("error", ""),
-        "reference_images": [
-            {
-                "id": ref["id"],
-                "filename": ref["filename"],
-                "preview_url": f"/api/link-check/tasks/{task_id}/images/reference/{ref['id']}",
-            }
-            for ref in task.get("reference_images", [])
-        ],
-        "items": [
-            {
-                "id": item["id"],
-                "kind": item["kind"],
-                "source_url": item["source_url"],
-                "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
-                "analysis": item["analysis"],
-                "reference_match": item["reference_match"],
-                "status": item["status"],
-                "error": item["error"],
-            }
-            for item in task.get("items", [])
-        ],
+"items": [
+    {
+        "id": item["id"],
+        "kind": item["kind"],
+        "source_url": item["source_url"],
+        "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
+        "analysis": dict(item.get("analysis") or {}),
+        "reference_match": dict(item.get("reference_match") or {}),
+        "binary_quick_check": dict(item.get("binary_quick_check") or {}),
+        "same_image_llm": dict(item.get("same_image_llm") or {}),
+        "status": item.get("status") or "pending",
+        "error": item.get("error") or "",
     }
-    return jsonify(payload)
-
-
-@bp.route("/api/link-check/tasks/<task_id>/images/site/<image_id>")
-@login_required
-def get_site_image(task_id: str, image_id: str):
-    task = _get_owned_task(task_id)
-    item = next((it for it in task.get("items", []) if it["id"] == image_id), None)
-    if not item:
-        abort(404)
-    return send_file(item["_local_path"])
-
-
-@bp.route("/api/link-check/tasks/<task_id>/images/reference/<reference_id>")
-@login_required
-def get_reference_image(task_id: str, reference_id: str):
-    task = _get_owned_task(task_id)
-    ref = next((it for it in task.get("reference_images", []) if it["id"] == reference_id), None)
-    if not ref:
-        abort(404)
-    return send_file(ref["local_path"])
-```
-
-```python
-# web/app.py
-from web.routes.link_check import bp as link_check_bp
-
-app.register_blueprint(link_check_bp)
-```
-
-- [ ] **Step 4: Re-run the route tests and confirm they pass**
-
-Run: `pytest tests/test_link_check_routes.py -v`
-
-Expected: the page route and task-create route tests `PASS`.
-
-- [ ] **Step 5: Commit the route and blueprint work**
-
-```bash
-git add web/routes/link_check.py web/app.py tests/test_link_check_routes.py
-git commit -m "feat: add link check routes and runner entrypoints"
-```
-
-### Task 7: Single-Page UI and Navigation
-
-**Files:**
-- Create: `web/templates/link_check.html`
-- Create: `web/static/link_check.css`
-- Create: `web/static/link_check.js`
-- Modify: `web/templates/layout.html:293-336`
-
-- [ ] **Step 1: Write the failing page-render assertion for the new UI markers**
-
-```python
-# tests/test_link_check_routes.py
-def test_link_check_page_contains_progress_and_results_shell(authed_client_no_db):
-    response = authed_client_no_db.get("/link-check")
-    html = response.get_data(as_text=True)
-
-    assert 'id="linkCheckSummary"' in html
-    assert 'id="linkCheckResults"' in html
-```
-
-- [ ] **Step 2: Run the page-render assertion and confirm it fails**
-
-Run: `pytest tests/test_link_check_routes.py::test_link_check_page_contains_progress_and_results_shell -v`
-
-Expected: `FAIL` because the page template does not yet render the progress/result containers.
-
-- [ ] **Step 3: Build the page shell, styles, polling JS, and sidebar link**
-
-```html
-<!-- web/templates/link_check.html -->
-{% extends "layout.html" %}
-{% block title %}链接检查{% endblock %}
-{% block page_title %}链接检查{% endblock %}
-{% block content %}
-<div class="lc-shell">
-  <section class="lc-card">
-    <form id="linkCheckForm" class="lc-form" enctype="multipart/form-data">
-      <label for="linkUrl">检查链接</label>
-      <input id="linkUrl" name="link_url" type="url" placeholder="https://example.com/de/products/demo" required>
-
-      <label for="targetLanguage">目标语言</label>
-      <select id="targetLanguage" name="target_language" required></select>
-
-      <label for="referenceImages">参考图片（可选）</label>
-      <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-
-      <button id="linkCheckSubmit" class="btn btn-primary" type="submit">开始检查</button>
-    </form>
-  </section>
-
-  <section id="linkCheckSummary" class="lc-card"></section>
-  <section id="linkCheckResults" class="lc-card"></section>
-</div>
-<link rel="stylesheet" href="{{ url_for('static', filename='link_check.css') }}">
-<script src="{{ url_for('static', filename='link_check.js') }}"></script>
-{% endblock %}
+    for item in task.get("items", [])
+]
 ```
 
 ```javascript
 // web/static/link_check.js
-async function loadLanguages() {
-  const res = await fetch("/api/languages");
-  const data = await res.json();
-  const select = document.getElementById("targetLanguage");
-  select.innerHTML = '<option value="">请选择语言</option>';
-  for (const item of data.items || []) {
-    const option = document.createElement("option");
-    option.value = item.code;
-    option.textContent = item.name_zh;
-    select.appendChild(option);
-  }
-}
+const binary = item.binary_quick_check || {};
+const sameImage = item.same_image_llm || {};
 
-async function createTask(formData) {
-  const res = await fetch("/api/link-check/tasks", {
-    method: "POST",
-    body: formData,
-  });
-  return res.json();
-}
-
-async function pollTask(taskId) {
-  const res = await fetch(`/api/link-check/tasks/${taskId}`);
-  return res.json();
-}
-
-function renderTask(state) {
-  document.getElementById("linkCheckSummary").innerHTML = `
-    <div class="lc-summary-grid">
-      <div>抓取图片：${state.progress.total}</div>
-      <div>已分析：${state.progress.analyzed}</div>
-      <div>异常：${state.progress.failed}</div>
-      <div>整体结论：${state.summary.overall_decision}</div>
-    </div>
-  `;
-
-  const cards = (state.items || []).map((item) => {
-    const reference = item.reference_match || {};
-    const referencePreview = reference.reference_id
-      ? `/api/link-check/tasks/${state.id}/images/reference/${reference.reference_id}`
-      : "";
-    return `
-      <article class="lc-result-card">
-        <div class="lc-result-grid">
-          <img class="lc-preview" src="${item.site_preview_url}" alt="site image">
-          ${referencePreview ? `<img class="lc-preview" src="${referencePreview}" alt="reference image">` : `<div class="lc-preview lc-preview--empty">无参考图</div>`}
-        </div>
-        <div class="lc-result-meta">
-          <div>类型：${item.kind}</div>
-          <div>来源：${item.source_url}</div>
-          <div>识别语言：${item.analysis.detected_language || "-"}</div>
-          <div>判断：${item.analysis.decision || item.status}</div>
-          <div>质量分：${item.analysis.quality_score ?? "-"}</div>
-          <div>参考匹配：${reference.status || "not_provided"} (${reference.score ?? 0})</div>
-          <div>说明：${item.analysis.quality_reason || item.error || "-"}</div>
-        </div>
-      </article>
-    `;
-  }).join("");
-  document.getElementById("linkCheckResults").innerHTML = cards || "<div class='lc-empty'>等待结果…</div>";
-}
-
-document.addEventListener("DOMContentLoaded", async () => {
-  await loadLanguages();
-  const form = document.getElementById("linkCheckForm");
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const payload = await createTask(new FormData(form));
-    if (!payload.task_id) return;
-    const timer = window.setInterval(async () => {
-      const state = await pollTask(payload.task_id);
-      renderTask(state);
-      if (["done", "failed", "review_ready"].includes(state.status)) {
-        window.clearInterval(timer);
-      }
-    }, 1500);
-  });
-});
+<div class="lc-meta-row"><strong>二值快检结果</strong><span>${binary.status || "-"}</span></div>
+<div class="lc-meta-row"><strong>二值相似度</strong><span>${formatPercent(binary.binary_similarity)}</span></div>
+<div class="lc-meta-row"><strong>前景重合度</strong><span>${formatPercent(binary.foreground_overlap)}</span></div>
+<div class="lc-meta-row"><strong>当前阈值</strong><span>${formatPercent(binary.threshold)}</span></div>
+<div class="lc-meta-row"><strong>二值快检说明</strong><span>${binary.reason || "-"}</span></div>
+<div class="lc-meta-row"><strong>大模型相同图片判断</strong><span>${sameImage.answer || sameImage.status || "-"}</span></div>
+<div class="lc-meta-row"><strong>大模型判断通道</strong><span>${sameImage.channel_label || "-"}</span></div>
+<div class="lc-meta-row"><strong>大模型判断模型</strong><span>${sameImage.model || "-"}</span></div>
+<div class="lc-meta-row"><strong>最终判定来源</strong><span>${analysis.decision_source || "-"}</span></div>
 ```
 
-```css
-/* web/static/link_check.css */
-.lc-shell { display: grid; gap: 16px; }
-.lc-card { background: var(--bg-card); border: 1px solid var(--border-main); border-radius: 12px; padding: 20px; }
-.lc-form { display: grid; gap: 12px; }
-.lc-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.lc-result-card { border: 1px solid var(--border-main); border-radius: 10px; padding: 12px; background: var(--bg-subtle, #f8fbff); }
-.lc-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-.lc-preview { width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; background: #eef4fb; }
-.lc-preview--empty { display: grid; place-items: center; color: var(--fg-subtle, #64748b); }
-.lc-result-meta { display: grid; gap: 6px; font-size: 13px; color: var(--text-main); }
-.lc-empty { color: var(--fg-subtle, #64748b); }
-```
+- [ ] **Step 4: Re-run route tests and a focused UI smoke test**
 
-```html
-<!-- web/templates/layout.html -->
-<a href="/link-check" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
-  <span class="nav-icon">🔎</span> 链接检查
-</a>
-```
+Run: `pytest tests/test_link_check_routes.py -q`
 
-- [ ] **Step 4: Re-run the UI-facing route assertions**
+Expected: all route tests `PASS`.
 
-Run: `pytest tests/test_link_check_routes.py::test_link_check_page_renders_form tests/test_link_check_routes.py::test_link_check_page_contains_progress_and_results_shell -v`
-
-Expected: both tests `PASS`.
-
-- [ ] **Step 5: Commit the UI and navigation changes**
+- [ ] **Step 5: Commit the route/UI payload changes**
 
 ```bash
-git add web/templates/link_check.html web/static/link_check.css web/static/link_check.js web/templates/layout.html tests/test_link_check_routes.py
-git commit -m "feat: add link check page and navigation"
+git add web/routes/link_check.py web/static/link_check.js web/templates/link_check.html tests/test_link_check_routes.py
+git commit -m "feat: show binary review and same image llm in link check ui"
+```
+
+## Task 5: End-to-End Verification for the Upgraded Flow
+
+**Files:**
+- Modify: `tests/test_link_check_runtime.py`
+- Modify: `tests/test_link_check_routes.py`
+- Modify: `tests/test_link_check_compare.py`
+- Create: `tests/test_link_check_same_image.py`
+
+- [ ] **Step 1: Run the full targeted suite**
+
+Run: `pytest tests/test_link_check_compare.py tests/test_link_check_same_image.py tests/test_link_check_runtime.py tests/test_link_check_routes.py -q`
+
+Expected: all tests `PASS`.
+
+- [ ] **Step 2: Run a Python syntax check over the touched runtime and web files**
+
+Run: `python -m py_compile appcore\link_check_compare.py appcore\link_check_same_image.py appcore\link_check_runtime.py web\routes\link_check.py web\static\link_check.js`
+
+Expected: Python files compile cleanly. If `py_compile` is used, omit the JS file and instead rely on the browser-facing test plus manual inspection.
+
+- [ ] **Step 3: Manually smoke-test the page contract with Flask test client**
+
+Run:
+
+```powershell
+@'
+from web.app import create_app
+app = create_app()
+print(app.url_map)
+'@ | python -
+```
+
+Expected: output includes `/link-check`, `/api/link-check/tasks`, `/api/link-check/tasks/<task_id>`.
+
+- [ ] **Step 4: Commit the verification pass**
+
+```bash
+git add tests/test_link_check_compare.py tests/test_link_check_same_image.py tests/test_link_check_runtime.py tests/test_link_check_routes.py
+git commit -m "test: cover binary review link check flow"
 ```
 
 ## Self-Review
 
 **Spec coverage**
-- Sidebar entry: covered by Task 7.
-- Single-page form with link/language/optional reference images: covered by Tasks 6-7.
-- Locale locking to avoid silent English fallback: covered by Task 3.
-- Downloading carousel/detail images from Shopify product pages: covered by Task 3.
-- Optional deterministic same-image matching for Shopify-compressed assets: covered by Task 2 and consumed in Task 5.
-- Gemini Flash language/quality analysis: covered by Task 4.
-- In-memory, non-persistent background task with current-page polling only: covered by Task 5 and Task 6.
-- Visualized results with previews and summary: covered by Task 7.
-- Vertex AI initialization correction: covered by Task 1.
+- Optional reference images: covered by existing route flow, preserved in Tasks 3-4.
+- Deterministic same-image matching remains first-layer screening: preserved in Task 1 and Task 3.
+- `matched` pairs now use binary quick-check as final decision: covered by Tasks 1 and 3.
+- Exact binary metrics exposed in UI: covered by Tasks 1 and 4.
+- Same-image LLM uses `AI Studio / Vertex / OpenRouter` image-translation channel chain: covered by Task 2.
+- Same-image LLM is display-only and not the final arbiter: enforced in Task 3.
+- Unmatched or missing-reference images still use the original language/quality Gemini path: covered by Task 3.
+- API and frontend surface the new result sections: covered by Task 4.
 
 **Placeholder scan**
-- No `TBD`, `TODO`, or “similar to above” placeholders remain.
-- Each task lists exact files, focused tests, commands, and commit messages.
+- No `TODO`, `TBD`, or “similar to previous task” placeholders remain.
+- Each task lists exact files, concrete commands, and code scaffolding for the intended change.
 
 **Type consistency**
-- Task state consistently uses `type="link_check"`.
-- Image comparison returns `status` / `score`.
-- Gemini analysis returns `decision` / `needs_replacement`.
-- Runtime summary uses `overall_decision`.
+- `reference_match.status` remains `matched | weak_match | not_matched | not_provided`.
+- `binary_quick_check.status` is consistently `pass | fail | skipped | error`.
+- `same_image_llm.status` is consistently `done | skipped | error`.
+- `analysis.decision_source` is consistently `binary_quick_check` or `gemini_language_check`.
 
 ## Notes
 
-- This plan intentionally reuses `GET /api/languages` instead of adding a second languages endpoint for link check.
-- This plan intentionally uses polling instead of Socket.IO to keep the first version smaller and easier to debug.
+- This upgrade intentionally does **not** make same-image LLM results part of the final business decision.
+- This plan assumes inline execution in the isolated worktree unless the user explicitly requests delegated subagents.

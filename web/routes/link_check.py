@@ -108,6 +108,8 @@ def get_task(task_id: str):
                 "site_preview_url": f"/api/link-check/tasks/{task_id}/images/site/{item['id']}",
                 "analysis": dict(item.get("analysis") or {}),
                 "reference_match": dict(item.get("reference_match") or {}),
+                "binary_quick_check": dict(item.get("binary_quick_check") or {}),
+                "same_image_llm": dict(item.get("same_image_llm") or {}),
                 "status": item.get("status") or "pending",
                 "error": item.get("error") or "",
             }
