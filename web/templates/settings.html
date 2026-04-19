@@ -80,10 +80,13 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 
     <label>默认翻译模型</label>
     <select name="translate_pref">
-      <option value="openrouter" {{ 'selected' if translate_pref == 'openrouter' }}>Claude Sonnet (OpenRouter)</option>
+      <option value="gemini_31_flash" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash (默认，via OpenRouter)</option>
+      <option value="gemini_31_pro" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro (via OpenRouter)</option>
+      <option value="gemini_3_flash" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash (via OpenRouter)</option>
+      <option value="claude_sonnet" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6 (via OpenRouter)</option>
       <option value="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
     </select>
-    <p class="hint">每次翻译时也可临时切换</p>
+    <p class="hint">全部复用上方 OpenRouter 的 Key（豆包除外）；每个任务内无临时切换，以此为准</p>
 
     <hr class="divider">
     <span class="service-tag blue">Claude Sonnet · via OpenRouter</span>

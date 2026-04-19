@@ -21,7 +21,12 @@ SERVICES = [
     ("elevenlabs", "ElevenLabs", ["key_value"]),
 ]
 
-TRANSLATE_PROVIDERS = ["openrouter", "doubao"]
+TRANSLATE_PROVIDERS = [
+    "gemini_31_flash", "gemini_31_pro", "gemini_3_flash",
+    "claude_sonnet",
+    "openrouter",  # legacy 值兼容（= claude_sonnet）
+    "doubao",
+]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -39,7 +44,7 @@ def index():
                 set_key(current_user.id, service, key_value, extra or None)
 
         # 保存默认翻译模型偏好
-        translate_pref = request.form.get("translate_pref", "openrouter").strip()
+        translate_pref = request.form.get("translate_pref", "gemini_31_flash").strip()
         if translate_pref in TRANSLATE_PROVIDERS:
             set_key(current_user.id, "translate_pref", translate_pref)
 
@@ -56,7 +61,7 @@ def index():
 
     keys = get_all(current_user.id)
     jianying_project_root = keys.get("jianying", {}).get("extra", {}).get("project_root") or DEFAULT_JIANYING_PROJECT_ROOT
-    translate_pref = keys.get("translate_pref", {}).get("key_value", "") or "openrouter"
+    translate_pref = keys.get("translate_pref", {}).get("key_value", "") or "gemini_31_flash"
     try:
         current_image_channel = get_image_translate_channel()
     except Exception:

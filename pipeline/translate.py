@@ -24,6 +24,15 @@ from pipeline.localization import (
 )
 
 
+_OPENROUTER_PREF_MODELS = {
+    "gemini_31_flash":  "google/gemini-3.1-flash-lite-preview",
+    "gemini_31_pro":    "google/gemini-3.1-pro-preview",
+    "gemini_3_flash":   "google/gemini-3-flash-preview",
+    "claude_sonnet":    "anthropic/claude-sonnet-4.6",
+    "openrouter":       "anthropic/claude-sonnet-4.6",  # legacy 值回落 claude
+}
+
+
 def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
@@ -39,13 +48,19 @@ def resolve_provider_config(
         extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
         base_url = extra.get("base_url") or DOUBAO_LLM_BASE_URL
         model = extra.get("model_id") or DOUBAO_LLM_MODEL
-    else:  # openrouter
+    else:
+        # 非 doubao 统一走 openrouter；根据 provider 字符串选模型
         key = api_key_override or (
             resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") if user_id else OPENROUTER_API_KEY
         )
         extra = resolve_extra(user_id, "openrouter") if user_id else {}
         base_url = extra.get("base_url") or OPENROUTER_BASE_URL
-        model = extra.get("model_id") or CLAUDE_MODEL
+        # 优先级：用户在 OpenRouter 设置里显式 override 的 model_id > provider 映射 > legacy 默认
+        user_override = (extra.get("model_id") or "").strip()
+        if user_override:
+            model = user_override
+        else:
+            model = _OPENROUTER_PREF_MODELS.get(provider, CLAUDE_MODEL)
 
     return OpenAI(api_key=key, base_url=base_url), model
 
