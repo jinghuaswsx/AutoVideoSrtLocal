@@ -42,6 +42,54 @@ _VERTEX_PREF_MODELS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# use_case code 前置解析（对接 appcore.llm_bindings）
+# ---------------------------------------------------------------------------
+
+def _binding_lookup_for_use_case(code: str) -> dict | None:
+    """如果入参看起来像 use_case code（含 '.'），查 bindings 表；否则 None。
+
+    返回 {provider, model, extra, source} 或 None。
+    """
+    if not isinstance(code, str) or "." not in code:
+        return None
+    try:
+        from appcore import llm_bindings
+        return llm_bindings.resolve(code)
+    except KeyError:
+        return None
+
+
+def _resolve_use_case_provider(provider_arg: str) -> str:
+    """入口映射：use_case code → 老式 provider 字符串（保留业务函数 vertex_* 分流不变）。
+
+    映射规则：
+      gemini_vertex + 模型命中 _VERTEX_PREF_MODELS 反向表 → 返 vertex_*
+      gemini_vertex + 未命中 → 写入 _VERTEX_PREF_MODELS["vertex_custom"] 并返 "vertex_custom"
+      gemini_aistudio → translate.py 无此分支；best-effort 走 OpenRouter 的 google/<model>
+      openrouter / doubao → 原样返回
+    """
+    binding = _binding_lookup_for_use_case(provider_arg)
+    if not binding:
+        return provider_arg
+
+    p = binding["provider"]
+    m = binding["model"]
+    if p == "gemini_vertex":
+        reverse = {v: k for k, v in _VERTEX_PREF_MODELS.items()}
+        if m in reverse:
+            return reverse[m]
+        _VERTEX_PREF_MODELS["vertex_custom"] = m
+        return "vertex_custom"
+    if p == "gemini_aistudio":
+        # translate.py 内没有 AIStudio 分支；回退到 OpenRouter 并补 google/ 前缀
+        model_id = m if m.startswith("google/") else f"google/{m}"
+        _OPENROUTER_PREF_MODELS["_gemini_aistudio_fallback"] = model_id
+        return "_gemini_aistudio_fallback"
+    # openrouter / doubao 原样
+    return p
+
+
 def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
@@ -255,6 +303,7 @@ def generate_localized_translation(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
+    provider = _resolve_use_case_provider(provider)
     messages = build_localized_translation_messages(
         source_full_text_zh,
         script_segments,
@@ -296,6 +345,7 @@ def generate_tts_script(
     response_format_override=None,
     validator=None,
 ) -> dict:
+    provider = _resolve_use_case_provider(provider)
     builder = messages_builder or build_tts_script_messages
     messages = builder(localized_translation)
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
@@ -338,6 +388,7 @@ def generate_localized_rewrite(
     provider 可以是 openrouter 派生值、vertex_* 或 doubao；所有路径都把实际发给
     LLM 的 messages 放在 result["_messages"] 里，供 UI/审计。
     """
+    provider = _resolve_use_case_provider(provider)
     messages = messages_builder(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
