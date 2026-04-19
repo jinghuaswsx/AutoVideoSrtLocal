@@ -497,6 +497,29 @@ _ALLOWED_ROUND_KINDS = {
 }
 
 
+@bp.route("/api/multi-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>")
+@login_required
+def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
+    """Serve per-rewrite-attempt intermediate translation JSON."""
+    if round_index not in (1, 2, 3, 4, 5):
+        abort(404)
+    if attempt not in (1, 2, 3, 4, 5):
+        abort(404)
+
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return jsonify({"error": "Task not found"}), 404
+
+    filename = f"localized_translation.round_{round_index}.attempt_{attempt}.json"
+    path = os.path.join(task.get("task_dir", ""), filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not ready"}), 404
+
+    return send_file(os.path.abspath(path), mimetype="application/json",
+                     as_attachment=False, download_name=filename,
+                     conditional=False)
+
+
 @bp.route("/api/multi-translate/<task_id>/round-file/<int:round_index>/<kind>")
 @login_required
 def get_round_file(task_id: str, round_index: int, kind: str):

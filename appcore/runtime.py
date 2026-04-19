@@ -363,10 +363,12 @@ class PipelineRunner:
                 # ========= 字数收敛内循环（最多 5 次 rewrite）=========
                 # LLM 对 target_words 经常不听话。先确认文案字数在 ±10% 窗口内
                 # 再去跑 TTS，避免浪费 TTS 调用。
+                # 每次 attempt 的完整译文 JSON 单独落盘，UI 可逐一查看。
                 MAX_REWRITE_ATTEMPTS = 5
                 WORD_TOLERANCE = 0.10
                 candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
                 localized_translation = None
+                chosen_attempt_idx = None
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     candidate = generate_localized_rewrite(
                         source_full_text=source_full_text,
@@ -382,6 +384,13 @@ class PipelineRunner:
                     diff = abs(cand_words - target_words)
                     tolerance_abs = max(1, int(target_words * WORD_TOLERANCE))
                     candidates.append((diff, candidate))
+
+                    # 每次 attempt 的完整译文都落盘，UI 可点链接查看
+                    attempt_filename = (
+                        f"localized_translation.round_{round_index}.attempt_{attempt}.json"
+                    )
+                    _save_json(task_dir, attempt_filename, candidate)
+
                     log.info(
                         "rewrite attempt %d/%d: got %d words (target %d, tol ±%d)",
                         attempt, MAX_REWRITE_ATTEMPTS, cand_words, target_words, tolerance_abs,
@@ -391,17 +400,24 @@ class PipelineRunner:
                         "words": cand_words,
                         "diff": diff,
                         "accepted": diff <= tolerance_abs,
+                        "artifact_path": attempt_filename,
+                        # 取 full_text 前 200 字符作为快速预览，避免 UI 默认加载大 JSON
+                        "preview_text": (candidate.get("full_text") or "")[:200],
                     })
                     if diff <= tolerance_abs:
                         localized_translation = candidate
+                        chosen_attempt_idx = attempt - 1  # 列表下标
                         round_record["rewrite_attempt_used"] = attempt
                         round_record["rewrite_words_actual"] = cand_words
                         break
                 if localized_translation is None:
                     # 5 次都没收敛 → 挑最接近 target 的
-                    candidates.sort(key=lambda x: x[0])
-                    localized_translation = candidates[0][1]
-                    round_record["rewrite_attempt_used"] = MAX_REWRITE_ATTEMPTS
+                    ranked = sorted(
+                        enumerate(candidates), key=lambda kv: kv[1][0]
+                    )
+                    chosen_attempt_idx = ranked[0][0]
+                    localized_translation = candidates[chosen_attempt_idx][1]
+                    round_record["rewrite_attempt_used"] = chosen_attempt_idx + 1
                     round_record["rewrite_words_actual"] = _count_words(
                         localized_translation.get("full_text", "")
                     )
@@ -414,6 +430,11 @@ class PipelineRunner:
                     )
                 else:
                     round_record["rewrite_converged"] = True
+                # 标记哪一次 attempt 被选用作本轮 TTS 输入
+                if chosen_attempt_idx is not None:
+                    attempts_list = round_record.get("rewrite_attempts") or []
+                    for i, a in enumerate(attempts_list):
+                        a["is_used_for_tts"] = (i == chosen_attempt_idx)
                 # =====================================================
                 _save_json(task_dir, f"localized_translation.round_{round_index}.json", localized_translation)
                 round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
