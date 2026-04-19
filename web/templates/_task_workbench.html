@@ -679,3 +679,19 @@
   <h3>生成结果</h3>
   <div class="result-grid" id="downloadGrid"></div>
 </div>
+
+<!-- 翻译本土化调试弹窗：Prompt / 中间 JSON / 跨轮 diff 共用 -->
+<div class="json-modal-overlay hidden" id="jsonPreviewModal" onclick="if (event.target === this) closeJsonModal()">
+  <div class="json-modal" role="dialog" aria-modal="true">
+    <div class="json-modal-header">
+      <div class="json-modal-title" id="jsonModalTitle">调试预览</div>
+      <div class="json-modal-tools">
+        <a class="json-modal-raw" id="jsonModalRawLink" href="#" target="_blank" rel="noopener">原始 JSON ↗</a>
+        <button type="button" class="json-modal-close" onclick="closeJsonModal()" aria-label="关闭">×</button>
+      </div>
+    </div>
+    <div class="json-modal-body" id="jsonModalBody">
+      <div class="json-modal-empty">加载中…</div>
+    </div>
+  </div>
+</div>

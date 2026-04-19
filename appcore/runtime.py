@@ -358,6 +358,26 @@ class PipelineRunner:
             if round_index == 1:
                 localized_translation = initial_localized_translation
                 round_record["message"] = "初始译文（来自 translate 步骤）"
+                # Round 1 没有 rewrite，但指向 translate 步骤落盘的初始 prompt，
+                # UI 统一从 artifact_paths.initial_translate_messages 拉取
+                if os.path.exists(os.path.join(task_dir, "localized_translate_messages.json")):
+                    round_record["artifact_paths"]["initial_translate_messages"] = (
+                        "localized_translate_messages.json"
+                    )
+                # 初始译文自身也写一份轮次快照，便于对比
+                _save_json(
+                    task_dir,
+                    f"localized_translation.round_{round_index}.json",
+                    localized_translation,
+                )
+                round_record["artifact_paths"]["localized_translation"] = (
+                    f"localized_translation.round_{round_index}.json"
+                )
+                # token usage（若 translate 步骤记录过）
+                init_usage = (initial_localized_translation or {}).get("_usage") or {}
+                if init_usage:
+                    round_record["translate_tokens_in"] = init_usage.get("input_tokens")
+                    round_record["translate_tokens_out"] = init_usage.get("output_tokens")
             else:
                 # wps: measured from round 1 if available, else language default.
                 if last_audio_duration > 0 and last_word_count > 0:
@@ -455,6 +475,11 @@ class PipelineRunner:
                 # =====================================================
                 _save_json(task_dir, f"localized_translation.round_{round_index}.json", localized_translation)
                 round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
+                # 捕获本轮 rewrite 的 token 消耗
+                rewrite_usage = (localized_translation or {}).get("_usage") or {}
+                if rewrite_usage:
+                    round_record["translate_tokens_in"] = rewrite_usage.get("input_tokens")
+                    round_record["translate_tokens_out"] = rewrite_usage.get("output_tokens")
                 # Persist the actual LLM prompt used this round for audit / UI download.
                 if localized_translation.get("_messages"):
                     rewrite_input_snapshot = [
@@ -496,6 +521,22 @@ class PipelineRunner:
             )
             _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
             round_record["artifact_paths"]["tts_script"] = f"tts_script.round_{round_index}.json"
+            # TTS script 摘要 —— 朗读块数、平均/最大单块字数
+            blocks = tts_script.get("blocks") or []
+            if blocks:
+                block_word_counts = [
+                    _count_words(b.get("text", "")) for b in blocks
+                ]
+                round_record["tts_block_count"] = len(blocks)
+                round_record["tts_avg_block_words"] = round(
+                    sum(block_word_counts) / max(1, len(block_word_counts)), 1
+                )
+                round_record["tts_max_block_words"] = max(block_word_counts) if block_word_counts else 0
+            # TTS script LLM token 消耗
+            tts_usage = (tts_script or {}).get("_usage") or {}
+            if tts_usage:
+                round_record["tts_script_tokens_in"] = tts_usage.get("input_tokens")
+                round_record["tts_script_tokens_out"] = tts_usage.get("output_tokens")
 
             # Phase 3: audio_gen
             self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
@@ -530,8 +571,19 @@ class PipelineRunner:
             self._emit_duration_round(task_id, round_index, "measure", round_record)
 
             if final_target_lo <= audio_duration <= final_target_hi:
+                # 标记本轮为最终采用：UI 画 ✨ 徽章 + 底部摘要说明
+                round_record["is_final"] = True
+                round_record["final_reason"] = "converged"
+                rounds[-1] = round_record
+                task_state.update(
+                    task_id,
+                    tts_duration_rounds=rounds,
+                    tts_duration_status="converged",
+                    tts_final_round=round_index,
+                    tts_final_reason="converged",
+                    tts_final_distance=0.0,
+                )
                 self._emit_duration_round(task_id, round_index, "converged", round_record)
-                task_state.update(task_id, tts_duration_status="converged")
                 return {
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
@@ -556,12 +608,26 @@ class PipelineRunner:
         )
         best_record = rounds[best_i]
         best_product = round_products[best_i]
+        best_distance = _distance_to_duration_range(
+            best_record["audio_duration"], final_target_lo, final_target_hi,
+        )
         best_record["message"] = (
             f"{MAX_ROUNDS} 轮未精确收敛，选第 {best_i + 1} 轮"
             f"（{best_record['audio_duration']:.1f}s，距 {video_duration:.1f}s 最近）"
         )
+        best_record["is_final"] = True
+        best_record["final_reason"] = "best_pick"
+        best_record["final_distance"] = round(best_distance, 3)
+        rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
-        task_state.update(task_id, tts_duration_status="converged")
+        task_state.update(
+            task_id,
+            tts_duration_rounds=rounds,
+            tts_duration_status="converged",
+            tts_final_round=best_i + 1,
+            tts_final_reason="best_pick",
+            tts_final_distance=round(best_distance, 3),
+        )
         return {
             "localized_translation": best_product["localized_translation"],
             "tts_script": best_product["tts_script"],
@@ -938,6 +1004,16 @@ class PipelineRunner:
             custom_system_prompt=custom_prompt,
             provider=provider, user_id=self.user_id,
         )
+
+        # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用
+        initial_messages = localized_translation.pop("_messages", None)
+        if initial_messages:
+            _save_json(task_dir, "localized_translate_messages.json", {
+                "phase": "initial_translate",
+                "variant": variant,
+                "custom_system_prompt_used": bool(custom_prompt),
+                "messages": initial_messages,
+            })
 
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))

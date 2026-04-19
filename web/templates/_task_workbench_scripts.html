@@ -49,14 +49,6 @@
   let _previewAudio = null;
   let _previewAudioGid = null;
 
-  // TTS 轮次提示词面板状态——必须在 bootInitialTask() 之前初始化，
-  // 否则 renderTtsDurationLog → _renderDurationPromptPanel 会在读
-  // window._durationPromptOpen[round] 时抛 TypeError，导致后续 addEventListener
-  // 全部跑不到（字体/字号/位置/开始处理按钮点击都无响应）。
-  window._durationPromptCache = window._durationPromptCache || {};
-  window._durationPromptLoading = window._durationPromptLoading || {};
-  window._durationPromptOpen = window._durationPromptOpen || {};
-
   bootVoices();
   renderStepPreviews({});
   bootInitialTask();
@@ -1108,27 +1100,44 @@
     return ['running', '...'];
   }
 
+  // ============================================================
+  // JSON 预览弹窗（Prompt / 译文 / 朗读文案 / rewrite attempt 共用）
+  // ============================================================
   function _durationPromptToText(content) {
     if (content == null) return '';
     if (typeof content === 'string') return content;
-    try {
-      return JSON.stringify(content, null, 2);
-    } catch (err) {
-      return String(content);
-    }
+    try { return JSON.stringify(content, null, 2); }
+    catch (err) { return String(content); }
   }
 
-  async function toggleDurationRoundPrompt(roundIndex) {
-    window._durationPromptOpen[roundIndex] = !window._durationPromptOpen[roundIndex];
-    renderTtsDurationLog();
-    if (!window._durationPromptOpen[roundIndex]) return;
-    // 只在"已经拿到合法 payload"时才跳过重复请求；null/未定义都视作未缓存。
-    if (window._durationPromptCache[roundIndex] || window._durationPromptLoading[roundIndex]) return;
+  function closeJsonModal() {
+    const overlay = document.getElementById('jsonPreviewModal');
+    if (overlay) overlay.classList.add('hidden');
+  }
 
-    window._durationPromptLoading[roundIndex] = true;
-    renderTtsDurationLog();
+  // ESC 关闭弹窗
+  if (!window._jsonModalEscBound) {
+    window._jsonModalEscBound = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('jsonPreviewModal');
+        if (overlay && !overlay.classList.contains('hidden')) closeJsonModal();
+      }
+    });
+  }
+
+  async function showJsonModal(url, title, options = {}) {
+    const overlay = document.getElementById('jsonPreviewModal');
+    const titleEl = document.getElementById('jsonModalTitle');
+    const bodyEl  = document.getElementById('jsonModalBody');
+    const rawLink = document.getElementById('jsonModalRawLink');
+    if (!overlay || !bodyEl || !titleEl) return;
+    titleEl.textContent = title || '调试预览';
+    if (rawLink) rawLink.href = url;
+    bodyEl.innerHTML = '<div class="json-modal-empty">加载中…</div>';
+    overlay.classList.remove('hidden');
     try {
-      const res = await fetch(_durationRoundFileUrl(roundIndex, 'localized_rewrite_messages'), { cache: 'no-store' });
+      const res = await fetch(url, { cache: 'no-store' });
       const raw = await res.text();
       if (!res.ok) {
         let errMsg = `HTTP ${res.status}`;
@@ -1136,92 +1145,193 @@
         throw new Error(errMsg);
       }
       if (!raw) throw new Error('空响应');
-      const payload = JSON.parse(raw);
-      window._durationPromptCache[roundIndex] = payload;
+      let payload;
+      try { payload = JSON.parse(raw); } catch (_) { payload = { __raw: raw }; }
+      bodyEl.innerHTML = _renderJsonModalBody(payload, options);
     } catch (err) {
-      // 错误不写入长期缓存，下次再点会重新请求；用临时 key 仅供本次渲染用。
-      window._durationPromptCache[roundIndex] = null;
-      window._durationPromptLastError = {
-        roundIndex,
-        message: err && err.message ? err.message : 'Prompt snapshot load failed',
-      };
-    } finally {
-      delete window._durationPromptLoading[roundIndex];
-      renderTtsDurationLog();
+      bodyEl.innerHTML = `<div class="json-modal-error">加载失败：${escapeHtml(err && err.message || String(err))}</div>`;
     }
   }
 
-  function _renderDurationPromptPanel(round) {
-    if (!window._durationPromptOpen[round.round]) return '';
+  function _renderJsonModalBody(payload, options) {
+    const mode = (options && options.mode) || 'auto';
+    if (payload && payload.__raw != null) {
+      return `<pre class="json-modal-pre">${escapeHtml(payload.__raw)}</pre>`;
+    }
+    // Prompt payload
+    if (mode === 'prompt' || (mode === 'auto' && Array.isArray(payload.messages))) {
+      const phaseLabel = payload.phase === 'initial_translate' ? '初始翻译（Round 1 输入）' : '';
+      const metaParts = [];
+      if (phaseLabel) metaParts.push(phaseLabel);
+      if (payload.target_words != null) metaParts.push(`目标 ${payload.target_words} 词`);
+      if (payload.direction) metaParts.push(`方向：${payload.direction}`);
+      if (payload.target_language) metaParts.push(`目标语言：${payload.target_language}`);
+      const metaHtml = metaParts.length ? `<div class="json-modal-meta">${escapeHtml(metaParts.join(' · '))}</div>` : '';
 
-    if (window._durationPromptLoading[round.round]) {
-      return `
-        <div class="duration-round-debug">
-          <div class="duration-round-debug-title">Prompt details</div>
-          <div class="duration-round-debug-empty">Loading...</div>
+      const inputs = Array.isArray(payload.input_snapshot) ? payload.input_snapshot : [];
+      const inputHtml = inputs.length ? inputs.map(it => `
+        <div class="json-modal-section">
+          <div class="json-modal-section-title">${escapeHtml(it.title || it.label || 'Input')}</div>
+          <pre class="json-modal-pre">${escapeHtml(_durationPromptToText(it.content))}</pre>
         </div>
+      `).join('') : '';
+
+      const messages = Array.isArray(payload.messages) ? payload.messages : [];
+      const msgHtml = messages.length ? messages.map((m, i) => `
+        <div class="json-modal-section">
+          <div class="json-modal-section-title">Message ${i + 1} · ${escapeHtml((m && m.role) || 'unknown')}</div>
+          <pre class="json-modal-pre">${escapeHtml(_durationPromptToText(m && m.content))}</pre>
+        </div>
+      `).join('') : '<div class="json-modal-empty">没有 messages 数据</div>';
+
+      return `
+        ${metaHtml}
+        ${inputHtml ? `<div class="json-modal-section-head">输入快照</div>${inputHtml}` : ''}
+        <div class="json-modal-section-head">Prompt Messages</div>
+        ${msgHtml}
       `;
     }
+    // 译文 payload: { full_text, sentences }
+    if (payload.full_text != null && Array.isArray(payload.sentences)) {
+      const wc = (payload.full_text || '').trim().split(/\s+/).filter(Boolean).length;
+      const sentHtml = payload.sentences.map((s, i) => `
+        <div class="json-modal-sentence">
+          <span class="json-modal-idx">#${i + 1}</span>
+          <span class="json-modal-sent-text">${escapeHtml(s.text || '')}</span>
+        </div>
+      `).join('');
+      return `
+        <div class="json-modal-section">
+          <div class="json-modal-section-title">整段译文（${wc} 词 · ${payload.full_text.length} 字符）</div>
+          <pre class="json-modal-pre">${escapeHtml(payload.full_text)}</pre>
+        </div>
+        <div class="json-modal-section-head">${payload.sentences.length} 个句子</div>
+        <div class="json-modal-sentences">${sentHtml}</div>
+      `;
+    }
+    // TTS script payload: { full_text, blocks, subtitle_chunks }
+    if (payload.full_text != null && Array.isArray(payload.blocks)) {
+      const blocks = payload.blocks;
+      const blockHtml = blocks.map((b, i) => `
+        <div class="json-modal-sentence">
+          <span class="json-modal-idx">#${i + 1}</span>
+          <span class="json-modal-sent-text">${escapeHtml(b.text || '')}</span>
+        </div>
+      `).join('');
+      const chunkCount = Array.isArray(payload.subtitle_chunks) ? payload.subtitle_chunks.length : 0;
+      return `
+        <div class="json-modal-section">
+          <div class="json-modal-section-title">整段朗读文案</div>
+          <pre class="json-modal-pre">${escapeHtml(payload.full_text)}</pre>
+        </div>
+        <div class="json-modal-section-head">${blocks.length} 个朗读块 · ${chunkCount} 个字幕块</div>
+        <div class="json-modal-sentences">${blockHtml}</div>
+      `;
+    }
+    try { return `<pre class="json-modal-pre">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`; }
+    catch (_) { return `<pre class="json-modal-pre">${escapeHtml(String(payload))}</pre>`; }
+  }
 
-    const payload = window._durationPromptCache[round.round];
-    const lastErr = window._durationPromptLastError;
-    if (!payload) {
-      if (lastErr && lastErr.roundIndex === round.round) {
-        return `
-          <div class="duration-round-debug">
-            <div class="duration-round-debug-title">Prompt details</div>
-            <div class="duration-round-debug-empty duration-round-debug-empty--error">${escapeHtml(lastErr.message)}（再次点击 Prompt JSON 可重试）</div>
-          </div>
-        `;
+  // ============================================================
+  // 跨轮 full_text diff 弹窗（vs 上一轮）
+  // ============================================================
+  function _tokenDiff(textA, textB) {
+    const a = (textA || '').trim().split(/\s+/).filter(Boolean);
+    const b = (textB || '').trim().split(/\s+/).filter(Boolean);
+    const m = a.length, n = b.length;
+    // LCS 反向 dp
+    const dp = [];
+    for (let i = 0; i <= m; i++) dp.push(new Int32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+        else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
       }
-      return '';
     }
-    if (payload.__error) {
-      return `
-        <div class="duration-round-debug">
-          <div class="duration-round-debug-title">Prompt details</div>
-          <div class="duration-round-debug-empty duration-round-debug-empty--error">${escapeHtml(payload.__error)}</div>
-        </div>
-      `;
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { ops.push({ op: 'eq', text: a[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ op: 'del', text: a[i] }); i++; }
+      else { ops.push({ op: 'add', text: b[j] }); j++; }
     }
-
-    const inputSnapshot = Array.isArray(payload.input_snapshot) ? payload.input_snapshot : [];
-    const inputHtml = inputSnapshot.length
-      ? inputSnapshot.map(item => `
-          <div class="duration-round-debug-block">
-            <div class="duration-round-debug-label">${escapeHtml(item.title || item.label || 'Input')}</div>
-            <pre class="duration-round-debug-pre">${escapeHtml(_durationPromptToText(item.content))}</pre>
-          </div>
-        `).join('')
-      : '<div class="duration-round-debug-empty">No input snapshot saved for this round.</div>';
-
-    const messages = Array.isArray(payload.messages) ? payload.messages : [];
-    const messageHtml = messages.length
-      ? messages.map((msg, idx) => `
-          <div class="duration-round-debug-block">
-            <div class="duration-round-debug-label">Message ${idx + 1} | ${escapeHtml((msg && msg.role) || 'unknown')}</div>
-            <pre class="duration-round-debug-pre">${escapeHtml(_durationPromptToText(msg && msg.content))}</pre>
-          </div>
-        `).join('')
-      : '<div class="duration-round-debug-empty">No message content saved for this round.</div>';
-
-    return `
-      <div class="duration-round-debug">
-        <div class="duration-round-debug-title">Round inputs</div>
-        <div class="duration-round-debug-grid">${inputHtml}</div>
-        <div class="duration-round-debug-title">Prompt messages</div>
-        <div class="duration-round-debug-list">${messageHtml}</div>
-      </div>
-    `;
+    while (i < m) ops.push({ op: 'del', text: a[i++] });
+    while (j < n) ops.push({ op: 'add', text: b[j++] });
+    return ops;
   }
 
+  async function showRoundDiffModal(prevRound, currRound) {
+    const overlay = document.getElementById('jsonPreviewModal');
+    const titleEl = document.getElementById('jsonModalTitle');
+    const bodyEl  = document.getElementById('jsonModalBody');
+    const rawLink = document.getElementById('jsonModalRawLink');
+    if (!overlay || !bodyEl) return;
+    titleEl.textContent = `译文 diff：第 ${prevRound} 轮 → 第 ${currRound} 轮`;
+    if (rawLink) rawLink.href = _durationRoundFileUrl(currRound, 'localized_translation');
+    bodyEl.innerHTML = '<div class="json-modal-empty">加载中…</div>';
+    overlay.classList.remove('hidden');
+    try {
+      const [a, b] = await Promise.all([
+        fetch(_durationRoundFileUrl(prevRound, 'localized_translation'), { cache: 'no-store' }).then(r => r.json()),
+        fetch(_durationRoundFileUrl(currRound, 'localized_translation'), { cache: 'no-store' }).then(r => r.json()),
+      ]);
+      const ops = _tokenDiff(a.full_text || '', b.full_text || '');
+      const addCount = ops.filter(o => o.op === 'add').length;
+      const delCount = ops.filter(o => o.op === 'del').length;
+      const wA = (a.full_text || '').trim().split(/\s+/).filter(Boolean).length;
+      const wB = (b.full_text || '').trim().split(/\s+/).filter(Boolean).length;
+      const html = ops.map(o => {
+        if (o.op === 'eq')  return escapeHtml(o.text);
+        if (o.op === 'del') return `<span class="diff-del">${escapeHtml(o.text)}</span>`;
+        return `<span class="diff-add">${escapeHtml(o.text)}</span>`;
+      }).join(' ');
+      bodyEl.innerHTML = `
+        <div class="json-modal-meta">
+          第 ${prevRound} 轮 ${wA} 词 → 第 ${currRound} 轮 ${wB} 词
+          · <span class="diff-add">+${addCount}</span>
+          · <span class="diff-del">-${delCount}</span>
+        </div>
+        <div class="json-modal-diff">${html}</div>
+      `;
+    } catch (err) {
+      bodyEl.innerHTML = `<div class="json-modal-error">加载失败：${escapeHtml(err && err.message || String(err))}</div>`;
+    }
+  }
+
+  // ============================================================
+  // Sparkline —— 音频时长 / WPS 多轮走势
+  // ============================================================
+  function _renderSparkline(values, targetRange) {
+    const nums = values.filter(v => Number.isFinite(v));
+    if (nums.length < 2) return '';
+    const w = 240, h = 48, pad = 8;
+    let lo = Math.min(...nums);
+    let hi = Math.max(...nums);
+    if (targetRange) {
+      lo = Math.min(lo, targetRange[0]);
+      hi = Math.max(hi, targetRange[1]);
+    }
+    const range = Math.max(1e-6, hi - lo);
+    const xs = values.map((_, i) => pad + (w - 2 * pad) * (i / Math.max(1, values.length - 1)));
+    const ys = values.map(v => h - pad - (h - 2 * pad) * ((v - lo) / range));
+    const pts = values.map((_, i) => `${xs[i].toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+    let band = '';
+    if (targetRange) {
+      const y1 = h - pad - (h - 2 * pad) * ((targetRange[0] - lo) / range);
+      const y2 = h - pad - (h - 2 * pad) * ((targetRange[1] - lo) / range);
+      band = `<rect x="${pad}" y="${Math.min(y1,y2).toFixed(1)}" width="${w-2*pad}" height="${Math.abs(y2-y1).toFixed(1)}" class="spark-band"/>`;
+    }
+    const dots = values.map((_, i) => `<circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="3" class="spark-dot"/>`).join('');
+    return `<svg class="duration-sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}">${band}<polyline points="${pts}" class="spark-line"/>${dots}</svg>`;
+  }
+
+  // ============================================================
+  // 文案收敛内循环 —— 表格 + attempt 弹窗预览
+  // ============================================================
   function _rewriteAttemptsHtml(round) {
-    // 文案收敛内循环：一轮里最多 5 次 rewrite，每次都单独落盘 JSON。
-    // 表格给出每次尝试的字数、偏差、是否命中窗口、本轮最终采用哪一次，并在行下方展示前 200 字预览。
     const attempts = Array.isArray(round.rewrite_attempts) ? round.rewrite_attempts : [];
     if (!attempts.length) return '';
-    const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase)
-      || '/api/tasks';
+    const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase) || '/api/tasks';
     const rows = attempts.map(a => {
       const ok = a.accepted
         ? '<span style="color:var(--success-fg);">✓ 命中 ±10%</span>'
@@ -1230,20 +1340,24 @@
         ? '<span style="color:var(--accent);font-weight:700;">（本轮采用）</span>'
         : '';
       const attemptUrl = `${base}/${taskId}/round-file/${round.round}/attempt/${a.attempt}`;
-      const preview = a.preview_text
+      const previewHtml = a.preview_text
         ? `<div class="duration-attempt-preview">${escapeHtml(a.preview_text)}${a.preview_text.length >= 200 ? '…' : ''}</div>`
         : '';
+      const btn = `<button type="button" class="link-btn"
+           onclick="showJsonModal('${escapeJs(attemptUrl)}','第 ${round.round} 轮 · rewrite 尝试 #${a.attempt} 译文')">
+           查看译文
+         </button>`;
       return `<tr class="duration-attempt-row${a.is_used_for_tts ? ' is-used' : ''}">
           <td>#${a.attempt} ${used}</td>
           <td>${a.words} 词</td>
           <td>偏差 ${a.diff}</td>
           <td>${ok}</td>
-          <td><a href="${attemptUrl}" target="_blank">查看译文 JSON</a></td>
+          <td>${btn}</td>
         </tr>
-        <tr class="duration-attempt-preview-row"><td colspan="5">${preview}</td></tr>`;
+        <tr class="duration-attempt-preview-row"><td colspan="5">${previewHtml}</td></tr>`;
     }).join('');
     const pickInfo = round.rewrite_converged === false
-      ? `（${attempts.length} 次均未落入 ±10% 窗口，挑最接近目标的第 ${round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
+      ? `（${attempts.length} 次均未命中 ±10%，挑最接近目标的第 ${round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
       : `（第 ${round.rewrite_attempt_used} 次命中，${round.rewrite_words_actual} 词）`;
     return `
       <details class="duration-round-attempts" open>
@@ -1257,9 +1371,10 @@
       </details>`;
   }
 
+  // ============================================================
+  // Duration Loop 主渲染
+  // ============================================================
   function renderTtsDurationLog() {
-    // 时长控制迭代可视化 —— 每轮一个卡片，展示目标、实测、rewrite 内循环尝试、
-    // 所有中间产物链接（prompt / 译文 / 朗读文案 / 音频），以及可展开的 Prompt 面板。
     const container = document.getElementById('ttsDurationLog');
     if (!container) return;
     const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
@@ -1270,6 +1385,10 @@
     }
 
     const status = currentTask.tts_duration_status || 'running';
+    const finalRound = currentTask.tts_final_round || null;
+    const finalReason = currentTask.tts_final_reason || null;
+    const finalDistance = currentTask.tts_final_distance;
+
     const videoDuration = rounds[0].video_duration || null;
     const targetLo = rounds[0].duration_lo;
     const targetHi = rounds[0].duration_hi;
@@ -1285,50 +1404,97 @@
     const parts = [];
     parts.push(`
       <div class="duration-log-header">
-        <span>时长控制迭代（Duration Loop）</span>
+        <span>翻译本土化 · 时长控制迭代（Duration Loop）</span>
         ${statusTag}
         <span class="meta">${metaStr}</span>
       </div>
     `);
 
+    // 音频时长走势 sparkline（至少 2 轮才画）
+    const durations = rounds.map(r => r.audio_duration).filter(v => Number.isFinite(v));
+    if (durations.length >= 2 && videoDuration != null && targetLo != null && targetHi != null) {
+      parts.push(`
+        <div class="duration-sparkline-wrap">
+          <span class="duration-sparkline-label">音频时长收敛曲线（阴影：目标区间）</span>
+          ${_renderSparkline(durations, [targetLo, targetHi])}
+          <span class="duration-sparkline-legend">
+            ${durations.map((d, i) => `<span>R${i+1}: ${d.toFixed(1)}s</span>`).join(' · ')}
+          </span>
+        </div>
+      `);
+    }
+
     rounds.forEach((round, idx) => {
       const isLast = idx === rounds.length - 1;
+      const isFinal = finalRound === round.round;
       const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
       const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase) : '';
 
       const targetWords = round.target_words != null ? round.target_words : round.target_chars;
-      const dirLabel = ({shrink: '缩写', expand: '扩写'})[round.direction] || round.direction || '';
+      const dirLabel = ({ shrink: '缩写', expand: '扩写' })[round.direction] || round.direction || '';
       const targetStr = (round.target_duration != null && targetWords != null)
         ? `目标 ${round.target_duration.toFixed(1)}s / ${targetWords} 词${dirLabel ? ` (${dirLabel})` : ''}`
-        : '初始翻译';
-
+        : '初始翻译（来自 translate 步骤）';
       const measuredWords = round.word_count != null ? round.word_count : round.char_count;
       const measuredStr = (round.audio_duration != null && measuredWords != null)
         ? `实测 ${round.audio_duration.toFixed(1)}s / ${measuredWords} 词`
         : '';
 
-      const actions = [];
-      const artifactPaths = round.artifact_paths || {};
-      if (artifactPaths.localized_rewrite_messages) {
-        actions.push(`
-          <button type="button" class="duration-round-toggle"
-                  onclick="toggleDurationRoundPrompt(${round.round})">
-            ${window._durationPromptOpen[round.round] ? '收起 Prompt' : '查看 Prompt'}
-          </button>
-        `);
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_rewrite_messages')}" target="_blank">Prompt JSON</a>`);
-      }
-      if (artifactPaths.localized_translation) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_translation')}" target="_blank">译文 JSON</a>`);
-      }
-      if (artifactPaths.tts_script) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_script')}" target="_blank">朗读文案 JSON</a>`);
-      }
-      if (artifactPaths.tts_full_audio) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_full_audio')}" target="_blank">音频 MP3</a>`);
+      // TTS 切分摘要（朗读块数 / 平均 / 最长）
+      let ttsSummary = '';
+      if (round.tts_block_count != null) {
+        ttsSummary = `朗读块 ${round.tts_block_count} 块 · 平均 ${round.tts_avg_block_words} 词 / 最长 ${round.tts_max_block_words} 词`;
       }
 
-      // 兼容新老字段：pre_trim/final_duration（音频裁剪） + removed_count（朗读块删除）
+      // Token usage 摘要
+      const tokenBits = [];
+      if (round.translate_tokens_in != null || round.translate_tokens_out != null) {
+        tokenBits.push(`翻译 ${round.translate_tokens_in || 0}↓/${round.translate_tokens_out || 0}↑`);
+      }
+      if (round.tts_script_tokens_in != null || round.tts_script_tokens_out != null) {
+        tokenBits.push(`TTS script ${round.tts_script_tokens_in || 0}↓/${round.tts_script_tokens_out || 0}↑`);
+      }
+      const tokenStr = tokenBits.length ? `Token: ${tokenBits.join(' · ')}` : '';
+
+      // Actions —— Prompt / 译文 / 朗读文案 / diff vs 上一轮
+      const actions = [];
+      const ap = round.artifact_paths || {};
+      if (ap.localized_rewrite_messages) {
+        const url = _durationRoundFileUrl(round.round, 'localized_rewrite_messages');
+        actions.push(`<button type="button" class="link-btn"
+          onclick="showJsonModal('${escapeJs(url)}','第 ${round.round} 轮 · Rewrite Prompt',{mode:'prompt'})">
+          查看 Prompt
+        </button>`);
+      } else if (ap.initial_translate_messages) {
+        const url = _durationRoundFileUrl(round.round, 'initial_translate_messages');
+        actions.push(`<button type="button" class="link-btn"
+          onclick="showJsonModal('${escapeJs(url)}','初始翻译 Prompt（Round 1 输入）',{mode:'prompt'})">
+          查看初始 Prompt
+        </button>`);
+      }
+      if (ap.localized_translation) {
+        const url = _durationRoundFileUrl(round.round, 'localized_translation');
+        actions.push(`<button type="button" class="link-btn"
+          onclick="showJsonModal('${escapeJs(url)}','第 ${round.round} 轮 · 本轮译文')">
+          查看本轮译文
+        </button>`);
+      }
+      if (ap.tts_script) {
+        const url = _durationRoundFileUrl(round.round, 'tts_script');
+        actions.push(`<button type="button" class="link-btn"
+          onclick="showJsonModal('${escapeJs(url)}','第 ${round.round} 轮 · 朗读文案')">
+          查看朗读文案
+        </button>`);
+      }
+      // 跨轮 diff（至少第 2 轮起可对比）
+      if (round.round > 1 && ap.localized_translation) {
+        actions.push(`<button type="button" class="link-btn"
+          onclick="showRoundDiffModal(${round.round - 1}, ${round.round})">
+          vs 上一轮（diff）
+        </button>`);
+      }
+
+      // 截断信息
       const truncationParts = [];
       if (round.pre_trim_duration != null && round.final_duration != null
           && round.pre_trim_duration > round.final_duration + 1e-6) {
@@ -1339,47 +1505,68 @@
       }
       const truncationInfo = truncationParts.join(' · ');
 
+      // 内联音频播放器
+      let audioHtml = '';
+      if (ap.tts_full_audio) {
+        const audioUrl = _durationRoundFileUrl(round.round, 'tts_full_audio');
+        audioHtml = `<audio class="duration-round-audio" controls preload="none" src="${audioUrl}"></audio>`;
+      }
+
+      const finalBadge = isFinal ? '<span class="duration-round-final-badge">✨ 最终采用</span>' : '';
+
       parts.push(`
-        <div class="duration-round">
+        <div class="duration-round${isFinal ? ' is-final' : ''}">
           <div class="duration-round-title">
             <span class="status-icon ${iconClass}">${iconChar}</span>
             <span>轮次 ${round.round}</span>
+            ${finalBadge}
           </div>
           <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
+          ${ttsSummary ? `<div class="duration-round-meta">${ttsSummary}</div>` : ''}
+          ${tokenStr ? `<div class="duration-round-meta">${tokenStr}</div>` : ''}
           ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
           ${_rewriteAttemptsHtml(round)}
           ${truncationInfo ? `<div class="duration-round-meta">${truncationInfo}</div>` : ''}
+          ${audioHtml}
           ${actions.length ? `<div class="duration-round-files">${actions.join('')}</div>` : ''}
-          ${_renderDurationPromptPanel(round)}
         </div>
       `);
     });
 
-    if (status === 'converged') {
-      const last = rounds[rounds.length - 1];
-      const finalDuration = last.final_duration != null ? last.final_duration : last.audio_duration;
-      if (finalDuration != null) {
-        const finalLo = last.duration_lo;
-        const finalHi = last.duration_hi;
-        const inTarget = finalLo != null && finalHi != null
-          && finalDuration >= finalLo && finalDuration <= finalHi;
-        const wasTruncated = (last.pre_trim_duration != null
-            && last.final_duration != null
-            && last.pre_trim_duration > last.final_duration + 1e-6)
-          || (last.removed_count != null && last.removed_count > 0);
-        const prefix = wasTruncated ? '裁剪后' : `第 ${last.round} 轮`;
-        const rangeStr = (finalLo != null && finalHi != null)
-          ? ` · 目标 [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]`
-          : '';
-
-        if (inTarget) {
-          parts.push(`<div class="duration-log-final">✓ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr}（已命中）</div>`);
-        } else if (finalLo != null && finalDuration < finalLo) {
-          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr} · 低于下界，视频末尾会有静音</div>`);
-        } else {
-          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr} · 超过视频时长</div>`);
-        }
+    // 最终结果摘要（必现，说明选这个的理由）
+    if (status === 'converged' && finalRound) {
+      const winner = rounds.find(r => r.round === finalRound) || rounds[rounds.length - 1];
+      const finalDuration = winner.final_duration != null ? winner.final_duration : winner.audio_duration;
+      const trimmed = (winner.pre_trim_duration != null && winner.final_duration != null
+          && winner.pre_trim_duration > winner.final_duration + 1e-6)
+        || (winner.removed_count != null && winner.removed_count > 0);
+      const rangeStr = (targetLo != null && targetHi != null)
+        ? ` [${targetLo.toFixed(1)}, ${targetHi.toFixed(1)}]`
+        : '';
+      const lines = [];
+      if (finalReason === 'converged') {
+        lines.push(`<strong>✓ 收敛成功</strong>：第 ${finalRound} 轮音频 ${finalDuration.toFixed(1)}s 首次落入目标区间${rangeStr}，直接采用。`);
+      } else if (finalReason === 'best_pick') {
+        lines.push(`<strong>⚠ 5 轮未精确收敛</strong>：挑选距目标区间最近的第 ${finalRound} 轮（距目标 ${finalDistance != null ? finalDistance.toFixed(2) : '?'}s）采用。`);
+      } else {
+        lines.push(`<strong>采用第 ${finalRound} 轮</strong>（最终音频 ${finalDuration.toFixed(1)}s${rangeStr}）。`);
       }
+      if (trimmed) {
+        const trimBits = [];
+        if (winner.pre_trim_duration != null && winner.final_duration != null) {
+          trimBits.push(`ffmpeg 裁剪 ${winner.pre_trim_duration.toFixed(1)}s → ${winner.final_duration.toFixed(1)}s`);
+        }
+        if (winner.removed_count != null && winner.removed_count > 0) {
+          trimBits.push(`删尾部 ${winner.removed_count} 块（${(winner.removed_duration || 0).toFixed(1)}s）`);
+        }
+        lines.push(`后处理：${trimBits.join(' + ')}。`);
+      }
+      const cls = finalReason === 'converged' ? '' : ' warning';
+      parts.push(`
+        <div class="duration-log-final${cls}">
+          ${lines.join('<br>')}
+        </div>
+      `);
     } else if (status === 'failed') {
       parts.push('<div class="duration-log-final failed">✗ 时长控制迭代失败</div>');
     }

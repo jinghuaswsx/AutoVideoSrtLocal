@@ -281,6 +281,8 @@ def generate_localized_translation(
         result["_usage"] = usage
         log.info("localized_translation token usage: input=%s, output=%s",
                  usage["input_tokens"], usage["output_tokens"])
+    # 把实际发送给 LLM 的 messages 也回传，方便调用方落盘供 UI 审计
+    result["_messages"] = messages
     return result
 
 

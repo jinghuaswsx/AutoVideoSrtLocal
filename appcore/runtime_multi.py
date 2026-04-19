@@ -83,6 +83,15 @@ class MultiTranslateRunner(PipelineRunner):
             provider=provider, user_id=self.user_id,
         )
 
+        initial_messages = localized_translation.pop("_messages", None)
+        if initial_messages:
+            _save_json(task_dir, "localized_translate_messages.json", {
+                "phase": "initial_translate",
+                "target_language": lang,
+                "custom_system_prompt_used": True,
+                "messages": initial_messages,
+            })
+
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get("normal", {}))
         variant_state["localized_translation"] = localized_translation
