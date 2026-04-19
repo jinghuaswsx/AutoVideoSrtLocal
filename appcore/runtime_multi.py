@@ -233,9 +233,17 @@ class MultiTranslateRunner(PipelineRunner):
                 candidates = match_candidates(vec, language=lang, top_k=10) or []
                 for c in candidates:
                     c["similarity"] = float(c.get("similarity", 0.0))
+                # 持久化 query embedding 到 state，以便前端切 gender 时
+                # 后端可以不重新 embed、直接对 gender 子集重排 top-10。
+                import base64 as _b64
+                from pipeline.voice_embedding import serialize_embedding
+                query_embedding_b64 = _b64.b64encode(serialize_embedding(vec)).decode("ascii")
             except Exception as exc:
                 log.exception("voice match failed for %s: %s", task_id, exc)
                 candidates = []
+                query_embedding_b64 = None
+        else:
+            query_embedding_b64 = None
 
         fallback = None if candidates else resolve_default_voice(lang, user_id=self.user_id)
 
@@ -243,6 +251,7 @@ class MultiTranslateRunner(PipelineRunner):
             task_id,
             voice_match_candidates=candidates,
             voice_match_fallback_voice_id=fallback,
+            voice_match_query_embedding=query_embedding_b64,
         )
 
         # 暂停 pipeline，等待 /api/multi-translate/<task_id>/confirm-voice

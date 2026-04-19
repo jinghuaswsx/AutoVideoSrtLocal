@@ -16,11 +16,13 @@
 
   <div class="vs-toolbar">
     <input id="vs-search" type="text" placeholder="搜索音色名或描述..."/>
-    <select id="vs-gender-filter">
-      <option value="">全部性别</option>
-      <option value="male">男声</option>
-      <option value="female">女声</option>
-    </select>
+    <div class="vs-gender-pills" id="vs-gender-filter" role="group" aria-label="性别筛选">
+      <button type="button" class="vs-pill vs-pill-male" data-gender="male"
+              aria-pressed="false">男声</button>
+      <button type="button" class="vs-pill vs-pill-female" data-gender="female"
+              aria-pressed="false">女声</button>
+    </div>
+    <span id="vs-rematching" class="vs-rematching" style="display:none;">重新匹配中…</span>
     <label style="font-size:12px;color:var(--text-user-badge);margin-left:auto;">
       <input type="checkbox" id="vs-recommended-only"/> 只看推荐
     </label>
@@ -104,6 +106,30 @@
     border-radius: 6px; font-size: 13px; font-family: inherit;
   }
   .vs-toolbar input[type=text] { flex: 1; min-width: 160px; }
+
+  /* 性别胶囊按钮组 */
+  .vs-gender-pills { display: flex; gap: 6px; }
+  .vs-pill {
+    padding: 6px 14px; border: 1.5px solid var(--border-main);
+    background: var(--bg-card); border-radius: 999px; cursor: pointer;
+    font-size: 13px; font-family: inherit; font-weight: 500;
+    color: var(--text-main); transition: background 0.15s, color 0.15s, border-color 0.15s;
+    user-select: none;
+  }
+  .vs-pill:hover { border-color: currentColor; }
+  .vs-pill-male.active {
+    background: oklch(56% 0.16 230); color: #fff;
+    border-color: oklch(56% 0.16 230);
+  }
+  .vs-pill-female.active {
+    background: oklch(58% 0.18 25); color: #fff;
+    border-color: oklch(58% 0.18 25);
+  }
+  .vs-pill:disabled { opacity: 0.4; cursor: wait; }
+  .vs-rematching {
+    font-size: 12px; color: oklch(56% 0.16 230);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
 
   .vs-default-btn {
     padding: 6px 14px; border: 1px solid var(--border-main);

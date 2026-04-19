@@ -671,6 +671,66 @@ def voice_library_for_task(task_id: str):
     })
 
 
+@bp.route("/api/multi-translate/<task_id>/rematch", methods=["POST"])
+@login_required
+def rematch_voice(task_id: str):
+    """基于前端当前筛选条件（目前：gender）重新对该子集做向量匹配，返回新 top-10。
+
+    完全不重新抽样/embed——复用 voice_match 步骤里保存到 state 的 query embedding。
+    写回 state.voice_match_candidates 让刷新页面也能看到同样结果。
+    """
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+    lang = state.get("target_lang")
+    if not lang:
+        return jsonify({"error": "task has no target_lang"}), 400
+
+    body = request.get_json(silent=True) or {}
+    gender = (body.get("gender") or "").strip().lower() or None
+    if gender and gender not in {"male", "female"}:
+        return jsonify({"error": "gender must be male|female|null"}), 400
+
+    embedding_b64 = state.get("voice_match_query_embedding")
+    if not embedding_b64:
+        return jsonify({
+            "error": "voice_match 尚未完成，无法重算；请等待向量匹配就绪"
+        }), 409
+
+    import base64
+    from pipeline.voice_embedding import deserialize_embedding
+    from pipeline.voice_match import match_candidates
+
+    try:
+        vec = deserialize_embedding(base64.b64decode(embedding_b64))
+    except Exception:
+        return jsonify({"error": "query embedding 解码失败"}), 500
+
+    candidates = match_candidates(
+        vec, language=lang, gender=gender, top_k=10,
+    ) or []
+    for c in candidates:
+        c["similarity"] = float(c.get("similarity", 0.0))
+
+    state["voice_match_candidates"] = candidates
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+    # 同步内存态，避免其他路径读到旧值
+    try:
+        from appcore import task_state as _ts
+        _ts.update(task_id, voice_match_candidates=candidates)
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "gender": gender, "candidates": candidates})
+
+
 @bp.route("/api/multi-translate/<task_id>/confirm-voice", methods=["POST"])
 @login_required
 def confirm_voice(task_id: str):
