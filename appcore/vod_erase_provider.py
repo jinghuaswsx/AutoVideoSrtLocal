@@ -60,12 +60,15 @@ def upload_media_by_url(
         ],
     }
     result = call(action="UploadMediaByUrl", version="2020-08-01", body=body)
-    data = result.get("Data") or result
+    # 响应形如 {"Data": [{"JobId": "...", "SourceUrl": "...", "ImageUrls": None}]}
+    data = result.get("Data")
+    if isinstance(data, list) and data and isinstance(data[0], dict) and data[0].get("JobId"):
+        return str(data[0]["JobId"])
+    if isinstance(data, dict) and data.get("JobId"):
+        return str(data["JobId"])
     jobs = data.get("JobIds") if isinstance(data, dict) else None
     if jobs and isinstance(jobs, list):
         return str(jobs[0])
-    if isinstance(result, list) and result and isinstance(result[0], dict):
-        return str(result[0].get("JobId", ""))
     raise VodEraseError(f"UploadMediaByUrl response missing JobId: {result}")
 
 
