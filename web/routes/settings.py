@@ -22,11 +22,17 @@ SERVICES = [
 ]
 
 TRANSLATE_PROVIDERS = [
+    # Vertex AI
+    "vertex_gemini_31_flash_lite", "vertex_gemini_3_flash", "vertex_gemini_31_pro",
+    # OpenRouter
     "gemini_31_flash", "gemini_31_pro", "gemini_3_flash",
     "claude_sonnet",
     "openrouter",  # legacy 值兼容（= claude_sonnet）
+    # 豆包
     "doubao",
 ]
+
+DEFAULT_TRANSLATE_PROVIDER = "vertex_gemini_31_flash_lite"
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -44,7 +50,7 @@ def index():
                 set_key(current_user.id, service, key_value, extra or None)
 
         # 保存默认翻译模型偏好
-        translate_pref = request.form.get("translate_pref", "gemini_31_flash").strip()
+        translate_pref = request.form.get("translate_pref", DEFAULT_TRANSLATE_PROVIDER).strip()
         if translate_pref in TRANSLATE_PROVIDERS:
             set_key(current_user.id, "translate_pref", translate_pref)
 
@@ -61,7 +67,7 @@ def index():
 
     keys = get_all(current_user.id)
     jianying_project_root = keys.get("jianying", {}).get("extra", {}).get("project_root") or DEFAULT_JIANYING_PROJECT_ROOT
-    translate_pref = keys.get("translate_pref", {}).get("key_value", "") or "gemini_31_flash"
+    translate_pref = keys.get("translate_pref", {}).get("key_value", "") or DEFAULT_TRANSLATE_PROVIDER
     try:
         current_image_channel = get_image_translate_channel()
     except Exception:

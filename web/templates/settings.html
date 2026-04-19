@@ -79,14 +79,55 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <p class="step-desc">将中文内容翻译为地道的英文</p>
 
     <label>默认翻译模型</label>
-    <select name="translate_pref">
-      <option value="gemini_31_flash" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash (默认，via OpenRouter)</option>
-      <option value="gemini_31_pro" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro (via OpenRouter)</option>
-      <option value="gemini_3_flash" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash (via OpenRouter)</option>
-      <option value="claude_sonnet" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6 (via OpenRouter)</option>
-      <option value="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
-    </select>
-    <p class="hint">全部复用上方 OpenRouter 的 Key（豆包除外）；每个任务内无临时切换，以此为准</p>
+    <div style="display:flex;gap:8px">
+      <select id="translate_provider_group" style="flex:0 0 200px">
+        <option value="vertex">Vertex AI (Google Cloud)</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="doubao">火山引擎 (豆包)</option>
+      </select>
+      <select id="translate_pref_select" name="translate_pref" style="flex:1">
+        {# 所有选项一次性写死，JS 按分组隐藏 #}
+        <option value="vertex_gemini_31_flash_lite" data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_flash_lite' }}>Gemini 3.1 Flash-Lite (默认)</option>
+        <option value="vertex_gemini_3_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_3_flash' }}>Gemini 3 Flash</option>
+        <option value="vertex_gemini_31_pro"         data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_pro' }}>Gemini 3.1 Pro</option>
+
+        <option value="gemini_31_flash" data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash-Lite</option>
+        <option value="gemini_3_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash</option>
+        <option value="gemini_31_pro"   data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro</option>
+        <option value="claude_sonnet"   data-group="openrouter" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6</option>
+
+        <option value="doubao" data-group="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
+      </select>
+    </div>
+    <p class="hint">
+      Vertex AI 复用「图片翻译通道 · Google Cloud」的 <code>GEMINI_CLOUD_API_KEY</code>；
+      OpenRouter 复用下方 OpenRouter 的 Key；豆包走 ARK。
+    </p>
+    <script>
+      (function() {
+        var grp = document.getElementById('translate_provider_group');
+        var sel = document.getElementById('translate_pref_select');
+        function applyGroup(group) {
+          var firstVisible = null;
+          Array.prototype.forEach.call(sel.options, function(opt) {
+            var match = opt.getAttribute('data-group') === group;
+            opt.hidden = !match;
+            opt.disabled = !match;
+            if (match && firstVisible === null) firstVisible = opt;
+          });
+          var current = sel.selectedOptions[0];
+          if (!current || current.hidden) {
+            if (firstVisible) firstVisible.selected = true;
+          }
+        }
+        // 根据当前选中值推断初始分组
+        var initial = sel.selectedOptions[0];
+        var initialGroup = initial ? (initial.getAttribute('data-group') || 'vertex') : 'vertex';
+        grp.value = initialGroup;
+        applyGroup(initialGroup);
+        grp.addEventListener('change', function() { applyGroup(grp.value); });
+      })();
+    </script>
 
     <hr class="divider">
     <span class="service-tag blue">Claude Sonnet · via OpenRouter</span>

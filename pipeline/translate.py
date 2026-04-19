@@ -11,6 +11,7 @@ from config import (
     DOUBAO_LLM_API_KEY,
     DOUBAO_LLM_BASE_URL,
     DOUBAO_LLM_MODEL,
+    GEMINI_CLOUD_API_KEY,
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
 )
@@ -24,6 +25,7 @@ from pipeline.localization import (
 )
 
 
+# 走 OpenRouter 的 provider 值 → 具体模型 ID
 _OPENROUTER_PREF_MODELS = {
     "gemini_31_flash":  "google/gemini-3.1-flash-lite-preview",
     "gemini_31_pro":    "google/gemini-3.1-pro-preview",
@@ -32,13 +34,23 @@ _OPENROUTER_PREF_MODELS = {
     "openrouter":       "anthropic/claude-sonnet-4.6",  # legacy 值回落 claude
 }
 
+# 走 Vertex AI（Google Cloud Express Mode）的 provider 值 → Gemini model ID
+_VERTEX_PREF_MODELS = {
+    "vertex_gemini_31_flash_lite": "gemini-3.1-flash-lite-preview",
+    "vertex_gemini_3_flash":       "gemini-3-flash-preview",
+    "vertex_gemini_31_pro":        "gemini-3.1-pro-preview",
+}
+
 
 def resolve_provider_config(
     provider: str,
     user_id: int | None = None,
     api_key_override: str | None = None,
 ) -> tuple[OpenAI, str]:
-    """Return (client, model_id) for the given provider."""
+    """Return (client, model_id) for the given provider (OpenAI-compatible only).
+
+    Vertex provider 不走这里——由 _call_vertex_json 单独处理。
+    """
     from appcore.api_keys import resolve_extra, resolve_key
 
     if provider == "doubao":
@@ -67,6 +79,8 @@ def resolve_provider_config(
 
 def get_model_display_name(provider: str, user_id: int | None = None) -> str:
     """Return the model ID string for logging/display."""
+    if provider.startswith("vertex_"):
+        return _VERTEX_PREF_MODELS.get(provider, "gemini-3.1-flash-lite-preview")
     _, model = resolve_provider_config(provider, user_id)
     return model
 
@@ -82,6 +96,155 @@ def parse_json_content(raw: str):
     return json.loads(content.strip())
 
 
+# ---------------------------------------------------------------------------
+# Vertex AI (Google Cloud Express Mode) 分支 —— 复用图片翻译模块的授权方式
+# ---------------------------------------------------------------------------
+
+def _strip_unsupported_schema(obj):
+    """Gemini response_schema 不认识 OpenAI 的 additionalProperties / strict，递归剥掉。"""
+    if isinstance(obj, dict):
+        return {
+            k: _strip_unsupported_schema(v)
+            for k, v in obj.items()
+            if k not in ("additionalProperties", "strict", "$schema")
+        }
+    if isinstance(obj, list):
+        return [_strip_unsupported_schema(x) for x in obj]
+    return obj
+
+
+def _extract_gemini_schema(response_format: dict | None) -> dict | None:
+    """把 OpenAI json_schema response_format 提取成 Gemini response_schema 需要的结构。"""
+    if not response_format:
+        return None
+    schema = response_format.get("json_schema", {}).get("schema", response_format)
+    return _strip_unsupported_schema(schema)
+
+
+def _split_oai_messages(messages: list[dict]) -> tuple[str, str]:
+    """拆 OpenAI 风格 [{system},{user}] 为 (system_prompt, user_content)。"""
+    system_parts: list[str] = []
+    user_parts: list[str] = []
+    for m in messages:
+        role = m.get("role")
+        content = m.get("content") or ""
+        if role == "system":
+            system_parts.append(content)
+        else:
+            user_parts.append(content)
+    return "\n\n".join(system_parts), "\n\n".join(user_parts)
+
+
+def _call_vertex_json(
+    messages: list[dict],
+    model_id: str,
+    response_format: dict | None,
+    temperature: float = 0.2,
+    max_output_tokens: int = 4096,
+):
+    """走 Vertex AI 返回 (parsed_payload, usage_dict, raw_text)。
+
+    复用 appcore/gemini_image.py 的 API Key + Express Mode 授权逻辑
+    （`genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)`）。
+    """
+    from google import genai
+    from google.genai import types as genai_types
+
+    if not GEMINI_CLOUD_API_KEY:
+        raise RuntimeError(
+            "Vertex AI 通道未配置（缺 GEMINI_CLOUD_API_KEY 环境变量 / google_api_key 里的 CLOUD: 行）"
+        )
+
+    system_prompt, user_content = _split_oai_messages(messages)
+    schema = _extract_gemini_schema(response_format)
+
+    cfg_kwargs: dict = {"temperature": temperature, "max_output_tokens": max_output_tokens}
+    if system_prompt:
+        cfg_kwargs["system_instruction"] = system_prompt
+    if schema:
+        cfg_kwargs["response_mime_type"] = "application/json"
+        cfg_kwargs["response_schema"] = schema
+    cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
+
+    client = genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)
+    resp = client.models.generate_content(
+        model=model_id,
+        contents=user_content,
+        config=cfg,
+    )
+    raw = resp.text or ""
+    log.info("vertex raw response (model=%s): %s", model_id, raw[:2000])
+
+    parsed = getattr(resp, "parsed", None)
+    payload = parsed if isinstance(parsed, (dict, list)) else parse_json_content(raw)
+
+    usage = None
+    meta = getattr(resp, "usage_metadata", None)
+    if meta is not None:
+        usage = {
+            "input_tokens": getattr(meta, "prompt_token_count", None),
+            "output_tokens": getattr(meta, "candidates_token_count", None),
+        }
+        log.info(
+            "vertex token usage (model=%s): input=%s, output=%s",
+            model_id, usage["input_tokens"], usage["output_tokens"],
+        )
+    return payload, usage, raw
+
+
+def _vertex_model_id(provider: str) -> str:
+    return _VERTEX_PREF_MODELS.get(provider, "gemini-3.1-flash-lite-preview")
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-兼容分支（OpenRouter / 豆包）
+# ---------------------------------------------------------------------------
+
+def _call_openai_compat(
+    messages: list[dict],
+    *,
+    provider: str,
+    user_id: int | None,
+    api_key_override: str | None,
+    response_format: dict | None,
+    temperature: float = 0.2,
+    max_tokens: int = 4096,
+):
+    """走 OpenAI 兼容接口返回 (parsed_payload, usage_dict, raw_text, model_id)。"""
+    client, model = resolve_provider_config(provider, user_id, api_key_override=api_key_override)
+    extra_body: dict = {}
+    if provider != "doubao" and response_format is not None:
+        extra_body["response_format"] = response_format
+    if provider == "openrouter" or provider in _OPENROUTER_PREF_MODELS:
+        # 非 doubao 都走 OpenRouter，启用 response-healing 让 JSON 更稳
+        if provider != "doubao":
+            extra_body["plugins"] = [{"id": "response-healing"}]
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        **({"extra_body": extra_body} if extra_body else {}),
+    )
+    raw_content = response.choices[0].message.content
+    log.info("openai-compat raw response (provider=%s, model=%s): %s",
+             provider, model, (raw_content or "")[:2000])
+    payload = parse_json_content(raw_content)
+    usage_obj = getattr(response, "usage", None)
+    usage = None
+    if usage_obj is not None:
+        usage = {
+            "input_tokens": getattr(usage_obj, "prompt_tokens", None),
+            "output_tokens": getattr(usage_obj, "completion_tokens", None),
+        }
+    return payload, usage, raw_content, model
+
+
+# ---------------------------------------------------------------------------
+# 对外业务函数
+# ---------------------------------------------------------------------------
+
 def generate_localized_translation(
     source_full_text_zh: str,
     script_segments: list[dict],
@@ -92,39 +255,32 @@ def generate_localized_translation(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
-    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-    extra_body: dict = {}
-    if provider != "doubao":
-        extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
-    if provider == "openrouter":
-        extra_body["plugins"] = [{"id": "response-healing"}]
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=build_localized_translation_messages(
-            source_full_text_zh,
-            script_segments,
-            variant=variant,
-            custom_system_prompt=custom_system_prompt,
-        ),
-        temperature=0.2,
-        max_tokens=4096,
-        **( {"extra_body": extra_body} if extra_body else {}),
+    messages = build_localized_translation_messages(
+        source_full_text_zh,
+        script_segments,
+        variant=variant,
+        custom_system_prompt=custom_system_prompt,
     )
-    raw_content = response.choices[0].message.content
-    log.info("localized_translation raw response (provider=%s): %s", provider, raw_content[:2000])
-    payload = parse_json_content(raw_content)
-    log.info("localized_translation parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
+
+    if provider.startswith("vertex_"):
+        payload, usage, _ = _call_vertex_json(
+            messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        )
+    else:
+        payload, usage, _, _ = _call_openai_compat(
+            messages, provider=provider, user_id=user_id,
+            api_key_override=openrouter_api_key,
+            response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        )
+
+    log.info("localized_translation parsed payload type=%s keys=%s",
+             type(payload).__name__,
+             list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     result = validate_localized_translation(payload)
-    # 提取 token 用量
-    usage = getattr(response, "usage", None)
     if usage:
-        result["_usage"] = {
-            "input_tokens": getattr(usage, "prompt_tokens", None),
-            "output_tokens": getattr(usage, "completion_tokens", None),
-        }
+        result["_usage"] = usage
         log.info("localized_translation token usage: input=%s, output=%s",
-                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+                 usage["input_tokens"], usage["output_tokens"])
     return result
 
 
@@ -138,37 +294,28 @@ def generate_tts_script(
     response_format_override=None,
     validator=None,
 ) -> dict:
-    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-    extra_body: dict = {}
-    rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
-    if provider != "doubao":
-        extra_body["response_format"] = rf
-    if provider == "openrouter":
-        extra_body["plugins"] = [{"id": "response-healing"}]
-
     builder = messages_builder or build_tts_script_messages
-    response = client.chat.completions.create(
-        model=model,
-        messages=builder(localized_translation),
-        temperature=0.2,
-        max_tokens=4096,
-        **( {"extra_body": extra_body} if extra_body else {}),
-    )
-    raw_content = response.choices[0].message.content
-    log.info("tts_script raw response (provider=%s): %s", provider, raw_content[:2000])
-    payload = parse_json_content(raw_content)
-    log.info("tts_script parsed payload type=%s keys=%s", type(payload).__name__, list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
+    messages = builder(localized_translation)
+    rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
+
+    if provider.startswith("vertex_"):
+        payload, usage, _ = _call_vertex_json(messages, _vertex_model_id(provider), rf)
+    else:
+        payload, usage, _, _ = _call_openai_compat(
+            messages, provider=provider, user_id=user_id,
+            api_key_override=openrouter_api_key,
+            response_format=rf,
+        )
+
+    log.info("tts_script parsed payload type=%s keys=%s",
+             type(payload).__name__,
+             list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     validate_fn = validator or validate_tts_script
     result = validate_fn(payload)
-    # 提取 token 用量
-    usage = getattr(response, "usage", None)
     if usage:
-        result["_usage"] = {
-            "input_tokens": getattr(usage, "prompt_tokens", None),
-            "output_tokens": getattr(usage, "completion_tokens", None),
-        }
+        result["_usage"] = usage
         log.info("tts_script token usage: input=%s, output=%s",
-                 result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+                 usage["input_tokens"], usage["output_tokens"])
     return result
 
 
@@ -186,32 +333,9 @@ def generate_localized_rewrite(
 ) -> dict:
     """Rewrite an existing localized_translation to a target word count.
 
-    Args:
-        source_full_text: original source text (Chinese or English).
-        prev_localized_translation: previous round's translation dict
-            ({full_text, sentences[...]}); supplied as reference for the LLM.
-        target_words: approximate whitespace-token count target for full_text.
-        direction: "shrink" or "expand".
-        source_language: "zh" or "en" (used for lang_label in the prompt).
-        messages_builder: language-specific callable, e.g.
-            pipeline.localization_de.build_localized_rewrite_messages.
-        provider: "openrouter" | "doubao".
-        user_id: user id for key/extras resolution.
-        openrouter_api_key: override api key.
-
-    Returns:
-        Same schema as generate_localized_translation:
-        {"full_text": str, "sentences": [...], "_usage": {...}, "_messages": [...]}
-        The "_messages" field echoes the exact prompt sent to the LLM so the
-        caller can persist it for audit / UI display.
+    provider 可以是 openrouter 派生值、vertex_* 或 doubao；所有路径都把实际发给
+    LLM 的 messages 放在 result["_messages"] 里，供 UI/审计。
     """
-    client, model = resolve_provider_config(provider, user_id, api_key_override=openrouter_api_key)
-    extra_body: dict = {}
-    if provider != "doubao":
-        extra_body["response_format"] = LOCALIZED_TRANSLATION_RESPONSE_FORMAT
-    if provider == "openrouter":
-        extra_body["plugins"] = [{"id": "response-healing"}]
-
     messages = messages_builder(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
@@ -220,25 +344,23 @@ def generate_localized_rewrite(
         source_language=source_language,
     )
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0.2,
-        max_tokens=4096,
-        **({"extra_body": extra_body} if extra_body else {}),
+    if provider.startswith("vertex_"):
+        payload, usage, _ = _call_vertex_json(
+            messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        )
+    else:
+        payload, usage, _, _ = _call_openai_compat(
+            messages, provider=provider, user_id=user_id,
+            api_key_override=openrouter_api_key,
+            response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+        )
+
+    log.info(
+        "localized_rewrite parsed (provider=%s, direction=%s, target_words=%d)",
+        provider, direction, target_words,
     )
-    raw_content = response.choices[0].message.content
-    log.info("localized_rewrite raw response (provider=%s, direction=%s, target_words=%d): %s",
-             provider, direction, target_words, raw_content[:2000])
-    payload = parse_json_content(raw_content)
     result = validate_localized_translation(payload)
-    usage = getattr(response, "usage", None)
     if usage:
-        result["_usage"] = {
-            "input_tokens": getattr(usage, "prompt_tokens", None),
-            "output_tokens": getattr(usage, "completion_tokens", None),
-        }
+        result["_usage"] = usage
     result["_messages"] = messages
     return result
-
-

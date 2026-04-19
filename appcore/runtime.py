@@ -119,22 +119,29 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
 
 
 _VALID_TRANSLATE_PREFS = (
-    "openrouter",          # legacy（= Claude Sonnet 4.6 via openrouter）
+    # Vertex AI（Google Cloud Express Mode，复用图片翻译模块的 GEMINI_CLOUD_API_KEY）
+    "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite-preview（默认）
+    "vertex_gemini_3_flash",         # gemini-3-flash-preview
+    "vertex_gemini_31_pro",          # gemini-3.1-pro-preview
+    # OpenRouter
+    "gemini_31_flash",               # google/gemini-3.1-flash-lite-preview via openrouter
+    "gemini_31_pro",                 # google/gemini-3.1-pro-preview via openrouter
+    "gemini_3_flash",                # google/gemini-3-flash-preview via openrouter
+    "claude_sonnet",                 # anthropic/claude-sonnet-4.6 via openrouter
+    "openrouter",                    # legacy（= claude_sonnet）
+    # 火山引擎
     "doubao",
-    "gemini_31_flash",     # google/gemini-3.1-flash-lite-preview via openrouter（默认）
-    "gemini_31_pro",       # google/gemini-3.1-pro-preview via openrouter
-    "gemini_3_flash",      # google/gemini-3-flash-preview via openrouter
-    "claude_sonnet",       # anthropic/claude-sonnet-4.6 via openrouter
 )
 
 
 def _resolve_translate_provider(user_id: int | None) -> str:
-    """Return the user's preferred translate provider. 默认改为 gemini_31_flash。"""
+    """Return the user's preferred translate provider. 默认走 Vertex Flash-Lite。"""
     from appcore.api_keys import get_key
+    default = "vertex_gemini_31_flash_lite"
     if user_id is None:
-        return "gemini_31_flash"
+        return default
     pref = get_key(user_id, "translate_pref")
-    return pref if pref in _VALID_TRANSLATE_PREFS else "gemini_31_flash"
+    return pref if pref in _VALID_TRANSLATE_PREFS else default
 
 
 def _lang_display(label: str) -> str:
