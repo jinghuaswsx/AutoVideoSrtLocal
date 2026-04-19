@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import threading
 
+import config
 from appcore.events import EventBus
 from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
 from web.extensions import socketio
 
 _running_tasks: set[str] = set()
@@ -30,7 +32,11 @@ def start(task_id: str, user_id: int | None = None):
 
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
-    runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
+    provider = (getattr(config, "SUBTITLE_REMOVAL_PROVIDER", "goodline") or "goodline").strip().lower()
+    if provider == "vod":
+        runtime = SubtitleRemovalVodRuntime(bus=bus, user_id=user_id)
+    else:
+        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
     def run():
         try:
             runtime.start(task_id)

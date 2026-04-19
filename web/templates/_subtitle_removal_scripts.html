@@ -444,12 +444,13 @@
       var providerTaskId = (state && state.provider_task_id) || "";
       var resultTosKey = (state && state.result_tos_key) || "";
       var resultVideoPath = (state && state.result_video_path) || "";
+      var providerResultUrl = (state && state.provider_result_url) || "";
       var previewUrl = (state && state.result_artifact_url) || "";
       var downloadUrl = (state && state.result_download_url) || "";
       var providerStatus = (state && state.provider_status) || "";
       var providerMessage = (state && state.provider_emsg) || "";
       var html = "";
-      var hasResult = !!(resultTosKey || resultVideoPath);
+      var hasResult = !!(resultTosKey || resultVideoPath || providerResultUrl);
 
       if (taskStatus === "done" && hasResult) {
         html = [

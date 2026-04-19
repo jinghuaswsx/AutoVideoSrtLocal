@@ -532,6 +532,12 @@ def _result_response(task: dict, *, as_attachment: bool = False):
     result_tos_key = (task.get("result_tos_key") or "").strip()
     if result_tos_key:
         return redirect(tos_clients.generate_signed_download_url(result_tos_key))
+
+    # VOD provider: 产物托管在 VOD，provider_result_url 已是完整可播放 URL
+    provider_result_url = (task.get("provider_result_url") or "").strip()
+    if provider_result_url.startswith("http://") or provider_result_url.startswith("https://"):
+        return redirect(provider_result_url)
+
     abort(404)
 
 
