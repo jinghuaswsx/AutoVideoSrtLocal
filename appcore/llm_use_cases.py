@@ -94,11 +94,12 @@ USE_CASES: dict[str, UseCase] = {
         "核查外链商品图文字是否匹配目标语种",
         "gemini_aistudio", "gemini-2.5-flash", "gemini",
     ),
-    # ── 文本翻译 ──（主线未改 pipeline/text_translate.py，保持 OpenRouter 默认）
+    # ── 文本翻译 ──（对齐重构前：translate_text() 默认 provider="openrouter"
+    # 无派生名时落到 _OPENROUTER_PREF_MODELS["openrouter"]="anthropic/claude-sonnet-4.6"）
     "text_translate.generate": _uc(
         "text_translate.generate", "text_translate", "纯文本翻译",
         "把任意文本翻译到目标语言",
-        "openrouter", "google/gemini-3.1-flash-lite-preview", "openrouter",
+        "openrouter", "anthropic/claude-sonnet-4.6", "openrouter",
     ),
 }
 
