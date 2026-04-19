@@ -104,38 +104,56 @@ def sync_all_shared_voices(
     gender: Optional[str] = None,
     category: Optional[str] = None,
     page_size: int = DEFAULT_PAGE_SIZE,
+    max_voices: Optional[int] = None,
     on_page: Optional[Callable[[int, List[Dict[str, Any]]], None]] = None,
+    on_total_count: Optional[Callable[[int], None]] = None,
 ) -> int:
-    """遍历所有分页，upsert 到数据库。返回处理的条目总数。
+    """翻页 upsert 到数据库。返回实际 upsert 的条目数。
 
-    on_page(page_index, voices)：每处理完一页后回调，page_index 从 0 开始。
-    回调抛异常只记 warning，不中断同步。
+    - page 用 0-based 整数递增（ElevenLabs API 真实分页方式）。
+    - max_voices 达到即 break，超量不再 upsert。
+    - on_total_count：仅在 page_index=0 时回调一次，传远端 total_count。
+    - on_page：每处理完一页后回调 (page_index, voices)。回调异常仅记 warning。
     """
     total = 0
-    next_token: Optional[str] = None
     page_index = 0
     while True:
-        voices, next_token = fetch_shared_voices_page(
+        voices, has_more, total_count = fetch_shared_voices_page(
             api_key=api_key,
+            page=page_index,
             page_size=page_size,
-            next_page_token=next_token,
             language=language,
             gender=gender,
             category=category,
         )
+        if page_index == 0 and on_total_count is not None:
+            try:
+                on_total_count(total_count)
+            except Exception as exc:
+                log.warning("on_total_count callback failed: %s", exc)
+
+        reached_cap = False
         for voice in voices:
             if not voice.get("voice_id"):
                 continue
             upsert_voice(voice)
             total += 1
+            if max_voices is not None and total >= max_voices:
+                reached_cap = True
+                break
+
         if on_page is not None:
             try:
                 on_page(page_index, voices)
             except Exception as exc:
-                log.warning("on_page callback failed at page %s: %s", page_index, exc)
-        page_index += 1
-        if not next_token:
+                log.warning("on_page callback failed at page %s: %s",
+                            page_index, exc)
+
+        if reached_cap:
             break
+        if not has_more:
+            break
+        page_index += 1
     return total
 
 
