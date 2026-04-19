@@ -118,13 +118,23 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
     return review_segments
 
 
+_VALID_TRANSLATE_PREFS = (
+    "openrouter",          # legacy（= Claude Sonnet 4.6 via openrouter）
+    "doubao",
+    "gemini_31_flash",     # google/gemini-3.1-flash-lite-preview via openrouter（默认）
+    "gemini_31_pro",       # google/gemini-3.1-pro-preview via openrouter
+    "gemini_3_flash",      # google/gemini-3-flash-preview via openrouter
+    "claude_sonnet",       # anthropic/claude-sonnet-4.6 via openrouter
+)
+
+
 def _resolve_translate_provider(user_id: int | None) -> str:
-    """Return the user's preferred translate provider, default 'openrouter'."""
+    """Return the user's preferred translate provider. 默认改为 gemini_31_flash。"""
     from appcore.api_keys import get_key
     if user_id is None:
-        return "openrouter"
+        return "gemini_31_flash"
     pref = get_key(user_id, "translate_pref")
-    return pref if pref in ("openrouter", "doubao") else "openrouter"
+    return pref if pref in _VALID_TRANSLATE_PREFS else "gemini_31_flash"
 
 
 def _lang_display(label: str) -> str:
