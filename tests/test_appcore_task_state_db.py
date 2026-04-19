@@ -1,7 +1,24 @@
 """Tests that task_state persists to and restores from DB."""
 import pytest
+import pymysql
+
 import appcore.task_state as ts
 from appcore.db import execute, query_one
+
+
+def _is_live_mysql_unavailable(exc: BaseException) -> bool:
+    code = exc.args[0] if getattr(exc, "args", None) else None
+    return code in {2002, 2003, 2005, 2013}
+
+
+@pytest.fixture(autouse=True, scope="module")
+def require_live_mysql():
+    try:
+        query_one("SELECT 1")
+    except pymysql.MySQLError as exc:
+        if _is_live_mysql_unavailable(exc):
+            pytest.skip("requires live MySQL at configured host")
+        raise
 
 
 @pytest.fixture(autouse=True)
