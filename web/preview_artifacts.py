@@ -104,7 +104,9 @@ def build_translate_artifact(source_or_segments, localized_translation: dict | N
 def build_tts_artifact(tts_script_or_segments, segments: list[dict] | None = None,
                        duration_rounds: list[dict] | None = None) -> dict:
     if segments is None and isinstance(tts_script_or_segments, list):
-        artifact = {
+        # 时长迭代面板由 _task_workbench.html 里的 #ttsDurationLog 专用容器独立渲染，
+        # 这里不再把 rounds 塞进 artifact 避免前端出现"暂不支持的预览类型"。
+        return {
             "title": "语音生成",
             "items": [
                 media_item("audio", "整段配音", "tts_full_audio"),
@@ -116,13 +118,6 @@ def build_tts_artifact(tts_script_or_segments, segments: list[dict] | None = Non
                 },
             ],
         }
-        if duration_rounds:
-            artifact["items"].append({
-                "type": "tts_duration_rounds",
-                "label": "时长控制迭代",
-                "rounds": duration_rounds,
-            })
-        return artifact
 
     tts_script = tts_script_or_segments or {}
     items = [
@@ -148,12 +143,7 @@ def build_tts_artifact(tts_script_or_segments, segments: list[dict] | None = Non
                 "break_after": [],
             }
         )
-    if duration_rounds:
-        items.append({
-            "type": "tts_duration_rounds",
-            "label": "时长控制迭代",
-            "rounds": duration_rounds,
-        })
+    # 时长迭代面板由前端 #ttsDurationLog 专用容器渲染，不混入 items 列表
     return {"title": "语音生成", "items": items}
 
 

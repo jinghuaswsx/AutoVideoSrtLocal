@@ -492,3 +492,74 @@ video.media-player {
 
 .duration-log-final.failed { color: var(--danger-fg); }
 .duration-log-final.warning { color: var(--warning-fg); }
+
+.duration-status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.duration-status-tag.running { background: var(--info-bg); color: var(--info); }
+.duration-status-tag.success { background: var(--success-bg); color: var(--success-fg); }
+.duration-status-tag.error   { background: var(--danger-bg);  color: var(--danger-fg); }
+
+.duration-round-attempts {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+}
+.duration-round-attempts > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  font-weight: 600;
+  list-style: none;
+}
+.duration-round-attempts > summary::-webkit-details-marker { display: none; }
+.duration-round-attempts > summary::before {
+  content: '▸ ';
+  color: var(--fg-subtle);
+  display: inline-block;
+  transition: transform 120ms var(--ease);
+}
+.duration-round-attempts[open] > summary::before { content: '▾ '; }
+
+.duration-attempts-table {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+.duration-attempts-table thead th {
+  color: var(--fg-muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.duration-attempts-table tbody td {
+  padding: 4px 10px;
+  vertical-align: top;
+  color: var(--fg);
+}
+.duration-attempt-row.is-used td {
+  background: var(--accent-subtle);
+}
+.duration-attempt-preview-row td {
+  padding-top: 0 !important;
+  padding-bottom: 6px !important;
+}
+.duration-attempt-preview {
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  line-height: var(--leading);
+  font-size: var(--text-xs);
+  max-width: 640px;
+}

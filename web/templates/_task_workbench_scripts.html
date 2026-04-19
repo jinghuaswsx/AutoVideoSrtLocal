@@ -1086,184 +1086,11 @@
       measure:           '测量音频时长',
       converged:         '已收敛',
       best_pick:         '选最接近轮次',
+      truncate_audio:    '正在裁剪尾部音频',
+      truncated:         '尾部裁剪完成',
       trim_tail:         '正在裁剪尾部句子',
       trimmed:           '尾部裁剪完成',
       failed:            '迭代失败',
-    })[phase] || phase || '';
-  }
-
-  function _roundStatusIcon(round, isFinalConverged, isFailed) {
-    if (round.audio_duration != null) {
-      // Round-level success uses the stage-1 band [0.9v, 1.1v] (the rewrite
-      // loop's internal convergence target). The final [video-3, video]
-      // judgement is shown in the log-final line instead.
-      const lo = round.stage1_lo, hi = round.stage1_hi;
-      if (lo != null && hi != null && round.audio_duration >= lo && round.audio_duration <= hi) {
-        return ['success', '✓'];
-      }
-      if (isFailed) return ['error', '✗'];
-      return ['warning', '!'];
-    }
-    return ['running', '⟳'];
-  }
-
-  function renderTtsDurationLog() {
-    const container = document.getElementById('ttsDurationLog');
-    if (!container) return;
-    const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
-    if (!rounds.length) {
-      container.hidden = true;
-      container.innerHTML = '';
-      return;
-    }
-    const status = currentTask.tts_duration_status || 'running';
-    const video_d = rounds[0].video_duration || null;
-    const lo = rounds[0].duration_lo, hi = rounds[0].duration_hi;
-
-    const metaStr = (video_d != null && lo != null && hi != null)
-      ? `视频 ${video_d.toFixed(1)}s · 目标区间 [${lo.toFixed(1)}, ${hi.toFixed(1)}]`
-      : '';
-
-    const parts = [];
-    parts.push(`<div class="duration-log-header">时长控制迭代 <span class="meta">${metaStr}</span></div>`);
-
-    rounds.forEach((r, idx) => {
-      const isLast = idx === rounds.length - 1;
-      const [iconClass, iconChar] = _roundStatusIcon(
-        r,
-        status === 'converged' && isLast,
-        status === 'failed' && isLast,
-      );
-      const phaseLabel = isLast && status === 'running' ? _phaseLabel(r.__current_phase) : '';
-      const targetWords = r.target_words != null ? r.target_words : r.target_chars;  // 向后兼容老字段
-      const targetStr = (r.target_duration != null && targetWords != null)
-        ? `目标 ${r.target_duration.toFixed(1)}s / ${targetWords} 单词（${r.direction}）`
-        : '初始译文';
-      const measuredWords = r.word_count != null ? r.word_count : r.char_count;
-      const measuredStr = (r.audio_duration != null && measuredWords != null)
-        ? `实测 ${r.audio_duration.toFixed(1)}s / ${measuredWords} 单词`
-        : '';
-
-      const files = [];
-      const ap = r.artifact_paths || {};
-      if (ap.localized_rewrite_messages) {
-        files.push(`<a href="${_durationRoundFileUrl(r.round, 'localized_rewrite_messages')}" target="_blank">调用提示词</a>`);
-      }
-      if (ap.localized_translation) {
-        files.push(`<a href="${_durationRoundFileUrl(r.round, 'localized_translation')}" target="_blank">译文 JSON</a>`);
-      }
-      if (ap.tts_script) {
-        files.push(`<a href="${_durationRoundFileUrl(r.round, 'tts_script')}" target="_blank">朗读文案 JSON</a>`);
-      }
-      if (ap.tts_full_audio) {
-        files.push(`<a href="${_durationRoundFileUrl(r.round, 'tts_full_audio')}" target="_blank">音频 MP3</a>`);
-      }
-
-      const trimInfo = (r.removed_count != null && r.final_duration != null)
-        ? `✂️ 尾部裁剪：删除 ${r.removed_count} 个朗读块（${(r.removed_duration || 0).toFixed(1)}s）→ 最终 ${r.final_duration.toFixed(1)}s`
-        : '';
-
-      // 文案收敛内循环（rewrite_attempts）：每轮内部最多 5 次 rewrite
-      // 每个 attempt 有独立 JSON，可预览前 200 字符，也可点链接看完整译文
-      let attemptsHtml = '';
-      if (Array.isArray(r.rewrite_attempts) && r.rewrite_attempts.length) {
-        const rows = r.rewrite_attempts.map(a => {
-          const ok = a.accepted
-            ? '<span style="color:#16a34a;">✓ 命中</span>'
-            : '<span style="color:#9ca3af;">✗ 超差</span>';
-          const used = a.is_used_for_tts
-            ? '<span style="color:#2563eb;font-weight:600;">（本轮采用）</span>'
-            : '';
-          const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase)
-            || '/api/tasks';
-          const attemptUrl = `${base}/${taskId}/round-file/${r.round}/attempt/${a.attempt}`;
-          const preview = a.preview_text
-            ? `<div style="margin-top:4px;padding:6px 8px;background:var(--bg-muted,#f3f4f6);border-radius:4px;font-size:11px;color:var(--fg,#374151);line-height:1.5;max-width:600px;">${escapeHtml(a.preview_text)}${a.preview_text.length >= 200 ? '...' : ''}</div>`
-            : '';
-          return `<tr>
-            <td style="padding:4px 10px;vertical-align:top;">#${a.attempt} ${used}</td>
-            <td style="padding:4px 10px;vertical-align:top;">${a.words} 词</td>
-            <td style="padding:4px 10px;vertical-align:top;">偏差 ${a.diff}</td>
-            <td style="padding:4px 10px;vertical-align:top;">${ok}</td>
-            <td style="padding:4px 10px;vertical-align:top;"><a href="${attemptUrl}" target="_blank">查看译文 JSON</a></td>
-          </tr>
-          <tr><td colspan="5" style="padding:0 10px 8px;">${preview}</td></tr>`;
-        }).join('');
-        const pickInfo = r.rewrite_converged === false
-          ? `（5 次都未落入 ±10% 窗口，挑最接近目标的第 ${r.rewrite_attempt_used} 次：${r.rewrite_words_actual} 词）`
-          : `（第 ${r.rewrite_attempt_used} 次命中，${r.rewrite_words_actual} 词）`;
-        attemptsHtml = `
-          <details class="duration-round-attempts" style="margin-top:4px;font-size:12px;" open>
-            <summary style="cursor:pointer;color:var(--text-user-badge,#6b7280);">
-              文案收敛：${r.rewrite_attempts.length} 次 rewrite ${pickInfo}
-            </summary>
-            <table style="margin-top:6px;border-collapse:collapse;font-size:11px;">
-              <thead><tr style="color:#9ca3af;">
-                <th style="padding:2px 10px;text-align:left;">尝试</th>
-                <th style="padding:2px 10px;text-align:left;">实际字数</th>
-                <th style="padding:2px 10px;text-align:left;">偏差</th>
-                <th style="padding:2px 10px;text-align:left;">结果</th>
-                <th style="padding:2px 10px;text-align:left;">完整译文</th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </details>`;
-      }
-
-      parts.push(`
-        <div class="duration-round">
-          <div class="duration-round-title">
-            <span class="status-icon ${iconClass}">${iconChar}</span>
-            <span>轮次 ${r.round}</span>
-          </div>
-          <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
-          ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
-          ${attemptsHtml}
-          ${trimInfo ? `<div class="duration-round-meta">${trimInfo}</div>` : ''}
-          ${files.length ? `<div class="duration-round-files">${files.join('')}</div>` : ''}
-        </div>
-      `);
-    });
-
-    if (status === 'converged') {
-      const last = rounds[rounds.length - 1];
-      // Prefer final_duration (after trim) over raw audio_duration
-      const finalDur = last.final_duration != null ? last.final_duration : last.audio_duration;
-      if (finalDur != null) {
-        const finalLo = last.duration_lo, finalHi = last.duration_hi;
-        const inTarget = finalLo != null && finalHi != null
-          && finalDur >= finalLo && finalDur <= finalHi;
-        const trimmed = last.removed_count != null && last.removed_count > 0;
-        const prefix = trimmed ? '裁剪后' : `第 ${last.round} 轮`;
-        const rangeStr = (finalLo != null && finalHi != null)
-          ? ` · 目标 [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]` : '';
-        if (inTarget) {
-          parts.push(`<div class="duration-log-final">✓ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr}（已命中）</div>`);
-        } else if (finalDur < finalLo) {
-          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr} · 低于下界，视频末尾会有静音</div>`);
-        } else {
-          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDur.toFixed(1)}s${rangeStr} · 超过视频时长</div>`);
-        }
-      }
-    } else if (status === 'failed') {
-      parts.push(`<div class="duration-log-final failed">✗ 时长控制失败</div>`);
-    }
-
-    container.innerHTML = parts.join('');
-    container.hidden = false;
-  }
-
-  function _phaseLabel(phase) {
-    return ({
-      translate_rewrite: 'Rewriting translation',
-      tts_script_regen: 'Generating TTS script',
-      audio_gen: 'Generating audio',
-      measure: 'Measuring duration',
-      converged: 'Target range reached',
-      best_pick: 'Picked nearest round',
-      truncate_audio: 'Truncating final audio',
-      truncated: 'Final audio truncated',
-      failed: 'Loop failed',
     })[phase] || phase || '';
   }
 
@@ -1388,7 +1215,51 @@
     `;
   }
 
+  function _rewriteAttemptsHtml(round) {
+    // 文案收敛内循环：一轮里最多 5 次 rewrite，每次都单独落盘 JSON。
+    // 表格给出每次尝试的字数、偏差、是否命中窗口、本轮最终采用哪一次，并在行下方展示前 200 字预览。
+    const attempts = Array.isArray(round.rewrite_attempts) ? round.rewrite_attempts : [];
+    if (!attempts.length) return '';
+    const base = (typeof TASK_WORKBENCH_CONFIG !== 'undefined' && TASK_WORKBENCH_CONFIG.apiBase)
+      || '/api/tasks';
+    const rows = attempts.map(a => {
+      const ok = a.accepted
+        ? '<span style="color:var(--success-fg);">✓ 命中 ±10%</span>'
+        : '<span style="color:var(--fg-subtle);">✗ 超差</span>';
+      const used = a.is_used_for_tts
+        ? '<span style="color:var(--accent);font-weight:700;">（本轮采用）</span>'
+        : '';
+      const attemptUrl = `${base}/${taskId}/round-file/${round.round}/attempt/${a.attempt}`;
+      const preview = a.preview_text
+        ? `<div class="duration-attempt-preview">${escapeHtml(a.preview_text)}${a.preview_text.length >= 200 ? '…' : ''}</div>`
+        : '';
+      return `<tr class="duration-attempt-row${a.is_used_for_tts ? ' is-used' : ''}">
+          <td>#${a.attempt} ${used}</td>
+          <td>${a.words} 词</td>
+          <td>偏差 ${a.diff}</td>
+          <td>${ok}</td>
+          <td><a href="${attemptUrl}" target="_blank">查看译文 JSON</a></td>
+        </tr>
+        <tr class="duration-attempt-preview-row"><td colspan="5">${preview}</td></tr>`;
+    }).join('');
+    const pickInfo = round.rewrite_converged === false
+      ? `（${attempts.length} 次均未落入 ±10% 窗口，挑最接近目标的第 ${round.rewrite_attempt_used} 次：${round.rewrite_words_actual} 词）`
+      : `（第 ${round.rewrite_attempt_used} 次命中，${round.rewrite_words_actual} 词）`;
+    return `
+      <details class="duration-round-attempts" open>
+        <summary>文案收敛内循环：${attempts.length} 次 rewrite ${pickInfo}</summary>
+        <table class="duration-attempts-table">
+          <thead><tr>
+            <th>尝试</th><th>实际字数</th><th>偏差</th><th>结果</th><th>完整译文</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </details>`;
+  }
+
   function renderTtsDurationLog() {
+    // 时长控制迭代可视化 —— 每轮一个卡片，展示目标、实测、rewrite 内循环尝试、
+    // 所有中间产物链接（prompt / 译文 / 朗读文案 / 音频），以及可展开的 Prompt 面板。
     const container = document.getElementById('ttsDurationLog');
     if (!container) return;
     const rounds = (currentTask && currentTask.tts_duration_rounds) || [];
@@ -1403,23 +1274,37 @@
     const targetLo = rounds[0].duration_lo;
     const targetHi = rounds[0].duration_hi;
     const metaStr = (videoDuration != null && targetLo != null && targetHi != null)
-      ? `Video ${videoDuration.toFixed(1)}s | target [${targetLo.toFixed(1)}, ${targetHi.toFixed(1)}]`
+      ? `视频 ${videoDuration.toFixed(1)}s · 目标区间 [${targetLo.toFixed(1)}, ${targetHi.toFixed(1)}]`
       : '';
+    const statusTag = ({
+      running:   '<span class="duration-status-tag running">运行中</span>',
+      converged: '<span class="duration-status-tag success">已收敛</span>',
+      failed:    '<span class="duration-status-tag error">失败</span>',
+    })[status] || '';
 
     const parts = [];
-    parts.push(`<div class="duration-log-header">Duration loop <span class="meta">${metaStr}</span></div>`);
+    parts.push(`
+      <div class="duration-log-header">
+        <span>时长控制迭代（Duration Loop）</span>
+        ${statusTag}
+        <span class="meta">${metaStr}</span>
+      </div>
+    `);
 
     rounds.forEach((round, idx) => {
       const isLast = idx === rounds.length - 1;
       const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
       const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase) : '';
+
       const targetWords = round.target_words != null ? round.target_words : round.target_chars;
+      const dirLabel = ({shrink: '缩写', expand: '扩写'})[round.direction] || round.direction || '';
       const targetStr = (round.target_duration != null && targetWords != null)
-        ? `Target ${round.target_duration.toFixed(1)}s / ${targetWords} words (${round.direction || 'adjust'})`
-        : 'Initial translation';
+        ? `目标 ${round.target_duration.toFixed(1)}s / ${targetWords} 词${dirLabel ? ` (${dirLabel})` : ''}`
+        : '初始翻译';
+
       const measuredWords = round.word_count != null ? round.word_count : round.char_count;
       const measuredStr = (round.audio_duration != null && measuredWords != null)
-        ? `Actual ${round.audio_duration.toFixed(1)}s / ${measuredWords} words`
+        ? `实测 ${round.audio_duration.toFixed(1)}s / ${measuredWords} 词`
         : '';
 
       const actions = [];
@@ -1428,34 +1313,41 @@
         actions.push(`
           <button type="button" class="duration-round-toggle"
                   onclick="toggleDurationRoundPrompt(${round.round})">
-            ${window._durationPromptOpen[round.round] ? 'Hide prompt' : 'View prompt'}
+            ${window._durationPromptOpen[round.round] ? '收起 Prompt' : '查看 Prompt'}
           </button>
         `);
         actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_rewrite_messages')}" target="_blank">Prompt JSON</a>`);
       }
       if (artifactPaths.localized_translation) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_translation')}" target="_blank">Translation JSON</a>`);
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'localized_translation')}" target="_blank">译文 JSON</a>`);
       }
       if (artifactPaths.tts_script) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_script')}" target="_blank">TTS script JSON</a>`);
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_script')}" target="_blank">朗读文案 JSON</a>`);
       }
       if (artifactPaths.tts_full_audio) {
-        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_full_audio')}" target="_blank">Audio MP3</a>`);
+        actions.push(`<a href="${_durationRoundFileUrl(round.round, 'tts_full_audio')}" target="_blank">音频 MP3</a>`);
       }
 
-      const truncationInfo = (round.pre_trim_duration != null && round.final_duration != null
-        && round.pre_trim_duration > round.final_duration + 1e-6)
-        ? `Truncated: ${round.pre_trim_duration.toFixed(1)}s -> ${round.final_duration.toFixed(1)}s`
-        : '';
+      // 兼容新老字段：pre_trim/final_duration（音频裁剪） + removed_count（朗读块删除）
+      const truncationParts = [];
+      if (round.pre_trim_duration != null && round.final_duration != null
+          && round.pre_trim_duration > round.final_duration + 1e-6) {
+        truncationParts.push(`音频尾部裁剪：${round.pre_trim_duration.toFixed(1)}s → ${round.final_duration.toFixed(1)}s`);
+      }
+      if (round.removed_count != null && round.removed_count > 0) {
+        truncationParts.push(`✂️ 删除 ${round.removed_count} 个朗读块（${(round.removed_duration || 0).toFixed(1)}s）`);
+      }
+      const truncationInfo = truncationParts.join(' · ');
 
       parts.push(`
         <div class="duration-round">
           <div class="duration-round-title">
             <span class="status-icon ${iconClass}">${iconChar}</span>
-            <span>Round ${round.round}</span>
+            <span>轮次 ${round.round}</span>
           </div>
-          <div class="duration-round-meta">${targetStr}${measuredStr ? ' | ' + measuredStr : ''}</div>
-          ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}</div>` : ''}
+          <div class="duration-round-meta">${targetStr}${measuredStr ? ' · ' + measuredStr : ''}</div>
+          ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
+          ${_rewriteAttemptsHtml(round)}
           ${truncationInfo ? `<div class="duration-round-meta">${truncationInfo}</div>` : ''}
           ${actions.length ? `<div class="duration-round-files">${actions.join('')}</div>` : ''}
           ${_renderDurationPromptPanel(round)}
@@ -1471,24 +1363,25 @@
         const finalHi = last.duration_hi;
         const inTarget = finalLo != null && finalHi != null
           && finalDuration >= finalLo && finalDuration <= finalHi;
-        const wasTruncated = last.pre_trim_duration != null
-          && last.final_duration != null
-          && last.pre_trim_duration > last.final_duration + 1e-6;
-        const prefix = wasTruncated ? 'After truncation' : `Round ${last.round}`;
+        const wasTruncated = (last.pre_trim_duration != null
+            && last.final_duration != null
+            && last.pre_trim_duration > last.final_duration + 1e-6)
+          || (last.removed_count != null && last.removed_count > 0);
+        const prefix = wasTruncated ? '裁剪后' : `第 ${last.round} 轮`;
         const rangeStr = (finalLo != null && finalHi != null)
-          ? ` | target [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]`
+          ? ` · 目标 [${finalLo.toFixed(1)}, ${finalHi.toFixed(1)}]`
           : '';
 
         if (inTarget) {
-          parts.push(`<div class="duration-log-final">OK ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr}</div>`);
+          parts.push(`<div class="duration-log-final">✓ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr}（已命中）</div>`);
         } else if (finalLo != null && finalDuration < finalLo) {
-          parts.push(`<div class="duration-log-final warning">Note ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr} | below lower bound</div>`);
+          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr} · 低于下界，视频末尾会有静音</div>`);
         } else {
-          parts.push(`<div class="duration-log-final warning">Note ${prefix} | final audio ${finalDuration.toFixed(1)}s${rangeStr} | above video duration</div>`);
+          parts.push(`<div class="duration-log-final warning">⚠ ${prefix} · 最终音频 ${finalDuration.toFixed(1)}s${rangeStr} · 超过视频时长</div>`);
         }
       }
     } else if (status === 'failed') {
-      parts.push('<div class="duration-log-final failed">Duration loop failed</div>');
+      parts.push('<div class="duration-log-final failed">✗ 时长控制迭代失败</div>');
     }
 
     container.innerHTML = parts.join('');
