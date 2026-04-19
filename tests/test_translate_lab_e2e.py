@@ -27,12 +27,14 @@ def _build_task_state():
         "voice_match_mode": "auto",
         "steps": {
             "extract": "pending",
+            "asr": "pending",
             "shot_decompose": "pending",
             "voice_match": "pending",
             "translate": "pending",
-            "tts_verify": "pending",
+            "tts": "pending",
             "subtitle": "pending",
             "compose": "pending",
+            "export": "pending",
         },
         "step_messages": {},
     }
@@ -181,15 +183,13 @@ def test_full_pipeline_integration(tmp_path):
     assert "lab_voice_match_candidates" in events, events
     assert "lab_voice_confirmed" in events, events
     assert "lab_translate_progress" in events, events
-    assert "lab_tts_progress" in events, events
-    assert "lab_subtitle_ready" in events, events
     assert "lab_pipeline_done" in events, events
     # 没有触发错误事件
     assert "lab_pipeline_error" not in events, events
 
-    # 7 个步骤都被置为 done
-    for name in ["extract", "shot_decompose", "voice_match",
-                 "translate", "tts_verify", "subtitle", "compose"]:
+    # 9 个步骤都被置为 done
+    for name in ["extract", "asr", "shot_decompose", "voice_match",
+                 "translate", "tts", "subtitle", "compose", "export"]:
         assert state["steps"].get(name) == "done", (name, state["steps"])
 
     # 最终视频路径被回写

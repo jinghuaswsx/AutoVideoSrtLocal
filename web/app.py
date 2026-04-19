@@ -130,8 +130,8 @@ def _recover_translate_lab_tasks_on_startup() -> list[str]:
             # 从首个非 done 的步骤恢复（缺字段时回退到 extract）
             steps = (task.get("steps") or state.get("steps") or {})
             start_step = "extract"
-            for name in ["extract", "shot_decompose", "voice_match",
-                         "translate", "tts_verify", "subtitle", "compose"]:
+            for name in ["extract", "asr", "shot_decompose", "voice_match",
+                         "translate", "tts", "subtitle", "compose", "export"]:
                 if (steps.get(name) or "") != "done":
                     start_step = name
                     break

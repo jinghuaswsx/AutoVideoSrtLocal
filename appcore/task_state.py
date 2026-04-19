@@ -399,9 +399,9 @@ def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
                          original_filename: str, user_id: int, **options) -> dict:
     """创建视频翻译（测试）模块的初始任务状态。
 
-    测试模块采用 7 步流水线：
-    extract -> shot_decompose -> voice_match -> translate -> tts_verify -> subtitle -> compose
-    其余字段为空占位，真正的业务写入在后续任务里完成。
+    测试模块采用 9 步流水线（复刻多语种大逻辑 + 分镜精确翻译）：
+    extract -> asr -> shot_decompose -> voice_match -> translate
+      -> tts -> subtitle -> compose -> export
     """
     task = {
         "id": task_id,
@@ -416,31 +416,43 @@ def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
         "source_object_info": {},
         "steps": {
             "extract": "pending",
+            "asr": "pending",
             "shot_decompose": "pending",
             "voice_match": "pending",
             "translate": "pending",
-            "tts_verify": "pending",
+            "tts": "pending",
             "subtitle": "pending",
             "compose": "pending",
+            "export": "pending",
         },
         "step_messages": {
             "extract": "",
+            "asr": "",
             "shot_decompose": "",
             "voice_match": "",
             "translate": "",
-            "tts_verify": "",
+            "tts": "",
             "subtitle": "",
             "compose": "",
+            "export": "",
         },
         "step_model_tags": {},
         "current_review_step": "",
-        "shot_decompose": {},
-        "voice_match": {},
-        "voice_confirmed": {},
-        "translate_result": {},
-        "tts_result": {},
-        "subtitle_result": {},
-        "compose_result": {},
+        # ASR 结果
+        "utterances": [],
+        # 分镜数据
+        "shots": [],
+        # 音色匹配
+        "voice_candidates": [],
+        "chosen_voice": {},
+        # 翻译结果
+        "translations": [],
+        "localized_translation": {},
+        "script_segments": [],
+        "source_full_text": "",
+        "source_language": "zh",
+        # 多语种兼容：variants 供基类 TTS/subtitle/compose/export 使用
+        "variants": {},
         "artifacts": {},
         "preview_files": {},
         "result": {},

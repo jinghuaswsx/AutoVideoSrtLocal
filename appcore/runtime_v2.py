@@ -1,8 +1,11 @@
 """视频翻译（测试）流水线 V2。
 
-PipelineRunnerV2 编排 7 步流水线：
-  extract -> shot_decompose -> voice_match -> translate
-    -> tts_verify -> subtitle -> compose
+PipelineRunnerV2 编排 9 步流水线（复刻多语种大逻辑 + 分镜精确翻译）：
+  extract -> asr -> shot_decompose -> voice_match -> translate
+    -> tts -> subtitle -> compose -> export
+
+翻译步骤用分镜级字符上限约束，确保初始译文尽可能贴合分镜时长，
+后续 TTS 时长迭代循环（继承自多语种基类）可以更快收敛。
 
 模块级只依赖 appcore，pipeline.* 在步骤函数内部延迟导入，
 避免测试时连锁加载 ElevenLabs / Gemini 客户端。
@@ -21,9 +24,7 @@ from appcore.events import (
     EVT_LAB_PIPELINE_DONE,
     EVT_LAB_PIPELINE_ERROR,
     EVT_LAB_SHOT_DECOMPOSE_RESULT,
-    EVT_LAB_SUBTITLE_READY,
     EVT_LAB_TRANSLATE_PROGRESS,
-    EVT_LAB_TTS_PROGRESS,
     EVT_LAB_VOICE_CONFIRMED,
     EVT_LAB_VOICE_MATCH_CANDIDATES,
 )
@@ -33,13 +34,30 @@ log = logging.getLogger(__name__)
 
 
 class PipelineRunnerV2(PipelineRunner):
-    """视频翻译（测试）模块的流水线 runner。"""
+    """视频翻译（测试）模块的流水线 runner。
 
-    # v2 流水线保持原行为：生成软字幕视频 + 主流程自动跑 analysis
+    继承多语种基类的 TTS 时长迭代、字幕生成、视频合成、CapCut 导出，
+    仅在 ASR 之后插入分镜分析 + 分镜级翻译。
+    """
+
     include_soft_video: bool = True
-    include_analysis_in_main_flow: bool = True
+    include_analysis_in_main_flow: bool = False
 
     project_type: str = "translate_lab"
+
+    # ------------------------------------------------------------------
+    # Voice 解析：优先使用 voice_match 步骤匹配到的音色
+    # ------------------------------------------------------------------
+
+    def _resolve_voice(self, task: dict, loc_mod) -> dict:
+        chosen = task.get("chosen_voice") or {}
+        if chosen.get("voice_id"):
+            return {
+                "id": None,
+                "elevenlabs_voice_id": chosen["voice_id"],
+                "name": chosen.get("name", "Matched Voice"),
+            }
+        return super()._resolve_voice(task, loc_mod)
 
     # ------------------------------------------------------------------
     # 步骤清单与主循环
@@ -48,20 +66,25 @@ class PipelineRunnerV2(PipelineRunner):
     def _build_steps(
         self, task_id: str, video_path: str, task_dir: str,
     ) -> List[Tuple[str, Callable[[], None]]]:
-        """返回 (step_name, step_callable) 列表，供 _run 或测试使用。"""
+        """返回 (step_name, step_callable) 列表。"""
         return [
             ("extract",        lambda: self._step_extract(task_id, video_path, task_dir)),
+            ("asr",            lambda: self._step_asr(task_id, task_dir)),
             ("shot_decompose", lambda: self._step_shot_decompose(task_id, video_path, task_dir)),
             ("voice_match",    lambda: self._step_voice_match(task_id, video_path, task_dir)),
             ("translate",      lambda: self._step_translate(task_id)),
-            ("tts_verify",     lambda: self._step_tts_verify(task_id, task_dir)),
+            ("tts",            lambda: self._step_tts(task_id, task_dir)),
             ("subtitle",       lambda: self._step_subtitle(task_id, task_dir)),
             ("compose",        lambda: self._step_compose(task_id, video_path, task_dir)),
+            ("export",         lambda: self._step_export(task_id, video_path, task_dir)),
         ]
 
     def _run(self, task_id: str, start_step: str = "extract") -> None:
+        # 从任务读取目标语言，动态设置基类属性
+        task_init = task_state.get(task_id) or {}
+        self.target_language_label = task_init.get("target_language", "en")
+
         # Guard: restore source video from TOS if the local file was cleaned up.
-        # Matches PipelineRunner._run behaviour so V2 doesn't crash on resume.
         try:
             from appcore.source_video import ensure_local_source_video
             ensure_local_source_video(task_id)
@@ -87,6 +110,13 @@ class PipelineRunnerV2(PipelineRunner):
                 current = task_state.get(task_id) or {}
                 if (current.get("steps") or {}).get(step_name) == "waiting":
                     return
+
+            # 所有步骤完成
+            final = task_state.get(task_id) or {}
+            self._emit(task_id, EVT_LAB_PIPELINE_DONE, {
+                "task_id": task_id,
+                "video": final.get("final_video"),
+            })
         except Exception as exc:
             log.warning("[runtime_v2] pipeline failed task=%s error=%s",
                         task_id, exc, exc_info=True)
@@ -95,7 +125,7 @@ class PipelineRunnerV2(PipelineRunner):
             self._emit(task_id, EVT_LAB_PIPELINE_ERROR, {"error": str(exc)})
 
     # ------------------------------------------------------------------
-    # Step 1: extract
+    # Step 1: extract（含视频元数据）
     # ------------------------------------------------------------------
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
@@ -115,15 +145,18 @@ class PipelineRunnerV2(PipelineRunner):
         self._set_step(task_id, "extract", "done", "音频提取完成")
 
     # ------------------------------------------------------------------
-    # Step 2: shot_decompose
+    # Step 2: asr（继承基类 ASR）
+    # ------------------------------------------------------------------
+    # 直接使用 PipelineRunner._step_asr
+
+    # ------------------------------------------------------------------
+    # Step 3: shot_decompose（Gemini 分镜 + ASR 对齐）
     # ------------------------------------------------------------------
 
     def _step_shot_decompose(
         self, task_id: str, video_path: str, task_dir: str,
     ) -> None:
-        from pipeline.asr import transcribe
         from pipeline.shot_decompose import align_asr_to_shots, decompose_shots
-        from pipeline.storage import delete_file, upload_file
 
         from appcore.gemini import resolve_config as _resolve_gemini
         _, _sd_model = _resolve_gemini(self.user_id, service="shot_decompose.run",
@@ -132,7 +165,6 @@ class PipelineRunnerV2(PipelineRunner):
                        model_tag=f"gemini · {_sd_model}")
         task = task_state.get(task_id) or {}
         duration = float(task.get("video_duration") or 0.0)
-        audio_path = task.get("audio_path", "")
 
         # Gemini 分镜
         shots = decompose_shots(
@@ -141,26 +173,15 @@ class PipelineRunnerV2(PipelineRunner):
             duration_seconds=duration,
         )
 
-        # ASR：先上传到 TOS 再识别
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
-        tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
+        # 使用 ASR 步骤的结果（utterances）做时间对齐
+        utterances = task.get("utterances") or []
         asr_segments: List[Dict[str, Any]] = []
-        if audio_path:
-            audio_url = upload_file(audio_path, tos_key)
-            try:
-                utterances = transcribe(audio_url, volc_api_key=volc_api_key) or []
-            finally:
-                try:
-                    delete_file(tos_key)
-                except Exception:
-                    pass
-            # 把豆包返回的 start_time/end_time 归一成 start/end
-            for utt in utterances:
-                asr_segments.append({
-                    "start": float(utt.get("start_time") or utt.get("start") or 0.0),
-                    "end": float(utt.get("end_time") or utt.get("end") or 0.0),
-                    "text": utt.get("text", ""),
-                })
+        for utt in utterances:
+            asr_segments.append({
+                "start": float(utt.get("start_time") or utt.get("start") or 0.0),
+                "end": float(utt.get("end_time") or utt.get("end") or 0.0),
+                "text": utt.get("text", ""),
+            })
 
         aligned = align_asr_to_shots(shots, asr_segments)
         task_state.update(task_id, shots=aligned)
@@ -169,7 +190,7 @@ class PipelineRunnerV2(PipelineRunner):
                        f"分镜完成，共 {len(aligned)} 段")
 
     # ------------------------------------------------------------------
-    # Step 3: voice_match
+    # Step 4: voice_match
     # ------------------------------------------------------------------
 
     def _step_voice_match(
@@ -228,11 +249,7 @@ class PipelineRunnerV2(PipelineRunner):
         poll_interval: float = 1.0,
         timeout_seconds: float = 1800,
     ) -> Optional[Dict[str, Any]]:
-        """阻塞等待前端确认音色；返回 chosen dict 或 None（超时）。
-
-        poll_interval == 0 时视作"零延迟轮询"，用 timeout_seconds 作为
-        最大迭代次数上限，便于单元测试驱动。
-        """
+        """阻塞等待前端确认音色；返回 chosen dict 或 None（超时）。"""
         task_state.update(
             task_id,
             pending_voice_choice=candidates,
@@ -259,7 +276,7 @@ class PipelineRunnerV2(PipelineRunner):
         return None
 
     # ------------------------------------------------------------------
-    # Step 4: translate
+    # Step 5: translate（分镜级翻译 + 构建多语种兼容数据结构）
     # ------------------------------------------------------------------
 
     def _step_translate(self, task_id: str) -> None:
@@ -312,200 +329,60 @@ class PipelineRunnerV2(PipelineRunner):
             })
 
         task_state.update(task_id, translations=translations)
+
+        # ── 构建多语种基类 TTS 需要的数据结构 ──
+
+        # localized_translation: 供 TTS 时长迭代循环使用
+        sentences = []
+        for i, tr in enumerate(translations):
+            if tr.get("translated_text"):
+                sentences.append({
+                    "index": i,
+                    "text": tr["translated_text"],
+                    "source_segment_indices": [i],
+                })
+        localized_translation = {
+            "full_text": "\n".join(
+                tr["translated_text"] for tr in translations
+                if tr.get("translated_text")
+            ),
+            "sentences": sentences,
+        }
+
+        # script_segments: 原文分段时间轴
+        script_segments = []
+        for shot in shots:
+            script_segments.append({
+                "index": shot.get("index"),
+                "text": shot.get("source_text", ""),
+                "start_time": float(shot.get("start") or 0.0),
+                "end_time": float(shot.get("end") or 0.0),
+            })
+
+        # source_full_text: 拼接原文
+        source_full_text = "\n".join(
+            shot.get("source_text", "") for shot in shots
+            if shot.get("source_text")
+        )
+
+        # variants: 基类 TTS/subtitle/compose/export 读写的核心结构
+        variants = {
+            "normal": {
+                "localized_translation": localized_translation,
+            },
+        }
+
+        task_state.update(
+            task_id,
+            localized_translation=localized_translation,
+            script_segments=script_segments,
+            source_full_text=source_full_text,
+            source_language="zh",
+            variants=variants,
+        )
         self._set_step(task_id, "translate", "done", "分镜翻译完成")
 
     # ------------------------------------------------------------------
-    # Step 5: tts_verify
+    # Step 6-9: tts / subtitle / compose / export
+    # 直接继承 PipelineRunner 基类的实现
     # ------------------------------------------------------------------
-
-    def _step_tts_verify(self, task_id: str, task_dir: str) -> None:
-        from pipeline.tts_v2 import generate_and_verify_shot
-
-        self._set_step(task_id, "tts_verify", "running", "正在生成配音并校验时长...")
-        task = task_state.get(task_id) or {}
-        translations_by_idx = {
-            t.get("shot_index"): t for t in (task.get("translations") or [])
-        }
-        shots: List[Dict[str, Any]] = task.get("shots") or []
-        voice = task.get("chosen_voice") or {}
-        target_lang = task.get("target_language", "en")
-        api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
-        tts_dir = os.path.join(task_dir, "tts_v2")
-
-        results: List[Dict[str, Any]] = []
-        for shot in shots:
-            tr = translations_by_idx.get(shot.get("index"))
-            if not tr or not (tr.get("translated_text") or "").strip():
-                continue
-            verified = generate_and_verify_shot(
-                shot=shot,
-                translated_text=tr["translated_text"],
-                voice_id=voice.get("voice_id", ""),
-                api_key=api_key or "",
-                language=target_lang,
-                user_id=self.user_id,
-                out_dir=tts_dir,
-            )
-            results.append(verified)
-            self._emit(task_id, EVT_LAB_TTS_PROGRESS, {
-                "index": shot.get("index"),
-                "result": verified,
-            })
-
-        task_state.update(task_id, tts_results=results)
-        self._set_step(task_id, "tts_verify", "done", "配音生成完成")
-
-    # ------------------------------------------------------------------
-    # Step 6: subtitle
-    # ------------------------------------------------------------------
-
-    def _step_subtitle(self, task_id: str, task_dir: str) -> None:
-        from pipeline.subtitle_v2 import (
-            compute_unified_font_size,
-            generate_srt,
-        )
-
-        self._set_step(task_id, "subtitle", "running", "正在生成字幕...")
-        task = task_state.get(task_id) or {}
-        shots: List[Dict[str, Any]] = task.get("shots") or []
-        tts_by_idx = {
-            r.get("shot_index"): r for r in (task.get("tts_results") or [])
-        }
-
-        # 把 TTS 结果合并到分镜（final_text / final_duration / audio_path）
-        final_shots: List[Dict[str, Any]] = []
-        for shot in shots:
-            merged = dict(shot)
-            r = tts_by_idx.get(shot.get("index"))
-            if r:
-                merged.update({
-                    "final_text": r.get("final_text", ""),
-                    "final_duration": float(r.get("final_duration") or 0.0),
-                    "audio_path": r.get("audio_path", ""),
-                })
-            else:
-                merged.setdefault("final_text", "")
-                merged.setdefault("final_duration", 0.0)
-            final_shots.append(merged)
-
-        width = int(task.get("video_width") or 1920)
-        height = int(task.get("video_height") or 1080)
-        font_size = compute_unified_font_size(
-            final_shots, video_width=width, video_height=height,
-        )
-        avg_char_width = max(1.0, font_size * 0.55)
-        max_chars = max(1, int((width * 0.8) / avg_char_width))
-        srt_text = generate_srt(
-            final_shots,
-            font_size=font_size,
-            max_chars_per_line=max_chars,
-        )
-        srt_path = os.path.join(task_dir, "subtitles.srt")
-        with open(srt_path, "w", encoding="utf-8") as fh:
-            fh.write(srt_text)
-
-        task_state.update(
-            task_id,
-            subtitle_path=srt_path,
-            font_size=font_size,
-            max_chars_per_line=max_chars,
-            final_shots=final_shots,
-        )
-        task_state.set_preview_file(task_id, "srt", srt_path)
-        self._emit(task_id, EVT_LAB_SUBTITLE_READY, {
-            "srt_path": srt_path,
-            "font_size": font_size,
-        })
-        self._set_step(task_id, "subtitle", "done", "字幕生成完成")
-
-    # ------------------------------------------------------------------
-    # Step 7: compose
-    # ------------------------------------------------------------------
-
-    def _step_compose(
-        self, task_id: str, video_path: str, task_dir: str,
-    ) -> None:
-        """合成最终视频。
-
-        V2 流水线输出的是"每个分镜一段独立 MP3"；本步骤先把它们按分镜时间轴
-        拼成一段整体音轨（中间空白处自然为静音），再复用
-        ``pipeline.compose.compose_video`` 生成软/硬字幕版视频。
-        """
-        from pipeline.audio_stitch import (
-            build_stitched_audio,
-            build_timeline_manifest,
-        )
-        from pipeline.compose import compose_video
-
-        self._set_step(task_id, "compose", "running", "正在合成最终视频...")
-        task = task_state.get(task_id) or {}
-        tts_results = task.get("tts_results") or []
-        if not tts_results:
-            raise RuntimeError("没有可合成的 TTS 分段")
-
-        shots_by_idx = {
-            s.get("index"): s for s in (task.get("shots") or [])
-        }
-        segments: List[Dict[str, Any]] = []
-        for tts in tts_results:
-            shot = shots_by_idx.get(tts.get("shot_index"))
-            if not shot:
-                continue
-            audio_path = tts.get("audio_path")
-            if not audio_path:
-                continue
-            segments.append({
-                "shot_index": tts.get("shot_index"),
-                "shot_start": float(shot.get("start") or 0.0),
-                "shot_duration": float(shot.get("duration") or 0.0),
-                "actual_duration": float(tts.get("final_duration") or 0.0),
-                "audio_path": audio_path,
-            })
-
-        if not segments:
-            raise RuntimeError("没有可合成的分镜音频")
-
-        stitched_path = os.path.join(task_dir, "stitched_audio.mp3")
-        build_stitched_audio(
-            segments,
-            total_duration=float(task.get("video_duration") or 0.0),
-            output_path=stitched_path,
-        )
-        timeline = build_timeline_manifest(segments)
-
-        subtitle_path = task.get("subtitle_path")
-        result = compose_video(
-            video_path=video_path,
-            tts_audio_path=stitched_path,
-            srt_path=subtitle_path,
-            output_dir=task_dir,
-            subtitle_position=task.get("subtitle_position", "bottom"),
-            timeline_manifest=timeline,
-            variant=task.get("variant"),
-            font_name=task.get("font_name", "Impact"),
-            font_size_preset=task.get("font_size_preset", "medium"),
-        )
-        final_path = (
-            (result or {}).get("hard_video")
-            or (result or {}).get("soft_video")
-        )
-        task_state.update(
-            task_id,
-            final_video=final_path,
-            compose_result=result,
-            stitched_audio_path=stitched_path,
-            status="done",
-        )
-        task_state.set_expires_at(task_id, self.project_type)
-        if result:
-            if result.get("soft_video"):
-                task_state.set_preview_file(task_id, "soft_video",
-                                            result["soft_video"])
-            if result.get("hard_video"):
-                task_state.set_preview_file(task_id, "hard_video",
-                                            result["hard_video"])
-        self._emit(task_id, EVT_LAB_PIPELINE_DONE, {
-            "video": final_path,
-            "compose_result": result,
-        })
-        self._set_step(task_id, "compose", "done", "合成完成")

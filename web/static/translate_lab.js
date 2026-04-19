@@ -408,13 +408,6 @@
       setStepState("translate", "running", "已翻译 " + Object.keys(D.translationsByIdx).length + " 段");
     });
 
-    socket.on("lab_tts_progress", function (payload) {
-      if (!payload || payload.index === undefined) return;
-      D.ttsByIdx[payload.index] = payload.result || {};
-      renderTranslateTts();
-      setStepState("tts_verify", "running", "已生成 " + Object.keys(D.ttsByIdx).length + " 段配音");
-    });
-
     socket.on("lab_subtitle_ready", function (payload) {
       if (!payload) return;
       if (payload.srt_path) {
@@ -425,7 +418,7 @@
 
     socket.on("lab_pipeline_done", function () {
       setStatusTag("done");
-      setStepState("compose", "done", "合成完成");
+      setStepState("export", "done", "导出完成");
       showToast("任务处理完成", "success");
       // 触发一次 refresh 拿最终产物 URL
       refreshDetail();
