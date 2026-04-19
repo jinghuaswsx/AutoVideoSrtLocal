@@ -360,17 +360,61 @@ class PipelineRunner:
                 )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
-                # Always base on the INITIAL translation, not the last round's output.
-                localized_translation = generate_localized_rewrite(
-                    source_full_text=source_full_text,
-                    prev_localized_translation=initial_localized_translation,
-                    target_words=target_words,
-                    direction=direction,
-                    source_language=source_language,
-                    messages_builder=loc_mod.build_localized_rewrite_messages,
-                    provider=provider,
-                    user_id=self.user_id,
-                )
+                # ========= 字数收敛内循环（最多 5 次 rewrite）=========
+                # LLM 对 target_words 经常不听话。先确认文案字数在 ±10% 窗口内
+                # 再去跑 TTS，避免浪费 TTS 调用。
+                MAX_REWRITE_ATTEMPTS = 5
+                WORD_TOLERANCE = 0.10
+                candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
+                localized_translation = None
+                for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
+                    candidate = generate_localized_rewrite(
+                        source_full_text=source_full_text,
+                        prev_localized_translation=initial_localized_translation,
+                        target_words=target_words,
+                        direction=direction,
+                        source_language=source_language,
+                        messages_builder=loc_mod.build_localized_rewrite_messages,
+                        provider=provider,
+                        user_id=self.user_id,
+                    )
+                    cand_words = _count_words(candidate.get("full_text", ""))
+                    diff = abs(cand_words - target_words)
+                    tolerance_abs = max(1, int(target_words * WORD_TOLERANCE))
+                    candidates.append((diff, candidate))
+                    log.info(
+                        "rewrite attempt %d/%d: got %d words (target %d, tol ±%d)",
+                        attempt, MAX_REWRITE_ATTEMPTS, cand_words, target_words, tolerance_abs,
+                    )
+                    round_record.setdefault("rewrite_attempts", []).append({
+                        "attempt": attempt,
+                        "words": cand_words,
+                        "diff": diff,
+                        "accepted": diff <= tolerance_abs,
+                    })
+                    if diff <= tolerance_abs:
+                        localized_translation = candidate
+                        round_record["rewrite_attempt_used"] = attempt
+                        round_record["rewrite_words_actual"] = cand_words
+                        break
+                if localized_translation is None:
+                    # 5 次都没收敛 → 挑最接近 target 的
+                    candidates.sort(key=lambda x: x[0])
+                    localized_translation = candidates[0][1]
+                    round_record["rewrite_attempt_used"] = MAX_REWRITE_ATTEMPTS
+                    round_record["rewrite_words_actual"] = _count_words(
+                        localized_translation.get("full_text", "")
+                    )
+                    round_record["rewrite_converged"] = False
+                    log.warning(
+                        "rewrite did not converge after %d attempts, picking closest (%d words, target %d)",
+                        MAX_REWRITE_ATTEMPTS,
+                        round_record["rewrite_words_actual"],
+                        target_words,
+                    )
+                else:
+                    round_record["rewrite_converged"] = True
+                # =====================================================
                 _save_json(task_dir, f"localized_translation.round_{round_index}.json", localized_translation)
                 round_record["artifact_paths"]["localized_translation"] = f"localized_translation.round_{round_index}.json"
                 # Persist the actual LLM prompt used this round for audit / UI download.
