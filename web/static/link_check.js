@@ -158,12 +158,20 @@
     );
   }
 
+  function isBinaryCheckError(binary) {
+    return binary.status === "error";
+  }
+
   function isSameImageRejected(sameImage) {
     if (sameImage.status !== "done") {
       return false;
     }
     const answer = String(sameImage.answer || "").trim().toLowerCase();
     return ["不是", "否", "no", "false", "different"].includes(answer);
+  }
+
+  function isSameImageError(sameImage) {
+    return sameImage.status === "error";
   }
 
   function collectIssueSummary(item, task) {
@@ -194,11 +202,17 @@
     if (binary.status === "fail") {
       issues.push("二值快检未通过");
     }
+    if (isBinaryCheckError(binary)) {
+      issues.push("二值快检执行失败");
+    }
     if (isForegroundOverlapBelowThreshold(binary)) {
       issues.push("前景重合度低于阈值");
     }
     if (isSameImageRejected(sameImage)) {
       issues.push("大模型判定不是同图");
+    }
+    if (isSameImageError(sameImage)) {
+      issues.push("大模型同图判断执行失败");
     }
 
     return issues;
@@ -354,7 +368,7 @@
       {
         label: "二值快检结果",
         value: binaryStatusLabels[binary.status] || binary.status || "-",
-        isAlert: binary.status === "fail",
+        isAlert: binary.status === "fail" || isBinaryCheckError(binary),
       },
       { label: "二值相似度", value: formatPercent(binary.binary_similarity) },
       {
@@ -370,12 +384,12 @@
       {
         label: "二值快检说明",
         value: binary.reason || "-",
-        isAlert: binary.status === "fail",
+        isAlert: binary.status === "fail" || isBinaryCheckError(binary),
       },
       {
         label: "大模型同图判断",
         value: getSameImageValue(sameImage),
-        isAlert: isSameImageRejected(sameImage),
+        isAlert: isSameImageRejected(sameImage) || isSameImageError(sameImage),
       },
       { label: "大模型判断通道", value: sameImage.channel_label || "-" },
       { label: "大模型模型", value: sameImage.model || "-" },

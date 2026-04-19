@@ -74,3 +74,5 @@ def test_link_check_detail_script_supports_bootstrap_and_issue_alert_rendering()
     assert "function collectIssueSummary(" in script
     assert "lc-result-card--alert" in script
     assert "lc-meta-card--alert" in script
+    assert 'binary.status === "error"' in script
+    assert 'sameImage.status === "error"' in script
