@@ -506,6 +506,29 @@ video.media-player {
 .duration-status-tag.success { background: var(--success-bg); color: var(--success-fg); }
 .duration-status-tag.error   { background: var(--danger-bg);  color: var(--danger-fg); }
 
+.duration-model-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  font-size: var(--text-xs);
+  letter-spacing: 0.01em;
+}
+.duration-model-tag.vertex     { background: var(--accent-subtle);  border-color: var(--accent-ring); }
+.duration-model-tag.openrouter { background: var(--info-bg);        border-color: var(--info-bg); }
+.duration-model-tag.doubao     { background: var(--warning-bg);     border-color: var(--warning-bg); }
+.duration-model-channel { font-weight: 700; color: var(--fg); }
+.duration-model-tag.vertex     .duration-model-channel { color: var(--accent); }
+.duration-model-tag.openrouter .duration-model-channel { color: var(--info); }
+.duration-model-tag.doubao     .duration-model-channel { color: var(--warning-fg); }
+.duration-model-id {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
 .duration-round-attempts {
   background: var(--bg-subtle);
   border: 1px solid var(--border);

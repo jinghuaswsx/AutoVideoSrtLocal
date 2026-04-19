@@ -1086,8 +1086,23 @@ class PipelineRunner:
         source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
 
-        # reset duration tracking for a fresh run (e.g. resume)
-        task_state.update(task_id, tts_duration_rounds=[], tts_duration_status="running")
+        # reset duration tracking for a fresh run (e.g. resume)；
+        # 顺带保存本次翻译走的 provider + model + channel，给前端 Duration Loop 头部展示
+        from pipeline.translate import get_model_display_name
+        if provider.startswith("vertex_"):
+            _channel_label = "Vertex AI"
+        elif provider == "doubao":
+            _channel_label = "火山引擎 (豆包)"
+        else:
+            _channel_label = "OpenRouter"
+        task_state.update(
+            task_id,
+            tts_duration_rounds=[],
+            tts_duration_status="running",
+            tts_translate_provider=provider,
+            tts_translate_model=get_model_display_name(provider, self.user_id),
+            tts_translate_channel=_channel_label,
+        )
 
         loop_result = self._run_tts_duration_loop(
             task_id=task_id,

@@ -1401,11 +1401,26 @@
       failed:    '<span class="duration-status-tag error">失败</span>',
     })[status] || '';
 
+    // 翻译模型 / 渠道标签
+    const model = currentTask.tts_translate_model || '';
+    const channel = currentTask.tts_translate_channel || '';
+    let modelTag = '';
+    if (channel || model) {
+      const channelClass = channel === 'Vertex AI' ? 'vertex'
+                         : channel === 'OpenRouter' ? 'openrouter'
+                         : channel.includes('豆包') ? 'doubao' : '';
+      modelTag = `<span class="duration-model-tag ${channelClass}">`
+        + (channel ? `<span class="duration-model-channel">${escapeHtml(channel)}</span>` : '')
+        + (model ? `<span class="duration-model-id">${escapeHtml(model)}</span>` : '')
+        + `</span>`;
+    }
+
     const parts = [];
     parts.push(`
       <div class="duration-log-header">
         <span>翻译本土化 · 时长控制迭代（Duration Loop）</span>
         ${statusTag}
+        ${modelTag}
         <span class="meta">${metaStr}</span>
       </div>
     `);
