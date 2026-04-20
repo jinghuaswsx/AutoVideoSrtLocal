@@ -214,6 +214,9 @@ def create_app() -> Flask:
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
     app.register_blueprint(openapi_push_items_bp)
+    # OpenAPI 蓝图走 X-API-Key 鉴权，无 cookie session，不需要 CSRF token
+    csrf.exempt(openapi_materials_bp)
+    csrf.exempt(openapi_push_items_bp)
     app.register_blueprint(pushes_bp)
     # 推送管理蓝图的 mark-pushed / mark-failed / reset 是纯 JSON POST API，
     # 前端走 cookie session 认证，不需要 CSRF 表单 token；整蓝图豁免。
