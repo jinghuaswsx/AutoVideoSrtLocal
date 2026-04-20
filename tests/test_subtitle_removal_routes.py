@@ -358,10 +358,29 @@ def test_subtitle_removal_source_artifact_returns_404_for_non_subtitle_removal_t
     assert response.status_code == 404
 
 
-def test_state_api_returns_detail_payload(authed_client_no_db):
+def test_subtitle_removal_source_video_artifact_serves_owned_task_video(tmp_path, authed_client_no_db):
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video")
+    task = store.create_subtitle_removal(
+        "sr-source-video",
+        str(video_path),
+        str(tmp_path / "task"),
+        original_filename="video.mp4",
+        user_id=1,
+    )
+
+    response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source-video")
+
+    assert response.status_code == 200
+    assert response.data == b"video"
+
+
+def test_state_api_returns_detail_payload(tmp_path, authed_client_no_db):
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video")
     task = store.create_subtitle_removal(
         "sr-state-api",
-        "uploads/sr-state-api.mp4",
+        str(video_path),
         "output/sr-state-api",
         original_filename="demo.mp4",
         user_id=1,
@@ -369,6 +388,7 @@ def test_state_api_returns_detail_payload(authed_client_no_db):
     store.update(
         task["id"],
         remove_mode="full",
+        source_tos_key="uploads/1/sr-state-api/demo.mp4",
         media_info={
             "width": 720,
             "height": 1280,
@@ -385,6 +405,7 @@ def test_state_api_returns_detail_payload(authed_client_no_db):
     assert payload["id"] == task["id"]
     assert payload["remove_mode"] == "full"
     assert payload["media_info"]["resolution"] == "720x1280"
+    assert payload["source_video_url"].endswith(f"/api/subtitle-removal/{task['id']}/artifact/source-video")
 
 
 def test_subtitle_removal_submit_persists_mode_and_starts_runner(authed_client_no_db, monkeypatch):

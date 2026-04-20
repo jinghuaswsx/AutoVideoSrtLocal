@@ -102,6 +102,31 @@
     color: var(--text-main);
   }
 
+  .sr-back-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    width: fit-content;
+    padding: 0 14px;
+    border: 1px solid var(--border-main);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  .sr-back-link:hover,
+  .sr-back-link:focus-visible {
+    background: #f8fbff;
+    border-color: rgba(29, 111, 232, 0.22);
+    color: #1d6fe8;
+    outline: none;
+  }
+
   .sr-hero,
   .sr-card,
   .sr-upload-card {
