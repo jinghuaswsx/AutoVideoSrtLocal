@@ -1,4 +1,5 @@
 (function () {
+  const DEFAULT_TARGET_LANGUAGE = "en";
   const state = {
     enabledLanguages: new Set(),
     manuallySelectedLanguage: false,
@@ -114,6 +115,23 @@
     return true;
   }
 
+  function applyDefaultLanguage() {
+    const select = $("targetLanguage");
+    if (!select || !state.enabledLanguages.has(DEFAULT_TARGET_LANGUAGE)) {
+      return false;
+    }
+    const option = Array.from(select.options).find(function (item) {
+      return item.value === DEFAULT_TARGET_LANGUAGE;
+    });
+    if (!option) {
+      return false;
+    }
+
+    select.value = DEFAULT_TARGET_LANGUAGE;
+    select.dataset.autoDetected = "false";
+    return true;
+  }
+
   function syncLanguageFromUrl() {
     const linkInput = $("linkUrl");
     const select = $("targetLanguage");
@@ -127,6 +145,10 @@
 
     const detected = detectTargetLanguageFromUrl(linkInput.value, state.enabledLanguages);
     if (!detected) {
+      if (applyDefaultLanguage()) {
+        setLanguageHint("未从链接识别到语言，已默认选择英语，可手动覆盖。");
+        return;
+      }
       if (!select.value || select.dataset.autoDetected === "true") {
         select.value = "";
         select.dataset.autoDetected = "false";
@@ -161,6 +183,7 @@
       select.appendChild(option);
     }
 
+    applyDefaultLanguage();
     syncLanguageFromUrl();
   }
 

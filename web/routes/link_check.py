@@ -18,6 +18,7 @@ from web.services import link_check_runner
 bp = Blueprint("link_check", __name__)
 
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_DEFAULT_TARGET_LANGUAGE = "en"
 
 
 def _enabled_language_map() -> dict[str, dict]:
@@ -181,7 +182,7 @@ def create_task():
     if not target_language:
         target_language = detect_target_language_from_url(link_url, set(enabled_languages))
     if not target_language:
-        return jsonify({"error": "target_language 必填"}), 400
+        target_language = _DEFAULT_TARGET_LANGUAGE
 
     language = enabled_languages.get(target_language)
     if not language:
