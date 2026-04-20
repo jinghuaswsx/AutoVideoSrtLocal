@@ -6,10 +6,10 @@
     failed:    { text: '推送失败', cls: 'badge-red' },
   };
   const READINESS_LABELS = {
-    has_object: '素材',
+    has_object: '视频',
     has_cover: '封面',
     has_copywriting: '文案',
-    lang_supported: '链接适配',
+    lang_supported: '链接',
   };
 
   const state = { page: 1, pageSize: 20, total: 0 };
@@ -65,17 +65,22 @@
     return params.toString();
   }
 
-  function renderReadinessDots(readiness) {
-    return Object.entries(READINESS_LABELS).map(([key, label]) => {
+  function renderReadinessText(readiness) {
+    const parts = Object.entries(READINESS_LABELS).map(([key, label]) => {
       const ok = readiness[key];
-      return `<span class="dot ${ok ? 'dot-green' : 'dot-gray'}" title="${label}${ok ? '✓' : '✗'}"></span>`;
-    }).join('');
+      return `<span class="ready-item ${ok ? 'ready-ok' : 'ready-bad'}">${label}</span>`;
+    });
+    return `<div class="ready-row">${parts.join('<span class="ready-sep">|</span>')}</div>`;
   }
 
   function renderStatusBadge(status) {
     const s = STATUS_LABELS[status] || { text: status, cls: '' };
     return `<span class="badge ${s.cls}">${s.text}</span>`;
   }
+
+  // 服务端与内网不通，所有状态下「推送」按钮一律禁用。
+  // 状态流转由推送端通过 openapi 回写，这里仅保留展示 + 历史 / 重置。
+  const PUSH_DISABLED_TITLE = '服务端与内网不通，暂不可从管理后台发起推送';
 
   function renderActionCell(it) {
     if (!window.PUSH_IS_ADMIN) return '';
@@ -92,9 +97,8 @@
         .filter(([, v]) => !v).map(([k]) => READINESS_LABELS[k]).join(' / ');
       return `<button class="btn-push" disabled title="缺少：${missing}">推送</button>`;
     }
-    const label = it.status === 'failed' ? '× 失败，重试' : '推送';
-    return `<button class="btn-push ${it.status === 'failed' ? 'btn-failed' : ''}"
-                    data-action="push" data-id="${it.id}">${label}</button>`;
+    const label = it.status === 'failed' ? '× 失败' : '推送';
+    return `<button class="btn-push" disabled title="${PUSH_DISABLED_TITLE}">${label}</button>`;
   }
 
   function renderRow(it) {
@@ -114,7 +118,7 @@
         <div class="item-meta">${durStr} · ${sizeStr}</div>
       </td>
       <td><span class="lang-pill">${it.lang || ''}</span></td>
-      <td class="dots">${renderReadinessDots(it.readiness)}</td>
+      <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
       <td>${renderStatusBadge(it.status)}</td>
       <td class="time">${(it.created_at || '').replace('T', ' ').slice(0, 16)}</td>
       ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}

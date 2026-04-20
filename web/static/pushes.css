@@ -281,19 +281,20 @@
   font-weight: 500;
 }
 
-/* ---------- 就绪点 ---------- */
-.dots {
-  display: flex;
+/* ---------- 就绪文字（视频|封面|文案|链接） ---------- */
+.ready-cell { white-space: nowrap; }
+.ready-row {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
 }
-.dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.dot-green { background: var(--oc-success); }
-.dot-gray  { background: var(--oc-fg-subtle); }
+.ready-item { font-weight: 500; }
+.ready-ok  { color: var(--oc-success-fg); }
+.ready-bad { color: var(--oc-danger-fg); }
+.ready-sep { color: var(--oc-fg-subtle); margin: 0 2px; }
 
 /* ---------- 状态徽章 ---------- */
 .badge {
