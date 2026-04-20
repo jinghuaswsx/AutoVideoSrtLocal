@@ -507,8 +507,15 @@
         '<div class="sr-compare-panel-title">结果视频预览</div>',
         '<div class="sr-compare-panel-hint">去字幕后的成品视频，方便直接比较前后差异。</div>',
         '</div>',
-        '<div class="sr-preview-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(resultPreviewUrl) + '"></video></div>',
+        '<div class="sr-preview-frame" data-role="result-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(resultPreviewUrl) + '"></video></div>',
       ].join("");
+      var resultFrame = compareResultPanel.querySelector('[data-role="result-frame"]');
+      var resultVideo = resultFrame && resultFrame.querySelector('video');
+      if (resultVideo) {
+        resultVideo.addEventListener('error', function () {
+          resultFrame.innerHTML = '<div class="sr-result-empty"><div class="sr-selection-empty-title">结果视频暂不可用</div><div class="sr-hint">源链接可能已过期，请点「重提」重新生成，或用「下载结果」兜底。</div></div>';
+        });
+      }
 
       compareCard.hidden = false;
       compareCard.classList.remove("sr-hidden");
