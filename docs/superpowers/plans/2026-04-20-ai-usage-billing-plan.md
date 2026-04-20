@@ -577,3 +577,65 @@ git worktree remove .worktrees/ai-usage-billing
 # 分支合并后
 git branch -d feature/ai-usage-billing
 ```
+
+## 测试环境验收记录
+
+**日期:** 2026-04-21
+
+**测试环境发布**
+- 服务器: `14.103.220.208`
+- 实际目录: `/data/autovideosrt-test`
+- 分支 / 提交: `feature/ai-usage-billing` @ `813c3ac`
+- 服务: `autovideosrt-test` 已重启并为 `active`
+- 测试库: `auto_video_test`
+
+**本地验证**
+- `pytest tests/test_copywriting_runtime.py tests/test_copywriting_pipeline.py tests/test_ai_billing.py tests/test_pricing.py tests/test_llm_client_invoke.py tests/test_ai_billing_routes.py -q`
+  - 结果: `37 passed, 2 warnings`
+- `pytest tests/test_image_translate_runtime.py tests/test_gemini_image.py -q`
+  - 结果: `15 passed, 1 warning`
+- `python -m pytest tests/ -q`
+  - 当前机器上 1 小时内未跑完；`C:\Users\admin\AppData\Local\Temp\pytest-task12-full-suite.txt` 保留了前段输出，`C:\Users\admin\AppData\Local\Temp\pytest-task12-vv.out` 保留了 `-vv` 采样输出。本次放行主要依赖新增/相关测试全绿 + 测试环境端到端验收。
+
+**验收中发现并修复的真实缺口**
+- `copywriting.generate` 原先未把 OpenRouter 响应 `cost` 透传到 `ai_billing.log_request`
+  - 修复提交: `cffe565` `fix(billing): 记录 copywriting 的 OpenRouter 响应成本`
+- 图片翻译 runtime 调 `gemini_image.generate_image()` 时误传 `service="image_translate"`，导致 `ai_billing` 查不到注册表项而静默丢账
+  - 修复提交: `813c3ac` `fix(billing): 修正图片翻译账单 use_case 编码`
+
+**测试环境端到端结果**
+- 视频翻译任务: `cc4ecd5b-0007-472b-992d-0c899f5b6a7e`
+  - 完成状态: `export=done`
+  - 账单已写入: `video_translate.asr` / `video_translate.localize` / `video_translate.tts_script` / `video_translate.rewrite` / `video_translate.tts`
+- 视频评分:
+  - 同任务触发 `video_score.run`
+  - 落账: `provider=gemini_aistudio`, `cost_source=pricebook`, `cost_cny=0.201028`
+- 文案生成任务: `10c2b67e-f88e-4abc-9e3d-b825d9287fb6`
+  - 落账: `copywriting.generate`, `provider=openrouter`, `cost_source=response`, `cost_cny=0.202511`
+- 图片翻译任务: `0b3e2f0a-9bb2-4650-988d-36fff52ca644`
+  - 先将 `gemini-3-pro-image-preview` 单价从 `0.2652` 临时改为 `0.333333`
+  - 落账: `image_translate.generate`, `provider=gemini_aistudio`, `units_type=images`, `cost_source=pricebook`, `cost_cny=0.333333`
+  - 验证后已把价格恢复为 `0.2652`
+
+**后台 / 导出 / 定价页**
+- `/admin/ai-usage` 返回 `200`，页面可见 `copywriting.generate` / `image_translate.generate` / `video_score.run`
+- `/admin/ai-usage?provider=openrouter&group_by=provider` 返回 `200`，筛选后可见 `openrouter`
+- `/admin/ai-usage/export.csv` 返回 `200`
+  - CSV 表头包含 `use_case_code` / `cost_source`
+- `/my-ai-usage` 返回 `200`，当前用户可见自己的账单明细
+- `/settings?tab=pricing`
+  - `PUT` 改价已验证
+  - 额外验证了 `POST` 新增一条临时价格记录并 `DELETE` 删除，确认 CRUD 可用
+
+**账单摘要（测试环境验收完成后）**
+- `provider='openrouter'` 的调用中，`cost_source=response` 为 `1/1`
+- `usage_logs` 汇总:
+  - `response`: `1` 条, `SUM(cost_cny)=0.202511`
+  - `pricebook`: `8` 条, `SUM(cost_cny)=0.698881`
+  - `unknown`: `10` 条
+
+**备注**
+- `unknown` 主要来自 Doubao 文本翻译链路当前未配置到具体模型单价；本次验收关注点是:
+  - OpenRouter 响应成本是否直落 `response`
+  - 图片 / ASR / Gemini 视频评分是否按价格表记账
+  - 管理员详单页、CSV、定价页是否工作
