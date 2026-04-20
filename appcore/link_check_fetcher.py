@@ -13,6 +13,10 @@ class LocaleLockError(RuntimeError):
     pass
 
 
+class ImageRedirectMismatchError(RuntimeError):
+    pass
+
+
 def _accept_language(code: str) -> str:
     mapping = {
         "de": "de-DE,de;q=0.9,en;q=0.8",
@@ -140,6 +144,10 @@ def _build_download_evidence(item: dict, resolved_url: str, *, preserved_asset: 
         "evidence_status": "ok" if preserved_asset else "mismatch",
         "evidence_reason": "" if preserved_asset else "final image URL did not preserve the original asset path",
     }
+
+
+def _same_image_target(requested_url: str, resolved_url: str) -> bool:
+    return _image_dedupe_key(requested_url) == _image_dedupe_key(resolved_url)
 
 
 def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
@@ -317,14 +325,17 @@ class LinkCheckFetcher:
                 timeout=20,
             )
             _raise_for_status(response)
+            preserved_asset = _same_image_target(item["source_url"], response.url)
+            if not preserved_asset:
+                raise ImageRedirectMismatchError("final image URL did not preserve the original asset path")
             suffix = Path(urlparse(item["source_url"]).path).suffix or ".jpg"
             local_path = output_dir / f"site_{index:03d}{suffix}"
             local_path.write_bytes(response.content)
-            preserved_asset = _image_dedupe_key(item["source_url"]) == _image_dedupe_key(response.url)
             downloaded.append(
                 {
                     **item,
                     "id": f"site-{index}",
+                    "resolved_source_url": response.url,
                     "local_path": str(local_path),
                     "download_evidence": _build_download_evidence(
                         item,

@@ -285,6 +285,7 @@ def test_download_images_records_download_evidence_for_success(monkeypatch, tmp_
         tmp_path,
     )
 
+    assert result[0]["resolved_source_url"] == "https://img.example.com/hero.jpg?width=640"
     assert result[0]["download_evidence"] == {
         "requested_source_url": "https://img.example.com/hero.jpg?width=640",
         "resolved_source_url": "https://img.example.com/hero.jpg?width=640",
@@ -293,3 +294,24 @@ def test_download_images_records_download_evidence_for_success(monkeypatch, tmp_
         "evidence_status": "ok",
         "evidence_reason": "",
     }
+
+
+def test_download_images_raises_when_redirect_changes_image_target(monkeypatch, tmp_path):
+    from appcore.link_check_fetcher import ImageRedirectMismatchError, LinkCheckFetcher
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return SimpleNamespace(
+            url="https://img.example.com/other-hero.jpg?width=640",
+            status_code=200,
+            content=b"hero-bytes",
+            text="",
+        )
+
+    fetcher = LinkCheckFetcher()
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    with pytest.raises(ImageRedirectMismatchError, match="final image URL did not preserve the original asset path"):
+        fetcher.download_images(
+            [{"kind": "carousel", "source_url": "https://img.example.com/hero.jpg?width=640"}],
+            tmp_path,
+        )
