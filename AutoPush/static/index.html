@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoPush — 推送管理</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <header class="ap-header">
+    <div class="ap-header-inner">
+      <h1 class="ap-title">AutoPush</h1>
+      <span class="ap-subtitle">推送管理 · 本地代理</span>
+      <span class="ap-config" id="ap-config-hint"></span>
+    </div>
+  </header>
+
+  <nav class="ap-tabs" role="tablist">
+    <button type="button" class="ap-tab active" data-tab="list"    role="tab" aria-selected="true">推送列表</button>
+    <button type="button" class="ap-tab"        data-tab="create"  role="tab" aria-selected="false">推送创建</button>
+    <button type="button" class="ap-tab"        data-tab="payload" role="tab" aria-selected="false">推送载荷</button>
+  </nav>
+
+  <main class="ap-main">
+    <section class="ap-panel" data-panel="list" role="tabpanel">
+      <div id="ap-list-root"></div>
+    </section>
+    <section class="ap-panel" data-panel="create" role="tabpanel" hidden>
+      <div id="ap-create-root"></div>
+    </section>
+    <section class="ap-panel" data-panel="payload" role="tabpanel" hidden>
+      <div id="ap-payload-root"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
