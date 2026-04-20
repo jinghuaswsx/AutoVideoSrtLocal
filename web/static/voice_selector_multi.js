@@ -196,9 +196,12 @@
 
     let html = "";
     const currentDefaultId = defaultVoice ? defaultVoice.voice_id : null;
+    const showPinnedDefault = !!defaultVoice
+      && applyFilter(defaultVoice)
+      && (!onlyRec || candidatesMap.has(defaultVoice.voice_id));
 
     // 1. 默认音色置顶
-    if (defaultVoice && applyFilter(defaultVoice)) {
+    if (showPinnedDefault) {
       const isSelDefault = selectedVoiceId === defaultVoice.voice_id;
       const badge = `<span class="vs-row-sim" style="background:#4b5563;">默认</span>`;
       html += rowHtml(defaultVoice, {

@@ -39,6 +39,33 @@ def test_match_candidates_limits_top_k():
     assert len(top) == 3
 
 
+def test_match_candidates_excludes_voice_ids_without_shrinking_top_k():
+    query_vec = np.array([1.0, 0.0], dtype=np.float32)
+    rows = [
+        {"voice_id": "default", "name": "Default", "language": "en",
+         "gender": "female", "accent": None, "preview_url": None,
+         "audio_embedding": np.array([1.0, 0.0], dtype=np.float32).tobytes()},
+        {"voice_id": "b", "name": "B", "language": "en",
+         "gender": "female", "accent": None, "preview_url": None,
+         "audio_embedding": np.array([0.9, 0.1], dtype=np.float32).tobytes()},
+        {"voice_id": "c", "name": "C", "language": "en",
+         "gender": "female", "accent": None, "preview_url": None,
+         "audio_embedding": np.array([0.8, 0.2], dtype=np.float32).tobytes()},
+        {"voice_id": "d", "name": "D", "language": "en",
+         "gender": "female", "accent": None, "preview_url": None,
+         "audio_embedding": np.array([0.7, 0.3], dtype=np.float32).tobytes()},
+    ]
+    with patch("pipeline.voice_match._query_voices_by_language",
+               return_value=rows):
+        top = match_candidates(
+            query_vec,
+            language="en",
+            top_k=3,
+            exclude_voice_ids={"default"},
+        )
+    assert [c["voice_id"] for c in top] == ["b", "c", "d"]
+
+
 def test_match_candidates_skips_empty_embedding():
     query_vec = np.array([1.0, 0.0], dtype=np.float32)
     rows = [
