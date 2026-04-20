@@ -347,6 +347,20 @@ def get_item(item_id: int) -> dict | None:
     )
 
 
+def find_item_by_keys(product_id: int, lang: str, filename: str) -> dict | None:
+    """按 (product_id, lang, filename) 三元组精确定位素材。
+
+    没有 UNIQUE 约束，理论上可能有多条同名素材；取最新一条（id DESC）。
+    依赖索引 idx_product_lang_filename。
+    """
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE product_id=%s AND lang=%s AND filename=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (product_id, lang, filename),
+    )
+
+
 def soft_delete_item(item_id: int) -> int:
     return execute("UPDATE media_items SET deleted_at=NOW() WHERE id=%s", (item_id,))
 

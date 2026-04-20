@@ -30,7 +30,12 @@
     try {
       const data = await fetchJSON('/medias/api/languages');
       const sel = document.getElementById('f-lang');
+      // 保留首项「全部」
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = '全部';
       sel.innerHTML = '';
+      sel.appendChild(all);
       (data.languages || []).forEach(l => {
         const opt = document.createElement('option');
         opt.value = l.code;
@@ -45,9 +50,9 @@
   function buildQuery() {
     const params = new URLSearchParams();
     const statusSel = document.getElementById('f-status');
-    [...statusSel.selectedOptions].forEach(o => params.append('status', o.value));
+    if (statusSel.value) params.set('status', statusSel.value);
     const langSel = document.getElementById('f-lang');
-    [...langSel.selectedOptions].forEach(o => params.append('lang', o.value));
+    if (langSel.value) params.set('lang', langSel.value);
     const product = document.getElementById('f-product').value.trim();
     if (product) params.set('product', product);
     const keyword = document.getElementById('f-keyword').value.trim();
@@ -74,7 +79,6 @@
 
   function renderActionCell(it) {
     if (!window.PUSH_IS_ADMIN) return '';
-    const disabled = !window.PUSH_TARGET_CONFIGURED;
     if (it.status === 'pushed') {
       const date = (it.pushed_at || '').slice(0, 10);
       return `<span class="pushed-text">✓ 已推送 ${date}</span>
@@ -90,7 +94,7 @@
     }
     const label = it.status === 'failed' ? '× 失败，重试' : '推送';
     return `<button class="btn-push ${it.status === 'failed' ? 'btn-failed' : ''}"
-                    data-action="push" data-id="${it.id}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+                    data-action="push" data-id="${it.id}">${label}</button>`;
   }
 
   function renderRow(it) {
@@ -159,9 +163,8 @@
     });
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
-      const statusSel = document.getElementById('f-status');
-      [...statusSel.options].forEach(o => { o.selected = o.value === 'pending'; });
-      document.getElementById('f-lang').querySelectorAll('option').forEach(o => (o.selected = false));
+      document.getElementById('f-status').value = 'pending';
+      document.getElementById('f-lang').value = '';
       state.page = 1; load();
     });
   }

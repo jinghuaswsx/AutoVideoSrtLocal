@@ -198,10 +198,11 @@ def list_items_for_push(
     date_from: str | None = None,
     date_to: str | None = None,
     offset: int = 0,
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> tuple[list[dict], int]:
     """不过滤状态（状态在内存里算）。返回 (items join product 的原始行, total)。
 
+    `limit=None` 表示不分页，用于需要在内存中先按状态过滤再分页的场景。
     说明：`media_items` 表没有 `updated_at` 列，排序与日期过滤均使用 `i.created_at`。
     """
     where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
@@ -236,14 +237,16 @@ def list_items_for_push(
     )
     total = int((total_row or {}).get("c") or 0)
 
-    rows = query(
+    base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, "
         f"       p.ad_supported_langs, p.selling_points, p.importance "
         f"FROM media_items i "
         f"JOIN media_products p ON p.id = i.product_id "
         f"WHERE {where_sql} "
-        f"ORDER BY i.created_at DESC, i.id DESC "
-        f"LIMIT %s OFFSET %s",
-        tuple(args + [limit, offset]),
+        f"ORDER BY i.created_at DESC, i.id DESC"
     )
+    if limit is None:
+        rows = query(base_sql, tuple(args))
+    else:
+        rows = query(base_sql + " LIMIT %s OFFSET %s", tuple(args + [limit, offset]))
     return rows, total

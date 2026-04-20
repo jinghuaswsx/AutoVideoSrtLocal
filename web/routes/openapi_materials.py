@@ -456,6 +456,43 @@ def get_push_item(item_id: int):
     return jsonify(_serialize_push_item(item, product))
 
 
+@push_bp.route("/by-keys", methods=["GET"], strict_slashes=False)
+def get_push_item_payload_by_keys():
+    """按 (product_id, lang, filename) 三元组精确定位素材并返回推送 payload。
+
+    同一产品同一语种下可能有多条视频素材，必须带 filename 才能唯一匹配。
+    依赖索引 idx_product_lang_filename。
+    """
+    if not _push_api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    try:
+        product_id = int(request.args.get("product_id") or 0)
+    except (TypeError, ValueError):
+        product_id = 0
+    lang = (request.args.get("lang") or "").strip()
+    filename = (request.args.get("filename") or "").strip()
+    if not product_id or not lang or not filename:
+        return jsonify({
+            "error": "missing params",
+            "required": ["product_id", "lang", "filename"],
+        }), 400
+
+    item = medias.find_item_by_keys(product_id, lang, filename)
+    if not item:
+        return jsonify({"error": "item not found"}), 404
+    product = medias.get_product(product_id)
+    if not product:
+        return jsonify({"error": "product not found"}), 404
+
+    payload = pushes.build_item_payload(item, product)
+    return jsonify({
+        "item_id": item["id"],
+        "item": _serialize_push_item(item, product),
+        "payload": payload,
+    })
+
+
 @push_bp.route("/<int:item_id>/mark-pushed", methods=["POST"])
 def mark_pushed(item_id: int):
     """AutoPush 推送成功后写回。"""

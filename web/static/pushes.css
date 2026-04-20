@@ -142,11 +142,6 @@
   transition: border-color var(--oc-dur-fast) var(--oc-ease),
               box-shadow var(--oc-dur-fast) var(--oc-ease);
 }
-.filter-group select[multiple] {
-  height: auto;
-  min-height: 80px;
-  padding: 4px 6px;
-}
 .filter-group select:focus,
 .filter-group input:focus {
   border-color: var(--oc-accent);
@@ -155,8 +150,19 @@
 .filter-group input::placeholder {
   color: var(--oc-fg-subtle);
 }
-.filter-group span {
-  align-self: center;
+
+/* 日期范围：起始 / 至 / 截止 同行对齐 */
+.filter-group-range { min-width: 260px; }
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-sp-2);
+}
+.date-range input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.date-range .range-sep {
   color: var(--oc-fg-subtle);
   font-size: 12px;
 }

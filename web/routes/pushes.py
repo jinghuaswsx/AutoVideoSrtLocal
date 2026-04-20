@@ -32,7 +32,6 @@ def index():
     return render_template(
         "pushes_list.html",
         is_admin=_is_admin(),
-        push_target_configured=bool((config.PUSH_TARGET_URL or "").strip()),
     )
 
 
@@ -77,7 +76,7 @@ def _serialize_row(row: dict) -> dict:
 @bp.route("/api/items", methods=["GET"])
 @login_required
 def api_list():
-    status_filter = request.args.getlist("status")
+    status_filter = [s for s in request.args.getlist("status") if s]
     langs = [l for l in request.args.getlist("lang") if l]
     keyword = (request.args.get("keyword") or "").strip()
     product_term = (request.args.get("product") or "").strip()
@@ -87,21 +86,27 @@ def api_list():
     page = max(1, int(request.args.get("page") or 1))
     limit = _PAGE_SIZE_DEFAULT
 
-    rows, total = pushes.list_items_for_push(
+    # 状态由 Python 计算而非 SQL，因此先取全量行、在内存过滤后再分页，
+    # 避免"前 N 行都不符合状态"导致页面显示空数据但 total 正常的错觉。
+    rows, _ = pushes.list_items_for_push(
         langs=langs or None,
         keyword=keyword,
         product_term=product_term,
         date_from=date_from,
         date_to=date_to,
-        offset=(page - 1) * limit,
-        limit=limit,
+        offset=0,
+        limit=None,
     )
     items = [_serialize_row(r) for r in rows]
     if status_filter:
         items = [it for it in items if it["status"] in status_filter]
 
+    total = len(items)
+    start = (page - 1) * limit
+    page_items = items[start:start + limit]
+
     return jsonify({
-        "items": items,
+        "items": page_items,
         "total": total,
         "page": page,
         "page_size": limit,
