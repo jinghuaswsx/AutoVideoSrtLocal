@@ -131,3 +131,76 @@ def test_get_task_serializes_preview_urls(authed_user_client_no_db, monkeypatch)
     assert payload["reference_images"][0]["preview_url"].endswith("/api/link-check/tasks/lc-1/images/reference/ref-1")
     assert payload["items"][0]["binary_quick_check"]["binary_similarity"] == 0.93
     assert payload["items"][0]["same_image_llm"]["answer"] == "是"
+
+
+def test_get_task_serializes_locale_and_download_evidence(authed_user_client_no_db, monkeypatch):
+    from web import store
+
+    locale_evidence = {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "warmup_attempt_2",
+        "locked": True,
+        "failure_reason": "",
+        "attempts": [
+            {
+                "phase": "initial",
+                "requested_url": "https://shop.example.com/products/demo",
+                "resolved_url": "https://shop.example.com/products/demo",
+                "page_language": "en",
+                "locked": False,
+            },
+            {
+                "phase": "warmup",
+                "requested_url": "https://shop.example.com/de/products/demo",
+                "resolved_url": "https://shop.example.com/de/products/demo",
+                "page_language": "de",
+                "locked": True,
+            },
+        ],
+    }
+    download_evidence = {
+        "requested_url": "https://cdn.example.com/site-1.jpg",
+        "final_url": "https://cdn.example.com/site-1.jpg",
+        "http_status": 200,
+        "content_type": "image/jpeg",
+        "content_length": 12345,
+        "preserved_asset": False,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "display_name": "Demo Link Check",
+            "status": "done",
+            "state_json": json.dumps(
+                {
+                    "id": args[0],
+                    "type": "link_check",
+                    "status": "done",
+                    "link_url": "https://shop.example.com/de/products/demo",
+                    "target_language": "de",
+                    "target_language_name": "德语",
+                    "locale_evidence": locale_evidence,
+                    "items": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/site.jpg",
+                            "download_evidence": download_evidence,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    monkeypatch.setattr(store, "get", lambda task_id: None)
+
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-1")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == locale_evidence
+    assert payload["items"][0]["download_evidence"] == download_evidence

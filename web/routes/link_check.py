@@ -59,6 +59,17 @@ def _load_task_from_row(row: dict | None) -> dict | None:
     state.setdefault("page_language", "")
     state.setdefault("target_language", "")
     state.setdefault("target_language_name", "")
+    state.setdefault(
+        "locale_evidence",
+        {
+            "target_language": state.get("target_language") or "",
+            "requested_url": state.get("link_url") or "",
+            "lock_source": "",
+            "locked": False,
+            "failure_reason": "",
+            "attempts": [],
+        },
+    )
     state.setdefault("progress", {})
     state.setdefault("summary", {})
     state.setdefault("error", "")
@@ -109,6 +120,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
         "page_language": task.get("page_language", ""),
         "target_language": task["target_language"],
         "target_language_name": task["target_language_name"],
+        "locale_evidence": dict(task.get("locale_evidence") or {}),
         "progress": dict(task.get("progress") or {}),
         "summary": dict(task.get("summary") or {}),
         "error": task.get("error", ""),
@@ -130,6 +142,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
                 "reference_match": dict(item.get("reference_match") or {}),
                 "binary_quick_check": dict(item.get("binary_quick_check") or {}),
                 "same_image_llm": dict(item.get("same_image_llm") or {}),
+                "download_evidence": dict(item.get("download_evidence") or {}),
                 "status": item.get("status") or "pending",
                 "error": item.get("error") or "",
             }
