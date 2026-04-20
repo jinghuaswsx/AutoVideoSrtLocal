@@ -262,6 +262,92 @@ def test_detail_images_download_zip_404_when_empty(authed_client_no_db, monkeypa
     assert resp.status_code == 404
 
 
+def _stub_zip_setup(monkeypatch, *, items):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "泡泡枪", "product_code": "demo-item"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: items)
+
+    def fake_download(object_key, local_path):
+        with open(local_path, "wb") as fh:
+            fh.write(b"BYTES-" + object_key.encode())
+
+    monkeypatch.setattr(r.tos_clients, "download_media_file", fake_download)
+
+
+def test_detail_images_download_zip_default_kind_excludes_gif(authed_client_no_db, monkeypatch):
+    """默认 kind=image：跳过 gif，只打包静态图。"""
+    _stub_zip_setup(monkeypatch, items=[
+        {"id": 21, "object_key": "1/medias/1/a.jpg", "sort_order": 0},
+        {"id": 22, "object_key": "1/medias/1/b.gif", "sort_order": 1},
+        {"id": 23, "object_key": "1/medias/1/c.webp", "sort_order": 2},
+    ])
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=en")
+
+    assert resp.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(resp.data))
+    names = archive.namelist()
+    assert all(not n.endswith(".gif") for n in names), f"static-only zip 不应包含 gif: {names}"
+    assert any(n.endswith(".jpg") for n in names)
+    assert any(n.endswith(".webp") for n in names)
+    # 文件名仍是默认 detail-images 包名
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "demo-item_en_detail-images.zip" in cd
+
+
+def test_detail_images_download_zip_kind_gif_only(authed_client_no_db, monkeypatch):
+    """kind=gif：只打包 gif，且文件名带 _gif 后缀。"""
+    _stub_zip_setup(monkeypatch, items=[
+        {"id": 21, "object_key": "1/medias/1/a.jpg", "sort_order": 0},
+        {"id": 22, "object_key": "1/medias/1/b.gif", "sort_order": 1},
+        {"id": 23, "object_key": "1/medias/1/c.gif", "sort_order": 2},
+    ])
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=en&kind=gif")
+
+    assert resp.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(resp.data))
+    names = archive.namelist()
+    assert names and all(n.endswith(".gif") for n in names), f"gif zip 应只含 .gif: {names}"
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "_gif.zip" in cd
+
+
+def test_detail_images_download_zip_kind_gif_404_when_no_gif(authed_client_no_db, monkeypatch):
+    """kind=gif 但当前语种没有 gif → 404。"""
+    _stub_zip_setup(monkeypatch, items=[
+        {"id": 21, "object_key": "1/medias/1/a.jpg", "sort_order": 0},
+        {"id": 22, "object_key": "1/medias/1/c.webp", "sort_order": 1},
+    ])
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=en&kind=gif")
+
+    assert resp.status_code == 404
+
+
+def test_detail_images_download_zip_kind_all_includes_gif(authed_client_no_db, monkeypatch):
+    """kind=all：包含静态图 + gif。"""
+    _stub_zip_setup(monkeypatch, items=[
+        {"id": 21, "object_key": "1/medias/1/a.jpg", "sort_order": 0},
+        {"id": 22, "object_key": "1/medias/1/b.gif", "sort_order": 1},
+    ])
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=en&kind=all")
+
+    assert resp.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(resp.data))
+    names = archive.namelist()
+    assert any(n.endswith(".jpg") for n in names)
+    assert any(n.endswith(".gif") for n in names)
+
+
 def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

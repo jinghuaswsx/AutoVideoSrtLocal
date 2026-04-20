@@ -1007,11 +1007,26 @@ def api_detail_images_download_zip(pid: int):
     if not medias.is_valid_language(lang):
         return jsonify({"error": f"不支持的语种: {lang}"}), 400
 
+    kind = (request.args.get("kind") or "image").strip().lower()
+    if kind not in {"image", "gif", "all"}:
+        return jsonify({"error": f"不支持的 kind: {kind}"}), 400
+
     rows = medias.list_detail_images(pid, lang)
     if not rows:
         abort(404)
 
-    archive_base = _detail_images_archive_basename(p or {}, pid, lang)
+    def _is_gif(row: dict) -> bool:
+        return str(row.get("object_key") or "").lower().endswith(".gif")
+
+    if kind == "gif":
+        rows = [r for r in rows if _is_gif(r)]
+    elif kind == "image":
+        rows = [r for r in rows if not _is_gif(r)]
+    if not rows:
+        abort(404)
+
+    base = _detail_images_archive_basename(p or {}, pid, lang)
+    archive_base = f"{base}_gif" if kind == "gif" else base
     buf = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix="detail_images_zip_") as tmp_dir:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
