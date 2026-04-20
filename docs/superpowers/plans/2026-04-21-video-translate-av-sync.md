@@ -523,7 +523,7 @@ git commit -m "feat(video-translate-v2): runtime 集成 run_av_localize + AV_LOC
 - Modify: `web/routes/`(视频翻译任务创建接口,具体文件 Codex 从 `web/routes/` 里找,应在 `projects.py` 或 `medias.py` 附近)
 - Modify: 对应 `web/static/*.js` 和 `web/templates/*.html`
 
-- [ ] **Step 6.1:定位任务创建路由**
+- [x] **Step 6.1:定位任务创建路由**
 
 ```bash
 grep -rn "video_translate" web/routes/ | head -20
@@ -532,7 +532,7 @@ grep -rn "run_localize\|create.*project.*translate" web/routes/ | head -20
 
 找到接收视频翻译任务创建的 POST 路由,读当前字段。
 
-- [ ] **Step 6.2:路由层接收新字段**
+- [x] **Step 6.2:路由层接收新字段**
 
 在 POST handler 里新增读取(使用 request.form.get / request.json.get,看现有代码风格):
 
@@ -555,7 +555,7 @@ task_state["av_translate_inputs"] = av_inputs
 
 必填校验:`target_language` 和 `target_market` 空 → 返回 400 错误。
 
-- [ ] **Step 6.3:前端表单加字段**
+- [x] **Step 6.3:前端表单加字段**
 
 找到视频翻译任务创建的模板/JS,加:
 - `<select name="target_language">`:填充现有支持语种列表(参考 `pipeline/speech_rate_model.py` 的 `BENCHMARK_TEXT` keys:en/de/fr/ja/es/pt)
@@ -564,7 +564,7 @@ task_state["av_translate_inputs"] = av_inputs
 
 **UI 风格**:遵循项目 CLAUDE.md 的"Frontend Design System — Ocean Blue Admin"(深海蓝+大圆角+OKLCH token)。
 
-- [ ] **Step 6.4:手动冒烟**
+- [x] **Step 6.4:手动冒烟**
 
 ```bash
 # 启动本地服务
@@ -573,7 +573,7 @@ python run.py   # 或项目实际启动命令
 # 检查数据库 projects.state_json 字段包含新字段
 ```
 
-- [ ] **Step 6.5:Commit**
+- [x] **Step 6.5:Commit**
 
 ```bash
 git add web/

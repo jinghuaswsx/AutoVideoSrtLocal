@@ -136,6 +136,19 @@ def test_index_page_contains_confirmation_mode_control(authed_client_no_db):
     assert "手动确认" in body
 
 
+def test_index_page_contains_av_sync_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "音画同步配置" in body
+    assert 'id="avTargetLanguage"' in body
+    assert 'id="avTargetMarket"' in body
+    assert 'id="avOverridesPanel"' in body
+    assert 'id="avOverrideSellingPoints"' in body
+    assert "getAvTranslateInputs()" in body
+
+
 def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db, monkeypatch):
     task = store.create("task-project-workbench", "video.mp4", "output/task-project-workbench")
     row = {
@@ -1127,6 +1140,54 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     second_payload = second_response.get_json()
     assert second_payload["status"] == "started"
     assert started == [("task-start-tos", 1)]
+
+
+def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path, authed_client_no_db, monkeypatch):
+    task_id = "task-start-av-inputs"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    video_path = tmp_path / "uploads" / f"{task_id}.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"video")
+
+    store.create(task_id, str(video_path), str(task_dir), user_id=1)
+    started = []
+
+    monkeypatch.setattr(
+        "web.services.pipeline_runner.start",
+        lambda task_id, user_id=None: started.append((task_id, user_id)),
+    )
+
+    response = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/start",
+        json={
+            "voice_id": "auto",
+            "target_language": "ja",
+            "target_market": "JP",
+            "override_product_name": "Glow Serum",
+            "override_brand": "Ocean Lab",
+            "override_selling_points": "轻薄不黏腻\n夜间修护",
+            "override_price": "¥299",
+            "override_target_audience": "熬夜肌人群",
+            "override_extra_info": "避免直译品牌 slogan",
+        },
+    )
+
+    assert response.status_code == 200
+    assert started == [(task_id, 1)]
+    task = store.get(task_id)
+    assert task["pipeline_version"] == "av"
+    assert task["av_translate_inputs"]["target_language"] == "ja"
+    assert task["av_translate_inputs"]["target_language_name"] == "Japanese"
+    assert task["av_translate_inputs"]["target_market"] == "JP"
+    assert task["av_translate_inputs"]["product_overrides"] == {
+        "product_name": "Glow Serum",
+        "brand": "Ocean Lab",
+        "selling_points": ["轻薄不黏腻", "夜间修护"],
+        "price": "¥299",
+        "target_audience": "熬夜肌人群",
+        "extra_info": "避免直译品牌 slogan",
+    }
 
 
 def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):

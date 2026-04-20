@@ -2,6 +2,7 @@
 <a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 {% endif %}
 {% set _default_source_language = default_source_language|default('zh') %}
+{% set _task_api_base = api_base|default('/api/tasks') %}
 
 
 {% if allow_upload %}
@@ -323,6 +324,65 @@
       </div>
       <div class="hint">字体、字号和位置同时应用于硬字幕烧录版与 CapCut 工程包。</div>
     </div>
+    {% if _task_api_base == '/api/tasks' %}
+    <div class="config-item config-item--av">
+      <div class="av-config-card">
+        <div class="av-config-head">
+          <div class="av-config-eyebrow">Video Translate v2</div>
+          <h3>音画同步配置</h3>
+          <p>默认走看画面的忠实翻译。目标语种、目标市场和资料微调会写入任务状态，驱动 v2 管线。</p>
+        </div>
+        <div class="av-config-grid">
+          <div class="av-field">
+            <label for="avTargetLanguage">目标语种</label>
+            <select id="avTargetLanguage">
+              {% for item in av_target_languages %}
+              <option value="{{ item.code }}" data-name="{{ item.name }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="av-field">
+            <label for="avTargetMarket">目标市场</label>
+            <select id="avTargetMarket">
+              {% for item in av_target_markets %}
+              <option value="{{ item.code }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <details class="av-overrides" id="avOverridesPanel">
+          <summary>带货资料微调</summary>
+          <p class="av-overrides-hint">可留空，系统会优先根据画面和口播自动识别；只有确定素材信息明显缺失时再手动补充。</p>
+          <div class="av-overrides-grid">
+            <div class="av-field">
+              <label for="avOverrideProductName">产品名</label>
+              <input type="text" id="avOverrideProductName" placeholder="例如：Collagen Night Mask" />
+            </div>
+            <div class="av-field">
+              <label for="avOverrideBrand">品牌</label>
+              <input type="text" id="avOverrideBrand" placeholder="例如：Lumiere Lab" />
+            </div>
+            <div class="av-field av-field--full">
+              <label for="avOverrideSellingPoints">卖点</label>
+              <textarea id="avOverrideSellingPoints" rows="4" placeholder="每行一个卖点，例如：&#10;7 天淡化暗沉&#10;晚安面膜免洗使用"></textarea>
+            </div>
+            <div class="av-field">
+              <label for="avOverridePrice">价格</label>
+              <input type="text" id="avOverridePrice" placeholder="例如：$29.90 / 199 元" />
+            </div>
+            <div class="av-field">
+              <label for="avOverrideTargetAudience">目标人群</label>
+              <input type="text" id="avOverrideTargetAudience" placeholder="例如：25-35 岁敏感肌上班族" />
+            </div>
+            <div class="av-field av-field--full">
+              <label for="avOverrideExtraInfo">补充信息</label>
+              <textarea id="avOverrideExtraInfo" rows="3" placeholder="例如：平台禁词、主推场景、不能直译的品牌术语"></textarea>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+    {% endif %}
     <div class="config-item">
       <label for="interactiveReviewToggle">确认模式</label>
       <select id="interactiveReviewToggle">

@@ -379,3 +379,27 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert saved["variants"]["av"]["sentences"][1]["status"] == "speed_adjusted"
     assert saved["variants"]["av"]["tts_audio_path"].endswith("tts_full.av.mp3")
     assert saved["variants"]["av"]["srt_path"].endswith("subtitle.av.srt")
+
+
+def test_step_translate_dispatches_av_pipeline_version(tmp_path, monkeypatch):
+    task_id = "test_step_translate_dispatches_av"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(task_id, pipeline_version="av")
+    runner, _events = _make_runner()
+    captured = {}
+
+    monkeypatch.setitem(
+        runner._step_translate.__func__.__globals__,
+        "run_av_localize",
+        lambda task_id, runner=None, variant="av": captured.update(
+            {"task_id": task_id, "runner": runner, "variant": variant}
+        ),
+    )
+
+    runner._step_translate(task_id)
+
+    assert captured == {
+        "task_id": task_id,
+        "runner": runner,
+        "variant": "av",
+    }

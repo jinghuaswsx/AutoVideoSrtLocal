@@ -151,6 +151,13 @@ def _lang_display(label: str) -> str:
     return {"en": "英语", "de": "德语", "fr": "法语"}.get(label, label)
 
 
+def _is_av_pipeline_task(task: dict | None) -> bool:
+    task = task or {}
+    task_type = str(task.get("type") or "").strip()
+    pipeline_version = str(task.get("pipeline_version") or "").strip()
+    return task_type == "av_translate" or pipeline_version == "av"
+
+
 # Default words-per-second by target language (fallback when no measured data).
 _DEFAULT_WPS = {"en": 2.5, "de": 2.0, "fr": 2.8}
 
@@ -897,6 +904,8 @@ class PipelineRunner:
                 current = task_state.get(task_id) or {}
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
+                if current.get("status") in {"failed", "error"}:
+                    return
         except Exception as exc:
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
@@ -996,6 +1005,9 @@ class PipelineRunner:
 
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         task_dir = task["task_dir"]
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
@@ -1076,6 +1088,11 @@ class PipelineRunner:
         import appcore.task_state as task_state
 
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            if (task.get("steps") or {}).get("tts") == "done":
+                return
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         loc_mod = importlib.import_module(self.localization_module)
 
         lang_display = _lang_display(self.target_language_label)
@@ -1413,6 +1430,11 @@ class PipelineRunner:
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            if (task.get("steps") or {}).get("subtitle") == "done":
+                return
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
         from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio

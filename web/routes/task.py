@@ -12,6 +12,14 @@ import mimetypes
 from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect, Response, make_response
 from flask_login import login_required, current_user
 
+from appcore.av_translate_inputs import (
+    AV_TARGET_LANGUAGE_CODES,
+    AV_TARGET_LANGUAGE_OPTIONS,
+    AV_TARGET_MARKET_CODES,
+    AV_TARGET_MARKET_OPTIONS,
+    build_default_av_translate_inputs,
+    normalize_av_translate_inputs,
+)
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup, tos_clients
 from appcore.task_recovery import recover_task_if_needed
@@ -39,6 +47,50 @@ def _parse_bool(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on", "manual"}
     return bool(value)
+
+
+def _request_payload() -> dict:
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return request.form.to_dict(flat=True)
+
+
+def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None = None) -> dict:
+    current_inputs = (current_task or {}).get("av_translate_inputs") or {}
+    data = payload or {}
+    nested = data.get("av_translate_inputs") or {}
+    nested_inputs = nested if isinstance(nested, dict) else {}
+    override_inputs = dict(nested_inputs.get("product_overrides") or {})
+
+    flat_map = {
+        "product_name": data.get("override_product_name"),
+        "brand": data.get("override_brand"),
+        "selling_points": data.get("override_selling_points"),
+        "price": data.get("override_price"),
+        "target_audience": data.get("override_target_audience"),
+        "extra_info": data.get("override_extra_info"),
+    }
+    for key, value in flat_map.items():
+        if value is not None:
+            override_inputs[key] = value
+
+    raw_inputs = {
+        "target_language": data.get("target_language", nested_inputs.get("target_language")),
+        "target_language_name": data.get("target_language_name", nested_inputs.get("target_language_name")),
+        "target_market": data.get("target_market", nested_inputs.get("target_market")),
+        "product_overrides": override_inputs,
+    }
+    return normalize_av_translate_inputs(raw_inputs, base=current_inputs)
+
+
+def _validate_av_translate_inputs(av_inputs: dict) -> str | None:
+    target_language = str(av_inputs.get("target_language") or "").strip().lower()
+    if target_language not in AV_TARGET_LANGUAGE_CODES:
+        return "target_language 非法"
+    target_market = str(av_inputs.get("target_market") or "").strip().upper()
+    if target_market not in AV_TARGET_MARKET_CODES:
+        return "target_market 非法"
+    return None
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -95,7 +147,13 @@ def _build_translate_compare_artifact(task: dict) -> dict:
 def upload_page():
     from appcore.api_keys import get_key
     translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
-    return render_template("index.html", translate_pref=translate_pref)
+    return render_template(
+        "index.html",
+        translate_pref=translate_pref,
+        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_markets=AV_TARGET_MARKET_OPTIONS,
+        av_translate_defaults=build_default_av_translate_inputs(),
+    )
 
 
 def _artifact_candidates(task_id: str, name: str, task: dict | None = None, variant: str | None = None) -> list[str]:
@@ -297,7 +355,11 @@ def restart(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
+    body = _request_payload()
+    av_inputs = _collect_av_translate_inputs(body, current_task=task)
+    av_error = _validate_av_translate_inputs(av_inputs)
+    if av_error:
+        return jsonify({"error": av_error}), 400
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -311,6 +373,12 @@ def restart(task_id):
         user_id=current_user.id if current_user.is_authenticated else None,
         runner=pipeline_runner,
     )
+    store.update(
+        task_id,
+        pipeline_version="av",
+        av_translate_inputs=av_inputs,
+    )
+    updated = store.get(task_id) or updated
     return jsonify({"status": "restarted", "task": updated})
 
 
@@ -322,7 +390,11 @@ def start(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
 
-    body = request.get_json(silent=True) or {}
+    body = _request_payload()
+    av_inputs = _collect_av_translate_inputs(body, current_task=task)
+    av_error = _validate_av_translate_inputs(av_inputs)
+    if av_error:
+        return jsonify({"error": av_error}), 400
     store.update(
         task_id,
         voice_gender=body.get("voice_gender", "male"),
@@ -332,11 +404,15 @@ def start(task_id):
         subtitle_size=body.get("subtitle_size", 14),
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         interactive_review=_parse_bool(body.get("interactive_review", False)),
+        pipeline_version="av",
+        av_translate_inputs=av_inputs,
     )
     task = store.get(task_id) or task
 
     if _task_requires_source_sync(task):
         _ensure_local_source_video(task_id, task)
+        updated_task = store.get(task_id) or task
+        return jsonify({"status": "source_ready", "task": updated_task})
 
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.start(task_id, user_id=user_id)
