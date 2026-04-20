@@ -61,13 +61,6 @@ OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
 OPENAPI_MEDIA_API_KEY = _env("OPENAPI_MEDIA_API_KEY")
 # 推送管理
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")
-# 推送管理 - push-module 纯前端直连模式
-AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://14.103.220.208:8888")
-AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "autovideosrt-materials-openapi")
-PUSH_MEDIAS_TARGET = _env(
-    "PUSH_MEDIAS_TARGET",
-    "http://172.17.254.77:22400/dify/shopify/medias",
-)
 AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
                        "https://newjoyloo.com/{lang}/products/{product_code}-rjc")
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
