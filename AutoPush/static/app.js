@@ -429,7 +429,7 @@ function validatePayload(p) {
 
 function renderList(container) {
   const state = {
-    page: 1, pageSize: 20, q: "", status: "", lang: "",
+    page: 1, pageSize: 20, q: "", status: "pending", lang: "",
     total: 0, items: [], loading: false, error: "",
   };
 
@@ -458,6 +458,7 @@ function renderList(container) {
   ].forEach(([v, t]) => {
     const opt = document.createElement("option");
     opt.value = v; opt.textContent = t;
+    if (v === state.status) opt.selected = true;
     statusSelect.appendChild(opt);
   });
   statusGroup.appendChild(statusSelect);
