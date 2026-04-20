@@ -1,0 +1,717 @@
+{% extends "layout.html" %}
+{% block title %}API 账单 — AutoVideoSrt{% endblock %}
+{% block page_title %}{% if admin_mode %}API 账单{% else %}我的 API 账单{% endif %}{% endblock %}
+{% block extra_style %}
+.billing-page {
+  --billing-bg: oklch(99% 0.004 230);
+  --billing-bg-subtle: oklch(97% 0.006 230);
+  --billing-bg-muted: oklch(95% 0.012 230);
+  --billing-border: oklch(91% 0.012 230);
+  --billing-border-strong: oklch(84% 0.015 230);
+  --billing-fg: oklch(24% 0.02 235);
+  --billing-fg-muted: oklch(52% 0.018 230);
+  --billing-fg-subtle: oklch(66% 0.015 230);
+  --billing-accent: oklch(56% 0.16 230);
+  --billing-accent-soft: oklch(95% 0.04 225);
+  --billing-info: oklch(62% 0.12 230);
+  --billing-info-soft: oklch(95% 0.04 230);
+  --billing-success: oklch(62% 0.13 165);
+  --billing-success-soft: oklch(95% 0.04 165);
+  --billing-danger: oklch(58% 0.18 25);
+  --billing-danger-soft: oklch(96% 0.04 25);
+  --billing-shadow: 0 12px 28px -18px oklch(22% 0.02 235 / 0.28);
+  display: grid;
+  gap: 20px;
+}
+
+.billing-hero {
+  background:
+    radial-gradient(circle at top right, oklch(97% 0.04 220), transparent 42%),
+    linear-gradient(180deg, var(--billing-bg), var(--billing-bg-subtle));
+  border: 1px solid var(--billing-border);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: var(--billing-shadow);
+}
+
+.billing-hero-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.billing-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--billing-accent-soft);
+  color: var(--billing-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.billing-title {
+  margin-top: 12px;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--billing-fg);
+}
+
+.billing-subtitle {
+  margin-top: 8px;
+  max-width: 760px;
+  color: var(--billing-fg-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.billing-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.billing-toolbar {
+  display: grid;
+  gap: 18px;
+}
+
+.billing-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.billing-field {
+  display: grid;
+  gap: 6px;
+}
+
+.billing-field > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--billing-fg-muted);
+  letter-spacing: 0.03em;
+}
+
+.billing-input,
+.billing-select {
+  min-height: 38px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--billing-border-strong);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--billing-fg);
+  padding: 9px 12px;
+  font: inherit;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.billing-input::placeholder {
+  color: var(--billing-fg-subtle);
+}
+
+.billing-input:focus,
+.billing-select:focus {
+  border-color: var(--billing-accent);
+  box-shadow: 0 0 0 3px oklch(56% 0.16 230 / 0.14);
+  background: white;
+}
+
+.billing-toolbar-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.billing-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.billing-tab {
+  border: 1px solid var(--billing-border);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--billing-fg-muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.billing-tab.is-active,
+.billing-tab:hover {
+  background: var(--billing-accent-soft);
+  border-color: oklch(88% 0.03 225);
+  color: var(--billing-accent);
+}
+
+.billing-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.billing-card {
+  background: white;
+  border: 1px solid var(--billing-border);
+  border-radius: 18px;
+  padding: 18px 20px;
+  box-shadow: var(--billing-shadow);
+}
+
+.billing-card-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--billing-fg-muted);
+}
+
+.billing-card-value {
+  margin-top: 8px;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--billing-fg);
+}
+
+.billing-card-meta {
+  margin-top: 8px;
+  color: var(--billing-fg-subtle);
+  font-size: 13px;
+}
+
+.billing-panel {
+  background: white;
+  border: 1px solid var(--billing-border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--billing-shadow);
+}
+
+.billing-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--billing-border);
+  background: linear-gradient(180deg, white, var(--billing-bg-subtle));
+}
+
+.billing-panel-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--billing-fg);
+}
+
+.billing-panel-note {
+  color: var(--billing-fg-muted);
+  font-size: 13px;
+}
+
+.billing-table-wrap {
+  overflow-x: auto;
+}
+
+.billing-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.billing-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--billing-fg-muted);
+  border-bottom: 1px solid var(--billing-border);
+  background: var(--billing-bg-subtle);
+  white-space: nowrap;
+}
+
+.billing-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--billing-bg-muted);
+  color: var(--billing-fg);
+  font-size: 14px;
+  vertical-align: top;
+}
+
+.billing-row {
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.billing-row:hover td {
+  background: var(--billing-bg-subtle);
+}
+
+.billing-row[aria-expanded="true"] td {
+  background: linear-gradient(180deg, var(--billing-bg), var(--billing-bg-subtle));
+}
+
+.billing-mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.billing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--billing-bg-subtle);
+  color: var(--billing-fg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.billing-pill.success {
+  background: var(--billing-success-soft);
+  color: var(--billing-success);
+}
+
+.billing-pill.failed {
+  background: var(--billing-danger-soft);
+  color: var(--billing-danger);
+}
+
+.cost-response { color: var(--billing-success); font-weight: 800; }
+.cost-pricebook { color: var(--billing-info); font-weight: 800; }
+.cost-unknown { color: var(--billing-fg-subtle); font-weight: 700; }
+
+.billing-detail-row[hidden] {
+  display: none;
+}
+
+.billing-detail {
+  background: linear-gradient(180deg, var(--billing-bg), white);
+  padding: 18px 20px 20px;
+}
+
+.billing-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.billing-detail-card {
+  border: 1px solid var(--billing-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 16px;
+}
+
+.billing-detail-label {
+  margin-bottom: 8px;
+  color: var(--billing-fg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.billing-detail-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--billing-fg);
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.billing-empty {
+  padding: 34px 20px;
+  text-align: center;
+  color: var(--billing-fg-subtle);
+}
+
+.billing-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.billing-pagination-note {
+  color: var(--billing-fg-muted);
+  font-size: 13px;
+}
+
+.billing-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .billing-hero-head,
+  .billing-toolbar-foot,
+  .billing-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .billing-actions,
+  .billing-tabs,
+  .billing-page-actions {
+    width: 100%;
+  }
+
+  .billing-actions .btn,
+  .billing-page-actions .btn,
+  .billing-tab {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .billing-page {
+    gap: 16px;
+  }
+
+  .billing-hero,
+  .billing-card,
+  .billing-panel-head,
+  .billing-detail {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .billing-title {
+    font-size: 24px;
+  }
+
+  .billing-card-value {
+    font-size: 24px;
+  }
+}
+{% endblock %}
+{% block content %}
+<section class="billing-page">
+  <div class="billing-hero">
+    <div class="billing-hero-head">
+      <div>
+        <div class="billing-kicker">AI Usage Ledger</div>
+        <h1 class="billing-title">{% if admin_mode %}按请求追踪每一笔 AI 费用{% else %}查看你自己的 AI 调用账单{% endif %}</h1>
+        <p class="billing-subtitle">
+          汇总视图和逐条明细共用同一批筛选条件。OpenRouter 响应直出费用标记为 <strong>response</strong>，查价表回填的标记为 <strong>pricebook</strong>，缺价或缺用量则显示为 <strong>unknown</strong>。
+        </p>
+      </div>
+      <div class="billing-actions">
+        <button type="submit" form="billingFilters" class="btn btn-primary">刷新数据</button>
+        {% if admin_mode %}
+        <button
+          type="submit"
+          form="billingFilters"
+          formaction="{{ url_for('admin_ai_billing.export_admin_ai_usage_csv') }}"
+          formmethod="get"
+          class="btn btn-ghost"
+        >
+          导出 CSV
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <form id="billingFilters" method="get" class="billing-toolbar">
+      <input type="hidden" name="page" value="1">
+      <div class="billing-filter-grid">
+        <label class="billing-field">
+          <span>开始日期</span>
+          <input class="billing-input" type="date" name="from" value="{{ filters.date_from }}">
+        </label>
+        <label class="billing-field">
+          <span>结束日期</span>
+          <input class="billing-input" type="date" name="to" value="{{ filters.date_to }}">
+        </label>
+        {% if admin_mode %}
+        <label class="billing-field">
+          <span>用户 ID</span>
+          <input class="billing-input billing-mono" type="text" name="user_id" value="{{ '' if filters.user_id in (none, -1) else filters.user_id }}">
+        </label>
+        {% endif %}
+        <label class="billing-field">
+          <span>模块</span>
+          <select class="billing-select" name="module">
+            <option value="">全部模块</option>
+            {% for value, label in [
+              ('video_translate', '视频翻译'),
+              ('copywriting', '文案创作'),
+              ('image', '图片翻译'),
+              ('video_analysis', '视频分析'),
+              ('text_translate', '文案翻译')
+            ] %}
+            <option value="{{ value }}" {% if filters.module == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="billing-field">
+          <span>功能</span>
+          <input class="billing-input billing-mono" type="text" name="use_case" value="{{ filters.use_case }}" placeholder="如 video_translate.localize">
+        </label>
+        <label class="billing-field">
+          <span>供应商</span>
+          <select class="billing-select" name="provider">
+            <option value="">全部供应商</option>
+            {% for provider in ['openrouter', 'doubao', 'gemini_vertex', 'gemini_aistudio', 'elevenlabs', 'doubao_asr'] %}
+            <option value="{{ provider }}" {% if filters.provider == provider %}selected{% endif %}>{{ provider }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="billing-field">
+          <span>模型</span>
+          <input class="billing-input billing-mono" type="text" name="model" value="{{ filters.model }}" placeholder="模型名或通配">
+        </label>
+        <label class="billing-field">
+          <span>状态</span>
+          <select class="billing-select" name="status">
+            <option value="">全部状态</option>
+            <option value="success" {% if filters.status is sameas true %}selected{% endif %}>成功</option>
+            <option value="failed" {% if filters.status is sameas false %}selected{% endif %}>失败</option>
+          </select>
+        </label>
+        <label class="billing-field">
+          <span>项目搜索</span>
+          <input class="billing-input billing-mono" type="text" name="q" value="{{ filters.q }}" placeholder="匹配 project_id">
+        </label>
+      </div>
+
+      <div class="billing-toolbar-foot">
+        <div class="billing-tabs">
+          {% for value, label in [
+            ('module', '按模块'),
+            ('use_case', '按功能'),
+            ('provider', '按供应商'),
+            ('model', '按模型')
+          ] %}
+          <button type="submit" name="group_by" value="{{ value }}" class="billing-tab{% if group_by == value %} is-active{% endif %}">{{ label }}</button>
+          {% endfor %}
+          {% if admin_mode %}
+          <button type="submit" name="group_by" value="user" class="billing-tab{% if group_by == 'user' %} is-active{% endif %}">按用户</button>
+          {% endif %}
+        </div>
+        <div class="billing-panel-note">每页 50 条，点击明细行可展开 `extra_data`。</div>
+      </div>
+    </form>
+  </div>
+
+  <section class="billing-summary">
+    <article class="billing-card">
+      <div class="billing-card-label">总费用</div>
+      <div class="billing-card-value">¥ {{ '%.4f'|format(summary.total_cost_cny|float) }}</div>
+      <div class="billing-card-meta">按写入当时价格锁定，不随改价回填。</div>
+    </article>
+    <article class="billing-card">
+      <div class="billing-card-label">总调用数</div>
+      <div class="billing-card-value">{{ '{:,}'.format(summary.total_calls|int) }}</div>
+      <div class="billing-card-meta">按请求粒度，一次调用对应一行。</div>
+    </article>
+    <article class="billing-card">
+      <div class="billing-card-label">已计费</div>
+      <div class="billing-card-value">{{ '{:,}'.format(summary.billed_calls|int) }}</div>
+      <div class="billing-card-meta">`response` + `pricebook` 两类都算已计费。</div>
+    </article>
+    <article class="billing-card">
+      <div class="billing-card-label">未计费</div>
+      <div class="billing-card-value">{{ '{:,}'.format(summary.unbilled_calls|int) }}</div>
+      <div class="billing-card-meta">通常是缺价格、缺 token，或响应未返回费用。</div>
+    </article>
+  </section>
+
+  <section class="billing-panel">
+    <div class="billing-panel-head">
+      <div>
+        <div class="billing-panel-title">分组汇总</div>
+        <div class="billing-panel-note">当前维度：{{ group_by }}</div>
+      </div>
+      <div class="billing-panel-note">按费用降序展示。</div>
+    </div>
+    <div class="billing-table-wrap">
+      <table class="billing-table">
+        <thead>
+          <tr>
+            <th>分组</th>
+            <th>调用数</th>
+            <th>Request Units</th>
+            <th>费用小计</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in groups %}
+          <tr>
+            <td>{{ group.group_value or '—' }}</td>
+            <td>{{ '{:,}'.format(group.calls|int) }}</td>
+            <td class="billing-mono">{{ '{:,}'.format(group.request_units|int) if group.request_units is not none else '—' }}</td>
+            <td class="billing-mono">¥ {{ '%.4f'|format(group.cost_cny|float) }}</td>
+          </tr>
+          {% endfor %}
+          {% if not groups %}
+          <tr>
+            <td colspan="4" class="billing-empty">当前筛选条件下暂无可汇总的数据。</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="billing-panel">
+    <div class="billing-panel-head">
+      <div>
+        <div class="billing-panel-title">逐条明细</div>
+        <div class="billing-panel-note">费用列按 `cost_source` 着色，失败请求也会保留账单行。</div>
+      </div>
+      <div class="billing-panel-note">第 {{ page }} / {{ total_pages }} 页</div>
+    </div>
+    <div class="billing-table-wrap">
+      <table class="billing-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            {% if admin_mode %}<th>用户</th>{% endif %}
+            <th>模块</th>
+            <th>功能</th>
+            <th>供应商 / 模型</th>
+            <th>Units</th>
+            <th>费用</th>
+            <th>状态</th>
+            <th>项目 ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          {% set detail_id = 'billing-detail-' ~ loop.index %}
+          <tr class="billing-row" data-detail-toggle="{{ detail_id }}" aria-expanded="false">
+            <td class="billing-mono">
+              {% if row.called_at %}
+              {{ row.called_at }}
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            {% if admin_mode %}
+            <td>
+              <div>{{ row.username or '—' }}</div>
+              <div class="billing-mono" style="margin-top:4px; color:var(--billing-fg-subtle);">#{{ row.user_id }}</div>
+            </td>
+            {% endif %}
+            <td>{{ row.module or '—' }}</td>
+            <td class="billing-mono">{{ row.use_case_code or '—' }}</td>
+            <td>
+              <div>{{ row.provider or '—' }}</div>
+              <div class="billing-mono" style="margin-top:4px; color:var(--billing-fg-subtle);">{{ row.model_name or '—' }}</div>
+            </td>
+            <td>
+              <div class="billing-mono">{{ row.request_units if row.request_units is not none else '—' }}</div>
+              <div style="margin-top:4px;">
+                <span class="billing-pill">{{ row.units_type or 'unknown' }}</span>
+              </div>
+            </td>
+            <td class="billing-mono cost-{{ row.cost_source or 'unknown' }}">
+              {% if row.cost_cny is not none %}
+              ¥ {{ '%.6f'|format(row.cost_cny|float) }}
+              {% else %}
+              —
+              {% endif %}
+            </td>
+            <td>
+              <span class="billing-pill {% if row.success %}success{% else %}failed{% endif %}">
+                {% if row.success %}成功{% else %}失败{% endif %}
+              </span>
+            </td>
+            <td class="billing-mono">{{ row.project_id or '—' }}</td>
+          </tr>
+          <tr id="{{ detail_id }}" class="billing-detail-row" hidden>
+            <td colspan="{% if admin_mode %}9{% else %}8{% endif %}">
+              <div class="billing-detail">
+                <div class="billing-detail-grid">
+                  <div class="billing-detail-card">
+                    <div class="billing-detail-label">额外信息 extra_data</div>
+                    <pre class="billing-detail-pre">{% if row.extra_data is string %}{{ row.extra_data }}{% elif row.extra_data %}{{ row.extra_data|tojson(indent=2) }}{% else %}{}{% endif %}</pre>
+                  </div>
+                  <div class="billing-detail-card">
+                    <div class="billing-detail-label">原始计量</div>
+                    <pre class="billing-detail-pre">service: {{ row.service or '—' }}
+input_tokens: {{ row.input_tokens if row.input_tokens is not none else '—' }}
+output_tokens: {{ row.output_tokens if row.output_tokens is not none else '—' }}
+audio_duration_seconds: {{ row.audio_duration_seconds if row.audio_duration_seconds is not none else '—' }}
+request_units: {{ row.request_units if row.request_units is not none else '—' }}
+cost_source: {{ row.cost_source or 'unknown' }}</pre>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not rows %}
+          <tr>
+            <td colspan="{% if admin_mode %}9{% else %}8{% endif %}" class="billing-empty">
+              当前筛选条件下没有账单记录。
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <form method="get" class="billing-pagination">
+    <input type="hidden" name="from" value="{{ filters.date_from }}">
+    <input type="hidden" name="to" value="{{ filters.date_to }}">
+    {% if admin_mode and filters.user_id is not none %}
+    <input type="hidden" name="user_id" value="{{ filters.user_id }}">
+    {% endif %}
+    <input type="hidden" name="module" value="{{ filters.module }}">
+    <input type="hidden" name="use_case" value="{{ filters.use_case }}">
+    <input type="hidden" name="provider" value="{{ filters.provider }}">
+    <input type="hidden" name="model" value="{{ filters.model }}">
+    <input type="hidden" name="q" value="{{ filters.q }}">
+    <input type="hidden" name="group_by" value="{{ group_by }}">
+    {% if filters.status is sameas true %}
+    <input type="hidden" name="status" value="success">
+    {% elif filters.status is sameas false %}
+    <input type="hidden" name="status" value="failed">
+    {% endif %}
+    <div class="billing-pagination-note">分页和筛选共享同一组 URL 参数，方便直接复制链接排查。</div>
+    <div class="billing-page-actions">
+      <button type="submit" name="page" value="{{ page - 1 if page > 1 else 1 }}" class="btn btn-ghost" {% if page <= 1 %}disabled{% endif %}>上一页</button>
+      <button type="submit" name="page" value="{{ page + 1 if page < total_pages else total_pages }}" class="btn btn-primary" {% if page >= total_pages %}disabled{% endif %}>下一页</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll("[data-detail-toggle]").forEach(function (row) {
+    row.addEventListener("click", function () {
+      var detail = document.getElementById(row.getAttribute("data-detail-toggle"));
+      if (!detail) return;
+      var expanded = row.getAttribute("aria-expanded") === "true";
+      row.setAttribute("aria-expanded", expanded ? "false" : "true");
+      detail.hidden = expanded;
+    });
+  });
+</script>
+{% endblock %}
