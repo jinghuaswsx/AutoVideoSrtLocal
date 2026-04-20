@@ -112,6 +112,19 @@ async def list_push_items(
         raise _map_upstream_error(exc) from exc
 
 
+@api.get("/push-items/by-keys")
+async def push_item_by_keys(
+    product_id: int = Query(...),
+    lang: str = Query(...),
+    filename: str = Query(...),
+) -> Any:
+    """三元组定位：返回 {item_id, item, payload}。"""
+    try:
+        return await _service().fetch_by_keys(product_id, lang, filename)
+    except Exception as exc:
+        raise _map_upstream_error(exc) from exc
+
+
 @api.get("/push-items/{item_id}")
 async def get_push_item(item_id: int) -> Any:
     try:

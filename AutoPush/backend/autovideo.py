@@ -51,6 +51,18 @@ class AutoVideoService:
             )
         return _unwrap(response)
 
+    async def fetch_by_keys(
+        self, product_id: int, lang: str, filename: str
+    ) -> dict[str, Any]:
+        """三元组精确定位单条 item + 组装好的推送 payload。"""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.settings.autovideo_base_url}/openapi/push-items/by-keys",
+                params={"product_id": product_id, "lang": lang, "filename": filename},
+                headers={"X-API-Key": self.settings.autovideo_api_key},
+            )
+        return _unwrap(response)
+
     # ----- 推送状态（/openapi/push-items） -----
 
     async def list_push_items(

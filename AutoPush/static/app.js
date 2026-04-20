@@ -65,6 +65,13 @@ const api = {
   },
   fetchPushPayload: (code, lang) =>
     apiJson(`/api/materials/${encodeURIComponent(code)}/push-payload?lang=${encodeURIComponent(lang)}`),
+  fetchByKeys: ({ productId, lang, filename }) => {
+    const p = new URLSearchParams();
+    p.set("product_id", String(productId));
+    p.set("lang", lang);
+    p.set("filename", filename);
+    return apiJson(`/api/push-items/by-keys?${p.toString()}`);
+  },
   fetchMaterials: (code) =>
     apiJson(`/api/materials/${encodeURIComponent(code)}`),
   pushItems: ({ page, pageSize, q, status, lang }) => {
@@ -217,10 +224,22 @@ function openPushModal(item, opts = {}) {
     btnJsonToggle.classList.toggle("active", wasHidden);
   });
 
-  // 拉 payload
+  // 拉 payload：优先用三元组 by-keys 精确定位单条；fallback 到旧接口
   (async () => {
     try {
-      const payload = await api.fetchPushPayload(item.product_code, item.lang);
+      let payload;
+      if (item.product_id && item.lang && item.filename) {
+        const resp = await api.fetchByKeys({
+          productId: item.product_id,
+          lang: item.lang,
+          filename: item.filename,
+        });
+        payload = resp.payload;
+        // 若服务端回了新的 item_id（例如同三元组取最新），同步覆盖
+        if (resp.item_id) item.item_id = resp.item_id;
+      } else {
+        payload = await api.fetchPushPayload(item.product_code, item.lang);
+      }
       payloadData = payload;
       jsonPre.textContent = JSON.stringify(payload, null, 2);
       payloadStatus.remove();
