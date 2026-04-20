@@ -1,0 +1,386 @@
+/*
+ * AutoPush 前端样式。严格遵循 Ocean Blue 规范（hue 200-240，零紫色）。
+ * 参考主项目 web/static/pushes.css 的 --oc-* token 体系。
+ */
+
+:root {
+  --oc-bg-page:        oklch(99%  0.004 230);
+  --oc-bg:             oklch(100% 0     0);
+  --oc-bg-subtle:      oklch(97%  0.006 230);
+  --oc-bg-muted:       oklch(94%  0.010 230);
+  --oc-border:         oklch(91%  0.012 230);
+  --oc-border-strong:  oklch(84%  0.015 230);
+  --oc-fg:             oklch(22%  0.020 235);
+  --oc-fg-muted:       oklch(48%  0.018 230);
+  --oc-fg-subtle:      oklch(62%  0.015 230);
+
+  --oc-accent:         oklch(56%  0.16  230);
+  --oc-accent-hover:   oklch(50%  0.17  230);
+  --oc-accent-subtle:  oklch(94%  0.04  225);
+  --oc-accent-ring:    oklch(56%  0.16  230 / 0.22);
+
+  --oc-success:        oklch(62%  0.13  165);
+  --oc-success-bg:     oklch(95%  0.04  165);
+  --oc-success-fg:     oklch(38%  0.09  165);
+  --oc-danger:         oklch(58%  0.18  25);
+  --oc-danger-bg:      oklch(96%  0.04  25);
+  --oc-danger-fg:      oklch(42%  0.14  25);
+
+  --oc-r-sm: 4px;
+  --oc-r:    6px;
+  --oc-r-md: 8px;
+  --oc-r-lg: 12px;
+  --oc-r-full: 9999px;
+
+  --oc-sp-1: 4px;  --oc-sp-2: 8px;  --oc-sp-3: 12px;
+  --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
+
+  --oc-dur-fast: 120ms;
+  --oc-ease:     cubic-bezier(0.32, 0.72, 0, 1);
+  --oc-shadow-sm: 0 1px 3px 0 oklch(22% 0.02 235 / 0.06),
+                  0 1px 2px 0 oklch(22% 0.02 235 / 0.04);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--oc-bg-page);
+  color: var(--oc-fg);
+  font-family: "Inter Tight", -apple-system, BlinkMacSystemFont,
+               "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ap-header {
+  background: oklch(26% 0.055 235);
+  border-bottom: 1px solid oklch(34% 0.055 235);
+  padding: 14px 24px;
+}
+.ap-header-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.ap-title {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+.ap-subtitle {
+  color: oklch(72% 0.020 230);
+  font-size: 12px;
+}
+.ap-config {
+  margin-left: auto;
+  color: oklch(72% 0.020 230);
+  font-size: 12px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.ap-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--oc-border);
+  background: var(--oc-bg);
+  max-width: none;
+}
+.ap-tab {
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  background: transparent;
+  color: var(--oc-fg-muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease);
+}
+.ap-tab:hover { color: var(--oc-fg); }
+.ap-tab.active {
+  color: var(--oc-accent);
+  border-bottom-color: var(--oc-accent);
+}
+.ap-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+  border-radius: var(--oc-r-sm);
+}
+
+.ap-main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.ap-panel[hidden] { display: none; }
+
+/* ---------- 通用卡片 / 表单 ---------- */
+
+.ap-card {
+  background: var(--oc-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-lg);
+  padding: var(--oc-sp-5);
+  margin-bottom: var(--oc-sp-5);
+  box-shadow: var(--oc-shadow-sm);
+}
+.ap-card h3 {
+  margin: 0 0 var(--oc-sp-4);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--oc-fg);
+}
+
+.ap-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--oc-sp-4);
+}
+@media (max-width: 768px) {
+  .ap-grid { grid-template-columns: 1fr; }
+}
+
+.ap-input-group { display: grid; gap: var(--oc-sp-1); }
+.ap-input-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--oc-fg-muted);
+  letter-spacing: 0.02em;
+}
+
+.ap-input,
+.ap-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--oc-dur-fast) var(--oc-ease),
+              box-shadow var(--oc-dur-fast) var(--oc-ease);
+}
+.ap-input { height: 32px; }
+.ap-textarea {
+  min-height: 88px;
+  resize: vertical;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  line-height: 1.5;
+}
+.ap-textarea.short { min-height: 64px; }
+.ap-input:focus,
+.ap-textarea:focus {
+  border-color: var(--oc-accent);
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.ap-input[readonly],
+.ap-textarea[readonly] {
+  background: var(--oc-bg-subtle);
+  color: var(--oc-fg-muted);
+}
+
+.ap-query-row { display: flex; gap: var(--oc-sp-3); align-items: center; }
+.ap-query-row .ap-input { flex: 1; min-width: 0; }
+
+.ap-btn,
+.ap-btn-primary,
+.ap-btn-success,
+.ap-btn-ghost {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--oc-r);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease),
+              color var(--oc-dur-fast) var(--oc-ease);
+}
+.ap-btn-primary {
+  background: var(--oc-accent);
+  color: #fff;
+  border-color: var(--oc-accent);
+}
+.ap-btn-primary:hover:not(:disabled) {
+  background: var(--oc-accent-hover);
+  border-color: var(--oc-accent-hover);
+}
+.ap-btn-success {
+  background: var(--oc-success);
+  color: #fff;
+  border-color: var(--oc-success);
+}
+.ap-btn-success:hover:not(:disabled) { filter: brightness(0.94); }
+.ap-btn-ghost {
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  border-color: var(--oc-border-strong);
+}
+.ap-btn-ghost:hover:not(:disabled) {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg);
+}
+.ap-btn-primary:disabled,
+.ap-btn-success:disabled,
+.ap-btn-ghost:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ap-error,
+.ap-info {
+  margin-top: var(--oc-sp-3);
+  padding: var(--oc-sp-2) var(--oc-sp-3);
+  border-radius: var(--oc-r);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ap-error { background: var(--oc-danger-bg); color: var(--oc-danger-fg); }
+.ap-info { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+
+.ap-array-header {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: var(--oc-sp-3); margin-bottom: var(--oc-sp-3);
+}
+.ap-array-item {
+  display: grid; gap: var(--oc-sp-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  padding: var(--oc-sp-3);
+  background: var(--oc-bg-subtle);
+  margin-bottom: var(--oc-sp-3);
+}
+.ap-array-row {
+  display: flex; gap: var(--oc-sp-2); align-items: flex-end;
+  margin-bottom: var(--oc-sp-2);
+}
+.ap-array-row .ap-input-group { flex: 1; min-width: 0; }
+.ap-empty {
+  margin: 0; padding: var(--oc-sp-3);
+  color: var(--oc-fg-subtle); font-size: 13px; text-align: center;
+}
+
+/* ---------- 推送列表 table ---------- */
+
+.ap-toolbar {
+  display: flex; gap: var(--oc-sp-3); flex-wrap: wrap;
+  align-items: flex-end; margin-bottom: var(--oc-sp-4);
+}
+.ap-toolbar .ap-input-group { min-width: 180px; }
+
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--oc-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-lg);
+  overflow: hidden;
+}
+.ap-table th {
+  text-align: left;
+  padding: 10px var(--oc-sp-3);
+  background: var(--oc-bg-subtle);
+  border-bottom: 1px solid var(--oc-border);
+  color: var(--oc-fg-muted);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.ap-table td {
+  padding: var(--oc-sp-3);
+  border-bottom: 1px solid var(--oc-border);
+  vertical-align: middle;
+  color: var(--oc-fg);
+}
+.ap-table tbody tr:last-child td { border-bottom: none; }
+.ap-table tbody tr { transition: background var(--oc-dur-fast) var(--oc-ease); }
+.ap-table tbody tr:hover { background: var(--oc-bg-subtle); }
+
+.ap-code { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; color: var(--oc-fg-muted); }
+.ap-langpill {
+  display: inline-block; padding: 1px 7px;
+  border-radius: var(--oc-r-full);
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  font-size: 11px; font-weight: 500;
+  margin: 2px 2px 0 0;
+}
+.ap-langpill.muted {
+  background: var(--oc-bg-muted); color: var(--oc-fg-subtle);
+}
+.ap-lang-select {
+  padding: 4px 8px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  font-size: 12px;
+  cursor: pointer;
+  margin-right: 4px;
+}
+
+.ap-pagination {
+  margin: var(--oc-sp-5) 0 var(--oc-sp-2);
+  display: flex; gap: 6px; align-items: center; justify-content: flex-end;
+  font-size: 13px;
+  color: var(--oc-fg-muted);
+}
+.ap-pagination button {
+  height: 30px; min-width: 30px; padding: 0 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg);
+  cursor: pointer;
+  font-size: 12px;
+}
+.ap-pagination button.active {
+  background: var(--oc-accent); color: #fff; border-color: var(--oc-accent);
+}
+.ap-pagination button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- 视频预览 ---------- */
+
+.ap-media-list { display: grid; gap: var(--oc-sp-4); margin-top: var(--oc-sp-4); }
+.ap-media-row { display: flex; gap: var(--oc-sp-4); flex-wrap: wrap; }
+.ap-media-item { display: grid; gap: var(--oc-sp-2); }
+.ap-media-frame {
+  width: 220px; height: 392px;
+  border-radius: var(--oc-r-md);
+  border: 1px solid var(--oc-border);
+  background: oklch(15% 0.02 235);
+  object-fit: contain;
+}
+.ap-media-empty {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--oc-bg-muted); color: var(--oc-fg-subtle); font-size: 12px;
+}
+
+.ap-json {
+  margin: 0; padding: var(--oc-sp-3);
+  background: var(--oc-bg-subtle);
+  border: 1px solid var(--oc-border);
+  color: var(--oc-fg);
+  border-radius: var(--oc-r);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 12px; line-height: 1.55;
+  max-height: 360px; overflow: auto;
+  white-space: pre;
+}
+.ap-response-text { min-height: 180px; }
