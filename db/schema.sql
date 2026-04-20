@@ -48,13 +48,23 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     user_id                INT NOT NULL,
     project_id             VARCHAR(36),
     service                VARCHAR(32) NOT NULL,
+    use_case_code          VARCHAR(64) DEFAULT NULL,
+    module                 VARCHAR(32) DEFAULT NULL,
+    provider               VARCHAR(32) DEFAULT NULL,
     model_name             VARCHAR(128),
     called_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     success                TINYINT(1) NOT NULL DEFAULT 1,
     input_tokens           INT,
     output_tokens          INT,
     audio_duration_seconds FLOAT,
+    request_units          INT,
+    units_type             VARCHAR(16),
+    cost_cny               DECIMAL(12,6),
+    cost_source            ENUM('response','pricebook','unknown') NOT NULL DEFAULT 'unknown',
     extra_data             JSON,
+    KEY idx_called_at (called_at),
+    KEY idx_user_module (user_id, module, called_at),
+    KEY idx_use_case (use_case_code, called_at),
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -131,4 +141,17 @@ CREATE TABLE IF NOT EXISTS `voice_speech_rate` (
   `sample_count` INT NOT NULL DEFAULT 1,
   `updated_at` DATETIME NOT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_voice_lang` (`voice_id`, `language`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_model_prices (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    provider        VARCHAR(32) NOT NULL,
+    model           VARCHAR(128) NOT NULL,
+    units_type      VARCHAR(16) NOT NULL,
+    unit_input_cny  DECIMAL(14,8) DEFAULT NULL,
+    unit_output_cny DECIMAL(14,8) DEFAULT NULL,
+    unit_flat_cny   DECIMAL(14,8) DEFAULT NULL,
+    note            VARCHAR(255) DEFAULT NULL,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_provider_model (provider, model)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
