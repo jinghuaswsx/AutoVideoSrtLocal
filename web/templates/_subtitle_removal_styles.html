@@ -251,6 +251,9 @@
     padding: 24px;
     text-align: center;
   }
+  .sr-selection-empty[hidden] {
+    display: none !important;
+  }
 
   .sr-selection-empty-title {
     font-size: 16px;
@@ -391,10 +394,11 @@
   }
 
   .sr-compare-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 360px));
-    gap: 24px;
-    justify-content: space-between;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 100px;
+    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .sr-compare-panel {
