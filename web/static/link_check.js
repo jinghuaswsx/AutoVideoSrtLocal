@@ -348,7 +348,36 @@
     return `<div class="${stackClass}">${panels.join("")}</div>`;
   }
 
+  function formatEvidenceBoolean(value) {
+    if (value === true) {
+      return "是";
+    }
+    if (value === false) {
+      return "否";
+    }
+    return "-";
+  }
+
+  function hasLocaleEvidence(task) {
+    const evidence = task && typeof task.locale_evidence === "object" ? task.locale_evidence : null;
+    if (!evidence) {
+      return false;
+    }
+
+    const attempts = Array.isArray(evidence.attempts) ? evidence.attempts : [];
+    return Boolean(
+      attempts.length
+      || evidence.lock_source
+      || evidence.failure_reason
+      || evidence.locked === true
+    );
+  }
+
   function renderLocaleAttemptRow(attempt) {
+    const lockResult = attempt.locked === true
+      ? badge("已锁定", "is-success")
+      : (attempt.locked === false ? badge("未锁定", "is-warning") : "-");
+
     return `
       <tr>
         <td>${escapeHtml(String(attempt.attempt_index || "-"))}</td>
@@ -357,7 +386,7 @@
         <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.requested_url))}</td>
         <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.resolved_url))}</td>
         <td>${escapeHtml(formatValue(attempt.page_language))}</td>
-        <td>${attempt.locked ? badge("已锁定", "is-success") : badge("未锁定", "is-warning")}</td>
+        <td>${lockResult}</td>
       </tr>
     `;
   }
@@ -365,6 +394,12 @@
   function renderLocaleEvidence(task) {
     const evidence = task.locale_evidence || {};
     const attempts = Array.isArray(evidence.attempts) ? evidence.attempts : [];
+    const hasEvidence = hasLocaleEvidence(task);
+    const lockResult = hasEvidence
+      ? (evidence.locked === true ? "已锁定" : (evidence.locked === false ? "未锁定" : "-"))
+      : "-";
+    const failureReason = hasEvidence ? (evidence.failure_reason || "-") : "暂无证据";
+    const emptyText = hasEvidence ? "暂无页面锁定尝试记录" : "暂无证据";
 
     return `
       <section class="lc-evidence-block">
@@ -376,8 +411,8 @@
         <div class="lc-evidence-grid">
           ${summaryCard("锁定来源", evidence.lock_source || "-")}
           ${summaryCard("目标语言", evidence.target_language || task.target_language || "-")}
-          ${summaryCard("锁定结果", evidence.locked ? "已锁定" : "未锁定")}
-          ${summaryCard("失败原因", evidence.failure_reason || "-")}
+          ${summaryCard("锁定结果", lockResult)}
+          ${summaryCard("失败原因", failureReason)}
         </div>
         <div class="lc-attempt-table-wrap">
           <table class="lc-attempt-table">
@@ -397,7 +432,7 @@
                 ? attempts.map(renderLocaleAttemptRow).join("")
                 : `
                   <tr>
-                    <td colspan="7" class="lc-attempt-table__empty">暂无页面锁定尝试记录</td>
+                    <td colspan="7" class="lc-attempt-table__empty">${escapeHtml(emptyText)}</td>
                   </tr>
                 `}
             </tbody>
@@ -415,12 +450,12 @@
       { label: "最终下载 URL", value: evidence.resolved_source_url || "-", mono: true },
       {
         label: "是否保持同一资源",
-        value: evidence.redirect_preserved_asset ? "是" : "否",
+        value: formatEvidenceBoolean(evidence.redirect_preserved_asset),
         isAlert: evidence.redirect_preserved_asset === false,
       },
       {
         label: "是否来自当前 Variant",
-        value: evidence.variant_selected ? "是" : "否",
+        value: formatEvidenceBoolean(evidence.variant_selected),
       },
       {
         label: "下载结果",

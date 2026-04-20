@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import tempfile
 import textwrap
@@ -314,6 +315,26 @@ def _run_link_check_detail_harness(scenario: dict) -> dict:
     return json.loads(completed.stdout)
 
 
+def _extract_result_meta_value(results_html: str, label: str) -> str | None:
+    pattern = re.compile(
+        rf'<div class="lc-meta-card(?: lc-meta-card--alert)?">[\s\S]*?<strong class="lc-meta-label">{re.escape(label)}</strong>[\s\S]*?<span class="[^"]*">([^<]*)</span>',
+    )
+    match = pattern.search(results_html)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_summary_card_value(summary_html: str, label: str) -> str | None:
+    pattern = re.compile(
+        rf'<div class="lc-summary-card">[\s\S]*?<strong>{re.escape(label)}</strong>[\s\S]*?<span>([^<]*)</span>',
+    )
+    match = pattern.search(summary_html)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def test_link_check_detail_bootstrap_prefers_window_task_before_json_fallback():
     window_task = {
         "id": "window-task",
@@ -479,6 +500,71 @@ def test_link_check_detail_renders_alerts_for_key_non_pass_states():
     assert "review-source" in rendered["resultsHtml"]
     assert "no-text-source" in rendered["resultsHtml"]
     assert "failed-source" in rendered["resultsHtml"]
+
+
+def test_link_check_detail_download_evidence_without_booleans_does_not_render_negative_conclusions():
+    task = {
+        "id": "download-evidence-missing",
+        "status": "done",
+        "target_language": "de",
+        "target_language_name": "德语",
+        "summary": {"overall_decision": "done"},
+        "progress": {"total": 1},
+        "items": [
+            {
+                "id": "site-1",
+                "kind": "detail",
+                "source_url": "https://img/site.jpg",
+                "analysis": {"decision": "pass", "decision_source": "binary_quick_check"},
+                "reference_match": {"status": "not_provided"},
+                "binary_quick_check": {"status": "pass"},
+                "same_image_llm": {"status": "skipped"},
+                "download_evidence": {},
+                "status": "done",
+            }
+        ],
+    }
+
+    rendered = _run_link_check_detail_harness(
+        {
+            "pageTaskId": "download-evidence-missing",
+            "windowTask": task,
+        }
+    )
+
+    assert _extract_result_meta_value(rendered["resultsHtml"], "是否保持同一资源") == "-"
+    assert _extract_result_meta_value(rendered["resultsHtml"], "是否来自当前 Variant") == "-"
+
+
+def test_link_check_detail_default_locale_evidence_does_not_render_unlocked_conclusion():
+    task = {
+        "id": "locale-evidence-defaulted",
+        "status": "done",
+        "target_language": "de",
+        "target_language_name": "德语",
+        "summary": {"overall_decision": "done"},
+        "progress": {"total": 0},
+        "locale_evidence": {
+            "target_language": "de",
+            "requested_url": "https://shop.example.com/de/products/demo?variant=123",
+            "lock_source": "",
+            "locked": False,
+            "failure_reason": "",
+            "attempts": [],
+        },
+        "items": [],
+    }
+
+    rendered = _run_link_check_detail_harness(
+        {
+            "pageTaskId": "locale-evidence-defaulted",
+            "windowTask": task,
+        }
+    )
+
+    assert _extract_summary_card_value(rendered["summaryHtml"], "锁定结果") == "-"
+    assert "未锁定" not in rendered["summaryHtml"]
+    assert "暂无证据" in rendered["summaryHtml"]
 
 
 def test_link_check_detail_renders_locale_evidence_and_download_evidence_labels():
