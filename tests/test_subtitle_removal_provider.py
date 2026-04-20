@@ -277,3 +277,20 @@ def test_subtitle_removal_provider_text_mode_adds_operation(monkeypatch):
             },
         },
     }
+
+
+def test_subtitle_removal_provider_rejects_invalid_erase_text_type(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.example/api")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "TOKEN")
+
+    with pytest.raises(ValueError, match="erase_text_type"):
+        provider.submit_task(
+            file_size_mb=1.0,
+            duration_seconds=1.0,
+            resolution="720x1280",
+            video_name="demo",
+            source_url="https://tos.example/s.mp4",
+            erase_text_type="bogus",
+        )
