@@ -77,14 +77,6 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         if recovered.get("current_review_step"):
             recovered["current_review_step"] = ""
             changed = True
-    elif project_type == "link_check":
-        if recovered.get("status") in LINK_CHECK_INTERRUPTED_STATUSES:
-            recovered["status"] = "failed"
-            recovered["error"] = RECOVERY_ERROR_MESSAGE
-            summary = recovered.setdefault("summary", {})
-            if summary.get("overall_decision") == "running":
-                summary["overall_decision"] = "unfinished"
-            changed = True
 
     if not changed:
         return False, recovered, None
