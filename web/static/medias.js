@@ -153,10 +153,23 @@
       progressBox.textContent = text;
     }
 
+    function inferMimeFromName(name) {
+      const n = (name || '').toLowerCase();
+      if (/\.(jpe?g)$/.test(n)) return 'image/jpeg';
+      if (/\.png$/.test(n))      return 'image/png';
+      if (/\.webp$/.test(n))     return 'image/webp';
+      if (/\.gif$/.test(n))      return 'image/gif';
+      return '';
+    }
+    function resolveMime(f) {
+      const mime = (f && f.type || '').toLowerCase();
+      if (/^image\/(jpeg|png|webp|gif)$/.test(mime)) return mime;
+      return inferMimeFromName(f && f.name);
+    }
+
     async function uploadFiles(rawFiles) {
       if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
-      const files = [...(rawFiles || [])]
-        .filter(f => /^image\/(jpeg|png|webp|gif)$/i.test(f.type));
+      const files = [...(rawFiles || [])].filter(f => !!resolveMime(f));
       if (!files.length) { alert('请选择 JPG / PNG / WebP / GIF 图片'); return; }
       if (files.length > 20) {
         alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
@@ -175,7 +188,9 @@
             body: JSON.stringify({
               lang,
               files: files.map(f => ({
-                filename: f.name, content_type: f.type, size: f.size,
+                filename: f.name,
+                content_type: resolveMime(f),
+                size: f.size,
               })),
             }),
           });
@@ -189,7 +204,7 @@
           setProgress(`上传中 ${i + 1} / ${files.length}：${f.name}`);
           const putRes = await fetch(u.upload_url, {
             method: 'PUT',
-            headers: { 'Content-Type': f.type || 'image/jpeg' },
+            headers: { 'Content-Type': resolveMime(f) || 'application/octet-stream' },
             body: f,
           });
           if (!putRes.ok) throw new Error(`TOS 上传失败 (${i + 1}/${files.length})`);
@@ -204,7 +219,7 @@
               lang,
               images: boot.uploads.map((u, i) => ({
                 object_key: u.object_key,
-                content_type: files[i].type,
+                content_type: resolveMime(files[i]),
                 file_size: files[i].size,
               })),
             }),
