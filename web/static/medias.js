@@ -2336,6 +2336,39 @@
         if (e.target.id === 'edFromUrlMask') closeFromUrlModal();
       });
 
+      function langDisplayName(code) {
+        const l = (LANGUAGES || []).find(x => x && x.code === code);
+        return (l && (l.name_zh || l.code)) || (code || '').toUpperCase();
+      }
+
+      function awaitFromUrlConfirm(existingCount, langCode) {
+        return new Promise((resolve) => {
+          const mask = $('edFromUrlConfirmMask');
+          const body = $('edFromUrlConfirmBody');
+          const okBtn = $('edFromUrlConfirmOkBtn');
+          const cancelBtn = $('edFromUrlConfirmCancelBtn');
+          const closeBtn = $('edFromUrlConfirmClose');
+          if (!mask || !body || !okBtn || !cancelBtn) { resolve(true); return; }
+          body.textContent = `即将清空当前【${langDisplayName(langCode)}】语种下 ${existingCount} 张详情图，并重新从商品链接抓取。该操作不可撤销。`;
+          mask.hidden = false;
+          const cleanup = (val) => {
+            mask.hidden = true;
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+            mask.removeEventListener('click', onMaskClick);
+            resolve(val);
+          };
+          const onOk = () => cleanup(true);
+          const onCancel = () => cleanup(false);
+          const onMaskClick = (e) => { if (e.target.id === 'edFromUrlConfirmMask') cleanup(false); };
+          okBtn.addEventListener('click', onOk);
+          cancelBtn.addEventListener('click', onCancel);
+          if (closeBtn) closeBtn.addEventListener('click', onCancel);
+          mask.addEventListener('click', onMaskClick);
+        });
+      }
+
       edFromUrlBtn.addEventListener('click', async () => {
         const pid = edState.productData && edState.productData.product && edState.productData.product.id;
         if (!pid) return;
@@ -2348,12 +2381,21 @@
         const url = override || def;
         if (!url) { alert('请先填写产品 ID 或产品链接'); return; }
 
+        const ctrl = edDetailImagesCtrl;
+        const existingCount = ctrl && ctrl.items ? ctrl.items().length : 0;
+        let clearExisting = false;
+        if (existingCount > 0) {
+          const ok = await awaitFromUrlConfirm(existingCount, lang);
+          if (!ok) return;
+          clearExisting = true;
+        }
+
         openFromUrlModal();
         try {
           const resp = await fetch(`/medias/api/products/${pid}/detail-images/from-url`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, lang }),
+            body: JSON.stringify({ url, lang, clear_existing: clearExisting }),
           });
           const data = await resp.json();
           if (!resp.ok) {
