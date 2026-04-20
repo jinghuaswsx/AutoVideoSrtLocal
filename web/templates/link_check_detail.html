@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+{% block title %}{{ project.display_name or project.id }} - 链接检查{% endblock %}
+{% block page_title %}{{ project.display_name or project.id }}{% endblock %}
+{% block extra_head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='link_check.css') }}">
+{% endblock %}
+{% block content %}
+<div
+  id="linkCheckDetailPage"
+  class="lc-shell lc-shell--detail"
+  data-task-id="{{ project.id }}"
+>
+  <a class="back-link lc-back-link" href="{{ url_for('link_check.page') }}">返回链接检查列表</a>
+
+  <section class="lc-panel lc-page-head">
+    <div class="lc-panel-head lc-panel-head--split">
+      <div>
+        <span class="lc-kicker">Detail</span>
+        <h2>{{ project.display_name or project.id }}</h2>
+        <p>查看持久化详情、处理进度和失败原因。页面刷新后仍会基于已保存任务状态继续渲染。</p>
+      </div>
+      <div class="lc-panel-tip">
+        <strong>任务 ID</strong>
+        <span class="lc-project-id">{{ project.id }}</span>
+      </div>
+    </div>
+    <div id="linkCheckStatus" class="lc-status-text">等待初始化</div>
+    <div id="linkCheckError" class="lc-error" hidden></div>
+  </section>
+
+  <section id="linkCheckSummary" class="lc-panel lc-panel--summary" aria-live="polite"></section>
+  <section id="linkCheckResults" class="lc-panel" aria-live="polite"></section>
+</div>
+
+<script id="linkCheckInitialTask" type="application/json">{{ initial_task|tojson }}</script>
+<script>
+  window.__LINK_CHECK_TASK__ = {{ initial_task|tojson }};
+</script>
+<script src="{{ url_for('static', filename='link_check.js') }}"></script>
+{% endblock %}

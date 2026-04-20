@@ -1,57 +1,80 @@
 from __future__ import annotations
 
 
-def test_link_check_runner_tracks_active_task(monkeypatch):
-    from web.services import link_check_runner
+def test_start_registers_active_task_and_clears_it_after_success(monkeypatch):
+    from web.services import link_check_runner as mod
 
     calls = []
 
-    monkeypatch.setattr(link_check_runner, "_running", set(), raising=False)
-    monkeypatch.setattr(
-        link_check_runner,
-        "register_active_task",
-        lambda project_type, task_id: calls.append(("register", project_type, task_id)),
-    )
-    monkeypatch.setattr(
-        link_check_runner,
-        "unregister_active_task",
-        lambda project_type, task_id: calls.append(("unregister", project_type, task_id)),
-    )
-
-    class _Runtime:
-        def start(self, task_id):
-            calls.append(("start", task_id))
-
-    class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
             self._target = target
 
         def start(self):
-            if self._target:
+            try:
                 self._target()
+            except Exception:
+                pass
 
-    monkeypatch.setattr(link_check_runner, "LinkCheckRuntime", lambda: _Runtime())
-    monkeypatch.setattr(link_check_runner.threading, "Thread", _ImmediateThread)
+    class FakeRuntime:
+        def start(self, task_id: str) -> None:
+            calls.append(("runtime", task_id))
 
-    assert link_check_runner.start("lc-1") is True
-    assert calls == [
-        ("register", "link_check", "lc-1"),
-        ("start", "lc-1"),
-        ("unregister", "link_check", "lc-1"),
-    ]
-    assert "lc-1" not in link_check_runner._running
+    monkeypatch.setattr(mod, "LinkCheckRuntime", lambda: FakeRuntime())
+    monkeypatch.setattr(mod, "register_active_task", lambda project_type, task_id: calls.append(("register", project_type, task_id)))
+    monkeypatch.setattr(mod, "unregister_active_task", lambda project_type, task_id: calls.append(("unregister", project_type, task_id)))
+    monkeypatch.setattr(mod.threading, "Thread", ImmediateThread)
+
+    mod._running.discard("lc-runner-1")
+    assert mod.start("lc-runner-1") is True
+    assert ("register", "link_check", "lc-runner-1") in calls
+    assert ("runtime", "lc-runner-1") in calls
+    assert ("unregister", "link_check", "lc-runner-1") in calls
+    assert "lc-runner-1" not in mod._running
 
 
-def test_link_check_runner_rejects_duplicate_task(monkeypatch):
-    from web.services import link_check_runner
+def test_start_unregisters_active_task_after_failure(monkeypatch):
+    from web.services import link_check_runner as mod
 
-    monkeypatch.setattr(link_check_runner, "_running", {"lc-dup"}, raising=False)
+    calls = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self._target = target
+
+        def start(self):
+            try:
+                self._target()
+            except Exception:
+                pass
+
+    class FakeRuntime:
+        def start(self, task_id: str) -> None:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(mod, "LinkCheckRuntime", lambda: FakeRuntime())
+    monkeypatch.setattr(mod, "register_active_task", lambda project_type, task_id: calls.append(("register", project_type, task_id)))
+    monkeypatch.setattr(mod, "unregister_active_task", lambda project_type, task_id: calls.append(("unregister", project_type, task_id)))
+    monkeypatch.setattr(mod.threading, "Thread", ImmediateThread)
+
+    mod._running.discard("lc-runner-2")
+    assert mod.start("lc-runner-2") is True
+    assert calls[0] == ("register", "link_check", "lc-runner-2")
+    assert calls[-1] == ("unregister", "link_check", "lc-runner-2")
+    assert "lc-runner-2" not in mod._running
+
+
+def test_start_rejects_duplicate_task(monkeypatch):
+    from web.services import link_check_runner as mod
+
     register_calls = []
+
+    monkeypatch.setattr(mod, "_running", {"lc-dup"}, raising=False)
     monkeypatch.setattr(
-        link_check_runner,
+        mod,
         "register_active_task",
         lambda *args: register_calls.append(args),
     )
 
-    assert link_check_runner.start("lc-dup") is False
+    assert mod.start("lc-dup") is False
     assert register_calls == []

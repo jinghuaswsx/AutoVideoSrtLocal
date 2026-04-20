@@ -19,6 +19,7 @@ def start(task_id: str) -> bool:
     register_active_task("link_check", task_id)
 
     def run() -> None:
+        register_active_task("link_check", task_id)
         try:
             runtime.start(task_id)
         finally:

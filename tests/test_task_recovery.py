@@ -110,25 +110,73 @@ def test_recover_project_state_keeps_active_task_running():
     assert status is None
 
 
-def test_recover_project_state_marks_interrupted_link_check_as_failed():
+def test_recover_project_state_marks_orphaned_link_check_as_failed():
     from appcore import task_recovery
 
     changed, recovered, status = task_recovery.recover_project_state(
-        project_type="link_check",
-        task_id="lc-orphan",
-        state={
+        "link_check",
+        "lc-orphan",
+        {
             "status": "analyzing",
-            "summary": {"overall_decision": "running"},
-            "progress": {"total": 4, "analyzed": 2},
+            "steps": {
+                "lock_locale": "done",
+                "download": "done",
+                "analyze": "running",
+                "summarize": "pending",
+            },
+            "items": [{"id": "site-1", "status": "done"}],
         },
         active=False,
     )
 
     assert changed is True
     assert status == "failed"
-    assert recovered["status"] == "failed"
-    assert recovered["summary"]["overall_decision"] == "unfinished"
+    assert recovered["items"][0]["id"] == "site-1"
+    assert recovered["steps"]["analyze"] == "error"
     assert "服务重启" in recovered["error"]
+
+
+def test_recover_project_state_marks_running_link_check_summary_unfinished():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        "link_check",
+        "lc-summary",
+        {
+            "status": "analyzing",
+            "summary": {"overall_decision": "running"},
+            "steps": {"analyze": "running"},
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "failed"
+    assert recovered["summary"]["overall_decision"] == "unfinished"
+
+
+def test_recover_project_state_keeps_active_link_check_running():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        "link_check",
+        "lc-live",
+        {
+            "status": "analyzing",
+            "steps": {
+                "lock_locale": "done",
+                "download": "done",
+                "analyze": "running",
+                "summarize": "pending",
+            },
+        },
+        active=True,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "analyzing"
+    assert recovered["steps"]["analyze"] == "running"
 
 
 def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
@@ -170,36 +218,74 @@ def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     assert writes[0][1][2] == "vc-orphan"
 
 
-def test_recover_all_interrupted_tasks_updates_link_check_rows(monkeypatch):
+def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypatch):
     from appcore import task_recovery
 
-    rows = [
-        {
-            "id": "lc-orphan",
-            "type": "link_check",
-            "status": "analyzing",
-            "state_json": json.dumps(
-                {"status": "analyzing", "summary": {"overall_decision": "running"}},
-                ensure_ascii=False,
-            ),
-        },
-    ]
-    writes = []
+    row = {
+        "id": "lc-boot",
+        "type": "link_check",
+        "status": "analyzing",
+        "state_json": json.dumps(
+            {
+                "status": "analyzing",
+                "steps": {"analyze": "running"},
+                "items": [{"id": "site-1", "status": "done"}],
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
 
-    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): rows)
+    def fake_db_query(sql, args=()):
+        if "'link_check'" in sql and "'analyzing'" in sql:
+            return [row]
+        return []
+
+    monkeypatch.setattr(task_recovery, "db_query", fake_db_query)
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
     monkeypatch.setattr(
         task_recovery,
-        "db_execute",
-        lambda sql, args=(): writes.append((sql, args)),
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
     )
-    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
 
     recovered = task_recovery.recover_all_interrupted_tasks()
 
     assert recovered == 1
-    assert len(writes) == 1
-    assert writes[0][1][1] == "failed"
-    assert writes[0][1][2] == "lc-orphan"
+    assert persisted[0][0] == "lc-boot"
+    assert persisted[0][2] == "failed"
+    assert persisted[0][1]["steps"]["analyze"] == "error"
+
+
+def test_recover_all_interrupted_tasks_skips_active_link_check_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "lc-live",
+        "type": "link_check",
+        "status": "analyzing",
+        "state_json": json.dumps(
+            {
+                "status": "analyzing",
+                "steps": {"analyze": "running"},
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): [row])
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: True)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 0
+    assert persisted == []
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):

@@ -41,14 +41,15 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
         db_execute(
-            """INSERT INTO projects (id, user_id, type, original_filename, status, task_dir, state_json, expires_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+            """INSERT INTO projects (id, user_id, type, original_filename, display_name, status, task_dir, state_json, expires_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL)
                ON DUPLICATE KEY UPDATE
                  type = VALUES(type),
+                 display_name = COALESCE(NULLIF(VALUES(display_name), ''), display_name),
                  status = VALUES(status),
                  state_json = VALUES(state_json),
                  task_dir = VALUES(task_dir)""",
-            (task_id, user_id, task.get("type", "translation"), original_filename,
+            (task_id, user_id, task.get("type", "translation"), original_filename, task.get("display_name", ""),
              task.get("status", "uploaded"),
              task.get("task_dir", ""),
              state_json),
@@ -71,8 +72,15 @@ def _sync_task_to_db(task_id: str) -> None:
         from appcore.db import execute as db_execute
         state_json = json.dumps(task, ensure_ascii=False, default=str)
         db_execute(
-            "UPDATE projects SET state_json = %s, status = %s, type = %s WHERE id = %s",
-            (state_json, task.get("status", "uploaded"), task.get("type", "translation"), task_id),
+            "UPDATE projects SET state_json = %s, status = %s, type = %s, "
+            "display_name = COALESCE(NULLIF(%s, ''), display_name) WHERE id = %s",
+            (
+                state_json,
+                task.get("status", "uploaded"),
+                task.get("type", "translation"),
+                task.get("display_name", ""),
+                task_id,
+            ),
         )
     except Exception:
         log.warning("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
@@ -582,18 +590,33 @@ def create_link_check(task_id: str, task_dir: str, *,
                       link_url: str,
                       target_language: str,
                       target_language_name: str,
-                      reference_images: list[dict]) -> dict:
+                      reference_images: list[dict],
+                      display_name: str = "") -> dict:
     task = {
         "id": task_id,
         "type": "link_check",
         "status": "queued",
         "task_dir": task_dir,
+        "display_name": display_name,
+        "original_filename": "",
         "link_url": link_url,
         "resolved_url": "",
         "page_language": "",
         "target_language": target_language,
         "target_language_name": target_language_name,
         "reference_images": reference_images,
+        "steps": {
+            "lock_locale": "pending",
+            "download": "pending",
+            "analyze": "pending",
+            "summarize": "pending",
+        },
+        "step_messages": {
+            "lock_locale": "",
+            "download": "",
+            "analyze": "",
+            "summarize": "",
+        },
         "progress": {
             "total": 0,
             "downloaded": 0,

@@ -5,65 +5,91 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='link_check.css') }}">
 {% endblock %}
 {% block content %}
-<div class="lc-shell">
-  <section class="lc-panel">
-    <div class="lc-panel-head">
+<div class="lc-shell lc-shell--projects">
+  <section class="lc-panel lc-panel--create">
+    <div class="lc-panel-head lc-panel-head--split">
       <div>
-        <h2>检查商品链接</h2>
-        <p>输入 Shopify 小语种商品链接，系统会抓取轮播图和详情图，判断是否已经替换成对应语种。</p>
+        <span class="lc-kicker">Create Project</span>
+        <h2>新建链接检查项目</h2>
+        <p>输入商品链接并上传参考图。创建成功后会直接跳转到项目详情页继续查看抓取与分析进度。</p>
+      </div>
+      <div class="lc-panel-tip">
+        <strong>自动带出目标语言</strong>
+        <span>链接中若包含 `/fr/`、`/fr-fr/` 这类语言子目录，会自动回填到目标语言。</span>
       </div>
     </div>
 
-    <form id="linkCheckForm" class="lc-form" enctype="multipart/form-data">
+    <form id="linkCheckProjectForm" class="lc-form" enctype="multipart/form-data">
       <label class="lc-field">
         <span>检查链接</span>
-        <input id="linkUrl" name="link_url" type="url" placeholder="https://example.com/de/products/demo" required>
+        <input
+          id="linkUrl"
+          name="link_url"
+          type="url"
+          placeholder="https://example.com/fr/products/demo"
+          autocomplete="url"
+          required
+        >
       </label>
 
-      <label class="lc-field">
-        <span>目标语言</span>
-        <select id="targetLanguage" name="target_language" required>
-          <option value="">请选择语言</option>
-        </select>
-      </label>
+      <div class="lc-form-grid">
+        <label class="lc-field">
+          <span>目标语言</span>
+          <select id="targetLanguage" name="target_language">
+            <option value="">自动识别或手动选择</option>
+          </select>
+          <small id="linkCheckLanguageHint">可从链接路径自动识别，也可以手动覆盖。</small>
+        </label>
 
-      <label class="lc-field">
-        <span>参考图片（可选）</span>
-        <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-        <small>如果上传参考图，系统会额外判断网站图片是否和你提供的原图属于同一张图。</small>
-      </label>
+        <label class="lc-field">
+          <span>参考图片（可选）</span>
+          <input id="referenceImages" name="reference_images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <small>支持 JPG、PNG、WEBP。未上传时仅检查页面抓取图片的语言与匹配情况。</small>
+        </label>
+      </div>
 
       <div class="lc-actions">
-        <button id="linkCheckSubmit" class="btn btn-primary" type="submit">开始检查</button>
-        <div id="linkCheckStatus" class="lc-status-text">等待开始</div>
+        <button id="linkCheckSubmit" class="btn btn-primary" type="submit">创建项目</button>
+        <div id="linkCheckStatus" class="lc-status-text">等待创建</div>
       </div>
     </form>
 
     <div id="linkCheckError" class="lc-error" hidden></div>
   </section>
 
-  <section id="linkCheckSummary" class="lc-panel lc-panel--summary">
-    <div class="lc-empty">提交链接后，这里会显示抓取进度、页面语种和最终判断。</div>
-  </section>
-
-  <section id="linkCheckResults" class="lc-panel">
-    <div class="lc-empty">结果区会按图片卡片展示抓取到的轮播图和详情图。</div>
-  </section>
-</div>
-
-<div id="linkCheckDetailDialog" class="lc-detail-dialog" hidden aria-hidden="true">
-  <div class="lc-detail-backdrop" data-dialog-close></div>
-  <div class="lc-detail-panel" role="dialog" aria-modal="true" aria-labelledby="linkCheckDetailTitle">
-    <div class="lc-detail-toolbar">
+  <section class="lc-panel">
+    <div class="lc-panel-head lc-panel-head--split">
       <div>
-        <h3 id="linkCheckDetailTitle">任务详情</h3>
-        <p>查看当前图片任务的完整判断信息。</p>
+        <span class="lc-kicker">Projects</span>
+        <h2>项目列表</h2>
+        <p>这里展示所有未删除的链接检查项目。点击卡片可进入详情页继续查看结果。</p>
       </div>
-      <button type="button" class="lc-detail-close" data-dialog-close>关闭</button>
+      <div class="lc-list-badge">{{ projects|length }} 个项目</div>
     </div>
-    <div id="linkCheckDetailBody"></div>
-  </div>
+
+    <div id="linkCheckProjectList" class="lc-project-list">
+      {% if projects %}
+        {% for project in projects %}
+          <a class="lc-project-card" href="{{ url_for('link_check.detail_page', task_id=project.id) }}">
+            <div class="lc-project-card__head">
+              <strong>{{ project.display_name or project.original_filename or project.id }}</strong>
+              <span class="lc-project-status lc-project-status--{{ project.status or 'queued' }}">{{ project.status or "queued" }}</span>
+            </div>
+            <div class="lc-project-card__meta">
+              <span class="lc-project-id">{{ project.id }}</span>
+              <span>{{ project.created_at or "最近创建" }}</span>
+            </div>
+          </a>
+        {% endfor %}
+      {% else %}
+        <div class="lc-empty lc-empty--panel">
+          <strong>还没有链接检查项目</strong>
+          <span>先创建一个项目，系统会在创建成功后自动跳转到详情页。</span>
+        </div>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
-<script src="{{ url_for('static', filename='link_check.js') }}"></script>
+<script src="{{ url_for('static', filename='link_check_projects.js') }}"></script>
 {% endblock %}

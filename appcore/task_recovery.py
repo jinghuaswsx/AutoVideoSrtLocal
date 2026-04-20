@@ -13,9 +13,9 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
-RUNNING_RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review"} | PIPELINE_PROJECT_TYPES
-LINK_CHECK_INTERRUPTED_STATUSES = {"queued", "locking_locale", "downloading", "analyzing"}
-RECOVERABLE_PROJECT_TYPES = RUNNING_RECOVERABLE_PROJECT_TYPES | {"link_check"}
+LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
+RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check"} | PIPELINE_PROJECT_TYPES
+LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -64,6 +64,14 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         steps["review"] = "error"
         recovered["review_started_at"] = None
         changed = True
+    elif project_type == "link_check" and recovered.get("status") in LINK_CHECK_RUNNING_STATUSES:
+        changed = _mark_running_steps_as_error(recovered) or changed
+        recovered["status"] = "failed"
+        recovered["error"] = RECOVERY_ERROR_MESSAGE
+        summary = recovered.setdefault("summary", {})
+        if summary.get("overall_decision") == "running":
+            summary["overall_decision"] = "unfinished"
+        return True, recovered, "failed"
     elif project_type in PIPELINE_PROJECT_TYPES:
         changed = _mark_running_steps_as_error(recovered)
         if recovered.get("current_review_step"):
@@ -129,16 +137,17 @@ def recover_task_if_needed(task_id: str) -> dict | None:
 
 
 def recover_all_interrupted_tasks() -> int:
-    running_placeholders = ", ".join(["%s"] * len(RUNNING_RECOVERABLE_PROJECT_TYPES))
-    link_check_status_placeholders = ", ".join(["%s"] * len(LINK_CHECK_INTERRUPTED_STATUSES))
+    non_link_check_types = tuple(sorted(RECOVERABLE_PROJECT_TYPES - {"link_check"}))
+    placeholders = ", ".join(["%s"] * len(non_link_check_types))
+    link_check_statuses = ", ".join(f"'{status}'" for status in LINK_CHECK_STARTUP_RECOVERY_STATUSES)
     try:
         rows = db_query(
             f"SELECT id, type, status, state_json FROM projects "
             f"WHERE deleted_at IS NULL AND ("
-            f"(status = 'running' AND type IN ({running_placeholders})) "
-            f"OR (type = 'link_check' AND status IN ({link_check_status_placeholders}))"
+            f"(type = 'link_check' AND status IN ({link_check_statuses})) "
+            f"OR (status = 'running' AND type IN ({placeholders}))"
             f")",
-            tuple(sorted(RUNNING_RECOVERABLE_PROJECT_TYPES)) + tuple(sorted(LINK_CHECK_INTERRUPTED_STATUSES)),
+            non_link_check_types,
         )
     except Exception:
         log.warning("[task_recovery] startup recovery query failed", exc_info=True)
