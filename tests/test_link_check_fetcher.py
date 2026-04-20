@@ -164,6 +164,29 @@ def test_fetch_page_waits_two_seconds_before_each_warmup_attempt(monkeypatch):
     assert sleeps == [2, 2]
 
 
+def test_fetch_page_failure_exposes_locale_evidence(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
+
+    responses = [
+        SimpleNamespace(url="https://shop.example.com/products/demo", status_code=200, text="<html lang='en'></html>"),
+        SimpleNamespace(url="https://shop.example.com/products/demo", status_code=200, text="<html lang='en'></html>"),
+        SimpleNamespace(url="https://shop.example.com/products/demo", status_code=200, text="<html lang='en'></html>"),
+    ]
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        return responses.pop(0)
+
+    fetcher = LinkCheckFetcher(sleep_func=lambda seconds: None)
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    with pytest.raises(LocaleLockError, match="locale lock failed") as excinfo:
+        fetcher.fetch_page("https://shop.example.com/de/products/demo", "de")
+
+    assert excinfo.value.locale_evidence["locked"] is False
+    assert excinfo.value.locale_evidence["failure_reason"].startswith("locale lock failed:")
+    assert [attempt["phase"] for attempt in excinfo.value.locale_evidence["attempts"]] == ["initial", "warmup", "warmup"]
+
+
 def test_fetch_page_uses_alternate_locale_after_failed_warmups(monkeypatch):
     from appcore.link_check_fetcher import LinkCheckFetcher
 
@@ -181,7 +204,17 @@ def test_fetch_page_uses_alternate_locale_after_failed_warmups(monkeypatch):
             """,
         ),
         SimpleNamespace(url="https://shop.example.com/products/demo?variant=123", status_code=200, text="<html lang='en'></html>"),
-        SimpleNamespace(url="https://shop.example.com/products/demo?variant=123", status_code=200, text="<html lang='en'></html>"),
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <head>
+                <link rel="alternate" hreflang="de" href="https://shop.example.com/de/products/demo">
+              </head>
+            </html>
+            """,
+        ),
         SimpleNamespace(url="https://shop.example.com/de/products/demo?variant=123", status_code=200, text="<html lang='de'></html>"),
     ]
 
@@ -196,6 +229,64 @@ def test_fetch_page_uses_alternate_locale_after_failed_warmups(monkeypatch):
     assert page.locale_evidence["lock_source"] == "alternate_locale"
     assert page.locale_evidence["attempts"][-1]["phase"] == "alternate_locale"
     assert page.locale_evidence["attempts"][-1]["locked"] is True
+
+
+def test_fetch_page_uses_last_warmup_response_for_alternate_locale(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher
+
+    responses = [
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <head>
+                <link rel="alternate" hreflang="de" href="https://shop.example.com/de/products/from-initial">
+              </head>
+            </html>
+            """,
+        ),
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <head>
+                <link rel="alternate" hreflang="de" href="https://shop.example.com/de/products/from-warmup-1">
+              </head>
+            </html>
+            """,
+        ),
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <head>
+                <link rel="alternate" hreflang="de" href="https://shop.example.com/de/products/from-warmup-2">
+              </head>
+            </html>
+            """,
+        ),
+        SimpleNamespace(
+            url="https://shop.example.com/de/products/from-warmup-2?variant=123",
+            status_code=200,
+            text="<html lang='de'></html>",
+        ),
+    ]
+    requested_urls = []
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        requested_urls.append(url)
+        return responses.pop(0)
+
+    fetcher = LinkCheckFetcher(sleep_func=lambda seconds: None)
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    page = fetcher.fetch_page("https://shop.example.com/de/products/demo?variant=123", "de")
+
+    assert requested_urls[-1] == "https://shop.example.com/de/products/from-warmup-2?variant=123"
+    assert page.locale_evidence["attempts"][-1]["requested_url"] == "https://shop.example.com/de/products/from-warmup-2?variant=123"
 
 
 def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
@@ -225,6 +316,41 @@ def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     assert [item["kind"] for item in items] == ["carousel", "detail"]
     assert items[0]["source_url"] == "https://img.example.com/hero.jpg?width=640"
     assert items[1]["source_url"] == "https://img.example.com/detail.jpg?width=800"
+
+
+def test_extract_images_from_html_marks_only_current_variant_featured_media():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    html = """
+    <html lang="en">
+      <body>
+        <script type="application/json" data-product-json>
+          {
+            "variants": [
+              {"id": 111, "featured_media": {"id": 9001}, "featured_image": {"src": "https://img.example.com/red.jpg"}},
+              {"id": 222, "featured_media": {"id": 9002}, "featured_image": {"src": "https://img.example.com/blue.jpg"}}
+            ]
+          }
+        </script>
+        <div class="product__media" data-media-id="9001">
+          <img data-src="https://img.example.com/red.jpg?width=800">
+        </div>
+        <div class="product__media" data-media-id="9002">
+          <img data-src="https://img.example.com/blue.jpg?width=800">
+        </div>
+        <div class="featured">
+          <img data-src="https://img.example.com/red.jpg?width=1200">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/products/demo?variant=222")
+
+    assert items[0]["source_url"] == "https://img.example.com/red.jpg?width=800"
+    assert "variant_selected" not in items[0]
+    assert items[1]["source_url"] == "https://img.example.com/blue.jpg?width=800"
+    assert items[1]["variant_selected"] is True
 
 
 def test_download_images_writes_files_into_task_directory(monkeypatch, tmp_path):
@@ -310,7 +436,14 @@ def test_download_images_raises_when_redirect_changes_image_target(monkeypatch, 
     fetcher = LinkCheckFetcher()
     monkeypatch.setattr(fetcher.session, "get", fake_get)
 
-    with pytest.raises(ImageRedirectMismatchError, match="final image URL did not preserve the original asset path"):
+    with pytest.raises(
+        ImageRedirectMismatchError,
+        match=(
+            "final image URL did not preserve the original asset path:"
+            " requested=https://img.example.com/hero.jpg\\?width=640"
+            " resolved=https://img.example.com/other-hero.jpg\\?width=640"
+        ),
+    ):
         fetcher.download_images(
             [{"kind": "carousel", "source_url": "https://img.example.com/hero.jpg?width=640"}],
             tmp_path,

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import time
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
 
 
 class LocaleLockError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, locale_evidence: dict | None = None) -> None:
+        super().__init__(message)
+        self.locale_evidence = locale_evidence or {}
 
 
 class ImageRedirectMismatchError(RuntimeError):
@@ -150,16 +153,98 @@ def _same_image_target(requested_url: str, resolved_url: str) -> bool:
     return _image_dedupe_key(requested_url) == _image_dedupe_key(resolved_url)
 
 
+def _selected_variant_id(base_url: str) -> str:
+    return (parse_qs(urlparse(base_url).query).get("variant") or [""])[0].strip()
+
+
+def _iter_variant_payloads(value):
+    if isinstance(value, dict):
+        variants = value.get("variants")
+        if isinstance(variants, list):
+            for variant in variants:
+                if isinstance(variant, dict):
+                    yield variant
+        for nested in value.values():
+            yield from _iter_variant_payloads(nested)
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _iter_variant_payloads(item)
+
+
+def _iter_json_script_payloads(soup: BeautifulSoup):
+    for node in soup.select("script[type='application/json'], script[type='text/json'], script[type='text/x-json'], script[data-product-json]"):
+        raw_text = (node.string or node.get_text() or "").strip()
+        if not raw_text:
+            continue
+        try:
+            yield json.loads(raw_text)
+        except json.JSONDecodeError:
+            continue
+
+
+def _variant_featured_targets(soup: BeautifulSoup, *, base_url: str) -> tuple[set[str], set[str]]:
+    selected_variant = _selected_variant_id(base_url)
+    if not selected_variant:
+        return set(), set()
+
+    media_ids: set[str] = set()
+    image_keys: set[str] = set()
+    for payload in _iter_json_script_payloads(soup):
+        for variant in _iter_variant_payloads(payload):
+            if str(variant.get("id") or "").strip() != selected_variant:
+                continue
+            featured_media = variant.get("featured_media")
+            if isinstance(featured_media, dict):
+                media_id = str(featured_media.get("id") or "").strip()
+                if media_id:
+                    media_ids.add(media_id)
+                media_src = featured_media.get("src")
+                if isinstance(media_src, str) and media_src.strip():
+                    image_keys.add(_image_dedupe_key(_absolute_image_url(media_src, base_url)))
+                preview_image = featured_media.get("preview_image")
+                if isinstance(preview_image, dict):
+                    preview_src = preview_image.get("src")
+                    if isinstance(preview_src, str) and preview_src.strip():
+                        image_keys.add(_image_dedupe_key(_absolute_image_url(preview_src, base_url)))
+            featured_image = variant.get("featured_image")
+            if isinstance(featured_image, dict):
+                featured_src = featured_image.get("src")
+                if isinstance(featured_src, str) and featured_src.strip():
+                    image_keys.add(_image_dedupe_key(_absolute_image_url(featured_src, base_url)))
+    return media_ids, image_keys
+
+
+def _node_media_id(node) -> str:
+    current = node
+    while current is not None and getattr(current, "name", None) is not None:
+        media_id = str(current.get("data-media-id") or "").strip()
+        if media_id:
+            return media_id
+        current = current.parent
+    return ""
+
+
+def _is_variant_selected_image(node, image_url: str, *, variant_media_ids: set[str], variant_image_keys: set[str]) -> bool:
+    if not variant_media_ids and not variant_image_keys:
+        return False
+    media_id = _node_media_id(node)
+    if media_id and media_id in variant_media_ids:
+        return True
+    return _image_dedupe_key(image_url) in variant_image_keys
+
+
 def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     items: list[dict] = []
     seen: dict[str, int] = {}
+    variant_media_ids, variant_image_keys = _variant_featured_targets(soup, base_url=base_url)
 
     carousel_selectors = [
-        ("[data-media-id] img", False),
-        (".t4s-product__media-item img", False),
-        (".product__media img", False),
-        (".featured img", True),
+        "[data-media-id] img",
+        ".t4s-product__media-item img",
+        ".product__media img",
+        ".featured img",
     ]
     detail_selectors = [
         ".t4s-rte.t4s-tab-content img",
@@ -168,12 +253,18 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
         "[class*='description'] img",
     ]
 
-    for selector, variant_selected in carousel_selectors:
+    for selector in carousel_selectors:
         for node in soup.select(selector):
             src = _image_source(node)
             if not src:
                 continue
             absolute = _absolute_image_url(src, base_url)
+            variant_selected = _is_variant_selected_image(
+                node,
+                absolute,
+                variant_media_ids=variant_media_ids,
+                variant_image_keys=variant_image_keys,
+            )
             dedupe_key = _image_dedupe_key(absolute)
             if dedupe_key in seen:
                 if variant_selected:
@@ -239,9 +330,8 @@ class LinkCheckFetcher:
             response = self._request_page(requested_url, target_language)
             _raise_for_status(response)
             soup = BeautifulSoup(response.text, "html.parser")
-            if alternate_soup is None:
-                alternate_soup = soup
-                alternate_current_url = response.url
+            alternate_soup = soup
+            alternate_current_url = response.url
             lang = _page_lang(soup)
             locked = _is_locale_locked(
                 resolved_url=response.url,
@@ -300,7 +390,7 @@ class LinkCheckFetcher:
             f"resolved_url={response.url} page_lang={lang or 'unknown'}"
         )
         evidence["failure_reason"] = failure_reason
-        raise LocaleLockError(failure_reason)
+        raise LocaleLockError(failure_reason, locale_evidence=evidence)
 
     def fetch_page(self, url: str, target_language: str) -> FetchedPage:
         response, _, lang, evidence = self._lock_target_locale(url, target_language)
@@ -327,7 +417,10 @@ class LinkCheckFetcher:
             _raise_for_status(response)
             preserved_asset = _same_image_target(item["source_url"], response.url)
             if not preserved_asset:
-                raise ImageRedirectMismatchError("final image URL did not preserve the original asset path")
+                raise ImageRedirectMismatchError(
+                    "final image URL did not preserve the original asset path: "
+                    f"requested={item['source_url']} resolved={response.url}"
+                )
             suffix = Path(urlparse(item["source_url"]).path).suffix or ".jpg"
             local_path = output_dir / f"site_{index:03d}{suffix}"
             local_path.write_bytes(response.content)
