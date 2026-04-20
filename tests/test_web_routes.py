@@ -92,14 +92,14 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
-def test_subtitle_removal_list_page_uses_180x320_first_frame_thumbnails(authed_client_no_db):
+def test_subtitle_removal_list_page_uses_90x160_first_frame_thumbnails_with_centered_row_content(authed_client_no_db):
     response = authed_client_no_db.get("/subtitle-removal")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "grid-template-columns: 180px 1fr 140px 140px 160px 180px 220px;" in body
-    assert "align-items: start;" in body
-    assert ".sr-list-thumb { width: 180px; height: 320px;" in body
+    assert "grid-template-columns: 90px 1fr 140px 140px 160px 180px 220px;" in body
+    assert "align-items: center;" in body
+    assert ".sr-list-thumb { width: 90px; height: 160px;" in body
 
 
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
