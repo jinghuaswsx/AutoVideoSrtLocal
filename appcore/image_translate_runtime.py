@@ -156,7 +156,7 @@ class ImageTranslateRuntime:
                     model=task["model_id"],
                     user_id=task.get("_user_id"),
                     project_id=task_id,
-                    service="image_translate",
+                    service="image_translate.generate",
                 )
 
                 # 3. 写临时文件 + 上传 TOS

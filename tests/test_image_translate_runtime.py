@@ -56,6 +56,26 @@ def test_runtime_processes_all_items_successfully(tmp_path):
     assert task["progress"]["done"] == 2
 
 
+def test_runtime_uses_registered_billing_use_case(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"IMG-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as gen:
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert gen.call_args.kwargs["service"] == "image_translate.generate"
+
+
 def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
