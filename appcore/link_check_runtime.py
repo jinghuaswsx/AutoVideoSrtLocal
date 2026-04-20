@@ -7,6 +7,17 @@ from appcore.link_check_gemini import analyze_image
 from appcore.link_check_same_image import judge_same_image
 
 
+def _default_locale_evidence(task: dict) -> dict:
+    return {
+        "target_language": task.get("target_language", ""),
+        "requested_url": task.get("link_url", ""),
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }
+
+
 def _skipped_binary(reason: str) -> dict:
     return {
         "status": "skipped",
@@ -89,12 +100,20 @@ class LinkCheckRuntime:
     def __init__(self, *, fetcher: LinkCheckFetcher | None = None) -> None:
         self.fetcher = fetcher or LinkCheckFetcher()
 
+    def _merge_locale_evidence(self, task: dict, evidence: dict | None = None) -> dict:
+        merged = _default_locale_evidence(task)
+        merged.update(dict(task.get("locale_evidence") or {}))
+        if evidence is not None:
+            merged.update(dict(evidence or {}))
+        return merged
+
     def start(self, task_id: str) -> None:
         task = task_state.get(task_id)
         if not task or task.get("type") != "link_check":
             return
 
         task["error"] = ""
+        task["locale_evidence"] = self._merge_locale_evidence(task)
         task["summary"] = _build_summary(task.get("items") or [])
 
         try:
@@ -108,6 +127,15 @@ class LinkCheckRuntime:
             page = self.fetcher.fetch_page(task["link_url"], task["target_language"])
             task["resolved_url"] = page.resolved_url
             task["page_language"] = page.page_language
+            task["locale_evidence"] = self._merge_locale_evidence(
+                task, getattr(page, "locale_evidence", None)
+            )
+
+            if not task["locale_evidence"].get("locked"):
+                raise RuntimeError(
+                    task["locale_evidence"].get("failure_reason")
+                    or "target page was not locked before download"
+                )
 
             self._transition_to_step(
                 task_id,
@@ -183,6 +211,9 @@ class LinkCheckRuntime:
             self._persist(task_id, task)
             task_state.set_expires_at(task_id, "link_check")
         except Exception as exc:
+            locale_evidence = getattr(exc, "locale_evidence", None)
+            if locale_evidence is not None:
+                task["locale_evidence"] = self._merge_locale_evidence(task, locale_evidence)
             self._fail_current_step(task_id, task, str(exc))
             task_state.set_expires_at(task_id, "link_check")
 
@@ -194,6 +225,7 @@ class LinkCheckRuntime:
             "kind": item["kind"],
             "source_url": item["source_url"],
             "_local_path": item["local_path"],
+            "download_evidence": dict(item.get("download_evidence") or {}),
             "analysis": {},
             "reference_match": {"status": "not_provided", "score": 0.0},
             "binary_quick_check": _skipped_binary(waiting_binary),
@@ -327,6 +359,7 @@ class LinkCheckRuntime:
             status=task["status"],
             resolved_url=task.get("resolved_url", ""),
             page_language=task.get("page_language", ""),
+            locale_evidence=dict(task.get("locale_evidence") or {}),
             steps=task["steps"],
             step_messages=task["step_messages"],
             progress=task["progress"],
