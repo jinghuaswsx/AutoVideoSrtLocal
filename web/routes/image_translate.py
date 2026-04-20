@@ -94,6 +94,24 @@ def _build_source_object_key(user_id: int, task_id: str, idx: int, ext: str) -> 
     return f"uploads/image_translate/{user_id}/{task_id}/src_{idx}.{ext}"
 
 
+def _resolve_source_bucket(task: dict, item: dict) -> str:
+    """返回 'media' 或 'upload'（默认）。
+
+    从 medias_edit_detail 入口创建的任务，源图来自 media bucket；老任务默认 upload。
+    item 级优先级高于 task 级，保证同一任务里混合来源也能各自对。
+    """
+    bucket = (item.get("source_bucket") or "").strip().lower()
+    if not bucket:
+        bucket = ((task.get("medias_context") or {}).get("source_bucket") or "").strip().lower()
+    return "media" if bucket == "media" else "upload"
+
+
+def _signed_source_url(task: dict, item: dict) -> str:
+    if _resolve_source_bucket(task, item) == "media":
+        return tos_clients.generate_signed_media_download_url(item["src_tos_key"])
+    return tos_clients.generate_signed_download_url(item["src_tos_key"])
+
+
 def _state_payload(task: dict) -> dict:
     return {
         "id": task.get("id"),
@@ -285,7 +303,7 @@ def api_source_artifact(task_id: str, idx: int):
     item = _get_item(task, idx)
     if not item or not item.get("src_tos_key"):
         abort(404)
-    return redirect(tos_clients.generate_signed_download_url(item["src_tos_key"]))
+    return redirect(_signed_source_url(task, item))
 
 
 @bp.route("/api/image-translate/<task_id>/artifact/result/<int:idx>", methods=["GET"])
@@ -470,13 +488,20 @@ def page_detail(task_id: str):
 def api_delete_task(task_id: str):
     task = _get_owned_task(task_id)
     for it in task.get("items") or []:
-        for key_name in ("src_tos_key", "dst_tos_key"):
-            v = (it.get(key_name) or "").strip()
-            if v:
-                try:
-                    tos_clients.delete_object(v)
-                except Exception:
-                    pass
+        # 源图：来自 media bucket 的是素材库永久资源，不得清理；只清 upload bucket 里任务自己上传的 src。
+        src_key = (it.get("src_tos_key") or "").strip()
+        if src_key and _resolve_source_bucket(task, it) != "media":
+            try:
+                tos_clients.delete_object(src_key)
+            except Exception:
+                pass
+        # 输出始终是 upload bucket 的 artifacts/ 路径，删除任务时可以一起清。
+        dst_key = (it.get("dst_tos_key") or "").strip()
+        if dst_key:
+            try:
+                tos_clients.delete_object(dst_key)
+            except Exception:
+                pass
     try:
         db_execute(
             "UPDATE projects SET deleted_at = NOW() WHERE id=%s AND user_id=%s",
