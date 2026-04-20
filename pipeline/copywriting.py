@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+from decimal import Decimal
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -621,7 +622,10 @@ def generate_copy(
 
         extra_kwargs: dict[str, Any] = {"temperature": 0.7, "max_tokens": 4096}
         if provider == "openrouter":
-            extra_kwargs["extra_body"] = {"plugins": [{"id": "response-healing"}]}
+            extra_kwargs["extra_body"] = {
+                "plugins": [{"id": "response-healing"}],
+                "usage": {"include": True},
+            }
         extra_kwargs["response_format"] = COPYWRITING_RESPONSE_FORMAT
 
         base_url = client.base_url if hasattr(client, 'base_url') else "unknown"
@@ -653,6 +657,17 @@ def generate_copy(
                 "input_tokens": getattr(usage, "prompt_tokens", None),
                 "output_tokens": getattr(usage, "completion_tokens", None),
             }
+            if provider == "openrouter":
+                from config import USD_TO_CNY
+
+                cost_usd = getattr(usage, "cost", None)
+                if cost_usd not in (None, ""):
+                    try:
+                        token_usage["cost_cny"] = (
+                            Decimal(str(cost_usd)) * Decimal(str(USD_TO_CNY))
+                        ).quantize(Decimal("0.000001"))
+                    except Exception:
+                        pass
             log.info("copywriting token usage: input=%s, output=%s",
                      token_usage["input_tokens"], token_usage["output_tokens"])
 

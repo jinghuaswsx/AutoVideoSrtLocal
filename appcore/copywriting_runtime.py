@@ -166,6 +166,7 @@ class CopywritingRunner:
             input_tokens=_cw_usage.get("input_tokens"),
             output_tokens=_cw_usage.get("output_tokens"),
             units_type="tokens",
+            response_cost_cny=_cw_usage.get("cost_cny"),
             success=True,
         )
         self._emit(task_id, EVT_CW_COPY_READY, {"copy": result})
