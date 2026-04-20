@@ -27,7 +27,7 @@ from web.services import link_check_runner
 
 import re
 
-_ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+_ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 
 
@@ -68,6 +68,8 @@ def _download_image_to_tos(
         ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
         if not ct.startswith("image/"):
             return None, None, f"非图片类型: {ct}"
+        if ct == "image/gif":
+            return None, None, "暂不支持 GIF 动图"
         data = b""
         for chunk in resp.iter_content(chunk_size=64 * 1024):
             data += chunk
@@ -76,7 +78,7 @@ def _download_image_to_tos(
     except requests.RequestException as e:
         return None, None, f"下载失败: {e}"
 
-    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(ct, ".jpg")
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(ct, ".jpg")
     name_from_url = os.path.basename(parsed.path or "") or "from_url"
     filename = f"{prefix}_{name_from_url}"
     if not filename.endswith(ext):
@@ -1323,6 +1325,19 @@ def api_detail_images_translate_from_en(pid: int):
     source_rows = medias.list_detail_images(pid, "en")
     if not source_rows:
         return jsonify({"error": "请先准备英语版商品详情图"}), 409
+
+    gif_rows = [
+        row for row in source_rows
+        if (row.get("object_key") or "").lower().endswith(".gif")
+        or (row.get("content_type") or "").lower() == "image/gif"
+    ]
+    if gif_rows:
+        return jsonify({
+            "error": (
+                "暂不支持 GIF 动图翻译，请先在素材编辑页删除以下 GIF 图后再发起任务："
+                + ", ".join(f"#{row['id']}" for row in gif_rows)
+            )
+        }), 400
 
     prompt_tpl = (its.get_prompts_for_lang(lang).get("detail") or "").strip()
     if not prompt_tpl:

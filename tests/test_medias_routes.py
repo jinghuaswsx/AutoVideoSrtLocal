@@ -260,3 +260,93 @@ def test_detail_images_download_zip_404_when_empty(authed_client_no_db, monkeypa
     resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=en")
 
     assert resp.status_code == 404
+
+
+def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    create_calls = []
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "镜片清洁器"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [
+            {"id": 11, "object_key": "1/medias/1/en_1.jpg"},
+            {"id": 12, "object_key": "1/medias/1/en_2.gif"},
+            {"id": 13, "object_key": "1/medias/1/en_3.jpg"},
+        ],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: {"de": "德语"}.get(lang, lang))
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "翻成 {target_language_name}"})
+    monkeypatch.setattr(
+        r.task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kw: create_calls.append(kw) or {"id": task_id},
+    )
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert "gif" in (body.get("error") or "").lower()
+    assert create_calls == [], "包含 gif 时不应创建任务"
+
+
+def test_download_image_to_tos_rejects_image_gif(monkeypatch):
+    from web.routes import medias as r
+
+    class GifResponse:
+        headers = {"content-type": "image/gif"}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size=65536):
+            del chunk_size
+            yield b"GIF89a-bytes"
+
+    captured_uploads = []
+    monkeypatch.setattr(r.requests, "get", lambda *a, **kw: GifResponse())
+    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *a, **kw: captured_uploads.append((a, kw)))
+
+    obj_key, data, err = r._download_image_to_tos(
+        "https://cdn.example.com/x.gif", 1, "from_url_en_00", user_id=1
+    )
+
+    assert obj_key is None
+    assert data is None
+    assert "gif" in (err or "").lower()
+    assert captured_uploads == [], "拒绝阶段不应触发 TOS 上传"
+
+
+def test_detail_images_upload_bootstrap_rejects_image_gif(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "镜片清洁器"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.tos_clients, "build_media_object_key", lambda *a, **kw: "ignored")
+    monkeypatch.setattr(r.tos_clients, "generate_signed_media_upload_url", lambda *a, **kw: "https://signed")
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/bootstrap",
+        json={
+            "lang": "en",
+            "files": [{"filename": "anim.gif", "content_type": "image/gif", "size": 1024}],
+        },
+    )
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert "gif" in (body.get("error") or "").lower()

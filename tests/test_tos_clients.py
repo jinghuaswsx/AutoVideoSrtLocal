@@ -141,3 +141,57 @@ def test_collect_task_tos_keys_includes_result_tos_key(monkeypatch):
         "uploads/1/task/source.mp4",
         "artifacts/1/task/result.mp4",
     ]
+
+
+def _install_fake_tos(monkeypatch, *, head_returns_exists: bool):
+    """注册一个假 TosClientV2，供 upload_media_object 用 put + head 校验。"""
+    calls = []
+
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def put_object(self, bucket, object_key, content=None, content_type=None):
+            calls.append(("put", bucket, object_key, content, content_type))
+
+        def head_object(self, bucket, object_key):
+            calls.append(("head", bucket, object_key))
+            if not head_returns_exists:
+                raise RuntimeError("NoSuchKey")
+            return types.SimpleNamespace(content_length=0)
+
+        def head_bucket(self, bucket):
+            return True
+
+    fake_tos = types.SimpleNamespace(TosClientV2=FakeClient)
+    monkeypatch.setitem(sys.modules, "tos", fake_tos)
+    return calls
+
+
+def test_upload_media_object_raises_when_head_fails_after_put(monkeypatch):
+    """put 看似成功但 head 找不到对象 → silent fail，必须主动抛错。"""
+    calls = _install_fake_tos(monkeypatch, head_returns_exists=False)
+    monkeypatch.setenv("TOS_MEDIA_BUCKET", "auto-video-srt-media")
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    import pytest
+    with pytest.raises(Exception) as exc:
+        tos_clients.upload_media_object("33/medias/316/x.gif", b"\x47\x49\x46", content_type="image/gif")
+
+    msg = str(exc.value).lower()
+    assert "33/medias/316/x.gif" in str(exc.value) or "no such" in msg or "verify" in msg or "缺失" in msg or "未找到" in msg
+    # 确保 put 和 head 都调过
+    op_names = [c[0] for c in calls]
+    assert "put" in op_names
+    assert "head" in op_names
+
+
+def test_upload_media_object_succeeds_when_head_confirms(monkeypatch):
+    calls = _install_fake_tos(monkeypatch, head_returns_exists=True)
+    monkeypatch.setenv("TOS_MEDIA_BUCKET", "auto-video-srt-media")
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    tos_clients.upload_media_object("1/medias/1/a.jpg", b"jpeg-bytes", content_type="image/jpeg")
+
+    op_names = [c[0] for c in calls]
+    assert op_names == ["put", "head"]
