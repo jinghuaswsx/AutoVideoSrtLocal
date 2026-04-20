@@ -38,6 +38,7 @@ example.mp4
 
 # Superpowers temp
 .superpowers/
+.tmp/
 
 # Stray empty file
 AutoVideoSrt
