@@ -33,6 +33,25 @@ def _enabled_language_map() -> dict[str, dict]:
     return mapping
 
 
+def _default_locale_evidence(task: dict) -> dict:
+    return {
+        "target_language": task.get("target_language") or "",
+        "requested_url": task.get("link_url") or "",
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }
+
+
+def _merged_locale_evidence(task: dict) -> dict:
+    merged = _default_locale_evidence(task)
+    evidence = task.get("locale_evidence")
+    if isinstance(evidence, dict):
+        merged.update(evidence)
+    return merged
+
+
 def _load_task_from_row(row: dict | None) -> dict | None:
     if not row:
         return None
@@ -59,17 +78,7 @@ def _load_task_from_row(row: dict | None) -> dict | None:
     state.setdefault("page_language", "")
     state.setdefault("target_language", "")
     state.setdefault("target_language_name", "")
-    state.setdefault(
-        "locale_evidence",
-        {
-            "target_language": state.get("target_language") or "",
-            "requested_url": state.get("link_url") or "",
-            "lock_source": "",
-            "locked": False,
-            "failure_reason": "",
-            "attempts": [],
-        },
-    )
+    state["locale_evidence"] = _merged_locale_evidence(state)
     state.setdefault("progress", {})
     state.setdefault("summary", {})
     state.setdefault("error", "")
@@ -120,7 +129,7 @@ def _serialize_task(task_id: str, task: dict) -> dict:
         "page_language": task.get("page_language", ""),
         "target_language": task["target_language"],
         "target_language_name": task["target_language_name"],
-        "locale_evidence": dict(task.get("locale_evidence") or {}),
+        "locale_evidence": _merged_locale_evidence(task),
         "progress": dict(task.get("progress") or {}),
         "summary": dict(task.get("summary") or {}),
         "error": task.get("error", ""),

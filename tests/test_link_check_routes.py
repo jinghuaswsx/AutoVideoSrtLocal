@@ -204,3 +204,61 @@ def test_get_task_serializes_locale_and_download_evidence(authed_user_client_no_
 
     assert payload["locale_evidence"] == locale_evidence
     assert payload["items"][0]["download_evidence"] == download_evidence
+
+
+def test_get_task_backfills_locale_evidence_defaults_from_empty_or_partial_state(
+    authed_user_client_no_db, monkeypatch
+):
+    from web import store
+
+    current_locale_evidence = {}
+
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "display_name": "Demo Link Check",
+            "status": "done",
+            "state_json": json.dumps(
+                {
+                    "id": args[0],
+                    "type": "link_check",
+                    "status": "done",
+                    "link_url": "https://shop.example.com/de/products/demo",
+                    "target_language": "de",
+                    "target_language_name": "德语",
+                    "locale_evidence": current_locale_evidence,
+                    "items": [],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    monkeypatch.setattr(store, "get", lambda task_id: None)
+
+    current_locale_evidence = {}
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-empty")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }
+
+    current_locale_evidence = {"locked": True}
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-partial")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "",
+        "locked": True,
+        "failure_reason": "",
+        "attempts": [],
+    }
