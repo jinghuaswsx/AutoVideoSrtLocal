@@ -141,6 +141,62 @@ def test_fetch_page_warmup_second_attempt_locks_locale_and_records_attempts(monk
     assert [attempt["locked"] for attempt in page.locale_evidence["attempts"]] == [False, True]
 
 
+def test_fetch_page_warmup_third_attempt_locks_locale_and_records_attempts(monkeypatch):
+    from appcore.link_check_fetcher import LinkCheckFetcher
+
+    responses = [
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <body></body>
+            </html>
+            """,
+        ),
+        SimpleNamespace(
+            url="https://shop.example.com/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="en">
+              <body></body>
+            </html>
+            """,
+        ),
+        SimpleNamespace(
+            url="https://shop.example.com/de/products/demo?variant=123",
+            status_code=200,
+            text="""
+            <html lang="de">
+              <body>
+                <div data-media-id="1"><img data-src="https://img.example.com/de-hero.jpg?width=800"></div>
+              </body>
+            </html>
+            """,
+        ),
+    ]
+    requested_urls = []
+    sleeps = []
+
+    def fake_get(url, *, headers, allow_redirects, timeout):
+        requested_urls.append(url)
+        return responses[len(requested_urls) - 1]
+
+    fetcher = LinkCheckFetcher(sleep_func=sleeps.append)
+    monkeypatch.setattr(fetcher.session, "get", fake_get)
+
+    page = fetcher.fetch_page("https://shop.example.com/de/products/demo?variant=123", "de")
+
+    assert requested_urls == [
+        "https://shop.example.com/de/products/demo?variant=123",
+        "https://shop.example.com/de/products/demo?variant=123",
+        "https://shop.example.com/de/products/demo?variant=123",
+    ]
+    assert sleeps == [2, 2]
+    assert page.locale_evidence["lock_source"] == "warmup_attempt_3"
+    assert [attempt["locked"] for attempt in page.locale_evidence["attempts"]] == [False, False, True]
+
+
 def test_fetch_page_waits_two_seconds_before_each_warmup_attempt(monkeypatch):
     from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
 
