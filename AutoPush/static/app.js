@@ -67,13 +67,37 @@ const api = {
     apiJson(`/api/materials/${encodeURIComponent(code)}/push-payload?lang=${encodeURIComponent(lang)}`),
   fetchMaterials: (code) =>
     apiJson(`/api/materials/${encodeURIComponent(code)}`),
-  push: (payload) =>
-    apiJson("/api/push/medias", {
+  pushItems: ({ page, pageSize, q, status, lang }) => {
+    const p = new URLSearchParams();
+    p.set("page", String(page));
+    p.set("page_size", String(pageSize));
+    if (q) p.set("q", q);
+    if (status) p.set("status", status);
+    if (lang) p.set("lang", lang);
+    return apiJson(`/api/push-items?${p.toString()}`);
+  },
+  getPushItem: (itemId) => apiJson(`/api/push-items/${itemId}`),
+  pushItem: (itemId, payload) =>
+    apiJson(`/api/push-items/${itemId}/push`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
 };
+
+/* ---------- 状态文案映射 ---------- */
+
+const STATUS_LABELS = {
+  not_ready: { text: "制作中", cls: "ap-badge-gray" },
+  pending:   { text: "待推送", cls: "ap-badge-blue" },
+  pushed:    { text: "已推送", cls: "ap-badge-green" },
+  failed:    { text: "推送失败", cls: "ap-badge-red" },
+};
+
+function renderStatusBadge(status) {
+  const s = STATUS_LABELS[status] || { text: status || "-", cls: "" };
+  return el("span", { class: `ap-badge ${s.cls}` }, s.text);
+}
 
 /* ---------- 载荷校验（同 push-module 源版） ---------- */
 
@@ -122,32 +146,50 @@ function validatePayload(p) {
 }
 
 /* ================================================================
- * 视图 1：推送列表
+ * 视图 1：推送列表（素材 × 语种扁平表）
  * ================================================================ */
 
 function renderList(container) {
-  const state = { page: 1, pageSize: 20, q: "", archived: "0", total: 0, items: [], loading: false, error: "" };
+  const state = {
+    page: 1, pageSize: 20, q: "", status: "", lang: "",
+    total: 0, items: [], loading: false, error: "",
+  };
 
   clear(container);
 
+  // ---- 筛选工具条 ----
   const toolbar = el("div", { class: "ap-toolbar" });
+
   const qGroup = el("label", { class: "ap-input-group" }, [
     el("span", { class: "ap-input-label" }, "关键词（产品名 / product_code）"),
   ]);
-  const qInput = el("input", { class: "ap-input", type: "text", placeholder: "输入后回车或点查询" });
+  const qInput = el("input", { class: "ap-input", type: "text", placeholder: "回车或点查询" });
   qInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
   qGroup.appendChild(qInput);
 
-  const archivedGroup = el("label", { class: "ap-input-group" }, [
-    el("span", { class: "ap-input-label" }, "归档状态"),
+  const statusGroup = el("label", { class: "ap-input-group" }, [
+    el("span", { class: "ap-input-label" }, "状态"),
   ]);
-  const archivedSelect = el("select", { class: "ap-input" });
-  [["0", "未归档"], ["1", "已归档"], ["all", "全部"]].forEach(([v, t]) => {
+  const statusSelect = el("select", { class: "ap-input" });
+  [
+    ["", "全部"],
+    ["pending", "待推送"],
+    ["pushed", "已推送"],
+    ["failed", "推送失败"],
+    ["not_ready", "制作中"],
+  ].forEach(([v, t]) => {
     const opt = document.createElement("option");
     opt.value = v; opt.textContent = t;
-    archivedSelect.appendChild(opt);
+    statusSelect.appendChild(opt);
   });
-  archivedGroup.appendChild(archivedSelect);
+  statusGroup.appendChild(statusSelect);
+
+  const langGroup = el("label", { class: "ap-input-group" }, [
+    el("span", { class: "ap-input-label" }, "语种（可用逗号分隔多个）"),
+  ]);
+  const langInput = el("input", { class: "ap-input", type: "text", placeholder: "de,fr,ja …" });
+  langInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+  langGroup.appendChild(langInput);
 
   const btnSearch = el("button", { type: "button", class: "ap-btn-primary" }, "查询");
   btnSearch.addEventListener("click", doSearch);
@@ -155,20 +197,22 @@ function renderList(container) {
   btnReload.addEventListener("click", () => { load(); });
 
   toolbar.appendChild(qGroup);
-  toolbar.appendChild(archivedGroup);
+  toolbar.appendChild(statusGroup);
+  toolbar.appendChild(langGroup);
   toolbar.appendChild(btnSearch);
   toolbar.appendChild(btnReload);
 
+  // ---- 表格 ----
   const tableBox = el("div", { class: "ap-card" });
   const table = el("table", { class: "ap-table" });
   const thead = el("thead", {}, [
     el("tr", {}, [
-      el("th", {}, "Product Code"),
-      el("th", {}, "名称"),
-      el("th", { style: "width: 180px;" }, "主图语种"),
-      el("th", { style: "width: 180px;" }, "文案语种"),
-      el("th", { style: "width: 200px;" }, "视频素材"),
-      el("th", { style: "width: 180px;" }, "操作"),
+      el("th", { style: "width: 120px;" }, "封面"),
+      el("th", {}, "产品 / 素材"),
+      el("th", { style: "width: 70px;" }, "语种"),
+      el("th", { style: "width: 100px;" }, "状态"),
+      el("th", { style: "width: 140px;" }, "时间"),
+      el("th", { style: "width: 140px;" }, "操作"),
     ]),
   ]);
   const tbody = el("tbody");
@@ -186,7 +230,8 @@ function renderList(container) {
 
   function doSearch() {
     state.q = qInput.value.trim();
-    state.archived = archivedSelect.value;
+    state.status = statusSelect.value;
+    state.lang = langInput.value.trim();
     state.page = 1;
     load();
   }
@@ -198,9 +243,9 @@ function renderList(container) {
     tbody.appendChild(el("tr", {}, [el("td", { colspan: 6, class: "ap-empty" }, "加载中…")]));
 
     try {
-      const data = await api.list({
+      const data = await api.pushItems({
         page: state.page, pageSize: state.pageSize,
-        q: state.q, archived: state.archived,
+        q: state.q, status: state.status, lang: state.lang,
       });
       state.total = data.total || 0;
       state.items = Array.isArray(data.items) ? data.items : [];
@@ -217,26 +262,6 @@ function renderList(container) {
     }
   }
 
-  function renderLangs(list, muted = false) {
-    if (!list || list.length === 0) return el("span", { class: "ap-code" }, "—");
-    const frag = document.createDocumentFragment();
-    list.forEach((l) => {
-      frag.appendChild(el("span", { class: `ap-langpill${muted ? " muted" : ""}` }, l));
-    });
-    return frag;
-  }
-
-  function renderItemLangs(langMap) {
-    if (!langMap || Object.keys(langMap).length === 0) {
-      return el("span", { class: "ap-code" }, "—");
-    }
-    const frag = document.createDocumentFragment();
-    Object.entries(langMap).forEach(([lang, count]) => {
-      frag.appendChild(el("span", { class: "ap-langpill" }, `${lang} × ${count}`));
-    });
-    return frag;
-  }
-
   function renderBody() {
     clear(tbody);
     if (state.items.length === 0 && !state.error) {
@@ -246,51 +271,82 @@ function renderList(container) {
     state.items.forEach((item) => {
       const row = el("tr");
 
-      row.appendChild(el("td", {}, [
-        el("div", { class: "ap-code" }, item.product_code || ""),
-      ]));
-      row.appendChild(el("td", {}, [
-        el("div", {}, item.name || ""),
-        item.archived ? el("span", { class: "ap-langpill muted" }, "已归档") : null,
-      ]));
+      // 封面
+      const coverTd = el("td");
+      if (item.cover_url) {
+        coverTd.appendChild(el("img", {
+          class: "ap-list-thumb", src: item.cover_url, alt: item.filename || "",
+        }));
+      } else {
+        coverTd.appendChild(el("div", { class: "ap-list-thumb ap-media-empty" }, "无"));
+      }
+      row.appendChild(coverTd);
 
-      const coverCell = el("td", {});
-      coverCell.appendChild(renderLangs(item.cover_langs));
-      row.appendChild(coverCell);
+      // 产品 / 素材
+      const nameTd = el("td");
+      nameTd.appendChild(el("div", { class: "ap-row-name" }, item.product_name || ""));
+      nameTd.appendChild(el("div", { class: "ap-code" }, item.product_code || ""));
+      nameTd.appendChild(el("div", { class: "ap-row-sub" }, item.display_name || item.filename || ""));
+      row.appendChild(nameTd);
 
-      const copyCell = el("td", {});
-      copyCell.appendChild(renderLangs(item.copywriting_langs));
-      row.appendChild(copyCell);
+      // 语种
+      row.appendChild(el("td", {}, [el("span", { class: "ap-langpill" }, item.lang || "en")]));
 
-      const itemsCell = el("td", {});
-      itemsCell.appendChild(renderItemLangs(item.item_langs));
-      row.appendChild(itemsCell);
+      // 状态
+      const statusTd = el("td");
+      statusTd.appendChild(renderStatusBadge(item.status));
+      row.appendChild(statusTd);
 
-      // 操作列：一个 lang 下拉 + 跳转按钮
-      const actionCell = el("td", {});
-      const langSelect = el("select", { class: "ap-lang-select" });
-      const availableLangs = Object.keys(item.item_langs || {});
-      // 默认选项集合：item 语种 ∪ ad_supported_langs
-      const extra = (item.ad_supported_langs || "").split(",").map((s) => s.trim()).filter(Boolean);
-      const allLangs = Array.from(new Set([...availableLangs, ...extra]));
-      if (allLangs.length === 0) allLangs.push("en");
-      allLangs.forEach((l) => {
-        const opt = document.createElement("option");
-        opt.value = l; opt.textContent = l;
-        langSelect.appendChild(opt);
-      });
-      const btnGo = el("button", { type: "button", class: "ap-btn-primary" }, "去载荷");
-      btnGo.addEventListener("click", () => {
-        activate("payload");
-        window.__AP_PREFILL_PAYLOAD__ = { code: item.product_code, lang: langSelect.value };
-        renderPayload(document.getElementById("ap-payload-root"));
-      });
-      actionCell.appendChild(langSelect);
-      actionCell.appendChild(btnGo);
-      row.appendChild(actionCell);
+      // 时间（pushed_at 优先，其次 created_at）
+      const timeTxt = (item.pushed_at || item.created_at || "")
+        .replace("T", " ").slice(0, 16);
+      row.appendChild(el("td", { class: "ap-row-time" }, timeTxt || "—"));
+
+      // 操作
+      const actionTd = el("td");
+      actionTd.appendChild(buildActionButton(item));
+      row.appendChild(actionTd);
 
       tbody.appendChild(row);
     });
+  }
+
+  function buildActionButton(item) {
+    if (item.status === "not_ready") {
+      const missing = Object.entries(item.readiness || {})
+        .filter(([, v]) => !v)
+        .map(([k]) => ({
+          has_object: "素材", has_cover: "封面",
+          has_copywriting: "文案", lang_supported: "链接适配",
+        })[k] || k)
+        .join(" / ");
+      return el("button", {
+        type: "button", class: "ap-btn-ghost", disabled: true,
+        title: `缺少：${missing}`,
+      }, "制作中");
+    }
+    if (item.status === "pushed") {
+      return el("button", {
+        type: "button", class: "ap-btn-ghost",
+        onclick: () => openPayloadFor(item),
+      }, "查看/重推");
+    }
+    // pending / failed：可推送
+    const label = item.status === "failed" ? "重推" : "去推送";
+    return el("button", {
+      type: "button", class: "ap-btn-primary",
+      onclick: () => openPayloadFor(item),
+    }, label);
+  }
+
+  function openPayloadFor(item) {
+    window.__AP_PREFILL_PAYLOAD__ = {
+      code: item.product_code,
+      lang: item.lang,
+      item_id: item.item_id,
+    };
+    activate("payload");
+    renderPayload(document.getElementById("ap-payload-root"));
   }
 
   function renderPager() {
@@ -309,7 +365,6 @@ function renderList(container) {
 
   load();
 }
-
 /* ================================================================
  * 视图 2：推送创建
  * ================================================================ */
@@ -584,6 +639,7 @@ function renderPayload(container) {
   const state = {
     productCode: prefill.code || "",
     lang: prefill.lang || "de",
+    itemId: prefill.item_id || null,
     fetching: false,
     errorMessage: "",
     responseText: "",
@@ -741,7 +797,9 @@ function renderPayload(container) {
     Object.assign(state, { pushing: true, pushError: "", pushResult: "" });
     sync();
     try {
-      const body = await api.push(state.payloadData);
+      const body = state.itemId
+        ? await api.pushItem(state.itemId, state.payloadData)
+        : await api.push(state.payloadData);
       state.pushResult = JSON.stringify(body, null, 2);
     } catch (err) {
       state.pushError = err.message || "推送失败";

@@ -384,3 +384,49 @@ body {
   white-space: pre;
 }
 .ap-response-text { min-height: 180px; }
+
+/* ---------- 列表新增：状态徽章 + 缩略图 + 行内排版 ---------- */
+
+.ap-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--oc-r-full);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.ap-badge-gray  { background: var(--oc-bg-muted); color: var(--oc-fg-muted); }
+.ap-badge-blue  { background: var(--oc-accent-subtle); color: var(--oc-accent); }
+.ap-badge-green { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.ap-badge-red   { background: var(--oc-danger-bg); color: var(--oc-danger-fg); }
+
+.ap-list-thumb {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: var(--oc-r-md);
+  display: block;
+  background: var(--oc-bg-muted);
+  border: 1px solid var(--oc-border);
+}
+.ap-list-thumb.ap-media-empty {
+  width: 88px; height: 88px;
+  font-size: 11px;
+}
+
+.ap-row-name {
+  font-weight: 500;
+  color: var(--oc-fg);
+  line-height: 1.4;
+}
+.ap-row-sub {
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.ap-row-time {
+  color: var(--oc-fg-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
