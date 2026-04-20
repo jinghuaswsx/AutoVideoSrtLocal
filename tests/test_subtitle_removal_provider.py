@@ -234,3 +234,46 @@ def test_subtitle_removal_provider_subtitle_mode_omits_operation(monkeypatch):
     )
 
     assert "operation" not in captured["json"], "subtitle 模式不应下发 operation 字段"
+
+
+def test_subtitle_removal_provider_text_mode_adds_operation(monkeypatch):
+    import appcore.subtitle_removal_provider as provider
+
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": {"taskId": "provider-task-2"}}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.example/api")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "TOKEN")
+    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_NOTIFY_URL", "")
+
+    provider.submit_task(
+        file_size_mb=1.0,
+        duration_seconds=1.0,
+        resolution="720x1280",
+        video_name="demo",
+        source_url="https://tos.example/s.mp4",
+        erase_text_type="text",
+    )
+
+    operation = captured["json"].get("operation")
+    assert operation == {
+        "type": "Task",
+        "task": {
+            "type": "Erase",
+            "erase": {
+                "mode": "Auto",
+                "auto": {"type": "Text"},
+            },
+        },
+    }
