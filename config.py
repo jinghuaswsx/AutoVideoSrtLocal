@@ -66,6 +66,7 @@ AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")
+USD_TO_CNY = 6.8
 
 # 豆包翻译 (火山引擎 ARK)
 DOUBAO_LLM_API_KEY = _env("DOUBAO_LLM_API_KEY") or _env("VOLC_API_KEY")
