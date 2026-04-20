@@ -355,3 +355,29 @@ def test_get_task_normalizes_invalid_locale_evidence_values(authed_user_client_n
         "failure_reason": "",
         "attempts": [],
     }
+
+    current_locale_evidence = []
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-invalid-empty-list-evidence")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }
+
+    current_locale_evidence = [1, 2]
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-invalid-list-evidence")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }
