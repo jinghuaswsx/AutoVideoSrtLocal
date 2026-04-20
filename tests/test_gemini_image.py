@@ -1,6 +1,8 @@
 import base64
-import pytest
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 def _fake_response(image_bytes: bytes, mime: str = "image/png"):
@@ -28,15 +30,25 @@ def test_generate_image_returns_bytes_and_mime():
     client.models.generate_content.return_value = _fake_response(b"PNG-BYTES", "image/png")
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
          patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
-         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"):
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
         out, mime = gemini_image.generate_image(
             prompt="翻译",
             source_image=b"RAW",
             source_mime="image/jpeg",
             model="gemini-3-pro-image-preview",
+            user_id=3,
+            project_id="img-1",
         )
     assert out == b"PNG-BYTES"
     assert mime == "image/png"
+    kwargs = m_log.call_args.kwargs
+    assert kwargs["use_case_code"] == "image_translate.generate"
+    assert kwargs["provider"] == "gemini_aistudio"
+    assert kwargs["model"] == "gemini-3-pro-image-preview"
+    assert kwargs["request_units"] == 1
+    assert kwargs["units_type"] == "images"
+    assert kwargs["success"] is True
 
 
 def test_generate_image_cloud_channel_uses_vertex_backend():
@@ -94,7 +106,7 @@ def test_generate_image_openrouter_channel_returns_decoded_image():
     image_obj.image_url = MagicMock(url=data_url)
     choice.message = MagicMock(images=[image_obj])
     or_resp.choices = [choice]
-    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0)
+    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0, cost="0.12")
 
     created_kwargs: dict = {}
 
@@ -109,16 +121,24 @@ def test_generate_image_openrouter_channel_returns_decoded_image():
     with patch("openai.OpenAI", _FakeOpenAI), \
          patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"):
+         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
         out, mime = gemini_image.generate_image(
             prompt="翻译",
             source_image=b"SRC",
             source_mime="image/jpeg",
             model="gemini-3-pro-image-preview",
+            user_id=8,
+            project_id="img-or",
         )
     assert out == raw
     assert mime == "image/png"
     assert created_kwargs["api_key"] == "OR-KEY"
+    kwargs = m_log.call_args.kwargs
+    assert kwargs["provider"] == "openrouter"
+    assert kwargs["response_cost_cny"] == Decimal("0.816000")
+    assert kwargs["request_units"] == 1
+    assert kwargs["units_type"] == "images"
 
 
 def test_generate_image_openrouter_channel_errors_without_key():
@@ -139,6 +159,7 @@ def test_generate_image_openrouter_channel_errors_without_key():
 
 def test_to_openrouter_model_adds_google_prefix():
     from appcore import gemini_image
+
     assert gemini_image._to_openrouter_model("gemini-3-pro-image-preview") == "google/gemini-3-pro-image-preview"
     assert gemini_image._to_openrouter_model("google/gemini-3-pro-image-preview") == "google/gemini-3-pro-image-preview"
 
@@ -162,12 +183,19 @@ def test_generate_image_raises_when_no_image_part():
     client.models.generate_content.return_value = resp
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
          patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
-         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"):
+         patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
         with pytest.raises(gemini_image.GeminiImageError) as exc:
             gemini_image.generate_image(
                 prompt="翻译",
                 source_image=b"RAW",
                 source_mime="image/jpeg",
                 model="gemini-3-pro-image-preview",
+                user_id=11,
+                project_id="img-fail",
             )
         assert "SAFETY" in str(exc.value)
+    kwargs = m_log.call_args.kwargs
+    assert kwargs["provider"] == "gemini_aistudio"
+    assert kwargs["success"] is False
+    assert "NO_IMAGE_RETURNED" not in kwargs["extra"]["error"]
