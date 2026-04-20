@@ -32,7 +32,7 @@ def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path,
     )
 
     class FakeVoiceLibrary:
-        def recommend_voice(self, text):
+        def recommend_voice(self, user_id, text):
             return {"id": "adam"}
 
     monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
@@ -66,7 +66,7 @@ def test_step_alignment_waits_when_interactive_review_enabled(tmp_path, monkeypa
     )
 
     class FakeVoiceLibrary:
-        def recommend_voice(self, text):
+        def recommend_voice(self, user_id, text):
             return {"id": "adam"}
 
     monkeypatch.setattr("pipeline.voice_library.get_voice_library", lambda: FakeVoiceLibrary())
@@ -78,7 +78,11 @@ def test_step_alignment_waits_when_interactive_review_enabled(tmp_path, monkeypa
     assert saved["steps"]["alignment"] == "waiting"
     assert saved["_alignment_confirmed"] is False
     assert saved["current_review_step"] == "alignment"
-    assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "hello world"
+    segments_item = next(
+        item for item in saved["artifacts"]["alignment"]["items"]
+        if item.get("segments")
+    )
+    assert segments_item["segments"][0]["text"] == "hello world"
 
 
 def test_step_translate_persists_source_text_and_localized_translation(tmp_path, monkeypatch):
@@ -107,6 +111,72 @@ def test_step_translate_persists_source_text_and_localized_translation(tmp_path,
     assert saved["steps"]["translate"] == "done"
     assert saved["source_full_text_zh"] == "part one\npart two"
     assert saved["localized_translation"]["full_text"] == "Hook line. Closing line."
+
+
+def test_step_translate_logs_ai_billing_for_localize(tmp_path, monkeypatch):
+    task = store.create("task-localized-billing", "video.mp4", str(tmp_path), user_id=7)
+    task["script_segments"] = [
+        {"index": 0, "text": "part one", "start_time": 0.0, "end_time": 1.0},
+    ]
+
+    monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one")
+    monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "vertex_gemini_31_flash_lite")
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gemini-3.1-flash-lite-preview")
+    monkeypatch.setattr(
+        "pipeline.translate.generate_localized_translation",
+        lambda source_full_text_zh, script_segments, variant="normal", **kwargs: {
+            "full_text": "Hook line.",
+            "sentences": [
+                {"index": 0, "text": "Hook line.", "source_segment_indices": [0]},
+            ],
+            "_usage": {"input_tokens": 12, "output_tokens": 8},
+        },
+    )
+    billing_calls = []
+    monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=7)
+    runner._step_translate("task-localized-billing")
+
+    assert len(billing_calls) == 1
+    assert billing_calls[0]["use_case_code"] == "video_translate.localize"
+    assert billing_calls[0]["user_id"] == 7
+    assert billing_calls[0]["project_id"] == "task-localized-billing"
+    assert billing_calls[0]["provider"] == "gemini_vertex"
+    assert billing_calls[0]["model"] == "gemini-3.1-flash-lite-preview"
+    assert billing_calls[0]["input_tokens"] == 12
+    assert billing_calls[0]["output_tokens"] == 8
+    assert billing_calls[0]["units_type"] == "tokens"
+    assert billing_calls[0]["success"] is True
+
+
+def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
+    task = store.create("task-asr-billing", "video.mp4", str(tmp_path), user_id=9)
+    task["audio_path"] = str(tmp_path / "audio.wav")
+
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
+    monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
+    monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
+    monkeypatch.setattr(
+        "pipeline.asr.transcribe",
+        lambda audio_url, volc_api_key=None: [
+            {"start_time": 0.0, "end_time": 12.4, "text": "hello"},
+        ],
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
+    billing_calls = []
+    monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=9)
+    runner._step_asr("task-asr-billing", str(tmp_path))
+
+    assert len(billing_calls) == 1
+    assert billing_calls[0]["use_case_code"] == "video_translate.asr"
+    assert billing_calls[0]["provider"] == "doubao_asr"
+    assert billing_calls[0]["model"] == "big-model"
+    assert billing_calls[0]["units_type"] == "seconds"
+    assert billing_calls[0]["audio_duration_seconds"] == 12.4
+    assert billing_calls[0]["request_units"] == 13
 
 
 def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypatch):

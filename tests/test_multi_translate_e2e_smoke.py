@@ -53,8 +53,9 @@ def test_smoke_de_pipeline_doesnt_crash():
         patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"),
         patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"),
         patch("appcore.runtime_multi._save_json"),
-        patch("appcore.runtime_multi._log_usage"),
+        patch("appcore.runtime.ai_billing.log_request"),
         patch("appcore.runtime_multi._build_review_segments", return_value=[]),
+        patch("appcore.runtime._translate_billing_model", return_value="gpt"),
         patch("appcore.runtime_multi.build_asr_artifact", return_value={}),
         patch("appcore.runtime_multi.build_translate_artifact", return_value={}),
         patch(

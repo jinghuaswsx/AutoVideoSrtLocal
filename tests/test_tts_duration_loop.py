@@ -463,7 +463,11 @@ class TestStepTtsIntegration:
         # Skip library fallback by forcing voice_id
         task_state.update(task_id, voice_id=99)
 
-        monkeypatch.setattr("appcore.usage_log.record", lambda *a, **kw: None)
+        billing_calls = []
+        monkeypatch.setattr(
+            "appcore.runtime.ai_billing.log_request",
+            lambda **kw: billing_calls.append(kw),
+        )
 
         runner = PipelineRunner(bus=EventBus(), user_id=1)
         runner._step_tts(task_id, str(tmp_path))
@@ -477,6 +481,13 @@ class TestStepTtsIntegration:
         v_state = task["variants"]["normal"]
         assert v_state["tts_audio_path"].endswith("tts_full.normal.mp3")
         assert task["tts_duration_status"] == "converged"
+        assert [call["use_case_code"] for call in billing_calls] == [
+            "video_translate.tts_script",
+            "video_translate.tts",
+        ]
+        assert billing_calls[0]["provider"] == "gemini_vertex"
+        assert billing_calls[1]["provider"] == "elevenlabs"
+        assert billing_calls[1]["request_units"] == len("EN.")
 
     def test_step_tts_truncates_overlong_final_audio(self, tmp_path, monkeypatch):
         from appcore import task_state
@@ -535,8 +546,15 @@ class TestStepTtsIntegration:
 
         monkeypatch.setattr("subprocess.run", fake_ffmpeg)
         monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+        monkeypatch.setattr("appcore.api_keys.get_key", lambda *args, **kwargs: None)
+        monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda *args, **kwargs: {})
         monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 30.0)
         monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 36.0)
+        billing_calls = []
+        monkeypatch.setattr(
+            "appcore.runtime.ai_billing.log_request",
+            lambda **kw: billing_calls.append(kw),
+        )
 
         runner = PipelineRunner(bus=EventBus(), user_id=1)
         monkeypatch.setattr(
@@ -568,7 +586,15 @@ class TestStepTtsIntegration:
                     {"index": 1, "text": "B", "translated": "B", "tts_path": str(round_audio), "tts_duration": 12.0},
                     {"index": 2, "text": "C", "translated": "C", "tts_path": str(round_audio), "tts_duration": 12.0},
                 ],
-                "rounds": [{"round": 5, "audio_duration": 36.0}],
+                "rounds": [{
+                    "round": 5,
+                    "audio_duration": 36.0,
+                    "translate_tokens_in": 11,
+                    "translate_tokens_out": 7,
+                    "tts_script_tokens_in": 5,
+                    "tts_script_tokens_out": 4,
+                    "tts_char_count": 5,
+                }],
                 "final_round": 5,
             },
         )
@@ -583,6 +609,16 @@ class TestStepTtsIntegration:
         assert len(variant_state["segments"]) == 3
         assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(30.0)
         assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(30.0)
+        assert [call["use_case_code"] for call in billing_calls] == [
+            "video_translate.rewrite",
+            "video_translate.tts_script",
+            "video_translate.tts",
+        ]
+        assert billing_calls[0]["provider"] == "gemini_vertex"
+        assert billing_calls[0]["input_tokens"] == 11
+        assert billing_calls[0]["output_tokens"] == 7
+        assert billing_calls[2]["provider"] == "elevenlabs"
+        assert billing_calls[2]["request_units"] == 5
 
     def test_step_tts_keeps_short_final_audio_without_truncation(self, tmp_path, monkeypatch):
         from appcore import task_state
@@ -621,6 +657,8 @@ class TestStepTtsIntegration:
 
         monkeypatch.setattr("subprocess.run", fail_if_ffmpeg)
         monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+        monkeypatch.setattr("appcore.api_keys.get_key", lambda *args, **kwargs: None)
+        monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda *args, **kwargs: {})
         monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 30.0)
         monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 28.0)
 

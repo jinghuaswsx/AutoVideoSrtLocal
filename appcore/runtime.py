@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import uuid
 from datetime import datetime
@@ -15,7 +16,7 @@ log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
-from appcore import tos_clients
+from appcore import ai_billing, tos_clients
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -116,6 +117,53 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
         )
 
     return review_segments
+
+
+def _translate_billing_provider(provider: str) -> str:
+    if provider == "doubao":
+        return "doubao"
+    if provider.startswith("vertex_"):
+        return "gemini_vertex"
+    return "openrouter"
+
+
+def _translate_billing_model(provider: str, user_id: int | None) -> str:
+    from pipeline.translate import get_model_display_name
+
+    return get_model_display_name(provider, user_id)
+
+
+def _log_translate_billing(
+    *,
+    user_id: int | None,
+    project_id: str,
+    use_case_code: str,
+    provider: str,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    success: bool = True,
+    extra: dict | None = None,
+) -> None:
+    ai_billing.log_request(
+        use_case_code=use_case_code,
+        user_id=user_id,
+        project_id=project_id,
+        provider=_translate_billing_provider(provider),
+        model=_translate_billing_model(provider, user_id),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        units_type="tokens",
+        success=success,
+        extra=extra,
+    )
+
+
+def _seconds_to_request_units(audio_duration_seconds: float | None) -> int | None:
+    if audio_duration_seconds is None:
+        return None
+    if audio_duration_seconds <= 0:
+        return 0
+    return int(math.ceil(audio_duration_seconds))
 
 
 _VALID_TRANSLATE_PREFS = (
@@ -557,10 +605,12 @@ class PipelineRunner:
             round_record["artifact_paths"]["tts_full_audio"] = f"tts_full.round_{round_index}.mp3"
 
             # Phase 4: measure
+            tts_full_text = tts_script.get("full_text", "")
             audio_duration = _get_audio_duration(result["full_audio_path"])
-            word_count = _count_words(tts_script.get("full_text", ""))
+            word_count = _count_words(tts_full_text)
             round_record["audio_duration"] = audio_duration
             round_record["word_count"] = word_count
+            round_record["tts_char_count"] = len(tts_full_text)
             round_record["wps_observed"] = (word_count / audio_duration) if audio_duration > 0 else 0.0
 
             # persist rounds incrementally so UI survives page refresh
@@ -915,6 +965,7 @@ class PipelineRunner:
         audio_path = task["audio_path"]
         self._set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
         from appcore.api_keys import resolve_key
+        from pipeline.extract import get_video_duration
         from pipeline.asr import transcribe
         from pipeline.storage import delete_file, upload_file
 
@@ -933,8 +984,24 @@ class PipelineRunner:
         task_state.update(task_id, utterances=utterances)
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
-        from appcore.usage_log import record as _log_usage
-        _log_usage(self.user_id, task_id, "doubao_asr", success=True)
+        try:
+            audio_duration_seconds = get_video_duration(audio_path)
+        except Exception:
+            audio_duration_seconds = max(
+                (float(item.get("end_time") or 0.0) for item in utterances),
+                default=0.0,
+            )
+        ai_billing.log_request(
+            use_case_code="video_translate.asr",
+            user_id=self.user_id,
+            project_id=task_id,
+            provider="doubao_asr",
+            model="big-model",
+            request_units=_seconds_to_request_units(audio_duration_seconds),
+            units_type="seconds",
+            audio_duration_seconds=audio_duration_seconds,
+            success=True,
+        )
 
         if not utterances:
             self._set_step(task_id, "asr", "done", "未检测到语音内容，可能是纯音乐/音效视频")
@@ -1046,14 +1113,16 @@ class PipelineRunner:
         _save_json(task_dir, "source_full_text_zh.json", {"full_text": source_full_text_zh})
         _save_json(task_dir, "localized_translation.json", localized_translation)
 
-        from appcore.usage_log import record as _log_usage
-        from pipeline.translate import get_model_display_name
         _translate_usage = localized_translation.get("_usage") or {}
-        _log_usage(self.user_id, task_id, provider,
-                   model_name=get_model_display_name(provider, self.user_id),
-                   success=True,
-                   input_tokens=_translate_usage.get("input_tokens"),
-                   output_tokens=_translate_usage.get("output_tokens"))
+        _log_translate_billing(
+            user_id=self.user_id,
+            project_id=task_id,
+            use_case_code="video_translate.localize",
+            provider=provider,
+            input_tokens=_translate_usage.get("input_tokens"),
+            output_tokens=_translate_usage.get("output_tokens"),
+            success=True,
+        )
 
         if requires_confirmation:
             task_state.set_current_review_step(task_id, "translate")
@@ -1225,22 +1294,41 @@ class PipelineRunner:
         )
 
         # Usage log for LLM + ElevenLabs (rewrite rounds 2/3 also recorded)
-        from appcore.usage_log import record as _log_usage
-        from pipeline.translate import get_model_display_name
         for round_record in loop_result["rounds"]:
             round_idx = round_record["round"]
             if round_idx >= 2:
-                # rewrite LLM call
-                _log_usage(self.user_id, task_id, provider,
-                           model_name=get_model_display_name(provider, self.user_id),
-                           success=True)
-            # tts_script LLM call every round
-            _log_usage(self.user_id, task_id, provider,
-                       model_name=get_model_display_name(provider, self.user_id),
-                       success=True)
-        # ElevenLabs call every round
-        for _ in loop_result["rounds"]:
-            _log_usage(self.user_id, task_id, "elevenlabs", success=True)
+                _log_translate_billing(
+                    user_id=self.user_id,
+                    project_id=task_id,
+                    use_case_code="video_translate.rewrite",
+                    provider=provider,
+                    input_tokens=round_record.get("translate_tokens_in"),
+                    output_tokens=round_record.get("translate_tokens_out"),
+                    success=True,
+                )
+            _log_translate_billing(
+                user_id=self.user_id,
+                project_id=task_id,
+                use_case_code="video_translate.tts_script",
+                provider=provider,
+                input_tokens=round_record.get("tts_script_tokens_in"),
+                output_tokens=round_record.get("tts_script_tokens_out"),
+                success=True,
+            )
+            tts_char_count = round_record.get("tts_char_count")
+            if tts_char_count is None and round_idx == loop_result["final_round"]:
+                final_text = (loop_result.get("tts_script") or {}).get("full_text") or ""
+                tts_char_count = len(final_text) if final_text else None
+            ai_billing.log_request(
+                use_case_code="video_translate.tts",
+                user_id=self.user_id,
+                project_id=task_id,
+                provider="elevenlabs",
+                model=self.tts_model_id,
+                request_units=tts_char_count,
+                units_type="chars",
+                success=True,
+            )
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
