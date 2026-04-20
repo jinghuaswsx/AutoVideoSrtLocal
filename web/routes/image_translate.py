@@ -129,6 +129,7 @@ def _state_payload(task: dict) -> dict:
         "medias_context": dict(task.get("medias_context") or {}),
         "steps": dict(task.get("steps") or {}),
         "error": task.get("error") or "",
+        "is_running": image_translate_runner.is_running(task.get("id") or ""),
     }
 
 

@@ -568,3 +568,24 @@ def test_delete_task(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.delete(f"/api/image-translate/{tid}")
     assert resp.status_code == 204
     assert called.get("db_execute") is True
+
+
+def test_state_payload_includes_is_running_false_when_no_runner(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    # 确保内存中没有这个 task_id
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+    assert resp.status_code == 200
+    assert resp.get_json()["is_running"] is False
+
+
+def test_state_payload_includes_is_running_true_when_runner_active(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: True)
+    resp = authed_client_no_db.get(f"/api/image-translate/{tid}")
+    assert resp.status_code == 200
+    assert resp.get_json()["is_running"] is True
