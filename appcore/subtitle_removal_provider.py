@@ -44,26 +44,49 @@ def _post(payload: dict) -> dict:
     return data
 
 
-def submit_task(*, file_size_mb: float, duration_seconds: float, resolution: str, video_name: str, source_url: str, cover_url: str = "") -> str:
-    data = _post(
-        {
-            "biz": "aiRemoveSubtitleSubmitTask",
-            "fileSize": round(file_size_mb, 2),
-            "duration": round(duration_seconds, 2),
-            "resolution": resolution,
-            "videoName": video_name,
-            "coverUrl": cover_url,
-            "url": source_url,
-            "notifyUrl": config.SUBTITLE_REMOVAL_NOTIFY_URL,
+def submit_task(
+    *,
+    file_size_mb: float,
+    duration_seconds: float,
+    resolution: str,
+    video_name: str,
+    source_url: str,
+    cover_url: str = "",
+    erase_text_type: str = "subtitle",
+) -> str:
+    if erase_text_type not in {"subtitle", "text"}:
+        raise ValueError(
+            f"erase_text_type must be 'subtitle' or 'text', got {erase_text_type!r}"
+        )
+    payload = {
+        "biz": "aiRemoveSubtitleSubmitTask",
+        "fileSize": round(file_size_mb, 2),
+        "duration": round(duration_seconds, 2),
+        "resolution": resolution,
+        "videoName": video_name,
+        "coverUrl": cover_url,
+        "url": source_url,
+        "notifyUrl": config.SUBTITLE_REMOVAL_NOTIFY_URL,
+    }
+    if erase_text_type == "text":
+        payload["operation"] = {
+            "type": "Task",
+            "task": {
+                "type": "Erase",
+                "erase": {
+                    "mode": "Auto",
+                    "auto": {"type": "Text"},
+                },
+            },
         }
-    )
-    payload = data.get("data")
-    if isinstance(payload, dict) and payload.get("taskId"):
-        return str(payload["taskId"])
-    if isinstance(payload, list) and payload and isinstance(payload[0], dict) and payload[0].get("taskId"):
-        return str(payload[0]["taskId"])
-    if isinstance(payload, str) and payload.strip():
-        return payload.strip()
+    data = _post(payload)
+    payload_result = data.get("data")
+    if isinstance(payload_result, dict) and payload_result.get("taskId"):
+        return str(payload_result["taskId"])
+    if isinstance(payload_result, list) and payload_result and isinstance(payload_result[0], dict) and payload_result[0].get("taskId"):
+        return str(payload_result[0]["taskId"])
+    if isinstance(payload_result, str) and payload_result.strip():
+        return payload_result.strip()
     raise SubtitleRemovalProviderError("Provider submit response missing taskId")
 
 
