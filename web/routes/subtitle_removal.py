@@ -258,6 +258,10 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
+    if erase_text_type not in {"subtitle", "text"}:
+        return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+
     next_steps = dict(task.get("steps") or {})
     next_steps.update(
         {
@@ -281,6 +285,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         remove_mode=mode,
         selection_box=normalized,
         position_payload=_to_position_payload(normalized),
+        erase_text_type=erase_text_type,
         provider_task_id="",
         provider_status="queued",
         provider_emsg="",

@@ -756,3 +756,75 @@ def test_subtitle_removal_delete_soft_deletes_project_and_cleans_result_artifact
     assert response.status_code == 204
     assert deleted == ["artifacts/1/sr-delete/subtitle_removal/result.cleaned.mp4"]
     assert not result_path.exists()
+
+
+def test_subtitle_removal_submit_persists_erase_text_type_text(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-erase-text",
+        "uploads/source.mp4",
+        "output/sr-submit-erase-text",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-erase-text",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.setdefault("task_id", task_id),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-erase-text/submit",
+        json={"remove_mode": "full", "erase_text_type": "text"},
+    )
+
+    assert response.status_code == 202
+    assert started["task_id"] == "sr-submit-erase-text"
+    saved = store.get("sr-submit-erase-text")
+    assert saved["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-erase-default",
+        "uploads/source.mp4",
+        "output/sr-submit-erase-default",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-erase-default",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-erase-default/submit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-submit-erase-default")
+    assert saved["erase_text_type"] == "subtitle"
