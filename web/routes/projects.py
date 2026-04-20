@@ -45,7 +45,10 @@ def detail(task_id: str):
         except Exception:
             pass
     from appcore.api_keys import get_key
-    translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    try:
+        translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    except Exception:
+        translate_pref = "openrouter"
     return render_template(
         "project_detail.html",
         project=row,

@@ -588,20 +588,20 @@ git commit -m "feat(video-translate-v2): 任务创建表单加 target_language/m
 - Modify: 任务详情页模板(`web/templates/`)和 JS(`web/static/`)
 - 可能新增: 单句重写接口 `web/routes/<something>:POST /api/tasks/<id>/av/rewrite_sentence`
 
-- [ ] **Step 7.1:画面笔记预览卡片**
+- [x] **Step 7.1:画面笔记预览卡片**
 
 读 `task.state_json.shot_notes`,展示:
 - 卡片头:`shot_notes.global.product_name / category / overall_theme`
 - 结构分段:`hook_range / demo_range / proof_range / cta_range`
 - 可展开"逐句画面笔记"表格:asr_index / scene / action / product_visible(图标) / shot_type
 
-- [ ] **Step 7.2:时长警告列表**
+- [x] **Step 7.2:时长警告列表**
 
 读 `task.state_json.variants["av"].sentences`,筛 `status in {"warning_overshoot", "warning_short"}`:
 - 表格列:asr_index / target_duration / tts_duration / 偏差 % / 当前译文 / 操作
 - 操作按钮:"手动重写"(弹窗显示原译文 textarea,运营修改提交 → 后端重跑 TTS)
 
-- [ ] **Step 7.3:单句重写后端接口**
+- [x] **Step 7.3:单句重写后端接口**
 
 ```python
 @bp.route("/api/tasks/<task_id>/av/rewrite_sentence", methods=["POST"])
@@ -616,13 +616,13 @@ def av_rewrite_sentence(task_id):
     return jsonify({"ok": True, "status": new_status, "tts_duration": new_dur})
 ```
 
-- [ ] **Step 7.4:手动冒烟**
+- [x] **Step 7.4:手动冒烟**
 
 - 创建测试任务 → 跑通 v2 → 详情页能看到画面笔记预览
 - 预期有 warning 的句子(可以人工制造短文案或改 target_duration)
 - 点"手动重写"修改,验证 SRT + 音频文件时间戳更新
 
-- [ ] **Step 7.5:Commit**
+- [x] **Step 7.5:Commit**
 
 ```bash
 git add web/
