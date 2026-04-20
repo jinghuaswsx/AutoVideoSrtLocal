@@ -153,7 +153,15 @@
     submitBtn.onclick = async function(){
       clearError();
       var productName = (productNameEl && productNameEl.value || "").trim();
-      if (!productName) return showError("请填写产品名");
+      if (!productName) {
+        if (productNameEl) {
+          productNameEl.focus();
+          if (typeof productNameEl.scrollIntoView === "function") {
+            productNameEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+        return showError("请先输入产品名，再提交任务");
+      }
       if (productName.length > 60) return showError("产品名长度不能超过 60 字符");
       if (!state.files.length) return showError("请选择图片");
       if (!langEl.value) return showError("请选择目标语言");

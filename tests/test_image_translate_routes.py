@@ -90,6 +90,19 @@ def test_image_translate_empty_state_container(authed_client_no_db, monkeypatch)
     assert 'id="itLanguageEmpty"' in resp.get_data(as_text=True)
 
 
+def test_image_translate_page_emphasizes_product_name_before_submit(authed_client_no_db, monkeypatch):
+    from appcore import db as app_db
+
+    monkeypatch.setattr(app_db, "query", lambda *args, **kwargs: [])
+    resp = authed_client_no_db.get("/image-translate")
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert "提交任务前先输入产品名" in body
+    assert 'class="it-product-name-callout"' in body
+    assert 'class="it-product-name-input"' in body
+
+
 def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     resp = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
