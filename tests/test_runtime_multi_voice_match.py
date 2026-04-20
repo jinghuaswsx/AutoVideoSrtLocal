@@ -19,6 +19,8 @@ def test_step_voice_match_writes_candidates_to_state():
                return_value="/tmp/x/clip.wav"), \
          patch("appcore.runtime_multi.embed_audio_file",
                return_value=np.zeros(256, dtype=np.float32)), \
+         patch("appcore.runtime_multi.resolve_default_voice",
+               return_value="default-voice-id"), \
          patch("appcore.runtime_multi.match_candidates") as m_match:
         m_match.return_value = [
             {"voice_id": "v1", "name": "A", "similarity": 0.85,
@@ -31,6 +33,7 @@ def test_step_voice_match_writes_candidates_to_state():
         runner._step_voice_match("t1")
 
     payload = m_update.call_args.kwargs
+    assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
     assert payload["voice_match_candidates"][0]["voice_id"] == "v1"
     assert len(payload["voice_match_candidates"]) == 3
 

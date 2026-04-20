@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import numpy as np
 
@@ -90,18 +90,27 @@ def match_candidates(
     language: str,
     gender: Optional[str] = None,
     top_k: int = 3,
+    exclude_voice_ids: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """对候选音色按余弦相似度排序，返回前 top_k 条。"""
     rows = _query_voices_by_language(language=language, gender=gender)
+    excluded = {
+        str(voice_id).strip()
+        for voice_id in (exclude_voice_ids or [])
+        if str(voice_id).strip()
+    }
     scored: List[Dict[str, Any]] = []
     for row in rows:
+        voice_id = str(row.get("voice_id") or "").strip()
+        if not voice_id or voice_id in excluded:
+            continue
         blob = row.get("audio_embedding")
         if not blob:
             continue
         cand_vec = deserialize_embedding(blob)
         sim = cosine_similarity(query_embedding, cand_vec)
         scored.append({
-            "voice_id": row["voice_id"],
+            "voice_id": voice_id,
             "name": row.get("name"),
             "language": row.get("language"),
             "gender": row.get("gender"),
@@ -119,13 +128,18 @@ def match_for_video(
     language: str,
     gender: Optional[str] = None,
     top_k: int = 3,
+    exclude_voice_ids: Optional[Iterable[str]] = None,
     out_dir: str,
 ) -> List[Dict[str, Any]]:
     """完整流程：提取采样 → 计算 embedding → 数据库匹配。"""
     clip_path = extract_sample_clip(video_path, out_dir=out_dir)
     query_vec = embed_audio_file(clip_path)
     return match_candidates(
-        query_vec, language=language, gender=gender, top_k=top_k,
+        query_vec,
+        language=language,
+        gender=gender,
+        top_k=top_k,
+        exclude_voice_ids=exclude_voice_ids,
     )
 
 

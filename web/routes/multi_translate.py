@@ -702,6 +702,7 @@ def rematch_voice(task_id: str):
         }), 409
 
     import base64
+    from appcore.video_translate_defaults import resolve_default_voice
     from pipeline.voice_embedding import deserialize_embedding
     from pipeline.voice_match import match_candidates
 
@@ -710,8 +711,13 @@ def rematch_voice(task_id: str):
     except Exception:
         return jsonify({"error": "query embedding 解码失败"}), 500
 
+    default_voice_id = resolve_default_voice(lang, user_id=current_user.id)
     candidates = match_candidates(
-        vec, language=lang, gender=gender, top_k=10,
+        vec,
+        language=lang,
+        gender=gender,
+        top_k=10,
+        exclude_voice_ids={default_voice_id} if default_voice_id else None,
     ) or []
     for c in candidates:
         c["similarity"] = float(c.get("similarity", 0.0))

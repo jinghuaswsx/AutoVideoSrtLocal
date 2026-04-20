@@ -219,6 +219,7 @@ class MultiTranslateRunner(PipelineRunner):
         lang = self._resolve_target_lang(task)
         utterances = task.get("utterances") or []
         video_path = task.get("video_path")
+        default_voice_id = resolve_default_voice(lang, user_id=self.user_id)
 
         self._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
 
@@ -230,7 +231,12 @@ class MultiTranslateRunner(PipelineRunner):
                     min_duration=8.0,
                 )
                 vec = embed_audio_file(clip)
-                candidates = match_candidates(vec, language=lang, top_k=10) or []
+                candidates = match_candidates(
+                    vec,
+                    language=lang,
+                    top_k=10,
+                    exclude_voice_ids={default_voice_id} if default_voice_id else None,
+                ) or []
                 for c in candidates:
                     c["similarity"] = float(c.get("similarity", 0.0))
                 # 持久化 query embedding 到 state，以便前端切 gender 时
@@ -245,7 +251,7 @@ class MultiTranslateRunner(PipelineRunner):
         else:
             query_embedding_b64 = None
 
-        fallback = None if candidates else resolve_default_voice(lang, user_id=self.user_id)
+        fallback = None if candidates else default_voice_id
 
         task_state.update(
             task_id,
