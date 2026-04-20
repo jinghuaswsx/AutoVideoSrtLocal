@@ -51,6 +51,58 @@ class AutoVideoService:
             )
         return _unwrap(response)
 
+    # ----- 推送状态（/openapi/push-items） -----
+
+    async def list_push_items(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        q: str,
+        status: str,
+        lang: str,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if q:
+            params["q"] = q
+        if status:
+            params["status"] = status
+        if lang:
+            params["lang"] = lang
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.settings.autovideo_base_url}/openapi/push-items",
+                params=params,
+                headers={"X-API-Key": self.settings.autovideo_api_key},
+            )
+        return _unwrap(response)
+
+    async def get_push_item(self, item_id: int) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.settings.autovideo_base_url}/openapi/push-items/{item_id}",
+                headers={"X-API-Key": self.settings.autovideo_api_key},
+            )
+        return _unwrap(response)
+
+    async def mark_pushed(self, item_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self.settings.autovideo_base_url}/openapi/push-items/{item_id}/mark-pushed",
+                json=body,
+                headers={"X-API-Key": self.settings.autovideo_api_key},
+            )
+        return _unwrap(response)
+
+    async def mark_failed(self, item_id: int, body: dict[str, Any]) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{self.settings.autovideo_base_url}/openapi/push-items/{item_id}/mark-failed",
+                json=body,
+                headers={"X-API-Key": self.settings.autovideo_api_key},
+            )
+        return _unwrap(response)
+
 
 def _unwrap(response: httpx.Response) -> dict[str, Any]:
     try:

@@ -62,6 +62,7 @@ async def get_push_payload(product_code: str, lang: str = Query(...)) -> Any:
 
 @api.post("/push/medias")
 async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
+    """直接向下游推送（旧接口，不写回主项目 DB）。"""
     target = get_settings().push_medias_target
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -88,3 +89,115 @@ async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
         "upstream_status": response.status_code,
         "upstream": content,
     }
+
+
+# ================================================================
+# /api/push-items —— 主推送流程：状态列表 + 推送（含写回）
+# ================================================================
+
+
+@api.get("/push-items")
+async def list_push_items(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    q: str = Query(""),
+    status: str = Query(""),
+    lang: str = Query(""),
+) -> Any:
+    try:
+        return await _service().list_push_items(
+            page=page, page_size=page_size, q=q, status=status, lang=lang,
+        )
+    except Exception as exc:
+        raise _map_upstream_error(exc) from exc
+
+
+@api.get("/push-items/{item_id}")
+async def get_push_item(item_id: int) -> Any:
+    try:
+        return await _service().get_push_item(item_id)
+    except Exception as exc:
+        raise _map_upstream_error(exc) from exc
+
+
+@api.post("/push-items/{item_id}/push")
+async def push_item(item_id: int, payload: dict[str, Any] = Body(...)) -> Any:
+    """推送一条素材：POST 下游 → 根据结果调 mark-pushed / mark-failed 写回。
+
+    body 直接是推送 JSON（与 /push/medias 同构）。
+    """
+    settings = get_settings()
+    target = settings.push_medias_target
+
+    # 1. POST 下游
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                target,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except Exception as exc:
+        # 网络失败 → 标记失败
+        try:
+            await _service().mark_failed(item_id, {
+                "request_payload": payload,
+                "error_message": f"下游不可达：{exc}",
+            })
+        except Exception:
+            pass
+        raise HTTPException(502, detail=f"下游推送服务不可达：{exc}") from exc
+
+    try:
+        content = response.json() if response.content else {}
+    except ValueError:
+        content = {"raw": response.text}
+
+    response_body_str = (
+        response.text if not isinstance(content, dict) else
+        __import__("json").dumps(content, ensure_ascii=False)
+    )
+
+    if response.status_code >= 400:
+        try:
+            await _service().mark_failed(item_id, {
+                "request_payload": payload,
+                "response_body": response_body_str,
+                "error_message": f"HTTP {response.status_code}",
+            })
+        except Exception:
+            pass
+        raise HTTPException(
+            response.status_code,
+            detail={"upstream_status": response.status_code, "body": content},
+        )
+
+    # 2. 成功 → mark-pushed
+    try:
+        await _service().mark_pushed(item_id, {
+            "request_payload": payload,
+            "response_body": response_body_str,
+        })
+    except Exception as exc:
+        # 下游已推送成功但主项目写回失败——返回 200 + 警告
+        return {
+            "ok": True,
+            "upstream_status": response.status_code,
+            "upstream": content,
+            "writeback_error": f"主项目写回失败：{exc}",
+        }
+
+    return {
+        "ok": True,
+        "upstream_status": response.status_code,
+        "upstream": content,
+    }
+
+
+@api.post("/push-items/{item_id}/mark-failed")
+async def mark_item_failed(item_id: int, body: dict[str, Any] = Body(...)) -> Any:
+    """单独标记失败的直通接口（调试用）。"""
+    try:
+        return await _service().mark_failed(item_id, body)
+    except Exception as exc:
+        raise _map_upstream_error(exc) from exc

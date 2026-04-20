@@ -249,3 +249,249 @@ def test_returns_product_assets(client, monkeypatch):
         "1/medias/123/demo-2.mp4",
     ]
     assert payload["expires_in"] == 3600
+
+
+# ================================================================
+# /openapi/push-items 路由测试
+# ================================================================
+
+
+def test_push_items_list_rejects_missing_api_key(client):
+    response = client.get("/openapi/push-items", follow_redirects=True)
+    assert response.status_code == 401
+
+
+def test_push_items_list_returns_items_with_status(client, monkeypatch):
+    """列表返回 item × lang 级的扁平数据 + 状态。"""
+    rows = [
+        {
+            "id": 456, "product_id": 123, "lang": "de",
+            "filename": "demo.mp4", "display_name": "demo.mp4",
+            "object_key": "k/demo.mp4", "cover_object_key": None,
+            "duration_seconds": 12.3, "file_size": 1234,
+            "pushed_at": None, "latest_push_id": None,
+            "created_at": None,
+            "product_name": "Alpha", "product_code": "alpha",
+            "ad_supported_langs": "en,de",
+            "selling_points": "", "importance": 3,
+        },
+    ]
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.list_items_for_push",
+        lambda **kw: (rows, 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True, "has_cover": True,
+            "has_copywriting": True, "lang_supported": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.query_one",
+        lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
+        lambda key: f"https://signed/{key}",
+    )
+
+    response = client.get(
+        "/openapi/push-items?page=1&page_size=10",
+        headers={"X-API-Key": "demo-key"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    row = body["items"][0]
+    assert row["item_id"] == 456
+    assert row["product_code"] == "alpha"
+    assert row["lang"] == "de"
+    assert row["status"] == "pending"
+    assert row["readiness"]["has_object"] is True
+
+
+def test_push_items_list_filters_by_status(client, monkeypatch):
+    rows = [
+        {
+            "id": 1, "product_id": 10, "lang": "en",
+            "filename": "f1.mp4", "display_name": "f1",
+            "object_key": "k1", "cover_object_key": None,
+            "duration_seconds": 1.0, "file_size": 100,
+            "pushed_at": None, "latest_push_id": None, "created_at": None,
+            "product_name": "P", "product_code": "p",
+            "ad_supported_langs": "en", "selling_points": "", "importance": 3,
+        },
+        {
+            "id": 2, "product_id": 10, "lang": "en",
+            "filename": "f2.mp4", "display_name": "f2",
+            "object_key": "k2", "cover_object_key": None,
+            "duration_seconds": 1.0, "file_size": 100,
+            "pushed_at": None, "latest_push_id": None, "created_at": None,
+            "product_name": "P", "product_code": "p",
+            "ad_supported_langs": "en", "selling_points": "", "importance": 3,
+        },
+    ]
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.list_items_for_push",
+        lambda **kw: (rows, 2),
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True, "has_cover": True,
+            "has_copywriting": True, "lang_supported": True,
+        },
+    )
+    # 第一条 pending、第二条 pushed
+    statuses = iter(["pending", "pushed"])
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_status",
+        lambda item, product: next(statuses),
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.query_one",
+        lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
+        lambda key: None,
+    )
+
+    response = client.get(
+        "/openapi/push-items?status=pushed",
+        headers={"X-API-Key": "demo-key"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["item_id"] == 2
+
+
+def test_mark_pushed_returns_ok(client, monkeypatch):
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_item",
+        lambda iid: {"id": iid},
+    )
+
+    def fake_record_success(**kwargs):
+        captured.update(kwargs)
+        return 42
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.record_push_success",
+        fake_record_success,
+    )
+
+    response = client.post(
+        "/openapi/push-items/456/mark-pushed",
+        headers={"X-API-Key": "demo-key", "Content-Type": "application/json"},
+        json={"request_payload": {"mode": "create"}, "response_body": "ok"},
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "log_id": 42}
+    assert captured["item_id"] == 456
+    assert captured["operator_user_id"] == 0
+    assert captured["payload"] == {"mode": "create"}
+    assert captured["response_body"] == "ok"
+
+
+def test_mark_failed_returns_ok(client, monkeypatch):
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_item",
+        lambda iid: {"id": iid},
+    )
+
+    def fake_record_failure(**kwargs):
+        captured.update(kwargs)
+        return 99
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.record_push_failure",
+        fake_record_failure,
+    )
+
+    response = client.post(
+        "/openapi/push-items/456/mark-failed",
+        headers={"X-API-Key": "demo-key", "Content-Type": "application/json"},
+        json={
+            "request_payload": {"mode": "create"},
+            "response_body": "oops",
+            "error_message": "HTTP 500",
+        },
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {"ok": True, "log_id": 99}
+    assert captured["item_id"] == 456
+    assert captured["error_message"] == "HTTP 500"
+
+
+def test_mark_pushed_item_not_found(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_item",
+        lambda iid: None,
+    )
+    response = client.post(
+        "/openapi/push-items/999/mark-pushed",
+        headers={"X-API-Key": "demo-key"},
+        json={},
+    )
+    assert response.status_code == 404
+
+
+def test_get_push_item_returns_single(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_item",
+        lambda iid: {
+            "id": iid, "product_id": 10, "lang": "de",
+            "filename": "f.mp4", "display_name": "f.mp4",
+            "object_key": "k", "cover_object_key": None,
+            "duration_seconds": 1.0, "file_size": 100,
+            "pushed_at": None, "latest_push_id": None, "created_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product",
+        lambda pid: {
+            "id": pid, "name": "P", "product_code": "p",
+            "ad_supported_langs": "de", "selling_points": "", "importance": 3,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True, "has_cover": True,
+            "has_copywriting": True, "lang_supported": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.query_one",
+        lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
+        lambda key: None,
+    )
+
+    response = client.get(
+        "/openapi/push-items/77",
+        headers={"X-API-Key": "demo-key"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["item_id"] == 77
+    assert body["product_code"] == "p"
+    assert body["status"] == "pending"

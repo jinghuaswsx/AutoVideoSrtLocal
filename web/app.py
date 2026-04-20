@@ -58,6 +58,7 @@ from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
 from web.routes.prompt_library import bp as prompt_library_bp
 from web.routes.openapi_materials import bp as openapi_materials_bp
+from web.routes.openapi_materials import push_bp as openapi_push_items_bp
 from web.routes.pushes import bp as pushes_bp
 from web.routes.image_translate import bp as image_translate_bp
 from web.routes.link_check import bp as link_check_bp
@@ -212,6 +213,7 @@ def create_app() -> Flask:
     app.register_blueprint(medias_bp)
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
+    app.register_blueprint(openapi_push_items_bp)
     app.register_blueprint(pushes_bp)
     # 推送管理蓝图的 mark-pushed / mark-failed / reset 是纯 JSON POST API，
     # 前端走 cookie session 认证，不需要 CSRF 表单 token；整蓝图豁免。

@@ -12,12 +12,14 @@ from typing import Any
 from flask import Blueprint, jsonify, request
 
 import config
-from appcore import medias, tos_clients
-from appcore.db import query
+from appcore import medias, pushes, tos_clients
+from appcore.db import query, query_one
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
+push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
 
 _LIST_PAGE_SIZE_MAX = 100
+_OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
 
 
 def _api_key_valid() -> bool:
@@ -319,3 +321,173 @@ def list_materials():
         "page": page,
         "page_size": page_size,
     })
+
+
+# ================================================================
+# /openapi/push-items —— 素材 × 语种 级的推送视图 + 写回接口。
+# 供 AutoPush 本地子项目使用，复用 appcore/pushes.py 的 helper。
+# ================================================================
+
+
+def _push_api_key_valid() -> bool:
+    return _api_key_valid()
+
+
+def _serialize_push_item(item: dict, product: dict) -> dict:
+    """把 media_items × media_products 行序列化为 AutoPush 列表的一行。"""
+    readiness = pushes.compute_readiness(item, product)
+    status = pushes.compute_status(item, product)
+    latest_push = None
+    latest_id = item.get("latest_push_id")
+    if latest_id:
+        row = query_one(
+            "SELECT status, error_message, created_at "
+            "FROM media_push_logs WHERE id=%s",
+            (latest_id,),
+        )
+        if row:
+            latest_push = {
+                "status": row.get("status"),
+                "error_message": row.get("error_message"),
+                "created_at": _iso_or_none(row.get("created_at")),
+            }
+    cover_key = item.get("cover_object_key")
+    return {
+        "item_id": item["id"],
+        "product_id": item.get("product_id"),
+        "product_code": product.get("product_code"),
+        "product_name": product.get("name"),
+        "lang": item.get("lang") or "en",
+        "filename": item.get("filename"),
+        "display_name": item.get("display_name") or item.get("filename"),
+        "file_size": item.get("file_size"),
+        "duration_seconds": item.get("duration_seconds"),
+        "cover_url": (
+            tos_clients.generate_signed_media_download_url(cover_key) if cover_key else None
+        ),
+        "status": status,
+        "readiness": readiness,
+        "pushed_at": _iso_or_none(item.get("pushed_at")),
+        "latest_push": latest_push,
+        "created_at": _iso_or_none(item.get("created_at")),
+    }
+
+
+@push_bp.route("", methods=["GET"], strict_slashes=False)
+def list_push_items():
+    """素材 × 语种级的扁平列表。
+
+    Query:
+      - page (int, default 1)
+      - page_size (int, default 20, max 100)
+      - q (string, 可选, 按 product name/code + 素材 filename 模糊)
+      - status (string, 可选, 状态过滤: production / pending / pushed / failed, 多个用逗号)
+      - lang (string, 可选, 语种过滤, 多个用逗号)
+    """
+    if not _push_api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(_LIST_PAGE_SIZE_MAX, int(request.args.get("page_size") or 20)))
+    except (TypeError, ValueError):
+        page_size = 20
+
+    q = (request.args.get("q") or "").strip()
+    lang_param = (request.args.get("lang") or "").strip()
+    status_param = (request.args.get("status") or "").strip()
+    lang_filter = [s for s in (lang_param.split(",") if lang_param else []) if s]
+    status_filter = [s for s in (status_param.split(",") if status_param else []) if s]
+
+    # 这个接口不过滤 status（状态在内存算），但支持 lang 和关键词。
+    # 借用 pushes.list_items_for_push 的 DB 查询，不按用户过滤（OpenAPI 是系统级）。
+    rows, total = pushes.list_items_for_push(
+        langs=lang_filter or None,
+        keyword="",
+        product_term=q,
+        offset=(page - 1) * page_size,
+        limit=page_size,
+    )
+
+    items: list[dict] = []
+    for row in rows:
+        item_shape = dict(row)
+        product_shape = {
+            "id": row.get("product_id"),
+            "name": row.get("product_name"),
+            "product_code": row.get("product_code"),
+            "ad_supported_langs": row.get("ad_supported_langs"),
+            "selling_points": row.get("selling_points"),
+            "importance": row.get("importance"),
+        }
+        items.append(_serialize_push_item(item_shape, product_shape))
+
+    # status 过滤（内存层）
+    if status_filter:
+        items = [it for it in items if it["status"] in status_filter]
+
+    return jsonify({
+        "items": items,
+        "total": total,  # 注意 total 是 lang/q 过滤后但 status 过滤前
+        "page": page,
+        "page_size": page_size,
+    })
+
+
+@push_bp.route("/<int:item_id>", methods=["GET"])
+def get_push_item(item_id: int):
+    """单条素材详情 + 状态，AutoPush 推送前的确认用。"""
+    if not _push_api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item not found"}), 404
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return jsonify({"error": "product not found"}), 404
+    return jsonify(_serialize_push_item(item, product))
+
+
+@push_bp.route("/<int:item_id>/mark-pushed", methods=["POST"])
+def mark_pushed(item_id: int):
+    """AutoPush 推送成功后写回。"""
+    if not _push_api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item not found"}), 404
+    body = request.get_json(silent=True) or {}
+    payload = body.get("request_payload") or {}
+    response_body = body.get("response_body")
+    log_id = pushes.record_push_success(
+        item_id=item_id,
+        operator_user_id=_OPENAPI_OPERATOR_USER_ID,
+        payload=payload,
+        response_body=response_body,
+    )
+    return jsonify({"ok": True, "log_id": log_id})
+
+
+@push_bp.route("/<int:item_id>/mark-failed", methods=["POST"])
+def mark_failed(item_id: int):
+    """AutoPush 推送失败后写回。"""
+    if not _push_api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item not found"}), 404
+    body = request.get_json(silent=True) or {}
+    payload = body.get("request_payload") or {}
+    response_body = body.get("response_body")
+    error_message = body.get("error_message")
+    log_id = pushes.record_push_failure(
+        item_id=item_id,
+        operator_user_id=_OPENAPI_OPERATOR_USER_ID,
+        payload=payload,
+        error_message=error_message,
+        response_body=response_body,
+    )
+    return jsonify({"ok": True, "log_id": log_id})
