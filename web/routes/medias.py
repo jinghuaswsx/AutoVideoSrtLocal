@@ -1381,7 +1381,7 @@ def api_detail_image_translate_tasks(pid: int):
         return jsonify({"error": f"不支持的语种: {lang}"}), 400
 
     rows = db_query(
-        "SELECT id, created_at, updated_at, state_json "
+        "SELECT id, created_at, state_json "
         "FROM projects "
         "WHERE user_id=%s AND type='image_translate' AND deleted_at IS NULL "
         "ORDER BY created_at DESC LIMIT 50",
@@ -1412,7 +1412,6 @@ def api_detail_image_translate_tasks(pid: int):
             "progress": progress,
             "detail_url": f"/image-translate/{row['id']}",
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
-            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         })
     return jsonify({"items": items})
 
