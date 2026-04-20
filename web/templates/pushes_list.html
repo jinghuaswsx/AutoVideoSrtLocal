@@ -10,70 +10,88 @@
   {% endif %}
 </div>
 
-<div class="push-toolbar">
-  <div class="filter-group">
-    <label>状态</label>
-    <select id="f-status" multiple size="4">
-      <option value="not_ready">未就绪</option>
-      <option value="pending" selected>待推送</option>
-      <option value="pushed">已推送</option>
-      <option value="failed">推送失败</option>
-    </select>
-  </div>
-  <div class="filter-group">
-    <label>语种</label>
-    <select id="f-lang" multiple size="4"></select>
-  </div>
-  <div class="filter-group">
-    <label>产品</label>
-    <input id="f-product" type="text" placeholder="产品名或 code" />
-  </div>
-  <div class="filter-group">
-    <label>关键词</label>
-    <input id="f-keyword" type="text" placeholder="素材文件名" />
-  </div>
-  <div class="filter-group">
-    <label>更新时间</label>
-    <input id="f-date-from" type="date" />
-    <span>至</span>
-    <input id="f-date-to" type="date" />
-  </div>
-  <div class="filter-actions">
-    <button id="btn-apply" type="button">筛选</button>
-    <button id="btn-reset" type="button">重置</button>
-  </div>
-</div>
+<nav class="push-tabs" role="tablist">
+  <button type="button" class="push-tab active" data-tab="list"    role="tab" aria-selected="true">推送列表</button>
+  <button type="button" class="push-tab"        data-tab="create"  role="tab" aria-selected="false">推送创建</button>
+  <button type="button" class="push-tab"        data-tab="payload" role="tab" aria-selected="false">推送载荷</button>
+</nav>
 
-<table class="push-table">
-  <thead>
-    <tr>
-      <th>缩略图</th>
-      <th>产品</th>
-      <th>素材</th>
-      <th>语种</th>
-      <th>就绪</th>
-      <th>状态</th>
-      <th>创建时间</th>
-      {% if is_admin %}<th>操作</th>{% endif %}
-    </tr>
-  </thead>
-  <tbody id="push-tbody"><tr><td colspan="8">加载中…</td></tr></tbody>
-</table>
-
-<div class="pagination" id="push-pagination"></div>
-
-<div id="push-log-drawer" class="drawer" hidden>
-  <div class="drawer-inner">
-    <h3>推送历史</h3>
-    <button class="drawer-close" id="drawer-close">×</button>
-    <div id="drawer-content"></div>
+<section class="push-tab-panel" data-panel="list" role="tabpanel">
+  <div class="push-toolbar">
+    <div class="filter-group">
+      <label>状态</label>
+      <select id="f-status" multiple size="4">
+        <option value="not_ready">未就绪</option>
+        <option value="pending" selected>待推送</option>
+        <option value="pushed">已推送</option>
+        <option value="failed">推送失败</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>语种</label>
+      <select id="f-lang" multiple size="4"></select>
+    </div>
+    <div class="filter-group">
+      <label>产品</label>
+      <input id="f-product" type="text" placeholder="产品名或 code" />
+    </div>
+    <div class="filter-group">
+      <label>关键词</label>
+      <input id="f-keyword" type="text" placeholder="素材文件名" />
+    </div>
+    <div class="filter-group">
+      <label>更新时间</label>
+      <input id="f-date-from" type="date" />
+      <span>至</span>
+      <input id="f-date-to" type="date" />
+    </div>
+    <div class="filter-actions">
+      <button id="btn-apply" type="button">筛选</button>
+      <button id="btn-reset" type="button">重置</button>
+    </div>
   </div>
-</div>
+
+  <table class="push-table">
+    <thead>
+      <tr>
+        <th>缩略图</th>
+        <th>产品</th>
+        <th>素材</th>
+        <th>语种</th>
+        <th>就绪</th>
+        <th>状态</th>
+        <th>创建时间</th>
+        {% if is_admin %}<th>操作</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody id="push-tbody"><tr><td colspan="8">加载中…</td></tr></tbody>
+  </table>
+
+  <div class="pagination" id="push-pagination"></div>
+
+  <div id="push-log-drawer" class="drawer" hidden>
+    <div class="drawer-inner">
+      <h3>推送历史</h3>
+      <button class="drawer-close" id="drawer-close">×</button>
+      <div id="drawer-content"></div>
+    </div>
+  </div>
+</section>
+
+<section class="push-tab-panel" data-panel="create" role="tabpanel" hidden>
+  <div id="push-create-root"></div>
+</section>
+
+<section class="push-tab-panel" data-panel="payload" role="tabpanel" hidden>
+  <div id="push-payload-root"></div>
+</section>
 
 <script>
   window.PUSH_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
   window.PUSH_TARGET_CONFIGURED = {{ 'true' if push_target_configured else 'false' }};
+  window.PUSH_DIRECT_CONFIG = {{ push_direct_config | tojson }};
 </script>
 <link rel="stylesheet" href="/static/pushes.css">
 <script src="/static/pushes.js"></script>
+<script type="module" src="/static/pushes_direct.js"></script>
 {% endblock %}
