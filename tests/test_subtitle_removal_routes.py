@@ -828,3 +828,130 @@ def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_cli
     assert response.status_code == 202
     saved = store.get("sr-submit-erase-default")
     assert saved["erase_text_type"] == "subtitle"
+
+
+def test_subtitle_removal_submit_rejects_invalid_erase_text_type(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-submit-erase-bogus",
+        "uploads/source.mp4",
+        "output/sr-submit-erase-bogus",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-erase-bogus",
+        status="ready",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append(task_id),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-erase-bogus/submit",
+        json={"remove_mode": "full", "erase_text_type": "bogus"},
+    )
+
+    assert response.status_code == 400
+    assert "erase_text_type" in (response.get_json() or {}).get("error", "")
+    assert started == []
+
+
+def test_subtitle_removal_resubmit_overrides_erase_text_type(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-resubmit-erase",
+        "uploads/source.mp4",
+        "output/sr-resubmit-erase",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-resubmit-erase",
+        status="done",
+        erase_text_type="subtitle",
+        media_info={
+            "width": 720,
+            "height": 1280,
+            "resolution": "720x1280",
+            "duration": 10.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-resubmit-erase/resubmit",
+        json={"remove_mode": "full", "erase_text_type": "text"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-resubmit-erase")
+    assert saved["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_state_api_returns_erase_text_type(authed_client_no_db, monkeypatch):
+    store.create_subtitle_removal(
+        "sr-state-erase",
+        "uploads/source.mp4",
+        "output/sr-state-erase",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-state-erase",
+        status="ready",
+        erase_text_type="text",
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0},
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_task", lambda task_id: store.get(task_id))
+
+    response = authed_client_no_db.get("/api/subtitle-removal/sr-state-erase")
+
+    assert response.status_code == 200
+    assert response.get_json().get("erase_text_type") == "text"
+
+
+def test_subtitle_removal_list_returns_erase_text_type(authed_client_no_db, monkeypatch):
+    import json as _json
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.db_query",
+        lambda sql, args=None: [
+            {
+                "id": "sr-list-erase",
+                "user_id": 1,
+                "status": "done",
+                "state_json": _json.dumps({
+                    "display_name": "demo",
+                    "original_filename": "demo.mp4",
+                    "status": "done",
+                    "erase_text_type": "text",
+                    "media_info": {"resolution": "720x1280", "duration": 10.0},
+                    "thumbnail_path": "",
+                    "provider_status": "success",
+                    "provider_result_url": "",
+                }),
+                "created_at": None,
+                "username": "tester",
+            }
+        ],
+    )
+
+    response = authed_client_no_db.get("/api/subtitle-removal/list")
+
+    assert response.status_code == 200
+    items = (response.get_json() or {}).get("items") or []
+    assert items, "list 接口应返回至少一条"
+    assert items[0]["erase_text_type"] == "text"
