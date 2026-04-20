@@ -47,6 +47,15 @@ def test_link_check_projects_script_does_not_restrict_locale_detection_with_leng
     assert "^[a-z]{2,3}-[a-z]{2,3}$" not in script
 
 
+def test_link_check_detail_script_includes_locale_and_download_evidence_renderers():
+    script = Path("web/static/link_check.js").read_text(encoding="utf-8")
+
+    assert "function renderLocaleEvidence" in script
+    assert "function renderDownloadEvidence" in script
+    assert "locale_evidence" in script
+    assert "download_evidence" in script
+
+
 def test_link_check_projects_css_focuses_on_create_and_list_page():
     style = Path("web/static/link_check.css").read_text(encoding="utf-8")
 
@@ -58,6 +67,15 @@ def test_link_check_projects_css_focuses_on_create_and_list_page():
     assert ".lc-result-card--alert" in style
     assert ".lc-meta-card--alert" in style
     assert ".lc-issue-summary" in style
+
+
+def test_link_check_detail_css_includes_evidence_layouts():
+    style = Path("web/static/link_check.css").read_text(encoding="utf-8")
+
+    assert ".lc-evidence-grid" in style
+    assert ".lc-attempt-table" in style
+    assert ".lc-attempt-table-wrap" in style
+    assert ".lc-evidence-block" in style
 
 
 def test_link_check_detail_template_bootstraps_persisted_task_for_detail_page():
@@ -460,3 +478,73 @@ def test_link_check_detail_renders_alerts_for_key_non_pass_states():
     assert "review-source" in rendered["resultsHtml"]
     assert "no-text-source" in rendered["resultsHtml"]
     assert "failed-source" in rendered["resultsHtml"]
+
+
+def test_link_check_detail_renders_locale_evidence_and_download_evidence_labels():
+    task = {
+        "id": "evidence-task",
+        "status": "done",
+        "target_language": "de",
+        "target_language_name": "德语",
+        "summary": {"overall_decision": "done"},
+        "progress": {"total": 1, "analyzed": 1},
+        "locale_evidence": {
+            "target_language": "de",
+            "requested_url": "https://shop.example.com/de/products/demo?variant=123",
+            "lock_source": "warmup_attempt_2",
+            "locked": True,
+            "failure_reason": "",
+            "attempts": [
+                {
+                    "phase": "initial",
+                    "attempt_index": 1,
+                    "wait_seconds_before_request": 0,
+                    "requested_url": "https://shop.example.com/de/products/demo?variant=123",
+                    "resolved_url": "https://shop.example.com/products/demo?variant=123",
+                    "page_language": "en",
+                    "locked": False,
+                },
+                {
+                    "phase": "warmup",
+                    "attempt_index": 2,
+                    "wait_seconds_before_request": 2,
+                    "requested_url": "https://shop.example.com/de/products/demo?variant=123",
+                    "resolved_url": "https://shop.example.com/de/products/demo?variant=123",
+                    "page_language": "de",
+                    "locked": True,
+                },
+            ],
+        },
+        "items": [
+            {
+                "id": "site-1",
+                "kind": "carousel",
+                "source_url": "https://img/site.jpg",
+                "analysis": {"decision": "pass", "decision_source": "binary_quick_check"},
+                "reference_match": {"status": "not_provided"},
+                "binary_quick_check": {"status": "pass"},
+                "same_image_llm": {"status": "done", "answer": "是"},
+                "download_evidence": {
+                    "requested_source_url": "https://img/site.jpg",
+                    "resolved_source_url": "https://cdn.example.com/site.jpg?width=1080",
+                    "redirect_preserved_asset": True,
+                    "variant_selected": True,
+                    "evidence_status": "ok",
+                    "evidence_reason": "",
+                },
+                "status": "done",
+            }
+        ],
+    }
+
+    rendered = _run_link_check_detail_harness(
+        {
+            "pageTaskId": "evidence-task",
+            "windowTask": task,
+        }
+    )
+
+    assert "warmup_attempt_2" in rendered["summaryHtml"]
+    assert "requested_source_url" not in rendered["resultsHtml"]
+    assert "最终下载 URL" in rendered["resultsHtml"]
+    assert "是否保持同一资源" in rendered["resultsHtml"]

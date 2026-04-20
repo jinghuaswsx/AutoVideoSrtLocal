@@ -351,6 +351,64 @@
   grid-column: span 2;
 }
 
+.lc-evidence-block {
+  display: grid;
+  gap: var(--space-4, 16px);
+  padding-top: var(--space-6, 24px);
+  border-top: 1px solid var(--border, #d7e3f3);
+}
+
+.lc-evidence-block .lc-panel-head h3 {
+  margin: 0 0 var(--space-2, 8px);
+  color: var(--fg, #183b56);
+  font-size: var(--text-lg, 18px);
+  line-height: var(--leading-tight, 1.3);
+}
+
+.lc-evidence-grid {
+  display: grid;
+  gap: var(--space-4, 16px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.lc-attempt-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border, #d7e3f3);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-subtle, #f6f9fc);
+}
+
+.lc-attempt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm, 13px);
+  color: var(--fg, #183b56);
+}
+
+.lc-attempt-table th,
+.lc-attempt-table td {
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-bottom: 1px solid var(--border, #d7e3f3);
+  text-align: left;
+  vertical-align: top;
+}
+
+.lc-attempt-table th {
+  background: color-mix(in oklab, var(--accent-subtle, #eef5ff) 72%, var(--bg, #ffffff));
+  color: var(--fg-muted, #5f7a96);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lc-attempt-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.lc-attempt-table__empty {
+  color: var(--fg-muted, #5f7a96);
+  text-align: center;
+}
+
 .lc-result-list {
   display: grid;
   gap: var(--space-5, 20px);
@@ -544,6 +602,7 @@
 
   .lc-summary-grid,
   .lc-summary-meta,
+  .lc-evidence-grid,
   .lc-meta-grid,
   .lc-result-layout {
     grid-template-columns: 1fr;

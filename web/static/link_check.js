@@ -348,6 +348,89 @@
     return `<div class="${stackClass}">${panels.join("")}</div>`;
   }
 
+  function renderLocaleAttemptRow(attempt) {
+    return `
+      <tr>
+        <td>${escapeHtml(String(attempt.attempt_index || "-"))}</td>
+        <td>${escapeHtml(formatValue(attempt.phase))}</td>
+        <td>${escapeHtml(formatValue(attempt.wait_seconds_before_request))}</td>
+        <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.requested_url))}</td>
+        <td class="lc-mono lc-clamp-2">${escapeHtml(formatValue(attempt.resolved_url))}</td>
+        <td>${escapeHtml(formatValue(attempt.page_language))}</td>
+        <td>${attempt.locked ? badge("已锁定", "is-success") : badge("未锁定", "is-warning")}</td>
+      </tr>
+    `;
+  }
+
+  function renderLocaleEvidence(task) {
+    const evidence = task.locale_evidence || {};
+    const attempts = Array.isArray(evidence.attempts) ? evidence.attempts : [];
+
+    return `
+      <section class="lc-evidence-block">
+        <div class="lc-panel-head">
+          <span class="lc-kicker">Locale Evidence</span>
+          <h3>页面锁定证据</h3>
+          <p>只有锁定到目标语言页面后，系统才会继续下载并检查图片。</p>
+        </div>
+        <div class="lc-evidence-grid">
+          ${summaryCard("锁定来源", evidence.lock_source || "-")}
+          ${summaryCard("目标语言", evidence.target_language || task.target_language || "-")}
+          ${summaryCard("锁定结果", evidence.locked ? "已锁定" : "未锁定")}
+          ${summaryCard("失败原因", evidence.failure_reason || "-")}
+        </div>
+        <div class="lc-attempt-table-wrap">
+          <table class="lc-attempt-table">
+            <thead>
+              <tr>
+                <th>尝试</th>
+                <th>阶段</th>
+                <th>等待秒数</th>
+                <th>请求 URL</th>
+                <th>最终 URL</th>
+                <th>页面语言</th>
+                <th>结果</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${attempts.length
+                ? attempts.map(renderLocaleAttemptRow).join("")
+                : `
+                  <tr>
+                    <td colspan="7" class="lc-attempt-table__empty">暂无页面锁定尝试记录</td>
+                  </tr>
+                `}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderDownloadEvidence(item) {
+    const evidence = item.download_evidence || {};
+
+    return [
+      { label: "原始图片 URL", value: evidence.requested_source_url || "-", mono: true },
+      { label: "最终下载 URL", value: evidence.resolved_source_url || "-", mono: true },
+      {
+        label: "是否保持同一资源",
+        value: evidence.redirect_preserved_asset ? "是" : "否",
+        isAlert: evidence.redirect_preserved_asset === false,
+      },
+      {
+        label: "是否来自当前 Variant",
+        value: evidence.variant_selected ? "是" : "否",
+      },
+      {
+        label: "下载结果",
+        value: evidence.evidence_status || "-",
+        isAlert: evidence.evidence_status === "mismatch",
+      },
+      { label: "下载说明", value: evidence.evidence_reason || "-" },
+    ];
+  }
+
   function getItemMetaEntries(item, task) {
     const analysis = item.analysis || {};
     const reference = item.reference_match || {};
@@ -415,6 +498,7 @@
       },
       { label: "大模型判断通道", value: sameImage.channel_label || "-" },
       { label: "大模型模型", value: sameImage.model || "-" },
+      ...renderDownloadEvidence(item),
     ];
   }
 
@@ -441,6 +525,7 @@
         <div class="lc-meta-chip"><strong>任务状态</strong><span>${escapeHtml(taskStatusLabels[task.status] || task.status || "-")}</span></div>
         <div class="lc-meta-chip lc-meta-chip--wide"><strong>链接</strong><span class="lc-clamp-2 lc-mono">${escapeHtml(formatValue(task.resolved_url || task.link_url))}</span></div>
       </div>
+      ${renderLocaleEvidence(task)}
     `;
   }
 
