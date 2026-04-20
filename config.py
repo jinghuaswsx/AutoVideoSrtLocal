@@ -62,7 +62,7 @@ OPENAPI_MEDIA_API_KEY = _env("OPENAPI_MEDIA_API_KEY")
 # 推送管理
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")
 AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
-                       "https://newjoyloo.com/{lang}/products/{product_code}-rjc")
+                       "https://newjoyloo.com/{lang}/products/{product_code}")
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")

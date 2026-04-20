@@ -143,7 +143,7 @@ def build_push_payload(product_code: str):
     items = medias.list_items(product_id, lang)
 
     product_links = (
-        [f"https://newjoyloo.com/{lang}/products/{code}-rjc"]
+        [f"https://newjoyloo.com/{lang}/products/{code}"]
         if lang != "en" else []
     )
 
