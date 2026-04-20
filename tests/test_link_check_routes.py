@@ -262,3 +262,70 @@ def test_get_task_backfills_locale_evidence_defaults_from_empty_or_partial_state
         "failure_reason": "",
         "attempts": [],
     }
+
+
+def test_get_task_normalizes_invalid_locale_evidence_values(authed_user_client_no_db, monkeypatch):
+    from web import store
+
+    current_locale_evidence = {}
+
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": args[0],
+            "type": "link_check",
+            "display_name": "Demo Link Check",
+            "status": "done",
+            "state_json": json.dumps(
+                {
+                    "id": args[0],
+                    "type": "link_check",
+                    "status": "done",
+                    "link_url": "https://shop.example.com/de/products/demo",
+                    "target_language": "de",
+                    "target_language_name": "德语",
+                    "locale_evidence": current_locale_evidence,
+                    "items": [],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    )
+    monkeypatch.setattr(store, "get", lambda task_id: None)
+
+    current_locale_evidence = {
+        "target_language": None,
+        "requested_url": None,
+        "lock_source": None,
+        "locked": 1,
+        "failure_reason": None,
+        "attempts": None,
+    }
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-invalid-none")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://shop.example.com/de/products/demo",
+        "lock_source": "",
+        "locked": True,
+        "failure_reason": "",
+        "attempts": [],
+    }
+
+    current_locale_evidence = {
+        "requested_url": "https://custom.example/manual",
+        "locked": 0,
+        "attempts": "oops",
+    }
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-invalid-type")
+    payload = response.get_json()
+
+    assert payload["locale_evidence"] == {
+        "target_language": "de",
+        "requested_url": "https://custom.example/manual",
+        "lock_source": "",
+        "locked": False,
+        "failure_reason": "",
+        "attempts": [],
+    }

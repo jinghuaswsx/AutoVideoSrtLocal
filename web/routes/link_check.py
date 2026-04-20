@@ -44,11 +44,23 @@ def _default_locale_evidence(task: dict) -> dict:
     }
 
 
+def _normalized_locale_evidence_string(value: object, default: str) -> str:
+    if isinstance(value, str) and value:
+        return value
+    return default
+
+
 def _merged_locale_evidence(task: dict) -> dict:
-    merged = _default_locale_evidence(task)
+    defaults = _default_locale_evidence(task)
+    merged = dict(defaults)
     evidence = task.get("locale_evidence")
     if isinstance(evidence, dict):
         merged.update(evidence)
+    for key in ("target_language", "requested_url", "lock_source", "failure_reason"):
+        merged[key] = _normalized_locale_evidence_string(merged.get(key), defaults[key])
+    merged["locked"] = bool(merged.get("locked"))
+    attempts = merged.get("attempts")
+    merged["attempts"] = attempts if isinstance(attempts, list) else []
     return merged
 
 
