@@ -31,14 +31,17 @@
   async function fetchJSON(url, opts) {
     const res = await fetch(url, opts);
     if (!res.ok) {
-      let msg;
-      try {
-        const data = await res.json();
-        msg = data.error || data.message || JSON.stringify(data);
-      } catch {
-        msg = await res.text();
+      const text = await res.text().catch(() => '');
+      let msg = '';
+      if (text) {
+        try {
+          const data = JSON.parse(text);
+          msg = data.error || data.message || text;
+        } catch {
+          msg = text;
+        }
       }
-      throw new Error(msg);
+      throw new Error(msg || `HTTP ${res.status}`);
     }
     return res.json();
   }
@@ -1276,18 +1279,22 @@
       return;
     }
     await ctrl.load(pid);
+    let tasks = [];
+    let loadError = null;
     try {
-      const tasks = await edLoadDetailTranslateTasks(pid, lang);
-      const detailItems = ctrl.items ? ctrl.items() : [];
-      edRenderDetailTranslateState(lang, tasks, detailItems);
-      edRenderDetailTranslateHistory(tasks);
+      tasks = await edLoadDetailTranslateTasks(pid, lang);
     } catch (err) {
+      loadError = err;
+    }
+    const detailItems = ctrl.items ? ctrl.items() : [];
+    edRenderDetailTranslateState(lang, tasks, detailItems);
+    edRenderDetailTranslateHistory(tasks);
+    if (loadError) {
       const status = $('edDetailTranslateStatus');
       if (status && lang !== 'en') {
         status.hidden = false;
-        status.textContent = '翻译任务记录加载失败：' + (err.message || err);
+        status.textContent = '翻译任务记录加载失败：' + (loadError.message || loadError);
       }
-      edRenderDetailTranslateHistory([]);
     }
   }
 
