@@ -29,10 +29,16 @@ def admin_required(fn):
 @bp.route("/")
 @login_required
 def index():
+    push_direct_config = {
+        "autovideoBaseUrl": config.AUTOVIDEO_BASE_URL,
+        "autovideoApiKey":  config.AUTOVIDEO_API_KEY,
+        "pushMediasTarget": config.PUSH_MEDIAS_TARGET,
+    }
     return render_template(
         "pushes_list.html",
         is_admin=_is_admin(),
         push_target_configured=bool((config.PUSH_TARGET_URL or "").strip()),
+        push_direct_config=push_direct_config,
     )
 
 
