@@ -129,6 +129,7 @@ def _state_payload(task: dict) -> dict:
         "medias_context": dict(task.get("medias_context") or {}),
         "steps": dict(task.get("steps") or {}),
         "error": task.get("error") or "",
+        "is_running": image_translate_runner.is_running(task.get("id") or ""),
     }
 
 
@@ -333,8 +334,14 @@ def api_retry_item(task_id: str, idx: int):
     item = _get_item(task, idx)
     if not item:
         abort(404)
-    if item.get("status") != "failed":
-        return jsonify({"error": "只有 failed 的图可以重试"}), 409
+    if image_translate_runner.is_running(task_id):
+        return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
+    old_dst = (item.get("dst_tos_key") or "").strip()
+    if old_dst:
+        try:
+            tos_clients.delete_object(old_dst)
+        except Exception:
+            pass
     item["status"] = "pending"
     item["attempts"] = 0
     item["error"] = ""
@@ -374,6 +381,47 @@ def api_retry_failed(task_id: str):
     done = sum(1 for it in items if it["status"] == "done")
     failed = sum(1 for it in items if it["status"] == "failed")
     task["progress"] = {"total": total, "done": done, "failed": failed, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=items,
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, current_user.id)
+    return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
+
+
+@bp.route("/api/image-translate/<task_id>/retry-unfinished", methods=["POST"])
+@login_required
+def api_retry_unfinished(task_id: str):
+    """把所有非 done 的 item 重置为 pending 并重启 runner。
+    与 retry-failed 的区别：范围不只是 failed，还包含 pending/running 僵尸。
+    仅允许在 runner 不活跃时调用，避免与在跑的线程冲突。"""
+    task = _get_owned_task(task_id)
+    if image_translate_runner.is_running(task_id):
+        return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
+    items = task.get("items") or []
+    reset_count = 0
+    for item in items:
+        if item.get("status") == "done":
+            continue
+        old_dst = (item.get("dst_tos_key") or "").strip()
+        if old_dst:
+            try:
+                tos_clients.delete_object(old_dst)
+            except Exception:
+                pass
+        item["status"] = "pending"
+        item["attempts"] = 0
+        item["error"] = ""
+        item["dst_tos_key"] = ""
+        reset_count += 1
+    if reset_count == 0:
+        return jsonify({"error": "没有需要重试的图片"}), 409
+    total = len(items)
+    done = sum(1 for it in items if it["status"] == "done")
+    task["progress"] = {"total": total, "done": done, "failed": 0, "running": 0}
     task["status"] = "queued"
     store.update(
         task_id,

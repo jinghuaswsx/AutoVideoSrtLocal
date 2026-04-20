@@ -255,3 +255,27 @@ def test_parse_link_check_tasks_json_handles_str_dict_and_none():
     assert medias.parse_link_check_tasks_json("") == {}
     assert medias.parse_link_check_tasks_json({"de": {"task_id": "x"}}) == {"de": {"task_id": "x"}}
     assert medias.parse_link_check_tasks_json('{"de":{"task_id":"x"}}') == {"de": {"task_id": "x"}}
+
+
+def test_list_products_orders_by_created_at_desc(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args=()):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    rows, total = medias.list_products(None, archived=False, offset=20, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "ORDER BY created_at DESC, id DESC" in captured["list_sql"]
+    assert captured["list_args"][-2:] == (20, 20)

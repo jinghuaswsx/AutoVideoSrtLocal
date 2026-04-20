@@ -14,6 +14,22 @@
   </div>
 
   <section class="sr-upload-card">
+    <div class="sr-erase-type-group" role="radiogroup" aria-label="擦除类型">
+      <div class="sr-erase-type-label">擦除类型</div>
+      <div class="sr-erase-type-options">
+        <label class="sr-erase-type-option" data-role="erase-type-option">
+          <input type="radio" name="erase_text_type" value="subtitle" checked>
+          <div class="sr-erase-type-title">仅字幕</div>
+          <div class="sr-erase-type-hint">只擦除识别为字幕的区域</div>
+        </label>
+        <label class="sr-erase-type-option" data-role="erase-type-option">
+          <input type="radio" name="erase_text_type" value="text">
+          <div class="sr-erase-type-title">所有渲染文本</div>
+          <div class="sr-erase-type-hint">字幕 + 水印、标题等都会被擦除</div>
+        </label>
+      </div>
+    </div>
+
     <div
       class="sr-upload-dropzone"
       id="srUploadDropzone"

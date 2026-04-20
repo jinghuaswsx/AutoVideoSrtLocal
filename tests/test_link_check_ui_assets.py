@@ -21,6 +21,12 @@ def test_link_check_projects_template_only_exposes_task5_surface():
     assert 'id="linkCheckDetailDialog"' not in template
 
 
+def test_link_check_projects_template_prefills_english_before_language_list_loads():
+    template = Path("web/templates/link_check.html").read_text(encoding="utf-8")
+
+    assert '<option value="en" selected>' in template
+
+
 def test_link_check_projects_script_includes_locale_detection_and_redirect():
     script = Path("web/static/link_check_projects.js").read_text(encoding="utf-8")
 
@@ -46,6 +52,211 @@ def test_link_check_projects_script_does_not_restrict_locale_detection_with_leng
     assert "isLanguageCountryPair" not in script
     assert "^[a-z]{2,3}$" not in script
     assert "^[a-z]{2,3}-[a-z]{2,3}$" not in script
+
+
+def _run_link_check_projects_harness(scenario: dict) -> dict:
+    script_path = Path("web/static/link_check_projects.js").resolve()
+    harness = textwrap.dedent(
+        """
+        const fs = require("fs");
+        const vm = require("vm");
+
+        const scenario = JSON.parse(process.env.LINK_CHECK_PROJECTS_SCENARIO);
+        const scriptPath = process.env.LINK_CHECK_PROJECTS_SCRIPT_PATH;
+        const scriptSource = fs.readFileSync(scriptPath, "utf8");
+
+        function createBaseElement(id) {
+          return {
+            id,
+            textContent: "",
+            hidden: false,
+            dataset: {},
+            attributes: {},
+            listeners: {},
+            disabled: false,
+            classList: {
+              add() {},
+              remove() {},
+              toggle() {},
+            },
+            setAttribute(name, value) {
+              this.attributes[name] = String(value);
+            },
+            getAttribute(name) {
+              return this.attributes[name];
+            },
+            addEventListener(type, handler) {
+              this.listeners[type] = handler;
+            },
+            dispatch(type) {
+              if (this.listeners[type]) {
+                this.listeners[type]({ target: this, preventDefault() {} });
+              }
+            },
+          };
+        }
+
+        function createSelectElement(id) {
+          const element = createBaseElement(id);
+          element.options = [];
+          element.value = Object.prototype.hasOwnProperty.call(scenario, "initialSelectValue")
+            ? scenario.initialSelectValue
+            : "";
+          element._innerHTML = "";
+          element.appendChild = function (option) {
+            this.options.push(option);
+            return option;
+          };
+          Object.defineProperty(element, "innerHTML", {
+            get() {
+              return this._innerHTML;
+            },
+            set(value) {
+              this._innerHTML = String(value);
+              const match = this._innerHTML.match(/<option value="([^"]*)">([\\s\\S]*?)<\\/option>/i);
+              this.options = [];
+              if (match) {
+                this.options.push({ value: match[1], textContent: match[2] });
+              }
+              this.value = this.value || "";
+            },
+          });
+          return element;
+        }
+
+        const elements = {
+          linkCheckProjectForm: createBaseElement("linkCheckProjectForm"),
+          linkUrl: createBaseElement("linkUrl"),
+          targetLanguage: createSelectElement("targetLanguage"),
+          linkCheckError: createBaseElement("linkCheckError"),
+          linkCheckStatus: createBaseElement("linkCheckStatus"),
+          linkCheckSubmit: createBaseElement("linkCheckSubmit"),
+          linkCheckLanguageHint: createBaseElement("linkCheckLanguageHint"),
+        };
+
+        elements.linkUrl.value = scenario.linkUrl || "";
+
+        const document = {
+          getElementById(id) {
+            return elements[id] || null;
+          },
+          createElement(tagName) {
+            if (String(tagName).toLowerCase() === "option") {
+              return { value: "", textContent: "" };
+            }
+            return createBaseElement(tagName);
+          },
+          addEventListener(type, handler) {
+            if (type === "DOMContentLoaded") {
+              this._domReady = handler;
+            }
+          },
+        };
+
+        const fetchQueue = Array.isArray(scenario.fetchQueue) ? scenario.fetchQueue.slice() : [];
+
+        async function flushMicrotasks() {
+          await Promise.resolve();
+          await new Promise((resolve) => setImmediate(resolve));
+          await Promise.resolve();
+        }
+
+        global.window = global;
+        global.document = document;
+        global.FormData = function FormData(form) {
+          this.form = form;
+        };
+        global.fetch = function () {
+          if (!fetchQueue.length) {
+            return Promise.reject(new Error("fetch queue exhausted"));
+          }
+          const next = fetchQueue.shift();
+          return Promise.resolve({
+            ok: next.ok !== false,
+            json: async () => next.payload || {},
+          });
+        };
+
+        vm.runInThisContext(scriptSource, { filename: scriptPath });
+
+        (async function () {
+          if (typeof document._domReady === "function") {
+            await document._domReady();
+            await flushMicrotasks();
+          }
+
+          for (const action of scenario.actions || []) {
+            if (action.type === "setLinkUrl") {
+              elements.linkUrl.value = action.value || "";
+            }
+            if (action.type === "dispatchInput") {
+              elements.linkUrl.dispatch("input");
+              await flushMicrotasks();
+            }
+          }
+
+          process.stdout.write(JSON.stringify({
+            selectValue: elements.targetLanguage.value,
+            optionValues: elements.targetLanguage.options.map((item) => item.value),
+            statusText: elements.linkCheckStatus.textContent,
+            hintText: elements.linkCheckLanguageHint.textContent,
+          }));
+        })().catch((error) => {
+          console.error(error && error.stack ? error.stack : String(error));
+          process.exit(1);
+        });
+        """
+    )
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".js", delete=False) as handle:
+        handle.write(harness)
+        harness_path = Path(handle.name)
+
+    try:
+        completed = subprocess.run(
+            ["node", str(harness_path)],
+            cwd=Path.cwd(),
+            env={
+                **os.environ,
+                "LINK_CHECK_PROJECTS_SCENARIO": json.dumps(scenario, ensure_ascii=False),
+                "LINK_CHECK_PROJECTS_SCRIPT_PATH": str(script_path),
+            },
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+    finally:
+        harness_path.unlink(missing_ok=True)
+
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"Node harness failed with code {completed.returncode}\\nSTDOUT:\\n{completed.stdout}\\nSTDERR:\\n{completed.stderr}"
+        )
+
+    return json.loads(completed.stdout)
+
+
+def test_link_check_projects_script_defaults_to_english_after_language_list_load():
+    result = _run_link_check_projects_harness(
+        {
+            "linkUrl": "",
+            "fetchQueue": [
+                {
+                    "payload": {
+                        "items": [
+                            {"code": "en", "name_zh": "英语"},
+                            {"code": "fr", "name_zh": "法语"},
+                        ]
+                    }
+                }
+            ],
+        }
+    )
+
+    assert result["optionValues"] == ["", "en", "fr"]
+    assert result["selectValue"] == "en"
 
 
 def test_link_check_detail_script_includes_locale_and_download_evidence_renderers():

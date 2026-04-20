@@ -25,6 +25,99 @@ def test_rejects_missing_api_key(client):
     assert response.get_json() == {"error": "invalid api key"}
 
 
+def test_list_rejects_missing_api_key(client):
+    response = client.get("/openapi/materials")
+    assert response.status_code in (301, 308, 401)
+    # 跟随重定向后仍应被拦截
+    follow = client.get("/openapi/materials", follow_redirects=True)
+    assert follow.status_code == 401
+
+
+def test_list_returns_paginated_products(client, monkeypatch):
+    def fake_query(sql, args=None):
+        sql = " ".join(sql.split())
+        if sql.startswith("SELECT COUNT(*) AS c FROM media_products"):
+            return [{"c": 3}]
+        if sql.startswith("SELECT id, product_code, name, archived"):
+            return [
+                {
+                    "id": 1, "product_code": "alpha", "name": "Alpha",
+                    "archived": 0, "ad_supported_langs": "en,de",
+                    "created_at": None, "updated_at": None,
+                },
+                {
+                    "id": 2, "product_code": "beta", "name": "Beta",
+                    "archived": 0, "ad_supported_langs": "",
+                    "created_at": None, "updated_at": None,
+                },
+            ]
+        if sql.startswith("SELECT product_id, lang, object_key FROM media_product_covers"):
+            return [
+                {"product_id": 1, "lang": "en", "object_key": "k1"},
+                {"product_id": 1, "lang": "de", "object_key": "k2"},
+            ]
+        if sql.startswith("SELECT DISTINCT product_id, lang FROM media_copywritings"):
+            return [
+                {"product_id": 1, "lang": "en"},
+                {"product_id": 2, "lang": "en"},
+            ]
+        if sql.startswith("SELECT product_id, lang, COUNT(*) AS c FROM media_items"):
+            return [
+                {"product_id": 1, "lang": "en", "c": 3},
+                {"product_id": 1, "lang": "de", "c": 1},
+                {"product_id": 2, "lang": "en", "c": 2},
+            ]
+        return []
+
+    monkeypatch.setattr("web.routes.openapi_materials.query", fake_query)
+
+    response = client.get(
+        "/openapi/materials?page=1&page_size=10",
+        headers={"X-API-Key": "demo-key"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total"] == 3
+    assert body["page"] == 1
+    assert body["page_size"] == 10
+    assert len(body["items"]) == 2
+
+    alpha = body["items"][0]
+    assert alpha["product_code"] == "alpha"
+    assert alpha["cover_langs"] == ["de", "en"]
+    assert alpha["copywriting_langs"] == ["en"]
+    assert alpha["item_langs"] == {"en": 3, "de": 1}
+    assert alpha["total_items"] == 4
+    assert alpha["ad_supported_langs"] == "en,de"
+
+    beta = body["items"][1]
+    assert beta["cover_langs"] == []
+    assert beta["total_items"] == 2
+
+
+def test_list_clamps_page_size(client, monkeypatch):
+    called = {}
+
+    def fake_query(sql, args=None):
+        sql = " ".join(sql.split())
+        if sql.startswith("SELECT COUNT"):
+            return [{"c": 0}]
+        if sql.startswith("SELECT id, product_code"):
+            called["limit"] = args[-2]
+            called["offset"] = args[-1]
+            return []
+        return []
+
+    monkeypatch.setattr("web.routes.openapi_materials.query", fake_query)
+    response = client.get(
+        "/openapi/materials?page=2&page_size=999",
+        headers={"X-API-Key": "demo-key"},
+    )
+    assert response.status_code == 200
+    assert called["limit"] == 100   # 超过上限被 clamp
+    assert called["offset"] == 100  # page=2 * page_size=100
+
+
 def test_rejects_wrong_api_key(client):
     response = client.get(
         "/openapi/materials/sonic-lens-refresher",

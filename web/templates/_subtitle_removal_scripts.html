@@ -148,6 +148,29 @@
       });
     }
 
+    function readUploadEraseType() {
+      var inputs = document.querySelectorAll("input[name='erase_text_type']");
+      for (var i = 0; i < inputs.length; i++) {
+        if (inputs[i].checked) return inputs[i].value;
+      }
+      return "subtitle";
+    }
+
+    function bindUploadEraseTypeRadios() {
+      var options = Array.prototype.slice.call(document.querySelectorAll("[data-role='erase-type-option']"));
+      var inputs = Array.prototype.slice.call(document.querySelectorAll("input[name='erase_text_type']"));
+      function sync() {
+        options.forEach(function (opt) {
+          var input = opt.querySelector("input[name='erase_text_type']");
+          opt.classList.toggle("is-active", !!input && input.checked);
+        });
+      }
+      inputs.forEach(function (input) {
+        input.addEventListener("change", sync);
+      });
+      sync();
+    }
+
     function completeSubtitleRemovalUpload(file, bootstrapData) {
       return fetch("/api/subtitle-removal/upload/complete", {
         method: "POST",
@@ -158,6 +181,7 @@
           original_filename: file.name,
           file_size: file.size,
           content_type: file.type || "application/octet-stream",
+          erase_text_type: readUploadEraseType(),
         }),
       }).then(function (response) {
         return response.json().then(function (data) {
@@ -197,6 +221,7 @@
       if (!uploadInput || !uploadButton || !uploadDropzone) {
         return;
       }
+      bindUploadEraseTypeRadios();
       uploadButton.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
@@ -257,6 +282,9 @@
     var stateSelection = document.getElementById("srStateSelection");
     var stateHint = document.getElementById("srStateHint");
     var resultPanel = document.getElementById("srResultPanel");
+    var compareCard = document.getElementById("srCompareCard");
+    var compareOriginalPanel = document.getElementById("srCompareOriginalPanel");
+    var compareResultPanel = document.getElementById("srCompareResultPanel");
     var resumeButton = document.getElementById("srResumeSubtitleRemoval");
     var resubmitButton = document.getElementById("srResubmitSubtitleRemoval");
     var deleteButton = document.getElementById("srDeleteSubtitleRemoval");
@@ -440,6 +468,52 @@
       });
     }
 
+    function renderComparePreviews(state) {
+      if (!compareCard || !compareOriginalPanel || !compareResultPanel) {
+        return;
+      }
+      var sourceVideoUrl = (state && state.source_video_url) || "";
+      var sourceThumbnailUrl = (state && state.thumbnail_url) || "";
+      var resultPreviewUrl = (state && state.result_artifact_url) || "";
+      var resultTosKey = (state && state.result_tos_key) || "";
+      var resultVideoPath = (state && state.result_video_path) || "";
+      var providerResultUrl = (state && state.provider_result_url) || "";
+      var hasResult = !!(resultTosKey || resultVideoPath || providerResultUrl);
+
+      if (!hasResult || !resultPreviewUrl) {
+        compareCard.hidden = true;
+        compareCard.classList.add("sr-hidden");
+        compareOriginalPanel.innerHTML = "";
+        compareResultPanel.innerHTML = "";
+        return;
+      }
+
+      compareOriginalPanel.innerHTML = [
+        '<div class="sr-compare-panel-head">',
+        '<div class="sr-compare-panel-title">原视频预览</div>',
+        '<div class="sr-compare-panel-hint">用来对比去字幕前的画面效果。</div>',
+        '</div>',
+        sourceVideoUrl
+          ? '<div class="sr-preview-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(sourceVideoUrl) + '"></video></div>'
+          : (
+              sourceThumbnailUrl
+                ? '<div class="sr-preview-frame"><img class="sr-preview-image" src="' + escapeHtml(sourceThumbnailUrl) + '" alt=""></div>'
+                : '<div class="sr-result-empty"><div class="sr-selection-empty-title">原视频暂不可预览</div><div class="sr-hint">当前可先参考右侧结果视频。</div></div>'
+            ),
+      ].join("");
+
+      compareResultPanel.innerHTML = [
+        '<div class="sr-compare-panel-head">',
+        '<div class="sr-compare-panel-title">结果视频预览</div>',
+        '<div class="sr-compare-panel-hint">去字幕后的成品视频，方便直接比较前后差异。</div>',
+        '</div>',
+        '<div class="sr-preview-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(resultPreviewUrl) + '"></video></div>',
+      ].join("");
+
+      compareCard.hidden = false;
+      compareCard.classList.remove("sr-hidden");
+    }
+
     function renderResultPanel(state) {
       if (!resultPanel) {
         return;
@@ -458,8 +532,8 @@
 
       if (taskStatus === "done" && hasResult) {
         html = [
-          '<div class="sr-result-preview">',
-          '<video class="sr-result-video" controls playsinline src="' + previewUrl + '"></video>',
+          '<div class="sr-result-empty">',
+          '<div class="sr-selection-empty-title">缁撴灉宸插噯澶囧ソ</div>',
           '</div>',
           '<div class="sr-result-copy">',
           '<div class="sr-hint">处理完成后可直接预览或下载。</div>',
@@ -540,6 +614,7 @@
       var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };
       setEraseTypeDisabled(!!lockStates[srStatus]);
       renderResultPanel(state);
+      renderComparePreviews(state);
     }
 
     function syncMode(nextMode) {

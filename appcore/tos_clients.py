@@ -274,10 +274,18 @@ def upload_media_object(
     content_type: str | None = None,
     bucket: str | None = None,
 ) -> None:
-    get_server_client().put_object(
-        get_media_bucket(bucket), object_key,
+    bucket_name = get_media_bucket(bucket)
+    client = get_server_client()
+    client.put_object(
+        bucket_name, object_key,
         content=data, content_type=content_type,
     )
+    try:
+        client.head_object(bucket_name, object_key)
+    except Exception as exc:
+        raise RuntimeError(
+            f"upload_media_object verify failed: object {object_key!r} 在 bucket {bucket_name!r} 中未找到 ({exc})"
+        ) from exc
 
 
 def configure_media_bucket_cors(

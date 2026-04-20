@@ -309,6 +309,8 @@ def _submit_locked(task_id: str, task: dict, body: dict):
 def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> dict:
     task_id = task_id or task.get("id") or ""
     thumbnail_path = (task.get("thumbnail_path") or "").strip()
+    video_path = (task.get("video_path") or "").strip()
+    source_tos_key = (task.get("source_tos_key") or "").strip()
     payload = {
         "id": task_id,
         "type": task.get("type") or "subtitle_removal",
@@ -329,9 +331,14 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "provider_result_url": task.get("provider_result_url") or "",
         "result_tos_key": task.get("result_tos_key") or "",
         "result_video_path": task.get("result_video_path") or "",
-        "source_tos_key": task.get("source_tos_key") or "",
+        "source_tos_key": source_tos_key,
         "source_object_info": dict(task.get("source_object_info") or {}),
         "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=task_id) if thumbnail_path else "",
+        "source_video_url": (
+            url_for("subtitle_removal.get_source_video_artifact", task_id=task_id)
+            if ((video_path and os.path.exists(video_path)) or source_tos_key)
+            else ""
+        ),
         "result_artifact_url": url_for("subtitle_removal.get_result_artifact", task_id=task_id),
         "result_download_url": url_for("subtitle_removal.download_result", task_id=task_id),
         "resume_poll_url": url_for("subtitle_removal.resume_poll", task_id=task_id),
@@ -475,6 +482,10 @@ def complete_upload():
     except (TypeError, ValueError):
         return jsonify({"error": "file_size must be an integer"}), 400
 
+    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
+    if erase_text_type not in {"subtitle", "text"}:
+        return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+
     if not task_id or not original_filename or not object_key:
         return jsonify({"error": "task_id, original_filename and object_key required"}), 400
     if not validate_video_extension(original_filename):
@@ -516,6 +527,7 @@ def complete_upload():
         task_id,
         source_tos_key=object_key,
         source_object_info=source_object_info,
+        erase_text_type=erase_text_type,
     )
 
     try:
@@ -587,6 +599,21 @@ def get_source_artifact(task_id: str):
     if not thumbnail_path or not os.path.exists(thumbnail_path):
         abort(404)
     return send_file(thumbnail_path, mimetype="image/jpeg")
+
+
+@bp.route("/api/subtitle-removal/<task_id>/artifact/source-video", methods=["GET"])
+@login_required
+def get_source_video_artifact(task_id: str):
+    task = _get_owned_task(task_id)
+    video_path = (task.get("video_path") or "").strip()
+    if video_path and os.path.exists(video_path):
+        return send_file(video_path, mimetype="video/mp4")
+
+    source_tos_key = (task.get("source_tos_key") or "").strip()
+    if source_tos_key:
+        return redirect(tos_clients.generate_signed_download_url(source_tos_key))
+
+    abort(404)
 
 
 def _result_response(task: dict, *, as_attachment: bool = False):

@@ -951,15 +951,14 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   position:absolute; top:6px; right:6px;
   width:24px; height:24px; display:flex; align-items:center; justify-content:center;
   border:none; border-radius:var(--oc-r-full, 9999px);
-  background:oklch(22% 0.02 235 / 0.55); color:#fff;
+  background:oklch(22% 0.02 235 / 0.72); color:#fff;
   cursor:pointer;
   transition:background var(--oc-dur-fast) var(--oc-ease);
-  opacity:0;
+  opacity:1;
 }
-.oc-detail-image:hover .oc-detail-image-del { opacity:1; }
 .oc-detail-image-del:hover { background:var(--oc-danger); }
 .oc-detail-image-del:focus-visible {
-  opacity:1; outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring);
+  outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
 
 .oc-detail-images-actions {

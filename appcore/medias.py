@@ -185,7 +185,7 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
 
     rows = query(
         f"SELECT * FROM media_products WHERE {where_sql} "
-        "ORDER BY updated_at DESC LIMIT %s OFFSET %s",
+        "ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
         tuple(args + [limit, offset]),
     )
     return rows, total

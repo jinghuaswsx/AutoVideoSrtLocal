@@ -13,8 +13,11 @@ from flask import Blueprint, jsonify, request
 
 import config
 from appcore import medias, tos_clients
+from appcore.db import query
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
+
+_LIST_PAGE_SIZE_MAX = 100
 
 
 def _api_key_valid() -> bool:
@@ -179,3 +182,140 @@ def build_push_payload(product_code: str):
         "tags": [],
     }
     return jsonify(payload)
+
+
+def _parse_archived_filter(raw: str) -> int | None:
+    """Return 0/1 to filter, None for 'all'."""
+    value = (raw or "").strip().lower()
+    if value == "all":
+        return None
+    if value == "1":
+        return 1
+    # 默认只看未归档
+    return 0
+
+
+def _batch_cover_langs(product_ids: list[int]) -> dict[int, list[str]]:
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, lang, object_key FROM media_product_covers "
+        f"WHERE product_id IN ({placeholders})",
+        tuple(product_ids),
+    )
+    out: dict[int, list[str]] = defaultdict(list)
+    for row in rows or []:
+        if row.get("object_key"):
+            out[int(row["product_id"])].append(row.get("lang") or "en")
+    return out
+
+
+def _batch_copywriting_langs(product_ids: list[int]) -> dict[int, list[str]]:
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT DISTINCT product_id, lang FROM media_copywritings "
+        f"WHERE product_id IN ({placeholders})",
+        tuple(product_ids),
+    )
+    out: dict[int, list[str]] = defaultdict(list)
+    for row in rows or []:
+        out[int(row["product_id"])].append(row.get("lang") or "en")
+    return out
+
+
+def _batch_item_lang_counts(product_ids: list[int]) -> tuple[dict[int, dict[str, int]], dict[int, int]]:
+    if not product_ids:
+        return {}, {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, lang, COUNT(*) AS c FROM media_items "
+        f"WHERE deleted_at IS NULL AND product_id IN ({placeholders}) "
+        f"GROUP BY product_id, lang",
+        tuple(product_ids),
+    )
+    per_lang: dict[int, dict[str, int]] = defaultdict(dict)
+    totals: dict[int, int] = defaultdict(int)
+    for row in rows or []:
+        pid = int(row["product_id"])
+        lang = row.get("lang") or "en"
+        cnt = int(row.get("c") or 0)
+        per_lang[pid][lang] = cnt
+        totals[pid] += cnt
+    return per_lang, totals
+
+
+@bp.route("", methods=["GET"], strict_slashes=False)
+def list_materials():
+    """产品列表，供 AutoPush 子项目拉清单。"""
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(_LIST_PAGE_SIZE_MAX, int(request.args.get("page_size") or 20)))
+    except (TypeError, ValueError):
+        page_size = 20
+
+    q = (request.args.get("q") or "").strip()
+    archived = _parse_archived_filter(request.args.get("archived") or "0")
+
+    where = ["deleted_at IS NULL"]
+    args: list[Any] = []
+    if archived is not None:
+        where.append("archived=%s")
+        args.append(archived)
+    if q:
+        where.append("(name LIKE %s OR product_code LIKE %s)")
+        like = f"%{q}%"
+        args.extend([like, like])
+    where_sql = " AND ".join(where)
+
+    total_row = query(
+        f"SELECT COUNT(*) AS c FROM media_products WHERE {where_sql}",
+        tuple(args),
+    )
+    total = int((total_row[0] if total_row else {}).get("c") or 0)
+
+    offset = (page - 1) * page_size
+    rows = query(
+        f"SELECT id, product_code, name, archived, ad_supported_langs, "
+        f"       created_at, updated_at "
+        f"FROM media_products WHERE {where_sql} "
+        f"ORDER BY updated_at DESC, id DESC LIMIT %s OFFSET %s",
+        tuple(args + [page_size, offset]),
+    )
+
+    product_ids = [int(r["id"]) for r in rows or []]
+    cover_map = _batch_cover_langs(product_ids)
+    copy_map = _batch_copywriting_langs(product_ids)
+    item_lang_map, item_total_map = _batch_item_lang_counts(product_ids)
+
+    items = []
+    for row in rows or []:
+        pid = int(row["id"])
+        items.append({
+            "id": pid,
+            "product_code": row.get("product_code"),
+            "name": row.get("name"),
+            "archived": bool(row.get("archived")),
+            "ad_supported_langs": row.get("ad_supported_langs") or "",
+            "created_at": _iso_or_none(row.get("created_at")),
+            "updated_at": _iso_or_none(row.get("updated_at")),
+            "cover_langs": sorted(cover_map.get(pid, [])),
+            "copywriting_langs": sorted(copy_map.get(pid, [])),
+            "item_langs": item_lang_map.get(pid, {}),
+            "total_items": item_total_map.get(pid, 0),
+        })
+
+    return jsonify({
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })

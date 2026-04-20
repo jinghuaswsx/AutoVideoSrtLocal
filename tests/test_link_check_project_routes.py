@@ -77,6 +77,46 @@ def test_create_link_check_task_auto_detects_target_language(authed_user_client_
     assert created["target_language_name"] == "德语"
 
 
+def test_create_link_check_task_defaults_target_language_to_english_when_not_detected(
+    authed_user_client_no_db, monkeypatch
+):
+    from web import store
+
+    created = {}
+
+    def fake_create(task_id, task_dir, **kwargs):
+        created.update({"task_id": task_id, "task_dir": task_dir, **kwargs})
+        return {"id": task_id, "type": "link_check"}
+
+    monkeypatch.setattr(store, "create_link_check", fake_create)
+    monkeypatch.setattr("web.routes.link_check.link_check_runner.start", lambda tid: True)
+    monkeypatch.setattr(
+        "web.routes.link_check.medias.list_languages",
+        lambda: [
+            {"code": "en", "name_zh": "鑻辫", "enabled": 1},
+            {"code": "de", "name_zh": "寰疯", "enabled": 1},
+            {"code": "fr", "name_zh": "娉曡", "enabled": 1},
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.link_check.medias.get_language",
+        lambda code: {"code": code, "name_zh": "鑻辫" if code == "en" else code, "enabled": 1},
+    )
+
+    response = authed_user_client_no_db.post(
+        "/api/link-check/tasks",
+        data={
+            "link_url": "https://shop.example.com/es/products/demo",
+            "target_language": "",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 202
+    assert created["target_language"] == "en"
+    assert created["target_language_name"] == "鑻辫"
+
+
 def test_link_check_detail_page_bootstraps_state_from_projects_row(authed_user_client_no_db, monkeypatch):
     state = {
         "id": "lc-db-1",

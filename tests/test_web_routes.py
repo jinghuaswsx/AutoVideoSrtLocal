@@ -92,6 +92,16 @@ def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
     assert "if (!uploadInput || !uploadButton || !uploadDropzone)" in scripts
 
 
+def test_subtitle_removal_list_page_uses_90x160_first_frame_thumbnails_with_centered_row_content(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "grid-template-columns: 90px 1fr 140px 140px 160px 180px 220px;" in body
+    assert "align-items: center;" in body
+    assert ".sr-list-thumb { width: 90px; height: 160px;" in body
+
+
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
     root = Path(__file__).resolve().parents[1]
     scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")
@@ -448,6 +458,118 @@ def test_subtitle_removal_detail_shell_shows_result_actions_for_local_result_onl
     assert "srResultPanel" in body
     assert "artifact/result" in body
     assert "download/result" in body
+
+
+def test_subtitle_removal_detail_shell_limits_result_player_to_360x640(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-result-size",
+        "uploads/sr-result-size.mp4",
+        "output/sr-result-size",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        result_tos_key="artifacts/1/sr-result-size/subtitle_removal/result.cleaned.mp4",
+        result_video_path="",
+        provider_task_id="provider-task-1",
+        provider_status="success",
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-result-size")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert ".sr-result-preview {" in body
+    assert "width: min(360px, 100%);" in body
+    assert "aspect-ratio: 9 / 16;" in body
+    assert "max-height: 640px;" in body
+    assert ".sr-result-video {" in body
+    assert "object-fit: contain;" in body
+
+
+def test_subtitle_removal_detail_shell_exposes_back_to_list_entry(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-back-link",
+        "uploads/sr-back-link.mp4",
+        "output/sr-back-link",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-back-link")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'class="sr-back-link"' in body
+    assert 'href="/subtitle-removal"' in body
+    assert "返回列表" in body
+
+
+def test_subtitle_removal_detail_shell_renders_bottom_compare_previews(authed_client_no_db, monkeypatch):
+    task = store.create_subtitle_removal(
+        "sr-compare-shell",
+        "uploads/sr-compare-shell.mp4",
+        "output/sr-compare-shell",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        status="done",
+        source_tos_key="uploads/1/sr-compare-shell/demo.mp4",
+        result_tos_key="artifacts/1/sr-compare-shell/subtitle_removal/result.cleaned.mp4",
+        provider_task_id="provider-task-1",
+        provider_status="success",
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "demo.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "type": "subtitle_removal",
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/subtitle-removal/sr-compare-shell")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="srCompareCard"' in body
+    assert 'id="srCompareGrid"' in body
+    assert "grid-template-columns: repeat(2, minmax(0, 360px));" in body
+    assert "srCompareOriginalPanel" in body
+    assert "srCompareResultPanel" in body
+    assert "source_video_url" in body
 
 
 def test_subtitle_removal_join_uses_persisted_task_state_when_memory_is_cold(authed_client_no_db, monkeypatch):

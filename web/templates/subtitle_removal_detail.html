@@ -6,6 +6,7 @@
   window.subtitleRemovalBootstrap = {{ state | tojson }};
 </script>
 <div class="sr-shell sr-detail-page" data-subtitle-removal-page="detail" data-task-id="{{ task_id }}">
+  <a class="sr-back-link" href="/subtitle-removal">返回列表</a>
   <header class="sr-hero">
     <div class="sr-hero-copy">
       <p class="sr-kicker">字幕移除</p>
@@ -96,6 +97,19 @@
       </div>
     </section>
   </div>
+
+  <section id="srCompareCard" class="sr-card sr-compare-card sr-hidden" hidden>
+    <div class="sr-card-head">
+      <div>
+        <h2>对比预览</h2>
+        <div class="sr-card-subtitle">左边看原视频，右边看去字幕结果，方便对比去字幕效果。</div>
+      </div>
+    </div>
+    <div id="srCompareGrid" class="sr-compare-grid">
+      <div id="srCompareOriginalPanel" class="sr-compare-panel"></div>
+      <div id="srCompareResultPanel" class="sr-compare-panel"></div>
+    </div>
+  </section>
 </div>
 {% include "_subtitle_removal_styles.html" %}
 {% include "_subtitle_removal_scripts.html" %}

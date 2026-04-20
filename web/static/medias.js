@@ -66,6 +66,8 @@
     const pickBtn = $(opts.pickBtn);
     const badge   = $(opts.badge);
     const progressBox = $(opts.progress);
+    const gifGrid  = opts.gifGrid  ? $(opts.gifGrid)  : null;
+    const gifBadge = opts.gifBadge ? $(opts.gifBadge) : null;
     const getLang   = opts.getLang   || (() => 'en');
     const ensurePid = opts.ensurePid || (async () => null);
     const onItemsChange = opts.onItemsChange || (() => {});
@@ -74,28 +76,51 @@
     function show() { if (section) section.hidden = false; }
     function hide() { if (section) section.hidden = true; }
 
-    function renderGrid() {
-      if (!grid) return;
-      if (!items.length) {
-        grid.innerHTML = '<div class="oc-detail-images-empty">尚未上传详情图</div>';
+    function isGifItem(it) {
+      const key = String((it && it.object_key) || '').toLowerCase();
+      return key.endsWith('.gif');
+    }
+
+    function renderItemHTML(it, idx) {
+      return `
+        <div class="oc-detail-image" data-id="${it.id}">
+          <img src="${escapeHtml(it.thumbnail_url)}" alt="详情图 ${idx + 1}" loading="lazy">
+          <span class="oc-detail-image-idx">${idx + 1}</span>
+          <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round">
+              <path d="M3 3l8 8M11 3l-8 8"></path>
+            </svg>
+          </button>
+        </div>
+      `;
+    }
+
+    function renderInto(targetGrid, list, emptyText) {
+      if (!targetGrid) return;
+      if (!list.length) {
+        targetGrid.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(emptyText)}</div>`;
       } else {
-        grid.innerHTML = items.map((it, idx) => `
-          <div class="oc-detail-image" data-id="${it.id}">
-            <img src="${escapeHtml(it.thumbnail_url)}" alt="详情图 ${idx + 1}" loading="lazy">
-            <span class="oc-detail-image-idx">${idx + 1}</span>
-            <button class="oc-detail-image-del" type="button" title="删除这张" aria-label="删除">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-                   stroke-width="1.8" stroke-linecap="round">
-                <path d="M3 3l8 8M11 3l-8 8"></path>
-              </svg>
-            </button>
-          </div>
-        `).join('');
-        grid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
+        targetGrid.innerHTML = list.map(renderItemHTML).join('');
+        targetGrid.querySelectorAll('.oc-detail-image-del').forEach(btn => {
           btn.addEventListener('click', onDelete);
         });
       }
-      if (badge) badge.textContent = String(items.length);
+    }
+
+    function renderGrid() {
+      if (!grid) return;
+      if (gifGrid) {
+        const staticList = items.filter(it => !isGifItem(it));
+        const gifList = items.filter(isGifItem);
+        renderInto(grid, staticList, '尚未上传静态详情图');
+        renderInto(gifGrid, gifList, '当前语种暂无 GIF 动图');
+        if (badge)    badge.textContent = String(staticList.length);
+        if (gifBadge) gifBadge.textContent = String(gifList.length);
+      } else {
+        renderInto(grid, items, '尚未上传详情图');
+        if (badge) badge.textContent = String(items.length);
+      }
       onItemsChange(items.slice());
     }
 
@@ -129,8 +154,8 @@
     async function uploadFiles(rawFiles) {
       if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
       const files = [...(rawFiles || [])]
-        .filter(f => /^image\/(jpeg|png|webp)$/i.test(f.type));
-      if (!files.length) { alert('请选择 JPG / PNG / WebP 图片'); return; }
+        .filter(f => /^image\/(jpeg|png|webp|gif)$/i.test(f.type));
+      if (!files.length) { alert('请选择 JPG / PNG / WebP / GIF 图片'); return; }
       if (files.length > 20) {
         alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
         files.length = 20;
@@ -220,7 +245,12 @@
       uploadFiles(files);
     });
 
-    return { load, reset, show, hide, items: () => items.slice() };
+    return {
+      load, reset, show, hide,
+      items: () => items.slice(),
+      staticItems: () => items.filter(it => !isGifItem(it)),
+      gifItems:    () => items.filter(isGifItem),
+    };
   }
 
   // ---------- List ----------
@@ -708,9 +738,11 @@
     edDetailImagesCtrl = createDetailImagesController({
       section: 'edDetailImagesSection',
       grid:    'edDetailImagesGrid',
+      gifGrid: 'edDetailGifImagesGrid',
       input:   'edDetailImagesInput',
       pickBtn: 'edDetailImagesPickBtn',
       badge:   'edDetailImagesBadge',
+      gifBadge:'edDetailGifImagesBadge',
       progress:'edDetailImagesProgress',
       getLang: () => edState.activeLang,
       ensurePid: async () => {
@@ -723,11 +755,18 @@
   }
 
   function edSyncDetailImagesDownloadZipButton() {
-    const btn = $('edDetailImagesDownloadZipBtn');
-    if (!btn) return;
     const p = edState.productData && edState.productData.product;
-    const items = edDetailImagesCtrl && edDetailImagesCtrl.items ? edDetailImagesCtrl.items() : [];
-    btn.disabled = !(p && p.id && items.length);
+    const ctrl = edDetailImagesCtrl;
+    const staticBtn = $('edDetailImagesDownloadZipBtn');
+    if (staticBtn) {
+      const list = (ctrl && ctrl.staticItems) ? ctrl.staticItems() : [];
+      staticBtn.disabled = !(p && p.id && list.length);
+    }
+    const gifBtn = $('edDetailGifImagesDownloadZipBtn');
+    if (gifBtn) {
+      const list = (ctrl && ctrl.gifItems) ? ctrl.gifItems() : [];
+      gifBtn.disabled = !(p && p.id && list.length);
+    }
   }
 
   function edRenderAdSupportedLangs(selected) {
@@ -2341,7 +2380,17 @@
         const pid = edState.productData && edState.productData.product && edState.productData.product.id;
         const lang = (edState.activeLang || 'en').trim().toLowerCase();
         if (!pid || edDownloadZipBtn.disabled) return;
-        window.location.href = `/medias/api/products/${pid}/detail-images/download-zip?lang=${encodeURIComponent(lang)}`;
+        window.location.href = `/medias/api/products/${pid}/detail-images/download-zip?lang=${encodeURIComponent(lang)}&kind=image`;
+      });
+    }
+
+    const edGifDownloadZipBtn = $('edDetailGifImagesDownloadZipBtn');
+    if (edGifDownloadZipBtn) {
+      edGifDownloadZipBtn.addEventListener('click', () => {
+        const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+        const lang = (edState.activeLang || 'en').trim().toLowerCase();
+        if (!pid || edGifDownloadZipBtn.disabled) return;
+        window.location.href = `/medias/api/products/${pid}/detail-images/download-zip?lang=${encodeURIComponent(lang)}&kind=gif`;
       });
     }
 
