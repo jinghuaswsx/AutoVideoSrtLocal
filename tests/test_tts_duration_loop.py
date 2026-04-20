@@ -535,6 +535,9 @@ class TestStepTtsIntegration:
 
         monkeypatch.setattr("subprocess.run", fake_ffmpeg)
         monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+        monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "openrouter")
+        monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "fake-model")
+        monkeypatch.setattr("appcore.usage_log.record", lambda *args, **kwargs: None)
         monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 30.0)
         monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 36.0)
 
@@ -621,6 +624,9 @@ class TestStepTtsIntegration:
 
         monkeypatch.setattr("subprocess.run", fail_if_ffmpeg)
         monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+        monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "openrouter")
+        monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "fake-model")
+        monkeypatch.setattr("appcore.usage_log.record", lambda *args, **kwargs: None)
         monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 30.0)
         monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 28.0)
 

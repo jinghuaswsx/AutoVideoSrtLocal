@@ -1088,14 +1088,16 @@ class PipelineRunner:
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
         voice = self._resolve_voice(task, loc_mod)
 
-        variant = "normal"
         variants = dict(task.get("variants", {}))
-        variant_state = dict(variants.get(variant, {}))
-        initial_localized = variant_state.get("localized_translation", {}) \
-                            or task.get("localized_translation", {})
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
+        variant_order = [name for name in variants.keys() if name != "normal"]
+        if "normal" in variants:
+            variant_order.append("normal")
+        elif not variant_order:
+            variant_order = ["normal"]
+            variants["normal"] = {}
 
         # reset duration tracking for a fresh run (e.g. resume)；
         # 顺带保存本次翻译走的 provider + model + channel，给前端 Duration Loop 头部展示
@@ -1114,6 +1116,171 @@ class PipelineRunner:
             tts_translate_model=get_model_display_name(provider, self.user_id),
             tts_translate_channel=_channel_label,
         )
+
+        from pipeline.tts import _get_audio_duration
+        from pipeline.timeline import build_timeline_manifest
+        import shutil
+
+        variant_results: dict[str, dict] = {}
+        for variant in variant_order:
+            variant_state = dict(variants.get(variant, {}))
+            initial_localized = variant_state.get("localized_translation", {}) or (
+                task.get("localized_translation", {}) if variant == "normal" else {}
+            )
+            if not initial_localized:
+                continue
+
+            loop_result = self._run_tts_duration_loop(
+                task_id=task_id,
+                task_dir=task_dir,
+                loc_mod=loc_mod,
+                provider=provider,
+                video_duration=video_duration,
+                voice=voice,
+                initial_localized_translation=initial_localized,
+                source_full_text=source_full_text,
+                source_language=source_language,
+                elevenlabs_api_key=elevenlabs_api_key,
+                script_segments=task.get("script_segments", []),
+                variant=variant,
+            )
+
+            final_round = loop_result["final_round"]
+            pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+            final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            if pre_trim_duration > video_duration:
+                trim_record = {
+                    "pre_trim_duration": pre_trim_duration,
+                    "video_duration": video_duration,
+                    "message": (
+                        f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
+                        "正在直接截断到视频时长..."
+                    ),
+                }
+                self._emit_duration_round(task_id, final_round, "truncate_audio", trim_record)
+                trim_result = self._truncate_audio_to_duration(
+                    input_audio_path=loop_result["tts_audio_path"],
+                    output_audio_path=final_audio_path,
+                    duration=video_duration,
+                    tts_segments=loop_result["tts_segments"],
+                    tts_script=loop_result["tts_script"],
+                    localized_translation=loop_result["localized_translation"],
+                )
+                if not trim_result.get("skipped"):
+                    loop_result["tts_audio_path"] = trim_result["audio_path"]
+                    loop_result["tts_script"] = trim_result["tts_script"]
+                    loop_result["localized_translation"] = trim_result["localized_translation"]
+                    loop_result["tts_segments"] = trim_result["tts_segments"]
+                    trimmed_record = {
+                        "pre_trim_duration": pre_trim_duration,
+                        "removed_count": trim_result["removed_count"],
+                        "removed_duration": trim_result["removed_duration"],
+                        "final_duration": trim_result["final_duration"],
+                        "video_duration": video_duration,
+                        "message": (
+                            f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
+                            f"对齐视频 {video_duration:.1f}s"
+                        ),
+                    }
+                    self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
+
+            if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+                shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
+
+            timeline_manifest = build_timeline_manifest(
+                loop_result["tts_segments"], video_duration=video_duration,
+            )
+            variant_state.update({
+                "segments": loop_result["tts_segments"],
+                "tts_script": loop_result["tts_script"],
+                "tts_audio_path": final_audio_path,
+                "timeline_manifest": timeline_manifest,
+                "voice_id": voice.get("id"),
+                "localized_translation": loop_result["localized_translation"],
+            })
+            variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_audio_path
+            variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(
+                loop_result["tts_script"],
+                loop_result["tts_segments"],
+                duration_rounds=loop_result["rounds"],
+            )
+            variants[variant] = variant_state
+
+            _save_json(task_dir, f"tts_script.{variant}.json", loop_result["tts_script"])
+            _save_json(task_dir, f"tts_result.{variant}.json", loop_result["tts_segments"])
+            _save_json(task_dir, f"timeline_manifest.{variant}.json", timeline_manifest)
+            _save_json(task_dir, f"localized_translation.{variant}.json", loop_result["localized_translation"])
+
+            variant_results[variant] = {
+                "loop_result": loop_result,
+                "timeline_manifest": timeline_manifest,
+                "final_audio_path": final_audio_path,
+            }
+
+        if not variant_results:
+            raise ValueError("No localized translation available for TTS generation")
+
+        primary_variant = "normal" if "normal" in variant_results else next(iter(variant_results))
+        primary_result = variant_results[primary_variant]
+        primary_loop_result = primary_result["loop_result"]
+        primary_timeline_manifest = primary_result["timeline_manifest"]
+        primary_audio_path = primary_result["final_audio_path"]
+
+        task_state.set_preview_file(task_id, "tts_full_audio", primary_audio_path)
+        _save_json(task_dir, "tts_duration_rounds.json", primary_loop_result["rounds"])
+
+        task_state.update(
+            task_id,
+            variants=variants,
+            segments=primary_loop_result["tts_segments"],
+            tts_script=primary_loop_result["tts_script"],
+            tts_audio_path=primary_audio_path,
+            voice_id=voice.get("id"),
+            timeline_manifest=primary_timeline_manifest,
+            localized_translation=primary_loop_result["localized_translation"],
+            tts_duration_rounds=primary_loop_result["rounds"],
+        )
+
+        task_state.set_artifact(
+            task_id,
+            "tts",
+            build_tts_artifact(
+                primary_loop_result["tts_script"],
+                primary_loop_result["tts_segments"],
+                duration_rounds=primary_loop_result["rounds"],
+            ),
+        )
+
+        from appcore.events import EVT_TTS_SCRIPT_READY
+        self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": primary_loop_result["tts_script"]})
+        self._set_step(
+            task_id, "tts", "done",
+            f"{lang_display}配音生成完成（{primary_loop_result['final_round']} 轮收敛）",
+        )
+
+        from appcore.usage_log import record as _log_usage
+        from pipeline.translate import get_model_display_name
+        for result in variant_results.values():
+            for round_record in result["loop_result"]["rounds"]:
+                round_idx = round_record["round"]
+                if round_idx >= 2:
+                    _log_usage(
+                        self.user_id,
+                        task_id,
+                        provider,
+                        model_name=get_model_display_name(provider, self.user_id),
+                        success=True,
+                    )
+                _log_usage(
+                    self.user_id,
+                    task_id,
+                    provider,
+                    model_name=get_model_display_name(provider, self.user_id),
+                    success=True,
+                )
+            for _ in result["loop_result"]["rounds"]:
+                _log_usage(self.user_id, task_id, "elevenlabs", success=True)
+        return
 
         loop_result = self._run_tts_duration_loop(
             task_id=task_id,

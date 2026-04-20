@@ -3,6 +3,10 @@ import subprocess
 import threading
 from typing import List, Dict
 
+try:
+    from elevenlabs import VoiceSettings
+except ImportError:  # pragma: no cover - older SDK fallback
+    VoiceSettings = None
 from elevenlabs.client import ElevenLabs
 from config import ELEVENLABS_API_KEY
 from pipeline.voice_library import get_voice_library
@@ -40,6 +44,7 @@ def generate_segment_audio(
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
+    speed: float | None = None,
 ) -> str:
     """生成单段音频，返回文件路径（mp3）"""
     client = _get_client(api_key=elevenlabs_api_key)
@@ -51,6 +56,14 @@ def generate_segment_audio(
     )
     if language_code:
         kwargs["language_code"] = language_code
+    if speed is not None and abs(speed - 1.0) > 0.001:
+        if VoiceSettings is not None:
+            try:
+                kwargs["voice_settings"] = VoiceSettings(speed=float(speed))
+            except Exception:
+                kwargs["voice_settings"] = {"speed": float(speed)}
+        else:
+            kwargs["voice_settings"] = {"speed": float(speed)}
     audio = client.text_to_speech.convert(**kwargs)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:

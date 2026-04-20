@@ -175,6 +175,7 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         "preview_files": {},
         "variants": {
             "normal": _empty_variant_state("普通版"),
+            "hook_cta": _empty_variant_state("黄金3秒 + CTA版"),
         },
         "tts_duration_rounds": [],
         "tts_duration_status": None,

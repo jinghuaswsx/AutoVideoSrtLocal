@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from pathlib import Path
 import json
 
@@ -663,10 +663,11 @@ def test_task_detail_returns_artifacts_structure(authed_client_no_db):
     assert payload["artifacts"] == {}
 
 
-def test_store_create_initializes_single_variant():
+def test_store_create_initializes_default_variants():
     task = store.create("task-variants", "video.mp4", "output/task-variants")
 
-    assert set(task["variants"].keys()) == {"normal"}
+    assert set(task["variants"].keys()) == {"normal", "hook_cta"}
+    assert "CTA" in task["variants"]["hook_cta"]["label"]
     assert task["variants"]["normal"]["label"] == "普通版"
 
 
