@@ -68,6 +68,7 @@
     const progressBox = $(opts.progress);
     const getLang   = opts.getLang   || (() => 'en');
     const ensurePid = opts.ensurePid || (async () => null);
+    const onItemsChange = opts.onItemsChange || (() => {});
     let items = [];
 
     function show() { if (section) section.hidden = false; }
@@ -95,6 +96,7 @@
         });
       }
       if (badge) badge.textContent = String(items.length);
+      onItemsChange(items.slice());
     }
 
     async function onDelete(e) {
@@ -715,8 +717,17 @@
         const p = edState.productData && edState.productData.product;
         return p ? p.id : null;
       },
+      onItemsChange: () => edSyncDetailImagesDownloadZipButton(),
     });
     return edDetailImagesCtrl;
+  }
+
+  function edSyncDetailImagesDownloadZipButton() {
+    const btn = $('edDetailImagesDownloadZipBtn');
+    if (!btn) return;
+    const p = edState.productData && edState.productData.product;
+    const items = edDetailImagesCtrl && edDetailImagesCtrl.items ? edDetailImagesCtrl.items() : [];
+    btn.disabled = !(p && p.id && items.length);
   }
 
   function edRenderAdSupportedLangs(selected) {
@@ -1513,6 +1524,7 @@
       saveBtn.disabled = !hasEn;
       saveBtn.title = hasEn ? '' : '必须先上传英文主图';
     }
+    edSyncDetailImagesDownloadZipButton();
   }
 
   // --- 主图块（按语种渲染） ---
@@ -2199,6 +2211,7 @@
 
     // 商品详情图：从商品链接一键下载（后台任务 + 进度弹窗）
     const edFromUrlBtn = $('edDetailImagesFromUrlBtn');
+    const edDownloadZipBtn = $('edDetailImagesDownloadZipBtn');
     if (edFromUrlBtn) {
       let pollHandle = null;
 
@@ -2320,6 +2333,15 @@
             message: '网络错误：' + (e.message || e),
           });
         }
+      });
+    }
+
+    if (edDownloadZipBtn) {
+      edDownloadZipBtn.addEventListener('click', () => {
+        const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+        const lang = (edState.activeLang || 'en').trim().toLowerCase();
+        if (!pid || edDownloadZipBtn.disabled) return;
+        window.location.href = `/medias/api/products/${pid}/detail-images/download-zip?lang=${encodeURIComponent(lang)}`;
       });
     }
 

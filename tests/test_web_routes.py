@@ -1348,6 +1348,15 @@ def test_medias_edit_modal_contains_detail_image_translation_controls():
     assert "detail-images/translate-from-en" in scripts
 
 
+def test_medias_edit_modal_contains_detail_image_zip_download_button():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'id="edDetailImagesDownloadZipBtn"' in template
+    assert "detail-images/download-zip" in scripts
+
+
 def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 

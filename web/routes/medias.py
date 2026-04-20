@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import os
+import tempfile
 import uuid
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -973,6 +976,12 @@ def _serialize_detail_image(row: dict) -> dict:
     }
 
 
+def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
+    raw_code = str((product or {}).get("product_code") or "").strip()
+    base_code = re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
+    return f"{base_code}_{lang}_detail-images"
+
+
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
 @login_required
 def api_detail_images_list(pid: int):
@@ -984,6 +993,41 @@ def api_detail_images_list(pid: int):
         return jsonify({"error": f"不支持的语种: {lang}"}), 400
     rows = medias.list_detail_images(pid, lang)
     return jsonify({"items": [_serialize_detail_image(r) for r in rows]})
+
+
+@bp.route("/api/products/<int:pid>/detail-images/download-zip", methods=["GET"])
+@login_required
+def api_detail_images_download_zip(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    lang = (request.args.get("lang") or "en").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+
+    rows = medias.list_detail_images(pid, lang)
+    if not rows:
+        abort(404)
+
+    archive_base = _detail_images_archive_basename(p or {}, pid, lang)
+    buf = io.BytesIO()
+    with tempfile.TemporaryDirectory(prefix="detail_images_zip_") as tmp_dir:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for idx, row in enumerate(rows, start=1):
+                object_key = str(row.get("object_key") or "").strip()
+                if not object_key:
+                    continue
+                suffix = Path(object_key).suffix or ".jpg"
+                local_path = Path(tmp_dir) / f"detail_{idx:02d}{suffix}"
+                tos_clients.download_media_file(object_key, str(local_path))
+                zf.write(local_path, arcname=f"{archive_base}/{idx:02d}{suffix}")
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{archive_base}.zip",
+    )
 
 
 @bp.route("/api/products/<int:pid>/detail-images/from-url", methods=["POST"])
