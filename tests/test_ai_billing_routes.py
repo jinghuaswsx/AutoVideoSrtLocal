@@ -203,3 +203,163 @@ def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, 
     rows = list(csv.reader(io.StringIO(text)))
     assert rows[0] == route_mod.CSV_COLUMNS
     assert len(rows) - 1 == 2
+
+
+def _install_pricing_store(monkeypatch):
+    from web.routes import settings as route_mod
+
+    rows = [
+        {
+            "id": 1,
+            "provider": "elevenlabs",
+            "model": "*",
+            "units_type": "chars",
+            "unit_input_cny": None,
+            "unit_output_cny": None,
+            "unit_flat_cny": 0.000165,
+            "note": "待复核：≈0.165 RMB/千字符",
+            "updated_at": "2026-04-21 10:00:00",
+        }
+    ]
+    state = {"invalidations": 0}
+
+    def fake_query(sql, args=()):
+        if "FROM ai_model_prices" in sql:
+            if "WHERE id = %s" in sql:
+                row_id = int(args[0])
+                return [row.copy() for row in rows if row["id"] == row_id]
+            return [row.copy() for row in rows]
+        return []
+
+    def fake_execute(sql, args=()):
+        if sql.strip().startswith("INSERT INTO ai_model_prices"):
+            next_id = max((row["id"] for row in rows), default=0) + 1
+            rows.append(
+                {
+                    "id": next_id,
+                    "provider": args[0],
+                    "model": args[1],
+                    "units_type": args[2],
+                    "unit_input_cny": args[3],
+                    "unit_output_cny": args[4],
+                    "unit_flat_cny": args[5],
+                    "note": args[6],
+                    "updated_at": "2026-04-21 11:00:00",
+                }
+            )
+            return next_id
+        if sql.strip().startswith("UPDATE ai_model_prices"):
+            row_id = int(args[-1])
+            for row in rows:
+                if row["id"] == row_id:
+                    row.update(
+                        {
+                            "units_type": args[0],
+                            "unit_input_cny": args[1],
+                            "unit_output_cny": args[2],
+                            "unit_flat_cny": args[3],
+                            "note": args[4],
+                            "updated_at": "2026-04-21 12:00:00",
+                        }
+                    )
+                    return 1
+            return 0
+        if sql.strip().startswith("DELETE FROM ai_model_prices"):
+            row_id = int(args[0])
+            before = len(rows)
+            rows[:] = [row for row in rows if row["id"] != row_id]
+            return 1 if len(rows) != before else 0
+        return 0
+
+    monkeypatch.setattr(route_mod, "query", fake_query)
+    monkeypatch.setattr(route_mod, "execute", fake_execute)
+    monkeypatch.setattr(route_mod.pricing, "invalidate_cache", lambda: state.__setitem__("invalidations", state["invalidations"] + 1))
+    return route_mod, rows, state
+
+
+def test_ai_pricing_write_routes_forbidden_for_non_admin(authed_user_client_no_db):
+    payload = {
+        "provider": "elevenlabs",
+        "model": "eleven_multilingual_v2",
+        "units_type": "chars",
+        "unit_flat_cny": 0.0002,
+        "note": "test",
+    }
+
+    assert authed_user_client_no_db.post("/admin/settings/ai-pricing", json=payload).status_code == 403
+    assert authed_user_client_no_db.put("/admin/settings/ai-pricing/1", json=payload).status_code == 403
+    assert authed_user_client_no_db.delete("/admin/settings/ai-pricing/1").status_code == 403
+
+
+def test_ai_pricing_post_creates_row_and_invalidates_cache(authed_client_no_db, monkeypatch):
+    _, rows, state = _install_pricing_store(monkeypatch)
+
+    resp = authed_client_no_db.post(
+        "/admin/settings/ai-pricing",
+        json={
+            "provider": "elevenlabs",
+            "model": "eleven_multilingual_v2",
+            "units_type": "chars",
+            "unit_flat_cny": 0.0002,
+            "note": "待复核",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert any(row["model"] == "eleven_multilingual_v2" for row in rows)
+    assert state["invalidations"] == 1
+
+
+def test_ai_pricing_put_updates_flat_price(authed_client_no_db, monkeypatch):
+    _, rows, state = _install_pricing_store(monkeypatch)
+
+    resp = authed_client_no_db.put(
+        "/admin/settings/ai-pricing/1",
+        json={
+            "provider": "elevenlabs",
+            "model": "*",
+            "units_type": "chars",
+            "unit_flat_cny": 0.0003,
+            "note": "已复核",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert rows[0]["unit_flat_cny"] == 0.0003
+    assert rows[0]["note"] == "已复核"
+    assert state["invalidations"] == 1
+
+
+def test_ai_pricing_delete_removes_row(authed_client_no_db, monkeypatch):
+    _, rows, state = _install_pricing_store(monkeypatch)
+
+    resp = authed_client_no_db.delete("/admin/settings/ai-pricing/1")
+
+    assert resp.status_code == 200
+    assert rows == []
+    assert state["invalidations"] == 1
+
+
+def test_ai_pricing_post_missing_price_fields_returns_400(authed_client_no_db, monkeypatch):
+    _install_pricing_store(monkeypatch)
+
+    resp = authed_client_no_db.post(
+        "/admin/settings/ai-pricing",
+        json={
+            "provider": "gemini_vertex",
+            "model": "gemini-3.1-pro-preview",
+            "units_type": "tokens",
+            "note": "缺价格",
+        },
+    )
+
+    assert resp.status_code == 400
+
+
+def test_ai_pricing_list_returns_rows(authed_client_no_db, monkeypatch):
+    _, rows, _ = _install_pricing_store(monkeypatch)
+
+    resp = authed_client_no_db.get("/admin/settings/ai-pricing/list")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == rows

@@ -8,11 +8,14 @@
 演进式重写：所有主线已有字段（TRANSLATE_PROVIDERS / SERVICES / DEFAULT_TRANSLATE_PROVIDER）
 保持不变，以免破坏已有用户数据。只新增 Tab 2 Bindings 部分。
 """
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from decimal import Decimal, InvalidOperation
+
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import llm_bindings
+from appcore import llm_bindings, pricing
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT, get_all, set_key
+from appcore.db import execute, query
 from appcore.gemini import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
     CHANNEL_LABELS as IMAGE_TRANSLATE_CHANNEL_LABELS,
@@ -21,6 +24,7 @@ from appcore.image_translate_settings import (
     set_channel as set_image_translate_channel,
 )
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
+from web.auth import admin_required
 
 bp = Blueprint("settings", __name__)
 
@@ -46,6 +50,7 @@ DEFAULT_TRANSLATE_PROVIDER = "vertex_gemini_31_flash_lite"
 BINDING_ALLOWED_PROVIDERS = (
     "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
 )
+PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -73,6 +78,14 @@ def index():
     for row in bindings_rows:
         bindings_grouped.setdefault(row["module"], []).append(row)
 
+    is_admin = getattr(current_user, "role", None) == "admin"
+    active_tab = (request.args.get("tab") or "providers").strip().lower()
+    allowed_tabs = {"providers", "bindings"}
+    if is_admin:
+        allowed_tabs.add("pricing")
+    if active_tab not in allowed_tabs:
+        active_tab = "providers"
+
     return render_template(
         "settings.html",
         keys=keys,
@@ -89,7 +102,9 @@ def index():
         bindings_grouped=bindings_grouped,
         module_labels=MODULE_LABELS,
         binding_allowed_providers=BINDING_ALLOWED_PROVIDERS,
-        active_tab=request.args.get("tab") or "providers",
+        active_tab=active_tab,
+        can_manage_pricing=is_admin,
+        pricing_units_types=PRICING_UNITS_TYPES,
     )
 
 
@@ -139,3 +154,181 @@ def _handle_bindings_post() -> None:
         llm_bindings.upsert(
             code, provider=provider, model=model, updated_by=current_user.id,
         )
+
+
+def _parse_price_decimal(raw_value, field_label: str) -> float | None:
+    if raw_value in (None, ""):
+        return None
+    try:
+        value = Decimal(str(raw_value))
+    except (ArithmeticError, InvalidOperation, ValueError):
+        raise ValueError(f"{field_label}必须是非负数字")
+    if value < 0:
+        raise ValueError(f"{field_label}不能为负数")
+    return float(value)
+
+
+def _serialize_price_row(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "provider": row["provider"],
+        "model": row["model"],
+        "units_type": row["units_type"],
+        "unit_input_cny": None if row.get("unit_input_cny") is None else float(row["unit_input_cny"]),
+        "unit_output_cny": None if row.get("unit_output_cny") is None else float(row["unit_output_cny"]),
+        "unit_flat_cny": None if row.get("unit_flat_cny") is None else float(row["unit_flat_cny"]),
+        "note": row.get("note"),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def _list_ai_pricing_rows() -> list[dict]:
+    rows = query(
+        """
+        SELECT id, provider, model, units_type,
+               unit_input_cny, unit_output_cny, unit_flat_cny,
+               note, updated_at
+        FROM ai_model_prices
+        ORDER BY provider ASC, model ASC, id ASC
+        """
+    )
+    return [_serialize_price_row(row) for row in rows]
+
+
+def _get_ai_pricing_row(price_id: int) -> dict | None:
+    rows = query(
+        """
+        SELECT id, provider, model, units_type,
+               unit_input_cny, unit_output_cny, unit_flat_cny,
+               note, updated_at
+        FROM ai_model_prices
+        WHERE id = %s
+        """,
+        (price_id,),
+    )
+    return _serialize_price_row(rows[0]) if rows else None
+
+
+def _parse_ai_pricing_payload() -> dict:
+    body = request.get_json(silent=True) or {}
+    provider = (body.get("provider") or "").strip()
+    model = (body.get("model") or "").strip()
+    units_type = (body.get("units_type") or "").strip().lower()
+    note = (body.get("note") or "").strip() or None
+    unit_input_cny = _parse_price_decimal(body.get("unit_input_cny"), "输入单价")
+    unit_output_cny = _parse_price_decimal(body.get("unit_output_cny"), "输出单价")
+    unit_flat_cny = _parse_price_decimal(body.get("unit_flat_cny"), "统一单价")
+
+    if not provider:
+        raise ValueError("provider不能为空")
+    if not model:
+        raise ValueError("model不能为空")
+    if units_type not in PRICING_UNITS_TYPES:
+        raise ValueError(f"units_type必须是 {', '.join(PRICING_UNITS_TYPES)}")
+    if unit_input_cny is None and unit_output_cny is None and unit_flat_cny is None:
+        raise ValueError("至少填写一个单价字段")
+
+    return {
+        "provider": provider,
+        "model": model,
+        "units_type": units_type,
+        "unit_input_cny": unit_input_cny,
+        "unit_output_cny": unit_output_cny,
+        "unit_flat_cny": unit_flat_cny,
+        "note": note,
+    }
+
+
+@bp.route("/admin/settings/ai-pricing", methods=["GET"])
+@login_required
+@admin_required
+def ai_pricing_page():
+    return redirect(url_for("settings.index", tab="pricing"))
+
+
+@bp.route("/admin/settings/ai-pricing/list", methods=["GET"])
+@login_required
+@admin_required
+def ai_pricing_list():
+    return jsonify({"items": _list_ai_pricing_rows()})
+
+
+@bp.route("/admin/settings/ai-pricing", methods=["POST"])
+@login_required
+@admin_required
+def ai_pricing_create():
+    try:
+        payload = _parse_ai_pricing_payload()
+        price_id = execute(
+            """
+            INSERT INTO ai_model_prices (
+              provider, model, units_type,
+              unit_input_cny, unit_output_cny, unit_flat_cny, note
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                payload["provider"],
+                payload["model"],
+                payload["units_type"],
+                payload["unit_input_cny"],
+                payload["unit_output_cny"],
+                payload["unit_flat_cny"],
+                payload["note"],
+            ),
+        )
+        pricing.invalidate_cache()
+        return jsonify({"ok": True, "item": _get_ai_pricing_row(int(price_id))}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["PUT"])
+@login_required
+@admin_required
+def ai_pricing_update(price_id: int):
+    if _get_ai_pricing_row(price_id) is None:
+        return jsonify({"error": "not found"}), 404
+
+    try:
+        payload = _parse_ai_pricing_payload()
+        updated = execute(
+            """
+            UPDATE ai_model_prices
+            SET units_type = %s,
+                unit_input_cny = %s,
+                unit_output_cny = %s,
+                unit_flat_cny = %s,
+                note = %s
+            WHERE id = %s
+            """,
+            (
+                payload["units_type"],
+                payload["unit_input_cny"],
+                payload["unit_output_cny"],
+                payload["unit_flat_cny"],
+                payload["note"],
+                price_id,
+            ),
+        )
+        if not updated:
+            return jsonify({"error": "not found"}), 404
+        pricing.invalidate_cache()
+        return jsonify({"ok": True, "item": _get_ai_pricing_row(price_id)})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["DELETE"])
+@login_required
+@admin_required
+def ai_pricing_delete(price_id: int):
+    deleted = execute("DELETE FROM ai_model_prices WHERE id = %s", (price_id,))
+    if not deleted:
+        return jsonify({"error": "not found"}), 404
+    pricing.invalidate_cache()
+    return jsonify({"ok": True})
