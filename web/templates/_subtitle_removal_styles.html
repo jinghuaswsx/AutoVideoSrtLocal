@@ -611,17 +611,17 @@
   }
 
   .sr-erase-type-group {
-    margin-bottom: var(--space-4);
+    margin-bottom: 16px;
   }
   .sr-erase-type-label {
-    font-size: var(--text-sm);
-    color: var(--fg-muted);
-    margin-bottom: var(--space-2);
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 8px;
   }
   .sr-erase-type-options {
     display: inline-flex;
-    background: var(--bg-muted);
-    border-radius: var(--radius-full);
+    background: #f3f4f6;
+    border-radius: 9999px;
     padding: 4px;
     gap: 2px;
     max-width: 100%;
@@ -629,14 +629,16 @@
   .sr-erase-type-option {
     position: relative;
     padding: 6px 18px;
-    border-radius: var(--radius-full);
+    border-radius: 9999px;
     cursor: pointer;
     background: transparent;
-    color: var(--fg-muted);
+    color: #6b7280;
+    font-size: 13px;
+    font-weight: 500;
     text-align: center;
     white-space: nowrap;
     user-select: none;
-    transition: color var(--duration-fast), background-color var(--duration-fast);
+    transition: color 120ms ease, background-color 120ms ease;
   }
   .sr-erase-type-option input[type="radio"] {
     position: absolute;
@@ -646,18 +648,16 @@
   }
   .sr-erase-type-option.is-active,
   .sr-erase-type-option:has(input[type="radio"]:checked) {
-    background: var(--accent);
-    color: var(--accent-fg);
+    background: var(--primary-color);
+    color: #fff;
   }
   .sr-erase-type-option.is-disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
   .sr-erase-type-title {
-    font-size: var(--text-sm);
-    font-weight: 500;
     color: inherit;
-    line-height: var(--leading-tight);
+    line-height: 1.3;
   }
   .sr-erase-type-hint {
     display: none;
