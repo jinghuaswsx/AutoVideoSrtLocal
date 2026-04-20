@@ -17,16 +17,12 @@
 
   <nav class="ap-tabs" role="tablist">
     <button type="button" class="ap-tab active" data-tab="list"    role="tab" aria-selected="true">推送列表</button>
-    <button type="button" class="ap-tab"        data-tab="create"  role="tab" aria-selected="false">推送创建</button>
-    <button type="button" class="ap-tab"        data-tab="payload" role="tab" aria-selected="false">推送载荷</button>
+    <button type="button" class="ap-tab"        data-tab="payload" role="tab" aria-selected="false">手动推送</button>
   </nav>
 
   <main class="ap-main">
     <section class="ap-panel" data-panel="list" role="tabpanel">
       <div id="ap-list-root"></div>
-    </section>
-    <section class="ap-panel" data-panel="create" role="tabpanel" hidden>
-      <div id="ap-create-root"></div>
     </section>
     <section class="ap-panel" data-panel="payload" role="tabpanel" hidden>
       <div id="ap-payload-root"></div>

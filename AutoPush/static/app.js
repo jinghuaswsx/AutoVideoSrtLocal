@@ -83,6 +83,13 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  // 手动推送（无 item_id，不写回主项目）
+  push: (payload) =>
+    apiJson("/api/push/medias", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
 };
 
 /* ---------- 状态文案映射 ---------- */
@@ -97,6 +104,244 @@ const STATUS_LABELS = {
 function renderStatusBadge(status) {
   const s = STATUS_LABELS[status] || { text: status || "-", cls: "" };
   return el("span", { class: `ap-badge ${s.cls}` }, s.text);
+}
+
+/* ================================================================
+ * 推送确认弹窗 openPushModal(item, { onPushed })
+ * 流程：拉 push-payload → 结构化展示 → 人工点推送 → 写回 + 展示响应
+ * ================================================================ */
+
+function openPushModal(item, opts = {}) {
+  const onPushed = opts.onPushed || (() => {});
+
+  // 基础 DOM
+  const overlay = el("div", { class: "ap-modal-overlay" });
+  const modal = el("div", { class: "ap-modal" });
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // header
+  const header = el("div", { class: "ap-modal-header" }, [
+    el("h3", { class: "ap-modal-title" }, "推送确认"),
+  ]);
+  const btnClose = el("button", {
+    type: "button", class: "ap-modal-close", "aria-label": "关闭",
+  }, "×");
+  header.appendChild(btnClose);
+  modal.appendChild(header);
+
+  // body
+  const body = el("div", { class: "ap-modal-body" });
+  modal.appendChild(body);
+
+  // 素材信息区
+  const infoSection = el("section", { class: "ap-modal-section" }, [
+    el("h4", {}, "素材信息"),
+  ]);
+  const kv = el("div", { class: "ap-kv" });
+  const addKV = (k, v) => {
+    kv.appendChild(el("span", { class: "k" }, k));
+    kv.appendChild(el("span", { class: "v" }, v));
+  };
+  addKV("产品", `${item.product_name || ""}  ·  ${item.product_code || ""}`);
+  addKV("语种", item.lang || "-");
+  addKV("文件", item.display_name || item.filename || "-");
+  addKV("item_id", String(item.item_id || "-"));
+  addKV("状态", STATUS_LABELS[item.status]?.text || item.status);
+  infoSection.appendChild(kv);
+  body.appendChild(infoSection);
+
+  // 载荷区（加载占位 → 填充）
+  const payloadSection = el("section", { class: "ap-modal-section" }, [
+    el("h4", {}, "推送载荷"),
+  ]);
+  const payloadStatus = el("p", { class: "ap-empty" }, "加载中…");
+  payloadSection.appendChild(payloadStatus);
+  const payloadBox = el("div", {});
+  payloadSection.appendChild(payloadBox);
+  body.appendChild(payloadSection);
+
+  // 操作按钮
+  const actions = el("div", { class: "ap-modal-actions" });
+  const btnPush = el("button", {
+    type: "button", class: "ap-pill-btn primary", disabled: true,
+  }, "推送");
+  const btnCancel = el("button", {
+    type: "button", class: "ap-pill-btn secondary",
+  }, "取消");
+  actions.appendChild(btnPush);
+  actions.appendChild(btnCancel);
+  modal.appendChild(actions);
+
+  // 响应区
+  const respWrap = el("div", { class: "ap-modal-response", hidden: true });
+  respWrap.appendChild(el("h4", {}, "推送响应"));
+  const respPre = el("pre", { class: "ap-json" });
+  respWrap.appendChild(respPre);
+  modal.appendChild(respWrap);
+
+  // footer
+  const footer = el("div", { class: "ap-modal-footer" });
+  const btnFooterClose = el("button", {
+    type: "button", class: "ap-btn-ghost",
+  }, "关闭");
+  footer.appendChild(btnFooterClose);
+  modal.appendChild(footer);
+
+  let payloadData = null;
+  let pushed = false;
+
+  function close() {
+    if (!overlay.parentNode) return;
+    overlay.parentNode.removeChild(overlay);
+    document.removeEventListener("keydown", onEsc);
+    if (pushed) onPushed();
+  }
+  function onEsc(e) { if (e.key === "Escape") close(); }
+  document.addEventListener("keydown", onEsc);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  btnClose.addEventListener("click", close);
+  btnCancel.addEventListener("click", close);
+  btnFooterClose.addEventListener("click", close);
+
+  // 拉 payload
+  (async () => {
+    try {
+      const payload = await api.fetchPushPayload(item.product_code, item.lang);
+      payloadData = payload;
+      payloadStatus.remove();
+      payloadBox.appendChild(renderPayloadView(payload));
+      btnPush.disabled = false;
+    } catch (err) {
+      payloadStatus.textContent = "";
+      const errBanner = el("p", { class: "ap-error" },
+        err.message || "载荷加载失败");
+      payloadStatus.replaceWith(errBanner);
+    }
+  })();
+
+  // 推送
+  btnPush.addEventListener("click", async () => {
+    if (!payloadData) return;
+    const errs = validatePayload(payloadData);
+    if (errs.length > 0) {
+      showResponse({ error: "校验失败", details: errs }, true);
+      return;
+    }
+    btnPush.disabled = true;
+    btnPush.textContent = "推送中…";
+    btnCancel.disabled = true;
+    try {
+      const body = item.item_id
+        ? await api.pushItem(item.item_id, payloadData)
+        : await api.push(payloadData);
+      showResponse(body, false);
+      pushed = true;
+      btnPush.textContent = "已推送";
+    } catch (err) {
+      showResponse(err.payload || { message: err.message }, true);
+      btnPush.disabled = false;
+      btnPush.textContent = "重试推送";
+    } finally {
+      btnCancel.disabled = false;
+    }
+  });
+
+  function showResponse(obj, isError) {
+    respWrap.hidden = false;
+    respPre.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    respPre.style.color = isError ? "var(--oc-danger-fg)" : "var(--oc-fg)";
+    respPre.style.borderColor = isError ? "var(--oc-danger)" : "var(--oc-border)";
+  }
+}
+
+/* 把 push-payload JSON 结构化成表格 + 视频预览，便于人工复核。 */
+function renderPayloadView(payload) {
+  const root = el("div", {});
+
+  // 基本字段 K/V
+  const kv = el("div", { class: "ap-kv" });
+  const pairs = [
+    ["mode", payload.mode],
+    ["product_name", payload.product_name],
+    ["author", payload.author],
+    ["push_admin", payload.push_admin],
+    ["level", payload.level],
+    ["roas", payload.roas],
+    ["source", payload.source],
+    ["platforms", JSON.stringify(payload.platforms || [])],
+    ["selling_point", payload.selling_point || "(空)"],
+    ["tags", JSON.stringify(payload.tags || [])],
+  ];
+  pairs.forEach(([k, v]) => {
+    kv.appendChild(el("span", { class: "k" }, k));
+    const vWrap = el("span", { class: "v" });
+    vWrap.appendChild(el("code", {}, String(v ?? "")));
+    kv.appendChild(vWrap);
+  });
+  root.appendChild(kv);
+
+  // product_links 子列表
+  if (Array.isArray(payload.product_links) && payload.product_links.length) {
+    const sub = el("div", { style: "margin-top: 12px;" }, [
+      el("div", { class: "ap-input-label" }, `product_links (${payload.product_links.length})`),
+    ]);
+    const ul = el("ul", { style: "margin: 4px 0 0; padding-left: 20px; font-size: 12px; word-break: break-all;" });
+    payload.product_links.forEach((link) => {
+      ul.appendChild(el("li", {}, [el("code", {}, link)]));
+    });
+    sub.appendChild(ul);
+    root.appendChild(sub);
+  }
+
+  // texts 子列表
+  if (Array.isArray(payload.texts) && payload.texts.length) {
+    const sub = el("div", { style: "margin-top: 12px;" }, [
+      el("div", { class: "ap-input-label" }, `texts (${payload.texts.length})`),
+    ]);
+    payload.texts.forEach((t, i) => {
+      const tkv = el("div", { class: "ap-kv", style: "margin-top: 4px;" });
+      const add = (k, v) => {
+        tkv.appendChild(el("span", { class: "k" }, `[${i}] ${k}`));
+        tkv.appendChild(el("span", { class: "v" }, [el("code", {}, String(v || ""))]));
+      };
+      add("title", t.title);
+      add("message", t.message);
+      add("description", t.description);
+      sub.appendChild(tkv);
+    });
+    root.appendChild(sub);
+  }
+
+  // videos 子列表 + 预览
+  if (Array.isArray(payload.videos) && payload.videos.length) {
+    const sub = el("div", { style: "margin-top: 16px;" }, [
+      el("div", { class: "ap-input-label" }, `videos (${payload.videos.length})`),
+    ]);
+    payload.videos.forEach((v, i) => {
+      const vkv = el("div", { class: "ap-kv", style: "margin-top: 8px;" });
+      ["name", "size", "width", "height"].forEach((k) => {
+        vkv.appendChild(el("span", { class: "k" }, `[${i}] ${k}`));
+        vkv.appendChild(el("span", { class: "v" }, [el("code", {}, String(v[k] ?? ""))]));
+      });
+      sub.appendChild(vkv);
+
+      const preview = el("div", { class: "ap-video-preview", style: "margin-top: 8px;" });
+      if (v.image_url) {
+        preview.appendChild(el("img", { class: "ap-thumb", src: v.image_url, alt: `cover-${i}` }));
+      }
+      if (v.url) {
+        preview.appendChild(el("video", {
+          class: "ap-thumb", src: v.url, poster: v.image_url || null,
+          controls: true, preload: "metadata",
+        }));
+      }
+      sub.appendChild(preview);
+    });
+    root.appendChild(sub);
+  }
+
+  return root;
 }
 
 /* ---------- 载荷校验（同 push-module 源版） ---------- */
@@ -340,13 +585,7 @@ function renderList(container) {
   }
 
   function openPayloadFor(item) {
-    window.__AP_PREFILL_PAYLOAD__ = {
-      code: item.product_code,
-      lang: item.lang,
-      item_id: item.item_id,
-    };
-    activate("payload");
-    renderPayload(document.getElementById("ap-payload-root"));
+    openPushModal(item, { onPushed: () => load() });
   }
 
   function renderPager() {
@@ -365,269 +604,6 @@ function renderList(container) {
 
   load();
 }
-/* ================================================================
- * 视图 2：推送创建
- * ================================================================ */
-
-function renderCreate(container) {
-  const defaultForm = {
-    mode: "create",
-    product_name: "",
-    texts: [{ title: "", message: "", description: "" }],
-    product_links: [""],
-    videos: [{ name: "", size: "", width: "", height: "", url: "", image_url: "" }],
-    source: "0",
-    level: "3",
-    author: "",
-    push_admin: "",
-    roas: "1.6",
-    platforms: ["tiktok"],
-    selling_point: "",
-    tags: [],
-  };
-  const state = {
-    form: JSON.parse(JSON.stringify(defaultForm)),
-    productCode: "",
-    fetching: false, fetchError: "", fetchInfo: "", responseText: "",
-  };
-
-  clear(container);
-
-  const queryCard = el("section", { class: "ap-card" });
-  const queryRow = el("div", { class: "ap-query-row" });
-  const codeInput = el("input", {
-    class: "ap-input", type: "text",
-    placeholder: "输入产品 ID / product_code",
-  });
-  codeInput.addEventListener("input", (e) => { state.productCode = e.target.value; });
-  const btnFetch = el("button", { type: "button", class: "ap-btn-primary" }, "获取");
-  btnFetch.addEventListener("click", handleFetch);
-  queryRow.appendChild(codeInput);
-  queryRow.appendChild(btnFetch);
-  queryCard.appendChild(queryRow);
-  const fetchErr = el("p", { class: "ap-error", hidden: true });
-  const fetchInfo = el("p", { class: "ap-info", hidden: true });
-  queryCard.appendChild(fetchErr);
-  queryCard.appendChild(fetchInfo);
-  const respGroup = el("label", { class: "ap-input-group", style: "margin-top: 16px;" }, [
-    el("span", { class: "ap-input-label" }, "返回报文（JSON）"),
-  ]);
-  const respText = el("textarea", {
-    class: "ap-textarea ap-response-text", readonly: true,
-    placeholder: "点击「获取」后，这里会显示上游返回的完整 JSON 报文",
-  });
-  respGroup.appendChild(respText);
-  queryCard.appendChild(respGroup);
-  container.appendChild(queryCard);
-
-  const basicInputs = {};
-
-  const basicCard = buildBasicCard();
-  const textsCard = buildArrayObjCard("texts", { title: "", message: "", description: "" }, renderTextItem);
-  const linksCard = buildArrayStrCard("product_links");
-  const videosCard = buildArrayObjCard("videos", { name: "", size: "", width: "", height: "", url: "", image_url: "" }, renderVideoItem);
-  const platformsCard = buildArrayStrCard("platforms");
-  const tagsCard = buildArrayStrCard("tags");
-  const jsonCard = el("section", { class: "ap-card" }, [el("h3", {}, "JSON 预览")]);
-  const jsonPre = el("pre", { class: "ap-json" });
-  jsonCard.appendChild(jsonPre);
-
-  container.appendChild(basicCard);
-  container.appendChild(textsCard);
-  container.appendChild(linksCard);
-  container.appendChild(videosCard);
-  container.appendChild(platformsCard);
-  container.appendChild(tagsCard);
-  container.appendChild(jsonCard);
-
-  function buildBasicCard() {
-    const card = el("section", { class: "ap-card" }, [el("h3", {}, "基本信息")]);
-    const grid = el("div", { class: "ap-grid" });
-    ["mode", "product_name", "source", "level", "author", "push_admin", "roas", "selling_point"]
-      .forEach((k) => {
-        const g = el("label", { class: "ap-input-group" }, [
-          el("span", { class: "ap-input-label" }, k),
-        ]);
-        const input = el("input", { class: "ap-input", type: "text" });
-        input.value = state.form[k] ?? "";
-        input.addEventListener("input", (e) => { state.form[k] = e.target.value; refreshJson(); });
-        basicInputs[k] = input;
-        g.appendChild(input);
-        grid.appendChild(g);
-      });
-    card.appendChild(grid);
-    return card;
-  }
-
-  function buildArrayObjCard(key, template, itemRenderer) {
-    const card = el("section", { class: "ap-card" });
-    card.appendChild(el("div", { class: "ap-array-header" }, [
-      el("h3", {}, key),
-      el("button", {
-        type: "button", class: "ap-btn-ghost",
-        onclick: () => {
-          state.form[key].push(JSON.parse(JSON.stringify(template)));
-          redrawObjCard(card, key, itemRenderer);
-          refreshJson();
-        },
-      }, "添加"),
-    ]));
-    card.appendChild(el("div", { dataset: { list: "1" } }));
-    redrawObjCard(card, key, itemRenderer);
-    return card;
-  }
-
-  function redrawObjCard(card, key, itemRenderer) {
-    const list = card.querySelector("[data-list]");
-    clear(list);
-    const items = state.form[key] || [];
-    if (items.length === 0) { list.appendChild(el("p", { class: "ap-empty" }, "（空）")); return; }
-    items.forEach((_, index) => {
-      const wrap = el("div", { class: "ap-array-item" });
-      wrap.appendChild(el("div", { class: "ap-array-header" }, [
-        el("span", { class: "ap-input-label" }, `${key}[${index}]`),
-        el("button", {
-          type: "button", class: "ap-btn-ghost",
-          onclick: () => {
-            state.form[key].splice(index, 1);
-            redrawObjCard(card, key, itemRenderer);
-            refreshJson();
-          },
-        }, "删除"),
-      ]));
-      itemRenderer(wrap, key, index);
-      list.appendChild(wrap);
-    });
-  }
-
-  function renderTextItem(wrap, key, index) {
-    ["title", "message", "description"].forEach((f) => {
-      const g = el("label", { class: "ap-input-group" }, [
-        el("span", { class: "ap-input-label" }, f),
-      ]);
-      const ta = el("textarea", { class: "ap-textarea short" });
-      ta.value = state.form[key][index][f] ?? "";
-      ta.addEventListener("input", (e) => {
-        state.form[key][index][f] = e.target.value; refreshJson();
-      });
-      g.appendChild(ta);
-      wrap.appendChild(g);
-    });
-  }
-
-  function renderVideoItem(wrap, key, index) {
-    const grid = el("div", { class: "ap-grid" });
-    ["name", "size", "width", "height"].forEach((f) => {
-      const g = el("label", { class: "ap-input-group" }, [
-        el("span", { class: "ap-input-label" }, f),
-      ]);
-      const input = el("input", { class: "ap-input", type: "text" });
-      input.value = state.form[key][index][f] ?? "";
-      input.addEventListener("input", (e) => { state.form[key][index][f] = e.target.value; refreshJson(); });
-      g.appendChild(input);
-      grid.appendChild(g);
-    });
-    wrap.appendChild(grid);
-    ["url", "image_url"].forEach((f) => {
-      const g = el("label", { class: "ap-input-group" }, [
-        el("span", { class: "ap-input-label" }, f),
-      ]);
-      const ta = el("textarea", { class: "ap-textarea short" });
-      ta.value = state.form[key][index][f] ?? "";
-      ta.addEventListener("input", (e) => { state.form[key][index][f] = e.target.value; refreshJson(); });
-      g.appendChild(ta);
-      wrap.appendChild(g);
-    });
-  }
-
-  function buildArrayStrCard(key) {
-    const card = el("section", { class: "ap-card" });
-    card.appendChild(el("div", { class: "ap-array-header" }, [
-      el("h3", {}, key),
-      el("button", {
-        type: "button", class: "ap-btn-ghost",
-        onclick: () => {
-          state.form[key].push("");
-          redrawStrCard(card, key);
-          refreshJson();
-        },
-      }, "添加"),
-    ]));
-    card.appendChild(el("div", { dataset: { list: "1" } }));
-    redrawStrCard(card, key);
-    return card;
-  }
-
-  function redrawStrCard(card, key) {
-    const list = card.querySelector("[data-list]");
-    clear(list);
-    const items = state.form[key] || [];
-    if (items.length === 0) { list.appendChild(el("p", { class: "ap-empty" }, "（空）")); return; }
-    items.forEach((v, index) => {
-      const row = el("div", { class: "ap-array-row" });
-      const g = el("label", { class: "ap-input-group" }, [
-        el("span", { class: "ap-input-label" }, `${key}[${index}]`),
-      ]);
-      const input = el("input", { class: "ap-input", type: "text" });
-      input.value = v ?? "";
-      input.addEventListener("input", (e) => { state.form[key][index] = e.target.value; refreshJson(); });
-      g.appendChild(input);
-      row.appendChild(g);
-      row.appendChild(el("button", {
-        type: "button", class: "ap-btn-ghost",
-        onclick: () => {
-          state.form[key].splice(index, 1);
-          redrawStrCard(card, key);
-          refreshJson();
-        },
-      }, "删除"));
-      list.appendChild(row);
-    });
-  }
-
-  function refreshJson() { jsonPre.textContent = JSON.stringify(state.form, null, 2); }
-
-  async function handleFetch() {
-    const code = state.productCode.trim();
-    if (!code) {
-      state.fetchError = "请输入 product_code";
-      syncFetchUI();
-      return;
-    }
-    state.fetching = true;
-    state.fetchError = ""; state.fetchInfo = ""; state.responseText = "";
-    syncFetchUI();
-    try {
-      const payload = await api.fetchMaterials(code);
-      const name = payload?.product?.name ?? "";
-      if (name) {
-        state.form.product_name = name;
-        if (basicInputs.product_name) basicInputs.product_name.value = name;
-      }
-      state.fetchInfo = `已获取：${name || "未命名产品"}（product_code: ${payload?.product?.product_code ?? code}）`;
-      state.responseText = JSON.stringify(payload, null, 2);
-      refreshJson();
-    } catch (err) {
-      state.fetchError = err.message || "查询失败";
-      state.responseText = JSON.stringify(err.payload || { message: err.message }, null, 2);
-    } finally {
-      state.fetching = false;
-      syncFetchUI();
-    }
-  }
-
-  function syncFetchUI() {
-    btnFetch.disabled = state.fetching;
-    btnFetch.textContent = state.fetching ? "获取中..." : "获取";
-    codeInput.disabled = state.fetching;
-    fetchErr.hidden = !state.fetchError; fetchErr.textContent = state.fetchError;
-    fetchInfo.hidden = !state.fetchInfo; fetchInfo.textContent = state.fetchInfo;
-    respText.value = state.responseText;
-  }
-
-  refreshJson();
-}
-
 /* ================================================================
  * 视图 3：推送载荷
  * ================================================================ */
@@ -824,7 +800,6 @@ function renderPayload(container) {
 /* ---------- tab 切换 ---------- */
 
 let listInit = false;
-let createInit = false;
 let payloadInit = false;
 
 function activate(name) {
@@ -839,10 +814,6 @@ function activate(name) {
   if (name === "list" && !listInit) {
     renderList(document.getElementById("ap-list-root"));
     listInit = true;
-  }
-  if (name === "create" && !createInit) {
-    renderCreate(document.getElementById("ap-create-root"));
-    createInit = true;
   }
   if (name === "payload" && !payloadInit) {
     renderPayload(document.getElementById("ap-payload-root"));
