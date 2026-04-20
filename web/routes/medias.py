@@ -36,10 +36,25 @@ def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None
     return lang, None
 
 
-def _download_image_to_tos(url: str, pid: int, prefix: str) -> tuple[str, bytes, str] | tuple[None, None, str]:
+def _resolve_upload_user_id(user_id: int | None = None) -> int | None:
+    if user_id is not None:
+        return int(user_id)
+    try:
+        resolved = getattr(current_user, "id", None)
+    except Exception:
+        resolved = None
+    return int(resolved) if resolved is not None else None
+
+
+def _download_image_to_tos(
+    url: str, pid: int, prefix: str, *, user_id: int | None = None
+) -> tuple[str, bytes, str] | tuple[None, None, str]:
     """从 URL 抓图并上传到 TOS media bucket。返回 (object_key, content, ext) 或失败时 (None, None, error_msg)。"""
     if not url:
         return None, None, "url required"
+    upload_user_id = _resolve_upload_user_id(user_id)
+    if upload_user_id is None:
+        return None, None, "missing upload user"
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         return None, None, "仅支持 http/https 链接"
@@ -63,7 +78,7 @@ def _download_image_to_tos(url: str, pid: int, prefix: str) -> tuple[str, bytes,
     filename = f"{prefix}_{name_from_url}"
     if not filename.endswith(ext):
         filename += ext
-    object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    object_key = tos_clients.build_media_object_key(upload_user_id, pid, filename)
     tos_clients.upload_media_object(object_key, data, content_type=ct)
     return object_key, data, ext
 
@@ -605,7 +620,7 @@ def api_cover_from_url(pid: int):
     if err:
         return jsonify({"error": err}), 400
     object_key, data, err_or_ext = _download_image_to_tos(
-        (body.get("url") or "").strip(), pid, f"cover_{lang}",
+        (body.get("url") or "").strip(), pid, f"cover_{lang}", user_id=current_user.id,
     )
     if object_key is None:
         return jsonify({"error": err_or_ext}), 400
@@ -636,7 +651,7 @@ def api_item_cover_from_url(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     object_key, _data, err_or_ext = _download_image_to_tos(
-        (body.get("url") or "").strip(), pid, "item_cover",
+        (body.get("url") or "").strip(), pid, "item_cover", user_id=current_user.id,
     )
     if object_key is None:
         return jsonify({"error": err_or_ext}), 400
@@ -654,7 +669,7 @@ def api_item_cover_set_from_url(item_id: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     object_key, data, err_or_ext = _download_image_to_tos(
-        (body.get("url") or "").strip(), it["product_id"], "item_cover",
+        (body.get("url") or "").strip(), it["product_id"], "item_cover", user_id=current_user.id,
     )
     if object_key is None:
         return jsonify({"error": err_or_ext}), 400
@@ -1061,7 +1076,9 @@ def api_detail_images_from_url(pid: int):
                    message=f"下载中 {idx + 1}/{len(images)}")
             filename = f"from_url_{lang}_{idx:02d}"
             try:
-                obj_key, data, err = _download_image_to_tos(src, pid, filename)
+                obj_key, data, err = _download_image_to_tos(
+                    src, pid, filename, user_id=uid,
+                )
                 if err and not obj_key:
                     errors.append(f"{src}: {err}")
                     continue

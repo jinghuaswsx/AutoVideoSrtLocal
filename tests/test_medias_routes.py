@@ -1,4 +1,6 @@
 import json
+import threading
+from types import SimpleNamespace
 
 
 def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db, monkeypatch):
@@ -91,3 +93,114 @@ def test_detail_image_translate_tasks_filters_current_product_and_lang(authed_cl
     assert data["items"][0]["task_id"] == "img-1"
     assert data["items"][0]["apply_status"] == "applied"
     assert data["items"][0]["detail_url"] == "/image-translate/img-1"
+
+
+def test_detail_images_from_url_background_worker_uses_captured_user_id(
+    authed_client_no_db, monkeypatch
+):
+    from appcore import medias_detail_fetch_tasks as mdf
+    from web.routes import medias as r
+
+    task_state = {}
+    object_key_calls = []
+
+    class DummyImageResponse:
+        headers = {"content-type": "image/jpeg"}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size=65536):
+            del chunk_size
+            yield b"image-bytes"
+
+    class DummyFetcher:
+        def fetch_page(self, url, lang):
+            assert url == "https://newjoyloo.com/products/led-bubble-blaster"
+            assert lang == "en"
+            return SimpleNamespace(
+                images=[
+                    {
+                        "kind": "detail",
+                        "source_url": "https://cdn.example.com/detail-1.jpg",
+                    }
+                ]
+            )
+
+    def fake_create(*, user_id, product_id, url, lang, worker):
+        assert user_id == 1
+        assert product_id == 123
+        assert url == "https://newjoyloo.com/products/led-bubble-blaster"
+        assert lang == "en"
+
+        task_id = "mdf-test"
+        state = {}
+
+        def update(**patch):
+            state.update(patch)
+
+        thread = threading.Thread(target=lambda: worker(task_id, update))
+        thread.start()
+        thread.join()
+        task_state.update(state)
+        return task_id
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": "泡泡枪",
+            "product_code": "led-bubble-blaster",
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr("appcore.link_check_fetcher.LinkCheckFetcher", DummyFetcher)
+    monkeypatch.setattr(r.requests, "get", lambda *args, **kwargs: DummyImageResponse())
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: object_key_calls.append((user_id, pid, filename))
+        or f"{user_id}/{pid}/{filename}",
+    )
+    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(r.medias, "add_detail_image", lambda *args, **kwargs: 99)
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id,
+            "product_id": 123,
+            "lang": "en",
+            "sort_order": 1,
+            "object_key": "1/123/from_url_en_00.jpg",
+            "content_type": "image/jpeg",
+            "file_size": 11,
+            "width": None,
+            "height": None,
+            "origin_type": "from_url",
+            "source_detail_image_id": None,
+            "image_translate_task_id": None,
+            "created_at": None,
+        },
+    )
+    monkeypatch.setattr(mdf, "create", fake_create)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/from-url",
+        json={
+            "lang": "en",
+            "url": "https://newjoyloo.com/products/led-bubble-blaster",
+        },
+    )
+
+    assert resp.status_code == 202
+    assert object_key_calls == [(1, 123, "from_url_en_00_detail-1.jpg")]
+    assert task_state["status"] == "done"
+    assert task_state["errors"] == []
+    assert len(task_state["inserted"]) == 1
