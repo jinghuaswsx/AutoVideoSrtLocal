@@ -460,12 +460,22 @@ body {
 
 .ap-modal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: var(--oc-sp-3);
   padding: var(--oc-sp-4) var(--oc-sp-5);
   border-bottom: 1px solid var(--oc-border);
 }
 .ap-modal-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--oc-fg); }
+.ap-modal-json-toggle { margin-right: auto; }
+.ap-modal-json-toggle.active {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  border-color: var(--oc-accent);
+}
+.ap-modal-json-full {
+  max-height: 520px;
+  margin-bottom: var(--oc-sp-4);
+}
 .ap-modal-close {
   width: 28px; height: 28px;
   border: none; background: transparent;

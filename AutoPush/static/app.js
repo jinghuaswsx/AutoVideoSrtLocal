@@ -121,13 +121,15 @@ function openPushModal(item, opts = {}) {
   document.body.appendChild(overlay);
 
   // header
-  const header = el("div", { class: "ap-modal-header" }, [
-    el("h3", { class: "ap-modal-title" }, "推送确认"),
-  ]);
+  const title = el("h3", { class: "ap-modal-title" }, "推送确认");
+  const btnJsonToggle = el("button", {
+    type: "button", class: "ap-btn-ghost ap-modal-json-toggle",
+    "aria-pressed": "false",
+  }, "JSON 预览");
   const btnClose = el("button", {
     type: "button", class: "ap-modal-close", "aria-label": "关闭",
   }, "×");
-  header.appendChild(btnClose);
+  const header = el("div", { class: "ap-modal-header" }, [title, btnJsonToggle, btnClose]);
   modal.appendChild(header);
 
   // body
@@ -157,6 +159,9 @@ function openPushModal(item, opts = {}) {
   ]);
   const payloadStatus = el("p", { class: "ap-empty" }, "加载中…");
   payloadSection.appendChild(payloadStatus);
+  // 完整 JSON 预览块（默认隐藏，点 header 的「JSON 预览」按钮切换）
+  const jsonPre = el("pre", { class: "ap-json ap-modal-json-full", hidden: true });
+  payloadSection.appendChild(jsonPre);
   const payloadBox = el("div", {});
   payloadSection.appendChild(payloadBox);
   body.appendChild(payloadSection);
@@ -204,11 +209,20 @@ function openPushModal(item, opts = {}) {
   btnCancel.addEventListener("click", close);
   btnFooterClose.addEventListener("click", close);
 
+  // JSON 预览按钮
+  btnJsonToggle.addEventListener("click", () => {
+    const wasHidden = jsonPre.hidden;
+    jsonPre.hidden = !wasHidden;
+    btnJsonToggle.setAttribute("aria-pressed", wasHidden ? "true" : "false");
+    btnJsonToggle.classList.toggle("active", wasHidden);
+  });
+
   // 拉 payload
   (async () => {
     try {
       const payload = await api.fetchPushPayload(item.product_code, item.lang);
       payloadData = payload;
+      jsonPre.textContent = JSON.stringify(payload, null, 2);
       payloadStatus.remove();
       payloadBox.appendChild(renderPayloadView(payload));
       btnPush.disabled = false;
