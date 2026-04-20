@@ -674,10 +674,16 @@
     pendingVideoFile: null,
     // 小语种详情图翻译任务历史（按语种缓存）
     detailTranslateTasks: {},
+    linkCheckPollTimer: null,
+    linkCheckModalLang: '',
+    linkCheckDetailTask: null,
+    linkCheckDetailError: '',
   };
 
   function edShow() { $('edMask').hidden = false; }
   function edHide() {
+    edCloseLinkCheckModal();
+    edStopLinkCheckPoll();
     $('edMask').hidden = true;
     if ($('edFromUrlMask')) $('edFromUrlMask').hidden = true;
     if ($('edDetailTranslateTaskMask')) $('edDetailTranslateTaskMask').hidden = true;
@@ -685,6 +691,8 @@
     edState.activeLang = 'en';
     edState.productData = null;
     edState.detailTranslateTasks = {};
+    edState.linkCheckDetailTask = null;
+    edState.linkCheckDetailError = '';
     edResetNewItemForm();
   }
 
@@ -731,10 +739,14 @@
   async function openEditDetail(pid) {
     try {
       await ensureLanguages();
+      edStopLinkCheckPoll();
+      edCloseLinkCheckModal();
       const data = await fetchJSON('/medias/api/products/' + pid);
       edState.current = data;
       edState.productData = data;
       edState.activeLang = 'en';
+      edState.linkCheckDetailTask = null;
+      edState.linkCheckDetailError = '';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
       edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
@@ -786,6 +798,10 @@
     // 切换前保存当前语种文案到 productData（从 DOM 读取）
     edFlushCopywritings();
     edFlushProductUrl();
+    edStopLinkCheckPoll();
+    if (edState.linkCheckModalLang && edState.linkCheckModalLang !== lang) {
+      edCloseLinkCheckModal();
+    }
     edState.activeLang = lang;
     // 切语言时重置"新增素材"大框的待上传状态
     edResetNewItemForm();
@@ -904,6 +920,305 @@
             <button type="button" class="oc-btn ghost sm" data-retranslate-lang="${escapeHtml(edState.activeLang)}">重新翻译</button>
           </div>
         </div>
+      `;
+    }).join('');
+  }
+
+  const LINK_CHECK_STATUS_LABELS = {
+    queued: '排队中',
+    locking_locale: '锁定目标语种页面',
+    downloading: '下载图片中',
+    analyzing: '分析图片中',
+    review_ready: '待复核',
+    done: '已完成',
+    failed: '失败',
+  };
+
+  const LINK_CHECK_OVERALL_LABELS = {
+    running: '检测中',
+    done: '通过',
+    unfinished: '需复核',
+  };
+
+  const LINK_CHECK_DECISION_LABELS = {
+    pass: '通过',
+    replace: '需替换',
+    review: '待复核',
+    no_text: '无文字',
+    failed: '失败',
+  };
+
+  const LINK_CHECK_REFERENCE_LABELS = {
+    matched: '已匹配参考图',
+    weak_match: '弱匹配',
+    not_matched: '未匹配',
+    not_provided: '未提供参考图',
+  };
+
+  const LINK_CHECK_BINARY_LABELS = {
+    pass: '快检通过',
+    fail: '快检不通过',
+    skipped: '未执行快检',
+    error: '快检失败',
+  };
+
+  const LINK_CHECK_SAME_IMAGE_LABELS = {
+    done: '已完成同图判断',
+    skipped: '未执行同图判断',
+    error: '同图判断失败',
+  };
+
+  function edLinkCheckTasks() {
+    if (!edState.productData || !edState.productData.product) return {};
+    if (!edState.productData.product.link_check_tasks || typeof edState.productData.product.link_check_tasks !== 'object') {
+      edState.productData.product.link_check_tasks = {};
+    }
+    return edState.productData.product.link_check_tasks;
+  }
+
+  function edGetLinkCheckTask(lang) {
+    if (!lang) return null;
+    return edLinkCheckTasks()[lang] || null;
+  }
+
+  function edSetLinkCheckTask(lang, task) {
+    if (!lang || !task || !edState.productData || !edState.productData.product) return null;
+    const tasks = edLinkCheckTasks();
+    tasks[lang] = { ...(tasks[lang] || {}), ...task };
+    return tasks[lang];
+  }
+
+  function edCurrentLinkUrl(lang) {
+    const code = ($('edCode') && $('edCode').value || '').trim();
+    const links = (edState.productData && edState.productData.product && edState.productData.product.localized_links) || {};
+    if (lang === edState.activeLang) {
+      const input = $('edProductUrl');
+      const current = input ? (input.value || '').trim() : '';
+      if (current) return current;
+    }
+    return links[lang] || _defaultProductUrl(lang, code) || '';
+  }
+
+  function edLinkCheckNeedsPolling(task) {
+    if (!task || !task.status) return false;
+    return !['done', 'review_ready', 'failed'].includes(task.status);
+  }
+
+  function edLinkCheckStatusKind(task) {
+    if (!task) return 'info';
+    if (task.status === 'failed') return 'danger';
+    if (task.status === 'review_ready' || (task.summary || {}).overall_decision === 'unfinished') return 'warning';
+    if (task.status === 'done') return 'success';
+    return 'info';
+  }
+
+  function edLinkCheckStatusText(task) {
+    if (!task) return '未检测';
+    const summary = task.summary || {};
+    if (task.status === 'done' && summary.overall_decision) {
+      return LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || LINK_CHECK_STATUS_LABELS[task.status] || task.status;
+    }
+    return LINK_CHECK_STATUS_LABELS[task.status] || LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || task.status || '未检测';
+  }
+
+  function edLinkCheckDecisionText(decision, status) {
+    if (status === 'failed') return LINK_CHECK_DECISION_LABELS.failed;
+    return LINK_CHECK_DECISION_LABELS[decision] || '待复核';
+  }
+
+  function edLinkCheckDecisionKind(decision, status) {
+    if (status === 'failed' || decision === 'replace') return 'danger';
+    if (decision === 'pass' || decision === 'no_text') return 'success';
+    return 'warning';
+  }
+
+  function edLinkCheckReferenceText(reference) {
+    const status = (reference || {}).status || 'not_provided';
+    if (status === 'matched' && reference.reference_filename) {
+      return reference.reference_filename;
+    }
+    return LINK_CHECK_REFERENCE_LABELS[status] || status;
+  }
+
+  function edLinkCheckBinaryText(binary) {
+    const status = (binary || {}).status || 'skipped';
+    return LINK_CHECK_BINARY_LABELS[status] || status;
+  }
+
+  function edLinkCheckSameImageText(sameImage) {
+    const status = (sameImage || {}).status || 'skipped';
+    if (status === 'done' && sameImage.answer) return sameImage.answer;
+    return LINK_CHECK_SAME_IMAGE_LABELS[status] || status;
+  }
+
+  function edLinkCheckBadge(label, kind) {
+    return `<span class="oc-link-check-badge ${kind || 'info'}">${escapeHtml(label)}</span>`;
+  }
+
+  function edLinkCheckPercent(task) {
+    const progress = (task && task.progress) || {};
+    const total = progress.total || 0;
+    if (total > 0) {
+      const finished = Math.max(progress.analyzed || 0, progress.downloaded || 0);
+      return Math.max(8, Math.min(100, Math.round((finished / total) * 100)));
+    }
+    if (!task) return 0;
+    if (task.status === 'queued') return 5;
+    if (task.status === 'locking_locale') return 12;
+    if (task.status === 'downloading') return 35;
+    if (task.status === 'analyzing') return 72;
+    if (task.status === 'review_ready' || task.status === 'done') return 100;
+    return 0;
+  }
+
+  function edRenderLinkCheckSummary(task) {
+    const box = $('edLinkCheckSummary');
+    const viewBtn = $('edLinkCheckViewBtn');
+    const actionBtn = $('edLinkCheckBtn');
+    if (!box || !viewBtn || !actionBtn) return;
+
+    actionBtn.innerHTML = `${icon('search', 14)}<span>${task ? '重新检测' : '链接检测'}</span>`;
+    if (!task) {
+      viewBtn.hidden = true;
+      box.innerHTML = '<span class="oc-link-check-empty">当前语种会使用该链接、主图和详情图作为检测输入。</span>';
+      return;
+    }
+
+    const summary = task.summary || {};
+    const currentUrl = edCurrentLinkUrl(edState.activeLang);
+    const urlChanged = currentUrl && task.link_url && currentUrl !== task.link_url;
+    const parts = [
+      edLinkCheckBadge(edLinkCheckStatusText(task), edLinkCheckStatusKind(task)),
+    ];
+    if (summary.overall_decision) {
+      parts.push(edLinkCheckBadge(
+        LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || summary.overall_decision,
+        summary.overall_decision === 'done' ? 'success' : (summary.overall_decision === 'unfinished' ? 'warning' : 'info'),
+      ));
+    }
+    if (typeof summary.pass_count === 'number') {
+      parts.push(`<span class="oc-link-check-meta">通过 ${summary.pass_count}</span>`);
+    }
+    if (typeof summary.replace_count === 'number') {
+      parts.push(`<span class="oc-link-check-meta">替换 ${summary.replace_count}</span>`);
+    }
+    if (typeof summary.review_count === 'number') {
+      parts.push(`<span class="oc-link-check-meta">复核 ${summary.review_count}</span>`);
+    }
+    if (task.checked_at) {
+      parts.push(`<span class="oc-link-check-meta">最近检测 ${escapeHtml(fmtDate(task.checked_at))}</span>`);
+    }
+    if (task.link_url) {
+      parts.push(`<span class="oc-link-check-meta mono">${escapeHtml(task.link_url)}</span>`);
+    }
+    if (urlChanged) {
+      parts.push(edLinkCheckBadge('链接已变更', 'warning'));
+    }
+
+    box.innerHTML = parts.join('');
+    viewBtn.hidden = !task.task_id;
+    viewBtn.textContent = edLinkCheckNeedsPolling(task) ? '查看进度' : '查看结果';
+  }
+
+  function edStopLinkCheckPoll() {
+    if (edState.linkCheckPollTimer) {
+      clearTimeout(edState.linkCheckPollTimer);
+      edState.linkCheckPollTimer = null;
+    }
+  }
+
+  function edRenderLinkCheckModal() {
+    const summaryBox = $('edLinkCheckModalSummary');
+    const refsBox = $('edLinkCheckRefs');
+    const itemsBox = $('edLinkCheckItems');
+    if (!summaryBox || !refsBox || !itemsBox) return;
+
+    const lang = edState.linkCheckModalLang || edState.activeLang;
+    const summaryTask = edGetLinkCheckTask(lang);
+    const detailTask = edState.linkCheckDetailTask;
+    const task = { ...(summaryTask || {}), ...(detailTask || {}) };
+
+    if (!task || (!task.task_id && !task.id)) {
+      summaryBox.innerHTML = '<div class="oc-detail-images-empty">当前语种还没有链接检测任务</div>';
+      refsBox.innerHTML = '<div class="oc-detail-images-empty">暂无参考图</div>';
+      itemsBox.innerHTML = '<div class="oc-detail-images-empty">还没有检测结果</div>';
+      $('edLinkCheckRefsBadge').textContent = '0';
+      $('edLinkCheckItemsBadge').textContent = '0';
+      return;
+    }
+
+    const summary = task.summary || {};
+    const progress = task.progress || {};
+    const summaryCards = [
+      ['当前状态', edLinkCheckStatusText(task), false],
+      ['整体结论', LINK_CHECK_OVERALL_LABELS[summary.overall_decision] || '-', false],
+      ['已分析图片', `${progress.analyzed ?? 0} / ${progress.total ?? 0}`, false],
+      ['参考图匹配', String(summary.reference_matched_count ?? 0), false],
+      ['通过', String(summary.pass_count ?? 0), false],
+      ['需替换', String(summary.replace_count ?? 0), false],
+      ['待复核', String(summary.review_count ?? 0), false],
+      ['最终链接', task.resolved_url || task.link_url || '-', true],
+    ];
+    summaryBox.innerHTML = summaryCards.map(([label, value, mono]) => `
+      <div class="oc-link-check-card">
+        <span class="oc-link-check-card-title">${escapeHtml(label)}</span>
+        <span class="oc-link-check-card-value${mono ? ' mono' : ''}">${escapeHtml(value)}</span>
+      </div>
+    `).join('');
+
+    const references = Array.isArray(task.reference_images) ? task.reference_images : [];
+    $('edLinkCheckRefsBadge').textContent = String(references.length);
+    refsBox.innerHTML = references.length
+      ? references.map(ref => `
+          <div class="oc-link-check-ref">
+            <img src="${escapeHtml(ref.preview_url || '')}" alt="${escapeHtml(ref.filename || '参考图')}" loading="lazy">
+            <span title="${escapeHtml(ref.filename || '')}">${escapeHtml(ref.filename || '')}</span>
+          </div>
+        `).join('')
+      : '<div class="oc-detail-images-empty">暂无参考图</div>';
+
+    const items = Array.isArray(task.items) ? task.items : [];
+    $('edLinkCheckItemsBadge').textContent = String(items.length);
+    if (!items.length) {
+      const placeholder = edLinkCheckNeedsPolling(summaryTask)
+        ? `链接检测进行中，当前进度 ${edLinkCheckPercent(summaryTask)}%`
+        : (edState.linkCheckDetailError || '还没有检测结果');
+      itemsBox.innerHTML = `<div class="oc-detail-images-empty">${escapeHtml(placeholder)}</div>`;
+      return;
+    }
+
+    itemsBox.innerHTML = items.map((item, idx) => {
+      const analysis = item.analysis || {};
+      const reference = item.reference_match || {};
+      const binary = item.binary_quick_check || {};
+      const sameImage = item.same_image_llm || {};
+      const decision = analysis.decision || '';
+      const reason = analysis.quality_reason || analysis.text_summary || item.error || binary.reason || sameImage.reason || '暂无说明';
+      const itemLabel = item.kind === 'hero' ? '轮播图' : '详情图';
+      const preview = item.site_preview_url
+        ? `<img src="${escapeHtml(item.site_preview_url)}" alt="${escapeHtml(itemLabel)}" loading="lazy">`
+        : `<div class="oc-detail-images-empty" style="height:100%;margin:0;">暂无预览</div>`;
+      return `
+        <article class="oc-link-check-item">
+          <div class="oc-link-check-item-preview">${preview}</div>
+          <div class="oc-link-check-item-body">
+            <div class="oc-link-check-item-head">
+              <div class="oc-link-check-item-title">${escapeHtml(itemLabel)} #${idx + 1}</div>
+              <div class="oc-link-check-item-badges">
+                ${edLinkCheckBadge(edLinkCheckDecisionText(decision, item.status), edLinkCheckDecisionKind(decision, item.status))}
+                ${edLinkCheckBadge(edLinkCheckReferenceText(reference), reference.status === 'matched' ? 'success' : (reference.status === 'not_matched' ? 'warning' : 'info'))}
+              </div>
+            </div>
+            <div class="oc-link-check-item-url">${escapeHtml(item.source_url || '-')}</div>
+            <div class="oc-link-check-item-meta">
+              <span><strong>识别语种：</strong>${escapeHtml(analysis.detected_language || '-')}</span>
+              <span><strong>页面语种：</strong>${escapeHtml(task.page_language || '-')}</span>
+              <span><strong>二值快检：</strong>${escapeHtml(edLinkCheckBinaryText(binary))}</span>
+              <span><strong>同图判断：</strong>${escapeHtml(edLinkCheckSameImageText(sameImage))}</span>
+            </div>
+            <div class="oc-link-check-item-text">${escapeHtml(reason)}</div>
+          </div>
+        </article>
       `;
     }).join('');
   }
@@ -1029,6 +1344,137 @@
     }
   }
 
+  function edCloseLinkCheckModal() {
+    const mask = $('edLinkCheckMask');
+    if (mask) mask.hidden = true;
+    edState.linkCheckModalLang = '';
+    edState.linkCheckDetailTask = null;
+    edState.linkCheckDetailError = '';
+  }
+
+  function edLoadLinkCheckDetail(lang) {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    const task = edGetLinkCheckTask(lang);
+    if (!pid || !task || !task.task_id) return Promise.resolve();
+    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail`)
+      .then((detail) => {
+        edState.linkCheckDetailTask = detail;
+        edState.linkCheckDetailError = '';
+        if (edState.linkCheckModalLang === lang) {
+          edRenderLinkCheckModal();
+        }
+        return detail;
+      })
+      .catch((err) => {
+        edState.linkCheckDetailTask = null;
+        edState.linkCheckDetailError = err.message || String(err);
+        if (edState.linkCheckModalLang === lang) {
+          edRenderLinkCheckModal();
+        }
+      });
+  }
+
+  function edOpenLinkCheckModal() {
+    const lang = edState.activeLang;
+    const task = edGetLinkCheckTask(lang);
+    if (!task || !task.task_id) return;
+    edState.linkCheckModalLang = lang;
+    edState.linkCheckDetailTask = null;
+    edState.linkCheckDetailError = '';
+    $('edLinkCheckMask').hidden = false;
+    edRenderLinkCheckModal();
+    if (edLinkCheckNeedsPolling(task)) {
+      edPollLinkCheck(lang);
+    } else {
+      edLoadLinkCheckDetail(lang);
+    }
+  }
+
+  function edPollLinkCheck(lang) {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid || !lang) return Promise.resolve();
+    edStopLinkCheckPoll();
+    return fetchJSON(`/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}`)
+      .then((data) => {
+        if (data && data.task) {
+          edSetLinkCheckTask(lang, data.task);
+        }
+        if (lang === edState.activeLang) {
+          edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+        }
+        if (edState.linkCheckModalLang === lang) {
+          edRenderLinkCheckModal();
+        }
+        const task = edGetLinkCheckTask(lang);
+        if (task && edState.linkCheckModalLang === lang && !edLinkCheckNeedsPolling(task)) {
+          return edLoadLinkCheckDetail(lang);
+        }
+        if (task && lang === edState.activeLang && edLinkCheckNeedsPolling(task) && !$('edMask').hidden) {
+          edState.linkCheckPollTimer = setTimeout(() => edPollLinkCheck(lang), 2000);
+        }
+        return data;
+      })
+      .catch((err) => {
+        if (lang === edState.activeLang) {
+          edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+        }
+        if (edState.linkCheckModalLang === lang) {
+          edState.linkCheckDetailError = err.message || String(err);
+          edRenderLinkCheckModal();
+        }
+      });
+  }
+
+  function edStartLinkCheck() {
+    return (async () => {
+      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+      if (!pid) return;
+      edFlushProductUrl();
+      const lang = edState.activeLang;
+      const url = edCurrentLinkUrl(lang);
+      if (!url || !/^https?:\/\//i.test(url)) {
+        alert('请先填写有效的商品链接');
+        $('edProductUrl') && $('edProductUrl').focus();
+        return;
+      }
+
+      const actionBtn = $('edLinkCheckBtn');
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = `${icon('search', 14)}<span>检测中...</span>`;
+      }
+
+      try {
+        const data = await fetchJSON(`/medias/api/products/${pid}/link-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lang, link_url: url }),
+        });
+        edSetLinkCheckTask(lang, {
+          task_id: data.task_id,
+          status: data.status || 'queued',
+          link_url: url,
+          checked_at: new Date().toISOString(),
+          summary: {
+            overall_decision: 'running',
+            pass_count: 0,
+            replace_count: 0,
+            review_count: 0,
+          },
+        });
+        edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+        edOpenLinkCheckModal();
+      } catch (e) {
+        alert('链接检测启动失败：' + (e.message || e));
+      } finally {
+        if (actionBtn) {
+          actionBtn.disabled = false;
+        }
+        edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+      }
+    })();
+  }
+
   async function edRenderActiveLangView() {
     const lang = edState.activeLang;
     // 更新语种标签提示
@@ -1042,6 +1488,12 @@
     edRenderItemsBlock(lang);
     edRenderCopyBlock(lang);
     edRenderProductUrl(lang);
+    edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+    if (edGetLinkCheckTask(lang)) {
+      edPollLinkCheck(lang);
+    } else {
+      edStopLinkCheckPoll();
+    }
 
     await edRefreshDetailImagesPanel(lang);
 
@@ -1695,20 +2147,48 @@
     $('edCancelBtn').addEventListener('click', edHide);
     $('edSaveBtn').addEventListener('click', edSave);
     $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('edMask').hidden) edHide(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!$('edLinkCheckMask').hidden) {
+        edCloseLinkCheckModal();
+        return;
+      }
+      if (!$('edMask').hidden) edHide();
+    });
 
     // 产品链接：输入变化时 flush 到内存；产品 ID 改了需刷新 placeholder/hint
     const edCodeInput = $('edCode');
     const edUrlInput = $('edProductUrl');
     if (edCodeInput) {
-      edCodeInput.addEventListener('input', () => edRenderProductUrl(edState.activeLang));
+      edCodeInput.addEventListener('input', () => {
+        edRenderProductUrl(edState.activeLang);
+        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
+      });
     }
     if (edUrlInput) {
       edUrlInput.addEventListener('blur', () => {
         edFlushProductUrl();
         edRenderProductUrl(edState.activeLang);  // 刷新 hint（是否已自定义）
+        edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
       });
     }
+    $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edStartLinkCheck);
+    $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
+    $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);
+    $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);
+    $('edLinkCheckRefreshBtn') && $('edLinkCheckRefreshBtn').addEventListener('click', () => {
+      const lang = edState.linkCheckModalLang || edState.activeLang;
+      const task = edGetLinkCheckTask(lang);
+      if (!task) return;
+      if (edLinkCheckNeedsPolling(task)) {
+        edPollLinkCheck(lang);
+      } else {
+        edLoadLinkCheckDetail(lang);
+      }
+    });
+    $('edLinkCheckMask') && $('edLinkCheckMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edLinkCheckMask') edCloseLinkCheckModal();
+    });
 
     // 商品详情图：从商品链接一键下载（后台任务 + 进度弹窗）
     const edFromUrlBtn = $('edDetailImagesFromUrlBtn');

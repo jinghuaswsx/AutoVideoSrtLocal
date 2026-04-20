@@ -31,9 +31,21 @@
           <label class="oc-label" for="edProductUrl">
             产品链接 <span class="oc-hint" id="edProductUrlHint" style="font-weight:400;"></span>
           </label>
-          <input id="edProductUrl" class="oc-input" type="url"
-                 placeholder="留空则用默认模板"
-                 autocomplete="off">
+          <div class="oc-url-row oc-link-check-row">
+            <input id="edProductUrl" class="oc-input" type="url"
+                   placeholder="留空则用默认模板"
+                   autocomplete="off">
+            <button type="button" class="oc-btn ghost sm" id="edLinkCheckBtn">
+              <svg width="14" height="14"><use href="#ic-search"/></svg>
+              <span>链接检测</span>
+            </button>
+            <button type="button" class="oc-btn text sm" id="edLinkCheckViewBtn" hidden>查看结果</button>
+          </div>
+          <div class="oc-link-check-inline">
+            <div id="edLinkCheckSummary" class="oc-link-check-summary">
+              <span class="oc-link-check-empty">当前语种会使用该链接、主图和详情图作为检测输入。</span>
+            </div>
+          </div>
         </div>
         <div class="oc-field oc-field-ad-supported" style="margin-top:var(--oc-sp-4)">
           <label class="oc-label">主站已适配语种</label>
@@ -147,6 +159,42 @@
           </div>
           <div class="oc-modal-foot" style="justify-content:flex-end;">
             <button class="oc-btn primary" id="edFromUrlDoneBtn" disabled>关闭（下载完成后可关）</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="oc-modal-mask oc" id="edLinkCheckMask" hidden>
+        <div class="oc-modal oc-link-check-modal" role="dialog" aria-modal="true" aria-labelledby="edLinkCheckTitle">
+          <div class="oc-modal-head">
+            <h3 id="edLinkCheckTitle">链接检测结果</h3>
+            <button class="oc-icon-btn" id="edLinkCheckClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body oc-link-check-modal-body">
+            <div id="edLinkCheckModalSummary" class="oc-link-check-modal-grid"></div>
+            <section class="oc-section" style="margin-bottom:0;">
+              <div class="oc-section-title">
+                <span>参考图片</span>
+                <span class="count" id="edLinkCheckRefsBadge">0</span>
+              </div>
+              <div id="edLinkCheckRefs" class="oc-link-check-ref-grid">
+                <div class="oc-detail-images-empty">暂无参考图</div>
+              </div>
+            </section>
+            <section class="oc-section" style="margin-bottom:0;">
+              <div class="oc-section-title">
+                <span>返回结果</span>
+                <span class="count" id="edLinkCheckItemsBadge">0</span>
+              </div>
+              <div id="edLinkCheckItems" class="oc-link-check-results">
+                <div class="oc-detail-images-empty">还没有检测结果</div>
+              </div>
+            </section>
+          </div>
+          <div class="oc-modal-foot">
+            <button class="oc-btn ghost" id="edLinkCheckRefreshBtn">刷新状态</button>
+            <button class="oc-btn primary" id="edLinkCheckDoneBtn">关闭</button>
           </div>
         </div>
       </div>

@@ -1346,3 +1346,29 @@ def test_medias_edit_modal_contains_detail_image_translation_controls():
     assert 'id="edDetailTranslateHistory"' in template
     assert "detail-image-translate-tasks" in scripts
     assert "detail-images/translate-from-en" in scripts
+
+
+def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="edLinkCheckBtn"' in body
+    assert 'id="edLinkCheckSummary"' in body
+    assert 'id="edLinkCheckViewBtn"' in body
+    assert 'id="edLinkCheckMask"' in body
+    assert '.oc-link-check-inline {' in body
+    assert '.oc-link-check-modal-grid {' in body
+
+
+def test_medias_scripts_wire_material_link_check_flow():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'function edStartLinkCheck()' in medias_js
+    assert 'function edPollLinkCheck(lang)' in medias_js
+    assert 'function edOpenLinkCheckModal()' in medias_js
+    assert 'function edRenderLinkCheckSummary(task)' in medias_js
+    assert '/medias/api/products/${pid}/link-check' in medias_js
+    assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}' in medias_js
+    assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail' in medias_js
+    assert "edState.productData.product.link_check_tasks" in medias_js

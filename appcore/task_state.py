@@ -620,10 +620,10 @@ def create_link_check(task_id: str, task_dir: str, *,
         "items": [],
         "error": "",
         "_user_id": user_id,
-        "_persist_state": False,
     }
     with _lock:
         _tasks[task_id] = task
+    _db_upsert(task_id, user_id, task, "")
     return task
 
 

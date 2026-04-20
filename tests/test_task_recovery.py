@@ -110,6 +110,27 @@ def test_recover_project_state_keeps_active_task_running():
     assert status is None
 
 
+def test_recover_project_state_marks_interrupted_link_check_as_failed():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="link_check",
+        task_id="lc-orphan",
+        state={
+            "status": "analyzing",
+            "summary": {"overall_decision": "running"},
+            "progress": {"total": 4, "analyzed": 2},
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "failed"
+    assert recovered["status"] == "failed"
+    assert recovered["summary"]["overall_decision"] == "unfinished"
+    assert "服务重启" in recovered["error"]
+
+
 def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     from appcore import task_recovery
 
@@ -147,6 +168,38 @@ def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     assert len(writes) == 1
     assert writes[0][1][1] == "error"
     assert writes[0][1][2] == "vc-orphan"
+
+
+def test_recover_all_interrupted_tasks_updates_link_check_rows(monkeypatch):
+    from appcore import task_recovery
+
+    rows = [
+        {
+            "id": "lc-orphan",
+            "type": "link_check",
+            "status": "analyzing",
+            "state_json": json.dumps(
+                {"status": "analyzing", "summary": {"overall_decision": "running"}},
+                ensure_ascii=False,
+            ),
+        },
+    ]
+    writes = []
+
+    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): rows)
+    monkeypatch.setattr(
+        task_recovery,
+        "db_execute",
+        lambda sql, args=(): writes.append((sql, args)),
+    )
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert len(writes) == 1
+    assert writes[0][1][1] == "failed"
+    assert writes[0][1][2] == "lc-orphan"
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):

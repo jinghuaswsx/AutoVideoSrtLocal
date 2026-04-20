@@ -316,6 +316,37 @@ def test_create_image_translate_persists_medias_context(tmp_path):
     assert got["medias_context"]["target_lang"] == "de"
 
 
+def test_create_link_check_initializes_summary_and_progress(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_db_upsert(task_id, user_id, task, original_filename=""):
+        captured["task_id"] = task_id
+        captured["user_id"] = user_id
+        captured["task"] = task
+        captured["original_filename"] = original_filename
+
+    monkeypatch.setattr(ts, "_db_upsert", fake_db_upsert)
+
+    task = ts.create_link_check(
+        "lc-init-1",
+        str(tmp_path / "lc-init-1"),
+        user_id=1,
+        link_url="https://newjoyloo.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    assert task["type"] == "link_check"
+    assert task["status"] == "queued"
+    assert task["progress"]["total"] == 0
+    assert task["summary"]["overall_decision"] == "running"
+    assert task.get("_persist_state") is not False
+    assert captured["task_id"] == "lc-init-1"
+    assert captured["user_id"] == 1
+    assert captured["task"]["type"] == "link_check"
+
+
 def test_create_task_initializes_tts_duration_fields(tmp_path):
     from appcore import task_state
     task_id = "test-duration-init"

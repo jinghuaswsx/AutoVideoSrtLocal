@@ -14,6 +14,7 @@ def test_runtime_marks_locale_failure(monkeypatch):
     from appcore.link_check_runtime import LinkCheckRuntime
 
     task_dir = _workspace_tmp()
+    expires = []
     task_state.create_link_check(
         "lc-1",
         task_dir=str(task_dir),
@@ -23,6 +24,7 @@ def test_runtime_marks_locale_failure(monkeypatch):
         target_language_name="德语",
         reference_images=[],
     )
+    monkeypatch.setattr(task_state, "set_expires_at", lambda task_id, project_type: expires.append((task_id, project_type)))
 
     class DummyFetcher:
         def fetch_page(self, url, target_language):
@@ -34,6 +36,7 @@ def test_runtime_marks_locale_failure(monkeypatch):
     saved = task_state.get("lc-1")
     assert saved["status"] == "failed"
     assert "locale lock failed" in saved["error"]
+    assert expires == [("lc-1", "link_check")]
 
 
 def test_runtime_records_best_reference_match(monkeypatch):
@@ -276,3 +279,42 @@ def test_runtime_falls_back_to_language_gemini_for_unmatched_reference(monkeypat
     assert item["analysis"]["decision_source"] == "gemini_language_check"
     assert saved["summary"]["reference_unmatched_count"] == 1
     assert saved["summary"]["binary_checked_count"] == 0
+
+
+def test_runtime_sets_expires_at_when_finished(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    expires = []
+    task_state.create_link_check(
+        "lc-expire",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="寰疯",
+        reference_images=[],
+    )
+    monkeypatch.setattr(task_state, "set_expires_at", lambda task_id, project_type: expires.append((task_id, project_type)))
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "images": [],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-expire")
+
+    saved = task_state.get("lc-expire")
+    assert saved["status"] == "done"
+    assert expires == [("lc-expire", "link_check")]
