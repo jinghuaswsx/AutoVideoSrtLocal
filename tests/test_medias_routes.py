@@ -386,7 +386,8 @@ def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db
     assert create_calls == [], "包含 gif 时不应创建任务"
 
 
-def test_download_image_to_tos_rejects_image_gif(monkeypatch):
+def test_download_image_to_tos_accepts_image_gif(monkeypatch):
+    """GIF 从 URL 抓取现在应入库（仍不进入翻译流程，那层限制在 translate-from-en）。"""
     from web.routes import medias as r
 
     class GifResponse:
@@ -403,26 +404,36 @@ def test_download_image_to_tos_rejects_image_gif(monkeypatch):
 
     captured_uploads = []
     monkeypatch.setattr(r.requests, "get", lambda *a, **kw: GifResponse())
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *a, **kw: captured_uploads.append((a, kw)))
-
-    obj_key, data, err = r._download_image_to_tos(
-        "https://cdn.example.com/x.gif", 1, "from_url_en_00", user_id=1
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
+    )
+    monkeypatch.setattr(
+        r.tos_clients,
+        "upload_media_object",
+        lambda *a, **kw: captured_uploads.append((a, kw)),
     )
 
-    assert obj_key is None
-    assert data is None
-    assert "gif" in (err or "").lower()
-    assert captured_uploads == [], "拒绝阶段不应触发 TOS 上传"
+    obj_key, data, ext = r._download_image_to_tos(
+        "https://cdn.example.com/x.gif", 99, "from_url_en_00", user_id=1
+    )
+
+    assert ext == ".gif"
+    assert obj_key and obj_key.endswith(".gif")
+    assert data == b"GIF89a-bytes"
+    assert len(captured_uploads) == 1, "GIF 也应该触发一次 TOS 上传"
 
 
-def test_detail_images_upload_bootstrap_rejects_image_gif(authed_client_no_db, monkeypatch):
+def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, monkeypatch):
+    """本地上传 GIF 应拿到签名直传 URL。"""
     from web.routes import medias as r
 
     monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "镜片清洁器"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
-    monkeypatch.setattr(r.tos_clients, "build_media_object_key", lambda *a, **kw: "ignored")
+    monkeypatch.setattr(r.tos_clients, "build_media_object_key", lambda *a, **kw: "1/medias/1/anim.gif")
     monkeypatch.setattr(r.tos_clients, "generate_signed_media_upload_url", lambda *a, **kw: "https://signed")
 
     resp = authed_client_no_db.post(
@@ -433,6 +444,7 @@ def test_detail_images_upload_bootstrap_rejects_image_gif(authed_client_no_db, m
         },
     )
 
-    assert resp.status_code == 400
+    assert resp.status_code == 200
     body = resp.get_json()
-    assert "gif" in (body.get("error") or "").lower()
+    assert body.get("uploads")
+    assert body["uploads"][0]["upload_url"] == "https://signed"

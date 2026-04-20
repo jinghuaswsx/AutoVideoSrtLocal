@@ -154,8 +154,8 @@
     async function uploadFiles(rawFiles) {
       if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
       const files = [...(rawFiles || [])]
-        .filter(f => /^image\/(jpeg|png|webp)$/i.test(f.type));
-      if (!files.length) { alert('请选择 JPG / PNG / WebP 图片'); return; }
+        .filter(f => /^image\/(jpeg|png|webp|gif)$/i.test(f.type));
+      if (!files.length) { alert('请选择 JPG / PNG / WebP / GIF 图片'); return; }
       if (files.length > 20) {
         alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
         files.length = 20;
