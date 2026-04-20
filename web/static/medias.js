@@ -280,10 +280,8 @@
   // ---------- List ----------
   async function loadList() {
     const kw = $('kw').value.trim();
-    const archived = $('archived').checked;
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
-    if (archived) params.set('archived', '1');
     renderSkeleton();
     try {
       await ensureLanguages();
@@ -2141,7 +2139,6 @@
       inp.addEventListener('change', () => { sync(); state.page = 1; loadList(); });
       sync();
     };
-    syncChip('chipArchived', 'archived');
 
     $('createBtn').addEventListener('click', openCreate);
     $('modalClose').addEventListener('click', hideModal);

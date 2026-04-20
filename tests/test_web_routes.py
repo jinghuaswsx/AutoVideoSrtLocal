@@ -1425,6 +1425,15 @@ def test_medias_page_removes_admin_only_scope_toggle(authed_user_client_no_db):
     assert 'window.MEDIAS_IS_ADMIN' not in body
 
 
+def test_medias_page_removes_archived_filter_chip(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="archived"' not in body
+    assert 'id="chipArchived"' not in body
+
+
 def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
     resp = authed_client_no_db.get("/voice-library")
     assert resp.status_code == 200
@@ -1445,6 +1454,18 @@ def test_medias_scripts_do_not_use_admin_scope_switch():
     assert "params.set('scope', 'all')" not in load_list_block
     assert "syncChip('chipScope', 'scopeAll')" not in events_block
     assert "chipScope" not in events_block
+
+
+def test_medias_scripts_do_not_use_archived_filter_chip():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    load_list_block = medias_js.split("// ---------- List ----------", 1)[1].split("// ---------- Modal ----------", 1)[0]
+    events_block = medias_js.split("// ---------- Events ----------", 1)[1].split("$('createBtn').addEventListener('click', openCreate);", 1)[0]
+
+    assert "$('archived').checked" not in load_list_block
+    assert "params.set('archived', '1')" not in load_list_block
+    assert "syncChip('chipArchived', 'archived')" not in events_block
+    assert "chipArchived" not in events_block
 
 
 def test_image_translate_detail_template_contains_medias_context_block():
