@@ -51,7 +51,8 @@ def test_run_calls_all_steps_in_order():
     runner._step_compose = lambda *a: call_order.append("compose")
     runner._step_export = lambda *a: call_order.append("export")
 
-    runner._run(task_id)
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        runner._run(task_id)
 
     assert call_order == ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
@@ -64,7 +65,8 @@ def test_run_publishes_pipeline_error_on_exception():
     runner._step_extract = MagicMock(side_effect=RuntimeError("boom"))
     runner._step_asr = MagicMock()
 
-    runner._run(task_id)
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        runner._run(task_id)
 
     error_events = [e for e in events if e.type == EVT_PIPELINE_ERROR]
     assert len(error_events) == 1
@@ -128,3 +130,252 @@ def test_fr_runner_overrides_tts_class_attributes():
     assert FrTranslateRunner.tts_default_voice_language == "fr"
     assert FrTranslateRunner.localization_module == "pipeline.localization_fr"
     assert FrTranslateRunner.target_language_label == "fr"
+
+
+def test_run_av_localize_fallback_to_v1(tmp_path, monkeypatch):
+    task_id = "test_av_localize_fallback"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    runner, _events = _make_runner()
+    captured = {}
+
+    monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", True)
+    monkeypatch.setattr(
+        "appcore.runtime.run_localize",
+        lambda task_id, runner=None, variant="normal": captured.update(
+            {"task_id": task_id, "runner": runner, "variant": variant}
+        ),
+    )
+
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        import appcore.runtime as runtime
+
+        runtime.run_av_localize(task_id, runner=runner)
+
+    assert captured == {
+        "task_id": task_id,
+        "runner": runner,
+        "variant": "normal",
+    }
+
+
+def test_dispatch_localize_routes_av_pipeline_version(tmp_path, monkeypatch):
+    task_id = "test_dispatch_av_pipeline"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(task_id, pipeline_version="av")
+    captured = {}
+
+    monkeypatch.setattr(
+        "appcore.runtime.run_av_localize",
+        lambda task_id, runner=None, variant="av": captured.setdefault(
+            "av", {"task_id": task_id, "runner": runner, "variant": variant}
+        ),
+    )
+    monkeypatch.setattr(
+        "appcore.runtime.run_localize",
+        lambda task_id, runner=None, variant="normal": captured.setdefault(
+            "legacy", {"task_id": task_id, "runner": runner, "variant": variant}
+        ),
+    )
+
+    import appcore.runtime as runtime
+
+    runtime.dispatch_localize(task_id)
+
+    assert "legacy" not in captured
+    assert captured["av"]["task_id"] == task_id
+    assert captured["av"]["variant"] == "av"
+
+
+def test_run_av_localize_fails_when_market_missing(tmp_path, monkeypatch):
+    task_id = "test_av_localize_missing_market"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        script_segments=[
+            {"index": 0, "text": "原文", "start_time": 0.0, "end_time": 1.0},
+        ],
+        av_translate_inputs={
+            "target_language": "en",
+            "target_language_name": "English",
+            "target_market": None,
+            "product_overrides": {},
+        },
+    )
+    runner, _events = _make_runner()
+    stage_calls = []
+
+    monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
+    monkeypatch.setattr(
+        "pipeline.shot_notes.generate_shot_notes",
+        lambda **kwargs: stage_calls.append("shot_notes"),
+    )
+
+    with patch("appcore.source_video.ensure_local_source_video", lambda task_id: None):
+        import appcore.runtime as runtime
+
+        runtime.run_av_localize(task_id, runner=runner)
+
+    saved = task_state.get(task_id)
+    assert saved["status"] == "failed"
+    assert saved["steps"]["translate"] == "error"
+    assert "target_market" in saved["error"]
+    assert stage_calls == []
+
+
+def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
+    task_id = "test_av_localize_happy_flow"
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake-video")
+    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        script_segments=[
+            {"index": 0, "text": "第一句", "start_time": 0.0, "end_time": 1.0},
+            {"index": 1, "text": "第二句", "start_time": 1.0, "end_time": 2.2},
+        ],
+        recommended_voice_id="voice-1",
+        av_translate_inputs={
+            "target_language": "en",
+            "target_language_name": "English",
+            "target_market": "US",
+            "product_overrides": {
+                "product_name": None,
+                "brand": None,
+                "selling_points": None,
+                "price": None,
+                "target_audience": None,
+                "extra_info": None,
+            },
+        },
+    )
+    runner, _events = _make_runner()
+    call_order = []
+
+    shot_notes = {
+        "global": {"overall_theme": "海边场景"},
+        "sentences": [
+            {"asr_index": 0, "scene": "桌面", "action": "展示产品"},
+            {"asr_index": 1, "scene": "近景", "action": "强调卖点"},
+        ],
+    }
+    av_output = {
+        "sentences": [
+            {
+                "asr_index": 0,
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "target_duration": 1.0,
+                "target_chars_range": (8, 10),
+                "source_text": "第一句",
+                "shot_context": {"scene": "桌面"},
+                "role_in_structure": "hook",
+                "text": "First line",
+                "est_chars": 10,
+            },
+            {
+                "asr_index": 1,
+                "start_time": 1.0,
+                "end_time": 2.2,
+                "target_duration": 1.2,
+                "target_chars_range": (10, 12),
+                "source_text": "第二句",
+                "shot_context": {"scene": "近景"},
+                "role_in_structure": "cta",
+                "text": "Second line",
+                "est_chars": 11,
+            },
+        ],
+    }
+    tts_output = {
+        "full_audio_path": str(tmp_path / "tts_full.av.mp3"),
+        "segments": [
+            {
+                "index": 0,
+                "asr_index": 0,
+                "translated": "First line",
+                "tts_duration": 1.0,
+                "tts_path": str(tmp_path / "seg0.mp3"),
+            },
+            {
+                "index": 1,
+                "asr_index": 1,
+                "translated": "Second line",
+                "tts_duration": 1.1,
+                "tts_path": str(tmp_path / "seg1.mp3"),
+            },
+        ],
+    }
+    final_sentences = [
+        {
+            "asr_index": 0,
+            "start_time": 0.0,
+            "end_time": 1.0,
+            "target_duration": 1.0,
+            "target_chars_range": (8, 10),
+            "text": "First line",
+            "tts_duration": 1.0,
+            "tts_path": str(tmp_path / "seg0.mp3"),
+            "speed": 1.0,
+            "rewrite_rounds": 0,
+            "status": "ok",
+        },
+        {
+            "asr_index": 1,
+            "start_time": 1.0,
+            "end_time": 2.2,
+            "target_duration": 1.2,
+            "target_chars_range": (10, 12),
+            "text": "Second line",
+            "tts_duration": 1.1,
+            "tts_path": str(tmp_path / "seg1.mp3"),
+            "speed": 1.02,
+            "rewrite_rounds": 0,
+            "status": "speed_adjusted",
+        },
+    ]
+
+    monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "pipeline.shot_notes.generate_shot_notes",
+        lambda **kwargs: call_order.append("shot_notes") or shot_notes,
+    )
+    monkeypatch.setattr(
+        "pipeline.av_translate.generate_av_localized_translation",
+        lambda **kwargs: call_order.append("av_translate") or av_output,
+    )
+    monkeypatch.setattr(
+        "pipeline.tts.get_voice_by_id",
+        lambda voice_id, user_id=None: {
+            "id": voice_id,
+            "name": "Voice 1",
+            "elevenlabs_voice_id": "el_voice_1",
+        },
+    )
+    monkeypatch.setattr(
+        "pipeline.tts.generate_full_audio",
+        lambda segments, voice_id, output_dir, variant=None, **kwargs: call_order.append("tts") or tts_output,
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.reconcile_duration",
+        lambda **kwargs: call_order.append("reconcile") or final_sentences,
+    )
+    monkeypatch.setattr(
+        "pipeline.subtitle.build_srt_from_tts",
+        lambda segments: call_order.append("subtitle") or "1\n00:00:00,000 --> 00:00:01,000\nFirst line\n",
+    )
+
+    import appcore.runtime as runtime
+
+    runtime.run_av_localize(task_id, runner=runner)
+
+    saved = task_state.get(task_id)
+    assert call_order == ["shot_notes", "av_translate", "tts", "reconcile", "subtitle"]
+    assert saved["steps"]["translate"] == "done"
+    assert saved["steps"]["tts"] == "done"
+    assert saved["steps"]["subtitle"] == "done"
+    assert saved["shot_notes"]["global"]["overall_theme"] == "海边场景"
+    assert saved["variants"]["av"]["voice_id"] == "voice-1"
+    assert saved["variants"]["av"]["sentences"][1]["status"] == "speed_adjusted"
+    assert saved["variants"]["av"]["tts_audio_path"].endswith("tts_full.av.mp3")
+    assert saved["variants"]["av"]["srt_path"].endswith("subtitle.av.srt")

@@ -458,13 +458,13 @@ git commit -m "feat(video-translate-v2): 时长闭环 duration_reconcile + tts s
 - Modify: `config.py`(新增 `AV_LOCALIZE_FALLBACK` 布尔)
 - Test: `tests/test_appcore_runtime.py`
 
-- [ ] **Step 5.1:在 `config.py` 加开关**
+- [x] **Step 5.1:在 `config.py` 加开关**
 
 ```python
 AV_LOCALIZE_FALLBACK = _env("AV_LOCALIZE_FALLBACK", "0") == "1"
 ```
 
-- [ ] **Step 5.2:在 `appcore/runtime.py` 新增 `run_av_localize(task_id, variant="av")`**
+- [x] **Step 5.2:在 `appcore/runtime.py` 新增 `run_av_localize(task_id, variant="av")`**
 
 参考现有 `run_localize` 的组织方式。内部顺序:
 
@@ -478,13 +478,13 @@ AV_LOCALIZE_FALLBACK = _env("AV_LOCALIZE_FALLBACK", "0") == "1"
 8. `subtitle.build_srt_from_tts(...)` → `variants["av"].srt_path`
 9. 每步落 task state 和 steps 日志
 
-- [ ] **Step 5.3:挂到任务 dispatcher**
+- [x] **Step 5.3:挂到任务 dispatcher**
 
 runtime.py 里一般有 `PIPELINE_BY_TYPE` 或类似 dispatcher,新类型 `"av_translate"` 或沿用现有 `"translate"` 类型 + state 里一个 `"pipeline_version": "av"` 字段。参考同目录其他 run_* 的注册方式。
 
 **确认**:Codex 读 runtime.py 首 300 行找到 dispatcher 注册点,按现有模式追加。
 
-- [ ] **Step 5.4:写集成测试 `tests/test_appcore_runtime.py` 追加**
+- [x] **Step 5.4:写集成测试 `tests/test_appcore_runtime.py` 追加**
 
 ```python
 def test_run_av_localize_fallback_to_v1(monkeypatch):
@@ -499,7 +499,7 @@ def test_run_av_localize_happy_flow(monkeypatch):
     # mock 所有阶段,验调用顺序 shot_notes → av_translate → tts → reconcile → subtitle
 ```
 
-- [ ] **Step 5.5:跑测试**
+- [x] **Step 5.5:跑测试**
 
 ```bash
 pytest tests/test_appcore_runtime.py -q -v
@@ -508,7 +508,7 @@ pytest tests/ -q   # 整体回归,期望不引入失败
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5.6:Commit**
+- [x] **Step 5.6:Commit**
 
 ```bash
 git add appcore/runtime.py config.py tests/test_appcore_runtime.py
