@@ -161,6 +161,9 @@ class SubtitleRemovalRuntime:
         selection = _box_bounds(task.get("selection_box") or task.get("position_payload"), media_info)
         video_name = f"sr_{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
         source_url = tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+        erase_text_type = (task.get("erase_text_type") or "subtitle").strip().lower()
+        if erase_text_type not in {"subtitle", "text"}:
+            erase_text_type = "subtitle"
         self._set_step(task_id, "submit", "running", "正在提交去字幕任务")
         try:
             provider_task_id = submit_task(
@@ -169,6 +172,7 @@ class SubtitleRemovalRuntime:
                 resolution=media_info.get("resolution") or "",
                 video_name=video_name,
                 source_url=source_url,
+                erase_text_type=erase_text_type,
             )
         except Exception as exc:
             self._set_step(task_id, "submit", "error", f"提交失败: {exc}")

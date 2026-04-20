@@ -258,6 +258,10 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
+    if erase_text_type not in {"subtitle", "text"}:
+        return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+
     next_steps = dict(task.get("steps") or {})
     next_steps.update(
         {
@@ -281,6 +285,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
         remove_mode=mode,
         selection_box=normalized,
         position_payload=_to_position_payload(normalized),
+        erase_text_type=erase_text_type,
         provider_task_id="",
         provider_status="queued",
         provider_emsg="",
@@ -311,6 +316,7 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "original_filename": task.get("original_filename") or "",
         "display_name": task.get("display_name") or "",
         "remove_mode": task.get("remove_mode") or "",
+        "erase_text_type": task.get("erase_text_type") or "subtitle",
         "selection_box": task.get("selection_box"),
         "position_payload": task.get("position_payload"),
         "media_info": dict(task.get("media_info") or {}),
@@ -419,6 +425,7 @@ def list_tasks():
                 "duration": media_info.get("duration") or 0,
                 "provider_status": state.get("provider_status") or "",
                 "provider_result_url": state.get("provider_result_url") or "",
+                "erase_text_type": state.get("erase_text_type") or "",
                 "thumbnail_url": url_for("subtitle_removal.get_source_artifact", task_id=row.get("id")) if state.get("thumbnail_path") else "",
                 "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
                 "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),

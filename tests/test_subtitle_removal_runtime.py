@@ -353,3 +353,80 @@ def test_runtime_resumes_existing_result_upload_without_re_submitting_provider(m
     assert uploaded == [(str(result_path), "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4")]
     assert saved["result_tos_key"] == "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4"
     assert saved["step_messages"]["upload_result"] == "结果已回传到TOS"
+
+
+def test_runtime_submit_passes_erase_text_type_text(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    task_state.create_subtitle_removal(
+        "sr-runtime-text",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-runtime-text",
+        status="queued",
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 720, "y2": 1280},
+        position_payload={"l": 0, "t": 0, "w": 720, "h": 1280},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        source_tos_key="uploads/1/sr-runtime-text/source.mp4",
+        erase_text_type="text",
+    )
+
+    captured = {}
+
+    def fake_submit_task(**kwargs):
+        captured.update(kwargs)
+        return "provider-task-text"
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.submit_task", fake_submit_task)
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime.tos_clients.generate_signed_download_url",
+        lambda key, expires=None: "https://tos.example/source.mp4",
+    )
+
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner._submit("sr-runtime-text")
+
+    assert captured.get("erase_text_type") == "text"
+
+
+def test_runtime_submit_defaults_to_subtitle_when_field_missing(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    task_state.create_subtitle_removal(
+        "sr-runtime-default",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-runtime-default",
+        status="queued",
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 720, "y2": 1280},
+        position_payload={"l": 0, "t": 0, "w": 720, "h": 1280},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        source_tos_key="uploads/1/sr-runtime-default/source.mp4",
+    )
+
+    captured = {}
+
+    def fake_submit_task(**kwargs):
+        captured.update(kwargs)
+        return "provider-task-default"
+
+    monkeypatch.setattr("appcore.subtitle_removal_runtime.submit_task", fake_submit_task)
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime.tos_clients.generate_signed_download_url",
+        lambda key, expires=None: "https://tos.example/source.mp4",
+    )
+
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner._submit("sr-runtime-default")
+
+    assert captured.get("erase_text_type") == "subtitle"

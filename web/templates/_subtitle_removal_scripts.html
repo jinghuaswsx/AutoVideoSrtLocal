@@ -263,6 +263,9 @@
     var submitButton = document.getElementById("srSubmitSubtitleRemoval");
     var modeInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='remove_mode']"));
     var radioTiles = Array.prototype.slice.call(document.querySelectorAll(".sr-radio-tile"));
+    var eraseTypeInputs = Array.prototype.slice.call(document.querySelectorAll("input[name='erase_text_type']"));
+    var eraseTypeOptions = Array.prototype.slice.call(document.querySelectorAll("[data-role='erase-type-option']"));
+    var stateEraseType = document.getElementById("srStateEraseType");
 
     var selectionState = {
       mode: bootstrap.remove_mode || "full",
@@ -411,6 +414,7 @@
     function getActionPayload() {
       var payload = {
         remove_mode: selectionState.mode,
+        erase_text_type: currentEraseType(),
       };
       if (selectionState.mode === "box") {
         var box = getCurrentSelectionPayload();
@@ -530,6 +534,11 @@
           updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
         }
       }
+      var nextEraseType = (state && state.erase_text_type) || "subtitle";
+      syncEraseType(nextEraseType);
+      var srStatus = (state && state.status) || "";
+      var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };
+      setEraseTypeDisabled(!!lockStates[srStatus]);
       renderResultPanel(state);
     }
 
@@ -559,6 +568,37 @@
         remove_mode: selectionState.mode,
         selection_box: selectionState.box,
       });
+    }
+
+    function eraseTypeLabel(value) {
+      if (value === "text") return "所有渲染文本";
+      if (value === "subtitle") return "仅字幕";
+      return "—";
+    }
+
+    function currentEraseType() {
+      for (var i = 0; i < eraseTypeInputs.length; i++) {
+        if (eraseTypeInputs[i].checked) return eraseTypeInputs[i].value;
+      }
+      return "subtitle";
+    }
+
+    function syncEraseType(nextValue) {
+      eraseTypeInputs.forEach(function (input) {
+        input.checked = input.value === nextValue;
+      });
+      eraseTypeOptions.forEach(function (opt) {
+        var input = opt.querySelector("input[name='erase_text_type']");
+        opt.classList.toggle("is-active", !!input && input.checked);
+      });
+      if (stateEraseType) {
+        stateEraseType.textContent = eraseTypeLabel(nextValue);
+      }
+    }
+
+    function setEraseTypeDisabled(disabled) {
+      eraseTypeInputs.forEach(function (input) { input.disabled = !!disabled; });
+      eraseTypeOptions.forEach(function (opt) { opt.classList.toggle("is-disabled", !!disabled); });
     }
 
     function refreshSubtitleRemovalState() {
@@ -676,6 +716,12 @@
       });
     });
 
+    eraseTypeInputs.forEach(function (input) {
+      input.addEventListener("change", function () {
+        syncEraseType(input.value);
+      });
+    });
+
     var submitError = document.getElementById("srSubmitError");
     function showSubmitError(msg) {
       if (!submitError) return;
@@ -727,6 +773,7 @@
 
     if (resubmitButton) {
       resubmitButton.addEventListener("click", function () {
+        setEraseTypeDisabled(false);
         var url = (bootstrap.resubmit_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/resubmit" : ""));
         postJson(url, getActionPayload())
           .then(function () {
