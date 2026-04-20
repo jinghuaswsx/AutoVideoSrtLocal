@@ -402,17 +402,18 @@ def list_push_items():
     lang_filter = [s for s in (lang_param.split(",") if lang_param else []) if s]
     status_filter = [s for s in (status_param.split(",") if status_param else []) if s]
 
-    # 这个接口不过滤 status（状态在内存算），但支持 lang 和关键词。
-    # 借用 pushes.list_items_for_push 的 DB 查询，不按用户过滤（OpenAPI 是系统级）。
-    rows, total = pushes.list_items_for_push(
+    # status 计算需要在 Python 层（compute_status），无法下推 SQL。
+    # 策略：先用 lang/q 把 DB 数据拉出来（不在 DB 分页），compute_status 后按
+    # status 过滤，再在内存里分页。total 始终为状态过滤后的最终数，保证分页一致。
+    rows, _db_total = pushes.list_items_for_push(
         langs=lang_filter or None,
         keyword="",
         product_term=q,
-        offset=(page - 1) * page_size,
-        limit=page_size,
+        offset=0,
+        limit=10000,
     )
 
-    items: list[dict] = []
+    all_items: list[dict] = []
     for row in rows:
         item_shape = dict(row)
         product_shape = {
@@ -423,15 +424,19 @@ def list_push_items():
             "selling_points": row.get("selling_points"),
             "importance": row.get("importance"),
         }
-        items.append(_serialize_push_item(item_shape, product_shape))
+        all_items.append(_serialize_push_item(item_shape, product_shape))
 
-    # status 过滤（内存层）
     if status_filter:
-        items = [it for it in items if it["status"] in status_filter]
+        all_items = [it for it in all_items if it["status"] in status_filter]
+
+    total = len(all_items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    items = all_items[start:end]
 
     return jsonify({
         "items": items,
-        "total": total,  # 注意 total 是 lang/q 过滤后但 status 过滤前
+        "total": total,
         "page": page,
         "page_size": page_size,
     })
