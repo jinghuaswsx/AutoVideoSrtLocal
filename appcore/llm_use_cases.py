@@ -1,7 +1,7 @@
 """LLM UseCase 注册表。
 
-每个业务功能（模块.功能）对应一个 use_case_code，绑定默认 provider + model
-以及写 usage_logs 时的 service 名称。UI / resolver / adapter 全部读这里。
+每个业务功能（模块.功能）对应一个 use_case_code，绑定默认 provider + model，
+以及记录 usage_logs 时的 service 名称。UI / resolver / adapter 全部读取这里。
 
 provider_code 枚举：
     openrouter      - OpenRouter (OpenAI-compatible)
@@ -9,7 +9,8 @@ provider_code 枚举：
     gemini_aistudio - Google AI Studio (GEMINI_API_KEY)
     gemini_vertex   - Google Cloud Express Mode (GEMINI_CLOUD_API_KEY, vertexai=True)
 
-视频翻译三项默认 provider 和 master 的 DEFAULT_TRANSLATE_PROVIDER="vertex_gemini_31_flash_lite" 对齐。
+视频翻译 v1 三项默认 provider 和 master 的
+DEFAULT_TRANSLATE_PROVIDER="vertex_gemini_31_flash_lite" 对齐。
 """
 from __future__ import annotations
 
@@ -28,78 +29,157 @@ class UseCase(TypedDict):
 
 def _uc(code, module, label, desc, provider, model, service) -> UseCase:
     return {
-        "code": code, "module": module, "label": label,
-        "description": desc, "default_provider": provider,
-        "default_model": model, "usage_log_service": service,
+        "code": code,
+        "module": module,
+        "label": label,
+        "description": desc,
+        "default_provider": provider,
+        "default_model": model,
+        "usage_log_service": service,
     }
 
 
 USE_CASES: dict[str, UseCase] = {
-    # ── 视频翻译 ── 默认走 Vertex Express Mode（与 master DEFAULT_TRANSLATE_PROVIDER 对齐）
+    # 视频翻译 v1
     "video_translate.localize": _uc(
-        "video_translate.localize", "video_translate", "本土化改写",
+        "video_translate.localize",
+        "video_translate",
+        "本土化改写",
         "视频翻译主流程中把中文转成目标语言本土化文本",
-        "gemini_vertex", "gemini-3.1-flash-lite-preview", "gemini_vertex",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
     ),
     "video_translate.tts_script": _uc(
-        "video_translate.tts_script", "video_translate", "TTS 脚本生成",
+        "video_translate.tts_script",
+        "video_translate",
+        "TTS 脚本生成",
         "根据本土化文本切分成适合配音的 TTS 脚本段落",
-        "gemini_vertex", "gemini-3.1-flash-lite-preview", "gemini_vertex",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
     ),
     "video_translate.rewrite": _uc(
-        "video_translate.rewrite", "video_translate", "字数收敛重写",
+        "video_translate.rewrite",
+        "video_translate",
+        "字数收敛重写",
         "TTS 时长不达标时回卷到文案重写的内循环",
-        "gemini_vertex", "gemini-3.1-flash-lite-preview", "gemini_vertex",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
     ),
-    # ── 文案创作 ──
+    # 视频翻译 v2（音画同步）
+    "video_translate.shot_notes": _uc(
+        "video_translate.shot_notes",
+        "video_translate",
+        "画面笔记",
+        "v2 Stage1: 多模态 LLM 看视频，输出全局摘要 + 逐句画面笔记",
+        "gemini_aistudio",
+        "gemini-3.1-pro-preview",
+        "gemini_video_analysis",
+    ),
+    "video_translate.av_localize": _uc(
+        "video_translate.av_localize",
+        "video_translate",
+        "音画同步翻译",
+        "v2 Stage2: 纯文本 LLM 按画面笔记 + 带货 context + 时长约束做本地化口播",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+    ),
+    "video_translate.av_rewrite": _uc(
+        "video_translate.av_rewrite",
+        "video_translate",
+        "音画同步单句重写",
+        "v2 Stage2 的时长超限局部重写",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+    ),
+    # 文案创作
     "copywriting.generate": _uc(
-        "copywriting.generate", "copywriting", "文案生成",
+        "copywriting.generate",
+        "copywriting",
+        "文案生成",
         "根据关键帧+商品信息生成带货文案",
-        "openrouter", "anthropic/claude-sonnet-4.6", "openrouter",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
     ),
     "copywriting.rewrite": _uc(
-        "copywriting.rewrite", "copywriting", "文案段重写",
+        "copywriting.rewrite",
+        "copywriting",
+        "文案段重写",
         "单段文案重写",
-        "openrouter", "anthropic/claude-sonnet-4.6", "openrouter",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
     ),
-    # ── 视频分析 ──（沿用 Gemini AI Studio，usage_log 归到 gemini_video_analysis）
+    # 视频分析（沿用 Gemini AI Studio；usage_log 归到 gemini_video_analysis）
     "video_score.run": _uc(
-        "video_score.run", "video_analysis", "视频评分",
+        "video_score.run",
+        "video_analysis",
+        "视频评分",
         "对硬字幕成片按美国带货要素打分",
-        "gemini_aistudio", "gemini-3.1-pro-preview", "gemini_video_analysis",
+        "gemini_aistudio",
+        "gemini-3.1-pro-preview",
+        "gemini_video_analysis",
     ),
     "video_review.analyze": _uc(
-        "video_review.analyze", "video_analysis", "视频评测",
+        "video_review.analyze",
+        "video_analysis",
+        "视频评测",
         "按用户自定义 prompt 分析视频",
-        "gemini_aistudio", "gemini-3.1-pro-preview", "gemini_video_analysis",
+        "gemini_aistudio",
+        "gemini-3.1-pro-preview",
+        "gemini_video_analysis",
     ),
     "shot_decompose.run": _uc(
-        "shot_decompose.run", "video_analysis", "分镜拆解",
+        "shot_decompose.run",
+        "video_analysis",
+        "分镜拆解",
         "Gemini 识别镜头切换并描述画面",
-        "gemini_aistudio", "gemini-3.1-pro-preview", "gemini_video_analysis",
+        "gemini_aistudio",
+        "gemini-3.1-pro-preview",
+        "gemini_video_analysis",
     ),
-    # ── 图片 & 链接 ──（usage_log 归到通用 gemini）
+    # 图片 & 链接（usage_log 归到通用 gemini）
     "image_translate.detect": _uc(
-        "image_translate.detect", "image", "图片文字检测",
+        "image_translate.detect",
+        "image",
+        "图片文字检测",
         "判定商品图是否已本地化为目标语种",
-        "gemini_aistudio", "gemini-2.5-flash", "gemini",
+        "gemini_aistudio",
+        "gemini-2.5-flash",
+        "gemini",
     ),
     "image_translate.generate": _uc(
-        "image_translate.generate", "image", "图片本地化重绘",
+        "image_translate.generate",
+        "image",
+        "图片本地化重绘",
         "用图像模型重绘目标语种的商品图",
-        "gemini_aistudio", "gemini-3-pro-image-preview", "gemini",
+        "gemini_aistudio",
+        "gemini-3-pro-image-preview",
+        "gemini",
     ),
     "link_check.analyze": _uc(
-        "link_check.analyze", "image", "链接商品图审查",
+        "link_check.analyze",
+        "image",
+        "链接商品图审查",
         "核查外链商品图文字是否匹配目标语种",
-        "gemini_aistudio", "gemini-2.5-flash", "gemini",
+        "gemini_aistudio",
+        "gemini-2.5-flash",
+        "gemini",
     ),
-    # ── 文本翻译 ──（对齐重构前：translate_text() 默认 provider="openrouter"
-    # 无派生名时落到 _OPENROUTER_PREF_MODELS["openrouter"]="anthropic/claude-sonnet-4.6"）
+    # 文本翻译（对齐重构前，translate_text() 默认 provider="openrouter"）
     "text_translate.generate": _uc(
-        "text_translate.generate", "text_translate", "纯文本翻译",
+        "text_translate.generate",
+        "text_translate",
+        "纯文本翻译",
         "把任意文本翻译到目标语言",
-        "openrouter", "anthropic/claude-sonnet-4.6", "openrouter",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
     ),
 }
 

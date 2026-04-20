@@ -35,6 +35,21 @@ def test_create_stores_original_filename():
     assert task["original_filename"] == "my_video.mp4"
 
 
+def test_create_contains_av_translate_defaults():
+    task = ts.create("t-av", "/v.mp4", "/task/t-av")
+    assert "av_translate_inputs" in task
+    assert task["av_translate_inputs"]["target_language"] is None
+    assert task["av_translate_inputs"]["target_language_name"] is None
+    assert task["av_translate_inputs"]["target_market"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["product_name"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["brand"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["selling_points"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["price"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["target_audience"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["extra_info"] is None
+    assert task["shot_notes"] is None
+
+
 def test_create_subtitle_removal_initializes_expected_shape():
     task = ts.create_subtitle_removal(
         "sr-init",

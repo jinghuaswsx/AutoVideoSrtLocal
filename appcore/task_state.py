@@ -5,6 +5,7 @@ MVP: in-process dict. Can be replaced with Redis later without touching callers.
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import threading
@@ -17,6 +18,20 @@ log = logging.getLogger(__name__)
 
 _tasks: dict = {}
 _lock = threading.Lock()
+
+AV_TRANSLATE_INPUTS_DEFAULT = {
+    "target_language": None,
+    "target_language_name": None,
+    "target_market": None,
+    "product_overrides": {
+        "product_name": None,
+        "brand": None,
+        "selling_points": None,
+        "price": None,
+        "target_audience": None,
+        "extra_info": None,
+    },
+}
 
 
 def _empty_variant_state(label: str) -> dict:
@@ -163,6 +178,8 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         },
         "tts_duration_rounds": [],
         "tts_duration_status": None,
+        "av_translate_inputs": copy.deepcopy(AV_TRANSLATE_INPUTS_DEFAULT),
+        "shot_notes": None,
     }
     if user_id is not None:
         task["_user_id"] = user_id

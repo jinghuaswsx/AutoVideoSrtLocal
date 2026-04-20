@@ -36,6 +36,31 @@ def test_image_and_link_check_defaults():
         assert uc["usage_log_service"] == "gemini"
 
 
+def test_video_translate_av_sync_defaults():
+    expected = {
+        "video_translate.shot_notes": (
+            "gemini_aistudio",
+            "gemini-3.1-pro-preview",
+            "gemini_video_analysis",
+        ),
+        "video_translate.av_localize": (
+            "openrouter",
+            "anthropic/claude-sonnet-4.6",
+            "openrouter",
+        ),
+        "video_translate.av_rewrite": (
+            "openrouter",
+            "anthropic/claude-sonnet-4.6",
+            "openrouter",
+        ),
+    }
+    for code, (provider, model, service) in expected.items():
+        uc = USE_CASES[code]
+        assert uc["default_provider"] == provider
+        assert uc["default_model"] == model
+        assert uc["usage_log_service"] == service
+
+
 def test_get_use_case_unknown_raises():
     import pytest
     with pytest.raises(KeyError):
