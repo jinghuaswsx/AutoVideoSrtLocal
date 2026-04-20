@@ -13,9 +13,9 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
-LINK_CHECK_RUNNING_STATUSES = {"queued", "locking_locale", "downloading", "analyzing"}
+LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
 RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check"} | PIPELINE_PROJECT_TYPES
-LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing")
+LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()

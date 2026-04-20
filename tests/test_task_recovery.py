@@ -135,6 +135,30 @@ def test_recover_project_state_marks_orphaned_link_check_as_failed():
     assert recovered["steps"]["analyze"] == "error"
 
 
+def test_recover_project_state_keeps_active_link_check_running():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        "link_check",
+        "lc-live",
+        {
+            "status": "analyzing",
+            "steps": {
+                "lock_locale": "done",
+                "download": "done",
+                "analyze": "running",
+                "summarize": "pending",
+            },
+        },
+        active=True,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "analyzing"
+    assert recovered["steps"]["analyze"] == "running"
+
+
 def test_recover_all_interrupted_tasks_updates_running_rows(monkeypatch):
     from appcore import task_recovery
 
@@ -211,6 +235,37 @@ def test_recover_all_interrupted_tasks_updates_running_link_check_rows(monkeypat
     assert persisted[0][0] == "lc-boot"
     assert persisted[0][2] == "failed"
     assert persisted[0][1]["steps"]["analyze"] == "error"
+
+
+def test_recover_all_interrupted_tasks_skips_active_link_check_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "lc-live",
+        "type": "link_check",
+        "status": "analyzing",
+        "state_json": json.dumps(
+            {
+                "status": "analyzing",
+                "steps": {"analyze": "running"},
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    monkeypatch.setattr(task_recovery, "db_query", lambda sql, args=(): [row])
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: True)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 0
+    assert persisted == []
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):

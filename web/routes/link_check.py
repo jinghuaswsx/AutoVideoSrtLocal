@@ -38,10 +38,6 @@ def _load_task_from_row(row: dict | None) -> dict | None:
         return None
 
     task_id = row.get("id") or ""
-    task = store.get(task_id)
-    if task and task.get("type") == "link_check":
-        return task
-
     state: dict = {}
     raw = row.get("state_json") or ""
     if raw:
@@ -83,25 +79,23 @@ def _get_project_row(task_id: str) -> dict:
 
 def _get_task(task_id: str) -> tuple[dict, dict]:
     row = _get_project_row(task_id)
+    row_task = _load_task_from_row(row)
+    if not row_task:
+        abort(404)
 
     store_task = store.get(task_id)
     if store_task and store_task.get("type") != "link_check":
         store_task = None
 
-    if store_task:
+    if store_task and (row.get("status") or "") == (store_task.get("status") or ""):
         merged_task = dict(store_task)
-        if not merged_task.get("display_name"):
+        if row.get("display_name") is not None:
             merged_task["display_name"] = row.get("display_name") or ""
-        if not merged_task.get("original_filename"):
+        if row.get("original_filename") is not None:
             merged_task["original_filename"] = row.get("original_filename") or ""
-        if not merged_task.get("status"):
-            merged_task["status"] = row.get("status") or "queued"
         return row, merged_task
 
-    task = _load_task_from_row(row)
-    if not task:
-        abort(404)
-    return row, task
+    return row, row_task
 
 
 def _serialize_task(task_id: str, task: dict) -> dict:
@@ -239,6 +233,7 @@ def create_task():
 @bp.route("/api/link-check/tasks/<task_id>")
 @login_required
 def get_task(task_id: str):
+    recover_project_if_needed(task_id, "link_check")
     _row, task = _get_task(task_id)
     return jsonify(_serialize_task(task_id, task))
 

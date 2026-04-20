@@ -82,10 +82,11 @@ def test_create_link_check_persists_to_db_with_null_expires_at(user_id, tmp_path
     )
 
     row = query_one(
-        "SELECT status, type, expires_at FROM projects WHERE id = %s",
+        "SELECT status, type, expires_at, display_name FROM projects WHERE id = %s",
         ("test_ts_link_check",),
     )
 
     assert row["type"] == "link_check"
     assert row["status"] == "queued"
     assert row["expires_at"] is None
+    assert row["display_name"] == "demo 路 FR"

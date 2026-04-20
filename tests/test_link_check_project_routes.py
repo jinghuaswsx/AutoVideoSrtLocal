@@ -149,6 +149,58 @@ def test_link_check_detail_page_uses_project_row_metadata_when_store_hits(authed
     assert "lc-store-1" in body
 
 
+def test_link_check_api_prefers_recovered_row_state_over_stale_store_cache(authed_user_client_no_db, monkeypatch):
+    recovered = {
+        "id": "lc-stale-1",
+        "type": "link_check",
+        "status": "failed",
+        "display_name": "Recovered Link Check",
+        "link_url": "https://shop.example.com/de/products/demo",
+        "target_language": "de",
+        "target_language_name": "寰疯",
+        "progress": {},
+        "summary": {"overall_decision": "unfinished"},
+        "reference_images": [],
+        "items": [],
+        "error": "recovered",
+    }
+
+    monkeypatch.setattr("web.routes.link_check.recover_project_if_needed", lambda task_id, project_type: recovered)
+    monkeypatch.setattr(
+        "web.routes.link_check.query_one",
+        lambda sql, args: {
+            "id": "lc-stale-1",
+            "type": "link_check",
+            "display_name": "Recovered Link Check",
+            "status": "failed",
+            "state_json": json.dumps(recovered, ensure_ascii=False),
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.link_check.store.get",
+        lambda task_id: {
+            "id": "lc-stale-1",
+            "type": "link_check",
+            "status": "analyzing",
+            "display_name": "Recovered Link Check",
+            "link_url": "https://shop.example.com/de/products/demo",
+            "target_language": "de",
+            "target_language_name": "寰疯",
+            "progress": {"analyzed": 1},
+            "summary": {"overall_decision": "running"},
+            "reference_images": [],
+            "items": [],
+        },
+    )
+
+    response = authed_user_client_no_db.get("/api/link-check/tasks/lc-stale-1")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "failed"
+    assert payload["error"] == "recovered"
+
+
 def test_link_check_api_rejects_deleted_project_even_if_store_has_task(authed_user_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.link_check.store.get", lambda task_id: {"id": task_id, "type": "link_check"})
     monkeypatch.setattr("web.routes.link_check.query_one", lambda sql, args: None)
