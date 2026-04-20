@@ -232,10 +232,11 @@
     var progressFill = document.getElementById("itProgressFill");
     var zipBtn = document.getElementById("itZipDownload");
     var delBtn = document.getElementById("itDelete");
-    var retryFailedBtn = document.getElementById("itRetryFailed");
+    var retryUnfinishedBtn = document.getElementById("itRetryUnfinished");
 
     function renderItems(state){
       listEl.innerHTML = "";
+      var isRunning = state.is_running === true;
       (state.items || []).forEach(function(it){
         var row = document.createElement("div");
         row.className = "it-item";
@@ -258,12 +259,15 @@
           var a = document.createElement("a");
           a.className = "btn"; a.href = "/api/image-translate/"+taskId+"/download/result/"+it.idx;
           a.textContent = "下载"; actions.appendChild(a);
-        } else if (it.status === "failed") {
-          var btn = document.createElement("button");
-          btn.className = "btn"; btn.textContent = "重试";
-          btn.onclick = function(){ retry(it.idx); };
-          actions.appendChild(btn);
         }
+        var retryBtn = document.createElement("button");
+        retryBtn.className = "btn it-retry-item";
+        retryBtn.type = "button";
+        retryBtn.textContent = it.status === "done" ? "重新生成" : "重试";
+        retryBtn.disabled = isRunning;
+        retryBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
+        retryBtn.onclick = (function(i){ return function(){ retry(i); }; })(it.idx);
+        actions.appendChild(retryBtn);
         row.appendChild(actions);
         listEl.appendChild(row);
       });
@@ -274,9 +278,14 @@
       progressText.textContent = p.done + " / " + p.total + " 完成，" + p.failed + " 失败";
       var pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
       progressFill.style.width = pct + "%";
-      if (retryFailedBtn) {
-        var hasFailed = (p.failed || 0) > 0 && (state.status || "") !== "queued" && (state.status || "") !== "running";
-        retryFailedBtn.hidden = !hasFailed;
+      if (retryUnfinishedBtn) {
+        var total = p.total || 0;
+        var done = p.done || 0;
+        var isRunning = state.is_running === true;
+        var showBtn = total > 0 && done < total;
+        retryUnfinishedBtn.hidden = !showBtn;
+        retryUnfinishedBtn.disabled = isRunning;
+        retryUnfinishedBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
       }
     }
 
@@ -323,21 +332,24 @@
     }
 
     function retry(idx){
-      fetch("/api/image-translate/"+taskId+"/retry/"+idx,{method:"POST"})
-        .then(refresh);
+      fetch("/api/image-translate/"+taskId+"/retry/"+idx,{method:"POST",credentials:"same-origin"})
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+        .then(function(res){
+          if (!res.ok) { alert(res.body && res.body.error || "重试失败"); return; }
+          refresh();
+        });
     }
 
-    if (retryFailedBtn) {
-      retryFailedBtn.onclick = function(){
-        retryFailedBtn.disabled = true;
-        fetch("/api/image-translate/"+taskId+"/retry-failed",{method:"POST",credentials:"same-origin"})
+    if (retryUnfinishedBtn) {
+      retryUnfinishedBtn.onclick = function(){
+        retryUnfinishedBtn.disabled = true;
+        fetch("/api/image-translate/"+taskId+"/retry-unfinished",{method:"POST",credentials:"same-origin"})
           .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
           .then(function(res){
-            retryFailedBtn.disabled = false;
-            if (!res.ok) { alert(res.body && res.body.error || "重试失败"); return; }
+            if (!res.ok) { alert(res.body && res.body.error || "重试失败"); retryUnfinishedBtn.disabled = false; return; }
             refresh();
           })
-          .catch(function(){ retryFailedBtn.disabled = false; });
+          .catch(function(){ retryUnfinishedBtn.disabled = false; });
       };
     }
 

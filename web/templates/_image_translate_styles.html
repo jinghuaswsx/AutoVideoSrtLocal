@@ -94,4 +94,41 @@
     font-size: 24px;
   }
 }
+
+/* 主进度按钮：「重试未完成的图片」——视觉放大 2×，海洋蓝主色 */
+.it-retry-main {
+  height: 40px;
+  padding: 8px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
+  letter-spacing: .01em;
+}
+.it-retry-main:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 单图重试按钮：紧凑的次级按钮 */
+.it-retry-item {
+  min-width: 64px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  border: 1.5px solid var(--primary-color, #1d6fe8);
+  background: #fff;
+  color: var(--primary-color, #1d6fe8);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms, box-shadow 120ms;
+}
+.it-retry-item:hover:not(:disabled) {
+  background: #f0f6ff;
+}
+.it-retry-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: #d1d5db;
+  color: #9ca3af;
+}
 </style>
