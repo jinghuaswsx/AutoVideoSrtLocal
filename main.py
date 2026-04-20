@@ -23,6 +23,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 validate_runtime_config()
 
+from appcore import db_migrations
+db_migrations.ensure_up_to_date()
+
 app = create_app()
 
 from appcore.scheduler import get_scheduler
