@@ -1,0 +1,322 @@
+from __future__ import annotations
+
+import json
+import time
+from typing import Any
+
+from appcore import llm_client
+from pipeline import speech_rate_model
+
+FALLBACK_CPS = {
+    "en": 14.0,
+    "de": 13.0,
+    "fr": 14.0,
+    "ja": 7.0,
+    "es": 14.0,
+    "pt": 14.0,
+}
+
+AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "av_translate",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "sentences": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "asr_index": {"type": "integer"},
+                            "text": {"type": "string"},
+                            "est_chars": {"type": "integer"},
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["asr_index", "text", "est_chars"],
+                    },
+                }
+            },
+            "required": ["sentences"],
+        },
+    },
+}
+
+SYSTEM_PROMPT_TEMPLATE = """你是专业的 {target_market} 市场带货短视频本地化配音师。
+规则：
+1. 服从原视频的 Hook / 卖点 / CTA 骨架顺序，不重排。
+2. 每句译文必须对应提供的 shot_context（此刻画面）。
+3. 每句字符数必须落在给定的 target_chars_range 内，这是一条硬约束。
+4. 带货语气要口语化、钩子化、痛点化，静音看字幕也能看懂。
+5. 产品特写镜头优先说产品名或卖点；无产品画面时讲故事、痛点或证据。
+6. 文化专有梗不要硬翻，要改成目标市场习惯表达。
+
+目标语言：{target_language}"""
+
+
+def _segment_index(segment: dict, fallback_index: int) -> int:
+    return int(segment.get("index", segment.get("asr_index", fallback_index)))
+
+
+def _segment_start(segment: dict) -> float:
+    return float(segment.get("start_time", segment.get("start", 0.0)))
+
+
+def _segment_end(segment: dict) -> float:
+    return float(segment.get("end_time", segment.get("end", 0.0)))
+
+
+def compute_target_chars_range(target_duration, voice_id, target_language):
+    cps = speech_rate_model.get_rate(voice_id, target_language)
+    if cps is None or cps <= 0:
+        cps = FALLBACK_CPS.get(target_language, 14.0)
+    lo = max(1, int(cps * target_duration * 0.92))
+    hi = max(lo + 1, int(cps * target_duration * 1.08 + 0.5))
+    return (lo, hi)
+
+
+def _first_non_empty(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        return value
+    return None
+
+
+def _merge_global_context(shot_notes, av_inputs) -> dict:
+    global_notes = dict((shot_notes or {}).get("global") or {})
+    overrides = dict((av_inputs or {}).get("product_overrides") or {})
+
+    structure_ranges = []
+    for role in ("hook", "demo", "proof", "cta"):
+        range_value = global_notes.get(f"{role}_range")
+        if range_value:
+            structure_ranges.append({"role": role, "range": list(range_value)})
+
+    return {
+        "product_name": _first_non_empty(overrides.get("product_name"), global_notes.get("product_name")),
+        "brand": _first_non_empty(overrides.get("brand"), global_notes.get("brand")),
+        "selling_points": _first_non_empty(
+            overrides.get("selling_points"),
+            global_notes.get("observed_selling_points"),
+        )
+        or [],
+        "price": _first_non_empty(overrides.get("price"), global_notes.get("price_mentioned")),
+        "target_audience": _first_non_empty(overrides.get("target_audience"), global_notes.get("target_audience")),
+        "extra_info": _first_non_empty(overrides.get("extra_info"), global_notes.get("extra_info")),
+        "category": global_notes.get("category"),
+        "overall_theme": global_notes.get("overall_theme"),
+        "pacing_note": global_notes.get("pacing_note"),
+        "structure_ranges": structure_ranges,
+    }
+
+
+def _role_in_structure(asr_index, structure_ranges) -> str:
+    priorities = ("hook", "cta", "demo", "proof")
+    for role in priorities:
+        for item in structure_ranges:
+            if item.get("role") != role:
+                continue
+            range_value = item.get("range") or []
+            if len(range_value) != 2:
+                continue
+            start, end = int(range_value[0]), int(range_value[1])
+            if start <= asr_index <= end:
+                return role
+    return "unknown"
+
+
+def _shot_context_for_index(shot_notes: dict, asr_index: int) -> dict | None:
+    for note in (shot_notes or {}).get("sentences") or []:
+        if int(note.get("asr_index", -1)) == asr_index:
+            return note
+    return None
+
+
+def _build_sentence_inputs(script_segments: list[dict], shot_notes: dict, av_inputs: dict, voice_id: str) -> tuple[list[dict], dict]:
+    global_context = _merge_global_context(shot_notes, av_inputs)
+    structure_ranges = global_context["structure_ranges"]
+    sentence_inputs = []
+    target_language = av_inputs["target_language"]
+
+    for fallback_index, segment in enumerate(script_segments):
+        asr_index = _segment_index(segment, fallback_index)
+        start_time = _segment_start(segment)
+        end_time = _segment_end(segment)
+        target_duration = round(end_time - start_time, 3)
+        target_chars_range = compute_target_chars_range(target_duration, voice_id, target_language)
+        sentence_inputs.append(
+            {
+                "asr_index": asr_index,
+                "start_time": start_time,
+                "end_time": end_time,
+                "source_text": str(segment.get("text") or ""),
+                "shot_context": _shot_context_for_index(shot_notes, asr_index),
+                "role_in_structure": _role_in_structure(asr_index, structure_ranges),
+                "target_duration": target_duration,
+                "target_chars_range": target_chars_range,
+            }
+        )
+    return sentence_inputs, global_context
+
+
+def _build_translate_messages(script_segments: list[dict], shot_notes: dict, av_inputs: dict, voice_id: str) -> tuple[list[dict], list[dict], dict]:
+    sentence_inputs, global_context = _build_sentence_inputs(script_segments, shot_notes, av_inputs, voice_id)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        target_market=av_inputs["target_market"],
+        target_language=av_inputs["target_language_name"] or av_inputs["target_language"],
+    )
+    user_payload = {
+        "global_context": global_context,
+        "target_language": av_inputs["target_language"],
+        "target_market": av_inputs["target_market"],
+        "sentences": sentence_inputs,
+    }
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, indent=2)},
+    ]
+    return messages, sentence_inputs, global_context
+
+
+def _extract_response_json(response: dict) -> dict:
+    if isinstance(response, dict):
+        if isinstance(response.get("json"), dict):
+            return response["json"]
+        if "sentences" in response:
+            return response
+        text = response.get("text")
+        if isinstance(text, str) and text.strip():
+            return json.loads(text)
+    raise ValueError("av_translate requires a JSON response")
+
+
+def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dict]) -> list[dict]:
+    raw_by_index = {}
+    for item in raw_sentences or []:
+        if not isinstance(item, dict):
+            continue
+        raw_by_index[int(item.get("asr_index", -1))] = item
+
+    merged = []
+    for sentence in sentence_inputs:
+        raw_item = raw_by_index.get(sentence["asr_index"], {})
+        text = str(raw_item.get("text") or sentence["source_text"])
+        merged.append(
+            {
+                "asr_index": sentence["asr_index"],
+                "start_time": sentence["start_time"],
+                "end_time": sentence["end_time"],
+                "source_text": sentence["source_text"],
+                "shot_context": sentence["shot_context"],
+                "role_in_structure": sentence["role_in_structure"],
+                "target_duration": sentence["target_duration"],
+                "target_chars_range": sentence["target_chars_range"],
+                "text": text,
+                "est_chars": int(raw_item.get("est_chars", len(text))),
+                "notes": raw_item.get("notes"),
+            }
+        )
+    return merged
+
+
+def generate_av_localized_translation(
+    *,
+    script_segments: list[dict],
+    shot_notes: dict,
+    av_inputs: dict,
+    voice_id: str,
+    user_id: int | None = None,
+    project_id: str | None = None,
+) -> dict:
+    messages, sentence_inputs, _global_context = _build_translate_messages(
+        script_segments, shot_notes, av_inputs, voice_id
+    )
+    last_error: Exception | None = None
+
+    for attempt in range(2):
+        try:
+            response = llm_client.invoke_chat(
+                "video_translate.av_localize",
+                messages=messages,
+                user_id=user_id,
+                project_id=project_id,
+                temperature=0.2,
+                max_tokens=8192,
+                response_format=AV_TRANSLATE_RESPONSE_FORMAT,
+            )
+            payload = _extract_response_json(response)
+            return {
+                "sentences": _merge_output_sentences(payload.get("sentences") or [], sentence_inputs),
+            }
+        except Exception as exc:  # pragma: no cover - exercised by retry test
+            last_error = exc
+            if attempt == 1:
+                raise
+            time.sleep(0.1)
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("av_translate failed without exception")
+
+
+def rewrite_one(
+    *,
+    asr_index: int,
+    prev_text: str,
+    overshoot_sec: float,
+    new_target_chars_range: tuple[int, int],
+    script_segments: list[dict],
+    shot_notes: dict,
+    av_inputs: dict,
+    voice_id: str,
+    user_id: int | None = None,
+    project_id: str | None = None,
+) -> str:
+    messages, sentence_inputs, global_context = _build_translate_messages(
+        script_segments, shot_notes, av_inputs, voice_id
+    )
+    focus_sentence = next(
+        (item for item in sentence_inputs if item["asr_index"] == asr_index),
+        None,
+    )
+    if focus_sentence is None:
+        raise KeyError(f"unknown asr_index: {asr_index}")
+
+    rewrite_payload = {
+        "global_context": global_context,
+        "target_language": av_inputs["target_language"],
+        "target_market": av_inputs["target_market"],
+        "focus_sentence": focus_sentence,
+        "rewrite_instruction": (
+            f'上一版译文:"{prev_text}"。'
+            f"TTS 实测超出目标 {overshoot_sec} 秒。"
+            f"请重写到 {new_target_chars_range[0]}-{new_target_chars_range[1]} 字符，"
+            "保留卖点和画面贴合，优先砍修饰词、感叹和重复，不改 Hook/CTA 意图。"
+        ),
+    }
+    rewrite_messages = [
+        messages[0],
+        {"role": "user", "content": json.dumps(rewrite_payload, ensure_ascii=False, indent=2)},
+    ]
+    response = llm_client.invoke_chat(
+        "video_translate.av_rewrite",
+        messages=rewrite_messages,
+        user_id=user_id,
+        project_id=project_id,
+        temperature=0.2,
+        max_tokens=4096,
+        response_format=AV_TRANSLATE_RESPONSE_FORMAT,
+    )
+    payload = _extract_response_json(response)
+    sentences = payload.get("sentences") or []
+    if not sentences:
+        raise ValueError("av_rewrite returned no sentences")
+    return str(sentences[0].get("text") or "")
