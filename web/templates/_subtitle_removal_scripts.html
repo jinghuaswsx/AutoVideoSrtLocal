@@ -490,22 +490,22 @@
 
       compareOriginalPanel.innerHTML = [
         '<div class="sr-compare-panel-head">',
-        '<div class="sr-compare-panel-title">鍘熻棰戦瑙?</div>',
-        '<div class="sr-compare-panel-hint">鐢ㄦ潵瀵规瘮鍘诲瓧骞曞墠鐨勭敾闈㈡晥鏋溿€?/div>',
+        '<div class="sr-compare-panel-title">原视频预览</div>',
+        '<div class="sr-compare-panel-hint">用来对比去字幕前的画面效果。</div>',
         '</div>',
         sourceVideoUrl
           ? '<div class="sr-preview-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(sourceVideoUrl) + '"></video></div>'
           : (
               sourceThumbnailUrl
                 ? '<div class="sr-preview-frame"><img class="sr-preview-image" src="' + escapeHtml(sourceThumbnailUrl) + '" alt=""></div>'
-                : '<div class="sr-result-empty"><div class="sr-selection-empty-title">鍘熻棰戞殏涓嶅彲棰勮</div><div class="sr-hint">褰撳墠鍙厛鍙傝€冨彸渚х粨鏋滆棰戙€?/div></div>'
+                : '<div class="sr-result-empty"><div class="sr-selection-empty-title">原视频暂不可预览</div><div class="sr-hint">当前可先参考右侧结果视频。</div></div>'
             ),
       ].join("");
 
       compareResultPanel.innerHTML = [
         '<div class="sr-compare-panel-head">',
-        '<div class="sr-compare-panel-title">缁撴灉瑙嗛棰勮</div>',
-        '<div class="sr-compare-panel-hint">鍘诲瓧骞曞悗鐨勬垚鍝佽棰戯紝鏂逛究浣犵洿鎺ユ瘮杈冨墠鍚庡樊寮傘€?/div>',
+        '<div class="sr-compare-panel-title">结果视频预览</div>',
+        '<div class="sr-compare-panel-hint">去字幕后的成品视频，方便直接比较前后差异。</div>',
         '</div>',
         '<div class="sr-preview-frame"><video class="sr-preview-video" controls playsinline src="' + escapeHtml(resultPreviewUrl) + '"></video></div>',
       ].join("");
