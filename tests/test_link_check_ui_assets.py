@@ -50,6 +50,7 @@ def test_link_check_projects_script_does_not_restrict_locale_detection_with_leng
 def test_link_check_detail_script_includes_locale_and_download_evidence_renderers():
     script = Path("web/static/link_check.js").read_text(encoding="utf-8")
 
+    assert "function renderLocaleAttemptRow" in script
     assert "function renderLocaleEvidence" in script
     assert "function renderDownloadEvidence" in script
     assert "locale_evidence" in script
