@@ -66,8 +66,10 @@
     const pickBtn = $(opts.pickBtn);
     const badge   = $(opts.badge);
     const progressBox = $(opts.progress);
-    const gifGrid  = opts.gifGrid  ? $(opts.gifGrid)  : null;
-    const gifBadge = opts.gifBadge ? $(opts.gifBadge) : null;
+    const gifGrid    = opts.gifGrid    ? $(opts.gifGrid)    : null;
+    const gifBadge   = opts.gifBadge   ? $(opts.gifBadge)   : null;
+    const gifPickBtn = opts.gifPickBtn ? $(opts.gifPickBtn) : null;
+    const gifInput   = opts.gifInput   ? $(opts.gifInput)   : null;
     const getLang   = opts.getLang   || (() => 'en');
     const ensurePid = opts.ensurePid || (async () => null);
     const onItemsChange = opts.onItemsChange || (() => {});
@@ -240,6 +242,13 @@
 
     if (pickBtn) pickBtn.addEventListener('click', () => input && input.click());
     if (input) input.addEventListener('change', (e) => {
+      const files = e.target.files;
+      e.target.value = '';
+      uploadFiles(files);
+    });
+
+    if (gifPickBtn) gifPickBtn.addEventListener('click', () => gifInput && gifInput.click());
+    if (gifInput) gifInput.addEventListener('change', (e) => {
       const files = e.target.files;
       e.target.value = '';
       uploadFiles(files);
@@ -736,14 +745,16 @@
   function ensureEdDetailImagesCtrl() {
     if (edDetailImagesCtrl) return edDetailImagesCtrl;
     edDetailImagesCtrl = createDetailImagesController({
-      section: 'edDetailImagesSection',
-      grid:    'edDetailImagesGrid',
-      gifGrid: 'edDetailGifImagesGrid',
-      input:   'edDetailImagesInput',
-      pickBtn: 'edDetailImagesPickBtn',
-      badge:   'edDetailImagesBadge',
-      gifBadge:'edDetailGifImagesBadge',
-      progress:'edDetailImagesProgress',
+      section:    'edDetailImagesSection',
+      grid:       'edDetailImagesGrid',
+      gifGrid:    'edDetailGifImagesGrid',
+      input:      'edDetailImagesInput',
+      pickBtn:    'edDetailImagesPickBtn',
+      gifInput:   'edDetailGifImagesInput',
+      gifPickBtn: 'edDetailGifImagesPickBtn',
+      badge:      'edDetailImagesBadge',
+      gifBadge:   'edDetailGifImagesBadge',
+      progress:   'edDetailImagesProgress',
       getLang: () => edState.activeLang,
       ensurePid: async () => {
         const p = edState.productData && edState.productData.product;
