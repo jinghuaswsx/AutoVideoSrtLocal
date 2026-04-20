@@ -448,3 +448,117 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     body = resp.get_json()
     assert body.get("uploads")
     assert body["uploads"][0]["upload_url"] == "https://signed"
+
+
+def _run_from_url_worker(monkeypatch, *, body_json):
+    """跑一次 from-url 后台 worker（synchronous，在线程里立刻 join）。返回 (task_state, soft_delete_calls)。"""
+    from appcore import medias_detail_fetch_tasks as mdf
+    from web.routes import medias as r
+
+    class DummyImageResponse:
+        headers = {"content-type": "image/jpeg"}
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size=65536):
+            del chunk_size
+            yield b"image-bytes"
+
+    class DummyFetcher:
+        def fetch_page(self, url, lang):
+            return SimpleNamespace(
+                images=[{"kind": "detail",
+                         "source_url": "https://cdn.example.com/new-1.jpg"}]
+            )
+
+    soft_delete_calls = []
+    task_state = {}
+
+    def fake_create(*, user_id, product_id, url, lang, worker):
+        task_id = "mdf-cleartest"
+        state = {}
+
+        def update(**patch):
+            state.update(patch)
+
+        thread = threading.Thread(target=lambda: worker(task_id, update))
+        thread.start()
+        thread.join()
+        task_state.update(state)
+        return task_id
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "泡泡枪", "product_code": "led-bubble-blaster"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr("appcore.link_check_fetcher.LinkCheckFetcher", DummyFetcher)
+    monkeypatch.setattr(r.requests, "get", lambda *args, **kwargs: DummyImageResponse())
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
+    )
+    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        r.medias,
+        "soft_delete_detail_images_by_lang",
+        lambda product_id, lang: soft_delete_calls.append((product_id, lang)) or 0,
+    )
+    monkeypatch.setattr(r.medias, "add_detail_image", lambda *args, **kwargs: 99)
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id, "product_id": 123, "lang": "en", "sort_order": 1,
+            "object_key": "1/123/from_url_en_00_new-1.jpg",
+            "content_type": "image/jpeg", "file_size": 11,
+            "width": None, "height": None, "origin_type": "from_url",
+            "source_detail_image_id": None, "image_translate_task_id": None,
+            "created_at": None,
+        },
+    )
+    monkeypatch.setattr(mdf, "create", fake_create)
+
+    return soft_delete_calls, task_state
+
+
+def test_detail_images_from_url_clears_existing_when_requested(authed_client_no_db, monkeypatch):
+    soft_delete_calls, task_state = _run_from_url_worker(monkeypatch, body_json=None)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/from-url",
+        json={
+            "lang": "en",
+            "url": "https://newjoyloo.com/products/led-bubble-blaster",
+            "clear_existing": True,
+        },
+    )
+
+    assert resp.status_code == 202
+    assert soft_delete_calls == [(123, "en")], (
+        f"clear_existing=true 时 worker 应该调用一次 soft_delete_detail_images_by_lang(pid, lang)，实际 {soft_delete_calls}"
+    )
+    assert task_state.get("status") == "done"
+
+
+def test_detail_images_from_url_skips_clear_by_default(authed_client_no_db, monkeypatch):
+    soft_delete_calls, task_state = _run_from_url_worker(monkeypatch, body_json=None)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/from-url",
+        json={
+            "lang": "en",
+            "url": "https://newjoyloo.com/products/led-bubble-blaster",
+        },
+    )
+
+    assert resp.status_code == 202
+    assert soft_delete_calls == [], (
+        f"未传 clear_existing 时 worker 不应清空，实际 {soft_delete_calls}"
+    )
+    assert task_state.get("status") == "done"

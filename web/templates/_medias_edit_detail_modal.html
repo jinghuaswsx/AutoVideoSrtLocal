@@ -175,6 +175,29 @@
         </div>
       </section>
 
+      <!-- 从 URL 一键下载：清空确认弹窗 -->
+      <div class="oc-modal-mask oc" id="edFromUrlConfirmMask" hidden>
+        <div class="oc-modal oc-modal-narrow" role="alertdialog" aria-modal="true" aria-labelledby="edFromUrlConfirmTitle">
+          <div class="oc-modal-head">
+            <h3 id="edFromUrlConfirmTitle" style="color:var(--oc-danger);">确认清空并重新下载</h3>
+            <button class="oc-icon-btn" id="edFromUrlConfirmClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body" style="padding:var(--oc-sp-5);display:grid;gap:var(--oc-sp-3);">
+            <div id="edFromUrlConfirmBody" style="font-size:14px;color:var(--oc-danger);line-height:1.6;font-weight:500;"></div>
+            <div style="font-size:12px;color:var(--oc-fg-muted);">抓取成功后才会清空；若抓取失败则原图保留。</div>
+          </div>
+          <div class="oc-modal-foot" style="justify-content:flex-end;gap:var(--oc-sp-2);">
+            <button class="oc-btn ghost" id="edFromUrlConfirmCancelBtn">取消</button>
+            <button class="oc-btn" id="edFromUrlConfirmOkBtn"
+                    style="background:var(--oc-danger);color:#fff;border:1px solid var(--oc-danger);">
+              清空并下载
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 从 URL 一键下载 进度弹窗 -->
       <div class="oc-modal-mask oc" id="edFromUrlMask" hidden>
         <div class="oc-modal oc-modal-narrow" role="dialog" aria-modal="true">

@@ -1059,6 +1059,7 @@ def api_detail_images_from_url(pid: int):
     lang = (body.get("lang") or "en").strip().lower()
     if not medias.is_valid_language(lang):
         return jsonify({"error": f"不支持的语种: {lang}"}), 400
+    clear_existing = bool(body.get("clear_existing"))
 
     # 解析商品链接
     url = (body.get("url") or "").strip()
@@ -1124,8 +1125,18 @@ def api_detail_images_from_url(pid: int):
         if len(images) > _DETAIL_IMAGES_MAX_BATCH:
             images = images[:_DETAIL_IMAGES_MAX_BATCH]
 
-        update(status="downloading", total=len(images),
-               message=f"共识别到 {len(images)} 张，开始下载...")
+        if clear_existing:
+            try:
+                cleared = medias.soft_delete_detail_images_by_lang(pid, lang)
+            except Exception as exc:
+                update(status="failed", error=str(exc),
+                       message=f"清空原有详情图失败：{exc}")
+                return
+            update(status="downloading", total=len(images),
+                   message=f"已清空 {cleared} 张原有详情图，共识别到 {len(images)} 张，开始下载...")
+        else:
+            update(status="downloading", total=len(images),
+                   message=f"共识别到 {len(images)} 张，开始下载...")
 
         created: list[dict] = []
         errors: list[str] = []
