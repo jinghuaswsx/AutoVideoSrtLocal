@@ -102,7 +102,13 @@ async def push_localized_texts(mk_id: int, payload: dict[str, Any] = Body(...)) 
                 headers={"Content-Type": "application/json"},
             )
     except Exception as exc:
-        raise HTTPException(502, detail=f"小语种文案推送服务不可达：{exc}") from exc
+        raise HTTPException(
+            502,
+            detail={
+                "message": f"小语种文案推送服务不可达：{exc}",
+                "target_url": target,
+            },
+        ) from exc
 
     try:
         content = response.json() if response.content else {}
@@ -112,12 +118,17 @@ async def push_localized_texts(mk_id: int, payload: dict[str, Any] = Body(...)) 
     if response.status_code >= 400:
         raise HTTPException(
             response.status_code,
-            detail={"upstream_status": response.status_code, "body": content},
+            detail={
+                "upstream_status": response.status_code,
+                "body": content,
+                "target_url": target,
+            },
         )
     return {
         "ok": True,
         "upstream_status": response.status_code,
         "upstream": content,
+        "target_url": target,
     }
 
 

@@ -105,6 +105,18 @@ const api = {
     }),
 };
 
+const runtimeConfig = {
+  autovideoBaseUrl: "",
+  pushMediasTarget: "",
+  pushLocalizedTextsBaseUrl: "",
+};
+
+function buildLocalizedPushTargetUrl(mkId) {
+  const base = (runtimeConfig.pushLocalizedTextsBaseUrl || "").replace(/\/+$/, "");
+  if (!base || !mkId) return "";
+  return `${base}/api/marketing/medias/${encodeURIComponent(mkId)}/texts`;
+}
+
 /* ---------- 状态文案映射 ---------- */
 
 const STATUS_LABELS = {
@@ -223,6 +235,7 @@ function openPushModal(item, opts = {}) {
     payload: null,
     localizedText: null,
     localizedTextsRequest: { texts: [] },
+    localizedTargetUrl: "",
   };
   let anyPushSucceeded = false;
   let materialPushed = false;
@@ -299,6 +312,10 @@ function openPushModal(item, opts = {}) {
     clear(localizedPane);
     const errorMessage = getLocalizedTextError();
     const localizedText = pushContext.localizedText || currentLocalizedTexts()[0] || null;
+    const targetInfo = renderLocalizedTargetInfo(pushContext.localizedTargetUrl);
+    if (targetInfo) {
+      localizedPane.appendChild(targetInfo);
+    }
     if (errorMessage) {
       localizedPane.appendChild(el("p", { class: "ap-error" }, errorMessage));
     }
@@ -335,6 +352,7 @@ function openPushModal(item, opts = {}) {
         payload,
         localizedText: context?.localized_text || null,
         localizedTextsRequest: context?.localized_texts_request || { texts: [] },
+        localizedTargetUrl: buildLocalizedPushTargetUrl(context?.mk_id ?? null),
       };
       jsonPre.textContent = JSON.stringify(payload, null, 2);
       localizedJsonPre.textContent = JSON.stringify(pushContext.localizedTextsRequest, null, 2);
@@ -406,6 +424,18 @@ function renderLocalizedTextView(localizedText) {
     kv.appendChild(el("span", { class: "k" }, k));
     kv.appendChild(el("span", { class: "v" }, v));
   });
+  root.appendChild(kv);
+  return root;
+}
+
+function renderLocalizedTargetInfo(targetUrl) {
+  if (!targetUrl) return null;
+  const root = el("div", { class: "ap-localized-text-card" });
+  const kv = el("div", { class: "ap-kv" });
+  kv.appendChild(el("span", { class: "k" }, "推送地址"));
+  kv.appendChild(el("span", { class: "v" }, [
+    el("code", { class: "ap-code" }, targetUrl),
+  ]));
   root.appendChild(kv);
   return root;
 }
@@ -982,6 +1012,7 @@ async function init() {
   });
   try {
     const cfg = await api.config();
+    Object.assign(runtimeConfig, cfg || {});
     const hint = document.getElementById("ap-config-hint");
     if (hint) {
       hint.textContent = `upstream=${cfg.autovideoBaseUrl} · target=${cfg.pushMediasTarget}`;

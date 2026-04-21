@@ -70,6 +70,7 @@ def test_push_localized_texts_proxies_to_marketing_api(monkeypatch):
         "ok": True,
         "upstream_status": 200,
         "upstream": {"ok": True},
+        "target_url": "https://os.wedev.vip/api/marketing/medias/3725/texts",
     }
     assert captured["url"] == "https://os.wedev.vip/api/marketing/medias/3725/texts"
     assert captured["json"]["texts"][0]["title"] == "fr1"
@@ -108,4 +109,5 @@ def test_push_localized_texts_returns_http_error_body(monkeypatch):
     assert response.json()["detail"] == {
         "upstream_status": 400,
         "body": {"error": "bad request"},
+        "target_url": "https://os.wedev.vip/api/marketing/medias/3725/texts",
     }
