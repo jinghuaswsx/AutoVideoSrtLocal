@@ -32,6 +32,10 @@ class Settings:
             "PUSH_LOCALIZED_TEXTS_AUTHORIZATION",
             "",
         ).strip()
+        self.push_localized_texts_use_chrome_auth = getenv(
+            "PUSH_LOCALIZED_TEXTS_USE_CHROME_AUTH",
+            "1",
+        ).strip().lower() not in {"0", "false", "no", "off"}
         self.port = int(getenv("AUTOPUSH_PORT", "8787"))
 
 

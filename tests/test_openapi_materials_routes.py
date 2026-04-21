@@ -546,12 +546,20 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
     monkeypatch.setattr(
         "web.routes.openapi_materials.pushes.build_localized_texts_request",
         lambda item: {
-            "texts": [{
-                "title": "fr1",
-                "message": "fr2",
-                "description": "fr3",
-                "lang": "小语种",
-            }],
+            "texts": [
+                {
+                    "title": "de1",
+                    "message": "de2",
+                    "description": "de3",
+                    "lang": "德语",
+                },
+                {
+                    "title": "fr1",
+                    "message": "fr2",
+                    "description": "fr3",
+                    "lang": "法语",
+                },
+            ],
         },
     )
     monkeypatch.setattr(
@@ -592,10 +600,18 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
         "lang": "法语",
     }
     assert body["localized_texts_request"] == {
-        "texts": [{
-            "title": "fr1",
-            "message": "fr2",
-            "description": "fr3",
-            "lang": "法语",
-        }]
+        "texts": [
+            {
+                "title": "de1",
+                "message": "de2",
+                "description": "de3",
+                "lang": "德语",
+            },
+            {
+                "title": "fr1",
+                "message": "fr2",
+                "description": "fr3",
+                "lang": "法语",
+            },
+        ]
     }

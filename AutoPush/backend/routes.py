@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, Body, HTTPException, Query
 
 from .autovideo import AutoVideoService
+from .browser_auth import resolve_chrome_auth_headers
 from .errors import UpstreamServiceError
 from .settings import get_settings
 
@@ -27,6 +28,20 @@ def _map_upstream_error(error: Exception) -> HTTPException:
             return HTTPException(404, detail="未找到该产品")
         return HTTPException(int(status or 502), detail=str(error))
     return HTTPException(502, detail=f"上游服务不可达：{error}")
+
+
+def _build_localized_text_push_headers(
+    settings: Any, target: str,
+) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if settings.push_localized_texts_use_chrome_auth:
+        headers.update(resolve_chrome_auth_headers(target))
+    if (
+        "Authorization" not in headers
+        and settings.push_localized_texts_authorization
+    ):
+        headers["Authorization"] = settings.push_localized_texts_authorization
+    return headers
 
 
 @api.get("/materials")
@@ -95,9 +110,7 @@ async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
 async def push_localized_texts(mk_id: int, payload: dict[str, Any] = Body(...)) -> Any:
     settings = get_settings()
     target = f"{settings.push_localized_texts_base_url}/api/marketing/medias/{mk_id}/texts"
-    headers = {"Content-Type": "application/json"}
-    if settings.push_localized_texts_authorization:
-        headers["Authorization"] = settings.push_localized_texts_authorization
+    headers = _build_localized_text_push_headers(settings, target)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(

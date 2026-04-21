@@ -51,6 +51,14 @@ def test_push_localized_texts_proxies_to_marketing_api(monkeypatch):
             return FakeResponse()
 
     routes = importlib.import_module("backend.routes")
+    monkeypatch.setattr(
+        routes,
+        "resolve_chrome_auth_headers",
+        lambda target: {
+            "Authorization": "Bearer browser-token",
+            "Cookie": "token=browser-token; x-hng=lang=zh-CN&domain=os.wedev.vip",
+        },
+    )
     monkeypatch.setattr(routes.httpx, "AsyncClient", lambda timeout=30.0: FakeClient())
 
     client = _build_client(monkeypatch)
@@ -77,7 +85,8 @@ def test_push_localized_texts_proxies_to_marketing_api(monkeypatch):
     assert captured["json"]["texts"][0]["title"] == "fr1"
     assert captured["headers"] == {
         "Content-Type": "application/json",
-        "Authorization": "Bearer demo-token",
+        "Authorization": "Bearer browser-token",
+        "Cookie": "token=browser-token; x-hng=lang=zh-CN&domain=os.wedev.vip",
     }
 
 
@@ -101,6 +110,7 @@ def test_push_localized_texts_returns_http_error_body(monkeypatch):
             return FakeResponse()
 
     routes = importlib.import_module("backend.routes")
+    monkeypatch.setattr(routes, "resolve_chrome_auth_headers", lambda target: {})
     monkeypatch.setattr(routes.httpx, "AsyncClient", lambda timeout=30.0: FakeClient())
 
     client = _build_client(monkeypatch)
@@ -114,4 +124,43 @@ def test_push_localized_texts_returns_http_error_body(monkeypatch):
         "upstream_status": 400,
         "body": {"error": "bad request"},
         "target_url": "https://os.wedev.vip/api/marketing/medias/3725/texts",
+    }
+
+
+def test_push_localized_texts_falls_back_to_env_authorization(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+        text = '{"ok": true}'
+
+        def json(self):
+            return {"ok": True}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            captured["headers"] = headers
+            return FakeResponse()
+
+    routes = importlib.import_module("backend.routes")
+    monkeypatch.setattr(routes, "resolve_chrome_auth_headers", lambda target: {})
+    monkeypatch.setattr(routes.httpx, "AsyncClient", lambda timeout=30.0: FakeClient())
+
+    client = _build_client(monkeypatch)
+    response = client.post(
+        "/api/marketing/medias/3725/texts",
+        json={"texts": []},
+    )
+
+    assert response.status_code == 200
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer demo-token",
     }

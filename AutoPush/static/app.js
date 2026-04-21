@@ -160,34 +160,35 @@ function normalizeLocalizedTextCandidate(candidate, fallbackLang = "") {
   };
 }
 
-function buildLocalizedDisplayText(pushContext) {
+function buildLocalizedDisplayTexts(pushContext) {
   const rawTexts = Array.isArray(pushContext?.localizedTextsRequest?.texts)
     ? pushContext.localizedTextsRequest.texts
     : [];
   const fallbackLang = pushContext?.localizedText?.lang || rawTexts[0]?.lang || "";
-  const candidates = [
-    pushContext?.localizedText,
-    ...rawTexts,
-  ];
+  const candidates = rawTexts.length ? rawTexts : [pushContext?.localizedText];
+  const normalizedTexts = [];
+  const seen = new Set();
   for (const candidate of candidates) {
     const normalized = normalizeLocalizedTextCandidate(candidate, fallbackLang);
-    if (normalized && normalized.title && normalized.message && normalized.description) {
-      return normalized;
+    if (!(normalized && normalized.title && normalized.message && normalized.description)) {
+      continue;
     }
+    const dedupeKey = [
+      normalized.lang || "",
+      normalized.title,
+      normalized.message,
+      normalized.description,
+    ].join("\u0001");
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalizedTexts.push(normalized);
   }
-  return null;
+  return normalizedTexts;
 }
 
 function buildLocalizedPushRequest(pushContext) {
-  const normalized = buildLocalizedDisplayText(pushContext);
-  if (!normalized) return { texts: [] };
   return {
-    texts: [{
-      title: normalized.title,
-      message: normalized.message,
-      description: normalized.description,
-      lang: normalized.lang || "",
-    }],
+    texts: buildLocalizedDisplayTexts(pushContext),
   };
 }
 
@@ -346,7 +347,7 @@ function openPushModal(item, opts = {}) {
 
   function getLocalizedTextError() {
     if (!pushContext.mkId) return "缺少 mk_id，暂不能推送小语种文案";
-    if (!currentLocalizedTexts().length) return "当前语种暂无可推送文案";
+    if (!currentLocalizedTexts().length) return "当前暂无可推送小语种文案";
     return "";
   }
 
@@ -390,7 +391,7 @@ function openPushModal(item, opts = {}) {
   function renderLocalizedPane() {
     clear(localizedPane);
     const errorMessage = getLocalizedTextError();
-    const localizedText = buildLocalizedDisplayText(pushContext);
+    const localizedTexts = buildLocalizedDisplayTexts(pushContext);
     const targetInfo = renderLocalizedTargetInfo(pushContext.mkId, pushContext.localizedTargetUrl);
     if (targetInfo) {
       localizedPane.appendChild(targetInfo);
@@ -398,11 +399,11 @@ function openPushModal(item, opts = {}) {
     if (errorMessage) {
       localizedPane.appendChild(el("p", { class: "ap-error" }, errorMessage));
     }
-    if (!localizedText) {
-      localizedPane.appendChild(el("p", { class: "ap-empty" }, "当前语种暂无可推送文案"));
+    if (!localizedTexts.length) {
+      localizedPane.appendChild(el("p", { class: "ap-empty" }, "当前暂无可推送小语种文案"));
       return;
     }
-    localizedPane.appendChild(renderLocalizedTextView(localizedText));
+    localizedPane.appendChild(renderLocalizedTextView(localizedTexts));
   }
 
   headerButtons.forEach((btn) => {
@@ -492,20 +493,28 @@ function openPushModal(item, opts = {}) {
   });
 }
 
-function renderLocalizedTextView(localizedText) {
+function renderLocalizedTextView(localizedTexts) {
   const root = el("div", { class: "ap-localized-text-card" });
-  const kv = el("div", { class: "ap-kv" });
-  const pairs = [
-    ["语种", localizedText.lang || ""],
-    ["标题", localizedText.title || ""],
-    ["文案", localizedText.message || ""],
-    ["描述", localizedText.description || ""],
-  ];
-  pairs.forEach(([k, v]) => {
-    kv.appendChild(el("span", { class: "k" }, k));
-    kv.appendChild(el("span", { class: "v" }, v));
+  clear(root);
+  localizedTexts.forEach((localizedText, index) => {
+    const card = el("div", {
+      class: "ap-localized-text-card",
+      style: index > 0 ? "margin-top: 12px;" : "",
+    });
+    const kv = el("div", { class: "ap-kv" });
+    const pairs = [
+      ["语种", localizedText.lang || ""],
+      ["标题", localizedText.title || ""],
+      ["文案", localizedText.message || ""],
+      ["描述", localizedText.description || ""],
+    ];
+    pairs.forEach(([k, v]) => {
+      kv.appendChild(el("span", { class: "k" }, k));
+      kv.appendChild(el("span", { class: "v" }, v));
+    });
+    card.appendChild(kv);
+    root.appendChild(card);
   });
-  root.appendChild(kv);
   return root;
 }
 

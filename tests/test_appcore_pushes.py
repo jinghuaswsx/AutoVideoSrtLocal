@@ -252,13 +252,21 @@ def test_resolve_localized_text_payload_returns_none_when_copy_missing(monkeypat
 
 def test_build_localized_texts_request_wraps_single_text(monkeypatch):
     monkeypatch.setattr(
-        "appcore.pushes.resolve_localized_text_payload",
-        lambda item: {
-            "title": "fr1",
-            "message": "fr2",
-            "description": "fr3",
-            "lang": "法语",
-        },
+        "appcore.pushes.resolve_localized_texts_payload",
+        lambda item: [
+            {
+                "title": "de1",
+                "message": "de2",
+                "description": "de3",
+                "lang": "德语",
+            },
+            {
+                "title": "fr1",
+                "message": "fr2",
+                "description": "fr3",
+                "lang": "法语",
+            },
+        ],
     )
 
     body = pushes.build_localized_texts_request({
@@ -268,6 +276,12 @@ def test_build_localized_texts_request_wraps_single_text(monkeypatch):
 
     assert body == {
         "texts": [
+            {
+                "title": "de1",
+                "message": "de2",
+                "description": "de3",
+                "lang": "德语",
+            },
             {
                 "title": "fr1",
                 "message": "fr2",
@@ -279,7 +293,7 @@ def test_build_localized_texts_request_wraps_single_text(monkeypatch):
 
 
 def test_build_localized_texts_request_returns_empty_array_when_text_missing(monkeypatch):
-    monkeypatch.setattr("appcore.pushes.resolve_localized_text_payload", lambda item: None)
+    monkeypatch.setattr("appcore.pushes.resolve_localized_texts_payload", lambda item: [])
 
     body = pushes.build_localized_texts_request({
         "product_id": 123,
@@ -291,13 +305,8 @@ def test_build_localized_texts_request_returns_empty_array_when_text_missing(mon
 
 def test_build_localized_texts_request_returns_empty_array_when_text_incomplete(monkeypatch):
     monkeypatch.setattr(
-        "appcore.pushes.resolve_localized_text_payload",
-        lambda item: {
-            "title": "fr1",
-            "message": "fr2",
-            "description": "",
-            "lang": "法语",
-        },
+        "appcore.pushes.resolve_localized_texts_payload",
+        lambda item: [],
     )
 
     body = pushes.build_localized_texts_request({
@@ -306,6 +315,73 @@ def test_build_localized_texts_request_returns_empty_array_when_text_incomplete(
     })
 
     assert body == {"texts": []}
+
+
+def test_resolve_localized_texts_payload_returns_all_non_english_first_rows(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.query",
+        lambda sql, args: [
+            {
+                "lang": "fr",
+                "title": "",
+                "body": "标题: FR 标题\n文案: FR 文案\n描述: FR 描述",
+                "description": "",
+            },
+            {
+                "lang": "fr",
+                "title": "ignored",
+                "body": "ignored",
+                "description": "ignored",
+            },
+            {
+                "lang": "de",
+                "title": "DE 标题",
+                "body": "DE 文案",
+                "description": "DE 描述",
+            },
+            {
+                "lang": "en",
+                "title": "EN 标题",
+                "body": "EN 文案",
+                "description": "EN 描述",
+            },
+            {
+                "lang": "it",
+                "title": "IT 标题",
+                "body": "IT 文案",
+                "description": "",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.medias.list_languages",
+        lambda: [
+            {"code": "de"},
+            {"code": "fr"},
+            {"code": "it"},
+        ],
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.medias.get_language_name",
+        lambda code: {"de": "德语", "fr": "法语", "it": "意大利语"}.get(code, code),
+    )
+
+    payload = pushes.resolve_localized_texts_payload({"product_id": 123})
+
+    assert payload == [
+        {
+            "title": "DE 标题",
+            "message": "DE 文案",
+            "description": "DE 描述",
+            "lang": "德语",
+        },
+        {
+            "title": "FR 标题",
+            "message": "FR 文案",
+            "description": "FR 描述",
+            "lang": "法语",
+        },
+    ]
 
 
 def test_record_success_and_reset(product_with_item):

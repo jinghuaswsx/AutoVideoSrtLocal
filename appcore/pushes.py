@@ -188,6 +188,36 @@ def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
     )
 
 
+def _list_first_non_english_copywritings(product_id: int) -> list[dict]:
+    rows = query(
+        "SELECT lang, title, body, description FROM media_copywritings "
+        "WHERE product_id=%s AND lang<>'en' "
+        "ORDER BY lang ASC, idx ASC, id ASC",
+        (product_id,),
+    )
+    first_rows: dict[str, dict] = {}
+    for row in rows or []:
+        lang = ((row or {}).get("lang") or "").strip().lower()
+        if not lang or lang == "en" or lang in first_rows:
+            continue
+        first_rows[lang] = row
+
+    enabled_order = {
+        (row.get("code") or "").strip().lower(): index
+        for index, row in enumerate(medias.list_languages() or [])
+    }
+    return sorted(
+        first_rows.values(),
+        key=lambda row: (
+            enabled_order.get(
+                ((row or {}).get("lang") or "").strip().lower(),
+                10_000,
+            ),
+            ((row or {}).get("lang") or "").strip().lower(),
+        ),
+    )
+
+
 def _normalize_localized_copywriting_fields(row: dict | None) -> dict[str, str] | None:
     if not row:
         return None
@@ -239,25 +269,31 @@ def resolve_localized_text_payload(item: dict) -> dict[str, str] | None:
     }
 
 
+def resolve_localized_texts_payload(item: dict) -> list[dict[str, str]]:
+    product_id = (item or {}).get("product_id")
+    if not product_id:
+        return []
+
+    texts: list[dict[str, str]] = []
+    for row in _list_first_non_english_copywritings(int(product_id)):
+        lang = ((row or {}).get("lang") or "").strip().lower()
+        fields = _normalize_localized_copywriting_fields(row)
+        if not fields:
+            continue
+        if any(not (fields.get(key) or "").strip() for key in ("title", "message", "description")):
+            continue
+        texts.append({
+            "title": fields["title"],
+            "message": fields["message"],
+            "description": fields["description"],
+            "lang": medias.get_language_name(lang),
+        })
+    return texts
+
+
 def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]:
-    localized = resolve_localized_text_payload(item)
-    if not localized:
-        return {"texts": []}
-
-    missing = [
-        key for key in ("title", "message", "description")
-        if not (localized.get(key) or "").strip()
-    ]
-    if missing:
-        return {"texts": []}
-
     return {
-        "texts": [{
-            "title": localized["title"],
-            "message": localized["message"],
-            "description": localized["description"],
-            "lang": localized["lang"],
-        }]
+        "texts": resolve_localized_texts_payload(item),
     }
 
 
