@@ -940,6 +940,36 @@ def item_cover(item_id: int):
         abort(404)
 
 
+@bp.route("/raw-sources/<int:rid>/video", methods=["GET"])
+@login_required
+def raw_source_video_url(rid: int):
+    row = medias.get_raw_source(rid)
+    if not row:
+        abort(404)
+    p = medias.get_product(int(row["product_id"]))
+    if not _can_access_product(p):
+        abort(404)
+    url = tos_clients.generate_signed_media_download_url(
+        row["video_object_key"], expires=TOS_SIGNED_URL_EXPIRES,
+    )
+    return redirect(url, code=302)
+
+
+@bp.route("/raw-sources/<int:rid>/cover", methods=["GET"])
+@login_required
+def raw_source_cover_url(rid: int):
+    row = medias.get_raw_source(rid)
+    if not row:
+        abort(404)
+    p = medias.get_product(int(row["product_id"]))
+    if not _can_access_product(p):
+        abort(404)
+    url = tos_clients.generate_signed_media_download_url(
+        row["cover_object_key"], expires=TOS_SIGNED_URL_EXPIRES,
+    )
+    return redirect(url, code=302)
+
+
 @bp.route("/api/products/<int:pid>/cover/bootstrap", methods=["POST"])
 @login_required
 def api_cover_bootstrap(pid: int):
