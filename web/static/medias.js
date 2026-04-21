@@ -561,7 +561,7 @@
   }
 
   // ---------- Cover ----------
-  const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+  const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$/;
 
   function setCover(url) {
     const dz = $('coverDropzone');
@@ -711,7 +711,7 @@
     const name = $('mName').value.trim();
     const code = $('mCode').value.trim().toLowerCase();
     if (!name) { alert('请先填写产品名称'); $('mName').focus(); return null; }
-    if (!SLUG_RE.test(code)) { alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return null; }
+    if (!SLUG_RE.test(code)) { alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–128）'); $('mCode').focus(); return null; }
     try {
       const res = await fetchJSON('/medias/api/products', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -777,7 +777,7 @@
     const name = $('mName').value.trim();
     const code = $('mCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
-    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('mCode').focus(); return; }
+    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('mCode').focus(); return; }
     if (!state.current || !state.current.product || (!state.current.product.cover_object_key && !state.current.product.has_en_cover)) {
       alert('请上传商品主图'); return;
     }
@@ -2212,7 +2212,7 @@
     const name = $('edName').value.trim();
     const code = $('edCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('edName').focus(); return; }
-    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–64）'); $('edCode').focus(); return; }
+    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('edCode').focus(); return; }
 
     // EN 主图硬校验
     const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
