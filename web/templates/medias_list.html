@@ -968,6 +968,38 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 .oc-detail-images-actions .oc-hint {
   font-size:12px; color:var(--oc-fg-subtle);
 }
+
+/* ────────── mk_id inline edit ────────── */
+.oc-table td.mk-id-cell {
+  cursor: pointer;
+}
+.oc-table td.mk-id-cell:hover {
+  background: var(--oc-bg-subtle);
+}
+.oc-table td.mk-id-cell .mk-id-text .muted {
+  color: var(--oc-fg-subtle);
+}
+.oc-table td.mk-id-cell .mk-id-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: #fff;
+  color: var(--oc-fg);
+  outline: none;
+  transition: border-color var(--oc-dur-fast), box-shadow var(--oc-dur-fast);
+}
+.oc-table td.mk-id-cell .mk-id-input:focus {
+  border-color: var(--oc-accent);
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.oc-table td.mk-id-cell .mk-id-input.error {
+  border-color: var(--oc-danger);
+  box-shadow: 0 0 0 2px var(--oc-danger-bg);
+}
 {% endblock %}
 
 {% block content %}
