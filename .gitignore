@@ -41,6 +41,7 @@ example.mp4
 # Superpowers temp
 .superpowers/
 .tmp/
+.tmp_release_merge_*/
 
 # Stray empty file
 AutoVideoSrt
