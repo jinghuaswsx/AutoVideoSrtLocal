@@ -18,6 +18,32 @@ CREATE TABLE IF NOT EXISTS media_raw_sources (
   KEY idx_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE media_items
-  ADD COLUMN source_raw_id INT NULL AFTER cover_object_key,
-  ADD KEY idx_source_raw (source_raw_id);
+SET @ddl := IF(
+  EXISTS(
+    SELECT 1
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'media_items'
+      AND COLUMN_NAME = 'source_raw_id'
+  ),
+  'SELECT 1',
+  'ALTER TABLE media_items ADD COLUMN source_raw_id INT NULL AFTER cover_object_key'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ddl := IF(
+  EXISTS(
+    SELECT 1
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'media_items'
+      AND INDEX_NAME = 'idx_source_raw'
+  ),
+  'SELECT 1',
+  'ALTER TABLE media_items ADD KEY idx_source_raw (source_raw_id)'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
