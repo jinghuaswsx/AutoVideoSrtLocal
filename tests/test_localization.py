@@ -12,6 +12,14 @@ from pipeline.localization import (
 from pipeline.translate import generate_localized_translation, generate_tts_script
 
 
+def _fake_openai_client(create_fn):
+    return types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(create=create_fn)
+        )
+    )
+
+
 def test_build_source_full_text_zh_joins_confirmed_segments_with_newlines():
     segments = [
         {"index": 0, "text": "part one"},
@@ -240,7 +248,10 @@ def test_generate_localized_translation_parses_structured_output(monkeypatch):
             ]
         )
 
-    monkeypatch.setattr("pipeline.translate.client.chat.completions.create", fake_create)
+    monkeypatch.setattr(
+        "pipeline.translate.resolve_provider_config",
+        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
+    )
 
     payload = generate_localized_translation(
         source_full_text_zh="part one\npart two",
@@ -269,7 +280,10 @@ def test_generate_localized_translation_passes_variant_specific_prompt(monkeypat
             ]
         )
 
-    monkeypatch.setattr("pipeline.translate.client.chat.completions.create", fake_create)
+    monkeypatch.setattr(
+        "pipeline.translate.resolve_provider_config",
+        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
+    )
 
     generate_localized_translation(
         source_full_text_zh="test chinese",
@@ -292,7 +306,10 @@ def test_generate_tts_script_returns_validated_blocks(monkeypatch):
             ]
         )
 
-    monkeypatch.setattr("pipeline.translate.client.chat.completions.create", fake_create)
+    monkeypatch.setattr(
+        "pipeline.translate.resolve_provider_config",
+        lambda *args, **kwargs: (_fake_openai_client(fake_create), "anthropic/claude-sonnet-4.5"),
+    )
 
     payload = generate_tts_script(
         localized_translation={

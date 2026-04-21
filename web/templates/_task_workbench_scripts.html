@@ -11,6 +11,9 @@
     apiBase: {{ (api_base|default('/api/tasks'))|tojson }},
     voiceLanguage: {{ (voice_language|default('en'))|tojson }},
     defaultSourceLanguage: {{ (default_source_language|default('zh'))|tojson }},
+    avTargetLanguages: {{ (av_target_languages|default([]))|tojson }},
+    avTargetMarkets: {{ (av_target_markets|default([]))|tojson }},
+    avTranslateDefaults: {{ (av_translate_defaults|default({}))|tojson }},
   };
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
@@ -24,6 +27,12 @@
   const START_BUTTON_DEFAULT_LABEL = "开始处理";
   const START_BUTTON_RESTART_LABEL = "重新开始处理";
   const START_BUTTON_LOADING_LABEL = "加载视频中...";
+  const DEFAULT_AV_TRANSLATE_INPUTS = TASK_WORKBENCH_CONFIG.avTranslateDefaults || {
+    target_language: "en",
+    target_language_name: "English",
+    target_market: "US",
+    product_overrides: {},
+  };
 
   const uploadZone = document.getElementById("uploadZone");
   const fileInput = document.getElementById("fileInput");
@@ -48,6 +57,7 @@
   let _playingAudio = null;
   let _previewAudio = null;
   let _previewAudioGid = null;
+  let _avRewriteAsrIndex = null;
 
   bootVoices();
   renderStepPreviews({});
@@ -267,6 +277,63 @@
     setStartButtonBusy(false, START_BUTTON_DEFAULT_LABEL);
   }
 
+  function getAvTranslateDefaults() {
+    return DEFAULT_AV_TRANSLATE_INPUTS;
+  }
+
+  function getAvTranslateInputs() {
+    const defaults = getAvTranslateDefaults();
+    const targetLanguage = (document.getElementById("avTargetLanguage")?.value || defaults.target_language || "en").trim();
+    const languageOption = (TASK_WORKBENCH_CONFIG.avTargetLanguages || []).find(item => item.code === targetLanguage);
+    const targetMarket = (document.getElementById("avTargetMarket")?.value || defaults.target_market || "US").trim();
+    const sellingPointsRaw = document.getElementById("avOverrideSellingPoints")?.value || "";
+    const sellingPoints = sellingPointsRaw
+      .split(/\r?\n/)
+      .map(item => item.trim())
+      .filter(Boolean);
+
+    return {
+      target_language: targetLanguage,
+      target_language_name: (languageOption && languageOption.name) || defaults.target_language_name || targetLanguage,
+      target_market: targetMarket,
+      product_overrides: {
+        product_name: (document.getElementById("avOverrideProductName")?.value || "").trim() || null,
+        brand: (document.getElementById("avOverrideBrand")?.value || "").trim() || null,
+        selling_points: sellingPoints.length ? sellingPoints : null,
+        price: (document.getElementById("avOverridePrice")?.value || "").trim() || null,
+        target_audience: (document.getElementById("avOverrideTargetAudience")?.value || "").trim() || null,
+        extra_info: (document.getElementById("avOverrideExtraInfo")?.value || "").trim() || null,
+      },
+    };
+  }
+
+  function applyAvTranslateInputsToForm() {
+    const defaults = getAvTranslateDefaults();
+    const currentInputs = (currentTask && currentTask.av_translate_inputs) || {};
+    const overrides = currentInputs.product_overrides || {};
+    const targetLanguage = currentInputs.target_language || defaults.target_language || "en";
+    const targetMarket = currentInputs.target_market || defaults.target_market || "US";
+
+    const languageSelect = document.getElementById("avTargetLanguage");
+    const marketSelect = document.getElementById("avTargetMarket");
+    if (languageSelect) languageSelect.value = targetLanguage;
+    if (marketSelect) marketSelect.value = targetMarket;
+
+    const productNameInput = document.getElementById("avOverrideProductName");
+    const brandInput = document.getElementById("avOverrideBrand");
+    const sellingPointsInput = document.getElementById("avOverrideSellingPoints");
+    const priceInput = document.getElementById("avOverridePrice");
+    const audienceInput = document.getElementById("avOverrideTargetAudience");
+    const extraInfoInput = document.getElementById("avOverrideExtraInfo");
+
+    if (productNameInput) productNameInput.value = overrides.product_name || "";
+    if (brandInput) brandInput.value = overrides.brand || "";
+    if (sellingPointsInput) sellingPointsInput.value = Array.isArray(overrides.selling_points) ? overrides.selling_points.join("\n") : "";
+    if (priceInput) priceInput.value = overrides.price || "";
+    if (audienceInput) audienceInput.value = overrides.target_audience || "";
+    if (extraInfoInput) extraInfoInput.value = overrides.extra_info || "";
+  }
+
   function applyTaskConfigToForm() {
     if (!currentTask) return;
     _selectedVoiceId = currentTask.voice_id || null;
@@ -294,6 +361,7 @@
     _subtitlePositionY = isNaN(lsPos) ? (currentTask.subtitle_position_y ?? 0.68) : lsPos;
     document.getElementById("subtitlePosHint").textContent = ((_subtitlePositionY * 100).toFixed(1) + "%");
     document.getElementById("interactiveReviewToggle").value = String(Boolean(currentTask.interactive_review));
+    applyAvTranslateInputsToForm();
   }
 
   function renderTaskHero() {
@@ -425,6 +493,7 @@
           subtitle_size: _selectedSubtitleSize,
           subtitle_position_y: _subtitlePositionY,
           interactive_review: document.getElementById("interactiveReviewToggle").value === "true",
+          av_translate_inputs: getAvTranslateInputs(),
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -566,6 +635,7 @@
     if (_previewAudio && !_previewAudio.paused && _previewAudioGid) {
       _setAudioBtns(_previewAudioGid, true);
     }
+    renderAvInsights();
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
@@ -638,13 +708,15 @@
       const status = currentTask?.steps?.[step] || "pending";
       let html;
       if (!artifact) {
-        html = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+        const message = currentTask?.step_messages?.[step] || placeholderText(status);
+        html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
         html = renderVariantCompareArtifact(artifact);
       } else if (artifact.layout === "analysis") {
         html = renderAnalysisArtifact(artifact);
       } else if (!artifact.items || !artifact.items.length) {
-        html = `<div class="preview-placeholder">${placeholderText(status)}</div>`;
+        const message = currentTask?.step_messages?.[step] || placeholderText(status);
+        html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else {
         // 老项目的 compose artifact 里可能还留着 soft_video 条目 → 过滤
         const items = (step === "compose")
@@ -1602,6 +1674,220 @@
     container.hidden = false;
   }
 
+  function isAvSyncTask(task = currentTask) {
+    if (!task) return false;
+    if (task.pipeline_version === "av" || task.type === "av_translate") return true;
+    const avVariant = task.variants?.av || {};
+    return Boolean(task.shot_notes || (avVariant.sentences && avVariant.sentences.length));
+  }
+
+  function renderAvInsights() {
+    const panel = document.getElementById("avInsightsPanel");
+    const shotNotesCard = document.getElementById("avShotNotesCard");
+    const warningsCard = document.getElementById("avWarningsCard");
+    if (!panel || !shotNotesCard || !warningsCard) return;
+
+    if (!currentTask || !isAvSyncTask(currentTask)) {
+      panel.classList.add("hidden");
+      shotNotesCard.innerHTML = "";
+      warningsCard.innerHTML = "";
+      return;
+    }
+
+    const shotNotes = currentTask.shot_notes || {};
+    const globalNotes = shotNotes.global || {};
+    const shotSentences = Array.isArray(shotNotes.sentences) ? shotNotes.sentences : [];
+    const avSentences = Array.isArray(currentTask.variants?.av?.sentences) ? currentTask.variants.av.sentences : [];
+    const warningSentences = avSentences.filter(sentence => {
+      const status = sentence?.status || "";
+      return status === "warning_overshoot" || status === "warning_short";
+    });
+
+    const ranges = [
+      ["Hook", globalNotes.hook_range],
+      ["Demo", globalNotes.demo_range],
+      ["Proof", globalNotes.proof_range],
+      ["CTA", globalNotes.cta_range],
+    ].filter(([, value]) => Array.isArray(value) && value.length === 2);
+
+    const shotNotesRows = shotSentences.length
+      ? shotSentences.map(sentence => `
+        <tr>
+          <td>${escapeHtml(sentence.asr_index ?? "--")}</td>
+          <td>${escapeHtml(sentence.scene || "--")}</td>
+          <td>${escapeHtml(sentence.action || "--")}</td>
+          <td>
+            <span class="av-visibility-badge ${sentence.product_visible ? "av-visibility-badge--yes" : "av-visibility-badge--no"}">
+              ${sentence.product_visible ? "可见" : "未见"}
+            </span>
+          </td>
+          <td>${escapeHtml(sentence.shot_type || "--")}</td>
+        </tr>
+      `).join("")
+      : `<tr><td colspan="5"><p class="av-insight-empty">当前还没有逐句画面笔记。</p></td></tr>`;
+
+    shotNotesCard.innerHTML = `
+      <h4>画面笔记预览</h4>
+      <div class="av-shot-notes-summary">
+        <div class="av-shot-notes-item">
+          <span>产品</span>
+          <strong>${escapeHtml(globalNotes.product_name || "--")}</strong>
+        </div>
+        <div class="av-shot-notes-item">
+          <span>品类</span>
+          <strong>${escapeHtml(globalNotes.category || "--")}</strong>
+        </div>
+        <div class="av-shot-notes-item">
+          <span>主题</span>
+          <strong>${escapeHtml(globalNotes.overall_theme || "--")}</strong>
+        </div>
+      </div>
+      <div class="av-shot-notes-structure">
+        ${ranges.length ? ranges.map(([label, value]) => `<span class="av-pill">${escapeHtml(label)} ${escapeHtml(value[0])}-${escapeHtml(value[1])}</span>`).join("") : '<span class="av-pill">结构分段待生成</span>'}
+      </div>
+      <details open>
+        <summary>逐句画面笔记</summary>
+        <div class="av-shot-notes-table-wrap">
+          <table class="av-shot-notes-table">
+            <thead>
+              <tr>
+                <th>句号</th>
+                <th>场景</th>
+                <th>动作</th>
+                <th>产品可见</th>
+                <th>镜头类型</th>
+              </tr>
+            </thead>
+            <tbody>${shotNotesRows}</tbody>
+          </table>
+        </div>
+      </details>
+    `;
+
+    warningsCard.innerHTML = `
+      <h4>时长警告列表</h4>
+      ${warningSentences.length ? `
+        <div class="av-warning-table-wrap">
+          <table class="av-warnings-table">
+            <thead>
+              <tr>
+                <th>句号</th>
+                <th>目标时长</th>
+                <th>实测时长</th>
+                <th>偏差</th>
+                <th>状态</th>
+                <th>当前译文</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${warningSentences.map(sentence => {
+                const targetDuration = Number(sentence.target_duration || 0);
+                const ttsDuration = Number(sentence.tts_duration || 0);
+                const deltaPct = targetDuration > 0 ? (((ttsDuration - targetDuration) / targetDuration) * 100).toFixed(1) : "--";
+                const isShort = sentence.status === "warning_short";
+                const statusLabel = isShort ? "偏短" : "超时";
+                return `
+                  <tr>
+                    <td>${escapeHtml(sentence.asr_index ?? "--")}</td>
+                    <td>${fmtTime(targetDuration)}</td>
+                    <td>${fmtTime(ttsDuration)}</td>
+                    <td>${deltaPct === "--" ? "--" : `${deltaPct}%`}</td>
+                    <td><span class="av-warning-status ${isShort ? "av-warning-status--short" : ""}">${statusLabel}</span></td>
+                    <td><div class="av-warning-text">${escapeHtml(sentence.text || "")}</div></td>
+                    <td class="av-warning-actions">
+                      <button type="button" class="btn btn-ghost btn-sm" onclick="openAvRewriteModal(${Number(sentence.asr_index)})">手动重写</button>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p class="av-insight-empty">当前没有时长 warning，句子时长已在可接受范围内。</p>'}
+    `;
+
+    panel.classList.remove("hidden");
+  }
+
+  function openAvRewriteModal(asrIndex) {
+    if (!currentTask) return;
+    const overlay = document.getElementById("avRewriteModal");
+    const textarea = document.getElementById("avRewriteText");
+    const meta = document.getElementById("avRewriteMeta");
+    const hint = document.getElementById("avRewriteHint");
+    const sentence = (currentTask.variants?.av?.sentences || []).find(item => Number(item.asr_index) === Number(asrIndex));
+    if (!overlay || !textarea || !sentence) return;
+
+    _avRewriteAsrIndex = Number(asrIndex);
+    textarea.value = sentence.text || "";
+    meta.textContent = `句号 #${sentence.asr_index} · 目标 ${fmtTime(Number(sentence.target_duration || 0))} · 当前 ${fmtTime(Number(sentence.tts_duration || 0))}`;
+    hint.textContent = "提交后会重跑当前句子的 TTS，并立即刷新整段音频、字幕和 warning 状态。";
+    overlay.classList.remove("hidden");
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
+
+  function closeAvRewriteModal() {
+    const overlay = document.getElementById("avRewriteModal");
+    const textarea = document.getElementById("avRewriteText");
+    const submitBtn = document.getElementById("avRewriteSubmitBtn");
+    _avRewriteAsrIndex = null;
+    if (textarea) textarea.value = "";
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "提交重写";
+    }
+    if (overlay) overlay.classList.add("hidden");
+  }
+
+  async function submitAvRewrite() {
+    if (!taskId || _avRewriteAsrIndex == null) return;
+    const textarea = document.getElementById("avRewriteText");
+    const submitBtn = document.getElementById("avRewriteSubmitBtn");
+    const text = (textarea?.value || "").trim();
+    if (!text) {
+      showError("请先填写新的译文");
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "重写中...";
+    }
+
+    try {
+      const response = await fetch(_apiUrl("/av/rewrite_sentence"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asr_index: _avRewriteAsrIndex, text }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        showError(payload.error || "单句重写失败");
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "提交重写";
+        }
+        return;
+      }
+
+      if (payload.task) {
+        currentTask = payload.task;
+        renderTaskHero();
+        renderTaskState();
+      }
+      closeAvRewriteModal();
+      scheduleRefreshTaskState(0);
+    } catch (err) {
+      showError(err.message || "单句重写失败");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "提交重写";
+      }
+    }
+  }
+
   function renderResultPanelFromTask() {
     if (!currentTask) return;
     const downloads = {};
@@ -1616,7 +1902,8 @@
     const bar = document.getElementById("heroDownloadBar");
     if (!bar) return;
     const hasDone = currentTask?.status === "done";
-    bar.classList.toggle("hidden", !hasDone);
+    const hasHeroDownloads = Boolean(downloads.capcut || downloads.hard);
+    bar.classList.toggle("hidden", !hasDone || !hasHeroDownloads);
     document.getElementById("heroCapcutBtn").classList.toggle("hidden", !downloads.capcut);
     document.getElementById("heroHardBtn").classList.toggle("hidden", !downloads.hard);
     // store urls for heroDownload()

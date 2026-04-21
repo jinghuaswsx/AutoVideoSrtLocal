@@ -83,6 +83,7 @@ if SEEDANCE_API_KEY and not os.environ.get("SEEDANCE_API_KEY"):
 # ElevenLabs
 ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
 ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
+AV_LOCALIZE_FALLBACK = _env("AV_LOCALIZE_FALLBACK", "0") == "1"
 
 # Google Gemini
 # 后端选择：aistudio（AI Studio，默认）| cloud（Vertex AI Express Mode）

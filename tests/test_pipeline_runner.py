@@ -260,7 +260,7 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "pipeline.tts.get_voice_by_id",
-        lambda vid: {"id": vid, "name": "Adam", "elevenlabs_voice_id": "el_adam"},
+        lambda vid, user_id=None: {"id": vid, "name": "Adam", "elevenlabs_voice_id": "el_adam"},
     )
     monkeypatch.setattr(
         "pipeline.translate.generate_tts_script",
@@ -281,6 +281,9 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
         return {"full_audio_path": path, "segments": []}
 
     monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_generate_full_audio)
+    monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 1.2)
+    monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.usage_log.record", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "pipeline.timeline.build_timeline_manifest",
         lambda segments, video_duration: {"segments": segments, "video_duration": video_duration, "total_tts_duration": 1.2},
@@ -288,6 +291,25 @@ def test_step_tts_populates_both_variant_outputs(tmp_path, monkeypatch):
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 10.0)
 
     runner = runtime.PipelineRunner(bus=_silent_bus())
+
+    def fake_run_tts_duration_loop(**kwargs):
+        round_path = tmp_path / f"tts_full.round_1.{kwargs['variant']}.mp3"
+        round_path.write_bytes(b"fake")
+        localized_translation = kwargs["initial_localized_translation"]
+        return {
+            "localized_translation": localized_translation,
+            "tts_script": {
+                "full_text": localized_translation["full_text"],
+                "subtitle_chunks": [],
+                "sentences": localized_translation["sentences"],
+            },
+            "tts_audio_path": str(round_path),
+            "tts_segments": [],
+            "rounds": [{"round": 1, "audio_duration": 1.2}],
+            "final_round": 1,
+        }
+
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_run_tts_duration_loop)
     runner._step_tts("task-variant-tts", str(tmp_path))
 
     saved = store.get("task-variant-tts")

@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore import tos_clients
+from appcore.av_translate_inputs import build_default_av_translate_inputs
 from appcore.db import execute as db_execute, query_one as db_query_one
 from config import (
     OUTPUT_DIR,
@@ -119,6 +120,8 @@ def complete_upload():
         display_name=display_name,
         source_language="zh",
         source_tos_key=object_key,
+        pipeline_version="av",
+        av_translate_inputs=build_default_av_translate_inputs(),
         source_object_info={
             "file_size": object_size,
             "content_type": content_type,

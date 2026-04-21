@@ -24,6 +24,9 @@ def test_create_initializes_expected_keys():
     assert task["steps"]["asr"] == "pending"
     assert "variants" in task
     assert "normal" in task["variants"]
+    assert "hook_cta" in task["variants"]
+    assert task["variants"]["normal"]["label"] == "普通版"
+    assert task["variants"]["hook_cta"]["label"] == "黄金3秒 + CTA版"
     assert task["source_tos_key"] == ""
     assert task["source_object_info"] == {}
     assert task["tos_uploads"] == {}
@@ -33,6 +36,21 @@ def test_create_initializes_expected_keys():
 def test_create_stores_original_filename():
     task = ts.create("t2", "/v.mp4", "/task/t2", original_filename="my_video.mp4")
     assert task["original_filename"] == "my_video.mp4"
+
+
+def test_create_contains_av_translate_defaults():
+    task = ts.create("t-av", "/v.mp4", "/task/t-av")
+    assert "av_translate_inputs" in task
+    assert task["av_translate_inputs"]["target_language"] is None
+    assert task["av_translate_inputs"]["target_language_name"] is None
+    assert task["av_translate_inputs"]["target_market"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["product_name"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["brand"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["selling_points"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["price"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["target_audience"] is None
+    assert task["av_translate_inputs"]["product_overrides"]["extra_info"] is None
+    assert task["shot_notes"] is None
 
 
 def test_create_subtitle_removal_initializes_expected_shape():

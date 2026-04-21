@@ -12,6 +12,8 @@ import os
 import uuid
 from datetime import datetime
 
+import config
+
 log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
@@ -195,6 +197,13 @@ def _resolve_translate_provider(user_id: int | None) -> str:
 def _lang_display(label: str) -> str:
     """Convert language label (en/de/fr) to Chinese display name for step messages."""
     return {"en": "英语", "de": "德语", "fr": "法语"}.get(label, label)
+
+
+def _is_av_pipeline_task(task: dict | None) -> bool:
+    task = task or {}
+    task_type = str(task.get("type") or "").strip()
+    pipeline_version = str(task.get("pipeline_version") or "").strip()
+    return task_type == "av_translate" or pipeline_version == "av"
 
 
 # Default words-per-second by target language (fallback when no measured data).
@@ -945,6 +954,8 @@ class PipelineRunner:
                 current = task_state.get(task_id) or {}
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
+                if current.get("status") in {"failed", "error"}:
+                    return
         except Exception as exc:
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
@@ -1061,6 +1072,9 @@ class PipelineRunner:
 
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         task_dir = task["task_dir"]
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
@@ -1143,6 +1157,11 @@ class PipelineRunner:
         import appcore.task_state as task_state
 
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            if (task.get("steps") or {}).get("tts") == "done":
+                return
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         loc_mod = importlib.import_module(self.localization_module)
 
         lang_display = _lang_display(self.target_language_label)
@@ -1157,14 +1176,16 @@ class PipelineRunner:
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
         voice = self._resolve_voice(task, loc_mod)
 
-        variant = "normal"
         variants = dict(task.get("variants", {}))
-        variant_state = dict(variants.get(variant, {}))
-        initial_localized = variant_state.get("localized_translation", {}) \
-                            or task.get("localized_translation", {})
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
+        variant_order = [name for name in variants.keys() if name != "normal"]
+        if "normal" in variants:
+            variant_order.append("normal")
+        elif not variant_order:
+            variant_order = ["normal"]
+            variants["normal"] = {}
 
         # reset duration tracking for a fresh run (e.g. resume)；
         # 顺带保存本次翻译走的 provider + model + channel，给前端 Duration Loop 头部展示
@@ -1183,6 +1204,186 @@ class PipelineRunner:
             tts_translate_model=get_model_display_name(provider, self.user_id),
             tts_translate_channel=_channel_label,
         )
+
+        from pipeline.tts import _get_audio_duration
+        from pipeline.timeline import build_timeline_manifest
+        import shutil
+
+        variant_results: dict[str, dict] = {}
+        for variant in variant_order:
+            variant_state = dict(variants.get(variant, {}))
+            initial_localized = variant_state.get("localized_translation", {}) or (
+                task.get("localized_translation", {}) if variant == "normal" else {}
+            )
+            if not initial_localized:
+                continue
+
+            loop_result = self._run_tts_duration_loop(
+                task_id=task_id,
+                task_dir=task_dir,
+                loc_mod=loc_mod,
+                provider=provider,
+                video_duration=video_duration,
+                voice=voice,
+                initial_localized_translation=initial_localized,
+                source_full_text=source_full_text,
+                source_language=source_language,
+                elevenlabs_api_key=elevenlabs_api_key,
+                script_segments=task.get("script_segments", []),
+                variant=variant,
+            )
+
+            final_round = loop_result["final_round"]
+            pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
+            final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            if pre_trim_duration > video_duration:
+                trim_record = {
+                    "pre_trim_duration": pre_trim_duration,
+                    "video_duration": video_duration,
+                    "message": (
+                        f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
+                        "正在直接截断到视频时长..."
+                    ),
+                }
+                self._emit_duration_round(task_id, final_round, "truncate_audio", trim_record)
+                trim_result = self._truncate_audio_to_duration(
+                    input_audio_path=loop_result["tts_audio_path"],
+                    output_audio_path=final_audio_path,
+                    duration=video_duration,
+                    tts_segments=loop_result["tts_segments"],
+                    tts_script=loop_result["tts_script"],
+                    localized_translation=loop_result["localized_translation"],
+                )
+                if not trim_result.get("skipped"):
+                    loop_result["tts_audio_path"] = trim_result["audio_path"]
+                    loop_result["tts_script"] = trim_result["tts_script"]
+                    loop_result["localized_translation"] = trim_result["localized_translation"]
+                    loop_result["tts_segments"] = trim_result["tts_segments"]
+                    trimmed_record = {
+                        "pre_trim_duration": pre_trim_duration,
+                        "removed_count": trim_result["removed_count"],
+                        "removed_duration": trim_result["removed_duration"],
+                        "final_duration": trim_result["final_duration"],
+                        "video_duration": video_duration,
+                        "message": (
+                            f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
+                            f"对齐视频 {video_duration:.1f}s"
+                        ),
+                    }
+                    self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
+
+            if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+                shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
+
+            timeline_manifest = build_timeline_manifest(
+                loop_result["tts_segments"], video_duration=video_duration,
+            )
+            variant_state.update({
+                "segments": loop_result["tts_segments"],
+                "tts_script": loop_result["tts_script"],
+                "tts_audio_path": final_audio_path,
+                "timeline_manifest": timeline_manifest,
+                "voice_id": voice.get("id"),
+                "localized_translation": loop_result["localized_translation"],
+            })
+            variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_audio_path
+            variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(
+                loop_result["tts_script"],
+                loop_result["tts_segments"],
+                duration_rounds=loop_result["rounds"],
+            )
+            variants[variant] = variant_state
+
+            _save_json(task_dir, f"tts_script.{variant}.json", loop_result["tts_script"])
+            _save_json(task_dir, f"tts_result.{variant}.json", loop_result["tts_segments"])
+            _save_json(task_dir, f"timeline_manifest.{variant}.json", timeline_manifest)
+            _save_json(task_dir, f"localized_translation.{variant}.json", loop_result["localized_translation"])
+
+            variant_results[variant] = {
+                "loop_result": loop_result,
+                "timeline_manifest": timeline_manifest,
+                "final_audio_path": final_audio_path,
+            }
+
+        if not variant_results:
+            raise ValueError("No localized translation available for TTS generation")
+
+        primary_variant = "normal" if "normal" in variant_results else next(iter(variant_results))
+        primary_result = variant_results[primary_variant]
+        primary_loop_result = primary_result["loop_result"]
+        primary_timeline_manifest = primary_result["timeline_manifest"]
+        primary_audio_path = primary_result["final_audio_path"]
+
+        task_state.set_preview_file(task_id, "tts_full_audio", primary_audio_path)
+        _save_json(task_dir, "tts_duration_rounds.json", primary_loop_result["rounds"])
+
+        task_state.update(
+            task_id,
+            variants=variants,
+            segments=primary_loop_result["tts_segments"],
+            tts_script=primary_loop_result["tts_script"],
+            tts_audio_path=primary_audio_path,
+            voice_id=voice.get("id"),
+            timeline_manifest=primary_timeline_manifest,
+            localized_translation=primary_loop_result["localized_translation"],
+            tts_duration_rounds=primary_loop_result["rounds"],
+        )
+
+        task_state.set_artifact(
+            task_id,
+            "tts",
+            build_tts_artifact(
+                primary_loop_result["tts_script"],
+                primary_loop_result["tts_segments"],
+                duration_rounds=primary_loop_result["rounds"],
+            ),
+        )
+
+        from appcore.events import EVT_TTS_SCRIPT_READY
+        self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": primary_loop_result["tts_script"]})
+        self._set_step(
+            task_id, "tts", "done",
+            f"{lang_display}配音生成完成（{primary_loop_result['final_round']} 轮收敛）",
+        )
+
+        for result in variant_results.values():
+            loop_result = result["loop_result"]
+            for round_record in loop_result["rounds"]:
+                round_idx = round_record["round"]
+                if round_idx >= 2:
+                    _log_translate_billing(
+                        user_id=self.user_id,
+                        project_id=task_id,
+                        use_case_code="video_translate.rewrite",
+                        provider=provider,
+                        input_tokens=round_record.get("translate_tokens_in"),
+                        output_tokens=round_record.get("translate_tokens_out"),
+                        success=True,
+                    )
+                _log_translate_billing(
+                    user_id=self.user_id,
+                    project_id=task_id,
+                    use_case_code="video_translate.tts_script",
+                    provider=provider,
+                    input_tokens=round_record.get("tts_script_tokens_in"),
+                    output_tokens=round_record.get("tts_script_tokens_out"),
+                    success=True,
+                )
+                tts_char_count = round_record.get("tts_char_count")
+                if tts_char_count is None and round_idx == loop_result["final_round"]:
+                    final_text = (loop_result.get("tts_script") or {}).get("full_text") or ""
+                    tts_char_count = len(final_text) if final_text else None
+                ai_billing.log_request(
+                    use_case_code="video_translate.tts",
+                    user_id=self.user_id,
+                    project_id=task_id,
+                    provider="elevenlabs",
+                    model=self.tts_model_id,
+                    request_units=tts_char_count,
+                    units_type="chars",
+                    success=True,
+                )
+        return
 
         loop_result = self._run_tts_duration_loop(
             task_id=task_id,
@@ -1332,6 +1533,11 @@ class PipelineRunner:
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if _is_av_pipeline_task(task):
+            if (task.get("steps") or {}).get("subtitle") == "done":
+                return
+            run_av_localize(task_id, runner=self, variant="av")
+            return
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
         from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio
@@ -1539,6 +1745,347 @@ class PipelineRunner:
             "exports": {"normal": exports},
         })
         _upload_artifacts_to_tos(task_state.get(task_id) or {}, task_id)
+
+def _default_av_variant_state(label: str = "音画同步版") -> dict:
+    return {
+        "label": label,
+        "localized_translation": {},
+        "tts_script": {},
+        "tts_result": {},
+        "english_asr_result": {},
+        "corrected_subtitle": {},
+        "timeline_manifest": {},
+        "result": {},
+        "exports": {},
+        "artifacts": {},
+        "preview_files": {},
+        "sentences": [],
+    }
+
+
+def _ensure_variant_state(task: dict, variant: str, label: str = "音画同步版") -> tuple[dict, dict]:
+    variants = dict(task.get("variants") or {})
+    base = variants.get(variant)
+    variant_state = dict(base) if isinstance(base, dict) else _default_av_variant_state(label)
+    variant_state.setdefault("label", label)
+    variant_state.setdefault("artifacts", {})
+    variant_state.setdefault("preview_files", {})
+    variant_state.setdefault("sentences", [])
+    variants[variant] = variant_state
+    return variants, variant_state
+
+
+def _join_source_full_text(script_segments: list[dict]) -> str:
+    return "\n".join(
+        str(segment.get("text") or "").strip()
+        for segment in script_segments
+        if str(segment.get("text") or "").strip()
+    ).strip()
+
+
+def _normalize_av_sentences(sentences: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for fallback_index, sentence in enumerate(sentences or []):
+        if not isinstance(sentence, dict):
+            continue
+        start_time = float(sentence.get("start_time", 0.0) or 0.0)
+        end_time = float(sentence.get("end_time", start_time) or start_time)
+        target_duration = float(sentence.get("target_duration", max(0.0, end_time - start_time)) or 0.0)
+        text = str(sentence.get("text") or "")
+        normalized.append(
+            {
+                **sentence,
+                "asr_index": int(sentence.get("asr_index", sentence.get("index", fallback_index))),
+                "start_time": start_time,
+                "end_time": end_time,
+                "target_duration": target_duration,
+                "target_chars_range": list(sentence.get("target_chars_range") or []),
+                "text": text,
+                "est_chars": int(sentence.get("est_chars", len(text)) or 0),
+            }
+        )
+    return normalized
+
+
+def _build_av_localized_translation(sentences: list[dict]) -> dict:
+    localized_sentences = []
+    text_parts = []
+    for fallback_index, sentence in enumerate(sentences or []):
+        text = str(sentence.get("text") or "")
+        if text:
+            text_parts.append(text)
+        localized_sentences.append(
+            {
+                "index": fallback_index,
+                "asr_index": int(sentence.get("asr_index", fallback_index)),
+                "text": text,
+                "source_segment_indices": [int(sentence.get("asr_index", fallback_index))],
+            }
+        )
+    return {
+        "full_text": " ".join(text_parts).strip(),
+        "sentences": localized_sentences,
+    }
+
+
+def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
+    segments: list[dict] = []
+    for fallback_index, sentence in enumerate(sentences or []):
+        text = str(sentence.get("text") or "")
+        segments.append(
+            {
+                "index": fallback_index,
+                "asr_index": int(sentence.get("asr_index", fallback_index)),
+                "text": text,
+                "translated": text,
+                "tts_text": text,
+                "start_time": float(sentence.get("start_time", 0.0) or 0.0),
+                "end_time": float(sentence.get("end_time", sentence.get("start_time", 0.0)) or 0.0),
+                "target_duration": float(sentence.get("target_duration", 0.0) or 0.0),
+                "target_chars_range": list(sentence.get("target_chars_range") or []),
+                "tts_duration": float(sentence.get("tts_duration", 0.0) or 0.0),
+                "tts_path": sentence.get("tts_path"),
+                "speed": float(sentence.get("speed", 1.0) or 1.0),
+                "rewrite_rounds": int(sentence.get("rewrite_rounds", 0) or 0),
+                "status": sentence.get("status"),
+            }
+        )
+    return segments
+
+
+def _fail_localize(task_id: str, runner: "PipelineRunner", step: str, message: str) -> None:
+    task_state.update(task_id, status="failed", error=message)
+    runner._set_step(task_id, step, "error", message)
+    runner._emit(task_id, EVT_PIPELINE_ERROR, {"error": message})
+
+
+def _new_silent_runner(user_id: int | None = None) -> "PipelineRunner":
+    bus = EventBus()
+    return PipelineRunner(bus=bus, user_id=user_id)
+
+
+def dispatch_localize(task_id: str, runner: "PipelineRunner" | None = None):
+    task = task_state.get(task_id) or {}
+    task_type = str(task.get("type") or "").strip()
+    pipeline_version = str(task.get("pipeline_version") or "").strip()
+    if task_type == "av_translate" or pipeline_version == "av":
+        return run_av_localize(task_id, runner=runner, variant="av")
+    return run_localize(task_id, runner=runner, variant="normal")
+
+
+def run_localize(task_id: str, runner: "PipelineRunner" | None = None, variant: str = "normal") -> None:
+    del variant  # legacy path always reuses existing normal/hook_cta flow
+    runner = runner or _new_silent_runner()
+
+    from appcore.source_video import ensure_local_source_video
+
+    ensure_local_source_video(task_id)
+    task = task_state.get(task_id) or {}
+    task_dir = task.get("task_dir", "")
+
+    runner._step_translate(task_id)
+    current = task_state.get(task_id) or {}
+    if current.get("steps", {}).get("translate") == "waiting":
+        return
+
+    runner._step_tts(task_id, task_dir)
+    current = task_state.get(task_id) or {}
+    if current.get("steps", {}).get("tts") == "waiting":
+        return
+
+    runner._step_subtitle(task_id, task_dir)
+
+
+def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, variant: str = "av") -> None:
+    runner = runner or _new_silent_runner()
+    if config.AV_LOCALIZE_FALLBACK:
+        return run_localize(task_id, runner=runner, variant="normal")
+
+    current_step = "translate"
+
+    try:
+        from appcore.source_video import ensure_local_source_video
+        import importlib
+        from pipeline.av_translate import generate_av_localized_translation
+        from pipeline.duration_reconcile import reconcile_duration
+        from pipeline.shot_notes import generate_shot_notes
+        from pipeline.subtitle import build_srt_from_tts, save_srt
+        from pipeline.tts import generate_full_audio
+
+        ensure_local_source_video(task_id)
+        task = task_state.get(task_id) or {}
+        if not task:
+            raise KeyError(f"task not found: {task_id}")
+
+        video_path = task.get("video_path", "")
+        task_dir = task.get("task_dir", "")
+        script_segments = list(task.get("script_segments") or [])
+        av_inputs = dict(task.get("av_translate_inputs") or {})
+        target_language = str(av_inputs.get("target_language") or "").strip()
+        target_market = str(av_inputs.get("target_market") or "").strip()
+        target_language_name = str(av_inputs.get("target_language_name") or target_language or "目标语").strip()
+
+        missing = [
+            field_name
+            for field_name, value in (
+                ("target_language", target_language),
+                ("target_market", target_market),
+            )
+            if not value
+        ]
+        if missing:
+            _fail_localize(task_id, runner, "translate", f"缺少必填字段: {', '.join(missing)}")
+            return
+
+        loc_mod = importlib.import_module(runner.localization_module)
+        voice = runner._resolve_voice(task, loc_mod)
+        tts_voice_id = voice.get("elevenlabs_voice_id") or voice.get("id")
+        speech_rate_voice_id = voice.get("id") or tts_voice_id
+        if not tts_voice_id:
+            _fail_localize(task_id, runner, "tts", "未找到可用音色，无法继续生成配音")
+            return
+
+        source_full_text = _join_source_full_text(script_segments)
+
+        runner._set_step(task_id, "translate", "running", "正在分析画面并生成笔记...")
+        shot_notes = generate_shot_notes(
+            video_path=video_path,
+            script_segments=script_segments,
+            target_language=target_language_name,
+            target_market=target_market,
+            user_id=runner.user_id,
+            project_id=task_id,
+        )
+        task = task_state.get(task_id) or task
+        variants, variant_state = _ensure_variant_state(task, variant)
+        task_state.update(task_id, shot_notes=shot_notes, variants=variants)
+        _save_json(task_dir, "shot_notes.json", shot_notes)
+
+        runner._set_step(task_id, "translate", "running", "正在生成音画同步译文...")
+        av_output = generate_av_localized_translation(
+            script_segments=script_segments,
+            shot_notes=shot_notes,
+            av_inputs=av_inputs,
+            voice_id=speech_rate_voice_id,
+            user_id=runner.user_id,
+            project_id=task_id,
+        )
+        av_sentences = _normalize_av_sentences((av_output or {}).get("sentences") or [])
+        localized_translation = _build_av_localized_translation(av_sentences)
+        task = task_state.get(task_id) or task
+        variants, variant_state = _ensure_variant_state(task, variant)
+        variant_state["sentences"] = av_sentences
+        variant_state["localized_translation"] = localized_translation
+        variants[variant] = variant_state
+        task_state.update(
+            task_id,
+            variants=variants,
+            shot_notes=shot_notes,
+            localized_translation=localized_translation,
+            source_full_text_zh=source_full_text,
+        )
+        task_state.set_artifact(
+            task_id,
+            "translate",
+            build_translate_artifact(
+                source_full_text,
+                localized_translation,
+                target_language=target_language,
+            ),
+        )
+        _save_json(task_dir, f"localized_translation.{variant}.json", localized_translation)
+        runner._emit(
+            task_id,
+            EVT_TRANSLATE_RESULT,
+            {
+                "source_full_text_zh": source_full_text,
+                "localized_translation": localized_translation,
+                "segments": av_sentences,
+            },
+        )
+        runner._set_step(task_id, "translate", "done", f"{target_language_name}音画同步翻译完成")
+
+        current_step = "tts"
+        runner._set_step(task_id, "tts", "running", f"正在生成{target_language_name}配音...")
+        tts_input_segments = _build_av_tts_segments(av_sentences)
+        tts_output = generate_full_audio(
+            tts_input_segments,
+            tts_voice_id,
+            task_dir,
+            variant=variant,
+            language_code=target_language,
+        )
+        final_sentences = reconcile_duration(
+            task=task_state.get(task_id) or task,
+            av_output={"sentences": av_sentences},
+            tts_output=tts_output,
+            voice_id=tts_voice_id,
+            target_language=target_language,
+            av_inputs=av_inputs,
+            shot_notes=shot_notes,
+            script_segments=script_segments,
+            user_id=runner.user_id,
+            project_id=task_id,
+        )
+        final_localized_translation = _build_av_localized_translation(final_sentences)
+        final_tts_segments = _build_av_tts_segments(final_sentences)
+        final_tts_output = {
+            "full_audio_path": (tts_output or {}).get("full_audio_path", ""),
+            "segments": final_tts_segments,
+        }
+        task = task_state.get(task_id) or task
+        variants, variant_state = _ensure_variant_state(task, variant)
+        variant_state.update(
+            {
+                "sentences": final_sentences,
+                "localized_translation": final_localized_translation,
+                "tts_result": final_tts_output,
+                "tts_audio_path": final_tts_output["full_audio_path"],
+                "voice_id": voice.get("id") or tts_voice_id,
+            }
+        )
+        variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_tts_output["full_audio_path"]
+        variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(final_tts_segments)
+        variants[variant] = variant_state
+        task_state.update(
+            task_id,
+            variants=variants,
+            segments=final_tts_segments,
+            tts_audio_path=final_tts_output["full_audio_path"],
+            voice_id=voice.get("id") or tts_voice_id,
+            localized_translation=final_localized_translation,
+            tts_duration_status="done",
+        )
+        task_state.set_preview_file(task_id, "tts_full_audio", final_tts_output["full_audio_path"])
+        task_state.set_artifact(task_id, "tts", build_tts_artifact(final_tts_segments))
+        _save_json(task_dir, f"tts_result.{variant}.json", final_tts_segments)
+        runner._set_step(task_id, "tts", "done", f"{target_language_name}配音生成完成")
+
+        current_step = "subtitle"
+        runner._set_step(task_id, "subtitle", "running", f"正在生成{target_language_name}字幕...")
+        srt_content = build_srt_from_tts(final_tts_segments)
+        srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
+        task = task_state.get(task_id) or task
+        variants, variant_state = _ensure_variant_state(task, variant)
+        variant_state["srt_path"] = srt_path
+        variant_state.setdefault("corrected_subtitle", {})["srt_content"] = srt_content
+        variants[variant] = variant_state
+        task_state.update(
+            task_id,
+            variants=variants,
+            srt_path=srt_path,
+            corrected_subtitle={"srt_content": srt_content},
+        )
+        task_state.set_preview_file(task_id, "srt", srt_path)
+        task_state.set_artifact(
+            task_id,
+            "subtitle",
+            build_subtitle_artifact(srt_content, target_language=target_language),
+        )
+        runner._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
+        runner._set_step(task_id, "subtitle", "done", f"{target_language_name}字幕生成完成")
+    except Exception as exc:
+        _fail_localize(task_id, runner, current_step, str(exc))
 
 
 def run_analysis_only(

@@ -458,13 +458,13 @@ git commit -m "feat(video-translate-v2): 时长闭环 duration_reconcile + tts s
 - Modify: `config.py`(新增 `AV_LOCALIZE_FALLBACK` 布尔)
 - Test: `tests/test_appcore_runtime.py`
 
-- [ ] **Step 5.1:在 `config.py` 加开关**
+- [x] **Step 5.1:在 `config.py` 加开关**
 
 ```python
 AV_LOCALIZE_FALLBACK = _env("AV_LOCALIZE_FALLBACK", "0") == "1"
 ```
 
-- [ ] **Step 5.2:在 `appcore/runtime.py` 新增 `run_av_localize(task_id, variant="av")`**
+- [x] **Step 5.2:在 `appcore/runtime.py` 新增 `run_av_localize(task_id, variant="av")`**
 
 参考现有 `run_localize` 的组织方式。内部顺序:
 
@@ -478,13 +478,13 @@ AV_LOCALIZE_FALLBACK = _env("AV_LOCALIZE_FALLBACK", "0") == "1"
 8. `subtitle.build_srt_from_tts(...)` → `variants["av"].srt_path`
 9. 每步落 task state 和 steps 日志
 
-- [ ] **Step 5.3:挂到任务 dispatcher**
+- [x] **Step 5.3:挂到任务 dispatcher**
 
 runtime.py 里一般有 `PIPELINE_BY_TYPE` 或类似 dispatcher,新类型 `"av_translate"` 或沿用现有 `"translate"` 类型 + state 里一个 `"pipeline_version": "av"` 字段。参考同目录其他 run_* 的注册方式。
 
 **确认**:Codex 读 runtime.py 首 300 行找到 dispatcher 注册点,按现有模式追加。
 
-- [ ] **Step 5.4:写集成测试 `tests/test_appcore_runtime.py` 追加**
+- [x] **Step 5.4:写集成测试 `tests/test_appcore_runtime.py` 追加**
 
 ```python
 def test_run_av_localize_fallback_to_v1(monkeypatch):
@@ -499,7 +499,7 @@ def test_run_av_localize_happy_flow(monkeypatch):
     # mock 所有阶段,验调用顺序 shot_notes → av_translate → tts → reconcile → subtitle
 ```
 
-- [ ] **Step 5.5:跑测试**
+- [x] **Step 5.5:跑测试**
 
 ```bash
 pytest tests/test_appcore_runtime.py -q -v
@@ -508,7 +508,7 @@ pytest tests/ -q   # 整体回归,期望不引入失败
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5.6:Commit**
+- [x] **Step 5.6:Commit**
 
 ```bash
 git add appcore/runtime.py config.py tests/test_appcore_runtime.py
@@ -523,7 +523,7 @@ git commit -m "feat(video-translate-v2): runtime 集成 run_av_localize + AV_LOC
 - Modify: `web/routes/`(视频翻译任务创建接口,具体文件 Codex 从 `web/routes/` 里找,应在 `projects.py` 或 `medias.py` 附近)
 - Modify: 对应 `web/static/*.js` 和 `web/templates/*.html`
 
-- [ ] **Step 6.1:定位任务创建路由**
+- [x] **Step 6.1:定位任务创建路由**
 
 ```bash
 grep -rn "video_translate" web/routes/ | head -20
@@ -532,7 +532,7 @@ grep -rn "run_localize\|create.*project.*translate" web/routes/ | head -20
 
 找到接收视频翻译任务创建的 POST 路由,读当前字段。
 
-- [ ] **Step 6.2:路由层接收新字段**
+- [x] **Step 6.2:路由层接收新字段**
 
 在 POST handler 里新增读取(使用 request.form.get / request.json.get,看现有代码风格):
 
@@ -555,7 +555,7 @@ task_state["av_translate_inputs"] = av_inputs
 
 必填校验:`target_language` 和 `target_market` 空 → 返回 400 错误。
 
-- [ ] **Step 6.3:前端表单加字段**
+- [x] **Step 6.3:前端表单加字段**
 
 找到视频翻译任务创建的模板/JS,加:
 - `<select name="target_language">`:填充现有支持语种列表(参考 `pipeline/speech_rate_model.py` 的 `BENCHMARK_TEXT` keys:en/de/fr/ja/es/pt)
@@ -564,7 +564,7 @@ task_state["av_translate_inputs"] = av_inputs
 
 **UI 风格**:遵循项目 CLAUDE.md 的"Frontend Design System — Ocean Blue Admin"(深海蓝+大圆角+OKLCH token)。
 
-- [ ] **Step 6.4:手动冒烟**
+- [x] **Step 6.4:手动冒烟**
 
 ```bash
 # 启动本地服务
@@ -573,7 +573,7 @@ python run.py   # 或项目实际启动命令
 # 检查数据库 projects.state_json 字段包含新字段
 ```
 
-- [ ] **Step 6.5:Commit**
+- [x] **Step 6.5:Commit**
 
 ```bash
 git add web/
@@ -588,20 +588,20 @@ git commit -m "feat(video-translate-v2): 任务创建表单加 target_language/m
 - Modify: 任务详情页模板(`web/templates/`)和 JS(`web/static/`)
 - 可能新增: 单句重写接口 `web/routes/<something>:POST /api/tasks/<id>/av/rewrite_sentence`
 
-- [ ] **Step 7.1:画面笔记预览卡片**
+- [x] **Step 7.1:画面笔记预览卡片**
 
 读 `task.state_json.shot_notes`,展示:
 - 卡片头:`shot_notes.global.product_name / category / overall_theme`
 - 结构分段:`hook_range / demo_range / proof_range / cta_range`
 - 可展开"逐句画面笔记"表格:asr_index / scene / action / product_visible(图标) / shot_type
 
-- [ ] **Step 7.2:时长警告列表**
+- [x] **Step 7.2:时长警告列表**
 
 读 `task.state_json.variants["av"].sentences`,筛 `status in {"warning_overshoot", "warning_short"}`:
 - 表格列:asr_index / target_duration / tts_duration / 偏差 % / 当前译文 / 操作
 - 操作按钮:"手动重写"(弹窗显示原译文 textarea,运营修改提交 → 后端重跑 TTS)
 
-- [ ] **Step 7.3:单句重写后端接口**
+- [x] **Step 7.3:单句重写后端接口**
 
 ```python
 @bp.route("/api/tasks/<task_id>/av/rewrite_sentence", methods=["POST"])
@@ -616,13 +616,13 @@ def av_rewrite_sentence(task_id):
     return jsonify({"ok": True, "status": new_status, "tts_duration": new_dur})
 ```
 
-- [ ] **Step 7.4:手动冒烟**
+- [x] **Step 7.4:手动冒烟**
 
 - 创建测试任务 → 跑通 v2 → 详情页能看到画面笔记预览
 - 预期有 warning 的句子(可以人工制造短文案或改 target_duration)
 - 点"手动重写"修改,验证 SRT + 音频文件时间戳更新
 
-- [ ] **Step 7.5:Commit**
+- [x] **Step 7.5:Commit**
 
 ```bash
 git add web/
@@ -653,7 +653,8 @@ git commit -m "feat(video-translate-v2): 详情页画面笔记预览 + 时长警
 pytest tests/ -q
 ```
 
-Expected: 全 PASS(除 v2 的新增测试外,老测试不应有失败)。
+Expected: v2 触及测试全绿(Phase 1-7 新增 + 改动波及的老测试)。
+26 个 C 类 baseline 老失败不在本 PR 范围,见 `docs/superpowers/notes/2026-04-21-pytest-baseline-failures.md`
 
 - [ ] **Step 8.4:合并前同步 master**
 

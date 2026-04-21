@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from pathlib import Path
 import json
 
@@ -136,6 +136,19 @@ def test_index_page_contains_confirmation_mode_control(authed_client_no_db):
     assert "手动确认" in body
 
 
+def test_index_page_contains_av_sync_controls(authed_client_no_db):
+    response = authed_client_no_db.get("/api/tasks/upload-page")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "音画同步配置" in body
+    assert 'id="avTargetLanguage"' in body
+    assert 'id="avTargetMarket"' in body
+    assert 'id="avOverridesPanel"' in body
+    assert 'id="avOverrideSellingPoints"' in body
+    assert "getAvTranslateInputs()" in body
+
+
 def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db, monkeypatch):
     task = store.create("task-project-workbench", "video.mp4", "output/task-project-workbench")
     row = {
@@ -158,6 +171,84 @@ def test_project_detail_page_contains_shared_workbench_hooks(authed_client_no_db
     assert "interactiveReviewToggle" in body
     assert "renderStepPreviews" in body
     assert "pipelineCard" in body
+
+
+def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-av-insights", "video.mp4", "output/task-project-av-insights")
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        shot_notes={
+            "global": {
+                "product_name": "Glow Serum",
+                "category": "护肤精华",
+                "overall_theme": "海边清透护肤",
+                "hook_range": [0, 1],
+                "demo_range": [2, 3],
+                "proof_range": [4, 4],
+                "cta_range": [5, 5],
+                "observed_selling_points": ["清爽", "夜间修护"],
+                "price_mentioned": "$29.9",
+                "on_screen_persistent_text": ["7-day glow"],
+                "pacing_note": "快节奏",
+            },
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 1.2,
+                    "scene": "女生举起产品瓶",
+                    "action": "展示滴管质地",
+                    "on_screen_text": ["7-day glow"],
+                    "product_visible": True,
+                    "shot_type": "close_up",
+                    "emotion_hint": "兴奋",
+                }
+            ],
+        },
+    )
+    store.update_variant(
+        task["id"],
+        "av",
+        sentences=[
+            {
+                "asr_index": 0,
+                "start_time": 0.0,
+                "end_time": 1.2,
+                "target_duration": 1.2,
+                "tts_duration": 1.8,
+                "target_chars_range": [8, 14],
+                "text": "Too long for this shot",
+                "status": "warning_overshoot",
+                "speed": 1.12,
+                "rewrite_rounds": 2,
+            }
+        ],
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "video.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-av-insights")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="avInsightsPanel"' in body
+    assert 'id="avShotNotesCard"' in body
+    assert 'id="avWarningsCard"' in body
+    assert 'id="avRewriteModal"' in body
+    assert "renderAvInsights()" in body
+    assert "submitAvRewrite()" in body
 
 
 def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db, monkeypatch):
@@ -663,10 +754,11 @@ def test_task_detail_returns_artifacts_structure(authed_client_no_db):
     assert payload["artifacts"] == {}
 
 
-def test_store_create_initializes_single_variant():
+def test_store_create_initializes_default_variants():
     task = store.create("task-variants", "video.mp4", "output/task-variants")
 
-    assert set(task["variants"].keys()) == {"normal"}
+    assert set(task["variants"].keys()) == {"normal", "hook_cta"}
+    assert "CTA" in task["variants"]["hook_cta"]["label"]
     assert task["variants"]["normal"]["label"] == "普通版"
 
 
@@ -1126,6 +1218,284 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     second_payload = second_response.get_json()
     assert second_payload["status"] == "started"
     assert started == [("task-start-tos", 1)]
+
+
+def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path, authed_client_no_db, monkeypatch):
+    task_id = "task-start-av-inputs"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    video_path = tmp_path / "uploads" / f"{task_id}.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"video")
+
+    store.create(task_id, str(video_path), str(task_dir), user_id=1)
+    started = []
+
+    monkeypatch.setattr(
+        "web.services.pipeline_runner.start",
+        lambda task_id, user_id=None: started.append((task_id, user_id)),
+    )
+
+    response = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/start",
+        json={
+            "voice_id": "auto",
+            "target_language": "ja",
+            "target_market": "JP",
+            "override_product_name": "Glow Serum",
+            "override_brand": "Ocean Lab",
+            "override_selling_points": "轻薄不黏腻\n夜间修护",
+            "override_price": "¥299",
+            "override_target_audience": "熬夜肌人群",
+            "override_extra_info": "避免直译品牌 slogan",
+        },
+    )
+
+    assert response.status_code == 200
+    assert started == [(task_id, 1)]
+    task = store.get(task_id)
+    assert task["pipeline_version"] == "av"
+    assert task["av_translate_inputs"]["target_language"] == "ja"
+    assert task["av_translate_inputs"]["target_language_name"] == "Japanese"
+    assert task["av_translate_inputs"]["target_market"] == "JP"
+    assert task["av_translate_inputs"]["product_overrides"] == {
+        "product_name": "Glow Serum",
+        "brand": "Ocean Lab",
+        "selling_points": ["轻薄不黏腻", "夜间修护"],
+        "price": "¥299",
+        "target_audience": "熬夜肌人群",
+        "extra_info": "避免直译品牌 slogan",
+    }
+
+
+def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "task-av-rewrite"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    video_path = tmp_path / "uploads" / f"{task_id}.mp4"
+    video_path.parent.mkdir(parents=True, exist_ok=True)
+    video_path.write_bytes(b"video")
+
+    full_audio_path = task_dir / "tts_full.av.mp3"
+    full_audio_path.write_bytes(b"old-full-audio")
+    srt_path = task_dir / "subtitle.av.srt"
+    srt_path.write_text("old srt", encoding="utf-8")
+    hard_video_path = task_dir / f"{task_id}_hard.av.mp4"
+    hard_video_path.write_bytes(b"old-hard-video")
+    capcut_archive_path = task_dir / "capcut_av.zip"
+    capcut_archive_path.write_bytes(b"old-capcut")
+    seg0_path = task_dir / "seg_0000.mp3"
+    seg1_path = task_dir / "seg_0001.mp3"
+    seg0_path.write_bytes(b"old-seg-0")
+    seg1_path.write_bytes(b"old-seg-1")
+
+    store.create(task_id, str(video_path), str(task_dir), user_id=1)
+    store.update(
+        task_id,
+        status="done",
+        pipeline_version="av",
+        av_translate_inputs={
+            "target_language": "en",
+            "target_language_name": "English",
+            "target_market": "US",
+            "product_overrides": {},
+        },
+        shot_notes={
+            "global": {
+                "product_name": "Glow Serum",
+                "category": "护肤精华",
+                "overall_theme": "海边清透护肤",
+            },
+            "sentences": [],
+        },
+        steps={
+            "extract": "done",
+            "asr": "done",
+            "alignment": "done",
+            "translate": "done",
+            "tts": "done",
+            "subtitle": "done",
+            "compose": "done",
+            "export": "done",
+        },
+        step_messages={
+            "extract": "",
+            "asr": "",
+            "alignment": "",
+            "translate": "",
+            "tts": "",
+            "subtitle": "",
+            "compose": "旧成片仍可下载",
+            "export": "旧工程包仍可下载",
+        },
+        result={"hard_video": str(hard_video_path)},
+        exports={"capcut_archive": str(capcut_archive_path)},
+        artifacts={
+            "compose": {"items": [{"type": "video", "artifact": "hard_video", "label": "硬字幕视频"}]},
+            "export": {"items": [{"type": "download", "label": "CapCut 工程包", "url": "/x.zip"}]},
+        },
+        preview_files={
+            "hard_video": str(hard_video_path),
+            "tts_full_audio": str(full_audio_path),
+            "srt": str(srt_path),
+        },
+        tos_uploads={
+            "av:srt": {"tos_key": "artifacts/1/task-av-rewrite/av/subtitle.av.srt", "artifact_kind": "srt", "variant": "av"},
+            "av:hard_video": {"tos_key": "artifacts/1/task-av-rewrite/av/task_av_hard.mp4", "artifact_kind": "hard_video", "variant": "av"},
+            "av:capcut_archive": {"tos_key": "artifacts/1/task-av-rewrite/av/capcut_av.zip", "artifact_kind": "capcut_archive", "variant": "av"},
+        },
+    )
+    store.update_variant(
+        task_id,
+        "av",
+        label="音画同步版",
+        voice_id="voice-db-id",
+        localized_translation={
+            "full_text": "Old opening line Keep this one",
+            "sentences": [
+                {"index": 0, "asr_index": 0, "text": "Old opening line", "source_segment_indices": [0]},
+                {"index": 1, "asr_index": 1, "text": "Keep this one", "source_segment_indices": [1]},
+            ],
+        },
+        tts_result={
+            "full_audio_path": str(full_audio_path),
+            "segments": [
+                {
+                    "index": 0,
+                    "asr_index": 0,
+                    "translated": "Old opening line",
+                    "text": "Old opening line",
+                    "tts_duration": 2.4,
+                    "tts_path": str(seg0_path),
+                },
+                {
+                    "index": 1,
+                    "asr_index": 1,
+                    "translated": "Keep this one",
+                    "text": "Keep this one",
+                    "tts_duration": 1.2,
+                    "tts_path": str(seg1_path),
+                },
+            ],
+        },
+        tts_audio_path=str(full_audio_path),
+        srt_path=str(srt_path),
+        corrected_subtitle={"srt_content": "old srt"},
+        result={"hard_video": str(hard_video_path)},
+        exports={"capcut_archive": str(capcut_archive_path)},
+        preview_files={
+            "tts_full_audio": str(full_audio_path),
+            "hard_video": str(hard_video_path),
+        },
+        sentences=[
+            {
+                "asr_index": 0,
+                "start_time": 0.0,
+                "end_time": 2.0,
+                "target_duration": 2.0,
+                "target_chars_range": [10, 18],
+                "text": "Old opening line",
+                "est_chars": 16,
+                "tts_path": str(seg0_path),
+                "tts_duration": 2.4,
+                "speed": 1.12,
+                "rewrite_rounds": 2,
+                "status": "warning_overshoot",
+            },
+            {
+                "asr_index": 1,
+                "start_time": 2.0,
+                "end_time": 3.2,
+                "target_duration": 1.2,
+                "target_chars_range": [6, 10],
+                "text": "Keep this one",
+                "est_chars": 13,
+                "tts_path": str(seg1_path),
+                "tts_duration": 1.2,
+                "speed": 1.0,
+                "rewrite_rounds": 0,
+                "status": "ok",
+            },
+        ],
+    )
+
+    generated = []
+    rebuilt = []
+
+    monkeypatch.setattr(
+        "web.routes.task.tts.get_voice_by_id",
+        lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
+    )
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        generated.append({"text": text, "voice_id": voice_id, "output_path": output_path, **kwargs})
+        Path(output_path).write_bytes(f"audio:{text}".encode("utf-8"))
+        return output_path
+
+    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 1.95 if str(path).endswith("seg_0000.mp3") else 1.2)
+
+    def fake_rebuild_full_audio(task_dir_arg, segments, variant):
+        rebuilt.append(
+            {
+                "task_dir": task_dir_arg,
+                "variant": variant,
+                "texts": [segment["text"] for segment in segments],
+            }
+        )
+        Path(full_audio_path).write_bytes(b"rebuilt-full-audio")
+        return str(full_audio_path)
+
+    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", fake_rebuild_full_audio)
+
+    response = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/av/rewrite_sentence",
+        json={"asr_index": 0, "text": "Fresh new hook"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["status"] == "ok"
+    assert payload["compose_stale"] is True
+    assert payload["tts_duration"] == 1.95
+    assert generated and generated[0]["text"] == "Fresh new hook"
+    assert rebuilt == [
+        {
+            "task_dir": str(task_dir),
+            "variant": "av",
+            "texts": ["Fresh new hook", "Keep this one"],
+        }
+    ]
+
+    saved = store.get(task_id)
+    assert saved["segments"][0]["translated"] == "Fresh new hook"
+    assert saved["localized_translation"]["full_text"] == "Fresh new hook Keep this one"
+    assert saved["tts_audio_path"] == str(full_audio_path)
+    assert saved["srt_path"] == str(srt_path)
+    assert "Fresh new hook" in saved["corrected_subtitle"]["srt_content"]
+    assert saved["steps"]["compose"] == "done"
+    assert saved["steps"]["export"] == "done"
+    assert "请从此步继续" in saved["step_messages"]["compose"]
+    assert saved["result"] == {}
+    assert saved["exports"] == {}
+    assert "compose" not in saved["artifacts"]
+    assert "export" not in saved["artifacts"]
+    assert "hard_video" not in saved["preview_files"]
+    assert saved["tos_uploads"] == {}
+    av_variant = saved["variants"]["av"]
+    assert av_variant["sentences"][0]["text"] == "Fresh new hook"
+    assert av_variant["sentences"][0]["status"] == "ok"
+    assert av_variant["sentences"][0]["tts_duration"] == 1.95
+    assert av_variant["tts_audio_path"] == str(full_audio_path)
+    assert av_variant["srt_path"] == str(srt_path)
+    assert av_variant["result"] == {}
+    assert av_variant["exports"] == {}
+    assert "hard_video" not in av_variant["preview_files"]
 
 
 def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):

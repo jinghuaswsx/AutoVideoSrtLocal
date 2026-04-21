@@ -2,6 +2,11 @@ from __future__ import annotations
 import json
 from flask import Blueprint, render_template, abort, redirect
 from flask_login import login_required, current_user
+from appcore.av_translate_inputs import (
+    AV_TARGET_LANGUAGE_OPTIONS,
+    AV_TARGET_MARKET_OPTIONS,
+    build_default_av_translate_inputs,
+)
 from appcore.db import query, query_one
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
 from appcore.settings import get_retention_hours
@@ -40,13 +45,19 @@ def detail(task_id: str):
         except Exception:
             pass
     from appcore.api_keys import get_key
-    translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    try:
+        translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    except Exception:
+        translate_pref = "openrouter"
     return render_template(
         "project_detail.html",
         project=row,
         state=state,
         initial_task_json=json.dumps(state, ensure_ascii=False),
         translate_pref=translate_pref,
+        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_markets=AV_TARGET_MARKET_OPTIONS,
+        av_translate_defaults=build_default_av_translate_inputs(),
     )
 
 

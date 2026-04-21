@@ -1,3 +1,5 @@
+import pytest
+
 from pipeline.localization import build_tts_segments
 
 
@@ -66,3 +68,37 @@ def test_build_tts_segments_falls_back_to_last_segment_when_all_indices_invalid(
     assert len(segments) == 1
     assert segments[0]["source_segment_indices"] == [1]
     assert segments[0]["end_time"] == 2.0
+
+
+def test_generate_segment_audio_passes_speed_via_voice_settings(tmp_path, monkeypatch):
+    import pipeline.tts as tts
+
+    captured = {}
+
+    class DummyVoiceSettings:
+        def __init__(self, **kwargs):
+            captured["voice_settings_kwargs"] = kwargs
+
+    class FakeTextToSpeech:
+        @staticmethod
+        def convert(**kwargs):
+            captured["convert_kwargs"] = kwargs
+            return [b"audio-bytes"]
+
+    class FakeClient:
+        text_to_speech = FakeTextToSpeech()
+
+    monkeypatch.setattr(tts, "_get_client", lambda api_key=None: FakeClient())
+    monkeypatch.setattr(tts, "VoiceSettings", DummyVoiceSettings, raising=False)
+
+    out = tmp_path / "seg.mp3"
+    path = tts.generate_segment_audio(
+        text="hello world",
+        voice_id="voice-1",
+        output_path=str(out),
+        speed=1.05,
+    )
+
+    assert path == str(out)
+    assert captured["voice_settings_kwargs"]["speed"] == pytest.approx(1.05)
+    assert captured["convert_kwargs"]["voice_settings"].__class__ is DummyVoiceSettings
