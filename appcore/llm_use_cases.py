@@ -203,7 +203,7 @@ USE_CASES: dict[str, UseCase] = {
         "图片本地化重绘",
         "用图像模型重绘目标语种的商品图",
         "gemini_aistudio",
-        "gemini-3-pro-image-preview",
+        "gemini-3.1-flash-image-preview",
         "gemini",
         "images",
     ),
