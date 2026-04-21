@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 from typing import Any
+
 from appcore.db import query, query_one, execute
 
 
@@ -163,6 +164,122 @@ def get_product_by_code(code: str) -> dict | None:
         "SELECT * FROM media_products WHERE product_code=%s AND deleted_at IS NULL",
         (code,),
     )
+
+
+def _normalize_link_check_url(url: str) -> str:
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    parsed = urlparse((url or "").strip())
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    normalized_query = urlencode(query_pairs, doseq=True)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, normalized_query, ""))
+
+
+def _parse_localized_links_json(value: str | dict | None) -> dict:
+    import json as _json
+
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = _json.loads(value)
+    except (_json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _link_check_handle_from_url(url: str) -> str:
+    from urllib.parse import urlparse
+
+    segments = [segment.strip().lower() for segment in urlparse(url or "").path.split("/") if segment.strip()]
+    if "products" not in segments:
+        return ""
+    index = segments.index("products")
+    if index + 1 >= len(segments):
+        return ""
+    handle = segments[index + 1]
+    if handle.endswith("-rjc"):
+        handle = handle[:-4]
+    return handle
+
+
+def find_product_for_link_check_url(target_url: str, target_language: str) -> dict | None:
+    normalized_target_url = _normalize_link_check_url(target_url)
+    target_path = normalized_target_url.split("?", 1)[0]
+    rows = query(
+        "SELECT id, product_code, name, localized_links_json "
+        "FROM media_products WHERE deleted_at IS NULL ORDER BY id ASC",
+        (),
+    ) or []
+    rows = sorted(rows, key=lambda row: int(row.get("id") or 0))
+
+    path_match: dict | None = None
+    for row in rows:
+        links = _parse_localized_links_json(row.get("localized_links_json"))
+        localized_url = (links.get(target_language) or "").strip()
+        if not localized_url:
+            continue
+        normalized_localized_url = _normalize_link_check_url(localized_url)
+        if normalized_localized_url == normalized_target_url:
+            return {**row, "_matched_by": "localized_links_exact"}
+        if normalized_localized_url.split("?", 1)[0] == target_path and path_match is None:
+            path_match = {**row, "_matched_by": "localized_links_path"}
+
+    if path_match:
+        return path_match
+
+    handle = _link_check_handle_from_url(target_url)
+    if not handle:
+        return None
+    product = query_one(
+        "SELECT id, product_code, name FROM media_products "
+        "WHERE product_code=%s AND deleted_at IS NULL",
+        (handle,),
+    )
+    if not product:
+        return None
+    return {**product, "_matched_by": "product_code"}
+
+
+def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
+    from pathlib import PurePosixPath
+
+    cover_rows = query(
+        "SELECT lang, object_key FROM media_product_covers "
+        "WHERE product_id=%s AND lang=%s",
+        (product_id, lang),
+    ) or []
+    detail_rows = query(
+        "SELECT id, sort_order, object_key FROM media_product_detail_images "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "ORDER BY sort_order ASC, id ASC",
+        (product_id, lang),
+    ) or []
+
+    images: list[dict] = []
+    for row in cover_rows:
+        object_key = (row.get("object_key") or "").strip()
+        if not object_key:
+            continue
+        images.append({
+            "id": f"cover-{lang}",
+            "kind": "cover",
+            "filename": PurePosixPath(object_key).name,
+            "object_key": object_key,
+        })
+    for row in sorted(detail_rows, key=lambda item: (int(item.get("sort_order") or 0), int(item.get("id") or 0))):
+        object_key = (row.get("object_key") or "").strip()
+        if not object_key:
+            continue
+        detail_id = int(row.get("id") or 0)
+        images.append({
+            "id": f"detail-{detail_id}",
+            "kind": "detail",
+            "filename": PurePosixPath(object_key).name,
+            "object_key": object_key,
+        })
+    return images
 
 
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,

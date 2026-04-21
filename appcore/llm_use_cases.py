@@ -94,6 +94,11 @@ USE_CASES: dict[str, UseCase] = {
         "核查外链商品图文字是否匹配目标语种",
         "gemini_aistudio", "gemini-2.5-flash", "gemini",
     ),
+    "link_check.same_image": _uc(
+        "link_check.same_image", "image", "链接同图判断",
+        "判断两张链接商品图是否属于同一基础图片",
+        "gemini_aistudio", "gemini-3.1-flash-lite-preview", "gemini",
+    ),
     # ── 文本翻译 ──（对齐重构前：translate_text() 默认 provider="openrouter"
     # 无派生名时落到 _OPENROUTER_PREF_MODELS["openrouter"]="anthropic/claude-sonnet-4.6"）
     "text_translate.generate": _uc(
