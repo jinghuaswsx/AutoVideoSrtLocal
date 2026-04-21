@@ -154,23 +154,43 @@
     }
 
     function inferMimeFromName(name) {
-      const n = (name || '').toLowerCase();
-      if (/\.(jpe?g)$/.test(n)) return 'image/jpeg';
-      if (/\.png$/.test(n))      return 'image/png';
-      if (/\.webp$/.test(n))     return 'image/webp';
-      if (/\.gif$/.test(n))      return 'image/gif';
+      const n = (name || '').toLowerCase().trim();
+      if (/\.(jpe?g)(?:\?|#|$)/.test(n)) return 'image/jpeg';
+      if (/\.png(?:\?|#|$)/.test(n))      return 'image/png';
+      if (/\.webp(?:\?|#|$)/.test(n))     return 'image/webp';
+      if (/\.gif(?:\?|#|$)/.test(n))      return 'image/gif';
       return '';
     }
     function resolveMime(f) {
-      const mime = (f && f.type || '').toLowerCase();
+      if (!f) return '';
+      // 浏览器有时给出带参数 ("image/png; charset=...") 或非标准 MIME ("image/x-png")；
+      // 优先按白名单精确命中，失败则按文件名后缀兜底，再失败则接受任意 image/*。
+      const rawMime = (f.type || '').toLowerCase().trim();
+      const mime = rawMime.split(';')[0].trim();
       if (/^image\/(jpeg|png|webp|gif)$/.test(mime)) return mime;
-      return inferMimeFromName(f && f.name);
+      const extMime = inferMimeFromName(f.name);
+      if (extMime) return extMime;
+      if (mime.startsWith('image/')) {
+        if (mime.includes('jpeg') || mime.includes('jpg')) return 'image/jpeg';
+        if (mime.includes('png'))  return 'image/png';
+        if (mime.includes('webp')) return 'image/webp';
+        if (mime.includes('gif'))  return 'image/gif';
+        return 'image/jpeg';
+      }
+      return '';
     }
 
     async function uploadFiles(rawFiles) {
       if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
-      const files = [...(rawFiles || [])].filter(f => !!resolveMime(f));
-      if (!files.length) { alert('请选择 JPG / PNG / WebP / GIF 图片'); return; }
+      const all = [...(rawFiles || [])];
+      const files = all.filter(f => !!resolveMime(f));
+      if (!files.length) {
+        const debug = all.length
+          ? all.map((f, i) => `[${i}] name=${f && f.name || '(空)'} · type=${f && f.type || '(空)'}`).join('\n')
+          : '(未选中任何文件)';
+        alert('请选择 JPG / PNG / WebP / GIF 图片\n\n调试信息：\n' + debug);
+        return;
+      }
       if (files.length > 20) {
         alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
         files.length = 20;
