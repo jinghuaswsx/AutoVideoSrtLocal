@@ -46,6 +46,7 @@ def create_bulk_translate_task(
     force_retranslate: bool,
     video_params: dict,
     initiator: dict,
+    raw_source_ids: list[int] | None = None,
 ) -> str:
     """创建父任务,生成 plan + 费用预估 + 审计初始记录。
 
@@ -53,8 +54,14 @@ def create_bulk_translate_task(
 
     返回 task_id(UUID)。
     """
-    plan = generate_plan(user_id, product_id, target_langs,
-                          content_types, force_retranslate)
+    plan = generate_plan(
+        user_id,
+        product_id,
+        target_langs,
+        content_types,
+        force_retranslate,
+        raw_source_ids=raw_source_ids,
+    )
     cost = do_estimate(user_id, product_id, target_langs,
                          content_types, force_retranslate)
 
@@ -64,6 +71,7 @@ def create_bulk_translate_task(
         "target_langs": target_langs,
         "content_types": content_types,
         "force_retranslate": force_retranslate,
+        "raw_source_ids": raw_source_ids or [],
         "video_params_snapshot": video_params or {},
         "initiator": initiator,
         "plan": plan,

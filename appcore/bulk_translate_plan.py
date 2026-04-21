@@ -30,6 +30,7 @@ def generate_plan(
     target_langs: list[str],
     content_types: list[str],
     force_retranslate: bool,
+    raw_source_ids: list[int] | None = None,
 ) -> list[dict]:
     """生成 plan 项列表。
 
@@ -80,19 +81,27 @@ def generate_plan(
 
     # 4. 视频
     if "video" in content_types:
+        if not raw_source_ids:
+            raise ValueError("video kind requires non-empty raw_source_ids")
+        placeholders = ",".join(["%s"] * len(raw_source_ids))
         video_rows = query(
-            "SELECT id FROM media_items "
-            "WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL "
-            "ORDER BY sort_order ASC, id ASC",
-            (product_id,),
+            f"SELECT id FROM media_raw_sources "
+            f"WHERE id IN ({placeholders}) "
+            f"  AND product_id = %s AND deleted_at IS NULL "
+            f"ORDER BY sort_order ASC, id ASC",
+            (*raw_source_ids, product_id),
         )
+        found_ids = {int(r["id"]) for r in video_rows}
+        missing = [rid for rid in raw_source_ids if int(rid) not in found_ids]
+        if missing:
+            raise ValueError(f"raw_source_ids not found or soft-deleted: {missing}")
         for row in video_rows:
             for lang in target_langs:
                 if lang not in VIDEO_SUPPORTED_LANGS:
                     continue   # 不支持的目标语言直接不规划
                 plan.append(_new_item(
                     idx_counter.next(), "video", lang,
-                    {"source_item_id": row["id"]},
+                    {"source_raw_id": row["id"]},
                 ))
 
     return plan
