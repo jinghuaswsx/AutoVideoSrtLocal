@@ -553,10 +553,15 @@ def get_push_item_payload_by_keys():
         return jsonify({"error": "product not found"}), 404
 
     payload = pushes.build_item_payload(item, product)
+    localized_text = pushes.resolve_localized_text_payload(item)
+    localized_texts_request = pushes.build_localized_texts_request(item)
     return jsonify({
         "item_id": item["id"],
+        "mk_id": product.get("mk_id"),
         "item": _serialize_push_item(item, product),
         "payload": payload,
+        "localized_text": localized_text,
+        "localized_texts_request": localized_texts_request,
     })
 
 

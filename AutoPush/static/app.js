@@ -97,6 +97,12 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  pushLocalizedTexts: (mkId, payload) =>
+    apiJson(`/api/marketing/medias/${encodeURIComponent(mkId)}/texts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
 };
 
 /* ---------- 状态文案映射 ---------- */
@@ -108,42 +114,48 @@ const STATUS_LABELS = {
   failed:    { text: "推送失败", cls: "ap-badge-red" },
 };
 
+const PUSH_MODAL_MODES = {
+  CONFIRM: "confirm",
+  JSON: "json",
+  LOCALIZED_TEXT: "localized-text",
+};
+
 function renderStatusBadge(status) {
   const s = STATUS_LABELS[status] || { text: status || "-", cls: "" };
   return el("span", { class: `ap-badge ${s.cls}` }, s.text);
 }
 
-/* ================================================================
- * 推送确认弹窗 openPushModal(item, { onPushed })
- * 流程：拉 push-payload → 结构化展示 → 人工点推送 → 写回 + 展示响应
- * ================================================================ */
-
+/* 把 push-payload JSON 结构化成表格 + 视频预览，便于人工复核。 */
 function openPushModal(item, opts = {}) {
   const onPushed = opts.onPushed || (() => {});
 
-  // 基础 DOM
   const overlay = el("div", { class: "ap-modal-overlay" });
   const modal = el("div", { class: "ap-modal" });
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  // header
-  const title = el("h3", { class: "ap-modal-title" }, "推送确认");
-  const btnJsonToggle = el("button", {
-    type: "button", class: "ap-btn-ghost ap-modal-json-toggle",
-    "aria-pressed": "false",
-  }, "JSON 预览");
   const btnClose = el("button", {
     type: "button", class: "ap-modal-close", "aria-label": "关闭",
   }, "×");
-  const header = el("div", { class: "ap-modal-header" }, [title, btnJsonToggle, btnClose]);
+  const header = el("div", { class: "ap-modal-header" });
+  const pillRow = el("div", { class: "ap-modal-pills" });
+  const headerButtons = [
+    { mode: PUSH_MODAL_MODES.CONFIRM, label: "推送确认" },
+    { mode: PUSH_MODAL_MODES.JSON, label: "JSON 预览" },
+    { mode: PUSH_MODAL_MODES.LOCALIZED_TEXT, label: "推送小语种文案" },
+  ].map(({ mode, label }) => el("button", {
+    type: "button",
+    class: "ap-modal-pill",
+    dataset: { mode },
+  }, label));
+  headerButtons.forEach((btn) => pillRow.appendChild(btn));
+  header.appendChild(pillRow);
+  header.appendChild(btnClose);
   modal.appendChild(header);
 
-  // body
   const body = el("div", { class: "ap-modal-body" });
   modal.appendChild(body);
 
-  // 素材信息区
   const infoSection = el("section", { class: "ap-modal-section" }, [
     el("h4", {}, "素材信息"),
   ]);
@@ -160,20 +172,21 @@ function openPushModal(item, opts = {}) {
   infoSection.appendChild(kv);
   body.appendChild(infoSection);
 
-  // 载荷区（加载占位 → 填充）
-  const payloadSection = el("section", { class: "ap-modal-section" }, [
-    el("h4", {}, "推送载荷"),
+  const contentSection = el("section", { class: "ap-modal-section" }, [
+    el("h4", {}, "推送内容"),
   ]);
-  const payloadStatus = el("p", { class: "ap-empty" }, "加载中…");
-  payloadSection.appendChild(payloadStatus);
-  // 完整 JSON 预览块（默认隐藏，点 header 的「JSON 预览」按钮切换）
-  const jsonPre = el("pre", { class: "ap-json ap-modal-json-full", hidden: true });
-  payloadSection.appendChild(jsonPre);
+  const payloadStatus = el("p", { class: "ap-empty" }, "加载中...");
+  const confirmPane = el("div", { class: "ap-modal-pane" });
   const payloadBox = el("div", {});
-  payloadSection.appendChild(payloadBox);
-  body.appendChild(payloadSection);
+  confirmPane.appendChild(payloadBox);
+  const jsonPre = el("pre", { class: "ap-json ap-modal-json-full ap-modal-pane", hidden: true });
+  const localizedPane = el("div", { class: "ap-modal-pane", hidden: true });
+  contentSection.appendChild(payloadStatus);
+  contentSection.appendChild(confirmPane);
+  contentSection.appendChild(jsonPre);
+  contentSection.appendChild(localizedPane);
+  body.appendChild(contentSection);
 
-  // 操作按钮
   const actions = el("div", { class: "ap-modal-actions" });
   const btnPush = el("button", {
     type: "button", class: "ap-pill-btn primary", disabled: true,
@@ -185,14 +198,13 @@ function openPushModal(item, opts = {}) {
   actions.appendChild(btnCancel);
   modal.appendChild(actions);
 
-  // 响应区
   const respWrap = el("div", { class: "ap-modal-response", hidden: true });
-  respWrap.appendChild(el("h4", {}, "推送响应"));
+  const respTitle = el("h4", {}, "推送响应");
   const respPre = el("pre", { class: "ap-json" });
+  respWrap.appendChild(respTitle);
   respWrap.appendChild(respPre);
   modal.appendChild(respWrap);
 
-  // footer
   const footer = el("div", { class: "ap-modal-footer" });
   const btnFooterClose = el("button", {
     type: "button", class: "ap-btn-ghost",
@@ -200,14 +212,23 @@ function openPushModal(item, opts = {}) {
   footer.appendChild(btnFooterClose);
   modal.appendChild(footer);
 
-  let payloadData = null;
-  let pushed = false;
+  let activeMode = PUSH_MODAL_MODES.CONFIRM;
+  let pushContext = {
+    itemId: item.item_id || null,
+    mkId: null,
+    payload: null,
+    localizedText: null,
+    localizedTextsRequest: { texts: [] },
+  };
+  let anyPushSucceeded = false;
+  let materialPushed = false;
+  let localizedTextPushed = false;
 
   function close() {
     if (!overlay.parentNode) return;
     overlay.parentNode.removeChild(overlay);
     document.removeEventListener("keydown", onEsc);
-    if (pushed) onPushed();
+    if (anyPushSucceeded) onPushed();
   }
   function onEsc(e) { if (e.key === "Escape") close(); }
   document.addEventListener("keydown", onEsc);
@@ -216,79 +237,168 @@ function openPushModal(item, opts = {}) {
   btnCancel.addEventListener("click", close);
   btnFooterClose.addEventListener("click", close);
 
-  // JSON 预览按钮
-  btnJsonToggle.addEventListener("click", () => {
-    const wasHidden = jsonPre.hidden;
-    jsonPre.hidden = !wasHidden;
-    btnJsonToggle.setAttribute("aria-pressed", wasHidden ? "true" : "false");
-    btnJsonToggle.classList.toggle("active", wasHidden);
+  function currentLocalizedTexts() {
+    return Array.isArray(pushContext.localizedTextsRequest?.texts)
+      ? pushContext.localizedTextsRequest.texts
+      : [];
+  }
+
+  function getLocalizedTextError() {
+    if (!pushContext.mkId) return "缺少 mk_id，暂不能推送小语种文案";
+    if (!currentLocalizedTexts().length) return "当前语种暂无可推送文案";
+    return "";
+  }
+
+  function syncPushButton() {
+    if (activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT) {
+      const localizedError = getLocalizedTextError();
+      btnPush.disabled = localizedTextPushed || !pushContext.payload || Boolean(localizedError);
+      btnPush.textContent = localizedTextPushed
+        ? "文案已推送"
+        : localizedError
+          ? "无法推送"
+          : "推送";
+      return;
+    }
+    btnPush.disabled = materialPushed || !pushContext.payload;
+    btnPush.textContent = materialPushed ? "素材已推送" : "推送";
+  }
+
+  function setMode(mode) {
+    activeMode = mode;
+    headerButtons.forEach((btn) => {
+      const isActive = btn.dataset.mode === mode;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    confirmPane.hidden = mode !== PUSH_MODAL_MODES.CONFIRM;
+    jsonPre.hidden = mode !== PUSH_MODAL_MODES.JSON;
+    localizedPane.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_TEXT;
+    syncPushButton();
+  }
+
+  function showResponse(obj, isError, titleText) {
+    respWrap.hidden = false;
+    respTitle.textContent = titleText || "推送响应";
+    respPre.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    respPre.style.color = isError ? "var(--oc-danger-fg)" : "var(--oc-fg)";
+    respPre.style.borderColor = isError ? "var(--oc-danger)" : "var(--oc-border)";
+  }
+
+  function renderLocalizedPane() {
+    clear(localizedPane);
+    const errorMessage = getLocalizedTextError();
+    const localizedText = pushContext.localizedText || currentLocalizedTexts()[0] || null;
+    if (errorMessage) {
+      localizedPane.appendChild(el("p", { class: "ap-error" }, errorMessage));
+    }
+    if (!localizedText) {
+      localizedPane.appendChild(el("p", { class: "ap-empty" }, "当前语种暂无可推送文案"));
+      return;
+    }
+    localizedPane.appendChild(renderLocalizedTextView(localizedText));
+  }
+
+  headerButtons.forEach((btn) => {
+    btn.addEventListener("click", () => setMode(btn.dataset.mode));
   });
 
-  // 拉 payload：优先用三元组 by-keys 精确定位单条；fallback 到旧接口
   (async () => {
     try {
       let payload;
+      let context = null;
       if (item.product_id && item.lang && item.filename) {
         const resp = await api.fetchByKeys({
           productId: item.product_id,
           lang: item.lang,
           filename: item.filename,
         });
+        context = resp;
         payload = resp.payload;
-        // 若服务端回了新的 item_id（例如同三元组取最新），同步覆盖
         if (resp.item_id) item.item_id = resp.item_id;
       } else {
         payload = await api.fetchPushPayload(item.product_code, item.lang);
       }
-      payloadData = payload;
+      pushContext = {
+        itemId: context?.item_id || item.item_id || null,
+        mkId: context?.mk_id ?? null,
+        payload,
+        localizedText: context?.localized_text || null,
+        localizedTextsRequest: context?.localized_texts_request || { texts: [] },
+      };
       jsonPre.textContent = JSON.stringify(payload, null, 2);
-      payloadStatus.remove();
+      clear(payloadBox);
       payloadBox.appendChild(renderPayloadView(payload));
-      btnPush.disabled = false;
+      renderLocalizedPane();
+      payloadStatus.remove();
+      syncPushButton();
+      setMode(PUSH_MODAL_MODES.CONFIRM);
     } catch (err) {
-      payloadStatus.textContent = "";
-      const errBanner = el("p", { class: "ap-error" },
-        err.message || "载荷加载失败");
-      payloadStatus.replaceWith(errBanner);
+      payloadStatus.replaceWith(el("p", { class: "ap-error" }, err.message || "载荷加载失败"));
     }
   })();
 
-  // 推送
   btnPush.addEventListener("click", async () => {
-    if (!payloadData) return;
-    const errs = validatePayload(payloadData);
-    if (errs.length > 0) {
-      showResponse({ error: "校验失败", details: errs }, true);
-      return;
-    }
+    if (!pushContext.payload) return;
     btnPush.disabled = true;
-    btnPush.textContent = "推送中…";
+    btnPush.textContent = "推送中...";
     btnCancel.disabled = true;
     try {
-      const body = item.item_id
-        ? await api.pushItem(item.item_id, payloadData)
-        : await api.push(payloadData);
-      showResponse(body, false);
-      pushed = true;
-      btnPush.textContent = "已推送";
+      if (activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT) {
+        const localizedError = getLocalizedTextError();
+        if (localizedError) {
+          throw Object.assign(new Error(localizedError), {
+            payload: { message: localizedError },
+          });
+        }
+        const body = await api.pushLocalizedTexts(pushContext.mkId, pushContext.localizedTextsRequest);
+        showResponse(body, false, "小语种文案推送响应");
+        localizedTextPushed = true;
+        anyPushSucceeded = true;
+      } else {
+        const errs = validatePayload(pushContext.payload);
+        if (errs.length > 0) {
+          showResponse({ error: "校验失败", details: errs }, true, "素材推送响应");
+          syncPushButton();
+          return;
+        }
+        const body = pushContext.itemId
+          ? await api.pushItem(pushContext.itemId, pushContext.payload)
+          : await api.push(pushContext.payload);
+        showResponse(body, false, "素材推送响应");
+        materialPushed = true;
+        anyPushSucceeded = true;
+      }
     } catch (err) {
-      showResponse(err.payload || { message: err.message }, true);
-      btnPush.disabled = false;
-      btnPush.textContent = "重试推送";
+      showResponse(
+        err.payload || { message: err.message },
+        true,
+        activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT ? "小语种文案推送响应" : "素材推送响应",
+      );
     } finally {
       btnCancel.disabled = false;
+      syncPushButton();
     }
   });
-
-  function showResponse(obj, isError) {
-    respWrap.hidden = false;
-    respPre.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
-    respPre.style.color = isError ? "var(--oc-danger-fg)" : "var(--oc-fg)";
-    respPre.style.borderColor = isError ? "var(--oc-danger)" : "var(--oc-border)";
-  }
 }
 
-/* 把 push-payload JSON 结构化成表格 + 视频预览，便于人工复核。 */
+function renderLocalizedTextView(localizedText) {
+  const root = el("div", { class: "ap-localized-text-card" });
+  const kv = el("div", { class: "ap-kv" });
+  const pairs = [
+    ["语种", localizedText.lang || ""],
+    ["标题", localizedText.title || ""],
+    ["文案", localizedText.message || ""],
+    ["描述", localizedText.description || ""],
+  ];
+  pairs.forEach(([k, v]) => {
+    kv.appendChild(el("span", { class: "k" }, k));
+    kv.appendChild(el("span", { class: "v" }, v));
+  });
+  root.appendChild(kv);
+  return root;
+}
+
 function renderPayloadView(payload) {
   const root = el("div", {});
 

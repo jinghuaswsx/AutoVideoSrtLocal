@@ -100,6 +100,38 @@ _FIXED_AUTHOR = "蔡靖华"
 _FIXED_TEXTS = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
 
 
+def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
+    return query_one(
+        "SELECT title, body, description FROM media_copywritings "
+        "WHERE product_id=%s AND lang=%s "
+        "ORDER BY idx ASC, id ASC LIMIT 1",
+        (product_id, lang),
+    )
+
+
+def resolve_localized_text_payload(item: dict) -> dict[str, str] | None:
+    lang = ((item or {}).get("lang") or "en").strip().lower()
+    product_id = (item or {}).get("product_id")
+    if not product_id:
+        return None
+
+    row = _get_first_copywriting(int(product_id), lang)
+    if not row:
+        return None
+
+    return {
+        "title": row.get("title") or "",
+        "message": row.get("body") or "",
+        "description": row.get("description") or "",
+        "lang": medias.get_language_name(lang),
+    }
+
+
+def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]:
+    localized = resolve_localized_text_payload(item)
+    return {"texts": [localized] if localized else []}
+
+
 def build_item_payload(item: dict, product: dict) -> dict:
     """按设计文档组装单条 item 的推送 JSON。"""
     object_key = item.get("object_key")

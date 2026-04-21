@@ -169,6 +169,80 @@ def test_build_item_payload_basic(monkeypatch, product_with_item):
         assert product["product_code"] in link
 
 
+def test_resolve_localized_text_payload_returns_first_current_lang_copy(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.query_one",
+        lambda sql, args: {
+            "title": "德语标题",
+            "body": "德语正文",
+            "description": "德语描述",
+        },
+    )
+    monkeypatch.setattr("appcore.pushes.medias.get_language_name", lambda code: "德语")
+
+    payload = pushes.resolve_localized_text_payload({
+        "product_id": 123,
+        "lang": "de",
+    })
+
+    assert payload == {
+        "title": "德语标题",
+        "message": "德语正文",
+        "description": "德语描述",
+        "lang": "德语",
+    }
+
+
+def test_resolve_localized_text_payload_returns_none_when_copy_missing(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: None)
+
+    payload = pushes.resolve_localized_text_payload({
+        "product_id": 123,
+        "lang": "fr",
+    })
+
+    assert payload is None
+
+
+def test_build_localized_texts_request_wraps_single_text(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_localized_text_payload",
+        lambda item: {
+            "title": "fr1",
+            "message": "fr2",
+            "description": "fr3",
+            "lang": "法语",
+        },
+    )
+
+    body = pushes.build_localized_texts_request({
+        "product_id": 123,
+        "lang": "fr",
+    })
+
+    assert body == {
+        "texts": [
+            {
+                "title": "fr1",
+                "message": "fr2",
+                "description": "fr3",
+                "lang": "法语",
+            }
+        ]
+    }
+
+
+def test_build_localized_texts_request_returns_empty_array_when_text_missing(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.resolve_localized_text_payload", lambda item: None)
+
+    body = pushes.build_localized_texts_request({
+        "product_id": 123,
+        "lang": "fr",
+    })
+
+    assert body == {"texts": []}
+
+
 def test_record_success_and_reset(product_with_item):
     pid, item_id = product_with_item
     log_id = pushes.record_push_success(

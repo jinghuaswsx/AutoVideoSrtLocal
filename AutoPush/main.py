@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
         return {
             "autovideoBaseUrl": settings.autovideo_base_url,
             "pushMediasTarget": settings.push_medias_target,
+            "pushLocalizedTextsBaseUrl": settings.push_localized_texts_base_url,
         }
 
     # 挂载静态目录；/ 直接 serve index.html

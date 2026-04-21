@@ -91,6 +91,36 @@ async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
     }
 
 
+@api.post("/marketing/medias/{mk_id}/texts")
+async def push_localized_texts(mk_id: int, payload: dict[str, Any] = Body(...)) -> Any:
+    target = f"{get_settings().push_localized_texts_base_url}/api/marketing/medias/{mk_id}/texts"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                target,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except Exception as exc:
+        raise HTTPException(502, detail=f"小语种文案推送服务不可达：{exc}") from exc
+
+    try:
+        content = response.json() if response.content else {}
+    except ValueError:
+        content = {"raw": response.text}
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            response.status_code,
+            detail={"upstream_status": response.status_code, "body": content},
+        )
+    return {
+        "ok": True,
+        "upstream_status": response.status_code,
+        "upstream": content,
+    }
+
+
 # ================================================================
 # /api/push-items —— 主推送流程：状态列表 + 推送（含写回）
 # ================================================================
