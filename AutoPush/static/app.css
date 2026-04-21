@@ -465,6 +465,36 @@ body {
   padding: var(--oc-sp-4) var(--oc-sp-5);
   border-bottom: 1px solid var(--oc-border);
 }
+.ap-modal-pills {
+  display: flex;
+  gap: var(--oc-sp-2);
+  margin-right: auto;
+  flex-wrap: wrap;
+}
+.ap-modal-pill {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r-full);
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease),
+              color var(--oc-dur-fast) var(--oc-ease);
+}
+.ap-modal-pill:hover {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg);
+}
+.ap-modal-pill.active {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  border-color: var(--oc-accent);
+}
 .ap-modal-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--oc-fg); }
 .ap-modal-json-toggle { margin-right: auto; }
 .ap-modal-json-toggle.active {
@@ -506,6 +536,7 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.ap-modal-pane[hidden] { display: none; }
 
 .ap-kv {
   display: grid;
@@ -530,6 +561,13 @@ body {
   border: 1px solid var(--oc-border);
   background: oklch(15% 0.02 235);
   object-fit: contain;
+}
+.ap-localized-text-card {
+  display: grid;
+  gap: var(--oc-sp-3);
+}
+.ap-localized-text-card .ap-error {
+  margin-top: 0;
 }
 
 .ap-modal-actions {

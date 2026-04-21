@@ -24,6 +24,10 @@ class Settings:
             "PUSH_MEDIAS_TARGET",
             "http://172.17.254.77:22400/dify/shopify/medias",
         )
+        self.push_localized_texts_base_url = getenv(
+            "PUSH_LOCALIZED_TEXTS_BASE_URL",
+            "https://os.wedev.vip",
+        ).rstrip("/")
         self.port = int(getenv("AUTOPUSH_PORT", "8787"))
 
 
