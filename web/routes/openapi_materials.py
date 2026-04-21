@@ -8,15 +8,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from flask import Blueprint, jsonify, request
 
 import config
 from appcore import medias, pushes, tos_clients
+from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
+link_check_bp = Blueprint("openapi_link_check", __name__, url_prefix="/openapi/link-check")
 
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
@@ -102,6 +105,13 @@ def _serialize_items(rows: list[dict]) -> list[dict]:
     return items
 
 
+def _normalize_target_url(target_url: str) -> str:
+    parsed = urlparse((target_url or "").strip())
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    normalized_query = urlencode(query_pairs, doseq=True)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, normalized_query, ""))
+
+
 @bp.route("/<product_code>", methods=["GET"])
 def get_material(product_code: str):
     if not _api_key_valid():
@@ -184,6 +194,63 @@ def build_push_payload(product_code: str):
         "tags": [],
     }
     return jsonify(payload)
+
+
+@link_check_bp.route("/bootstrap", methods=["POST"])
+def bootstrap_link_check():
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    body = request.get_json(silent=True) or {}
+    target_url = (body.get("target_url") or "").strip()
+    if not target_url or not target_url.lower().startswith(("http://", "https://")):
+        return jsonify({"error": "invalid target_url"}), 400
+
+    normalized_url = _normalize_target_url(target_url)
+    enabled_languages = {
+        (row.get("code") or "").strip().lower()
+        for row in (medias.list_languages() or [])
+        if row and row.get("enabled", 1)
+    }
+    target_language = detect_target_language_from_url(target_url, enabled_languages)
+    if not target_language:
+        return jsonify({"error": "language not detected"}), 409
+
+    product = medias.find_product_for_link_check_url(target_url, target_language)
+    if not product:
+        return jsonify({"error": "product not found"}), 404
+
+    raw_reference_images = medias.list_reference_images_for_lang(int(product["id"]), target_language)
+    if not raw_reference_images:
+        return jsonify({"error": "references not ready"}), 409
+
+    reference_images = []
+    for item in raw_reference_images:
+        object_key = (item.get("object_key") or "").strip()
+        if not object_key:
+            continue
+        reference_images.append({
+            "id": item.get("id"),
+            "kind": item.get("kind"),
+            "filename": item.get("filename"),
+            "download_url": tos_clients.generate_signed_media_download_url(object_key),
+            "expires_in": config.TOS_SIGNED_URL_EXPIRES,
+        })
+    if not reference_images:
+        return jsonify({"error": "references not ready"}), 409
+
+    return jsonify({
+        "product": {
+            "id": product.get("id"),
+            "product_code": product.get("product_code"),
+            "name": product.get("name"),
+        },
+        "target_language": target_language,
+        "target_language_name": medias.get_language_name(target_language),
+        "matched_by": product.get("_matched_by"),
+        "normalized_url": normalized_url,
+        "reference_images": reference_images,
+    })
 
 
 def _parse_archived_filter(raw: str) -> int | None:

@@ -7,6 +7,7 @@ __pycache__/
 # Python virtual environments
 .venv/
 venv/
+.venv_link_check_runtime/
 
 # Environment
 .env
@@ -28,6 +29,7 @@ dist/
 build/
 out/
 .worktrees/
+img/
 
 # Logs
 *.log

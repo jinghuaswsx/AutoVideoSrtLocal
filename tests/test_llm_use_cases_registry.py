@@ -55,6 +55,13 @@ def test_registry_count_and_new_units_types():
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
 
 
+def test_same_image_use_case_defaults():
+    uc = USE_CASES["link_check.same_image"]
+    assert uc["default_provider"] == "gemini_aistudio"
+    assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert uc["usage_log_service"] == "gemini"
+
+
 def test_get_use_case_unknown_raises():
     import pytest
     with pytest.raises(KeyError):
