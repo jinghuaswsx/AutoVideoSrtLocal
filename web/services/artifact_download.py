@@ -1,17 +1,7 @@
-"""统一的成品下载逻辑。
+"""Shared artifact download logic for translation tasks."""
 
-翻译主线（英文/德语/法语）的下载路由共用这个 helper，保证：
-  1. 下载优先走 TOS 预签名 URL（客户端直连 TOS，不经过 Flask）
-  2. TOS 不可用或尚未上传时才 fallback 到本地 send_file
-  3. 下载 CapCut 工程包时，按当前下载用户的 jianying_project_root 重写路径
-     后即时上传 TOS，并记录到 task.tos_uploads
-
-被调用方（三个模块的 download 路由）只负责：
-  - 鉴权（确认 task 归属）
-  - 解析 variant 参数
-  - 把 task / task_id / file_type / variant 交给 serve_artifact_download
-"""
 from __future__ import annotations
+
 import os
 from datetime import datetime
 
@@ -20,10 +10,7 @@ from flask_login import current_user
 
 from appcore import tos_clients
 from appcore.api_keys import resolve_jianying_project_root
-from pipeline.capcut import (
-    build_capcut_archive_name,
-    rewrite_capcut_project_paths,
-)
+from pipeline.capcut import build_capcut_archive_name, rewrite_capcut_project_paths
 from web import store
 
 
@@ -34,19 +21,11 @@ _ARTIFACT_KIND_MAP: dict[str, str] = {
     "capcut": "capcut_archive",
 }
 
-# /artifact/<name> 里前端请求的 name 本身就是 artifact_kind；仅对这几种产物做 TOS 重定向
-# （其它如 audio_extract / tts_full_audio 从未上传 TOS，继续走本地）
 _PREVIEW_NAME_TO_ARTIFACT_KIND: set[str] = {"hard_video", "soft_video", "srt"}
 
 
-def preview_artifact_tos_redirect(
-    task: dict, name: str, variant: str | None = None
-):
-    """若 task 在 tos_uploads 已登记对应成品，返回 302 到 TOS 签名 URL。
-
-    只处理 hard_video / soft_video / srt 三种产物；其它 name 返回 None，让
-    调用方落回本地 send_file。
-    """
+def preview_artifact_tos_redirect(task: dict, name: str, variant: str | None = None):
+    """Return a signed TOS redirect for preview routes when an upload record exists."""
     if name not in _PREVIEW_NAME_TO_ARTIFACT_KIND:
         return None
     record = get_tos_upload_record(task, name, variant)
@@ -66,6 +45,10 @@ def _is_pure_tos_task(task: dict) -> bool:
     return (task.get("delivery_mode") or "").strip() == "pure_tos"
 
 
+def _local_artifact_exists(path: str | None) -> bool:
+    return bool(path and os.path.exists(path))
+
+
 def artifact_kind_for_download(file_type: str) -> str | None:
     return _ARTIFACT_KIND_MAP.get(file_type)
 
@@ -82,9 +65,12 @@ def get_tos_upload_record(task: dict, artifact_kind: str, variant: str | None = 
 
 
 def upload_capcut_archive_for_current_user(
-    task_id: str, task: dict, variant: str | None, archive_path: str
+    task_id: str,
+    task: dict,
+    variant: str | None,
+    archive_path: str,
 ) -> dict | None:
-    """点击 CapCut 下载时，按当前用户重写路径并上传 TOS，返回上传记录或 None。"""
+    """Upload a rewritten CapCut archive to TOS for the current user."""
     if not archive_path or not os.path.exists(archive_path) or not tos_clients.is_tos_configured():
         return None
 
@@ -119,12 +105,6 @@ def upload_capcut_archive_for_current_user(
 
 
 def _paths_for(task: dict, variant: str | None) -> tuple[dict, dict, dict, str | None]:
-    """返回 (variant_state, result, exports, srt_path)。
-
-    保留与原英文模块 task.py 严格一致的语义：
-      - variant 为 None 时，从 task 顶层字段读（适配历史任务格式）
-      - variant 有值时，从 task.variants[variant] 读
-    """
     if variant:
         variant_state = (task.get("variants") or {}).get(variant, {}) or {}
         result = variant_state.get("result") or {}
@@ -138,6 +118,47 @@ def _paths_for(task: dict, variant: str | None) -> tuple[dict, dict, dict, str |
     return variant_state, result, exports, srt_path
 
 
+def _rewrite_capcut_for_current_user(
+    task_id: str,
+    task: dict,
+    variant: str | None,
+    exports: dict,
+    archive_path: str | None,
+    rewrite_capcut_paths: bool,
+) -> None:
+    if not rewrite_capcut_paths or not _local_artifact_exists(archive_path):
+        return
+
+    project_dir = exports.get("capcut_project")
+    if not project_dir or not os.path.isdir(project_dir):
+        return
+
+    manifest_path = exports.get("capcut_manifest")
+    try:
+        jianying_project_dir = rewrite_capcut_project_paths(
+            project_dir=project_dir,
+            manifest_path=manifest_path,
+            archive_path=archive_path,
+            jianying_project_root=resolve_jianying_project_root(current_user.id),
+        )
+        updated_exports = dict(exports)
+        updated_exports["jianying_project_dir"] = jianying_project_dir
+        if variant:
+            store.update_variant(task_id, variant, exports=updated_exports)
+        else:
+            store.update(task_id, exports=updated_exports)
+    except Exception:
+        pass
+
+
+def _send_local_artifact(task: dict, task_id: str, file_type: str, variant: str | None, path: str) -> Response:
+    download_name = None
+    if file_type == "capcut":
+        source_name = task.get("display_name") or task.get("original_filename") or task_id
+        download_name = build_capcut_archive_name(source_name, variant=variant)
+    return send_file(os.path.abspath(path), as_attachment=True, download_name=download_name)
+
+
 def serve_artifact_download(
     task: dict,
     task_id: str,
@@ -145,16 +166,8 @@ def serve_artifact_download(
     variant: str | None = None,
     rewrite_capcut_paths: bool = True,
 ) -> Response:
-    """处理翻译主线的下载请求，统一逻辑：TOS 优先，本地兜底。
-
-    参数:
-        task:     store.get(task_id) 的结果；路由层已经做过归属校验
-        task_id:  项目 ID
-        file_type: 前端传入的下载类型：soft / hard / srt / capcut
-        variant:  variant key，None 表示使用顶层字段（历史格式）
-        rewrite_capcut_paths: 下载 capcut 时是否按当前用户重写工程路径（默认 True）
-    """
-    variant_state, result, exports, srt_path = _paths_for(task, variant)
+    """Serve a task artifact with local-first behavior for non-``pure_tos`` tasks."""
+    _variant_state, result, exports, srt_path = _paths_for(task, variant)
     path_map = {
         "soft": result.get("soft_video"),
         "hard": result.get("hard_video"),
@@ -163,27 +176,23 @@ def serve_artifact_download(
     }
     path = path_map.get(file_type)
     artifact_kind = artifact_kind_for_download(file_type)
+    pure_tos = _is_pure_tos_task(task)
+    local_available = _local_artifact_exists(path)
 
-    # ─── CapCut：按当前用户重写路径 + 即时上传 ───
-    if file_type == "capcut" and path:
-        project_dir = exports.get("capcut_project")
-        if rewrite_capcut_paths and project_dir and os.path.isdir(project_dir):
-            manifest_path = exports.get("capcut_manifest")
-            try:
-                jianying_project_dir = rewrite_capcut_project_paths(
-                    project_dir=project_dir,
-                    manifest_path=manifest_path,
-                    archive_path=path,
-                    jianying_project_root=resolve_jianying_project_root(current_user.id),
-                )
-                updated_exports = dict(exports)
-                updated_exports["jianying_project_dir"] = jianying_project_dir
-                if variant:
-                    store.update_variant(task_id, variant, exports=updated_exports)
-                else:
-                    store.update(task_id, exports=updated_exports)
-            except Exception:
-                pass  # 重写失败不阻断下载
+    if file_type == "capcut":
+        _rewrite_capcut_for_current_user(task_id, task, variant, exports, path, rewrite_capcut_paths)
+
+    if local_available and not pure_tos:
+        return _send_local_artifact(task, task_id, file_type, variant, path)
+
+    uploaded_artifact = get_tos_upload_record(task, artifact_kind, variant) if artifact_kind else None
+    if uploaded_artifact:
+        try:
+            return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
+        except Exception:
+            pass
+
+    if file_type == "capcut" and pure_tos and local_available:
         try:
             upload_payload = upload_capcut_archive_for_current_user(task_id, task, variant, path)
         except Exception:
@@ -193,26 +202,12 @@ def serve_artifact_download(
                 return redirect(tos_clients.generate_signed_download_url(upload_payload["tos_key"]))
             except Exception:
                 pass
-        if _is_pure_tos_task(task):
-            return jsonify({"error": "CapCut 工程包尚未上传到 TOS，暂不可下载"}), 409
+        return jsonify({"error": "CapCut 工程包尚未上传到 TOS，暂不可下载"}), 409
 
-    # ─── 其它类型：优先查任务完成时上传的 TOS 记录 ───
-    if artifact_kind:
-        uploaded_artifact = get_tos_upload_record(task, artifact_kind, variant)
-        if uploaded_artifact:
-            try:
-                return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
-            except Exception:
-                pass
-        if _is_pure_tos_task(task):
-            return jsonify({"error": "下载文件尚未上传到 TOS，暂不可下载"}), 409
+    if pure_tos and artifact_kind:
+        return jsonify({"error": "下载文件尚未上传到 TOS，暂不可下载"}), 409
 
-    # ─── Fallback：本地文件 ───
-    if not path or not os.path.exists(path):
+    if not local_available:
         return jsonify({"error": "File not ready"}), 404
 
-    download_name = None
-    if file_type == "capcut":
-        source_name = task.get("display_name") or task.get("original_filename") or task_id
-        download_name = build_capcut_archive_name(source_name, variant=variant)
-    return send_file(os.path.abspath(path), as_attachment=True, download_name=download_name)
+    return _send_local_artifact(task, task_id, file_type, variant, path)
