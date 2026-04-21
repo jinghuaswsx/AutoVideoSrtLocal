@@ -15,6 +15,10 @@ from web import store
 logger = logging.getLogger(__name__)
 
 
+class _WatchdogTakeover(Exception):
+    """slot 已被新 runner 抢占，旧 runtime 线程应退出（Task 2 完整实现）。"""
+
+
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
 
