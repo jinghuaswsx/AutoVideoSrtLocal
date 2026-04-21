@@ -4,12 +4,12 @@
     python scripts/smoke_bulk_translate_ui.py
 
 前置:
-    * 生产环境 http://14.103.220.208:8888 已部署本分支
+    * 生产环境 http://172.30.254.14:8888 已部署本分支
     * testuser.md 的 admin / 709709@ 有效
 """
 from playwright.sync_api import sync_playwright, expect
 
-BASE = "http://14.103.220.208:8888"
+BASE = "http://172.30.254.14:8888"
 USER = "admin"
 PWD = "709709@"
 

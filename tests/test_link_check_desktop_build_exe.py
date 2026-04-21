@@ -28,7 +28,7 @@ def test_write_runtime_config_copies_existing_config(tmp_path):
     source_config = repo_root / "link_check_desktop_config.json"
     source_config.write_text(
         json.dumps({
-            "base_url": "http://14.103.220.208:8888",
+            "base_url": "http://172.30.254.14:8888",
             "api_key": "autovideosrt-materials-openapi",
         }),
         encoding="utf-8",
@@ -40,7 +40,7 @@ def test_write_runtime_config_copies_existing_config(tmp_path):
     build_exe._write_runtime_config(repo_root, dist_root)
 
     payload = json.loads((dist_root / "link_check_desktop_config.json").read_text(encoding="utf-8"))
-    assert payload["base_url"] == "http://14.103.220.208:8888"
+    assert payload["base_url"] == "http://172.30.254.14:8888"
     assert payload["api_key"] == "autovideosrt-materials-openapi"
 
 

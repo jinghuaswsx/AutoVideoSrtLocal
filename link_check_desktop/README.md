@@ -87,7 +87,7 @@ link_check_desktop_config.json
 
 ```json
 {
-  "base_url": "http://14.103.220.208:8888",
+  "base_url": "http://172.30.254.14:8888",
   "api_key": "autovideosrt-materials-openapi"
 }
 ```

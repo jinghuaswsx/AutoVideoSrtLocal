@@ -6,7 +6,7 @@ from pathlib import Path
 from link_check_desktop.storage import executable_root
 
 
-DEFAULT_BASE_URL = "http://14.103.220.208:8888"
+DEFAULT_BASE_URL = "http://172.30.254.14:8888"
 DEFAULT_API_KEY = "autovideosrt-materials-openapi"
 CONFIG_FILENAME = "link_check_desktop_config.json"
 

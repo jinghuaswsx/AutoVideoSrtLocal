@@ -215,7 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="origins",
         action="append",
         default=None,
-        help="允许的 CORS Origin，可重复（默认 http(s)://14.103.220.208:8888）",
+        help="允许的 CORS Origin，可重复（默认 http(s)://172.30.254.14:8888）",
     )
     return parser
 
@@ -248,8 +248,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.configure_cors:
         origins = args.origins or [
-            "http://14.103.220.208:8888",
-            "https://14.103.220.208:8888",
+            "http://172.30.254.14:8888",
+            "https://172.30.254.14:8888",
         ]
         report = configure_cors(new_bucket=new_bucket, origins=origins)
         print(json.dumps({"new_bucket": report["new_bucket"], "origins": report["origins"]}, ensure_ascii=False))

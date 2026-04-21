@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # AutoVideoSrt 一键发布脚本
 # 用法: bash deploy/publish.sh [commit message]
-# 依赖: 仓库根目录 .server/openclaw-noobird.pem 存在
+# 依赖: ~/.ssh/CC.pem（LocalServer 内网 SSH key）
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-KEY="$REPO_ROOT/.server/openclaw-noobird.pem"
+KEY="${SSH_KEY:-$HOME/.ssh/CC.pem}"
 SERVER_USER="root"
-SERVER_HOST="14.103.220.208"
+SERVER_HOST="172.30.254.14"
 SERVER_PORT="22"
 APP_DIR="/opt/autovideosrt"
 SERVICE="autovideosrt"
 
 if [[ ! -f "$KEY" ]]; then
   echo "[ERROR] SSH key not found: $KEY" >&2
-  echo "请把 openclaw-noobird.pem 放到 .server/ 目录下。" >&2
+  echo "请确认 ~/.ssh/CC.pem 存在，或通过 SSH_KEY 环境变量指定路径。" >&2
   exit 1
 fi
 

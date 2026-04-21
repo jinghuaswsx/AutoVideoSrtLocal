@@ -1,3 +1,3 @@
-ip 172.30.254.18
-rootuser cjh
-password cjh123
+ip 172.30.254.14
+rootuser: root
+ssh_key_file: "C:\Users\admin\.ssh\CC.pem"

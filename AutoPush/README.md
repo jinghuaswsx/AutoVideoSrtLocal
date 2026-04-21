@@ -4,7 +4,7 @@
 
 ```
 浏览器 (你的电脑) ──同源─▶ AutoPush (127.0.0.1:8787)
-                              ├──▶ AutoVideoSrt OpenAPI  (14.103.220.208:8888)
+                              ├──▶ AutoVideoSrt OpenAPI  (172.30.254.14:8888)
                               └──▶ 下游推送服务          (172.17.254.77:22400)
 ```
 
@@ -13,7 +13,7 @@
 - Windows / macOS / Linux 都行（开发环境是 Windows）
 - Python 3.10+（FastAPI + httpx）
 - 本机能通以下两个地址：
-  - `http://14.103.220.208:8888`（AutoVideoSrt 公网）
+  - `http://172.30.254.14:8888`（AutoVideoSrt 公网）
   - `http://172.17.254.77:22400`（内网推送服务）
 - 从 AutoVideoSrt 管理员那里拿一个 `X-API-Key`（就是 `OPENAPI_MEDIA_API_KEY`）
 
@@ -40,7 +40,7 @@ python main.py                 # 或者：python -m uvicorn main:app --port 8787
 
 | 字段 | 说明 | 默认 |
 | --- | --- | --- |
-| `AUTOVIDEO_BASE_URL` | 上游 AutoVideoSrt 地址 | `http://14.103.220.208:8888` |
+| `AUTOVIDEO_BASE_URL` | 上游 AutoVideoSrt 地址 | `http://172.30.254.14:8888` |
 | `AUTOVIDEO_API_KEY` | 上游 OpenAPI 鉴权 Key | `autovideosrt-materials-openapi` |
 | `PUSH_MEDIAS_TARGET` | 下游推送目标 | `http://172.17.254.77:22400/dify/shopify/medias` |
 | `AUTOPUSH_PORT` | 本地监听端口 | `8787` |

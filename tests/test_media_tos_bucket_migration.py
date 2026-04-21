@@ -177,15 +177,15 @@ def test_configure_media_bucket_cors_writes_rule(monkeypatch):
     monkeypatch.setattr(tos_clients.config, "TOS_MEDIA_BUCKET", "auto-video-srt-product-video-manage")
 
     tos_clients.configure_media_bucket_cors(
-        origins=["http://14.103.220.208:8888", "https://14.103.220.208:8888"],
+        origins=["http://172.30.254.14:8888", "https://172.30.254.14:8888"],
     )
 
     assert calls["bucket"] == "auto-video-srt-product-video-manage"
     assert len(calls["rules"]) == 1
     rule = calls["rules"][0]
     assert rule.allowed_origins == [
-        "http://14.103.220.208:8888",
-        "https://14.103.220.208:8888",
+        "http://172.30.254.14:8888",
+        "https://172.30.254.14:8888",
     ]
     assert rule.allowed_methods == ["GET", "HEAD", "PUT", "POST", "DELETE"]
     assert rule.allowed_headers == ["*"]
@@ -216,8 +216,8 @@ def test_migrate_script_configure_cors_subcommand(monkeypatch, capsys):
     assert exit_code == 0
     assert captured["bucket"] == "auto-video-srt-product-video-manage"
     assert captured["origins"] == [
-        "http://14.103.220.208:8888",
-        "https://14.103.220.208:8888",
+        "http://172.30.254.14:8888",
+        "https://172.30.254.14:8888",
     ]
 
 
