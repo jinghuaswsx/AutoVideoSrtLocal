@@ -233,3 +233,30 @@ def test_list_items_for_push_filter_by_keyword(product_with_item):
     rows, _ = pushes.list_items_for_push(keyword="UNIQUEMARKER", offset=0, limit=20)
     assert len(rows) == 1
     assert rows[0]["id"] == item_id
+
+
+# ---------- resolve_push_texts ----------
+
+
+def test_resolve_push_texts_returns_parsed(product_with_item):
+    pid, _item_id = product_with_item
+    body = "标题: Ready\n文案: Do it\n描述: Go"
+    medias.replace_copywritings(pid, [{"body": body}], lang="en")
+    texts = pushes.resolve_push_texts(pid)
+    assert texts == [{"title": "Ready", "message": "Do it", "description": "Go"}]
+
+
+def test_resolve_push_texts_missing_raises(product_with_item):
+    pid, _ = product_with_item
+    # fixture 只写了 lang='de' 的文案，英文没有
+    with pytest.raises(pushes.CopywritingMissingError):
+        pushes.resolve_push_texts(pid)
+
+
+def test_resolve_push_texts_parse_error(product_with_item):
+    pid, _ = product_with_item
+    medias.replace_copywritings(
+        pid, [{"body": "随便一段没有标签的中文"}], lang="en",
+    )
+    with pytest.raises(pushes.CopywritingParseError):
+        pushes.resolve_push_texts(pid)

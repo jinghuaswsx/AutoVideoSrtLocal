@@ -60,6 +60,33 @@ def parse_copywriting_body(body: str) -> dict[str, str]:
     return fields
 
 
+def resolve_push_texts(product_id: int) -> list[dict[str, str]]:
+    """查 media_copywritings(lang='en', idx=1).body 并解析成 texts 数组。
+
+    Raises:
+        CopywritingMissingError: 产品没有英文 idx=1 文案。
+        CopywritingParseError: body 无法解析出合规三段。
+    """
+    row = query_one(
+        "SELECT body FROM media_copywritings "
+        "WHERE product_id=%s AND lang='en' AND idx=1 LIMIT 1",
+        (product_id,),
+    )
+    if not row:
+        raise CopywritingMissingError(f"产品 {product_id} 缺少英文 idx=1 文案")
+    parsed = parse_copywriting_body(row.get("body") or "")
+    return [parsed]
+
+
+def _has_valid_en_push_texts(product_id: int) -> bool:
+    """compute_readiness 用的轻量检查：英文 idx=1 文案能否解析成合规三段。"""
+    try:
+        resolve_push_texts(product_id)
+    except (CopywritingMissingError, CopywritingParseError):
+        return False
+    return True
+
+
 # ---------- 就绪判定 ----------
 
 def compute_readiness(item: dict, product: dict) -> dict:
