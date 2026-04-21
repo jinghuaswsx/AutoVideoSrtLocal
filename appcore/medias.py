@@ -585,6 +585,14 @@ def collect_media_object_references() -> list[dict[str, object]]:
         "SELECT 'product_detail_image' AS source, object_key "
         "FROM media_product_detail_images WHERE deleted_at IS NULL"
     ))
+    rows.extend(query(
+        "SELECT 'raw_source_video' AS source, video_object_key AS object_key "
+        "FROM media_raw_sources WHERE deleted_at IS NULL"
+    ))
+    rows.extend(query(
+        "SELECT 'raw_source_cover' AS source, cover_object_key AS object_key "
+        "FROM media_raw_sources WHERE deleted_at IS NULL"
+    ))
 
     grouped: dict[str, set[str]] = {}
     for row in rows:
