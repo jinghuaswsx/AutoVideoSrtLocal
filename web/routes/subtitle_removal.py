@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import uuid
@@ -13,11 +14,14 @@ from flask_login import login_required, current_user
 from appcore import task_state
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
+from appcore.vod_erase_provider import VodEraseError, get_play_info
 from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
 from web.services import subtitle_removal_runner
 from web.upload_util import validate_video_extension
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("subtitle_removal", __name__)
 _submit_locks: dict[str, threading.Lock] = {}
@@ -616,6 +620,28 @@ def get_source_video_artifact(task_id: str):
     abort(404)
 
 
+def _refresh_vod_play_url(task_id: str, vid: str) -> str:
+    """VOD 的 MainPlayUrl 是带签名有效期的，每次点下载都实时重取，避免拿到过期链接。"""
+    info = get_play_info(vid)
+    play_list = info.get("PlayInfoList") or []
+    main_url = ""
+    if isinstance(play_list, list) and play_list:
+        first = play_list[0] if isinstance(play_list[0], dict) else {}
+        main_url = first.get("MainPlayUrl") or first.get("BackupPlayUrl") or ""
+    if not main_url:
+        raise VodEraseError(f"GetPlayInfo response missing play url: {info}")
+    existing = task_state.get(task_id) or {}
+    result_object_info = dict(existing.get("result_object_info") or {})
+    result_object_info["play_url"] = main_url
+    result_object_info["refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+    task_state.update(
+        task_id,
+        provider_result_url=main_url,
+        result_object_info=result_object_info,
+    )
+    return main_url
+
+
 def _result_response(task: dict, *, as_attachment: bool = False):
     result_video_path = (task.get("result_video_path") or "").strip()
     if result_video_path and os.path.exists(result_video_path):
@@ -628,7 +654,16 @@ def _result_response(task: dict, *, as_attachment: bool = False):
     if result_tos_key:
         return redirect(tos_clients.generate_signed_download_url(result_tos_key))
 
-    # VOD provider: 产物托管在 VOD，provider_result_url 已是完整可播放 URL
+    # VOD provider: 产物托管在 VOD，MainPlayUrl 带过期时间，每次都实时重取
+    task_id = (task.get("id") or "").strip()
+    vod_vid = (task.get("vod_result_vid") or "").strip()
+    if task_id and vod_vid:
+        try:
+            fresh_url = _refresh_vod_play_url(task_id, vod_vid)
+            return redirect(fresh_url)
+        except Exception:
+            log.exception("[subtitle_removal] refresh vod play url failed task_id=%s vid=%s", task_id, vod_vid)
+
     provider_result_url = (task.get("provider_result_url") or "").strip()
     if provider_result_url.startswith("http://") or provider_result_url.startswith("https://"):
         return redirect(provider_result_url)
