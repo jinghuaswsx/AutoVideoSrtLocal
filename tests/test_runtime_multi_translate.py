@@ -25,8 +25,9 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
          patch("appcore.runtime_multi.resolve_prompt_config") as m_resolve, \
          patch("appcore.runtime_multi.generate_localized_translation") as m_gen, \
          patch("appcore.runtime_multi._save_json"), \
-         patch("appcore.runtime_multi._log_usage"), \
+         patch("appcore.runtime.ai_billing.log_request") as m_log_request, \
          patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
+         patch("appcore.runtime._translate_billing_model", return_value="gpt"), \
          patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
          patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
          patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
@@ -44,3 +45,8 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     kwargs = m_gen.call_args.kwargs
     assert "BASE_DE" in kwargs["custom_system_prompt"]
     assert "ECOM_PLUGIN" in kwargs["custom_system_prompt"]
+    billing = m_log_request.call_args.kwargs
+    assert billing["use_case_code"] == "video_translate.localize"
+    assert billing["provider"] == "openrouter"
+    assert billing["model"] == "gpt"
+    assert billing["units_type"] == "tokens"

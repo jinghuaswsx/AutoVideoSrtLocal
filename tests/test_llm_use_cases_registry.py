@@ -6,9 +6,13 @@ def test_all_use_cases_have_required_fields():
         assert uc["code"] == code, f"{code} mismatch self-key"
         assert uc["module"], f"{code} missing module"
         assert uc["label"], f"{code} missing label"
-        assert uc["default_provider"] in {"openrouter", "doubao", "gemini_aistudio", "gemini_vertex"}
+        assert uc["default_provider"] in {
+            "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
+            "elevenlabs", "doubao_asr",
+        }
         assert uc["default_model"], f"{code} missing default_model"
         assert uc["usage_log_service"], f"{code} missing usage_log_service"
+        assert uc["units_type"] in {"tokens", "chars", "seconds", "images"}
 
 
 def test_video_translate_defaults_align_with_master_vertex_pref():
@@ -18,6 +22,14 @@ def test_video_translate_defaults_align_with_master_vertex_pref():
         uc = USE_CASES[code]
         assert uc["default_provider"] == "gemini_vertex"
         assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
+        assert uc["units_type"] == "tokens"
+
+
+def test_video_translate_asr_and_tts_defaults():
+    assert USE_CASES["video_translate.tts"]["default_provider"] == "elevenlabs"
+    assert USE_CASES["video_translate.tts"]["units_type"] == "chars"
+    assert USE_CASES["video_translate.asr"]["default_provider"] == "doubao_asr"
+    assert USE_CASES["video_translate.asr"]["units_type"] == "seconds"
 
 
 def test_gemini_video_analysis_family_defaults():
@@ -30,10 +42,17 @@ def test_gemini_video_analysis_family_defaults():
 def test_image_and_link_check_defaults():
     for code in ("image_translate.detect",
                  "image_translate.generate",
-                 "link_check.analyze"):
+                 "link_check.analyze",
+                 "link_check.same_image"):
         uc = USE_CASES[code]
         assert uc["default_provider"] == "gemini_aistudio"
         assert uc["usage_log_service"] == "gemini"
+
+
+def test_registry_count_and_new_units_types():
+    assert len(USE_CASES) == 16
+    assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
+    assert USE_CASES["image_translate.generate"]["units_type"] == "images"
 
 
 def test_get_use_case_unknown_raises():

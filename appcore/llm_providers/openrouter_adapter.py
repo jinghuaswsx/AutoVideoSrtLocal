@@ -1,6 +1,8 @@
 """OpenRouter / 豆包 ARK 适配器（OpenAI-compatible 协议）。"""
 from __future__ import annotations
 
+from decimal import Decimal
+
 from openai import OpenAI
 
 from appcore.api_keys import resolve_extra, resolve_key
@@ -8,6 +10,7 @@ from appcore.llm_providers.base import LLMAdapter
 from config import (
     DOUBAO_LLM_API_KEY, DOUBAO_LLM_BASE_URL,
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
+    USD_TO_CNY,
 )
 
 
@@ -33,6 +36,9 @@ class OpenRouterAdapter(LLMAdapter):
         body: dict = dict(extra_body or {})
         if response_format is not None:
             body["response_format"] = response_format
+        usage_body = dict(body.get("usage") or {})
+        usage_body["include"] = True
+        body["usage"] = usage_body
         # 非显式传 plugins 时默认启用 response-healing，让 JSON 响应更稳
         if "plugins" not in body:
             body["plugins"] = [{"id": "response-healing"}]
@@ -45,12 +51,19 @@ class OpenRouterAdapter(LLMAdapter):
             kwargs["extra_body"] = body
         resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
         usage = getattr(resp, "usage", None)
+        cost_usd = getattr(usage, "cost", None) if usage else None
+        cost_cny = None
+        if cost_usd is not None:
+            cost_cny = (
+                Decimal(str(cost_usd)) * Decimal(str(USD_TO_CNY))
+            ).quantize(Decimal("0.000001"))
         return {
             "text": resp.choices[0].message.content or "",
             "raw": resp,
             "usage": {
                 "input_tokens": getattr(usage, "prompt_tokens", None) if usage else None,
                 "output_tokens": getattr(usage, "completion_tokens", None) if usage else None,
+                "cost_cny": cost_cny,
             },
         }
 

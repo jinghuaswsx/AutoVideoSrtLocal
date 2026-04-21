@@ -21,10 +21,10 @@ from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
+    _log_translate_billing,
     _save_json,
     _resolve_translate_provider,
 )
-from appcore.usage_log import record as _log_usage
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline.voice_embedding import embed_audio_file
 from pipeline.voice_match import extract_sample_from_utterances, match_candidates
@@ -121,11 +121,15 @@ class MultiTranslateRunner(PipelineRunner):
         _save_json(task_dir, "localized_translation.json", localized_translation)
 
         usage = localized_translation.get("_usage") or {}
-        _log_usage(self.user_id, task_id, provider,
-                    model_name=get_model_display_name(provider, self.user_id),
-                    success=True,
-                    input_tokens=usage.get("input_tokens"),
-                    output_tokens=usage.get("output_tokens"))
+        _log_translate_billing(
+            user_id=self.user_id,
+            project_id=task_id,
+            use_case_code="video_translate.localize",
+            provider=provider,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            success=True,
+        )
 
         if requires_confirmation:
             task_state.set_current_review_step(task_id, "translate")

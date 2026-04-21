@@ -8,6 +8,7 @@ AI Studio、Cloud 走 google-genai SDK，OpenRouter 走 OpenAI 兼容接口。
 from __future__ import annotations
 
 import base64
+from decimal import Decimal
 import logging
 import re
 from typing import Any
@@ -15,13 +16,14 @@ from typing import Any
 from google import genai
 from google.genai import types as genai_types
 
+from appcore import ai_billing
 from appcore.gemini import resolve_config
-from appcore.usage_log import record as _record_usage
 from config import (
     GEMINI_AISTUDIO_API_KEY,
     GEMINI_CLOUD_API_KEY,
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
+    USD_TO_CNY,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,28 +106,68 @@ def _classify_error(exc: Exception) -> type[Exception]:
     return GeminiImageError
 
 
+def _channel_provider(channel: str) -> str:
+    if channel == "openrouter":
+        return "openrouter"
+    if channel == "cloud":
+        return "gemini_vertex"
+    return "gemini_aistudio"
+
+
+def _extract_openrouter_cost_cny(resp: Any) -> Decimal | None:
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        return None
+    cost_usd = getattr(usage, "cost", None)
+    if cost_usd is None and isinstance(usage, dict):
+        cost_usd = usage.get("cost")
+    if cost_usd in (None, ""):
+        return None
+    try:
+        return (Decimal(str(cost_usd)) * Decimal(str(USD_TO_CNY))).quantize(Decimal("0.000001"))
+    except Exception:
+        return None
+
+
 def _log_usage(
     *,
     user_id: int | None,
     project_id: str | None,
-    service: str,
+    use_case_code: str,
+    provider: str,
     model_id: str,
-    image_bytes_len: int,
+    image_bytes_len: int | None,
     input_tokens: int | None,
     output_tokens: int | None,
     channel: str,
+    response_cost_cny: Decimal | None = None,
+    success: bool = True,
+    error: Exception | None = None,
 ) -> None:
     if user_id is None:
         return
     try:
-        _record_usage(
-            user_id, project_id, service,
-            model_name=model_id, success=True,
-            input_tokens=input_tokens, output_tokens=output_tokens,
-            extra_data={"bytes": image_bytes_len, "channel": channel},
+        extra: dict[str, Any] = {"channel": channel}
+        if image_bytes_len is not None:
+            extra["bytes"] = image_bytes_len
+        if error is not None:
+            extra["error"] = str(error)[:500]
+        ai_billing.log_request(
+            use_case_code=use_case_code,
+            user_id=user_id,
+            project_id=project_id,
+            provider=provider,
+            model=model_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            request_units=1,
+            units_type="images",
+            response_cost_cny=response_cost_cny,
+            success=success,
+            extra=extra,
         )
     except Exception:
-        logger.debug("gemini_image usage_log 记录失败", exc_info=True)
+        logger.debug("gemini_image ai_billing record failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -248,13 +290,14 @@ def _generate_via_openrouter(
             model=or_model,
             messages=messages,
             modalities=["image", "text"],
+            extra_body={"usage": {"include": True}},
         )
     except TypeError:
         # 旧版 SDK 不认 modalities 参数，退回 extra_body
         resp = client.chat.completions.create(
             model=or_model,
             messages=messages,
-            extra_body={"modalities": ["image", "text"]},
+            extra_body={"modalities": ["image", "text"], "usage": {"include": True}},
         )
     except Exception as e:
         raise _classify_error(e)(str(e)) from e
@@ -281,53 +324,73 @@ def generate_image(
     project_id: str | None = None,
     service: str = "image_translate.generate",
 ) -> tuple[bytes, str]:
-    """调用 Gemini 图像模型，返回 (译图 bytes, mime)。
-
-    通道由 system_settings 的 image_translate.channel 决定，默认 aistudio。
-    可重试错误抛 GeminiImageRetryable；不可重试抛 GeminiImageError。
-    """
+    """?? Gemini ??????? (?? bytes, mime)?"""
     channel = _resolve_channel()
 
-    # 模型 ID：aistudio / cloud 直接用上游 resolve_config 的解析结果，
-    # openrouter 通道保留原始 model，后面再做 google/ 前缀转换
     api_key_from_gemini, resolved_model = resolve_config(
         user_id, service=service, default_model=model,
     )
     model_id = model or resolved_model
+    provider = _channel_provider(channel)
 
-    if channel == "openrouter":
-        api_key = OPENROUTER_API_KEY
-        image_bytes, mime, resp = _generate_via_openrouter(
-            prompt, source_image, source_mime, model_id, api_key=api_key,
-        )
-        input_tokens = output_tokens = None
-        usage = getattr(resp, "usage", None)
-        if usage is not None:
-            input_tokens = getattr(usage, "prompt_tokens", None)
-            output_tokens = getattr(usage, "completion_tokens", None)
-    else:
-        if channel == "cloud":
-            api_key = GEMINI_CLOUD_API_KEY
-            if not api_key:
-                raise GeminiImageError(
-                    "Google Cloud 通道未配置（请设置 GEMINI_CLOUD_API_KEY 环境变量）"
-                )
+    try:
+        if channel == "openrouter":
+            api_key = OPENROUTER_API_KEY
+            image_bytes, mime, resp = _generate_via_openrouter(
+                prompt, source_image, source_mime, model_id, api_key=api_key,
+            )
+            input_tokens = output_tokens = None
+            response_cost_cny = _extract_openrouter_cost_cny(resp)
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                input_tokens = getattr(usage, "prompt_tokens", None)
+                output_tokens = getattr(usage, "completion_tokens", None)
         else:
-            # aistudio: 优先使用用户级 / 环境变量解析出的 key，最后回落 AI Studio env
-            api_key = api_key_from_gemini or GEMINI_AISTUDIO_API_KEY
-            if not api_key:
-                raise GeminiImageError("Gemini API key 未配置")
-        image_bytes, mime, resp = _generate_via_genai(
-            prompt, source_image, source_mime, model_id,
-            backend=channel, api_key=api_key,
+            response_cost_cny = None
+            if channel == "cloud":
+                api_key = GEMINI_CLOUD_API_KEY
+                if not api_key:
+                    raise GeminiImageError(
+                        "Google Cloud ????????? GEMINI_CLOUD_API_KEY ?????"
+                    )
+            else:
+                api_key = api_key_from_gemini or GEMINI_AISTUDIO_API_KEY
+                if not api_key:
+                    raise GeminiImageError("Gemini API key ???")
+            image_bytes, mime, resp = _generate_via_genai(
+                prompt, source_image, source_mime, model_id,
+                backend=channel, api_key=api_key,
+            )
+            meta = getattr(resp, "usage_metadata", None)
+            input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None
+            output_tokens = int(getattr(meta, "candidates_token_count", 0) or 0) if meta else None
+    except Exception as e:
+        _log_usage(
+            user_id=user_id,
+            project_id=project_id,
+            use_case_code=service,
+            provider=provider,
+            model_id=model_id,
+            image_bytes_len=None,
+            input_tokens=None,
+            output_tokens=None,
+            channel=channel,
+            success=False,
+            error=e,
         )
-        meta = getattr(resp, "usage_metadata", None)
-        input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None
-        output_tokens = int(getattr(meta, "candidates_token_count", 0) or 0) if meta else None
+        raise
 
     _log_usage(
-        user_id=user_id, project_id=project_id, service=service,
-        model_id=model_id, image_bytes_len=len(image_bytes),
-        input_tokens=input_tokens, output_tokens=output_tokens, channel=channel,
+        user_id=user_id,
+        project_id=project_id,
+        use_case_code=service,
+        provider=provider,
+        model_id=model_id,
+        image_bytes_len=len(image_bytes),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        channel=channel,
+        response_cost_cny=response_cost_cny,
+        success=True,
     )
     return image_bytes, mime

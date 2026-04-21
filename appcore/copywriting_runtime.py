@@ -15,11 +15,15 @@ from appcore.events import (
     EVT_CW_STEP_UPDATE, EVT_CW_KEYFRAMES_READY, EVT_CW_COPY_READY,
     EVT_CW_TTS_READY, EVT_CW_COMPOSE_READY, EVT_CW_DONE, EVT_CW_ERROR,
 )
-from appcore import task_state
+from appcore import ai_billing, task_state
 from appcore.api_keys import resolve_key, resolve_extra
 from appcore.db import get_conn as get_connection
 
 log = logging.getLogger(__name__)
+
+
+def _billing_provider(provider: str) -> str:
+    return "doubao" if provider == "doubao" else "openrouter"
 
 
 class CopywritingRunner:
@@ -152,15 +156,19 @@ class CopywritingRunner:
         self._set_step(task_id, "copywrite", "done",
                        f"文案生成完成: {len(result.get('segments', []))} 段",
                        model_tag=f"{provider} · {_actual_model}")
-        # 记录 token 用量
-        from appcore.usage_log import record as _log_usage
         _cw_usage = result.get("_usage") or {}
-        _model_name = _actual_model
-        _log_usage(self._user_id, task_id, f"copywriting:{provider}",
-                   model_name=_model_name,
-                   success=True,
-                   input_tokens=_cw_usage.get("input_tokens"),
-                   output_tokens=_cw_usage.get("output_tokens"))
+        ai_billing.log_request(
+            use_case_code="copywriting.generate",
+            user_id=self._user_id,
+            project_id=task_id,
+            provider=_billing_provider(provider),
+            model=_actual_model,
+            input_tokens=_cw_usage.get("input_tokens"),
+            output_tokens=_cw_usage.get("output_tokens"),
+            units_type="tokens",
+            response_cost_cny=_cw_usage.get("cost_cny"),
+            success=True,
+        )
         self._emit(task_id, EVT_CW_COPY_READY, {"copy": result})
 
     def _step_tts(self, task_id: str):

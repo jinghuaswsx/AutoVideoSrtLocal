@@ -16,6 +16,7 @@ from google import genai
 from google.genai import types as genai_types
 from google.genai import errors as genai_errors
 
+from appcore import ai_billing
 from appcore.api_keys import resolve_extra, resolve_key
 from config import (
     GEMINI_API_KEY,
@@ -251,34 +252,63 @@ def _extract_gemini_tokens(resp: Any) -> tuple[int | None, int | None]:
         return None, None
 
 
+def _resolve_billing_use_case(service: str) -> str | None:
+    if not isinstance(service, str) or "." not in service:
+        return None
+    try:
+        from appcore.llm_use_cases import get_use_case
+        get_use_case(service)
+        return service
+    except KeyError:
+        return None
+
+
+def _resolve_billing_provider(use_case_code: str | None) -> str:
+    if use_case_code:
+        try:
+            binding = _binding_lookup(use_case_code)
+        except Exception:
+            binding = None
+        if binding and binding.get("provider"):
+            return str(binding["provider"])
+        try:
+            from appcore.llm_use_cases import get_use_case
+            return str(get_use_case(use_case_code)["default_provider"])
+        except KeyError:
+            pass
+    return "gemini_vertex" if GEMINI_BACKEND == "cloud" else "gemini_aistudio"
+
+
 def _log_gemini_usage(
     *, user_id: int | None, project_id: str | None, service: str,
     model_id: str, success: bool, resp: Any = None, error: Exception | None = None,
 ) -> None:
-    """统一把 Gemini 调用写入 usage_logs。模型名用具体的 model_id（如 gemini-3.1-pro-preview）。
-
-    只在 user_id 存在时写；对任何异常都吞掉，不影响主流程。
-    """
     if user_id is None:
         return
     try:
-        from appcore.usage_log import record as _record
+        use_case_code = _resolve_billing_use_case(service)
+        if not use_case_code:
+            return
         input_tokens, output_tokens = (None, None)
         if resp is not None:
             input_tokens, output_tokens = _extract_gemini_tokens(resp)
-        extra: dict[str, Any] = {"service_source": service}
+        extra: dict[str, Any] | None = None
         if error is not None:
-            extra["error"] = str(error)[:500]
-        _record(
-            user_id, project_id, service,
-            model_name=model_id,
-            success=success,
+            extra = {"error": str(error)[:500]}
+        ai_billing.log_request(
+            use_case_code=use_case_code,
+            user_id=user_id,
+            project_id=project_id,
+            provider=_resolve_billing_provider(use_case_code),
+            model=model_id,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            extra_data=extra or None,
+            units_type="tokens",
+            success=success,
+            extra=extra,
         )
-    except Exception:  # 永不冒泡
-        logger.debug("Gemini usage_log 记录失败", exc_info=True)
+    except Exception:
+        logger.debug("Gemini ai_billing record failed", exc_info=True)
 
 
 def generate(

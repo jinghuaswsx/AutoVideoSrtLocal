@@ -1,51 +1,44 @@
-"""统一 LLM 调用入口。
-
-使用方式：
-    llm_client.invoke_chat("video_translate.localize",
-                           messages=[...], user_id=42)
-    llm_client.invoke_generate("video_score.run",
-                               prompt="...", user_id=1,
-                               media=[video_path], response_schema={...})
-
-内部流程：
-  1. llm_bindings.resolve(use_case) → (provider, model)
-  2. get_adapter(provider) → Adapter 实例
-  3. adapter.chat() 或 adapter.generate()
-  4. _log_usage() → usage_logs（service 字段来自 USE_CASES.usage_log_service）
-"""
+"""统一 LLM 调用入口。"""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 from typing import Any, Iterable
 
-from appcore import llm_bindings, usage_log
+from appcore import ai_billing, llm_bindings
 from appcore.llm_providers import get_adapter
-from appcore.llm_use_cases import get_use_case
 
 log = logging.getLogger(__name__)
 
 
 def _log_usage(*, use_case_code: str, user_id: int | None,
-               project_id: str | None, model: str,
+               project_id: str | None, provider: str, model: str,
                success: bool, usage: dict | None,
                error: Exception | None = None) -> None:
     if user_id is None:
         return
+
+    usage_data = usage or {}
+    extra: dict[str, Any] = {"use_case": use_case_code}
+    if error is not None:
+        extra["error"] = str(error)[:500]
+
     try:
-        uc = get_use_case(use_case_code)
-        extra: dict[str, Any] = {"use_case": use_case_code}
-        if error is not None:
-            extra["error"] = str(error)[:500]
-        usage_log.record(
-            user_id, project_id, uc["usage_log_service"],
-            model_name=model, success=success,
-            input_tokens=(usage or {}).get("input_tokens"),
-            output_tokens=(usage or {}).get("output_tokens"),
-            extra_data=extra,
+        ai_billing.log_request(
+            use_case_code=use_case_code,
+            user_id=user_id,
+            project_id=project_id,
+            provider=provider,
+            model=model,
+            input_tokens=usage_data.get("input_tokens"),
+            output_tokens=usage_data.get("output_tokens"),
+            response_cost_cny=usage_data.get("cost_cny"),
+            success=success,
+            extra=extra,
         )
     except Exception:
-        log.debug("usage_log failed for use_case=%s", use_case_code, exc_info=True)
+        log.debug("ai_billing.log_request failed for use_case=%s",
+                  use_case_code, exc_info=True)
 
 
 def invoke_chat(
@@ -73,11 +66,11 @@ def invoke_chat(
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
-                   project_id=project_id, model=model,
+                   project_id=project_id, provider=provider, model=model,
                    success=False, usage=None, error=e)
         raise
     _log_usage(use_case_code=use_case_code, user_id=user_id,
-               project_id=project_id, model=model,
+               project_id=project_id, provider=provider, model=model,
                success=True, usage=result.get("usage"))
     return result
 
@@ -110,10 +103,10 @@ def invoke_generate(
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
-                   project_id=project_id, model=model,
+                   project_id=project_id, provider=provider, model=model,
                    success=False, usage=None, error=e)
         raise
     _log_usage(use_case_code=use_case_code, user_id=user_id,
-               project_id=project_id, model=model,
+               project_id=project_id, provider=provider, model=model,
                success=True, usage=result.get("usage"))
     return result
