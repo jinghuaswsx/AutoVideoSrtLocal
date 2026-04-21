@@ -1,5 +1,13 @@
 # AutoVideoSrt Codex 协作说明
 
+## 当前正式契约
+
+- 正式入口：`http://172.30.254.14/`
+- 运行方式：不使用 nginx，`gunicorn` 直接监听 `80`
+- 运行目录：`/opt/autovideosrt`
+- 数据目录：`/data/autovideosrt/uploads` 和 `/data/autovideosrt/output`
+- MySQL 库名：`auto_video`
+
 ## 启动与验证
 
 - 安装依赖：`pip install -r requirements.txt`

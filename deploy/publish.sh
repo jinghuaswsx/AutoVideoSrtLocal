@@ -9,7 +9,7 @@ cd "$REPO_ROOT"
 
 KEY="$REPO_ROOT/.server/openclaw-noobird.pem"
 SERVER_USER="root"
-SERVER_HOST="14.103.220.208"
+SERVER_HOST="172.30.254.14"
 SERVER_PORT="22"
 APP_DIR="/opt/autovideosrt"
 SERVICE="autovideosrt"
@@ -42,6 +42,6 @@ ssh -i "$KEY" -p "$SERVER_PORT" -o StrictHostKeyChecking=accept-new \
 # 3) 健康检查
 echo "[3/3] 健康检查..."
 ssh -i "$KEY" -p "$SERVER_PORT" "$SERVER_USER@$SERVER_HOST" \
-  "curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8888/ || true"
+  "curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1/ || true"
 
-echo "发布完成：http://$SERVER_HOST:8888"
+echo "发布完成：http://$SERVER_HOST/"

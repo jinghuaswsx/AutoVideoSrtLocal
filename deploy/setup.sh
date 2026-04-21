@@ -19,4 +19,5 @@ python db/create_admin.py
 # Restart service
 systemctl restart autovideosrt
 systemctl status autovideosrt --no-pager
-echo "Deploy complete. Running on port 8888."
+curl -fsS http://127.0.0.1/ >/dev/null
+echo "Deploy complete. Running on port 80."
