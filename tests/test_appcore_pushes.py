@@ -23,6 +23,13 @@ def product_with_item(user_id):
         file_size=12345, duration_seconds=10.5, lang="de",
     )
     medias.replace_copywritings(pid, [{"title": "T", "body": "B"}], lang="de")
+    # 默认插一条合规英文文案，compute_readiness 的 has_push_texts 才为 True。
+    # 需要测 has_push_texts=False 的用例自己覆盖/删除这条。
+    medias.replace_copywritings(
+        pid,
+        [{"body": "标题: T\n文案: M\n描述: D"}],
+        lang="en",
+    )
     yield pid, item_id
     medias.soft_delete_product(pid)
 
@@ -32,7 +39,13 @@ def test_compute_readiness_all_satisfied(product_with_item):
     item = medias.get_item(item_id)
     product = medias.get_product(pid)
     r = pushes.compute_readiness(item, product)
-    assert r == {"has_object": True, "has_cover": True, "has_copywriting": True, "lang_supported": True}
+    assert r == {
+        "has_object": True,
+        "has_cover": True,
+        "has_copywriting": True,
+        "lang_supported": True,
+        "has_push_texts": True,
+    }
 
 
 def test_compute_readiness_missing_cover(product_with_item):
@@ -248,7 +261,7 @@ def test_resolve_push_texts_returns_parsed(product_with_item):
 
 def test_resolve_push_texts_missing_raises(product_with_item):
     pid, _ = product_with_item
-    # fixture 只写了 lang='de' 的文案，英文没有
+    medias.replace_copywritings(pid, [], lang="en")  # 清掉 fixture 里的默认英文文案
     with pytest.raises(pushes.CopywritingMissingError):
         pushes.resolve_push_texts(pid)
 
@@ -283,7 +296,46 @@ def test_build_item_payload_uses_real_texts(product_with_item):
 
 def test_build_item_payload_raises_when_no_en_copy(product_with_item):
     pid, item_id = product_with_item
+    medias.replace_copywritings(pid, [], lang="en")  # 清掉 fixture 里的默认英文文案
     item = medias.get_item(item_id)
     product = medias.get_product(pid)
     with pytest.raises(pushes.CopywritingMissingError):
         pushes.build_item_payload(item, product)
+
+
+# ---------- has_push_texts 就绪项 ----------
+
+
+def test_compute_readiness_has_push_texts_true(product_with_item):
+    pid, item_id = product_with_item
+    # fixture 默认插了合规英文文案
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    r = pushes.compute_readiness(item, product)
+    assert r["has_push_texts"] is True
+
+
+def test_compute_readiness_has_push_texts_false_when_no_en(product_with_item):
+    pid, item_id = product_with_item
+    medias.replace_copywritings(pid, [], lang="en")
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    r = pushes.compute_readiness(item, product)
+    assert r["has_push_texts"] is False
+
+
+def test_compute_readiness_has_push_texts_false_when_unparseable(product_with_item):
+    pid, item_id = product_with_item
+    medias.replace_copywritings(pid, [{"body": "no labels here"}], lang="en")
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    r = pushes.compute_readiness(item, product)
+    assert r["has_push_texts"] is False
+
+
+def test_compute_status_not_ready_without_push_texts(product_with_item):
+    pid, item_id = product_with_item
+    medias.replace_copywritings(pid, [], lang="en")
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    assert pushes.compute_status(item, product) == pushes.STATUS_NOT_READY

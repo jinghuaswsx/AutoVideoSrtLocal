@@ -90,7 +90,11 @@ def _has_valid_en_push_texts(product_id: int) -> bool:
 # ---------- 就绪判定 ----------
 
 def compute_readiness(item: dict, product: dict) -> dict:
-    """返回 4 项就绪布尔。调用方再据此判定 pushable。"""
+    """返回 5 项就绪布尔。调用方再据此判定 pushable。
+
+    - has_copywriting：按 item.lang 检查本语种是否有任一 copywriting 记录
+    - has_push_texts：英文 idx=1 文案能否解析成合规三段（推送下游 texts 字段要求）
+    """
     has_object = bool((item or {}).get("object_key"))
     has_cover = bool((item or {}).get("cover_object_key"))
 
@@ -108,11 +112,14 @@ def compute_readiness(item: dict, product: dict) -> dict:
     supported = medias.parse_ad_supported_langs((product or {}).get("ad_supported_langs"))
     lang_supported = lang in supported
 
+    has_push_texts = _has_valid_en_push_texts(pid) if pid else False
+
     return {
         "has_object": has_object,
         "has_cover": has_cover,
         "has_copywriting": has_copywriting,
         "lang_supported": lang_supported,
+        "has_push_texts": has_push_texts,
     }
 
 
