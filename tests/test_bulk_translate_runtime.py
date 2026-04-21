@@ -385,9 +385,9 @@ def test_scheduler_skips_video_non_de_fr(fake_db, monkeypatch):
     """视频 × es/it 语种 → 自动 skipped,不调 dispatch。"""
     plan = [
         {**_mk_pending(0, kind="video", lang="es"),
-         "ref": {"source_item_id": 1}},
+         "ref": {"source_raw_id": 1}},
         {**_mk_pending(1, kind="video", lang="de"),
-         "ref": {"source_item_id": 1}},
+         "ref": {"source_raw_id": 1}},
     ]
     tid = _prepare_running_task(fake_db, monkeypatch, plan)
 
@@ -586,8 +586,102 @@ def test_translation_exists_for_video(monkeypatch):
     monkeypatch.setattr(mod, "query_one", lambda sql, args: None)
 
     item = {"kind": "video", "lang": "de",
-            "ref": {"source_item_id": 7}}
+            "ref": {"source_raw_id": 7}}
     assert mod._translation_exists_for_item(item) is False
+
+
+def test_translation_exists_for_video_uses_source_raw_id(monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+
+    seen = {}
+
+    def fake_exists(table, **conds):
+        seen["table"] = table
+        seen["conds"] = conds
+        return True
+
+    monkeypatch.setattr(mod, "_exists_one", fake_exists)
+
+    item = {"kind": "video", "lang": "de", "ref": {"source_raw_id": 17}}
+    assert mod._translation_exists_for_item(item) is True
+    assert seen["table"] == "media_items"
+    assert seen["conds"] == {"source_raw_id": 17, "lang": "de"}
+
+
+def test_dispatch_video_from_raw_source_creates_media_item_and_updates_source_raw_id(tmp_path, monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+
+    raw_video = tmp_path / "raw.mp4"
+    raw_video.write_bytes(b"raw-video")
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda rid: {
+            "id": rid,
+            "product_id": 77,
+            "user_id": 1,
+            "video_object_key": "1/medias/77/raw_sources/src.mp4",
+            "cover_object_key": "1/medias/77/raw_sources/src.cover.jpg",
+            "duration_seconds": 90.0,
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "_download_media_to_tmp",
+        lambda object_key, suffix=".mp4": str(raw_video),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_translate_video_to_media_key",
+        lambda local_video, target_lang, product_id, user_id, parent_state: "1/medias/77/de_out.mp4",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_translate_cover_to_media_key",
+        lambda source_cover_key, target_lang, product_id, user_id: "1/medias/77/de_cover.cover.jpg",
+        raising=False,
+    )
+
+    created_items = []
+    monkeypatch.setattr(
+        mod.medias,
+        "create_item",
+        lambda **kwargs: created_items.append(kwargs) or 901,
+    )
+
+    executed = []
+    monkeypatch.setattr(
+        mod,
+        "execute",
+        lambda sql, args=None: executed.append((sql, args)) or 1,
+    )
+
+    result = mod._dispatch_video(
+        "parent-task",
+        1,
+        77,
+        "de",
+        {"ref": {"source_raw_id": 321}},
+        {"initiator": {"user_id": 1}, "video_params_snapshot": {}},
+    )
+
+    assert result.status == "done"
+    assert created_items == [{
+        "product_id": 77,
+        "user_id": 1,
+        "filename": "de_out.mp4",
+        "object_key": "1/medias/77/de_out.mp4",
+        "cover_object_key": "1/medias/77/de_cover.cover.jpg",
+        "duration_seconds": 90.0,
+        "file_size": None,
+        "lang": "de",
+    }]
+    assert executed
+    assert executed[0][1] == (321, 901)
+    assert result.video_minutes == pytest.approx(1.5)
 
 
 # ============================================================

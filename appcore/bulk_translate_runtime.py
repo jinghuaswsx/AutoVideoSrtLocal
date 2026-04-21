@@ -18,9 +18,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
+from appcore import medias
 from appcore.bulk_translate_estimator import (
     COST_PER_1K_TOKENS_CNY,
     COST_PER_IMAGE_CNY,
@@ -31,6 +35,7 @@ from appcore.bulk_translate_plan import generate_plan
 from appcore.db import execute, query, query_one
 from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
 from appcore.video_translate_defaults import VIDEO_SUPPORTED_LANGS
+from config import OUTPUT_DIR
 
 log = logging.getLogger(__name__)
 
@@ -486,54 +491,231 @@ def _dispatch_video(parent_id, user_id, product_id, lang, item, parent_state):
             status="error",
             error=f"unsupported video target lang: {lang}",
         )
+    raw_id = int(item["ref"]["source_raw_id"])
+    row = medias.get_raw_source(raw_id)
+    if not row:
+        return SubTaskResult(
+            status="error",
+            error=f"raw source {raw_id} missing",
+        )
 
-    from appcore.runtime_de import run_de_translation
-    from appcore.runtime_fr import run_fr_translation
-
-    sub_id = str(uuid.uuid4())
-    video_params = parent_state.get("video_params_snapshot") or {}
-    state = {
-        "product_id": product_id,
-        "source_item_id": item["ref"]["source_item_id"],
-        "source_language": "en",
-        "target_language": lang,
-        "parent_task_id": parent_id,
-        **video_params,
-    }
-    execute(
-        """
-        INSERT INTO projects (id, user_id, type, status, state_json)
-        VALUES (%s, %s, 'translate_lab', 'queued', %s)
-        """,
-        (sub_id, user_id, json.dumps(state, ensure_ascii=False)),
-    )
-
-    runner = run_de_translation if lang == "de" else run_fr_translation
+    local_video = ""
+    sub_id = None
     try:
-        runner(sub_id)
+        local_video = _download_media_to_tmp(
+            row["video_object_key"],
+            suffix=_suffix_from_key(row["video_object_key"], default=".mp4"),
+        )
+        video_result = _translate_video_to_media_key(
+            local_video,
+            target_lang=lang,
+            product_id=row["product_id"],
+            user_id=row["user_id"],
+            parent_state=parent_state,
+        )
+        if isinstance(video_result, tuple):
+            sub_id, video_out_key = video_result
+        else:
+            video_out_key = video_result
+
+        cover_out_key = _translate_cover_to_media_key(
+            source_cover_key=row["cover_object_key"],
+            target_lang=lang,
+            product_id=row["product_id"],
+            user_id=row["user_id"],
+        )
+        new_item_id = medias.create_item(
+            product_id=row["product_id"],
+            user_id=row["user_id"],
+            filename=Path(video_out_key).name,
+            object_key=video_out_key,
+            cover_object_key=cover_out_key,
+            duration_seconds=row.get("duration_seconds"),
+            file_size=None,
+            lang=lang,
+        )
+        execute(
+            "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+            (raw_id, new_item_id),
+        )
+        dur_sec = float(row.get("duration_seconds") or 0.0)
+        return SubTaskResult(
+            sub_id,
+            status="done",
+            video_minutes=dur_sec / 60.0,
+        )
     except Exception as e:
         return SubTaskResult(sub_id, status="error", error=str(e))
+    finally:
+        if local_video and os.path.exists(local_video):
+            try:
+                os.unlink(local_video)
+            except OSError:
+                pass
 
-    sub = query_one(
-        "SELECT status, state_json FROM projects WHERE id=%s",
-        (sub_id,),
-    )
-    sub_state = (sub["state_json"] if isinstance(sub["state_json"], dict)
-                 else json.loads(sub["state_json"] or "{}"))
-    dur_sec = sub_state.get("video_duration_seconds") or 0
-    return SubTaskResult(
+
+def _download_media_to_tmp(object_key: str, suffix: str = ".bin") -> str:
+    from appcore import tos_clients
+
+    source_name = Path(object_key or "").name
+    prefix = f"bt_{Path(source_name).stem[:32] or 'raw'}_"
+    fd, local_path = tempfile.mkstemp(suffix=suffix, prefix=prefix)
+    os.close(fd)
+    return tos_clients.download_media_file(object_key, local_path)
+
+
+def _translate_video_to_media_key(local_video, target_lang, product_id, user_id, parent_state):
+    from appcore import task_state, tos_clients
+    from appcore.runtime_v2 import PipelineRunnerV2
+
+    sub_id = str(uuid.uuid4())
+    task_dir = os.path.join(OUTPUT_DIR, sub_id)
+    os.makedirs(task_dir, exist_ok=True)
+    video_params = dict(parent_state.get("video_params_snapshot") or {})
+    task_state.create_translate_lab(
         sub_id,
-        status=sub["status"],
-        error=sub_state.get("last_error"),
-        video_minutes=dur_sec / 60.0,
+        local_video,
+        task_dir,
+        original_filename=Path(local_video).name,
+        user_id=user_id,
+        source_language="en",
+        target_language=target_lang,
+        **video_params,
     )
+    PipelineRunnerV2(bus=EventBus(), user_id=user_id).start(sub_id)
+
+    task = task_state.get(sub_id) or {}
+    result_path = _resolve_translated_video_path(task)
+    if not result_path:
+        message = task.get("error") or "translate_lab output missing"
+        raise RuntimeError(message)
+
+    with open(result_path, "rb") as fh:
+        payload = fh.read()
+    output_name = f"{target_lang}_{Path(local_video).stem}{Path(result_path).suffix or '.mp4'}"
+    object_key = tos_clients.build_media_object_key(user_id, product_id, output_name)
+    tos_clients.upload_media_object(object_key, payload, content_type="video/mp4")
+    return sub_id, object_key
+
+
+def _translate_cover_to_media_key(source_cover_key, target_lang, product_id, user_id):
+    from appcore import image_translate_settings as its
+    from appcore import task_state, tos_clients
+    from appcore.image_translate_runtime import ImageTranslateRuntime
+
+    task_id = str(uuid.uuid4())
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    os.makedirs(task_dir, exist_ok=True)
+    lang_name = medias.get_language_name(target_lang)
+    prompt = its.get_prompt("cover", target_lang).replace(
+        "{target_language_name}",
+        lang_name,
+    )
+    task_state.create_image_translate(
+        task_id,
+        task_dir,
+        user_id=user_id,
+        preset="cover",
+        target_language=target_lang,
+        target_language_name=lang_name,
+        model_id=_default_image_translate_model_id(user_id),
+        prompt=prompt,
+        items=[{
+            "idx": 0,
+            "filename": Path(source_cover_key).name or "cover.jpg",
+            "src_tos_key": source_cover_key,
+            "source_bucket": "media",
+        }],
+        medias_context={"source_bucket": "media"},
+    )
+    ImageTranslateRuntime(bus=EventBus(), user_id=user_id).start(task_id)
+
+    task = task_state.get(task_id) or {}
+    items = task.get("items") or []
+    first = items[0] if items else {}
+    if (first.get("status") or "") != "done":
+        raise RuntimeError(first.get("error") or task.get("error") or "cover translate failed")
+    dst_key = (first.get("dst_tos_key") or "").strip()
+    if not dst_key:
+        raise RuntimeError("cover translate output missing")
+
+    ext = _suffix_from_key(dst_key, default=_suffix_from_key(source_cover_key, default=".png"))
+    fd, local_path = tempfile.mkstemp(suffix=ext, prefix="bt_cover_")
+    os.close(fd)
+    try:
+        tos_clients.download_file(dst_key, local_path)
+        with open(local_path, "rb") as fh:
+            payload = fh.read()
+    finally:
+        if os.path.exists(local_path):
+            try:
+                os.unlink(local_path)
+            except OSError:
+                pass
+
+    filename = f"cover_{target_lang}_{Path(source_cover_key).name or f'{target_lang}{ext}'}"
+    object_key = tos_clients.build_media_object_key(user_id, product_id, filename)
+    tos_clients.upload_media_object(
+        object_key,
+        payload,
+        content_type=_image_content_type_from_key(dst_key),
+    )
+    return object_key
+
+
+def _default_image_translate_model_id(user_id: int | None) -> str:
+    from appcore.api_keys import resolve_extra
+    from appcore.gemini_image import IMAGE_MODELS
+
+    try:
+        extra = resolve_extra(user_id, "image_translate") or {}
+        preferred = (extra.get("default_model_id") or "").strip()
+        if preferred:
+            return preferred
+    except Exception:
+        pass
+    if IMAGE_MODELS:
+        return IMAGE_MODELS[0][0]
+    return "gemini-3.1-flash-image-preview"
+
+
+def _resolve_translated_video_path(task: dict) -> str:
+    candidates = [
+        ((task.get("compose_result") or {}).get("hard_video") or ""),
+        ((task.get("compose_result") or {}).get("soft_video") or ""),
+        ((task.get("result") or {}).get("hard_video") or ""),
+        ((task.get("result") or {}).get("soft_video") or ""),
+        ((task.get("preview_files") or {}).get("hard_video") or ""),
+        ((task.get("preview_files") or {}).get("soft_video") or ""),
+        (task.get("final_video") or ""),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
+def _suffix_from_key(key: str, default: str = "") -> str:
+    suffix = Path(key or "").suffix
+    return suffix or default
+
+
+def _image_content_type_from_key(key: str) -> str:
+    lower = (key or "").lower()
+    if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+        return "image/jpeg"
+    if lower.endswith(".png"):
+        return "image/png"
+    if lower.endswith(".webp"):
+        return "image/webp"
+    return "application/octet-stream"
 
 
 # ============================================================
 # Task 18:已存在译本查询
 # ============================================================
 def _translation_exists_for_item(item: dict) -> bool:
-    """判断该 plan 项的目标素材是否已存在译本(source_ref_id 关联)。"""
+    """判断该 plan 项的目标素材是否已存在译本。"""
     kind = item["kind"]
     lang = item["lang"]
     ref = item["ref"]
@@ -546,7 +728,7 @@ def _translation_exists_for_item(item: dict) -> bool:
     if kind == "video":
         return _exists_one(
             "media_items",
-            source_ref_id=ref["source_item_id"], lang=lang,
+            source_raw_id=ref["source_raw_id"], lang=lang,
         )
     if kind == "detail":
         for src_id in ref.get("source_detail_ids") or []:
@@ -577,14 +759,24 @@ _EXISTS_ALLOWED = {
 _SOFT_DELETE_TABLES = {"media_items", "media_product_detail_images"}
 
 
-def _exists_one(table: str, *, source_ref_id: int, lang: str) -> bool:
+def _exists_one(
+    table: str,
+    *,
+    source_ref_id: int | None = None,
+    source_raw_id: int | None = None,
+    lang: str,
+) -> bool:
     if table not in _EXISTS_ALLOWED:
         raise ValueError(f"Unsupported table: {table}")
+    if (source_ref_id is None) == (source_raw_id is None):
+        raise ValueError("exactly one of source_ref_id/source_raw_id is required")
+    column = "source_ref_id" if source_ref_id is not None else "source_raw_id"
+    source_id = source_ref_id if source_ref_id is not None else source_raw_id
     where_del = " AND deleted_at IS NULL" if table in _SOFT_DELETE_TABLES else ""
     row = query_one(
         f"SELECT 1 AS x FROM {table} "
-        f"WHERE source_ref_id = %s AND lang = %s{where_del} LIMIT 1",
-        (source_ref_id, lang),
+        f"WHERE {column} = %s AND lang = %s{where_del} LIMIT 1",
+        (source_id, lang),
     )
     return row is not None
 
