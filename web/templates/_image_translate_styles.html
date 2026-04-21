@@ -131,4 +131,24 @@
   border-color: #d1d5db;
   color: #9ca3af;
 }
+
+.it-retry-all {
+  height: 40px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1.5px solid var(--danger, #dc2626);
+  background: #fff;
+  color: var(--danger, #dc2626);
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms, box-shadow 120ms;
+}
+.it-retry-all:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+}
+.it-retry-all:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 </style>

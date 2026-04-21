@@ -37,7 +37,10 @@
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
       <h2 style="margin:0">进度</h2>
-      <button id="itRetryUnfinished" class="btn btn-primary it-retry-main" type="button" hidden>重试未完成的图片</button>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="itRetryAll" class="btn it-retry-all" type="button" hidden>全部重跑</button>
+        <button id="itRetryUnfinished" class="btn btn-primary it-retry-main" type="button" hidden>重试未完成的图片</button>
+      </div>
     </div>
     <div id="itProgress" class="it-progress">
       <span id="itProgressText">{{ state.progress.done }} / {{ state.progress.total }} 完成，{{ state.progress.failed }} 失败</span>
