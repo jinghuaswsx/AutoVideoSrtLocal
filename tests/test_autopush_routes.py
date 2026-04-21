@@ -17,6 +17,7 @@ def _build_client(monkeypatch):
     monkeypatch.setenv("AUTOVIDEO_API_KEY", "demo-key")
     monkeypatch.setenv("PUSH_MEDIAS_TARGET", "http://push-target.example/push")
     monkeypatch.setenv("PUSH_LOCALIZED_TEXTS_BASE_URL", "https://os.wedev.vip")
+    monkeypatch.setenv("PUSH_LOCALIZED_TEXTS_AUTHORIZATION", "Bearer demo-token")
 
     settings = importlib.import_module("backend.settings")
     settings.get_settings.cache_clear()
@@ -74,7 +75,10 @@ def test_push_localized_texts_proxies_to_marketing_api(monkeypatch):
     }
     assert captured["url"] == "https://os.wedev.vip/api/marketing/medias/3725/texts"
     assert captured["json"]["texts"][0]["title"] == "fr1"
-    assert captured["headers"] == {"Content-Type": "application/json"}
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer demo-token",
+    }
 
 
 def test_push_localized_texts_returns_http_error_body(monkeypatch):

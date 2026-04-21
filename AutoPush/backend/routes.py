@@ -93,13 +93,17 @@ async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
 
 @api.post("/marketing/medias/{mk_id}/texts")
 async def push_localized_texts(mk_id: int, payload: dict[str, Any] = Body(...)) -> Any:
-    target = f"{get_settings().push_localized_texts_base_url}/api/marketing/medias/{mk_id}/texts"
+    settings = get_settings()
+    target = f"{settings.push_localized_texts_base_url}/api/marketing/medias/{mk_id}/texts"
+    headers = {"Content-Type": "application/json"}
+    if settings.push_localized_texts_authorization:
+        headers["Authorization"] = settings.push_localized_texts_authorization
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 target,
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
     except Exception as exc:
         raise HTTPException(

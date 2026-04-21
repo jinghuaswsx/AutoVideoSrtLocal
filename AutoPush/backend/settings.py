@@ -28,6 +28,10 @@ class Settings:
             "PUSH_LOCALIZED_TEXTS_BASE_URL",
             "https://os.wedev.vip",
         ).rstrip("/")
+        self.push_localized_texts_authorization = getenv(
+            "PUSH_LOCALIZED_TEXTS_AUTHORIZATION",
+            "",
+        ).strip()
         self.port = int(getenv("AUTOPUSH_PORT", "8787"))
 
 
