@@ -11,6 +11,89 @@
     return LANGUAGES;
   }
 
+  // 素材文件名命名规范校验
+  // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
+  // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
+  function validateMaterialFilename(filename, productName, langCode) {
+    const TAIL = '-指派-蔡靖华.mp4';
+    const MID_PREFIX = '-原素材-补充素材(';
+    const fn = String(filename || '');
+    const errs = [];
+
+    const lang = (LANGUAGES || []).find(l => l.code === langCode);
+    const langZh = (lang && lang.name_zh) || '';
+    if (!langZh) {
+      errs.push(`未知语种 code='${langCode}'，无法校验`);
+      return errs;
+    }
+    if (!productName) {
+      errs.push('当前产品尚未加载，请重试');
+      return errs;
+    }
+
+    if (!fn.endsWith(TAIL)) {
+      errs.push(`结尾必须是 "${TAIL}"`);
+      return errs;
+    }
+    const headMid = fn.slice(0, fn.length - TAIL.length);
+
+    if (headMid.length < 11 || headMid[10] !== '-') {
+      errs.push('开头必须是 "YYYY.MM.DD-" 格式');
+      return errs;
+    }
+    const dateStr = headMid.slice(0, 10);
+    const dateMatch = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateStr);
+    if (!dateMatch) {
+      errs.push(`日期段 "${dateStr}" 格式必须是 YYYY.MM.DD`);
+      return errs;
+    }
+    const y = +dateMatch[1], mo = +dateMatch[2], d = +dateMatch[3];
+    const dObj = new Date(y, mo - 1, d);
+    if (dObj.getFullYear() !== y || dObj.getMonth() !== mo - 1 || dObj.getDate() !== d) {
+      errs.push(`日期 "${dateStr}" 不是合法日期`);
+    }
+
+    const rest = headMid.slice(11);
+
+    if (!rest.endsWith(')')) {
+      errs.push('在 "-指派-蔡靖华.mp4" 之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）');
+      return errs;
+    }
+
+    const midStart = rest.lastIndexOf(MID_PREFIX);
+    if (midStart < 0) {
+      errs.push(`中间必须包含 "${MID_PREFIX}语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）`);
+      return errs;
+    }
+
+    const productPart = rest.slice(0, midStart);
+    const langPart = rest.slice(midStart + MID_PREFIX.length, -1);
+
+    if (productPart !== productName) {
+      errs.push(`商品名不符：文件名写的是 "${productPart}"，应为 "${productName}"（注意前后不能有空格）`);
+    }
+    if (langPart !== langZh) {
+      errs.push(`语种中文名不符：文件名写的是 "${langPart}"，应为 "${langZh}"`);
+    }
+
+    return errs;
+  }
+
+  function assertMaterialFilenameOrAlert(filename, productName, langCode) {
+    const errs = validateMaterialFilename(filename, productName, langCode);
+    if (!errs.length) return true;
+    const lang = (LANGUAGES || []).find(l => l.code === langCode);
+    const langZh = (lang && lang.name_zh) || langCode;
+    const example = `例如：2026.04.17-${productName || '商品名'}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+    alert(
+      '文件名不符合命名规范，请修改后再上传：\n\n'
+      + '• ' + errs.join('\n• ')
+      + '\n\n规范：YYYY.MM.DD-{商品名}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4\n'
+      + example
+    );
+    return false;
+  }
+
   function renderLangBar(coverage) {
     if (!LANGUAGES.length) return '';
     return `<div class="oc-lang-bar">` + LANGUAGES.map(l => {
@@ -733,6 +816,8 @@
     if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
+    const productName = state.current && state.current.product && state.current.product.name;
+    if (!assertMaterialFilenameOrAlert(file.name, productName, 'en')) return;
     const box = $('uploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
@@ -2020,6 +2105,8 @@
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) { alert('产品数据未加载'); return; }
     const lang = edState.activeLang;
+    const productName = edState.productData && edState.productData.product && edState.productData.product.name;
+    if (!assertMaterialFilenameOrAlert(file.name, productName, lang)) return;
     const box = $('edUploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
