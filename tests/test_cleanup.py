@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from pathlib import Path
 
 import appcore.cleanup as cleanup
 
@@ -98,3 +100,63 @@ def test_run_cleanup_skips_link_check_from_null_expiry_cleanup(monkeypatch):
 
     zombie_sql = next(sql for sql in captured_sql if "expires_at IS NULL" in sql)
     assert "type NOT IN ('image_translate', 'link_check')" in zombie_sql
+
+
+def test_trim_local_uploads_keeps_local_primary_source_file(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    video_path = upload_dir / "task-1.mp4"
+    video_path.write_bytes(b"video")
+
+    monkeypatch.setattr("config.UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setattr(
+        cleanup,
+        "query",
+        lambda sql, args=(): [
+            {
+                "id": "task-1",
+                "state_json": json.dumps(
+                    {
+                        "delivery_mode": "local_primary",
+                        "source_tos_key": "uploads/1/task-1/source.mp4",
+                        "video_path": str(video_path),
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ],
+    )
+
+    cleanup._trim_local_uploads_with_tos_backup()
+
+    assert video_path.exists()
+
+
+def test_trim_local_uploads_removes_pure_tos_source_file(tmp_path, monkeypatch):
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    video_path = upload_dir / "task-2.mp4"
+    video_path.write_bytes(b"video")
+
+    monkeypatch.setattr("config.UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setattr(
+        cleanup,
+        "query",
+        lambda sql, args=(): [
+            {
+                "id": "task-2",
+                "state_json": json.dumps(
+                    {
+                        "delivery_mode": "pure_tos",
+                        "source_tos_key": "uploads/1/task-2/source.mp4",
+                        "video_path": str(video_path),
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ],
+    )
+
+    cleanup._trim_local_uploads_with_tos_backup()
+
+    assert not Path(video_path).exists()

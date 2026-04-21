@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,6 +25,23 @@ def test_tos_upload_bootstrap_returns_signed_put_payload(authed_client_no_db, mo
     assert payload["object_key"].endswith("/demo.mp4")
     assert payload["upload_url"] == f"https://signed-upload.example.com/{payload['object_key']}"
     assert payload["max_object_age_seconds"] == 7200
+
+
+def test_tos_upload_bootstrap_marks_endpoint_as_compatibility_only(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.tos_upload.tos_clients.generate_signed_upload_url",
+        lambda object_key: f"https://signed-upload.example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/tos-upload/bootstrap",
+        json={"original_filename": "demo.mp4"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["compat_only"] is True
+    assert "新建任务" in payload["message"]
 
 
 def test_tos_upload_complete_creates_task_from_tos_object(tmp_path, authed_client_no_db, monkeypatch):
@@ -92,6 +110,33 @@ def test_de_translate_complete_marks_task_as_pure_tos(tmp_path, authed_client_no
     assert task["type"] == "de_translate"
 
 
+def test_de_translate_start_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.de_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.de_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.de_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.de_translate.db_execute", lambda sql, args: None)
+
+    response = authed_client_no_db.post(
+        "/api/de-translate/start",
+        data={"video": (io.BytesIO(b"de-video"), "demo.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    task = store.get(payload["task_id"])
+    assert task["type"] == "de_translate"
+    assert task["delivery_mode"] == "local_primary"
+    assert task["source_tos_key"] == ""
+    assert task["source_language"] == "en"
+    assert task["source_object_info"]["original_filename"] == "demo.mp4"
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert task["source_object_info"]["file_size"] == len(b"de-video")
+    assert task["source_object_info"]["storage_backend"] == "local"
+    assert task["source_object_info"]["uploaded_at"]
+    assert Path(task["video_path"]).read_bytes() == b"de-video"
+
+
 def test_fr_translate_complete_marks_task_as_pure_tos(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.fr_translate.OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr("web.routes.fr_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
@@ -118,3 +163,30 @@ def test_fr_translate_complete_marks_task_as_pure_tos(tmp_path, authed_client_no
     assert task["delivery_mode"] == "pure_tos"
     assert task["source_language"] == "en"
     assert task["type"] == "fr_translate"
+
+
+def test_fr_translate_start_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.fr_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.fr_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.fr_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.fr_translate.db_execute", lambda sql, args: None)
+
+    response = authed_client_no_db.post(
+        "/api/fr-translate/start",
+        data={"video": (io.BytesIO(b"fr-video"), "demo.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    task = store.get(payload["task_id"])
+    assert task["type"] == "fr_translate"
+    assert task["delivery_mode"] == "local_primary"
+    assert task["source_tos_key"] == ""
+    assert task["source_language"] == "en"
+    assert task["source_object_info"]["original_filename"] == "demo.mp4"
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert task["source_object_info"]["file_size"] == len(b"fr-video")
+    assert task["source_object_info"]["storage_backend"] == "local"
+    assert task["source_object_info"]["uploaded_at"]
+    assert Path(task["video_path"]).read_bytes() == b"fr-video"

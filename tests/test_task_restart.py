@@ -209,3 +209,33 @@ def test_restart_swallows_tos_delete_failures(done_task, monkeypatch):
         interactive_review=False, user_id=1, runner=runner,
     )
     assert runner.started is True
+
+
+def test_restart_stops_when_source_video_cannot_be_restored(done_task, monkeypatch):
+    started = []
+
+    monkeypatch.setattr(
+        task_restart,
+        "ensure_local_source_video",
+        lambda task_id: (_ for _ in ()).throw(RuntimeError("source missing")),
+    )
+
+    class _Runner:
+        def start(self, task_id, user_id=None):
+            started.append((task_id, user_id))
+
+    with pytest.raises(RuntimeError, match="source missing"):
+        task_restart.restart_task(
+            done_task["task_id"],
+            voice_id=None,
+            voice_gender="male",
+            subtitle_font="Impact",
+            subtitle_size=14,
+            subtitle_position_y=0.68,
+            subtitle_position="bottom",
+            interactive_review=False,
+            user_id=1,
+            runner=_Runner(),
+        )
+
+    assert started == []

@@ -68,6 +68,8 @@ def bootstrap_upload():
             "task_id": task_id,
             "object_key": object_key,
             "upload_url": tos_clients.generate_signed_upload_url(object_key),
+            "compat_only": True,
+            "message": "该 TOS 直传入口仅保留给兼容流程使用，新建任务主链路已切回本地上传。",
             "bucket": TOS_BUCKET,
             "region": TOS_REGION,
             "endpoint": TOS_PUBLIC_ENDPOINT,

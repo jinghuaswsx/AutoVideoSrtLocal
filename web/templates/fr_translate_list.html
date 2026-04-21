@@ -222,51 +222,20 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
 
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
+  var uploadForm = document.getElementById('uploadForm');
   var btn = document.getElementById('uploadBtn'), fileInput = document.getElementById('videoFile');
   if (!fileInput.files[0]) return;
   var file = fileInput.files[0];
   var sizeMB = (file.size / 1024 / 1024).toFixed(1);
   btn.disabled = true; btn.textContent = '准备中...';
   try {
-    var bootRes = await fetch('/api/fr-translate/bootstrap', {
+    var formData = new FormData(uploadForm);
+    var res = await fetch('/api/fr-translate/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ original_filename: file.name, content_type: file.type || 'application/octet-stream' }),
+      body: formData,
     });
-    var boot = await bootRes.json();
-    if (!bootRes.ok) throw new Error(boot.error || '上传初始化失败');
-
-    await new Promise(function(resolve, reject) {
-      var xhr = new XMLHttpRequest();
-      xhr.open('PUT', boot.upload_url, true);
-      xhr.upload.onprogress = function(ev) {
-        if (ev.lengthComputable) {
-          var percent = Math.round((ev.loaded / ev.total) * 100);
-          btn.textContent = '上传中 ' + percent + '% (' + sizeMB + ' MB)';
-        }
-      };
-      xhr.onload = function() {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error('TOS 上传失败 HTTP ' + xhr.status));
-      };
-      xhr.onerror = function() { reject(new Error('网络错误，TOS 上传失败')); };
-      xhr.send(file);
-    });
-
-    btn.textContent = '创建任务...';
-
-    var compRes = await fetch('/api/fr-translate/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        task_id: boot.task_id,
-        object_key: boot.object_key,
-        original_filename: file.name,
-        content_type: file.type || 'application/octet-stream',
-      }),
-    });
-    var data = await compRes.json();
-    if (!compRes.ok) throw new Error(data.error || '创建任务失败 (HTTP ' + compRes.status + ')');
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.error || '鍒涘缓浠诲姟澶辫触');
     window.location.href = '/fr-translate/' + data.task_id;
   } catch (err) { alert(err.message); btn.disabled = false; btn.textContent = '上传并创建'; }
 });

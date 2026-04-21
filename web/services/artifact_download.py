@@ -25,8 +25,10 @@ _PREVIEW_NAME_TO_ARTIFACT_KIND: set[str] = {"hard_video", "soft_video", "srt"}
 
 
 def preview_artifact_tos_redirect(task: dict, name: str, variant: str | None = None):
-    """Return a signed TOS redirect for preview routes when an upload record exists."""
+    """Return a signed TOS redirect for preview routes when local preview is unavailable."""
     if name not in _PREVIEW_NAME_TO_ARTIFACT_KIND:
+        return None
+    if not _is_pure_tos_task(task) and _local_artifact_exists(_preview_artifact_path(task, name, variant)):
         return None
     record = get_tos_upload_record(task, name, variant)
     if not record:
@@ -39,6 +41,16 @@ def preview_artifact_tos_redirect(task: dict, name: str, variant: str | None = N
 
 def _resolved_variant_key(variant: str | None) -> str:
     return variant or "normal"
+
+
+def _preview_artifact_path(task: dict, name: str, variant: str | None) -> str | None:
+    variant_state, result, _exports, srt_path = _paths_for(task, variant)
+    preview_files = variant_state.get("preview_files") or {} if variant else task.get("preview_files") or {}
+    return {
+        "hard_video": preview_files.get("hard_video") or result.get("hard_video"),
+        "soft_video": preview_files.get("soft_video") or result.get("soft_video"),
+        "srt": preview_files.get("srt") or srt_path,
+    }.get(name)
 
 
 def _is_pure_tos_task(task: dict) -> bool:
