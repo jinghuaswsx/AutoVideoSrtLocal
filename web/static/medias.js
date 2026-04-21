@@ -400,7 +400,7 @@
           <div class="oc-row-actions">
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
             <button class="oc-btn sm ghost js-raw-sources" data-pid="${p.id}" data-name="${escapeHtml(p.name)}">原始视频 (${rawCount})</button>
-            <button class="bt-row-btn js-translate" data-bt-open="${p.id}" data-bt-name="${escapeHtml(p.name)}" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="一键翻译到多语言">🌐 翻译</button>
+            <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="基于原始视频发起多语言翻译">🌐 翻译</button>
           </div>
         </td>
       </tr>`;
@@ -2579,22 +2579,25 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const drawerMask = $('rsDrawerMask');
-  const drawer = $('rsDrawer');
-  const drawerClose = $('rsDrawerClose');
   const summary = $('rsSummary');
   const list = $('rsList');
-  const uploadBtn = $('rsUploadBtn');
   const uploadMask = $('rsUploadMask');
-  const uploadClose = $('rsUploadClose');
-  const uploadCancel = $('rsUploadCancel');
   const uploadForm = $('rsUploadForm');
   const uploadSubmit = $('rsUploadSubmit');
+  const translateMask = $('rsTranslateMask');
+  const translateTitleMeta = $('rstTitleMeta');
+  const translateRsList = $('rstRsList');
+  const translateLangs = $('rstLangs');
+  const translatePreview = $('rstPreview');
+  const translateSubmit = $('rstSubmit');
   const uiState = {
     currentPid: null,
     currentName: '',
+    translatePid: null,
+    translateName: '',
   };
 
-  if (!drawerMask || !drawer || !list || !uploadMask || !uploadForm) {
+  if (!drawerMask || !list || !uploadMask || !uploadForm || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
     return;
   }
 
@@ -2733,6 +2736,129 @@
     }
   }
 
+  function renderTranslateRawSourceChoice(it) {
+    const thumb = it.cover_url
+      ? `<img src="${escapeHtml(it.cover_url)}" alt="${escapeHtml(it.display_name || '原始素材封面')}" loading="lazy">`
+      : `<div class="ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></div>`;
+    const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
+    return `
+      <li class="oc-rst-choice">
+        <label>
+          <input type="checkbox" value="${it.id}" checked>
+          ${thumb}
+          <span class="oc-rst-choice-meta">
+            <span class="oc-rst-choice-title" title="${title}">${title}</span>
+            <span class="oc-rst-choice-subtitle">${fmtRawDuration(it.duration_seconds)} · ${fmtRawSize(it.file_size)}</span>
+          </span>
+        </label>
+      </li>`;
+  }
+
+  function renderTranslateLanguageChoice(lang) {
+    const name = escapeHtml(lang.name_zh || lang.code.toUpperCase());
+    return `
+      <label class="oc-rst-lang">
+        <input type="checkbox" value="${escapeHtml(lang.code)}">
+        <span>${name}</span>
+      </label>`;
+  }
+
+  function updateTranslatePreview() {
+    const rawCount = translateRsList.querySelectorAll('input[type="checkbox"]:checked').length;
+    const langCount = translateLangs.querySelectorAll('input[type="checkbox"]:checked').length;
+    if (!rawCount || !langCount) {
+      translatePreview.textContent = '请选择至少 1 条原始视频和 1 个目标语言';
+      translateSubmit.disabled = true;
+      return;
+    }
+    translatePreview.textContent = `将生成 ${rawCount} × ${langCount} = ${rawCount * langCount} 条多语种素材`;
+    translateSubmit.disabled = false;
+  }
+
+  function closeTranslateDialog() {
+    translateMask.hidden = true;
+    uiState.translatePid = null;
+    uiState.translateName = '';
+    translateRsList.innerHTML = '';
+    translateLangs.innerHTML = '';
+    translateTitleMeta.textContent = '';
+    translatePreview.textContent = '请选择原始视频和目标语言';
+    translateSubmit.disabled = true;
+    translateSubmit.textContent = '提交翻译';
+  }
+
+  async function openTranslateDialog(pid, name) {
+    uiState.translatePid = String(pid);
+    uiState.translateName = name || '';
+    translateMask.hidden = false;
+    translateTitleMeta.textContent = uiState.translateName ? ` · ${uiState.translateName}` : '';
+    translateRsList.innerHTML = '<li class="oc-rs-empty">加载原始视频中…</li>';
+    translateLangs.innerHTML = '<div class="oc-rs-empty">加载语言中…</div>';
+    translatePreview.textContent = '加载中…';
+    translateSubmit.disabled = true;
+
+    try {
+      const [rawData, langData] = await Promise.all([
+        requestJSON(`/medias/api/products/${pid}/raw-sources`),
+        requestJSON('/medias/api/languages'),
+      ]);
+      const items = rawData.items || [];
+      const languages = (langData.items || langData.languages || []).filter((lang) => lang.code !== 'en');
+
+      translateRsList.innerHTML = items.length
+        ? items.map(renderTranslateRawSourceChoice).join('')
+        : '<li class="oc-rs-empty">还没有原始去字幕素材，请先上传素材。</li>';
+      translateLangs.innerHTML = languages.length
+        ? languages.map(renderTranslateLanguageChoice).join('')
+        : '<div class="oc-rs-empty">暂无可选目标语言</div>';
+      updateTranslatePreview();
+    } catch (err) {
+      translateRsList.innerHTML = `<li class="oc-rs-empty">加载失败：${escapeHtml(err.message || err)}</li>`;
+      translateLangs.innerHTML = '<div class="oc-rs-empty">请稍后重试</div>';
+      translatePreview.textContent = '翻译弹窗初始化失败';
+      translateSubmit.disabled = true;
+    }
+  }
+
+  async function submitTranslateTask() {
+    const pid = uiState.translatePid;
+    if (!pid) return;
+    const raw_ids = Array.from(
+      translateRsList.querySelectorAll('input[type="checkbox"]:checked'),
+      (input) => Number(input.value),
+    );
+    const target_langs = Array.from(
+      translateLangs.querySelectorAll('input[type="checkbox"]:checked'),
+      (input) => input.value,
+    );
+    if (!raw_ids.length || !target_langs.length) {
+      updateTranslatePreview();
+      return;
+    }
+
+    translateSubmit.disabled = true;
+    translateSubmit.textContent = '提交中…';
+    try {
+      const data = await requestJSON(`/medias/api/products/${pid}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_ids, target_langs }),
+      });
+      const taskId = data.task_id;
+      closeTranslateDialog();
+      window.location.href = `/tasks/${taskId}`;
+    } catch (err) {
+      alert(`提交失败：${err.message || err}`);
+      translateSubmit.textContent = '提交翻译';
+      updateTranslatePreview();
+    }
+  }
+
+  translateRsList.addEventListener('change', updateTranslatePreview);
+  translateLangs.addEventListener('change', updateTranslatePreview);
+  uploadForm.addEventListener('submit', submitRawSourceUpload);
+  translateSubmit.addEventListener('click', submitTranslateTask);
+
   document.addEventListener('click', async (event) => {
     const openBtn = event.target.closest('.js-raw-sources');
     if (openBtn) {
@@ -2747,6 +2873,13 @@
       return;
     }
 
+    const translateBtn = event.target.closest('.js-translate');
+    if (translateBtn) {
+      event.preventDefault();
+      await openTranslateDialog(translateBtn.dataset.pid, translateBtn.dataset.name || '');
+      return;
+    }
+
     if (event.target === drawerMask || event.target.closest('#rsDrawerClose')) {
       closeRawSourceDrawer();
       return;
@@ -2754,6 +2887,11 @@
 
     if (event.target === uploadMask || event.target.closest('#rsUploadClose') || event.target.closest('#rsUploadCancel')) {
       closeRawSourceUpload();
+      return;
+    }
+
+    if (event.target === translateMask || event.target.closest('#rstClose') || event.target.closest('#rstCancel')) {
+      closeTranslateDialog();
       return;
     }
 
@@ -2770,11 +2908,10 @@
     }
   });
 
-  uploadForm.addEventListener('submit', submitRawSourceUpload);
-
   window.MediasRawSources = {
     escapeHtml,
     refreshRawSourceList,
     syncRawSourceCount,
+    openTranslateDialog,
   };
 })();

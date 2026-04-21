@@ -1819,6 +1819,20 @@ def test_medias_page_contains_raw_sources_drawer_and_upload_modal(authed_client_
     assert 'id="rsDisplayName"' in body
 
 
+def test_medias_page_contains_raw_source_translate_dialog(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="rsTranslateMask"' in body
+    assert 'id="rsTranslateDialog"' in body
+    assert 'id="rstRsList"' in body
+    assert 'id="rstLangs"' in body
+    assert 'id="rstPreview"' in body
+    assert 'id="rstSubmit"' in body
+    assert 'id="rstCancel"' in body
+
+
 def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
     resp = authed_client_no_db.get("/voice-library")
     assert resp.status_code == 200
@@ -1862,6 +1876,19 @@ def test_medias_scripts_wire_raw_sources_drawer_flow():
     assert '/medias/api/products/${pid}/raw-sources' in medias_js
     assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js
     assert "refreshRawSourceList" in medias_js
+
+
+def test_medias_scripts_wire_raw_source_translate_dialog():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "openTranslateDialog" in medias_js
+    assert "rsTranslateMask" in medias_js
+    assert "rstRsList" in medias_js
+    assert "rstLangs" in medias_js
+    assert "rstPreview" in medias_js
+    assert '/medias/api/languages' in medias_js
+    assert '/medias/api/products/${pid}/translate' in medias_js
+    assert "window.location.href = `/tasks/${taskId}`" in medias_js
 
 
 def test_image_translate_detail_template_contains_medias_context_block():
