@@ -170,11 +170,14 @@ def probe_ad_url(url: str) -> tuple[bool, str | None]:
 # ---------- payload 组装 ----------
 
 _FIXED_AUTHOR = "蔡靖华"
-_FIXED_TEXTS = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
 
 
 def build_item_payload(item: dict, product: dict) -> dict:
-    """按设计文档组装单条 item 的推送 JSON。"""
+    """按设计文档组装单条 item 的推送 JSON。
+
+    Raises:
+        CopywritingMissingError / CopywritingParseError: 英文 idx=1 文案缺失或格式不合规。
+    """
     object_key = item.get("object_key")
     cover_object_key = item.get("cover_object_key")
     product_code = (product.get("product_code") or "").strip().lower()
@@ -194,10 +197,12 @@ def build_item_payload(item: dict, product: dict) -> dict:
     enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]
     product_links = [build_product_link(lang, product_code) for lang in enabled_langs]
 
+    texts = resolve_push_texts(product["id"])
+
     return {
         "mode": "create",
         "product_name": product.get("name") or "",
-        "texts": list(_FIXED_TEXTS),
+        "texts": texts,
         "product_links": product_links,
         "videos": [video],
         "source": 0,

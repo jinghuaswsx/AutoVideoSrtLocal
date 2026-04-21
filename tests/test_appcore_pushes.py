@@ -260,3 +260,30 @@ def test_resolve_push_texts_parse_error(product_with_item):
     )
     with pytest.raises(pushes.CopywritingParseError):
         pushes.resolve_push_texts(pid)
+
+
+# ---------- build_item_payload ----------
+
+
+def test_build_item_payload_uses_real_texts(product_with_item):
+    pid, item_id = product_with_item
+    body = "标题: Ready. Aim. LAUNCH!\n文案: Experience the thrill.\n描述: Fly High Today"
+    medias.replace_copywritings(pid, [{"body": body}], lang="en")
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    payload = pushes.build_item_payload(item, product)
+    assert payload["texts"] == [
+        {
+            "title": "Ready. Aim. LAUNCH!",
+            "message": "Experience the thrill.",
+            "description": "Fly High Today",
+        }
+    ]
+
+
+def test_build_item_payload_raises_when_no_en_copy(product_with_item):
+    pid, item_id = product_with_item
+    item = medias.get_item(item_id)
+    product = medias.get_product(pid)
+    with pytest.raises(pushes.CopywritingMissingError):
+        pushes.build_item_payload(item, product)
