@@ -88,14 +88,14 @@ def _download_image_to_tos(
     tos_clients.upload_media_object(object_key, data, content_type=ct)
     return object_key, data, ext
 
-_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
 
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not code:
         return False, "产品 ID 必填"
     if not _SLUG_RE.match(code):
-        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-64，且首尾不能是连字符"
+        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-128，且首尾不能是连字符"
     return True, None
 
 
