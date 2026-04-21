@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import requests
@@ -14,10 +15,86 @@ from appcore.db import query, query_one, execute
 log = logging.getLogger(__name__)
 
 
+class CopywritingMissingError(Exception):
+    """产品没有英文 idx=1 文案。"""
+
+
+class CopywritingParseError(Exception):
+    """英文 idx=1 文案 body 无法解析出三段合规字段。"""
+
+
+_COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
+_COPY_LABEL_TO_FIELD = {
+    "标题": "title",
+    "文案": "message",
+    "描述": "description",
+}
+
+
+def parse_copywriting_body(body: str) -> dict[str, str]:
+    """从英文文案 body 里提取 {title, message, description}。
+
+    要求三个标签（标题 / 文案 / 描述）全部出现，每段 strip() 后非空。
+    冒号兼容英文 `:` 和中文 `：`。
+    """
+    text = body or ""
+    matches = list(_COPY_LABEL_RE.finditer(text))
+    if not matches:
+        raise CopywritingParseError("未找到任何「标题/文案/描述」标签")
+
+    fields: dict[str, str] = {}
+    for idx, m in enumerate(matches):
+        label = m.group(1)
+        field = _COPY_LABEL_TO_FIELD[label]
+        start = m.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        fields[field] = text[start:end].strip()
+
+    missing = [k for k in ("title", "message", "description") if k not in fields]
+    if missing:
+        raise CopywritingParseError(f"文案缺少字段：{', '.join(missing)}")
+
+    empty = [k for k, v in fields.items() if not v]
+    if empty:
+        raise CopywritingParseError(f"文案字段为空：{', '.join(empty)}")
+    return fields
+
+
+def resolve_push_texts(product_id: int) -> list[dict[str, str]]:
+    """查 media_copywritings(lang='en', idx=1).body 并解析成 texts 数组。
+
+    Raises:
+        CopywritingMissingError: 产品没有英文 idx=1 文案。
+        CopywritingParseError: body 无法解析出合规三段。
+    """
+    row = query_one(
+        "SELECT body FROM media_copywritings "
+        "WHERE product_id=%s AND lang='en' AND idx=1 LIMIT 1",
+        (product_id,),
+    )
+    if not row:
+        raise CopywritingMissingError(f"产品 {product_id} 缺少英文 idx=1 文案")
+    parsed = parse_copywriting_body(row.get("body") or "")
+    return [parsed]
+
+
+def _has_valid_en_push_texts(product_id: int) -> bool:
+    """compute_readiness 用的轻量检查：英文 idx=1 文案能否解析成合规三段。"""
+    try:
+        resolve_push_texts(product_id)
+    except (CopywritingMissingError, CopywritingParseError):
+        return False
+    return True
+
+
 # ---------- 就绪判定 ----------
 
 def compute_readiness(item: dict, product: dict) -> dict:
-    """返回 4 项就绪布尔。调用方再据此判定 pushable。"""
+    """返回 5 项就绪布尔。调用方再据此判定 pushable。
+
+    - has_copywriting：按 item.lang 检查本语种是否有任一 copywriting 记录
+    - has_push_texts：英文 idx=1 文案能否解析成合规三段（推送下游 texts 字段要求）
+    """
     has_object = bool((item or {}).get("object_key"))
     has_cover = bool((item or {}).get("cover_object_key"))
 
@@ -35,11 +112,14 @@ def compute_readiness(item: dict, product: dict) -> dict:
     supported = medias.parse_ad_supported_langs((product or {}).get("ad_supported_langs"))
     lang_supported = lang in supported
 
+    has_push_texts = _has_valid_en_push_texts(pid) if pid else False
+
     return {
         "has_object": has_object,
         "has_cover": has_cover,
         "has_copywriting": has_copywriting,
         "lang_supported": lang_supported,
+        "has_push_texts": has_push_texts,
     }
 
 
@@ -97,11 +177,14 @@ def probe_ad_url(url: str) -> tuple[bool, str | None]:
 # ---------- payload 组装 ----------
 
 _FIXED_AUTHOR = "蔡靖华"
-_FIXED_TEXTS = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
 
 
 def build_item_payload(item: dict, product: dict) -> dict:
-    """按设计文档组装单条 item 的推送 JSON。"""
+    """按设计文档组装单条 item 的推送 JSON。
+
+    Raises:
+        CopywritingMissingError / CopywritingParseError: 英文 idx=1 文案缺失或格式不合规。
+    """
     object_key = item.get("object_key")
     cover_object_key = item.get("cover_object_key")
     product_code = (product.get("product_code") or "").strip().lower()
@@ -121,10 +204,12 @@ def build_item_payload(item: dict, product: dict) -> dict:
     enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]
     product_links = [build_product_link(lang, product_code) for lang in enabled_langs]
 
+    texts = resolve_push_texts(product["id"])
+
     return {
         "mode": "create",
         "product_name": product.get("name") or "",
-        "texts": list(_FIXED_TEXTS),
+        "texts": texts,
         "product_links": product_links,
         "videos": [video],
         "source": 0,
