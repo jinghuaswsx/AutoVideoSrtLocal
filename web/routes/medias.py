@@ -684,6 +684,61 @@ def api_delete_raw_source(rid: int):
     return jsonify({"ok": True})
 
 
+@bp.route("/api/products/<int:pid>/translate", methods=["POST"])
+@login_required
+def api_product_translate(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    body = request.get_json(silent=True) or {}
+    raw_ids = body.get("raw_ids") or []
+    target_langs = body.get("target_langs") or []
+    content_types = body.get("content_types") or ["video"]
+
+    if not raw_ids:
+        return jsonify({"error": "raw_ids 不能为空"}), 400
+    if not target_langs:
+        return jsonify({"error": "target_langs 不能为空"}), 400
+
+    try:
+        raw_ids_int = [int(x) for x in raw_ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "raw_ids 必须是整数数组"}), 400
+
+    rows = medias.list_raw_sources(pid)
+    valid_ids = {int(r["id"]) for r in rows}
+    bad = [rid for rid in raw_ids_int if rid not in valid_ids]
+    if bad:
+        return jsonify({"error": f"raw_ids 不属于该产品或已删除: {bad}"}), 400
+
+    for lang in target_langs:
+        if lang == "en" or not medias.is_valid_language(lang):
+            return jsonify({"error": f"target_langs 非法: {lang}"}), 400
+
+    from appcore.bulk_translate_runtime import create_bulk_translate_task, start_task
+
+    initiator = {
+        "user_id": current_user.id,
+        "user_name": getattr(current_user, "username", "") or "",
+        "ip": request.remote_addr or "",
+        "user_agent": request.headers.get("User-Agent", "") or "",
+        "source": "medias_raw_translate",
+    }
+    task_id = create_bulk_translate_task(
+        user_id=current_user.id,
+        product_id=pid,
+        target_langs=target_langs,
+        content_types=content_types,
+        force_retranslate=bool(body.get("force_retranslate")),
+        video_params=body.get("video_params") or {},
+        initiator=initiator,
+        raw_source_ids=raw_ids_int,
+    )
+    start_task(task_id, current_user.id)
+    return jsonify({"task_id": task_id}), 202
+
+
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
 @login_required
 def api_item_bootstrap(pid: int):
