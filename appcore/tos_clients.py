@@ -206,6 +206,28 @@ def build_media_object_key(user_id: int, product_id: int, filename: str) -> str:
     return f"{user_id}/medias/{product_id}/{date}_{uuid.uuid4().hex[:8]}_{name}"
 
 
+def build_media_raw_source_key(
+    user_id: int,
+    product_id: int,
+    *,
+    kind: str,
+    filename: str,
+) -> str:
+    """生成原始去字幕素材的 TOS object key。"""
+    import uuid
+    from pathlib import Path as _Path
+
+    if kind not in ("video", "cover"):
+        raise ValueError(f"invalid kind: {kind}")
+    raw = _Path(filename or "media.bin").name
+    stem = _Path(raw).stem or "media"
+    ext = _Path(raw).suffix or (".mp4" if kind == "video" else ".jpg")
+    unique = uuid.uuid4().hex[:12]
+    if kind == "video":
+        return f"{user_id}/medias/{product_id}/raw_sources/{unique}_{raw}"
+    return f"{user_id}/medias/{product_id}/raw_sources/{unique}_{stem}.cover{ext}"
+
+
 def generate_signed_media_upload_url(
     object_key: str,
     expires: int | None = None,
