@@ -4,9 +4,21 @@ setlocal EnableDelayedExpansion
 cd /d %~dp0
 
 set "ROOT=%~dp0"
+set "PORTABLE_EXE=%ROOT%dist\LinkCheckDesktop\LinkCheckDesktop.exe"
 set "VENV_DIR=%ROOT%.venv_link_check_runtime"
 set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
 set "READY_FILE=%VENV_DIR%\.ready"
+
+if exist "%PORTABLE_EXE%" (
+    echo [LinkCheckDesktop] launching portable exe...
+    "%PORTABLE_EXE%"
+    set "EXIT_CODE=%ERRORLEVEL%"
+    if not "%EXIT_CODE%"=="0" (
+        echo [LinkCheckDesktop] portable exe exited with code %EXIT_CODE%
+        pause
+    )
+    exit /b %EXIT_CODE%
+)
 
 if not exist "%PYTHON_EXE%" (
     echo [LinkCheckDesktop] runtime venv not found, creating...

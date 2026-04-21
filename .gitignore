@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 .venv_link_check_runtime/
+.playwright-runtime/
 
 # Environment
 .env
@@ -41,6 +42,7 @@ example.mp4
 # Superpowers temp
 .superpowers/
 .tmp/
+.tmp_release_merge_*/
 
 # Stray empty file
 AutoVideoSrt
@@ -60,6 +62,7 @@ package-lock.json
 testuser.md
 .omc/
 google_api_key
+link_check_desktop_config.json
 
 # 本地备份（服务器漂移/snapshot 等不入仓）
 backup/

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
 
 from link_check_desktop.html_extract import extract_images_from_html
+from link_check_desktop.storage import executable_root
 
 
 _SUPPORTED_RASTER_EXTENSIONS = {
@@ -23,6 +25,7 @@ _NOT_FOUND_TOKENS = (
     "not found",
     "nicht gefunden",
     "no encontrado",
+    "non trouve",
     "non trouvé",
 )
 
@@ -105,12 +108,42 @@ def _response_status(response) -> int | None:
     return getattr(response, "status", None) if response is not None else None
 
 
+def _version_key(path: Path) -> tuple[int, str]:
+    match = re.search(r"(\d+)$", path.name)
+    return (int(match.group(1)) if match else -1, path.name)
+
+
+def _find_bundled_chromium_executable() -> Path | None:
+    browsers_root = executable_root() / "ms-playwright"
+    if not browsers_root.is_dir():
+        return None
+
+    candidates: list[Path] = []
+    for browser_dir in sorted(browsers_root.glob("chromium-*"), key=_version_key, reverse=True):
+        for relative in ("chrome-win64/chrome.exe", "chrome-win/chrome.exe"):
+            candidate = browser_dir / relative
+            if candidate.is_file():
+                candidates.append(candidate)
+    return candidates[0] if candidates else None
+
+
 def _launch_visible_browser(playwright):
+    bundled_executable = _find_bundled_chromium_executable()
+    if bundled_executable is not None:
+        try:
+            return playwright.chromium.launch(
+                executable_path=str(bundled_executable),
+                headless=False,
+            )
+        except Exception:
+            pass
+
     try:
         return playwright.chromium.launch(channel="msedge", headless=False)
     except Exception as exc:
         raise RuntimeError(
-            "未找到可用的 Microsoft Edge 浏览器，请在目标 Windows 机器安装 Edge 后再运行 exe"
+            "未找到可用浏览器运行时。绿色包请确认 exe 同目录下带有 ms-playwright，"
+            "或在目标 Windows 机器安装 Microsoft Edge 后再运行。"
         ) from exc
 
 
@@ -122,6 +155,45 @@ def _assert_valid_page(response, page) -> tuple[int | None, str]:
     if _looks_not_found(title):
         raise RuntimeError(f"target page looks like not found: {title}")
     return status_code, title
+
+
+def _disable_browser_cache(context, page) -> None:
+    try:
+        cdp_session = context.new_cdp_session(page)
+    except Exception:
+        return
+
+    try:
+        cdp_session.send("Network.enable")
+        cdp_session.send("Network.setCacheDisabled", {"cacheDisabled": True})
+    except Exception:
+        return
+
+
+def _hard_refresh_page(page) -> None:
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded"):
+            page.keyboard.press("Control+F5")
+    except Exception:
+        reload_fn = getattr(page, "reload", None)
+        if reload_fn is None:
+            raise
+        reload_fn(wait_until="domcontentloaded")
+
+    wait_for_load_state = getattr(page, "wait_for_load_state", None)
+    if callable(wait_for_load_state):
+        try:
+            wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+    page.wait_for_timeout(1500)
+
+
+def _refresh_page_assets(page, context, status_cb=None, *, refresh_count: int = 2) -> None:
+    _disable_browser_cache(context, page)
+    for index in range(refresh_count):
+        _report(status_cb, f"页面已锁定，正在强制刷新 {index + 1}/{refresh_count}")
+        _hard_refresh_page(page)
 
 
 def capture_page(*, target_url: str, target_language: str, workspace, status_cb=None) -> dict:
@@ -152,6 +224,14 @@ def capture_page(*, target_url: str, target_language: str, workspace, status_cb=
         final_url = page.url
         html_lang = page.eval_on_selector("html", "el => el.lang || ''")
         locked = _is_locked(html_lang, target_language)
+
+        if locked:
+            _refresh_page_assets(page, context, status_cb)
+            _assert_valid_page(None, page)
+            final_url = page.url
+            html_lang = page.eval_on_selector("html", "el => el.lang || ''")
+            page_title = page.title()
+
         html = page.content()
         (workspace.root / "page.html").write_text(html, encoding="utf-8")
 

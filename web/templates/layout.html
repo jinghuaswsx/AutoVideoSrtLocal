@@ -360,6 +360,9 @@
       <a href="/translate-lab" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
         <span class="nav-icon">🧪</span> 视频翻译（测试）
       </a>
+      <a href="{{ url_for('projects.av_sync_page') }}" {% if request.endpoint == 'projects.av_sync_page' %}class="active"{% endif %}>
+        <span class="nav-icon">AV</span> 视频翻译音画同步
+      </a>
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-user">

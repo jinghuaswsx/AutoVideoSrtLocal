@@ -10,6 +10,7 @@ __all__ = [
     "html_extract",
     "image_analyzer",
     "image_compare",
+    "report",
     "result_schema",
     "same_image",
     "settings",

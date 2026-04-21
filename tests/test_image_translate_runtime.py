@@ -127,7 +127,7 @@ def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
          patch.object(rt.tos_clients, "upload_media_object", side_effect=fake_upload_media_object), \
          patch.object(rt.tos_clients, "build_media_object_key", return_value="1/medias/100/de_1.png"), \
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")), \
-         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=fake_replace):
+         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
     assert applied["replace"][0] == 100
@@ -276,7 +276,158 @@ def test_runtime_skips_auto_apply_when_any_item_failed():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=AssertionError("must not apply")):
+         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=AssertionError("must not apply")):
         runtime._finalize_auto_apply(task)
 
     assert task["medias_context"]["apply_status"] == "skipped_failed"
+
+
+def _done_item(idx: int, *, src_id: int | None = None) -> dict:
+    return {
+        "idx": idx,
+        "filename": f"a{idx}.jpg",
+        "src_tos_key": f"1/medias/100/src_{idx}.jpg",
+        "source_bucket": "media",
+        "source_detail_image_id": src_id or (10 + idx),
+        "dst_tos_key": f"artifacts/image_translate/1/t-img-1/out_{idx}.png",
+        "status": "done",
+        "attempts": 1,
+        "error": "",
+    }
+
+
+def _apply_test_task(items: list[dict]) -> dict:
+    """minimal task dict for apply_translated_detail_images_from_task."""
+    task = _fake_task(items)
+    task["preset"] = "detail"
+    task["medias_context"] = {
+        "entry": "medias_edit_detail",
+        "product_id": 100,
+        "source_lang": "en",
+        "target_lang": "de",
+        "source_bucket": "media",
+        "auto_apply_detail_images": True,
+        "apply_status": "pending",
+    }
+    return task
+
+
+def _patch_tos_success(rt, applied: dict):
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"PNG-" + key.encode())
+        return lp
+    def fake_upload(object_key, data, content_type=None, bucket=None):
+        applied.setdefault("uploaded", []).append((object_key, content_type, len(data)))
+    def fake_replace(product_id, lang, images):
+        applied["replace"] = (product_id, lang, list(images))
+        return list(range(900, 900 + len(images)))
+    return (
+        patch.object(rt.tos_clients, "download_file", side_effect=fake_download),
+        patch.object(rt.tos_clients, "upload_media_object", side_effect=fake_upload),
+        patch.object(rt.tos_clients, "build_media_object_key",
+                     side_effect=lambda uid, pid, fn: f"{uid}/medias/{pid}/{fn}"),
+        patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace),
+    )
+
+
+def test_apply_allow_partial_ignores_failed_and_applies_done():
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _apply_test_task([_done_item(0), _done_item(1)])
+    task["items"][1]["status"] = "failed"
+    task["items"][1]["dst_tos_key"] = ""
+    task["items"][1]["error"] = "gemini rejected"
+
+    applied: dict = {}
+    patches = _patch_tos_success(rt, applied)
+    with patch.object(store, "update"), patches[0], patches[1], patches[2], patches[3]:
+        result = rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+    assert result["apply_status"] == "applied_partial"
+    assert result["applied_ids"] == [900]
+    assert result["skipped_failed_indices"] == [1]
+    assert len(applied["replace"][2]) == 1
+    assert applied["replace"][2][0]["source_detail_image_id"] == 10
+    assert task["medias_context"]["apply_status"] == "applied_partial"
+    assert task["medias_context"]["skipped_failed_indices"] == [1]
+
+
+def test_apply_allow_partial_applies_all_when_all_done():
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _apply_test_task([_done_item(0), _done_item(1)])
+
+    applied: dict = {}
+    patches = _patch_tos_success(rt, applied)
+    with patch.object(store, "update"), patches[0], patches[1], patches[2], patches[3]:
+        result = rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+    assert result["apply_status"] == "applied"
+    assert result["skipped_failed_indices"] == []
+    assert len(applied["replace"][2]) == 2
+
+
+def test_apply_allow_partial_false_skips_when_any_failed():
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _apply_test_task([_done_item(0), _done_item(1)])
+    task["items"][1]["status"] = "failed"
+    task["items"][1]["error"] = "gemini rejected"
+
+    with patch.object(store, "update"), \
+         patch.object(rt.medias, "replace_translated_detail_images_for_lang",
+                      side_effect=AssertionError("must not apply")):
+        result = rt.apply_translated_detail_images_from_task(
+            task, allow_partial=False, user_id=1,
+        )
+
+    assert result["apply_status"] == "skipped_failed"
+    assert result["applied_ids"] == []
+    assert result["skipped_failed_indices"] == [1]
+    assert task["medias_context"]["apply_status"] == "skipped_failed"
+
+
+def test_apply_raises_when_pending_items():
+    from appcore import image_translate_runtime as rt
+
+    task = _apply_test_task([_done_item(0), _done_item(1)])
+    task["items"][1]["status"] = "pending"
+    task["items"][1]["dst_tos_key"] = ""
+
+    with pytest.raises(RuntimeError, match="pending"):
+        rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+
+def test_apply_raises_when_no_done_items():
+    from appcore import image_translate_runtime as rt
+
+    task = _apply_test_task([_done_item(0)])
+    task["items"][0]["status"] = "failed"
+    task["items"][0]["dst_tos_key"] = ""
+    task["items"][0]["error"] = "gemini rejected"
+
+    with pytest.raises(RuntimeError, match="没有成功的翻译结果"):
+        rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+
+def test_apply_raises_when_medias_context_missing():
+    from appcore import image_translate_runtime as rt
+
+    task = _fake_task([_done_item(0)])
+    task.pop("medias_context", None)
+
+    with pytest.raises(ValueError, match="medias_context"):
+        rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
