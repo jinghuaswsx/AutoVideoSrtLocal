@@ -233,6 +233,7 @@
     var zipBtn = document.getElementById("itZipDownload");
     var delBtn = document.getElementById("itDelete");
     var retryUnfinishedBtn = document.getElementById("itRetryUnfinished");
+    var retryAllBtn = document.getElementById("itRetryAll");
 
     function renderItems(state){
       listEl.innerHTML = "";
@@ -278,14 +279,20 @@
       progressText.textContent = p.done + " / " + p.total + " 完成，" + p.failed + " 失败";
       var pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
       progressFill.style.width = pct + "%";
+      var total = p.total || 0;
+      var done = p.done || 0;
+      var isRunning = state.is_running === true;
       if (retryUnfinishedBtn) {
-        var total = p.total || 0;
-        var done = p.done || 0;
-        var isRunning = state.is_running === true;
-        var showBtn = total > 0 && done < total;
-        retryUnfinishedBtn.hidden = !showBtn;
+        var showUnfinished = total > 0 && done < total;
+        retryUnfinishedBtn.hidden = !showUnfinished;
         retryUnfinishedBtn.disabled = isRunning;
         retryUnfinishedBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
+      }
+      if (retryAllBtn) {
+        var showAll = total > 0;
+        retryAllBtn.hidden = !showAll;
+        retryAllBtn.disabled = isRunning;
+        retryAllBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
       }
     }
 
@@ -350,6 +357,19 @@
             refresh();
           })
           .catch(function(){ retryUnfinishedBtn.disabled = false; });
+      };
+    }
+    if (retryAllBtn) {
+      retryAllBtn.onclick = function(){
+        if (!confirm("将重置所有图片（包括已完成的），原有结果会被删除，确认？")) return;
+        retryAllBtn.disabled = true;
+        fetch("/api/image-translate/"+taskId+"/retry-all",{method:"POST",credentials:"same-origin"})
+          .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+          .then(function(res){
+            if (!res.ok) { alert(res.body && res.body.error || "全部重跑失败"); retryAllBtn.disabled = false; return; }
+            refresh();
+          })
+          .catch(function(){ retryAllBtn.disabled = false; });
       };
     }
 
