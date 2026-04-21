@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% set allow_upload = true %}
+{% set show_back_link = false %}
+{% set task_id = none %}
+{% set initial_task = none %}
+{% block title %}视频翻译音画同步 - AutoVideoSrt{% endblock %}
+{% block page_title %}视频翻译音画同步{% endblock %}
+{% block extra_style %}
+{% include "_task_workbench_styles.html" %}
+{% endblock %}
+{% block content %}
+<p class="page-subtitle">从这里直接发起音画同步 v2 任务，目标语种、目标市场和画面笔记参数都会进入同一条工作流。</p>
+{% include "_task_workbench.html" %}
+{% endblock %}
+{% block scripts %}
+{% include "_task_workbench_scripts.html" %}
+{% endblock %}
