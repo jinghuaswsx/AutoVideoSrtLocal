@@ -257,14 +257,17 @@
 
     if (pickBtn) pickBtn.addEventListener('click', () => input && input.click());
     if (input) input.addEventListener('change', (e) => {
-      const files = e.target.files;
+      // Chromium 里 input.value='' 会 mutate 先前拿到的 FileList 引用 → 长度变 0；
+      // 必须先 snapshot 成 Array 再清 value，否则 uploadFiles 永远拿到空列表，
+      // 误触发"请选择 JPG / PNG / WebP / GIF 图片"弹窗。
+      const files = [...(e.target.files || [])];
       e.target.value = '';
       uploadFiles(files);
     });
 
     if (gifPickBtn) gifPickBtn.addEventListener('click', () => gifInput && gifInput.click());
     if (gifInput) gifInput.addEventListener('change', (e) => {
-      const files = e.target.files;
+      const files = [...(e.target.files || [])];
       e.target.value = '';
       uploadFiles(files);
     });
