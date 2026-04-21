@@ -927,6 +927,8 @@
       edState.linkCheckDetailError = '';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
+      $('edMkId').value = (data.product.mk_id === null || data.product.mk_id === undefined)
+        ? '' : String(data.product.mk_id);
       edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
       $('edUploadProgress').innerHTML = '';
       edResetNewItemForm();
@@ -2233,9 +2235,17 @@
       '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
     )].map(i => i.value).join(',');
 
+    const mkIdRaw = ($('edMkId').value || '').trim();
+    if (mkIdRaw && !/^\d{1,8}$/.test(mkIdRaw)) {
+      alert('明空 ID 必须是 1-8 位数字');
+      $('edMkId').focus();
+      return;
+    }
+
     const payload = {
       name,
       product_code: code,
+      mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
       copywritings: cwDict,
       localized_links: edState.productData.product.localized_links || {},
       ad_supported_langs: adSupportedLangs,
@@ -2249,8 +2259,18 @@
       loadList();
     } catch (e) {
       const msg = (e.message || '').toString();
-      if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('edCode').focus(); }
-      else alert('保存失败：' + msg);
+      if (msg.includes('mk_id_conflict') || msg.includes('明空 ID 已被其他产品占用')) {
+        alert('明空 ID 已被其他产品占用');
+        $('edMkId').focus();
+      } else if (msg.includes('mk_id_invalid')) {
+        alert('明空 ID 必须是 1-8 位数字');
+        $('edMkId').focus();
+      } else if (msg.includes('已被占用')) {
+        alert('产品 ID 已被占用');
+        $('edCode').focus();
+      } else {
+        alert('保存失败：' + msg);
+      }
     }
   }
 
