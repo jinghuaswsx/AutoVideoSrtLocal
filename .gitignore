@@ -64,6 +64,9 @@ testuser.md
 google_api_key
 link_check_desktop_config.json
 
+# Server SSH keys / drop-zone — never commit private keys or server configs
+.server/
+
 # 本地备份（服务器漂移/snapshot 等不入仓）
 backup/
 
