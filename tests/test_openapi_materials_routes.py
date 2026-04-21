@@ -495,3 +495,107 @@ def test_get_push_item_returns_single(client, monkeypatch):
     assert body["item_id"] == 77
     assert body["product_code"] == "p"
     assert body["status"] == "pending"
+
+
+def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.find_item_by_keys",
+        lambda product_id, lang, filename: {
+            "id": 238,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": filename,
+            "display_name": filename,
+            "object_key": "k.mp4",
+            "cover_object_key": "k.jpg",
+            "duration_seconds": 1.0,
+            "file_size": 100,
+            "pushed_at": None,
+            "latest_push_id": None,
+            "created_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product",
+        lambda pid: {
+            "id": pid,
+            "name": "P",
+            "product_code": "p",
+            "mk_id": 3725,
+            "ad_supported_langs": "fr",
+            "selling_points": "",
+            "importance": 3,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.build_item_payload",
+        lambda item, product: {
+            "mode": "create",
+            "texts": [{"title": "x", "message": "y", "description": "z"}],
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.resolve_localized_text_payload",
+        lambda item: {
+            "title": "fr1",
+            "message": "fr2",
+            "description": "fr3",
+            "lang": "法语",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.build_localized_texts_request",
+        lambda item: {
+            "texts": [{
+                "title": "fr1",
+                "message": "fr2",
+                "description": "fr3",
+                "lang": "法语",
+            }],
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.query_one",
+        lambda sql, args: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
+        lambda key: f"https://signed/{key}",
+    )
+
+    response = client.get(
+        "/openapi/push-items/by-keys?product_id=10&lang=fr&filename=demo.mp4",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["item_id"] == 238
+    assert body["mk_id"] == 3725
+    assert body["localized_text"] == {
+        "title": "fr1",
+        "message": "fr2",
+        "description": "fr3",
+        "lang": "法语",
+    }
+    assert body["localized_texts_request"] == {
+        "texts": [{
+            "title": "fr1",
+            "message": "fr2",
+            "description": "fr3",
+            "lang": "法语",
+        }]
+    }
