@@ -177,7 +177,6 @@ def probe_ad_url(url: str) -> tuple[bool, str | None]:
 # ---------- payload 组装 ----------
 
 _FIXED_AUTHOR = "蔡靖华"
-_LOCALIZED_REQUEST_LANG = "小语种"
 
 
 def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
@@ -257,7 +256,7 @@ def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]
             "title": localized["title"],
             "message": localized["message"],
             "description": localized["description"],
-            "lang": _LOCALIZED_REQUEST_LANG,
+            "lang": localized["lang"],
         }]
     }
 

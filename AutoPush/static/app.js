@@ -110,7 +110,6 @@ const runtimeConfig = {
   pushMediasTarget: "",
   pushLocalizedTextsBaseUrl: "",
 };
-const LOCALIZED_REQUEST_LANG = "小语种";
 const LOCALIZED_LABEL_TO_FIELD = {
   "标题": "title",
   "文案": "message",
@@ -187,7 +186,7 @@ function buildLocalizedPushRequest(pushContext) {
       title: normalized.title,
       message: normalized.message,
       description: normalized.description,
-      lang: LOCALIZED_REQUEST_LANG,
+      lang: normalized.lang || "",
     }],
   };
 }

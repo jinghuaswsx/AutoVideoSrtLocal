@@ -272,7 +272,7 @@ def test_build_localized_texts_request_wraps_single_text(monkeypatch):
                 "title": "fr1",
                 "message": "fr2",
                 "description": "fr3",
-                "lang": "小语种",
+                "lang": "法语",
             }
         ]
     }
