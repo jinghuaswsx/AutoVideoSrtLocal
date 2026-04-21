@@ -1,6 +1,8 @@
-# AutoVideoSrt Claude Code Notes
+# AutoVideoSrtLocal Claude Code Notes
 
 - 与用户沟通一律使用中文。
+- 当前仓库默认开发远程应为 `https://github.com/jinghuaswsx/AutoVideoSrtLocal.git`。
+- 旧服务器版仓库 `https://github.com/jinghuaswsx/AutoVideoSrt.git` 暂时仅作迁移参考，不作为默认推送目标；如需保留，建议使用单独远程名，例如 `server-origin`。
 - Follow the global workflow and installed-skill guidance from `C:\Users\admin\.claude\CLAUDE.md`.
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `claude-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.

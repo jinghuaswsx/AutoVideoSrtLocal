@@ -1,4 +1,8 @@
-# AutoVideoSrt
+# AutoVideoSrtLocal
+
+> 仓库说明：当前默认开发仓库是 `jinghuaswsx/AutoVideoSrtLocal`。旧服务器版仓库 `jinghuaswsx/AutoVideoSrt` 暂时保留不动，仅作为迁移参考；本地工作区默认 `origin` 应指向本仓库，旧仓库建议保留为单独备用远程（如 `server-origin`）。
+
+> 产品名称说明：仓库已切换为本地版，但应用内产品名、页面标题和历史设计文档里仍大量使用 `AutoVideoSrt`，这些文案默认视为产品名，不等同于 GitHub 仓库名。
 
 面向多模块短视频生产的 Flask 平台。主线能力是“上传视频 -> 识别/本土化/配音/字幕/成片/CapCut 导出”，同时还扩展了文案创作、文案翻译、视频评测、视频生成等子模块。
 

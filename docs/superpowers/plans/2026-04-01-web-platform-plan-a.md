@@ -1581,7 +1581,7 @@ ssh -i C:\Users\admin\.ssh\openclaw-noobird.pem root@14.103.220.208
 # On server:
 mkdir -p /opt/autovideosrt
 cd /opt/autovideosrt
-git clone https://github.com/jinghuaswsx/AutoVideoSrt.git .
+git clone https://github.com/jinghuaswsx/AutoVideoSrtLocal.git .
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
