@@ -110,11 +110,86 @@ const runtimeConfig = {
   pushMediasTarget: "",
   pushLocalizedTextsBaseUrl: "",
 };
+const LOCALIZED_REQUEST_LANG = "小语种";
+const LOCALIZED_LABEL_TO_FIELD = {
+  "标题": "title",
+  "文案": "message",
+  "描述": "description",
+};
 
 function buildLocalizedPushTargetUrl(mkId) {
   const base = (runtimeConfig.pushLocalizedTextsBaseUrl || "").replace(/\/+$/, "");
   if (!base || !mkId) return "";
   return `${base}/api/marketing/medias/${encodeURIComponent(mkId)}/texts`;
+}
+
+function parseLocalizedTaggedText(text) {
+  const source = String(text || "");
+  const matches = Array.from(source.matchAll(/(标题|文案|描述)\s*[:：]\s*/g));
+  if (!matches.length) return null;
+
+  const fields = {};
+  matches.forEach((match, index) => {
+    const field = LOCALIZED_LABEL_TO_FIELD[match[1]];
+    const start = (match.index ?? 0) + match[0].length;
+    const end = index + 1 < matches.length ? (matches[index + 1].index ?? source.length) : source.length;
+    fields[field] = source.slice(start, end).trim();
+  });
+
+  const required = ["title", "message", "description"];
+  if (required.some((key) => !fields[key])) return null;
+  return fields;
+}
+
+function normalizeLocalizedTextCandidate(candidate, fallbackLang = "") {
+  if (!candidate || typeof candidate !== "object") return null;
+  const rawTitle = String(candidate.title || "").trim();
+  const rawMessage = String(candidate.message ?? candidate.body ?? "").trim();
+  const rawDescription = String(candidate.description || "").trim();
+  const lang = String(candidate.lang || fallbackLang || "").trim();
+
+  const parsed = parseLocalizedTaggedText(rawMessage);
+  if (parsed) {
+    return { ...parsed, lang };
+  }
+  if (!(rawTitle || rawMessage || rawDescription)) return null;
+  return {
+    title: rawTitle,
+    message: rawMessage,
+    description: rawDescription,
+    lang,
+  };
+}
+
+function buildLocalizedDisplayText(pushContext) {
+  const rawTexts = Array.isArray(pushContext?.localizedTextsRequest?.texts)
+    ? pushContext.localizedTextsRequest.texts
+    : [];
+  const fallbackLang = pushContext?.localizedText?.lang || rawTexts[0]?.lang || "";
+  const candidates = [
+    pushContext?.localizedText,
+    ...rawTexts,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeLocalizedTextCandidate(candidate, fallbackLang);
+    if (normalized && normalized.title && normalized.message && normalized.description) {
+      return normalized;
+    }
+  }
+  return null;
+}
+
+function buildLocalizedPushRequest(pushContext) {
+  const normalized = buildLocalizedDisplayText(pushContext);
+  if (!normalized) return { texts: [] };
+  return {
+    texts: [{
+      title: normalized.title,
+      message: normalized.message,
+      description: normalized.description,
+      lang: LOCALIZED_REQUEST_LANG,
+    }],
+  };
 }
 
 /* ---------- 状态文案映射 ---------- */
@@ -262,9 +337,7 @@ function openPushModal(item, opts = {}) {
   btnFooterClose.addEventListener("click", close);
 
   function currentLocalizedTexts() {
-    return Array.isArray(pushContext.localizedTextsRequest?.texts)
-      ? pushContext.localizedTextsRequest.texts
-      : [];
+    return buildLocalizedPushRequest(pushContext).texts;
   }
 
   function isLocalizedMode(mode = activeMode) {
@@ -318,7 +391,7 @@ function openPushModal(item, opts = {}) {
   function renderLocalizedPane() {
     clear(localizedPane);
     const errorMessage = getLocalizedTextError();
-    const localizedText = pushContext.localizedText || currentLocalizedTexts()[0] || null;
+    const localizedText = buildLocalizedDisplayText(pushContext);
     const targetInfo = renderLocalizedTargetInfo(pushContext.mkId, pushContext.localizedTargetUrl);
     if (targetInfo) {
       localizedPane.appendChild(targetInfo);
@@ -389,7 +462,7 @@ function openPushModal(item, opts = {}) {
             payload: { message: localizedError },
           });
         }
-        const body = await api.pushLocalizedTexts(pushContext.mkId, pushContext.localizedTextsRequest);
+        const body = await api.pushLocalizedTexts(pushContext.mkId, buildLocalizedPushRequest(pushContext));
         showResponse(body, false, "小语种文案推送响应");
         localizedTextPushed = true;
         anyPushSucceeded = true;
@@ -446,9 +519,7 @@ function buildLocalizedRequestPreview(pushContext) {
 }
 
 function currentLocalizedTextsForPreview(pushContext) {
-  return Array.isArray(pushContext?.localizedTextsRequest?.texts)
-    ? pushContext.localizedTextsRequest.texts
-    : [];
+  return buildLocalizedPushRequest(pushContext).texts;
 }
 
 function renderLocalizedTargetInfo(mkId, targetUrl) {
