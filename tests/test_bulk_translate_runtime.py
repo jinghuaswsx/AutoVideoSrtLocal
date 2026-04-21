@@ -159,6 +159,43 @@ def test_create_empty_plan_still_creates_task(fake_db, monkeypatch):
     assert state["progress"]["pending"] == 0
 
 
+def test_create_stores_raw_source_ids_and_passes_to_generate_plan(fake_db, monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+
+    seen = {}
+
+    def fake_generate_plan(user_id, product_id, target_langs, content_types, force_retranslate, raw_source_ids=None):
+        seen["raw_source_ids"] = raw_source_ids
+        return [{
+            "idx": 0,
+            "kind": "video",
+            "lang": "de",
+            "ref": {"source_raw_id": 301},
+            "sub_task_id": None,
+            "status": "pending",
+            "error": None,
+            "started_at": None,
+            "finished_at": None,
+        }]
+
+    monkeypatch.setattr(mod, "generate_plan", fake_generate_plan)
+
+    tid = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["video"],
+        force_retranslate=False,
+        video_params={"subtitle_size": 16},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301, 302],
+    )
+
+    assert seen["raw_source_ids"] == [301, 302]
+    state = json.loads(fake_db.rows[tid]["state_json"])
+    assert state["raw_source_ids"] == [301, 302]
+
+
 # ============================================================
 # Task 16:get_task
 # ============================================================

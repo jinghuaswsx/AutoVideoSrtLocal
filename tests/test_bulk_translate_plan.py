@@ -3,11 +3,11 @@ import pytest
 
 
 class _FakeDB:
-    def __init__(self, copies=None, details=None, covers=None, videos=None):
+    def __init__(self, copies=None, details=None, covers=None, raw_sources=None):
         self.copies = copies or []   # [{"id": N}, ...]
         self.details = details or [] # [N, ...]
         self.covers = covers or []
-        self.videos = videos or []   # [{"id": N}, ...]
+        self.raw_sources = raw_sources or []   # [{"id": N}, ...]
 
     def query(self, sql, args=None):
         s = sql.lower()
@@ -17,8 +17,8 @@ class _FakeDB:
             return [{"id": i} for i in self.details]
         if "from media_product_covers" in s:
             return [{"id": i} for i in self.covers]
-        if "from media_items" in s:
-            return list(self.videos)
+        if "from media_raw_sources" in s:
+            return list(self.raw_sources)
         raise AssertionError(f"unexpected query: {sql}")
 
 
@@ -74,10 +74,12 @@ def test_cover_batch_one_per_lang(monkeypatch):
 
 def test_video_only_de_fr_generates_items(monkeypatch):
     """视频 target_lang ∈ {de, fr} 才生成 plan 项;其他语言 skip 规划。"""
-    _patch(monkeypatch, _FakeDB(videos=[{"id": 1}, {"id": 2}]))
+    _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 1}, {"id": 2}]))
 
     from appcore.bulk_translate_plan import generate_plan
-    plan = generate_plan(1, 77, ["de", "fr", "es", "it"], ["video"], False)
+    plan = generate_plan(
+        1, 77, ["de", "fr", "es", "it"], ["video"], False, raw_source_ids=[1, 2],
+    )
 
     # 2 视频 × 2 支持语种 = 4,es/it 不规划
     video_items = [p for p in plan if p["kind"] == "video"]
@@ -91,13 +93,13 @@ def test_mixed_content_types(monkeypatch):
         copies=[{"id": 10}],
         details=[100, 101],
         covers=[200],
-        videos=[{"id": 1}],
+        raw_sources=[{"id": 1}],
     ))
 
     from appcore.bulk_translate_plan import generate_plan
     plan = generate_plan(
         1, 77, ["de", "fr"],
-        ["copy", "detail", "cover", "video"], False,
+        ["copy", "detail", "cover", "video"], False, raw_source_ids=[1],
     )
 
     by_kind = {}
@@ -123,7 +125,7 @@ def test_empty_product_empty_plan(monkeypatch):
 
     from appcore.bulk_translate_plan import generate_plan
     plan = generate_plan(1, 77, ["de"],
-                           ["copy", "detail", "cover", "video"], False)
+                           ["copy", "detail", "cover"], False)
     assert plan == []
 
 
