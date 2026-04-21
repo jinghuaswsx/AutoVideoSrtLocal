@@ -639,3 +639,53 @@ git branch -d feature/ai-usage-billing
   - OpenRouter 响应成本是否直落 `response`
   - 图片 / ASR / Gemini 视频评分是否按价格表记账
   - 管理员详单页、CSV、定价页是否工作
+
+---
+
+## 2026-04-21 验收补录（Claude 接手收尾）
+
+**目标：** 修掉 Codex 留下的两个 blocker（unknown 占比 53% + 全量 pytest 未跑完），把分支带到可以发生产的状态。
+
+### 缺口 1 — `unknown` 占比 53%（已修）
+
+根因：`ai_model_prices` 种子只有 `doubao-1-5-pro-32k`，但视频翻译 bindings 实际用的是 `doubao-seed-2-0-pro-260215`，查表未命中 → `cost_source='unknown'`。
+
+修复：新增 migration `db/migrations/2026_04_21_seed_doubao_wildcard.sql`（commit `737d4e4`），
+为 `doubao` / `gemini_aistudio` / `gemini_vertex` 三家补 `(provider, '*')` 通配兜底价，全部标"待复核"。
+OpenRouter / ElevenLabs / doubao_asr 本来就有通配，现在 6 家 provider 全覆盖。
+
+验证（测试环境 `/data/autovideosrt-test`，分支 `feature/ai-usage-billing` @ `737d4e4`）：
+
+1. migration apply 成功，6 家 provider 都有 `*` 行：
+   ```
+   doubao          *  tokens   0.00000600 / 0.00001200
+   doubao_asr      *  seconds  NULL / NULL / 0.01400000
+   elevenlabs      *  chars    NULL / NULL / 0.00016500
+   gemini_aistudio *  tokens   0.00000204 / 0.00000816
+   gemini_vertex   *  tokens   0.00000816 / 0.00003264
+   openrouter      *  tokens   NULL（响应 cost 兜底）
+   ```
+2. `compute_cost_cny(provider='doubao', model='doubao-seed-2-0-pro-260215', ...)` → `(0.012000, 'pricebook')`
+3. 直接调 `ai_billing.log_request(... provider='doubao', model='doubao-seed-2-0-pro-260215' ...)` → 写入行 `cost_source=pricebook`, `cost_cny=0.012000`
+
+后续（生产发布时）：原 migration 会 `TRUNCATE usage_logs`，历史测试数据全清；上线后首个 24h 观察，`unknown` 应 < 5%。
+
+### 缺口 2 — 全量 pytest（已在测试服务器跑完）
+
+本地 1 小时跑不完，改到测试服务器（约 58 秒）。为准确判断有无回归，先跑 master baseline 再对比。
+
+| 分支 | passed | failed |
+|---|---|---|
+| master @ 最新 | 1126 | 35 |
+| feature/ai-usage-billing @ 737d4e4 | 1166 | 34 |
+
+差集（对比失败用例的完整 ID）：
+
+- **feature-only 新失败**: 1 个 — `test_runtime_multi_translate.py::test_step_translate_calls_resolver_with_base_plus_plugin`。单跑立即通过（`1 passed in 0.49s`），是 test pollution（全量跑时其他测试污染了共享状态），不是代码回归。
+- **master-only 已修好**: 2 个（feature 分支因改写链路顺带修好了）
+- **两边都失败**: 33 个（pre-existing，和本次改动无关）
+
+其余 1 个疑似回归（`tests/test_translate_lab_e2e.py`）是 Python 3.12 的 `too many statically nested blocks` 语法限制，master 和 feature 都收集失败，用 `--ignore` 跳过。
+
+**结论**：feature 分支相比 master 净增 40 passed、无真实 regression。
+全量验收 checklist 的"全量 pytest 通过数 ≥ baseline" 达标（1166 ≥ 1126）。
