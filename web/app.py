@@ -178,6 +178,8 @@ def create_app() -> Flask:
         app.config["WTF_CSRF_ENABLED"] = True
     else:
         app.config["WTF_CSRF_ENABLED"] = False
+    # token 有效期与 session 对齐（1 个月），避免页面停留超过默认 1 小时后提交报 "CSRF token has expired"
+    app.config["WTF_CSRF_TIME_LIMIT"] = None
 
     # 初始化扩展
     login_manager.init_app(app)
@@ -218,6 +220,8 @@ def create_app() -> Flask:
     app.register_blueprint(admin_prompts_bp)
     app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)
+    # 素材管理蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
+    csrf.exempt(medias_bp)
     app.register_blueprint(prompt_library_bp)
     app.register_blueprint(openapi_materials_bp)
     app.register_blueprint(openapi_push_items_bp)
@@ -231,6 +235,8 @@ def create_app() -> Flask:
     # 前端走 cookie session 认证，不需要 CSRF 表单 token；整蓝图豁免。
     csrf.exempt(pushes_bp)
     app.register_blueprint(image_translate_bp)
+    # 图片翻译蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
+    csrf.exempt(image_translate_bp)
     app.register_blueprint(link_check_bp)
     csrf.exempt(link_check_bp)
     # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
