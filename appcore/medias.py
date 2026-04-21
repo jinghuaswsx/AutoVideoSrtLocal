@@ -815,3 +815,83 @@ def set_product_link_check_task(product_id: int, lang: str, payload: dict | None
     else:
         tasks.pop(lang, None)
     return update_product(product_id, link_check_tasks_json=(tasks or None))
+
+
+# ---------- 原始去字幕素材（raw sources）----------
+
+def create_raw_source(
+    product_id: int,
+    user_id: int,
+    *,
+    display_name: str | None,
+    video_object_key: str,
+    cover_object_key: str,
+    duration_seconds: float | None = None,
+    file_size: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> int:
+    return execute(
+        "INSERT INTO media_raw_sources "
+        "(product_id, user_id, display_name, video_object_key, cover_object_key, "
+        " duration_seconds, file_size, width, height) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (
+            product_id,
+            user_id,
+            display_name,
+            video_object_key,
+            cover_object_key,
+            duration_seconds,
+            file_size,
+            width,
+            height,
+        ),
+    )
+
+
+def get_raw_source(rid: int) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_raw_sources WHERE id=%s AND deleted_at IS NULL",
+        (rid,),
+    )
+
+
+def list_raw_sources(product_id: int) -> list[dict]:
+    return query(
+        "SELECT * FROM media_raw_sources "
+        "WHERE product_id=%s AND deleted_at IS NULL "
+        "ORDER BY sort_order ASC, id ASC",
+        (product_id,),
+    )
+
+
+def update_raw_source(rid: int, **fields) -> int:
+    allowed = {"display_name", "sort_order"}
+    keys = [k for k in fields if k in allowed]
+    if not keys:
+        return 0
+    set_sql = ", ".join(f"{k}=%s" for k in keys)
+    args = tuple(fields[k] for k in keys) + (rid,)
+    return execute(f"UPDATE media_raw_sources SET {set_sql} WHERE id=%s", args)
+
+
+def soft_delete_raw_source(rid: int) -> int:
+    return execute(
+        "UPDATE media_raw_sources SET deleted_at=NOW() "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (rid,),
+    )
+
+
+def count_raw_sources_by_product(product_ids: list[int]) -> dict[int, int]:
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        f"SELECT product_id, COUNT(*) AS c FROM media_raw_sources "
+        f"WHERE product_id IN ({placeholders}) AND deleted_at IS NULL "
+        f"GROUP BY product_id",
+        tuple(product_ids),
+    )
+    return {int(r["product_id"]): int(r["c"]) for r in rows}
