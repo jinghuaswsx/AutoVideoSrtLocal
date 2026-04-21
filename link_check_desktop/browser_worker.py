@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
 
 from link_check_desktop.html_extract import extract_images_from_html
+from link_check_desktop.storage import executable_root
 
 
 _SUPPORTED_RASTER_EXTENSIONS = {
@@ -23,6 +25,7 @@ _NOT_FOUND_TOKENS = (
     "not found",
     "nicht gefunden",
     "no encontrado",
+    "non trouve",
     "non trouvé",
 )
 
@@ -105,12 +108,42 @@ def _response_status(response) -> int | None:
     return getattr(response, "status", None) if response is not None else None
 
 
+def _version_key(path: Path) -> tuple[int, str]:
+    match = re.search(r"(\d+)$", path.name)
+    return (int(match.group(1)) if match else -1, path.name)
+
+
+def _find_bundled_chromium_executable() -> Path | None:
+    browsers_root = executable_root() / "ms-playwright"
+    if not browsers_root.is_dir():
+        return None
+
+    candidates: list[Path] = []
+    for browser_dir in sorted(browsers_root.glob("chromium-*"), key=_version_key, reverse=True):
+        for relative in ("chrome-win64/chrome.exe", "chrome-win/chrome.exe"):
+            candidate = browser_dir / relative
+            if candidate.is_file():
+                candidates.append(candidate)
+    return candidates[0] if candidates else None
+
+
 def _launch_visible_browser(playwright):
+    bundled_executable = _find_bundled_chromium_executable()
+    if bundled_executable is not None:
+        try:
+            return playwright.chromium.launch(
+                executable_path=str(bundled_executable),
+                headless=False,
+            )
+        except Exception:
+            pass
+
     try:
         return playwright.chromium.launch(channel="msedge", headless=False)
     except Exception as exc:
         raise RuntimeError(
-            "未找到可用的 Microsoft Edge 浏览器，请在目标 Windows 机器安装 Edge 后再运行 exe"
+            "未找到可用浏览器运行时。绿色包请确认 exe 同目录下带有 ms-playwright，"
+            "或在目标 Windows 机器安装 Microsoft Edge 后再运行。"
         ) from exc
 
 

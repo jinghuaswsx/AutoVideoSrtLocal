@@ -44,6 +44,7 @@ def test_run_link_check_builds_workspace_and_result(monkeypatch, tmp_path):
         "product_id": bootstrap["product"]["id"],
         "workspace": str(ws.root),
     })
+    monkeypatch.setattr(controller.report, "write_report", lambda payload: workspace_root / "report.html")
 
     result = controller.run_link_check(
         base_url="http://127.0.0.1:5000",
@@ -55,4 +56,5 @@ def test_run_link_check_builds_workspace_and_result(monkeypatch, tmp_path):
     assert result["product"]["id"] == 123
     assert result["page"]["locked"] is True
     assert result["analysis"]["summary"]["pass_count"] == 0
+    assert result["report_html_path"] == str(workspace_root / "report.html")
     assert [path.name for path, _payload in written] == ["task.json", "page_info.json", "result.json"]
