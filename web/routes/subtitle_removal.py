@@ -262,7 +262,7 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    erase_text_type = (body.get("erase_text_type") or "text").strip().lower()
+    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
         return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
 
@@ -322,7 +322,7 @@ def _subtitle_removal_state_payload(task: dict, task_id: str | None = None) -> d
         "original_filename": task.get("original_filename") or "",
         "display_name": task.get("display_name") or "",
         "remove_mode": task.get("remove_mode") or "",
-        "erase_text_type": task.get("erase_text_type") or "text",
+        "erase_text_type": task.get("erase_text_type") or "subtitle",
         "selection_box": task.get("selection_box"),
         "position_payload": task.get("position_payload"),
         "media_info": dict(task.get("media_info") or {}),
@@ -486,7 +486,7 @@ def complete_upload():
     except (TypeError, ValueError):
         return jsonify({"error": "file_size must be an integer"}), 400
 
-    erase_text_type = (body.get("erase_text_type") or "text").strip().lower()
+    erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
         return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
 
