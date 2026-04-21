@@ -433,6 +433,40 @@ def api_retry_unfinished(task_id: str):
     return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
 
 
+@bp.route("/api/image-translate/<task_id>/retry-all", methods=["POST"])
+@login_required
+def api_retry_all(task_id: str):
+    """把该任务所有 item（含 done）全部重置为 pending，删所有旧 dst，重启 runner。"""
+    task = _get_owned_task(task_id)
+    if image_translate_runner.is_running(task_id):
+        return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
+    items = task.get("items") or []
+    if not items:
+        return jsonify({"error": "任务没有图片"}), 409
+    for item in items:
+        old_dst = (item.get("dst_tos_key") or "").strip()
+        if old_dst:
+            try:
+                tos_clients.delete_object(old_dst)
+            except Exception:
+                pass
+        item["status"] = "pending"
+        item["attempts"] = 0
+        item["error"] = ""
+        item["dst_tos_key"] = ""
+    total = len(items)
+    task["progress"] = {"total": total, "done": 0, "failed": 0, "running": 0}
+    task["status"] = "queued"
+    store.update(
+        task_id,
+        items=items,
+        progress=task["progress"],
+        status="queued",
+    )
+    _start_runner(task_id, current_user.id)
+    return jsonify({"task_id": task_id, "reset": total, "status": "queued"}), 202
+
+
 @bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
 @login_required
 def api_download_zip(task_id: str):

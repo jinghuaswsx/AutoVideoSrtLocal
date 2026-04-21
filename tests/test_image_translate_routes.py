@@ -728,3 +728,87 @@ def test_retry_unfinished_409_when_all_done(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-unfinished")
     assert resp.status_code == 409
     assert "没有" in resp.get_json().get("error", "")
+
+
+def test_retry_all_resets_every_item_including_done(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    task = store.get(tid)
+    task["items"] = [
+        {"idx": 0, "filename": "a.jpg", "src_tos_key": "s/a", "dst_tos_key": "d/a",
+         "status": "done", "attempts": 1, "error": ""},
+        {"idx": 1, "filename": "b.jpg", "src_tos_key": "s/b", "dst_tos_key": "d/b-old",
+         "status": "failed", "attempts": 3, "error": "timeout"},
+        {"idx": 2, "filename": "c.jpg", "src_tos_key": "s/c", "dst_tos_key": "",
+         "status": "pending", "attempts": 0, "error": ""},
+    ]
+    task["progress"] = {"total": 3, "done": 1, "failed": 1, "running": 0}
+    task["status"] = "done"
+    deleted: list[str] = []
+    monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: deleted.append(k))
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: True)
+    monkeypatch.setattr(store, "update", lambda *a, **kw: None)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-all")
+    assert resp.status_code == 202
+    data = resp.get_json()
+    assert data["reset"] == 3
+    for it in task["items"]:
+        assert it["status"] == "pending"
+        assert it["attempts"] == 0
+        assert it["error"] == ""
+        assert it["dst_tos_key"] == ""
+    assert sorted(deleted) == ["d/a", "d/b-old"]
+    assert task["progress"] == {"total": 3, "done": 0, "failed": 0, "running": 0}
+    assert task["status"] == "queued"
+
+
+def test_retry_all_409_when_runner_active(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: True)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-all")
+    assert resp.status_code == 409
+    assert "正在跑" in resp.get_json().get("error", "")
+
+
+def test_retry_all_409_when_no_items(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    task = store.get(tid)
+    task["items"] = []
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-all")
+    assert resp.status_code == 409
+
+
+def test_retry_all_tolerates_delete_object_failure(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    from web import store
+
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["items"][0]["dst_tos_key"] = "d/exists"
+
+    def boom(_k):
+        raise RuntimeError("tos down")
+
+    monkeypatch.setattr(r.tos_clients, "delete_object", boom)
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: True)
+    monkeypatch.setattr(store, "update", lambda *a, **kw: None)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-all")
+    assert resp.status_code == 202
+    assert task["items"][0]["status"] == "pending"
+    assert task["items"][0]["dst_tos_key"] == ""
