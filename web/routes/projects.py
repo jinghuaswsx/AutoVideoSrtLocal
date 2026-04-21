@@ -28,6 +28,24 @@ def index():
                            retention_hours=get_retention_hours("translation"))
 
 
+@bp.route("/video-translate-av-sync")
+@login_required
+def av_sync_page():
+    from appcore.api_keys import get_key
+
+    try:
+        translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    except Exception:
+        translate_pref = "openrouter"
+    return render_template(
+        "video_translate_av_sync.html",
+        translate_pref=translate_pref,
+        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_markets=AV_TARGET_MARKET_OPTIONS,
+        av_translate_defaults=build_default_av_translate_inputs(),
+    )
+
+
 @bp.route("/projects/<task_id>")
 @login_required
 def detail(task_id: str):
