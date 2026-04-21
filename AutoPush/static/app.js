@@ -174,14 +174,21 @@ function openPushModal(item, opts = {}) {
     el("h4", {}, "素材信息"),
   ]);
   const kv = el("div", { class: "ap-kv" });
+  const itemIdValue = el("span", { class: "v" }, String(item.item_id || "-"));
+  const mkIdValue = el("span", { class: "v" }, "-");
   const addKV = (k, v) => {
     kv.appendChild(el("span", { class: "k" }, k));
+    if (v instanceof Node) {
+      kv.appendChild(v);
+      return;
+    }
     kv.appendChild(el("span", { class: "v" }, v));
   };
   addKV("产品", `${item.product_name || ""}  ·  ${item.product_code || ""}`);
   addKV("语种", item.lang || "-");
   addKV("文件", item.display_name || item.filename || "-");
-  addKV("item_id", String(item.item_id || "-"));
+  addKV("item_id", itemIdValue);
+  addKV("mk_id", mkIdValue);
   addKV("状态", STATUS_LABELS[item.status]?.text || item.status);
   infoSection.appendChild(kv);
   body.appendChild(infoSection);
@@ -312,7 +319,7 @@ function openPushModal(item, opts = {}) {
     clear(localizedPane);
     const errorMessage = getLocalizedTextError();
     const localizedText = pushContext.localizedText || currentLocalizedTexts()[0] || null;
-    const targetInfo = renderLocalizedTargetInfo(pushContext.localizedTargetUrl);
+    const targetInfo = renderLocalizedTargetInfo(pushContext.mkId, pushContext.localizedTargetUrl);
     if (targetInfo) {
       localizedPane.appendChild(targetInfo);
     }
@@ -354,8 +361,10 @@ function openPushModal(item, opts = {}) {
         localizedTextsRequest: context?.localized_texts_request || { texts: [] },
         localizedTargetUrl: buildLocalizedPushTargetUrl(context?.mk_id ?? null),
       };
+      itemIdValue.textContent = String(pushContext.itemId || "-");
+      mkIdValue.textContent = String(pushContext.mkId || "-");
       jsonPre.textContent = JSON.stringify(payload, null, 2);
-      localizedJsonPre.textContent = JSON.stringify(pushContext.localizedTextsRequest, null, 2);
+      localizedJsonPre.textContent = JSON.stringify(buildLocalizedRequestPreview(pushContext), null, 2);
       clear(payloadBox);
       payloadBox.appendChild(renderPayloadView(payload));
       renderLocalizedPane();
@@ -428,14 +437,37 @@ function renderLocalizedTextView(localizedText) {
   return root;
 }
 
-function renderLocalizedTargetInfo(targetUrl) {
-  if (!targetUrl) return null;
+function buildLocalizedRequestPreview(pushContext) {
+  return {
+    mk_id: pushContext.mkId ?? null,
+    target_url: pushContext.localizedTargetUrl || "",
+    texts: currentLocalizedTextsForPreview(pushContext),
+  };
+}
+
+function currentLocalizedTextsForPreview(pushContext) {
+  return Array.isArray(pushContext?.localizedTextsRequest?.texts)
+    ? pushContext.localizedTextsRequest.texts
+    : [];
+}
+
+function renderLocalizedTargetInfo(mkId, targetUrl) {
   const root = el("div", { class: "ap-localized-text-card" });
   const kv = el("div", { class: "ap-kv" });
-  kv.appendChild(el("span", { class: "k" }, "推送地址"));
-  kv.appendChild(el("span", { class: "v" }, [
-    el("code", { class: "ap-code" }, targetUrl),
-  ]));
+  const pairs = [
+    ["mk_id", mkId ? String(mkId) : "-"],
+    ["推送地址", targetUrl || "(待确定)"],
+  ];
+  pairs.forEach(([k, v]) => {
+    kv.appendChild(el("span", { class: "k" }, k));
+    if (k === "推送地址") {
+      kv.appendChild(el("span", { class: "v" }, [
+        el("code", { class: "ap-code" }, v),
+      ]));
+      return;
+    }
+    kv.appendChild(el("span", { class: "v" }, v));
+  });
   root.appendChild(kv);
   return root;
 }
