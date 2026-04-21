@@ -4,9 +4,11 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -22,6 +24,10 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 log = logging.getLogger(__name__)
+_JWT_RE = re.compile(
+    rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+)
+_STORAGE_TOKEN_HINTS = (b"access_token", b"token", b"auth_token")
 
 
 def resolve_chrome_auth_headers(target_url: str) -> dict[str, str]:
@@ -39,25 +45,25 @@ def resolve_chrome_auth_headers(target_url: str) -> dict[str, str]:
     if not user_data_dir:
         return {}
 
+    headers: dict[str, str] = {}
     try:
         cookies = _load_best_profile_cookies(user_data_dir, host)
     except Exception as exc:  # pragma: no cover - defensive
         log.warning("failed to load Chrome cookies for %s: %s", host, exc)
-        return {}
+        cookies = {}
 
-    if not cookies:
-        return {}
-
-    headers: dict[str, str] = {}
     cookie_header = _build_cookie_header(cookies)
     if cookie_header:
         headers["Cookie"] = cookie_header
 
     token = cookies.get("token", "").strip()
+    if not token:
+        token = _load_best_profile_storage_token(user_data_dir, host)
+
     if token:
-        headers["Authorization"] = (
-            token if token.lower().startswith("bearer ") else f"Bearer {token}"
-        )
+        headers["Authorization"] = _format_bearer_token(token)
+        if "Cookie" not in headers:
+            headers["Cookie"] = f"token={token}"
     return headers
 
 
@@ -92,6 +98,28 @@ def _iter_chrome_cookie_dbs(user_data_dir: Path) -> list[Path]:
                 break
     return sorted(
         cookie_dbs,
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+
+
+def _iter_chrome_storage_files(user_data_dir: Path) -> list[Path]:
+    files: list[Path] = []
+    for profile_dir in user_data_dir.iterdir():
+        if not profile_dir.is_dir():
+            continue
+        if profile_dir.name != "Default" and not profile_dir.name.startswith("Profile "):
+            continue
+        for storage_dir in (
+            profile_dir / "Local Storage" / "leveldb",
+            profile_dir / "Session Storage",
+        ):
+            if not storage_dir.is_dir():
+                continue
+            for pattern in ("*.ldb", "*.log"):
+                files.extend(storage_dir.glob(pattern))
+    return sorted(
+        files,
         key=lambda path: path.stat().st_mtime if path.exists() else 0,
         reverse=True,
     )
@@ -182,6 +210,84 @@ def _copy_sqlite_db(path: Path) -> Path:
     return temp_copy
 
 
+def _load_best_profile_storage_token(user_data_dir: Path, host: str) -> str:
+    candidates: dict[str, tuple[int, int, float, str]] = {}
+    storage_files = _iter_chrome_storage_files(user_data_dir)
+    for require_host_marker in (True, False):
+        if candidates:
+            break
+        for storage_file in storage_files:
+            candidate = _extract_best_storage_token(
+                storage_file,
+                host,
+                require_host_marker=require_host_marker,
+            )
+            if not candidate:
+                continue
+            score, exp_ts, modified_at, token = candidate
+            existing = candidates.get(token)
+            if existing is None or (score, exp_ts, modified_at) > existing[:3]:
+                candidates[token] = (score, exp_ts, modified_at, token)
+    if not candidates:
+        return ""
+
+    now = int(time.time())
+
+    def _sort_key(item: tuple[int, int, float, str]) -> tuple[int, int, int, float, int]:
+        score, exp_ts, modified_at, token = item
+        is_valid = 1 if exp_ts >= now else 0
+        return (is_valid, exp_ts, score, modified_at, len(token))
+
+    return max(candidates.values(), key=_sort_key)[3]
+
+
+def _extract_best_storage_token(
+    storage_file: Path,
+    host: str,
+    *,
+    require_host_marker: bool,
+) -> tuple[int, int, float, str] | None:
+    try:
+        data = storage_file.read_bytes()
+    except OSError:
+        return None
+
+    host_bytes = host.encode("utf-8")
+    has_host_marker = host_bytes in data
+    if require_host_marker and not has_host_marker:
+        return None
+    if not has_host_marker and not any(hint in data for hint in _STORAGE_TOKEN_HINTS):
+        return None
+
+    modified_at = storage_file.stat().st_mtime
+    best: tuple[int, int, float, str] | None = None
+    for match in _JWT_RE.finditer(data):
+        token_bytes = match.group(0)
+        window_start = max(0, match.start() - 256)
+        window_end = min(len(data), match.end() + 256)
+        window = data[window_start:window_end]
+        score = 0
+        if has_host_marker:
+            score += 80
+        if host_bytes in window:
+            score += 100
+        if any(hint in window for hint in _STORAGE_TOKEN_HINTS):
+            score += 50
+        if b"access_token" in window:
+            score += 100
+        if b"access_token" in data:
+            score += 30
+        if any(hint in data for hint in _STORAGE_TOKEN_HINTS):
+            score += 10
+
+        token = token_bytes.decode("ascii", errors="ignore").strip()
+        exp_ts = _decode_jwt_exp(token)
+        candidate = (score, exp_ts, modified_at, token)
+        if best is None or candidate[:3] > best[:3]:
+            best = candidate
+    return best
+
+
 def _cookie_matches_host(cookie_host: str, target_host: str) -> bool:
     normalized_cookie_host = cookie_host.lstrip(".")
     return (
@@ -200,6 +306,23 @@ def _decrypt_cookie_value(
     encrypted = bytes(encrypted_value or b"")
     if not encrypted:
         return ""
+
+
+def _decode_jwt_exp(token: str) -> int:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return 0
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(payload + padding)
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        return 0
+    try:
+        return int(data.get("exp") or 0)
+    except (TypeError, ValueError):
+        return 0
 
     if encrypted.startswith((b"v10", b"v11")):
         if not master_key or AESGCM is None:
@@ -224,6 +347,10 @@ def _unprotect_windows_data(encrypted: bytes) -> bytes:
     if win32crypt is None:  # pragma: no cover - non-Windows fallback
         raise RuntimeError("win32crypt is unavailable")
     return win32crypt.CryptUnprotectData(encrypted, None, None, None, 0)[1]
+
+
+def _format_bearer_token(token: str) -> str:
+    return token if token.lower().startswith("bearer ") else f"Bearer {token}"
 
 
 def _build_cookie_header(cookies: dict[str, str]) -> str:
