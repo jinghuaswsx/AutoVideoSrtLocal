@@ -643,6 +643,43 @@ def api_create_raw_source(pid: int):
     return jsonify({"item": _serialize_raw_source(row)}), 201
 
 
+@bp.route("/api/raw-sources/<int:rid>", methods=["PATCH"])
+@login_required
+def api_update_raw_source(rid: int):
+    row = medias.get_raw_source(rid)
+    if not row:
+        abort(404)
+    p = medias.get_product(int(row["product_id"]))
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    fields: dict = {}
+    if "display_name" in body:
+        fields["display_name"] = (body.get("display_name") or "").strip() or None
+    if "sort_order" in body:
+        try:
+            fields["sort_order"] = int(body["sort_order"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "sort_order must be int"}), 400
+    if not fields:
+        return jsonify({"error": "no valid fields"}), 400
+    medias.update_raw_source(rid, **fields)
+    return jsonify({"item": _serialize_raw_source(medias.get_raw_source(rid))})
+
+
+@bp.route("/api/raw-sources/<int:rid>", methods=["DELETE"])
+@login_required
+def api_delete_raw_source(rid: int):
+    row = medias.get_raw_source(rid)
+    if not row:
+        abort(404)
+    p = medias.get_product(int(row["product_id"]))
+    if not _can_access_product(p):
+        abort(404)
+    medias.soft_delete_raw_source(rid)
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
 @login_required
 def api_item_bootstrap(pid: int):
