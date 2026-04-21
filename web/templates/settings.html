@@ -350,31 +350,33 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <button class="btn btn-primary save-btn" type="submit">保存分配</button>
 
   <script>
-    // 项目里实际用过的 model ID —— 后续有新增直接加到这里
+    // Gemini 模型清单 —— AI Studio / Vertex 共用同一份，OpenRouter 自动派生 google/ 前缀
+    // 新增/淘汰 Gemini 型号只改这里一处
+    const GEMINI_MODELS = [
+      "gemini-3.1-pro-preview",
+      "gemini-3-flash-preview",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-3-pro-image-preview",
+      "gemini-3.1-flash-image-preview",
+    ];
+
+    // 非 Gemini 的其他模型按原样维护
+    const OPENROUTER_EXTRA = [
+      "anthropic/claude-sonnet-4.6",
+      "openai/gpt-4o-mini",
+    ];
+    const DOUBAO_MODELS = [
+      "doubao-seed-2-0-pro-260215",
+    ];
+
     const PROVIDER_MODELS = {
       "openrouter": [
-        "google/gemini-3.1-flash-lite-preview",
-        "google/gemini-3.1-pro-preview",
-        "google/gemini-3-flash-preview",
-        "anthropic/claude-sonnet-4.6",
-        "openai/gpt-4o-mini",
+        ...GEMINI_MODELS.map(function (m) { return "google/" + m; }),
+        ...OPENROUTER_EXTRA,
       ],
-      "doubao": [
-        "doubao-seed-2-0-pro-260215",
-      ],
-      "gemini_aistudio": [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-2.5-flash",
-        "gemini-3-pro-image-preview",
-        "gemini-3.1-flash-image-preview",
-      ],
-      "gemini_vertex": [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3-flash-preview",
-        "gemini-3.1-pro-preview",
-      ],
+      "doubao": DOUBAO_MODELS,
+      "gemini_aistudio": GEMINI_MODELS,
+      "gemini_vertex": GEMINI_MODELS,
     };
 
     (function () {
@@ -422,6 +424,11 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       <div>
         <h2>模型价格表</h2>
         <p>支持精确模型和 `*` 通配模型。新增、编辑、删除后会立即失效 pricing 缓存。</p>
+        <p style="color:var(--fg-muted); font-size:13px; margin-top:4px">
+          <strong>Gemini 共享定价：</strong>
+          <code>gemini_aistudio</code> 和 <code>gemini_vertex</code> 对同名模型自动回落取对家价格，
+          任一家填一次即可，无需两边各维护一份。
+        </p>
       </div>
       <div class="pricing-toolbar">
         <button type="button" class="pricing-btn" id="pricingAddBtn">+ 新增模型定价</button>

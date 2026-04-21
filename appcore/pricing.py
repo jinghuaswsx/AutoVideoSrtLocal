@@ -42,9 +42,28 @@ def _load_prices() -> dict[tuple[str, str], dict]:
     return data
 
 
+# AI Studio 和 Vertex 对同名 Gemini 模型定价相同，这里维护一次即可
+# 查找顺序：自家精确 → 对家精确 → 自家通配 → 对家通配
+_GEMINI_PAIR = {
+    "gemini_aistudio": "gemini_vertex",
+    "gemini_vertex": "gemini_aistudio",
+}
+
+
 def _lookup(provider: str, model: str) -> dict | None:
     data = _load_prices()
-    return data.get((provider, model)) or data.get((provider, "*"))
+    pair = _GEMINI_PAIR.get(provider)
+    keys: list[tuple[str, str]] = [(provider, model)]
+    if pair:
+        keys.append((pair, model))
+    keys.append((provider, "*"))
+    if pair:
+        keys.append((pair, "*"))
+    for key in keys:
+        row = data.get(key)
+        if row is not None:
+            return row
+    return None
 
 
 def compute_cost_cny(
