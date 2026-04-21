@@ -347,21 +347,28 @@ def api_update_product(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
 
-    name = (body.get("name") or "").strip() or p["name"]
-    product_code = (body.get("product_code") or "").strip().lower()
-    ok, err = _validate_product_code(product_code)
-    if not ok:
-        return jsonify({"error": err}), 400
-    exist = medias.get_product_by_code(product_code)
-    if exist and exist["id"] != pid:
-        return jsonify({"error": "产品 ID 已被占用"}), 409
+    # 基础信息字段：只有 body 里显式带了才校验+写回，支持部分更新
+    # （列表 inline edit 之类的轻量更新只会携带 mk_id / ad_supported_langs 等单字段）
+    update_fields: dict = {}
 
-    if not medias.has_english_cover(pid):
+    if "name" in body:
+        name = (body.get("name") or "").strip() or p["name"]
+        update_fields["name"] = name
+
+    if "product_code" in body:
+        product_code = (body.get("product_code") or "").strip().lower()
+        ok, err = _validate_product_code(product_code)
+        if not ok:
+            return jsonify({"error": err}), 400
+        exist = medias.get_product_by_code(product_code)
+        if exist and exist["id"] != pid:
+            return jsonify({"error": "产品 ID 已被占用"}), 409
+        update_fields["product_code"] = product_code
+
+    # EN 主图硬校验仅在修改基础信息时触发
+    touches_base = any(k in body for k in ("name", "product_code", "copywritings"))
+    if touches_base and not medias.has_english_cover(pid):
         return jsonify({"error": "必须先上传英文（EN）产品主图才能保存"}), 400
-
-    # 允许先创建/保存产品基础信息，视频素材可在编辑弹窗后续补充，不做硬校验
-
-    update_fields = {"name": name, "product_code": product_code}
 
     # 明空 ID（mk_id）：选填，1-8 位数字，空串代表清除
     if "mk_id" in body:
