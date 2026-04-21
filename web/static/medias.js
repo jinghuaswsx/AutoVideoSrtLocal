@@ -351,6 +351,7 @@
           <col style="width:96px">
           <col style="width:120px">
           <col style="width:120px">
+          <col style="width:96px">
           <col style="width:60px">
           <col style="width:200px">
           <col style="width:108px">
@@ -362,6 +363,7 @@
             <th>主图</th>
             <th>产品名称</th>
             <th>产品 ID</th>
+            <th>明空 ID</th>
             <th>素材数</th>
             <th>语种覆盖</th>
             <th>修改时间</th>
@@ -378,6 +380,8 @@
       b.addEventListener('click', (e) => { e.stopPropagation(); deleteProduct(+b.dataset.del); }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
+    grid.querySelectorAll('td.mk-id-cell').forEach(td =>
+      td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
   }
 
   function rowHTML(p) {
@@ -387,12 +391,17 @@
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
+    const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
+    const mkIdCell = mkIdText
+      ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
+      : `<span class="mk-id-text"><span class="muted">—</span></span>`;
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
         <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
         <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
+        <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
@@ -404,6 +413,75 @@
           </div>
         </td>
       </tr>`;
+  }
+
+  async function startMkIdInlineEdit(td) {
+    if (td.dataset.editing === '1') return;
+    td.dataset.editing = '1';
+    const pid = +td.dataset.pid;
+    const original = td.dataset.mkid || '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.maxLength = 8;
+    input.value = original;
+    input.className = 'mk-id-input';
+    input.setAttribute('aria-label', '明空 ID');
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    input.select();
+
+    let settled = false;
+
+    function restore(value) {
+      td.dataset.mkid = value;
+      td.dataset.editing = '';
+      td.innerHTML = value
+        ? `<span class="mk-id-text">${escapeHtml(value)}</span>`
+        : `<span class="mk-id-text"><span class="muted">—</span></span>`;
+    }
+
+    async function commit() {
+      if (settled) return;
+      settled = true;
+      const raw = input.value.trim();
+      if (raw === original) { restore(original); return; }
+      if (raw !== '' && !/^\d{1,8}$/.test(raw)) {
+        input.classList.add('error');
+        input.focus();
+        settled = false;
+        return;
+      }
+      input.disabled = true;
+      try {
+        await fetchJSON('/medias/api/products/' + pid, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mk_id: raw === '' ? null : parseInt(raw, 10) }),
+        });
+        restore(raw);
+      } catch (e) {
+        const msg = (e.message || '').toString();
+        if (msg.includes('mk_id_conflict') || msg.includes('明空 ID 已被其他产品占用')) {
+          alert('明空 ID 已被其他产品占用');
+        } else if (msg.includes('mk_id_invalid') || msg.includes('必须是 1-8 位数字')) {
+          alert('明空 ID 必须是 1-8 位数字');
+        } else {
+          alert('保存失败：' + msg);
+        }
+        input.disabled = false;
+        input.classList.add('error');
+        input.focus();
+        settled = false;
+      }
+    }
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); settled = true; restore(original); }
+    });
+    input.addEventListener('blur', commit);
   }
 
   function closeAllMenus() {
@@ -853,6 +931,8 @@
       edState.linkCheckDetailError = '';
       $('edName').value = data.product.name || '';
       $('edCode').value = data.product.product_code || '';
+      $('edMkId').value = (data.product.mk_id === null || data.product.mk_id === undefined)
+        ? '' : String(data.product.mk_id);
       edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
       $('edUploadProgress').innerHTML = '';
       edResetNewItemForm();
@@ -2159,9 +2239,17 @@
       '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
     )].map(i => i.value).join(',');
 
+    const mkIdRaw = ($('edMkId').value || '').trim();
+    if (mkIdRaw && !/^\d{1,8}$/.test(mkIdRaw)) {
+      alert('明空 ID 必须是 1-8 位数字');
+      $('edMkId').focus();
+      return;
+    }
+
     const payload = {
       name,
       product_code: code,
+      mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
       copywritings: cwDict,
       localized_links: edState.productData.product.localized_links || {},
       ad_supported_langs: adSupportedLangs,
@@ -2175,8 +2263,18 @@
       loadList();
     } catch (e) {
       const msg = (e.message || '').toString();
-      if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('edCode').focus(); }
-      else alert('保存失败：' + msg);
+      if (msg.includes('mk_id_conflict') || msg.includes('明空 ID 已被其他产品占用')) {
+        alert('明空 ID 已被其他产品占用');
+        $('edMkId').focus();
+      } else if (msg.includes('mk_id_invalid')) {
+        alert('明空 ID 必须是 1-8 位数字');
+        $('edMkId').focus();
+      } else if (msg.includes('已被占用')) {
+        alert('产品 ID 已被占用');
+        $('edCode').focus();
+      } else {
+        alert('保存失败：' + msg);
+      }
     }
   }
 

@@ -28,6 +28,8 @@ from web.services import image_translate_runner, link_check_runner
 
 import re
 
+import pymysql.err
+
 _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 _ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
@@ -156,6 +158,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "id": p["id"],
         "name": p["name"],
         "product_code": p.get("product_code"),
+        "mk_id": p.get("mk_id"),
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
         "source": p.get("source"),
@@ -384,6 +387,10 @@ def api_update_product(pid: int):
 
     update_fields = {"name": name, "product_code": product_code}
 
+    # 明空 ID（mk_id）：选填，1-8 位数字，空串代表清除
+    if "mk_id" in body:
+        update_fields["mk_id"] = body.get("mk_id")
+
     # 可选：localized_links — 每语言覆盖商品链接（dict {lang: url}）
     if isinstance(body.get("localized_links"), dict):
         cleaned = {}
@@ -410,7 +417,18 @@ def api_update_product(pid: int):
             seen.add(code)
             kept.append(code)
         update_fields["ad_supported_langs"] = ",".join(kept) if kept else None
-    medias.update_product(pid, **update_fields)
+    try:
+        medias.update_product(pid, **update_fields)
+    except ValueError as e:
+        return jsonify({"error": "mk_id_invalid", "message": str(e)}), 400
+    except pymysql.err.IntegrityError as e:
+        code = e.args[0] if e.args else None
+        if code == 1062 and "uk_media_products_mk_id" in str(e):
+            return jsonify({
+                "error": "mk_id_conflict",
+                "message": "明空 ID 已被其他产品占用",
+            }), 409
+        raise
 
     if isinstance(body.get("copywritings"), dict):
         for lang_code, lang_items in body["copywritings"].items():

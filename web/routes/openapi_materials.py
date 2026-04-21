@@ -157,7 +157,13 @@ def build_push_payload(product_code: str):
         if lang != "en" else []
     )
 
-    texts = [{"title": "tiktok", "message": "tiktok", "description": "tiktok"}]
+    try:
+        texts = pushes.resolve_push_texts(product_id)
+    except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
+        return jsonify({
+            "error": str(exc),
+            "code": "copywriting_not_ready",
+        }), 409
 
     videos = []
     for it in items:
@@ -552,7 +558,13 @@ def get_push_item_payload_by_keys():
     if not product:
         return jsonify({"error": "product not found"}), 404
 
-    payload = pushes.build_item_payload(item, product)
+    try:
+        payload = pushes.build_item_payload(item, product)
+    except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
+        return jsonify({
+            "error": str(exc),
+            "code": "copywriting_not_ready",
+        }), 409
     return jsonify({
         "item_id": item["id"],
         "item": _serialize_push_item(item, product),

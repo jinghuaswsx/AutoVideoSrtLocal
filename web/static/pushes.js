@@ -37,6 +37,7 @@
       sel.innerHTML = '';
       sel.appendChild(all);
       (data.languages || []).forEach(l => {
+        if (l.code === 'en') return;
         const opt = document.createElement('option');
         opt.value = l.code;
         opt.textContent = `${l.name_zh} (${l.code})`;
