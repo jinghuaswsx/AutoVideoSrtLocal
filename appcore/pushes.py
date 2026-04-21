@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import requests
@@ -12,6 +13,51 @@ from appcore import medias, tos_clients
 from appcore.db import query, query_one, execute
 
 log = logging.getLogger(__name__)
+
+
+class CopywritingMissingError(Exception):
+    """产品没有英文 idx=1 文案。"""
+
+
+class CopywritingParseError(Exception):
+    """英文 idx=1 文案 body 无法解析出三段合规字段。"""
+
+
+_COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
+_COPY_LABEL_TO_FIELD = {
+    "标题": "title",
+    "文案": "message",
+    "描述": "description",
+}
+
+
+def parse_copywriting_body(body: str) -> dict[str, str]:
+    """从英文文案 body 里提取 {title, message, description}。
+
+    要求三个标签（标题 / 文案 / 描述）全部出现，每段 strip() 后非空。
+    冒号兼容英文 `:` 和中文 `：`。
+    """
+    text = body or ""
+    matches = list(_COPY_LABEL_RE.finditer(text))
+    if not matches:
+        raise CopywritingParseError("未找到任何「标题/文案/描述」标签")
+
+    fields: dict[str, str] = {}
+    for idx, m in enumerate(matches):
+        label = m.group(1)
+        field = _COPY_LABEL_TO_FIELD[label]
+        start = m.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        fields[field] = text[start:end].strip()
+
+    missing = [k for k in ("title", "message", "description") if k not in fields]
+    if missing:
+        raise CopywritingParseError(f"文案缺少字段：{', '.join(missing)}")
+
+    empty = [k for k, v in fields.items() if not v]
+    if empty:
+        raise CopywritingParseError(f"文案字段为空：{', '.join(empty)}")
+    return fields
 
 
 # ---------- 就绪判定 ----------
