@@ -205,7 +205,7 @@ def list_items_for_push(
     `limit=None` 表示不分页，用于需要在内存中先按状态过滤再分页的场景。
     说明：`media_items` 表没有 `updated_at` 列，排序与日期过滤均使用 `i.created_at`。
     """
-    where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
+    where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL", "i.lang <> 'en'"]
     args: list[Any] = []
 
     if langs:
