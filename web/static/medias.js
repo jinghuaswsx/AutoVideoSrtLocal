@@ -964,7 +964,8 @@
   function edDetailTranslateApplyLabel(status) {
     switch ((status || '').toLowerCase()) {
       case 'applied': return '已回填';
-      case 'skipped_failed': return '未回填';
+      case 'applied_partial': return '部分回填';
+      case 'skipped_failed': return '未回填（有失败）';
       case 'apply_error': return '回填失败';
       case 'pending': return '待回填';
       default: return status || '待回填';
@@ -1353,14 +1354,39 @@
     const latest = tasks[0] || null;
     let html = '';
     if (appliedTask) {
+      const appliedLabel = escapeHtml(edDetailTranslateApplyLabel(appliedTask.apply_status || 'applied'));
       const detailUrl = escapeHtml(appliedTask.detail_url || `/image-translate/${appliedTask.task_id}`);
-      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填。<a href="${detailUrl}" target="_blank" rel="noopener">查看关联任务</a>`;
+      html = `当前 ${escapeHtml(langName)} 详情图已由英语版一键翻译回填（${appliedLabel}）。<a href="${detailUrl}" target="_blank" rel="noopener">查看关联任务</a>`;
     } else if (latest) {
       const detailUrl = escapeHtml(latest.detail_url || `/image-translate/${latest.task_id}`);
       html = `最近一次翻译任务：${escapeHtml(edDetailTranslateStatusLabel(latest.status))} / ${escapeHtml(edDetailTranslateApplyLabel(latest.apply_status))}。<a href="${detailUrl}" target="_blank" rel="noopener">查看任务详情</a>`;
     } else {
       html = `当前 ${escapeHtml(langName)} 还没有执行过从英语版一键翻译。`;
     }
+
+    // 当最近一次任务已结束但尚未回填，且存在成功项时，显示"手动回填已成功项"按钮。
+    // 仅以 latest 为目标，避免误把过期任务的图覆盖上来。
+    const candidate = latest && !appliedTask ? latest : null;
+    if (candidate) {
+      const applyStatus = String(candidate.apply_status || '').toLowerCase();
+      const status_ = String(candidate.status || '').toLowerCase();
+      const progress = candidate.progress || {};
+      const doneCount = Number(progress.done || 0);
+      const totalCount = Number(progress.total || 0);
+      const failedCount = Number(progress.failed || 0);
+      const canApply =
+        (status_ === 'done' || status_ === 'error')
+        && applyStatus !== 'applied'
+        && applyStatus !== 'applied_partial'
+        && doneCount > 0;
+      if (canApply) {
+        const btnLabel = failedCount > 0
+          ? `手动回填已成功项（${doneCount}/${totalCount}，忽略 ${failedCount} 张失败）`
+          : `手动回填已成功项（${doneCount}/${totalCount}）`;
+        html += ` <button type="button" class="oc-btn primary sm" data-apply-translate-task="${escapeHtml(candidate.task_id)}" data-apply-translate-lang="${escapeHtml(lang)}">${escapeHtml(btnLabel)}</button>`;
+      }
+    }
+
     status.hidden = false;
     status.innerHTML = html;
   }
@@ -2498,6 +2524,32 @@
       edStartDetailTranslate(btn.getAttribute('data-retranslate-lang') || edState.activeLang).catch((err) => {
         console.error('[detail-images] retranslate failed:', err);
       });
+    });
+    $('edDetailTranslateStatus') && $('edDetailTranslateStatus').addEventListener('click', async (e) => {
+      const btn = e.target && e.target.closest('[data-apply-translate-task]');
+      if (!btn) return;
+      const taskId = btn.getAttribute('data-apply-translate-task') || '';
+      const lang = (btn.getAttribute('data-apply-translate-lang') || edState.activeLang || '').trim().toLowerCase();
+      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+      if (!pid || !taskId || !lang) return;
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '回填中...';
+      try {
+        const data = await fetchJSON(
+          `/medias/api/products/${pid}/detail-images/${encodeURIComponent(lang)}/apply-translate-task/${encodeURIComponent(taskId)}`,
+          { method: 'POST' },
+        );
+        const msg = data.skipped_failed > 0
+          ? `已回填 ${data.applied} 张（忽略 ${data.skipped_failed} 张失败）`
+          : `已回填 ${data.applied} 张`;
+        alert(msg);
+        await edRefreshDetailImagesPanel(lang);
+      } catch (err) {
+        alert('手动回填失败：' + (err && err.message ? err.message : err));
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
     });
 
     $('edCwAddBtn').addEventListener('click', () => {

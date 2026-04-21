@@ -234,65 +234,12 @@ class ImageTranslateRuntime:
         return tos_clients.download_file(item["src_tos_key"], local_path)
 
     def _finalize_auto_apply(self, task: dict) -> None:
-        ctx = dict(task.get("medias_context") or {})
+        ctx = task.get("medias_context") or {}
         if not ctx.get("auto_apply_detail_images"):
             return
-        items = task.get("items") or []
-        if any((item.get("status") or "") != "done" for item in items):
-            ctx["apply_status"] = "skipped_failed"
-            task["medias_context"] = ctx
-            store.update(task["id"], medias_context=ctx)
-            return
-
-        created_images = []
-        created_ids: list[int] = []
-        for item in items:
-            dst_key = (item.get("dst_tos_key") or "").strip()
-            if not dst_key:
-                raise ValueError(f"任务项 {item.get('idx')} 缺少输出文件")
-            ext = self._ext_from_key(dst_key) or ".png"
-            download_fd, download_path = tempfile.mkstemp(suffix=ext, prefix="it_apply_")
-            os.close(download_fd)
-            try:
-                tos_clients.download_file(dst_key, download_path)
-                with open(download_path, "rb") as f:
-                    data = f.read()
-            finally:
-                if os.path.exists(download_path):
-                    try:
-                        os.unlink(download_path)
-                    except OSError:
-                        pass
-
-            base_name = os.path.splitext(os.path.basename(item.get("filename") or f"detail_{item.get('idx') or 0}"))[0]
-            filename = f"{base_name or 'detail'}{ext}"
-            object_key = tos_clients.build_media_object_key(
-                task.get("_user_id") or self.user_id or 0,
-                int(ctx["product_id"]),
-                filename,
-            )
-            content_type = self._guess_mime(dst_key)
-            tos_clients.upload_media_object(object_key, data, content_type=content_type)
-            created_images.append({
-                "object_key": object_key,
-                "content_type": content_type,
-                "file_size": len(data),
-                "origin_type": "image_translate",
-                "source_detail_image_id": item.get("source_detail_image_id"),
-                "image_translate_task_id": task["id"],
-            })
-
-        created_ids = medias.replace_detail_images_for_lang(
-            int(ctx["product_id"]),
-            str(ctx["target_lang"]),
-            created_images,
+        apply_translated_detail_images_from_task(
+            task, allow_partial=False, user_id=self.user_id,
         )
-        ctx["apply_status"] = "applied"
-        ctx["applied_at"] = datetime.now().isoformat()
-        ctx["applied_detail_image_ids"] = created_ids
-        ctx["last_apply_error"] = ""
-        task["medias_context"] = ctx
-        store.update(task["id"], medias_context=ctx)
 
     @staticmethod
     def _ext_from_key(key: str) -> str:
@@ -349,3 +296,115 @@ class ImageTranslateRuntime:
             task_id=task_id,
             payload={"task_id": task_id, **progress},
         ))
+
+
+def apply_translated_detail_images_from_task(
+    task: dict,
+    *,
+    allow_partial: bool,
+    user_id: int | None = None,
+) -> dict:
+    """把一个 image_translate 任务的已成功项回填到 medias 详情图。
+
+    - allow_partial=False：任一 item 非 done → apply_status='skipped_failed'，不回填
+    - allow_partial=True：忽略 failed，只回填 done；若仍有 pending/running → 拒绝（RuntimeError）
+
+    仅替换 origin_type='image_translate' 的旧条目，保留手动上传/链接下载的图。
+
+    返回 {applied_ids, skipped_failed_indices, apply_status}
+    """
+    ctx = dict(task.get("medias_context") or {})
+    if not ctx:
+        raise ValueError("任务缺少 medias_context，无法回填")
+    product_id = int(ctx.get("product_id") or 0)
+    target_lang = (ctx.get("target_lang") or "").strip()
+    if not product_id or not target_lang:
+        raise ValueError("medias_context 缺少 product_id 或 target_lang")
+
+    items = task.get("items") or []
+    done_items: list[dict] = []
+    failed_items: list[dict] = []
+    pending_items: list[dict] = []
+    for it in items:
+        st = (it.get("status") or "").strip()
+        if st == "done":
+            done_items.append(it)
+        elif st == "failed":
+            failed_items.append(it)
+        else:
+            pending_items.append(it)
+
+    if pending_items:
+        raise RuntimeError(
+            f"任务还有 {len(pending_items)} 项未完成（pending/running），请先让任务跑完"
+        )
+
+    if not allow_partial and failed_items:
+        ctx["apply_status"] = "skipped_failed"
+        task["medias_context"] = ctx
+        store.update(task["id"], medias_context=ctx)
+        return {
+            "applied_ids": [],
+            "skipped_failed_indices": [it.get("idx") for it in failed_items],
+            "apply_status": "skipped_failed",
+        }
+
+    if not done_items:
+        raise RuntimeError("没有成功的翻译结果可回填")
+
+    created_images: list[dict] = []
+    resolved_uid = int(task.get("_user_id") or user_id or 0)
+    for item in done_items:
+        dst_key = (item.get("dst_tos_key") or "").strip()
+        if not dst_key:
+            raise ValueError(f"任务项 {item.get('idx')} 缺少输出文件")
+        ext = ImageTranslateRuntime._ext_from_key(dst_key) or ".png"
+        download_fd, download_path = tempfile.mkstemp(suffix=ext, prefix="it_apply_")
+        os.close(download_fd)
+        try:
+            tos_clients.download_file(dst_key, download_path)
+            with open(download_path, "rb") as f:
+                data = f.read()
+        finally:
+            if os.path.exists(download_path):
+                try:
+                    os.unlink(download_path)
+                except OSError:
+                    pass
+
+        base_name = os.path.splitext(
+            os.path.basename(item.get("filename") or f"detail_{item.get('idx') or 0}")
+        )[0]
+        filename = f"{base_name or 'detail'}{ext}"
+        object_key = tos_clients.build_media_object_key(resolved_uid, product_id, filename)
+        content_type = ImageTranslateRuntime._guess_mime(dst_key)
+        tos_clients.upload_media_object(object_key, data, content_type=content_type)
+        created_images.append({
+            "object_key": object_key,
+            "content_type": content_type,
+            "file_size": len(data),
+            "origin_type": "image_translate",
+            "source_detail_image_id": item.get("source_detail_image_id"),
+            "image_translate_task_id": task["id"],
+        })
+
+    created_ids = medias.replace_translated_detail_images_for_lang(
+        product_id, target_lang, created_images,
+    )
+
+    failed_indices = [it.get("idx") for it in failed_items]
+    apply_status = "applied_partial" if failed_indices else "applied"
+
+    ctx["apply_status"] = apply_status
+    ctx["applied_at"] = datetime.now().isoformat()
+    ctx["applied_detail_image_ids"] = created_ids
+    ctx["skipped_failed_indices"] = failed_indices
+    ctx["last_apply_error"] = ""
+    task["medias_context"] = ctx
+    store.update(task["id"], medias_context=ctx)
+
+    return {
+        "applied_ids": created_ids,
+        "skipped_failed_indices": failed_indices,
+        "apply_status": apply_status,
+    }

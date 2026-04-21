@@ -15,6 +15,7 @@ from flask import Blueprint, render_template, request, jsonify, abort, redirect,
 from flask_login import login_required, current_user
 
 from appcore import medias, task_state, tos_clients
+from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
@@ -23,7 +24,7 @@ from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
 from web.routes import image_translate as image_translate_routes
-from web.services import link_check_runner
+from web.services import image_translate_runner, link_check_runner
 
 import re
 
@@ -1452,6 +1453,63 @@ def api_detail_image_translate_tasks(pid: int):
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         })
     return jsonify({"items": items})
+
+
+@bp.route(
+    "/api/products/<int:pid>/detail-images/<lang>/apply-translate-task/<task_id>",
+    methods=["POST"],
+)
+@login_required
+def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
+    """手动回填：从已完成的 image_translate 任务里取成功项，允许忽略失败项。
+
+    自动回填在任一失败时会整单 skip（apply_status='skipped_failed'），
+    本端点让用户在任务已 done、但存在顽固失败项的场景下手动把成功项回填回来，
+    仅替换 origin_type='image_translate' 的旧条目，保留手动上传/链接下载的图。
+    """
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    lang = (lang or "").strip().lower()
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+    if lang == "en":
+        return jsonify({"error": "英文详情图不需要回填"}), 400
+    if not tos_clients.is_media_bucket_configured():
+        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+
+    task = store.get(task_id)
+    if not task or task.get("type") != "image_translate":
+        abort(404)
+    task_user_id = task.get("_user_id")
+    if task_user_id is not None and int(task_user_id) != int(current_user.id):
+        abort(404)
+
+    ctx = task.get("medias_context") or {}
+    if int(ctx.get("product_id") or 0) != pid:
+        return jsonify({"error": "任务不属于该商品"}), 400
+    if (ctx.get("target_lang") or "").strip().lower() != lang:
+        return jsonify({"error": "任务的目标语种与当前语种不一致"}), 400
+
+    if image_translate_runner.is_running(task_id):
+        return jsonify({"error": "任务还在跑，请等跑完再回填"}), 409
+    if (task.get("status") or "") not in {"done", "error"}:
+        return jsonify({"error": "任务尚未结束，无法手动回填"}), 409
+
+    try:
+        result = image_translate_runtime.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=int(current_user.id),
+        )
+    except (ValueError, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 409
+
+    return jsonify({
+        "ok": True,
+        "applied": len(result["applied_ids"]),
+        "skipped_failed": len(result["skipped_failed_indices"]),
+        "apply_status": result["apply_status"],
+        "applied_detail_image_ids": result["applied_ids"],
+    })
 
 
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])
