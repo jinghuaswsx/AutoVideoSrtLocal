@@ -314,7 +314,18 @@ def update_product(product_id: int, **fields) -> int:
                "importance", "trend_score", "selling_points",
                "product_code", "cover_object_key",
                "localized_links_json", "ad_supported_langs",
-               "link_check_tasks_json"}
+               "link_check_tasks_json",
+               "mk_id"}
+    # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
+    if "mk_id" in fields:
+        v = fields["mk_id"]
+        if v is None or (isinstance(v, str) and not v.strip()):
+            fields["mk_id"] = None
+        else:
+            s = str(v).strip()
+            if not s.isdigit() or not (1 <= len(s) <= 8):
+                raise ValueError("mk_id 必须是 1-8 位数字")
+            fields["mk_id"] = int(s)
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
