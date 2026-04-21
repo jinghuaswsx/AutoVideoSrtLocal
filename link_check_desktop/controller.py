@@ -8,6 +8,7 @@ from link_check_desktop import (
     analysis,
     bootstrap_api,
     browser_worker,
+    report,
     result_schema,
     settings,
     storage,
@@ -95,5 +96,6 @@ def run_link_check(
     )
     storage.write_json(workspace.root / "page_info.json", page_result)
     storage.write_json(workspace.compare_dir / "result.json", analyzed)
+    result["report_html_path"] = str(report.write_report(result))
 
     return result
