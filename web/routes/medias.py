@@ -29,6 +29,8 @@ import re
 
 _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
+_ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
+_MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
@@ -185,6 +187,24 @@ def _serialize_item(it: dict) -> dict:
         "duration_seconds": it.get("duration_seconds"),
         "file_size": it.get("file_size"),
         "created_at": it["created_at"].isoformat() if it.get("created_at") else None,
+    }
+
+
+def _serialize_raw_source(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "product_id": row["product_id"],
+        "display_name": row.get("display_name") or "",
+        "video_object_key": row["video_object_key"],
+        "cover_object_key": row["cover_object_key"],
+        "duration_seconds": row.get("duration_seconds"),
+        "file_size": row.get("file_size"),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "sort_order": row.get("sort_order") or 0,
+        "video_url": f"/medias/raw-sources/{row['id']}/video",
+        "cover_url": f"/medias/raw-sources/{row['id']}/cover",
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
 
 
@@ -518,6 +538,110 @@ def api_delete_product(pid: int):
 
 
 # ---------- 素材上传 ----------
+
+@bp.route("/api/products/<int:pid>/raw-sources", methods=["GET"])
+@login_required
+def api_list_raw_sources(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    rows = medias.list_raw_sources(pid)
+    return jsonify({"items": [_serialize_raw_source(r) for r in rows]})
+
+
+@bp.route("/api/products/<int:pid>/raw-sources", methods=["POST"])
+@login_required
+def api_create_raw_source(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    video = request.files.get("video")
+    cover = request.files.get("cover")
+    if not video or not cover:
+        return jsonify({"error": "video and cover both required"}), 400
+
+    video_ct = (video.mimetype or "").lower()
+    cover_ct = (cover.mimetype or "").lower()
+    if video_ct not in _ALLOWED_RAW_VIDEO_TYPES:
+        return jsonify({"error": f"video mimetype not allowed: {video_ct}"}), 400
+    if cover_ct not in _ALLOWED_IMAGE_TYPES:
+        return jsonify({"error": f"cover mimetype not allowed: {cover_ct}"}), 400
+
+    display_name = (request.form.get("display_name") or "").strip() or None
+
+    uid = _resolve_upload_user_id()
+    if uid is None:
+        return jsonify({"error": "missing upload user"}), 400
+
+    video_key = tos_clients.build_media_raw_source_key(
+        uid, pid, kind="video", filename=video.filename or "video.mp4",
+    )
+    cover_key = tos_clients.build_media_raw_source_key(
+        uid, pid, kind="cover", filename=cover.filename or "cover.jpg",
+    )
+
+    video_bytes = b""
+    for chunk in iter(lambda: video.stream.read(1024 * 1024), b""):
+        video_bytes += chunk
+        if len(video_bytes) > _MAX_RAW_VIDEO_BYTES:
+            return jsonify({"error": "video too large (>2GB)"}), 400
+
+    cover_bytes = cover.read()
+    if len(cover_bytes) > _MAX_IMAGE_BYTES:
+        return jsonify({"error": "cover too large (>15MB)"}), 400
+
+    try:
+        tos_clients.upload_media_object(video_key, video_bytes, content_type=video_ct)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"upload video failed: {exc}"}), 500
+    try:
+        tos_clients.upload_media_object(cover_key, cover_bytes, content_type=cover_ct)
+    except Exception as exc:  # noqa: BLE001
+        tos_clients.delete_media_object(video_key)
+        return jsonify({"error": f"upload cover failed: {exc}"}), 500
+
+    duration_seconds = None
+    width = None
+    height = None
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+        duration_seconds = float(get_media_duration(tmp_path) or 0.0) or None
+        info = probe_media_info_safe(tmp_path)
+        width = info.get("width")
+        height = info.get("height")
+    except Exception:
+        pass
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    try:
+        rid = medias.create_raw_source(
+            pid,
+            uid,
+            display_name=display_name,
+            video_object_key=video_key,
+            cover_object_key=cover_key,
+            duration_seconds=duration_seconds,
+            file_size=len(video_bytes),
+            width=width,
+            height=height,
+        )
+    except Exception as exc:  # noqa: BLE001
+        tos_clients.delete_media_object(video_key)
+        tos_clients.delete_media_object(cover_key)
+        return jsonify({"error": f"db insert failed: {exc}"}), 500
+
+    row = medias.get_raw_source(rid)
+    return jsonify({"item": _serialize_raw_source(row)}), 201
+
 
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
 @login_required
@@ -974,6 +1098,15 @@ def _serialize_detail_image(row: dict) -> dict:
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "thumbnail_url": f"/medias/detail-image/{row['id']}",
     }
+
+
+def probe_media_info_safe(path: str) -> dict:
+    try:
+        from pipeline.ffutil import probe_media_info
+
+        return probe_media_info(path) or {}
+    except Exception:
+        return {}
 
 
 def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
