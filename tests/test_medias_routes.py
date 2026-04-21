@@ -348,7 +348,8 @@ def test_detail_images_download_zip_kind_all_includes_gif(authed_client_no_db, m
     assert any(n.endswith(".gif") for n in names)
 
 
-def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db, monkeypatch):
+def test_detail_images_translate_from_en_skips_gif_sources(authed_client_no_db, monkeypatch):
+    """有 GIF 时不再整单拒绝：跳过 GIF，只翻译静态图。"""
     from web.routes import medias as r
 
     create_calls = []
@@ -362,7 +363,8 @@ def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db
         lambda pid, lang: [
             {"id": 11, "object_key": "1/medias/1/en_1.jpg"},
             {"id": 12, "object_key": "1/medias/1/en_2.gif"},
-            {"id": 13, "object_key": "1/medias/1/en_3.jpg"},
+            {"id": 13, "object_key": "1/medias/1/en_3.jpg", "content_type": "image/jpeg"},
+            {"id": 14, "object_key": "1/medias/1/en_4.png", "content_type": "image/gif"},
         ],
     )
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
@@ -380,10 +382,52 @@ def test_detail_images_translate_from_en_rejects_gif_sources(authed_client_no_db
         json={"lang": "de"},
     )
 
-    assert resp.status_code == 400
+    assert resp.status_code == 201
     body = resp.get_json()
-    assert "gif" in (body.get("error") or "").lower()
-    assert create_calls == [], "包含 gif 时不应创建任务"
+    assert body["task_id"]
+    assert len(create_calls) == 1, "应创建一个翻译任务"
+    created = create_calls[0]
+    source_ids = [it["source_detail_image_id"] for it in created["items"]]
+    assert source_ids == [11, 13], (
+        f"只应把静态图（id=11,13）加入翻译项，.gif 结尾和 image/gif MIME 都要过滤：实际 {source_ids}"
+    )
+    assert created["medias_context"]["source_detail_image_ids"] == [11, 13]
+
+
+def test_detail_images_translate_from_en_rejects_when_only_gif_sources(authed_client_no_db, monkeypatch):
+    """英语版全是 GIF → 无可翻译的静态图，返回 409。"""
+    from web.routes import medias as r
+
+    create_calls = []
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "镜片清洁器"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [
+            {"id": 11, "object_key": "1/medias/1/en_1.gif"},
+            {"id": 12, "object_key": "1/medias/1/en_2.gif", "content_type": "image/gif"},
+        ],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: {"de": "德语"}.get(lang, lang))
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "翻成 {target_language_name}"})
+    monkeypatch.setattr(
+        r.task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kw: create_calls.append(kw) or {"id": task_id},
+    )
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+
+    assert resp.status_code == 409
+    assert create_calls == [], "全是 GIF 时不应创建任务"
 
 
 def test_download_image_to_tos_accepts_image_gif(monkeypatch):

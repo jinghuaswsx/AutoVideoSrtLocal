@@ -1350,18 +1350,17 @@ def api_detail_images_translate_from_en(pid: int):
     if not source_rows:
         return jsonify({"error": "请先准备英语版商品详情图"}), 409
 
-    gif_rows = [
-        row for row in source_rows
-        if (row.get("object_key") or "").lower().endswith(".gif")
-        or (row.get("content_type") or "").lower() == "image/gif"
-    ]
-    if gif_rows:
-        return jsonify({
-            "error": (
-                "暂不支持 GIF 动图翻译，请先在素材编辑页删除以下 GIF 图后再发起任务："
-                + ", ".join(f"#{row['id']}" for row in gif_rows)
-            )
-        }), 400
+    # GIF 不参与翻译（UI 里 "GIF 不参与翻译但会归入 GIF 栏"），直接过滤掉，
+    # 只翻译可翻的静态图，不要因为夹带 GIF 就整单失败。
+    def _is_gif_row(row: dict) -> bool:
+        return (
+            (row.get("object_key") or "").lower().endswith(".gif")
+            or (row.get("content_type") or "").lower() == "image/gif"
+        )
+
+    translatable_rows = [row for row in source_rows if not _is_gif_row(row)]
+    if not translatable_rows:
+        return jsonify({"error": "英语版详情图全部为 GIF 动图，无可翻译的静态图"}), 409
 
     prompt_tpl = (its.get_prompts_for_lang(lang).get("detail") or "").strip()
     if not prompt_tpl:
@@ -1370,7 +1369,7 @@ def api_detail_images_translate_from_en(pid: int):
     task_id = uuid.uuid4().hex
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     items = []
-    for idx, row in enumerate(source_rows):
+    for idx, row in enumerate(translatable_rows):
         items.append({
             "idx": idx,
             "filename": os.path.basename(row.get("object_key") or "") or f"detail_{idx}.png",
@@ -1384,7 +1383,7 @@ def api_detail_images_translate_from_en(pid: int):
         "source_lang": "en",
         "target_lang": lang,
         "source_bucket": "media",
-        "source_detail_image_ids": [row["id"] for row in source_rows],
+        "source_detail_image_ids": [row["id"] for row in translatable_rows],
         "auto_apply_detail_images": True,
         "apply_status": "pending",
         "applied_at": "",
