@@ -7,6 +7,7 @@ import tempfile
 import time
 from collections import deque
 from datetime import datetime
+from typing import Callable
 
 from appcore import gemini_image, medias, tos_clients
 from appcore.events import Event, EventBus
@@ -46,10 +47,21 @@ def _update_progress(task: dict) -> None:
 
 
 class ImageTranslateRuntime:
-    def __init__(self, *, bus: EventBus, user_id: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        bus: EventBus,
+        user_id: int | None = None,
+        heartbeat: Callable[[], bool] | None = None,
+    ) -> None:
         self.bus = bus
         self.user_id = user_id
+        self._heartbeat = heartbeat or (lambda: True)
         self._rate_limit_hits: deque[float] = deque()
+
+    def _beat(self) -> None:
+        if not self._heartbeat():
+            raise _WatchdogTakeover()
 
     def _record_rate_limit_hit(self) -> bool:
         """记一次可重试错误（429/5xx），返回 True 表示应熔断整任务。"""
@@ -66,6 +78,7 @@ class ImageTranslateRuntime:
             logger.warning("image_translate runtime: task not found: %s", task_id)
             return
 
+        self._beat()
         task["status"] = "running"
         task["steps"]["process"] = "running"
         # 记录图片翻译使用的模型
@@ -80,6 +93,7 @@ class ImageTranslateRuntime:
             for idx in range(len(items)):
                 if items[idx]["status"] in {"done", "failed"}:
                     continue
+                self._beat()
                 self._process_one(task, task_id, idx)
         except _CircuitOpen as exc:
             circuit_msg = str(exc) or "上游持续限流，已熔断"
@@ -88,6 +102,8 @@ class ImageTranslateRuntime:
                 task_id, circuit_msg,
             )
             self._abort_remaining_items(task, task_id, circuit_msg)
+        except _WatchdogTakeover:
+            raise
 
         if circuit_msg:
             task["status"] = "error"
@@ -131,6 +147,7 @@ class ImageTranslateRuntime:
 
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
+        self._beat()
         item["status"] = "running"
         _update_progress(task)
         store.update(task_id, items=task["items"], progress=task["progress"])
@@ -151,6 +168,7 @@ class ImageTranslateRuntime:
                 with open(src_path, "rb") as f:
                     src_bytes = f.read()
                 mime = self._guess_mime(item["src_tos_key"])
+                self._beat()
 
                 # 2. 调 gemini_image
                 out_bytes, out_mime = gemini_image.generate_image(

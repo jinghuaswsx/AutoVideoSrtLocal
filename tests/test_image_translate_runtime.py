@@ -431,3 +431,73 @@ def test_apply_raises_when_medias_context_missing():
         rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
         )
+
+
+def test_runtime_beat_raises_when_heartbeat_returns_false():
+    from appcore.events import EventBus
+    from appcore.image_translate_runtime import ImageTranslateRuntime, _WatchdogTakeover
+
+    rt = ImageTranslateRuntime(bus=EventBus(), heartbeat=lambda: False)
+
+    try:
+        rt._beat()
+    except _WatchdogTakeover:
+        return
+    raise AssertionError("expected _WatchdogTakeover")
+
+
+def test_runtime_beat_noop_when_heartbeat_returns_true():
+    from appcore.events import EventBus
+    from appcore.image_translate_runtime import ImageTranslateRuntime
+
+    rt = ImageTranslateRuntime(bus=EventBus(), heartbeat=lambda: True)
+    rt._beat()
+
+
+def test_runtime_beat_noop_when_heartbeat_none():
+    from appcore.events import EventBus
+    from appcore.image_translate_runtime import ImageTranslateRuntime
+
+    rt = ImageTranslateRuntime(bus=EventBus())
+    rt._beat()
+
+
+def test_runtime_start_propagates_watchdog_takeover(monkeypatch):
+    """runtime.start 循环中 heartbeat 被踢下线时，抛出 _WatchdogTakeover 让上层处理。"""
+    from appcore.events import EventBus
+    from appcore.image_translate_runtime import ImageTranslateRuntime, _WatchdogTakeover
+    from web import store
+
+    task = {
+        "id": "t-takeover",
+        "type": "image_translate",
+        "status": "queued",
+        "steps": {},
+        "items": [{
+            "idx": 0,
+            "filename": "a.jpg",
+            "src_tos_key": "s/a",
+            "dst_tos_key": "",
+            "status": "pending",
+            "attempts": 0,
+            "error": "",
+        }],
+        "progress": {"total": 1, "done": 0, "failed": 0, "running": 0},
+    }
+    monkeypatch.setattr(store, "get", lambda tid: task)
+    monkeypatch.setattr(store, "update", lambda *a, **kw: None)
+
+    calls = {"n": 0}
+
+    def hb():
+        calls["n"] += 1
+        return False
+
+    rt = ImageTranslateRuntime(bus=EventBus(), heartbeat=hb)
+
+    try:
+        rt.start("t-takeover")
+    except _WatchdogTakeover:
+        assert calls["n"] >= 1
+        return
+    raise AssertionError("expected _WatchdogTakeover")
