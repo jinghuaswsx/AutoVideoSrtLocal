@@ -354,7 +354,7 @@
           <col style="width:60px">
           <col style="width:200px">
           <col style="width:108px">
-          <col style="width:160px">
+          <col style="width:300px">
         </colgroup>
         <thead>
           <tr>
@@ -382,6 +382,7 @@
 
   function rowHTML(p) {
     const count = p.items_count || 0;
+    const rawCount = p.raw_sources_count || 0;
     const warnCls = !p.has_en_cover ? ' class="oc-row-warn"' : '';
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
@@ -396,8 +397,11 @@
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="actions">
-          <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
-          <button class="bt-row-btn" data-bt-open="${p.id}" data-bt-name="${escapeHtml(p.name)}" title="一键翻译到多语言">🌐 翻译</button>
+          <div class="oc-row-actions">
+            <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
+            <button class="oc-btn sm ghost js-raw-sources" data-pid="${p.id}" data-name="${escapeHtml(p.name)}">原始视频 (${rawCount})</button>
+            <button class="bt-row-btn js-translate" data-bt-open="${p.id}" data-bt-name="${escapeHtml(p.name)}" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="一键翻译到多语言">🌐 翻译</button>
+          </div>
         </td>
       </tr>`;
   }
@@ -2570,4 +2574,207 @@
 
     loadList();
   });
+})();
+
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const drawerMask = $('rsDrawerMask');
+  const drawer = $('rsDrawer');
+  const drawerClose = $('rsDrawerClose');
+  const summary = $('rsSummary');
+  const list = $('rsList');
+  const uploadBtn = $('rsUploadBtn');
+  const uploadMask = $('rsUploadMask');
+  const uploadClose = $('rsUploadClose');
+  const uploadCancel = $('rsUploadCancel');
+  const uploadForm = $('rsUploadForm');
+  const uploadSubmit = $('rsUploadSubmit');
+  const uiState = {
+    currentPid: null,
+    currentName: '',
+  };
+
+  if (!drawerMask || !drawer || !list || !uploadMask || !uploadForm) {
+    return;
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function fmtRawDuration(seconds) {
+    const value = Number(seconds || 0);
+    if (!value) return '时长 —';
+    const mins = value / 60;
+    if (mins >= 60) return `时长 ${(mins / 60).toFixed(1)}h`;
+    return `时长 ${mins.toFixed(1)}m`;
+  }
+
+  function fmtRawSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return '大小 —';
+    return `大小 ${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function requestJSON(url, options) {
+    const resp = await fetch(url, options);
+    if (resp.ok) return resp.json();
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `${resp.status}`);
+  }
+
+  function syncRawSourceCount(pid, count) {
+    document.querySelectorAll(`.js-raw-sources[data-pid="${pid}"]`).forEach((btn) => {
+      btn.textContent = `原始视频 (${count})`;
+    });
+  }
+
+  function setSummary(items) {
+    const name = uiState.currentName || (uiState.currentPid ? `产品 #${uiState.currentPid}` : '当前产品');
+    summary.textContent = `${name} · 共 ${items.length} 条原始去字幕素材`;
+  }
+
+  function renderRawSourceRow(it) {
+    const thumb = it.cover_url
+      ? `<img src="${escapeHtml(it.cover_url)}" alt="${escapeHtml(it.display_name || '原始素材封面')}" loading="lazy">`
+      : `<svg width="24" height="24" aria-hidden="true"><use href="#ic-film"/></svg>`;
+    const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
+    return `
+      <li class="oc-rs-row">
+        <div class="oc-rs-thumb">${thumb}</div>
+        <div class="oc-rs-meta">
+          <div class="oc-rs-title" title="${title}">${title}</div>
+          <div class="oc-rs-subtitle">${fmtRawDuration(it.duration_seconds)} · ${fmtRawSize(it.file_size)}</div>
+          <div class="oc-rs-links">
+            <a class="oc-rs-link" href="${escapeHtml(it.video_url)}" target="_blank" rel="noopener noreferrer">查看视频</a>
+            <a class="oc-rs-link" href="${escapeHtml(it.cover_url)}" target="_blank" rel="noopener noreferrer">查看封面</a>
+          </div>
+        </div>
+        <div class="oc-rs-actions">
+          <button type="button" class="oc-btn sm ghost js-rs-del" data-rid="${it.id}">删除</button>
+        </div>
+      </li>`;
+  }
+
+  function openRawSourceDrawer(pid, name) {
+    uiState.currentPid = String(pid);
+    uiState.currentName = name || '';
+    drawerMask.hidden = false;
+  }
+
+  function closeRawSourceDrawer() {
+    drawerMask.hidden = true;
+    uiState.currentPid = null;
+    uiState.currentName = '';
+    list.innerHTML = '';
+    summary.textContent = '加载中…';
+  }
+
+  function openRawSourceUpload() {
+    if (!window.MEDIAS_TOS_READY) {
+      alert('TOS 未配置，无法上传原始素材');
+      return;
+    }
+    uploadMask.hidden = false;
+    if ($('rsVideoInput')) $('rsVideoInput').focus();
+  }
+
+  function closeRawSourceUpload() {
+    uploadMask.hidden = true;
+    uploadForm.reset();
+    uploadSubmit.disabled = false;
+  }
+
+  async function refreshRawSourceList(pid) {
+    const data = await requestJSON(`/medias/api/products/${pid}/raw-sources`);
+    const items = data.items || [];
+    setSummary(items);
+    list.innerHTML = items.length
+      ? items.map(renderRawSourceRow).join('')
+      : '<li class="oc-rs-empty">还没有原始去字幕素材，先上传第一条再发起视频翻译。</li>';
+    syncRawSourceCount(pid, items.length);
+    return items;
+  }
+
+  async function submitRawSourceUpload(event) {
+    event.preventDefault();
+    if (!uiState.currentPid) return;
+    const fd = new FormData(uploadForm);
+    uploadSubmit.disabled = true;
+    try {
+      await requestJSON(`/medias/api/products/${uiState.currentPid}/raw-sources`, {
+        method: 'POST',
+        body: fd,
+      });
+      closeRawSourceUpload();
+      await refreshRawSourceList(uiState.currentPid);
+    } catch (err) {
+      alert(`上传失败：${err.message || err}`);
+      uploadSubmit.disabled = false;
+    }
+  }
+
+  async function deleteRawSource(del) {
+    if (!uiState.currentPid) return;
+    if (!confirm('删除后无法恢复，该素材不会再出现在翻译弹窗，但已翻译出来的多语种素材不受影响。确定？')) {
+      return;
+    }
+    try {
+      await requestJSON(`/medias/api/raw-sources/${del.dataset.rid}`, { method: 'DELETE' });
+      await refreshRawSourceList(uiState.currentPid);
+    } catch (err) {
+      alert(`删除失败：${err.message || err}`);
+    }
+  }
+
+  document.addEventListener('click', async (event) => {
+    const openBtn = event.target.closest('.js-raw-sources');
+    if (openBtn) {
+      event.preventDefault();
+      openRawSourceDrawer(openBtn.dataset.pid, openBtn.dataset.name || '');
+      try {
+        await refreshRawSourceList(openBtn.dataset.pid);
+      } catch (err) {
+        list.innerHTML = `<li class="oc-rs-empty">加载失败：${escapeHtml(err.message || err)}</li>`;
+        summary.textContent = '原始素材列表加载失败';
+      }
+      return;
+    }
+
+    if (event.target === drawerMask || event.target.closest('#rsDrawerClose')) {
+      closeRawSourceDrawer();
+      return;
+    }
+
+    if (event.target === uploadMask || event.target.closest('#rsUploadClose') || event.target.closest('#rsUploadCancel')) {
+      closeRawSourceUpload();
+      return;
+    }
+
+    const del = event.target.closest('.js-rs-del');
+    if (del) {
+      event.preventDefault();
+      await deleteRawSource(del);
+      return;
+    }
+
+    if (event.target.closest('#rsUploadBtn')) {
+      event.preventDefault();
+      openRawSourceUpload();
+    }
+  });
+
+  uploadForm.addEventListener('submit', submitRawSourceUpload);
+
+  window.MediasRawSources = {
+    escapeHtml,
+    refreshRawSourceList,
+    syncRawSourceCount,
+  };
 })();

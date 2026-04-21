@@ -1804,6 +1804,21 @@ def test_medias_page_removes_archived_filter_chip(authed_user_client_no_db):
     assert 'id="chipArchived"' not in body
 
 
+def test_medias_page_contains_raw_sources_drawer_and_upload_modal(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="rsDrawerMask"' in body
+    assert 'id="rsDrawer"' in body
+    assert 'id="rsSummary"' in body
+    assert 'id="rsUploadMask"' in body
+    assert 'id="rsUploadForm"' in body
+    assert 'id="rsVideoInput"' in body
+    assert 'id="rsCoverInput"' in body
+    assert 'id="rsDisplayName"' in body
+
+
 def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
     resp = authed_client_no_db.get("/voice-library")
     assert resp.status_code == 200
@@ -1836,6 +1851,17 @@ def test_medias_scripts_do_not_use_archived_filter_chip():
     assert "params.set('archived', '1')" not in load_list_block
     assert "syncChip('chipArchived', 'archived')" not in events_block
     assert "chipArchived" not in events_block
+
+
+def test_medias_scripts_wire_raw_sources_drawer_flow():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "js-raw-sources" in medias_js
+    assert "rsDrawerMask" in medias_js
+    assert "rsUploadForm" in medias_js
+    assert '/medias/api/products/${pid}/raw-sources' in medias_js
+    assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js
+    assert "refreshRawSourceList" in medias_js
 
 
 def test_image_translate_detail_template_contains_medias_context_block():
