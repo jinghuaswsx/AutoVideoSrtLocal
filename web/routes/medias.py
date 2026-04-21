@@ -121,7 +121,7 @@ def _default_image_translate_model_id() -> str:
         pass
     if IMAGE_MODELS:
         return IMAGE_MODELS[0][0]
-    return "gemini-3-pro-image-preview"
+    return "gemini-3.1-flash-image-preview"
 
 
 def _serialize_product(p: dict, items_count: int | None = None,

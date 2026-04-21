@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 IMAGE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3-pro-image-preview",   "Nano Banana Pro（高保真）"),
     ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+    ("gemini-3-pro-image-preview",   "Nano Banana Pro（高保真）"),
 ]
 
 

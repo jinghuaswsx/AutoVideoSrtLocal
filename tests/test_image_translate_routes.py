@@ -49,6 +49,41 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     data = resp.get_json()
     assert any(m["id"] == "gemini-3-pro-image-preview" for m in data["items"])
     assert data["default_model_id"] == ""
+    # 用户没有设置偏好时，前端 items[0] 就是默认模型 → 应是 Nano Banana 2 快速版
+    assert data["items"][0]["id"] == "gemini-3.1-flash-image-preview"
+
+
+def test_medias_default_image_model_is_flash_when_no_user_preference(authed_client_no_db, monkeypatch):
+    """从英语版一键翻译：用户没有保存偏好时，默认模型应是 Nano Banana 2（快速）。"""
+    from web.routes import medias as r
+
+    created = {}
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "灯"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [{"id": 11, "object_key": "1/medias/1/a.jpg"}] if lang == "en" else [],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: "德语")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "翻 {target_language_name}"})
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
+    monkeypatch.setattr(
+        r.task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kw: created.update(kw) or {"id": task_id},
+    )
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+    assert resp.status_code == 201
+    assert created["model_id"] == "gemini-3.1-flash-image-preview"
 
 
 def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):
