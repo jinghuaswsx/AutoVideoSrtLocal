@@ -11,16 +11,16 @@ def test_av_sync_menu_page_renders_shared_workbench(authed_client_no_db):
     assert 'href="/video-translate-av-sync"' in html
 
 
-def test_dashboard_sidebar_places_av_sync_below_video_translate(authed_client_no_db):
+def test_dashboard_sidebar_places_av_sync_at_sidebar_bottom(authed_client_no_db):
     resp = authed_client_no_db.get("/video-translate-av-sync")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
 
-    video_idx = html.index('href="/"')
+    lab_idx = html.index('href="/translate-lab"')
     av_sync_idx = html.index('href="/video-translate-av-sync"')
-    multi_idx = html.index('href="/multi-translate"')
+    nav_end_idx = html.index("</nav>")
 
-    assert video_idx < av_sync_idx < multi_idx
+    assert lab_idx < av_sync_idx < nav_end_idx
 
 
 def test_dashboard_sidebar_marks_av_sync_entry_active(authed_client_no_db):
