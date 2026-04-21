@@ -130,7 +130,8 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
                        items_filenames: list[str] | None = None,
                        lang_coverage: dict | None = None,
-                       covers: dict[str, str] | None = None) -> dict:
+                       covers: dict[str, str] | None = None,
+                       raw_sources_count: int | None = None) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
     has_en_cover = "en" in covers
@@ -167,6 +168,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "lang_coverage": lang_coverage or {},
         "localized_links": localized_links,
         "link_check_tasks": link_check_tasks,
+        "raw_sources_count": raw_sources_count or 0,
     }
 
 
@@ -303,6 +305,7 @@ def api_list_products():
                                        offset=offset, limit=limit)
     pids = [r["id"] for r in rows]
     counts = medias.count_items_by_product(pids)
+    raw_counts = medias.count_raw_sources_by_product(pids)
     thumb_covers = medias.first_thumb_item_by_product(pids)
     filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
     coverage = medias.lang_coverage_by_product(pids)
@@ -313,6 +316,7 @@ def api_list_products():
             items_filenames=filenames.get(r["id"], []),
             lang_coverage=coverage.get(r["id"], {}),
             covers=covers_map.get(r["id"], {}),
+            raw_sources_count=raw_counts.get(r["id"], 0),
         )
         for r in rows
     ]
