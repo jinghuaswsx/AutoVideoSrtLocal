@@ -206,6 +206,39 @@ def test_resolve_localized_text_payload_returns_first_current_lang_copy(monkeypa
     }
 
 
+def test_resolve_localized_text_payload_parses_labeled_body(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.query_one",
+        lambda sql, args: {
+            "title": "",
+            "body": (
+                "标题：  Ready. Aim. LAUNCH! 🌪️\n"
+                "文案:\n"
+                "Experience the thrill! 🤩 Instant mechanical launch. Durable & crash-proof. "
+                "The coolest gift for ages 3+.\n"
+                "描述: Fly High Today ✈️"
+            ),
+            "description": "",
+        },
+    )
+    monkeypatch.setattr("appcore.pushes.medias.get_language_name", lambda code: "法语")
+
+    payload = pushes.resolve_localized_text_payload({
+        "product_id": 123,
+        "lang": "fr",
+    })
+
+    assert payload == {
+        "title": "Ready. Aim. LAUNCH! 🌪️",
+        "message": (
+            "Experience the thrill! 🤩 Instant mechanical launch. Durable & crash-proof. "
+            "The coolest gift for ages 3+."
+        ),
+        "description": "Fly High Today ✈️",
+        "lang": "法语",
+    }
+
+
 def test_resolve_localized_text_payload_returns_none_when_copy_missing(monkeypatch):
     monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: None)
 
@@ -239,7 +272,7 @@ def test_build_localized_texts_request_wraps_single_text(monkeypatch):
                 "title": "fr1",
                 "message": "fr2",
                 "description": "fr3",
-                "lang": "法语",
+                "lang": "小语种",
             }
         ]
     }
@@ -247,6 +280,25 @@ def test_build_localized_texts_request_wraps_single_text(monkeypatch):
 
 def test_build_localized_texts_request_returns_empty_array_when_text_missing(monkeypatch):
     monkeypatch.setattr("appcore.pushes.resolve_localized_text_payload", lambda item: None)
+
+    body = pushes.build_localized_texts_request({
+        "product_id": 123,
+        "lang": "fr",
+    })
+
+    assert body == {"texts": []}
+
+
+def test_build_localized_texts_request_returns_empty_array_when_text_incomplete(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.pushes.resolve_localized_text_payload",
+        lambda item: {
+            "title": "fr1",
+            "message": "fr2",
+            "description": "",
+            "lang": "法语",
+        },
+    )
 
     body = pushes.build_localized_texts_request({
         "product_id": 123,

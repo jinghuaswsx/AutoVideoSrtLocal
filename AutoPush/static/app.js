@@ -118,6 +118,7 @@ const PUSH_MODAL_MODES = {
   CONFIRM: "confirm",
   JSON: "json",
   LOCALIZED_TEXT: "localized-text",
+  LOCALIZED_JSON: "localized-json",
 };
 
 function renderStatusBadge(status) {
@@ -143,6 +144,7 @@ function openPushModal(item, opts = {}) {
     { mode: PUSH_MODAL_MODES.CONFIRM, label: "推送确认" },
     { mode: PUSH_MODAL_MODES.JSON, label: "JSON 预览" },
     { mode: PUSH_MODAL_MODES.LOCALIZED_TEXT, label: "推送小语种文案" },
+    { mode: PUSH_MODAL_MODES.LOCALIZED_JSON, label: "小语种文案JSON预览" },
   ].map(({ mode, label }) => el("button", {
     type: "button",
     class: "ap-modal-pill",
@@ -181,10 +183,12 @@ function openPushModal(item, opts = {}) {
   confirmPane.appendChild(payloadBox);
   const jsonPre = el("pre", { class: "ap-json ap-modal-json-full ap-modal-pane", hidden: true });
   const localizedPane = el("div", { class: "ap-modal-pane", hidden: true });
+  const localizedJsonPre = el("pre", { class: "ap-json ap-modal-json-full ap-modal-pane", hidden: true });
   contentSection.appendChild(payloadStatus);
   contentSection.appendChild(confirmPane);
   contentSection.appendChild(jsonPre);
   contentSection.appendChild(localizedPane);
+  contentSection.appendChild(localizedJsonPre);
   body.appendChild(contentSection);
 
   const actions = el("div", { class: "ap-modal-actions" });
@@ -243,6 +247,11 @@ function openPushModal(item, opts = {}) {
       : [];
   }
 
+  function isLocalizedMode(mode = activeMode) {
+    return mode === PUSH_MODAL_MODES.LOCALIZED_TEXT
+      || mode === PUSH_MODAL_MODES.LOCALIZED_JSON;
+  }
+
   function getLocalizedTextError() {
     if (!pushContext.mkId) return "缺少 mk_id，暂不能推送小语种文案";
     if (!currentLocalizedTexts().length) return "当前语种暂无可推送文案";
@@ -250,7 +259,7 @@ function openPushModal(item, opts = {}) {
   }
 
   function syncPushButton() {
-    if (activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT) {
+    if (isLocalizedMode()) {
       const localizedError = getLocalizedTextError();
       btnPush.disabled = localizedTextPushed || !pushContext.payload || Boolean(localizedError);
       btnPush.textContent = localizedTextPushed
@@ -274,6 +283,7 @@ function openPushModal(item, opts = {}) {
     confirmPane.hidden = mode !== PUSH_MODAL_MODES.CONFIRM;
     jsonPre.hidden = mode !== PUSH_MODAL_MODES.JSON;
     localizedPane.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_TEXT;
+    localizedJsonPre.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_JSON;
     syncPushButton();
   }
 
@@ -327,6 +337,7 @@ function openPushModal(item, opts = {}) {
         localizedTextsRequest: context?.localized_texts_request || { texts: [] },
       };
       jsonPre.textContent = JSON.stringify(payload, null, 2);
+      localizedJsonPre.textContent = JSON.stringify(pushContext.localizedTextsRequest, null, 2);
       clear(payloadBox);
       payloadBox.appendChild(renderPayloadView(payload));
       renderLocalizedPane();
@@ -344,7 +355,7 @@ function openPushModal(item, opts = {}) {
     btnPush.textContent = "推送中...";
     btnCancel.disabled = true;
     try {
-      if (activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT) {
+      if (isLocalizedMode()) {
         const localizedError = getLocalizedTextError();
         if (localizedError) {
           throw Object.assign(new Error(localizedError), {
@@ -373,7 +384,7 @@ function openPushModal(item, opts = {}) {
       showResponse(
         err.payload || { message: err.message },
         true,
-        activeMode === PUSH_MODAL_MODES.LOCALIZED_TEXT ? "小语种文案推送响应" : "素材推送响应",
+        isLocalizedMode() ? "小语种文案推送响应" : "素材推送响应",
       );
     } finally {
       btnCancel.disabled = false;

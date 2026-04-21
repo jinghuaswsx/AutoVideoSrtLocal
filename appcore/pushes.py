@@ -177,6 +177,7 @@ def probe_ad_url(url: str) -> tuple[bool, str | None]:
 # ---------- payload 组装 ----------
 
 _FIXED_AUTHOR = "蔡靖华"
+_LOCALIZED_REQUEST_LANG = "小语种"
 
 
 def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
@@ -186,6 +187,37 @@ def _get_first_copywriting(product_id: int, lang: str) -> dict | None:
         "ORDER BY idx ASC, id ASC LIMIT 1",
         (product_id, lang),
     )
+
+
+def _normalize_localized_copywriting_fields(row: dict | None) -> dict[str, str] | None:
+    if not row:
+        return None
+
+    title = (row.get("title") or "").strip()
+    message = (row.get("body") or "").strip()
+    description = (row.get("description") or "").strip()
+
+    if title and message and description:
+        return {
+            "title": title,
+            "message": message,
+            "description": description,
+        }
+
+    if message:
+        try:
+            return parse_copywriting_body(message)
+        except CopywritingParseError:
+            pass
+
+    if not any((title, message, description)):
+        return None
+
+    return {
+        "title": title,
+        "message": message,
+        "description": description,
+    }
 
 
 def resolve_localized_text_payload(item: dict) -> dict[str, str] | None:
@@ -198,17 +230,36 @@ def resolve_localized_text_payload(item: dict) -> dict[str, str] | None:
     if not row:
         return None
 
+    fields = _normalize_localized_copywriting_fields(row)
+    if not fields:
+        return None
+
     return {
-        "title": row.get("title") or "",
-        "message": row.get("body") or "",
-        "description": row.get("description") or "",
+        **fields,
         "lang": medias.get_language_name(lang),
     }
 
 
 def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]:
     localized = resolve_localized_text_payload(item)
-    return {"texts": [localized] if localized else []}
+    if not localized:
+        return {"texts": []}
+
+    missing = [
+        key for key in ("title", "message", "description")
+        if not (localized.get(key) or "").strip()
+    ]
+    if missing:
+        return {"texts": []}
+
+    return {
+        "texts": [{
+            "title": localized["title"],
+            "message": localized["message"],
+            "description": localized["description"],
+            "lang": _LOCALIZED_REQUEST_LANG,
+        }]
+    }
 
 
 def build_item_payload(item: dict, product: dict) -> dict:

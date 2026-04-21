@@ -95,3 +95,22 @@ def test_parse_body_preserves_emoji_and_punctuation():
     assert parsed["title"] == "Ready. Aim. LAUNCH! 🌪️"
     assert parsed["message"] == "Durable & crash-proof."
     assert parsed["description"] == "Fly ✈️"
+
+
+def test_parse_body_supports_mixed_colons_and_newlines():
+    body = (
+        "标题：\n"
+        "Ready. Aim. LAUNCH! 🌪️\n"
+        "文案:\n"
+        "Experience the thrill! 🤩 Instant mechanical launch.\n"
+        "Durable & crash-proof. The coolest gift for ages 3+.\n"
+        "描述： Fly High Today ✈️"
+    )
+    assert parse_copywriting_body(body) == {
+        "title": "Ready. Aim. LAUNCH! 🌪️",
+        "message": (
+            "Experience the thrill! 🤩 Instant mechanical launch.\n"
+            "Durable & crash-proof. The coolest gift for ages 3+."
+        ),
+        "description": "Fly High Today ✈️",
+    }

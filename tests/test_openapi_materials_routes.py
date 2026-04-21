@@ -550,7 +550,7 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
                 "title": "fr1",
                 "message": "fr2",
                 "description": "fr3",
-                "lang": "法语",
+                "lang": "小语种",
             }],
         },
     )
@@ -596,6 +596,6 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
             "title": "fr1",
             "message": "fr2",
             "description": "fr3",
-            "lang": "法语",
+            "lang": "小语种",
         }]
     }
