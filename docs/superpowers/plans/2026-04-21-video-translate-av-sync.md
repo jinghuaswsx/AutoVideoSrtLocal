@@ -653,7 +653,8 @@ git commit -m "feat(video-translate-v2): 详情页画面笔记预览 + 时长警
 pytest tests/ -q
 ```
 
-Expected: 全 PASS(除 v2 的新增测试外,老测试不应有失败)。
+Expected: v2 触及测试全绿(Phase 1-7 新增 + 改动波及的老测试)。
+26 个 C 类 baseline 老失败不在本 PR 范围,见 `docs/superpowers/notes/2026-04-21-pytest-baseline-failures.md`
 
 - [ ] **Step 8.4:合并前同步 master**
 
