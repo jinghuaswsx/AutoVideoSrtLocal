@@ -31,15 +31,46 @@ class _FakeSession:
         )
 
 
+class _FakeCDPSession:
+    def __init__(self) -> None:
+        self.commands = []
+
+    def send(self, method: str, params=None):
+        self.commands.append((method, params or {}))
+        return {}
+
+
+class _FakeKeyboard:
+    def __init__(self) -> None:
+        self.presses = []
+
+    def press(self, combo: str) -> None:
+        self.presses.append(combo)
+
+
+class _FakeNavigationWaiter:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 class _FakeContext:
     def __init__(self, page) -> None:
         self._page = page
+        self.cdp_sessions = []
 
     def new_page(self):
         return self._page
 
     def cookies(self):
         return []
+
+    def new_cdp_session(self, _page):
+        session = _FakeCDPSession()
+        self.cdp_sessions.append(session)
+        return session
 
 
 class _FakeBrowser:
@@ -125,6 +156,9 @@ class _FakePage:
         self._status = status
         self.url = final_url
         self._html_lang = html_lang
+        self.keyboard = _FakeKeyboard()
+        self.navigation_expectations = 0
+        self.wait_calls = []
 
     def set_default_timeout(self, _value: int) -> None:
         return None
@@ -133,7 +167,12 @@ class _FakePage:
         return _FakeResponse(self._status)
 
     def wait_for_timeout(self, _value: int) -> None:
+        self.wait_calls.append(_value)
         return None
+
+    def expect_navigation(self, **_kwargs):
+        self.navigation_expectations += 1
+        return _FakeNavigationWaiter()
 
     def eval_on_selector(self, selector: str, script: str):
         assert selector == "html"
@@ -187,6 +226,7 @@ def test_capture_page_uses_structured_extraction_and_skips_svg(monkeypatch, tmp_
     assert result["locked"] is True
     assert result["final_status"] == 200
     assert result["page_title"] == "Live product - Newjoyloo"
+    assert fake_page.keyboard.presses == ["Control+F5", "Control+F5"]
     assert [item["source_url"] for item in result["downloaded_images"]] == [
         "https://cdn.example.com/product.webp",
     ]

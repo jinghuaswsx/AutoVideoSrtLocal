@@ -157,6 +157,45 @@ def _assert_valid_page(response, page) -> tuple[int | None, str]:
     return status_code, title
 
 
+def _disable_browser_cache(context, page) -> None:
+    try:
+        cdp_session = context.new_cdp_session(page)
+    except Exception:
+        return
+
+    try:
+        cdp_session.send("Network.enable")
+        cdp_session.send("Network.setCacheDisabled", {"cacheDisabled": True})
+    except Exception:
+        return
+
+
+def _hard_refresh_page(page) -> None:
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded"):
+            page.keyboard.press("Control+F5")
+    except Exception:
+        reload_fn = getattr(page, "reload", None)
+        if reload_fn is None:
+            raise
+        reload_fn(wait_until="domcontentloaded")
+
+    wait_for_load_state = getattr(page, "wait_for_load_state", None)
+    if callable(wait_for_load_state):
+        try:
+            wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+    page.wait_for_timeout(1500)
+
+
+def _refresh_page_assets(page, context, status_cb=None, *, refresh_count: int = 2) -> None:
+    _disable_browser_cache(context, page)
+    for index in range(refresh_count):
+        _report(status_cb, f"页面已锁定，正在强制刷新 {index + 1}/{refresh_count}")
+        _hard_refresh_page(page)
+
+
 def capture_page(*, target_url: str, target_language: str, workspace, status_cb=None) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -185,6 +224,14 @@ def capture_page(*, target_url: str, target_language: str, workspace, status_cb=
         final_url = page.url
         html_lang = page.eval_on_selector("html", "el => el.lang || ''")
         locked = _is_locked(html_lang, target_language)
+
+        if locked:
+            _refresh_page_assets(page, context, status_cb)
+            _assert_valid_page(None, page)
+            final_url = page.url
+            html_lang = page.eval_on_selector("html", "el => el.lang || ''")
+            page_title = page.title()
+
         html = page.content()
         (workspace.root / "page.html").write_text(html, encoding="utf-8")
 
