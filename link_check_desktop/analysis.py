@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from link_check_desktop.image_analyzer import analyze_image
+from link_check_desktop.image_compare import find_best_reference, run_binary_quick_check
+from link_check_desktop.same_image import judge_same_image
+
 
 def _skipped_binary(reason: str) -> dict[str, Any]:
     return {
@@ -88,10 +92,6 @@ def analyze_downloaded_images(
     target_language: str,
     target_language_name: str,
 ) -> dict[str, Any]:
-    from appcore.link_check_compare import find_best_reference, run_binary_quick_check
-    from appcore.link_check_gemini import analyze_image
-    from appcore.link_check_same_image import judge_same_image
-
     reference_paths = [item["local_path"] for item in reference_images if item.get("local_path")]
     reference_index = {item["local_path"]: item for item in reference_images if item.get("local_path")}
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -10,12 +9,13 @@ from link_check_desktop import (
     bootstrap_api,
     browser_worker,
     result_schema,
+    settings,
     storage,
 )
 
 
-DEFAULT_BASE_URL = "http://14.103.220.208:8888"
-DEFAULT_API_KEY = "autovideosrt-materials-openapi"
+DEFAULT_BASE_URL = settings.DEFAULT_BASE_URL
+DEFAULT_API_KEY = settings.DEFAULT_API_KEY
 
 
 def _noop(_message: str) -> None:

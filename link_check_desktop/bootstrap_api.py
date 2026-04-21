@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import requests
@@ -25,7 +26,14 @@ def fetch_bootstrap(
         json={"target_url": target_url},
         timeout=timeout,
     )
-    payload = response.json()
+    try:
+        payload = response.json()
+    except (ValueError, json.JSONDecodeError):
+        snippet = (getattr(response, "text", "") or "").strip()
+        payload = {
+            "error": "bootstrap returned non-json response",
+            "raw_response": snippet[:1000],
+        }
     if response.status_code >= 400:
         raise BootstrapError(response.status_code, payload)
     return payload

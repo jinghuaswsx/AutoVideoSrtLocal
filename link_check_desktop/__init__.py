@@ -5,7 +5,13 @@ __all__ = [
     "bootstrap_api",
     "browser_worker",
     "controller",
+    "gemini_client",
     "gui",
+    "html_extract",
+    "image_analyzer",
+    "image_compare",
     "result_schema",
+    "same_image",
+    "settings",
     "storage",
 ]

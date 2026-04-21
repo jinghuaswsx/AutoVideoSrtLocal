@@ -28,6 +28,7 @@ def _stub_enabled_languages(monkeypatch):
         "web.routes.openapi_materials.medias.list_languages",
         lambda: [
             {"code": "de", "enabled": 1},
+            {"code": "en", "enabled": 1},
             {"code": "fr", "enabled": 1},
         ],
     )
@@ -133,3 +134,34 @@ def test_bootstrap_returns_product_reference_payload(client, monkeypatch):
     assert [item["kind"] for item in payload["reference_images"]] == ["cover", "detail"]
     assert payload["reference_images"][0]["download_url"] == "https://signed.example.com/covers/de.jpg"
     assert payload["reference_images"][0]["expires_in"] == 3600
+
+
+def test_bootstrap_treats_plain_products_path_as_english(client, monkeypatch):
+    _stub_enabled_languages(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.find_product_for_link_check_url",
+        lambda url, lang: {"id": 11, "product_code": "demo-en", "name": "Demo EN", "_matched_by": "localized_links_exact"},
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.list_reference_images_for_lang",
+        lambda pid, lang: [
+            {"id": "cover-en", "kind": "cover", "filename": "cover_en.jpg", "object_key": "covers/en.jpg"},
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
+        lambda object_key: f"https://signed.example.com/{object_key}",
+    )
+    monkeypatch.setattr("web.routes.openapi_materials.medias.get_language_name", lambda code: "EN")
+
+    response = client.post(
+        "/openapi/link-check/bootstrap",
+        headers={"X-API-Key": "demo-key"},
+        json={"target_url": "https://example.com/products/demo-en?variant=2"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["target_language"] == "en"
+    assert payload["target_language_name"] == "EN"
+    assert payload["product"] == {"id": 11, "product_code": "demo-en", "name": "Demo EN"}

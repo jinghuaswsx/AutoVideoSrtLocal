@@ -34,13 +34,13 @@ def test_build_display_name_prefers_product_handle_and_language():
     ) == "baseball-cap-organizer · FR"
 
 
-def test_detect_target_language_does_not_treat_product_handle_as_locale():
+def test_detect_target_language_treats_root_products_path_as_english_instead_of_handle_locale():
     from appcore.link_check_locale import detect_target_language_from_url
 
     assert detect_target_language_from_url(
         "https://newjoyloo.com/products/de-sign-tool",
         {"de", "fr", "ja", "en"},
-    ) == ""
+    ) == "en"
 
 
 def test_detect_target_language_supports_language_country_pair_before_products():
@@ -48,5 +48,14 @@ def test_detect_target_language_supports_language_country_pair_before_products()
 
     assert detect_target_language_from_url(
         "https://newjoyloo.com/en-de/products/demo",
+        {"de", "fr", "ja", "en"},
+    ) == "en"
+
+
+def test_detect_target_language_treats_plain_products_path_as_english_when_enabled():
+    from appcore.link_check_locale import detect_target_language_from_url
+
+    assert detect_target_language_from_url(
+        "https://newjoyloo.com/products/demo-rjc?variant=1",
         {"de", "fr", "ja", "en"},
     ) == "en"
