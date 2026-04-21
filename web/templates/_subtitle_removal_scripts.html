@@ -153,7 +153,7 @@
       for (var i = 0; i < inputs.length; i++) {
         if (inputs[i].checked) return inputs[i].value;
       }
-      return "subtitle";
+      return "text";
     }
 
     function bindUploadEraseTypeRadios() {
@@ -615,7 +615,7 @@
           updateSelectionBoxDisplay(selectionBoxToOverlayRect(selectionState.box, imageRect, state.media_info || getMediaInfo()));
         }
       }
-      var nextEraseType = (state && state.erase_text_type) || "subtitle";
+      var nextEraseType = (state && state.erase_text_type) || "text";
       syncEraseType(nextEraseType);
       var srStatus = (state && state.status) || "";
       var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };

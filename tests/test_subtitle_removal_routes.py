@@ -816,7 +816,7 @@ def test_subtitle_removal_submit_persists_erase_text_type_text(authed_client_no_
     assert saved["erase_text_type"] == "text"
 
 
-def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_submit_defaults_erase_text_type_to_text(authed_client_no_db, monkeypatch):
     store.create_subtitle_removal(
         "sr-submit-erase-default",
         "uploads/source.mp4",
@@ -848,7 +848,7 @@ def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_cli
 
     assert response.status_code == 202
     saved = store.get("sr-submit-erase-default")
-    assert saved["erase_text_type"] == "subtitle"
+    assert saved["erase_text_type"] == "text"
 
 
 def test_subtitle_removal_submit_rejects_invalid_erase_text_type(authed_client_no_db, monkeypatch):
