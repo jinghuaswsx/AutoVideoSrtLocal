@@ -19,6 +19,7 @@ from flask_login import login_required, current_user
 from appcore import local_media_storage, medias, task_state, tos_clients
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
+from appcore.bulk_translate_projection import build_product_task_payload
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
@@ -378,6 +379,34 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 @login_required
 def index():
     return render_template("medias_list.html")
+
+
+# ---------- 缈昏瘧浠诲姟 ----------
+
+@bp.route("/products/<int:pid>/translation-tasks", methods=["GET"])
+@login_required
+def translation_tasks_page(pid: int):
+    product = medias.get_product(pid)
+    if not _can_access_product(product):
+        abort(404)
+    return render_template(
+        "medias_translation_tasks.html",
+        product=product,
+        product_id=pid,
+    )
+
+
+@bp.route("/api/products/<int:pid>/translation-tasks", methods=["GET"])
+@login_required
+def api_product_translation_tasks(pid: int):
+    product = medias.get_product(pid)
+    if not _can_access_product(product):
+        abort(404)
+    try:
+        payload = build_product_task_payload(current_user.id, pid)
+    except ValueError:
+        abort(404)
+    return jsonify(payload)
 
 
 # ---------- 浜у搧 API ----------

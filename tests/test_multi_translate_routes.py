@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 
@@ -112,6 +113,51 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     assert "/api/multi-translate/compat-bootstrap" not in template
     assert "/api/multi-translate/compat-complete" not in template
     assert "xhr.open('PUT'" not in template
+
+
+def test_multi_translate_subtitle_preview_route(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.multi_translate.build_multi_translate_preview_payload",
+        lambda task_id, user_id: {
+            "video_url": "/media/demo.mp4",
+            "subtitle_font": "Impact",
+            "subtitle_size": 14,
+            "subtitle_position_y": 0.68,
+            "sample_lines": [
+                "Tiktok and facebook shot videos!",
+                "Tiktok and facebook shot videos!",
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.multi_translate.db_query_one",
+        lambda sql, args: {"id": args[0], "state_json": "{}"},
+    )
+
+    resp = authed_client_no_db.get("/api/multi-translate/task-1/subtitle-preview")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["video_url"] == "/media/demo.mp4"
+    assert payload["sample_lines"] == [
+        "Tiktok and facebook shot videos!",
+        "Tiktok and facebook shot videos!",
+    ]
+
+
+def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    workbench = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+
+    assert "_subtitle_preview_panel.html" in template
+    assert "subtitle_preview.js" in template
+    assert "sharedSubtitlePreviewMount" in workbench
+    assert "openPhonePickerBtn" not in scripts
+    assert "phoneFrame" not in scripts
+    assert "pfSubtitleBar" not in scripts
+    assert "createSubtitlePreviewController" in scripts
 
 
 def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no_db):

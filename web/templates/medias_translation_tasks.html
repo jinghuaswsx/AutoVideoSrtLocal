@@ -1,0 +1,241 @@
+{% extends "layout.html" %}
+{% block title %}翻译任务管理 · AutoVideoSrt{% endblock %}
+{% block page_title %}翻译任务管理{% endblock %}
+{% block extra_style %}
+<style>
+  .mt-page {
+    max-width: 1360px;
+    margin: 0 auto;
+  }
+  .mt-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    background: #fff;
+    border: 1px solid var(--border-main);
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .mt-hero__title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text-main);
+  }
+  .mt-hero__meta {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--btn-ghost-text);
+  }
+  .mt-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 6px;
+    border: 1px solid var(--btn-ghost-border);
+    background: var(--btn-ghost-bg);
+    color: var(--btn-ghost-text);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .mt-btn:hover {
+    border-color: var(--btn-ghost-hover-border);
+    color: var(--btn-ghost-hover-text);
+    background: var(--bg-card);
+  }
+  .mt-status {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border-main);
+    background: #fff;
+    color: var(--btn-ghost-text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .mt-status.is-error {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .mt-status.is-loading {
+    color: var(--btn-ghost-text);
+  }
+  .mt-batch-list {
+    display: grid;
+    gap: 16px;
+  }
+  .mt-batch {
+    padding: 20px;
+    border-radius: 16px;
+    border: 1px solid var(--border-main);
+    background: #fff;
+  }
+  .mt-batch__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .mt-batch__task {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--text-main);
+  }
+  .mt-batch__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--btn-ghost-text);
+    font-family: Consolas, "SF Mono", ui-monospace, monospace;
+  }
+  .mt-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .mt-group {
+    margin-top: 16px;
+  }
+  .mt-group:first-of-type {
+    margin-top: 0;
+  }
+  .mt-group__title {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .mt-group__empty {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px dashed var(--border-main);
+    background: #f8fafc;
+    color: var(--btn-ghost-text);
+    font-size: 13px;
+  }
+  .mt-items {
+    display: grid;
+    gap: 8px;
+  }
+  .mt-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-main);
+    border-radius: 12px;
+    background: #fff;
+  }
+  .mt-item__label {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: var(--text-main);
+  }
+  .mt-item__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--btn-ghost-text);
+    word-break: break-all;
+  }
+  .mt-item__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .mt-action {
+    border: 1px solid transparent;
+  }
+  .mt-action--primary {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-color);
+  }
+  .mt-action--primary:hover {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+  .mt-empty {
+    padding: 42px 24px;
+    border: 1px dashed var(--border-main);
+    border-radius: 16px;
+    background: #fff;
+    text-align: center;
+    color: var(--btn-ghost-text);
+  }
+  .mt-empty__title {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .mt-empty__desc {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  @media (max-width: 768px) {
+    .mt-hero,
+    .mt-item {
+      flex-direction: column;
+    }
+    .mt-item__actions {
+      width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section
+  class="mt-page"
+  id="translationTasksApp"
+  data-product-id="{{ product_id }}"
+  data-product-name="{{ product.name }}"
+>
+  <header class="mt-hero">
+    <div>
+      <h1 class="mt-hero__title">翻译任务管理</h1>
+      <div class="mt-hero__meta">
+        产品：{{ product.name }} · 聚合最近的 `bulk_translate` 批次，支持失败重启、中断续跑和选声跳转。
+      </div>
+    </div>
+    <a class="mt-btn" href="/medias">返回素材管理</a>
+  </header>
+
+  <div id="translationTasksStatus" class="mt-status is-loading">正在加载翻译任务…</div>
+  <div id="translationTasksList" class="mt-batch-list" aria-live="polite"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
+{% endblock %}

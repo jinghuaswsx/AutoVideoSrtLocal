@@ -1,4 +1,4 @@
-{% if show_back_link %}
+﻿{% if show_back_link %}
 <a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 {% endif %}
 {% set _default_source_language = default_source_language|default('zh') %}
@@ -263,7 +263,10 @@
 <div class="card hidden" id="configPanel">
   <h2>生成配置</h2>
   <div class="config-row">
-    <div class="config-item config-item--subtitle">
+    <div class="config-item config-item--subtitle" data-role="sharedSubtitlePreviewMount"></div>
+  </div>
+  <div class="config-row">
+    <div class="config-item config-item--subtitle" style="display:none;">
       <label>字幕样式</label>
       <div class="subtitle-font-grid" id="subtitleFontGrid">
         <button type="button" class="font-card font-card--selected" data-font="Impact">
@@ -787,3 +790,4 @@
     </div>
   </div>
 </div>
+

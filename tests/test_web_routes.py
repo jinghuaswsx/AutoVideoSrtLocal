@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import io
+import subprocess
 
 from web import store
 from web.app import create_app
@@ -1877,6 +1878,60 @@ def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
     assert "slot.replaceChildren(btn);" in medias_js
     assert "btn.textContent = '一键翻译英文文案';" in medias_js
     assert "textarea.placeholder = '标题: \\n文案: \\n描述: ';" in medias_js
+
+
+def test_medias_page_translates_copywriting_as_single_structured_block():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function edValidateCopyTranslateSource(rawText)" in medias_js
+    assert "const sourceValidation = edValidateCopyTranslateSource(source.body);" in medias_js
+    assert "source_text: sourceValidation.value" in medias_js
+    assert "const translatedBody = edNormalizeCopywritingBody(response.result || '');" in medias_js
+    assert "const sourceBody = edNormalizeCopywritingBody(source.body);" not in medias_js
+    assert "function edTranslateCopyField" not in medias_js
+
+
+def test_medias_copywriting_normalizer_strips_nested_field_labels():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    fn_block = (
+        "function edCanonicalCopyField"
+        + medias_js.split("function edCanonicalCopyField", 1)[1]
+        .split("function edNormalizeCopywritingsData", 1)[0]
+    )
+    expected = "标题: Magnet\n文案: Strong hold\n描述: Easy install"
+    source = "标题: 标题: Magnet\n文案: 文案: Strong hold\n描述: 描述: Easy install"
+    script = f"""
+{fn_block}
+const normalized = edNormalizeCopywritingBody({source!r});
+if (normalized !== {expected!r}) {{
+  throw new Error(`unexpected normalized copywriting: ${{normalized}}`);
+}}
+"""
+
+    result = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_medias_page_wraps_language_coverage_with_full_labels():
+    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function langDisplayName(code)" in medias_js
+    assert "if (l && l.name_zh) return `${l.name_zh} (${l.code})`;" in medias_js
+    assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
+    assert '<col style="width:336px">' in medias_js
+    assert ".oc-lang-bar {" in template
+    assert "flex-wrap:wrap;" in template
+    assert "align-content:flex-start;" in template
+    assert "white-space:normal;" in template
 
 
 def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):

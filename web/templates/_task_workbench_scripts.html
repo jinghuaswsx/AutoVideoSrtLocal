@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   const socket = io();
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
@@ -51,15 +51,16 @@
 
   let _voicesCache = [];
   let _selectedVoiceId = null;
-  let _selectedSubtitleFont = "Impact";
-  let _selectedSubtitleSize = 14;
-  let _subtitlePositionY = parseFloat(localStorage.getItem("subtitle_position_y") || "0.68");
+  let _subtitlePreviewController = null;
+  let _subtitlePreviewPendingValue = null;
+  let _subtitlePreviewBootPromise = null;
   let _playingAudio = null;
   let _previewAudio = null;
   let _previewAudioGid = null;
   let _avRewriteAsrIndex = null;
 
   bootVoices();
+  bootSharedSubtitlePreview();
   renderStepPreviews({});
   bootInitialTask();
 
@@ -334,32 +335,59 @@
     if (extraInfoInput) extraInfoInput.value = overrides.extra_info || "";
   }
 
+  function _getSubtitlePreviewFallback(task = currentTask) {
+    const source = task || {};
+    const legacySizeMap = { small: 10, medium: 14, large: 18 };
+    const subtitleSize = typeof source.subtitle_size === "number"
+      ? source.subtitle_size
+      : (legacySizeMap[source.subtitle_size] || 14);
+    const subtitlePositionY = Number.isFinite(Number(source.subtitle_position_y))
+      ? Number(source.subtitle_position_y)
+      : 0.68;
+    return {
+      subtitle_font: source.subtitle_font || "Impact",
+      subtitle_size: subtitleSize,
+      subtitle_position_y: subtitlePositionY,
+    };
+  }
+
+  function syncSubtitlePreviewFromTask(task = currentTask) {
+    const nextValue = _getSubtitlePreviewFallback(task);
+    _subtitlePreviewPendingValue = nextValue;
+    if (_subtitlePreviewController) {
+      _subtitlePreviewController.setPayload(nextValue);
+    }
+  }
+
+  async function bootSharedSubtitlePreview() {
+    const mount = document.getElementById("sharedSubtitlePreviewMount");
+    const template = document.getElementById("subtitlePreviewTemplate");
+    if (!mount || !template || !window.createSubtitlePreviewController) return;
+    if (_subtitlePreviewBootPromise) return _subtitlePreviewBootPromise;
+    _subtitlePreviewBootPromise = (async () => {
+      try {
+        const response = await fetch(_apiUrl('/subtitle-preview'));
+        if (!response.ok) return;
+        const payload = await response.json();
+        mount.innerHTML = template.innerHTML;
+        const root = mount.firstElementChild;
+        if (!root) return;
+        _subtitlePreviewController = window.createSubtitlePreviewController(root, payload);
+        if (_subtitlePreviewPendingValue) {
+          _subtitlePreviewController.setPayload(_subtitlePreviewPendingValue);
+        }
+      } catch (error) {
+        console.error("bootSharedSubtitlePreview error:", error);
+      }
+    })();
+    return _subtitlePreviewBootPromise;
+  }
+
   function applyTaskConfigToForm() {
     if (!currentTask) return;
     _selectedVoiceId = currentTask.voice_id || null;
     renderVoiceList();
-    // 恢复字幕字体
-    const savedFont = currentTask.subtitle_font || "Impact";
-    document.querySelectorAll("#subtitleFontGrid .font-card").forEach(card => {
-      card.classList.toggle("font-card--selected", card.dataset.font === savedFont);
-    });
-    _selectedSubtitleFont = savedFont;
-
-    // 恢复字幕字号（兼容旧 small/medium/large 字符串和新数字值）
-    const _legacySizeMap = { small: 10, medium: 14, large: 18 };
-    const savedSizeRaw = currentTask.subtitle_size;
-    const savedSize = typeof savedSizeRaw === "number"
-      ? savedSizeRaw
-      : (_legacySizeMap[savedSizeRaw] || 14);
-    document.querySelectorAll("#subtitleSizeGroup button").forEach(btn => {
-      btn.classList.toggle("btn-outline--active", parseInt(btn.dataset.size, 10) === savedSize);
-    });
-    _selectedSubtitleSize = savedSize;
-
-    // 恢复字幕位置（优先从 localStorage）
-    const lsPos = parseFloat(localStorage.getItem("subtitle_position_y") || "");
-    _subtitlePositionY = isNaN(lsPos) ? (currentTask.subtitle_position_y ?? 0.68) : lsPos;
-    document.getElementById("subtitlePosHint").textContent = ((_subtitlePositionY * 100).toFixed(1) + "%");
+    syncSubtitlePreviewFromTask(currentTask);
     document.getElementById("interactiveReviewToggle").value = String(Boolean(currentTask.interactive_review));
     applyAvTranslateInputsToForm();
   }
@@ -445,14 +473,16 @@
     socket.emit("join_task", { task_id: taskId });
 
     try {
+      const subtitlePreviewValue = _subtitlePreviewController ? _subtitlePreviewController.getValue() : _getSubtitlePreviewFallback();
       const response = await fetch(_apiUrl(isRestart ? '/restart' : '/start'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           voice_id: _selectedVoiceId || "auto",
-          subtitle_font: _selectedSubtitleFont,
-          subtitle_size: _selectedSubtitleSize,
-          subtitle_position_y: _subtitlePositionY,
+          subtitle_font: subtitlePreviewValue.subtitle_font,
+          subtitle_size: subtitlePreviewValue.subtitle_size,
+          subtitle_position_y: subtitlePreviewValue.subtitle_position_y,
+          subtitle_position: (currentTask && currentTask.subtitle_position) || "bottom",
           interactive_review: document.getElementById("interactiveReviewToggle").value === "true",
           av_translate_inputs: getAvTranslateInputs(),
         }),
@@ -2268,149 +2298,8 @@
 
   document.querySelectorAll(".review-panel").forEach(initDraggable);
 
-  // ===== 字幕字体卡片 =====
-  document.getElementById("subtitleFontGrid").addEventListener("click", function(e) {
-    const card = e.target.closest(".font-card");
-    if (!card) return;
-    document.querySelectorAll("#subtitleFontGrid .font-card").forEach(c => c.classList.remove("font-card--selected"));
-    card.classList.add("font-card--selected");
-    _selectedSubtitleFont = card.dataset.font;
-  });
+  // Shared subtitle preview controls are mounted from subtitle_preview.js.
 
-  // ===== 字号按钮组 =====
-  let _updateSizePreview = function() {};  // 由 initSizePreview 赋值
-
-  document.getElementById("subtitleSizeGroup").addEventListener("click", function(e) {
-    const btn = e.target.closest("button[data-size]");
-    if (!btn) return;
-    document.querySelectorAll("#subtitleSizeGroup button").forEach(b => b.classList.remove("btn-outline--active"));
-    btn.classList.add("btn-outline--active");
-    _selectedSubtitleSize = parseInt(btn.dataset.size, 10);
-    _updateSizePreview();
-  });
-
-  // ===== 字号 1:1 预览弹窗 =====
-  (function initSizePreview() {
-    const backdrop = document.getElementById("sizePreviewBackdrop");
-    const scrollArea = document.getElementById("sizePreviewScroll");
-
-    _updateSizePreview = function() {
-      const subtitleEl = document.getElementById("spfSubtitleText");
-      const posEl = document.getElementById("spfSubtitle");
-      const labelEl = document.getElementById("sizePreviewLabel");
-      if (!subtitleEl) return;
-      subtitleEl.style.fontSize = _selectedSubtitleSize + "px";
-      subtitleEl.style.fontFamily = _selectedSubtitleFont + ", Impact, sans-serif";
-      if (posEl) posEl.style.top = (_subtitlePositionY * 100) + "%";
-      if (labelEl) labelEl.textContent = "（" + _selectedSubtitleSize + "pt · 1080p）";
-    };
-
-    function scrollToSubtitle() {
-      if (!scrollArea) return;
-      const scrollTop = 1920 * _subtitlePositionY - scrollArea.clientHeight / 2;
-      scrollArea.scrollTop = Math.max(0, scrollTop);
-    }
-
-    document.getElementById("openSizePreviewBtn").addEventListener("click", function() {
-      _updateSizePreview();
-      backdrop.classList.remove("hidden");
-      requestAnimationFrame(() => requestAnimationFrame(scrollToSubtitle));
-    });
-
-    document.getElementById("closeSizePreviewBtn").addEventListener("click", function() {
-      backdrop.classList.add("hidden");
-    });
-  })();
-
-  // ===== 手机位置选择器 =====
-  (function initPhonePicker() {
-    const backdrop = document.getElementById("phonePickerBackdrop");
-    const phoneFrame = document.getElementById("phoneFrame");
-    const subtitleBar = document.getElementById("pfSubtitleBar");
-    const posDisplay = document.getElementById("pfPosDisplay");
-    const zoneBadge = document.getElementById("pfZoneBadge");
-    const posHint = document.getElementById("subtitlePosHint");
-
-    let _pickerPosPct = _subtitlePositionY * 100;
-    let _isDragging = false;
-    let _dragStartClientY = 0;
-    let _dragStartPct = 0;
-
-    function updateBar(pct) {
-      _pickerPosPct = Math.min(95, Math.max(5, pct));
-      subtitleBar.style.top = _pickerPosPct + "%";
-      posDisplay.textContent = _pickerPosPct.toFixed(1) + "%";
-      if (_pickerPosPct > 79) {
-        zoneBadge.textContent = "⚠ 遮挡区";
-        zoneBadge.className = "badge badge--warn";
-      } else {
-        zoneBadge.textContent = "安全区 ✓";
-        zoneBadge.className = "badge badge--info";
-      }
-    }
-
-    function pctFromClientY(clientY) {
-      const rect = phoneFrame.getBoundingClientRect();
-      return ((clientY - rect.top) / rect.height) * 100;
-    }
-
-    document.getElementById("openPhonePickerBtn").addEventListener("click", function() {
-      _pickerPosPct = _subtitlePositionY * 100;
-      updateBar(_pickerPosPct);
-      backdrop.classList.remove("hidden");
-    });
-
-    document.getElementById("closePhonePickerBtn").addEventListener("click", function() {
-      backdrop.classList.add("hidden");
-    });
-    backdrop.addEventListener("click", function(e) {
-      if (e.target === backdrop) backdrop.classList.add("hidden");
-    });
-
-    phoneFrame.addEventListener("click", function(e) {
-      if (_isDragging) return;
-      if (e.target.closest("#pfSubtitleBar")) return;
-      updateBar(pctFromClientY(e.clientY));
-    });
-
-    subtitleBar.addEventListener("mousedown", function(e) {
-      _isDragging = true;
-      _dragStartClientY = e.clientY;
-      _dragStartPct = _pickerPosPct;
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", function(e) {
-      if (!_isDragging) return;
-      const rect = phoneFrame.getBoundingClientRect();
-      const delta = ((e.clientY - _dragStartClientY) / rect.height) * 100;
-      updateBar(_dragStartPct + delta);
-    });
-    document.addEventListener("mouseup", function() { _isDragging = false; });
-
-    subtitleBar.addEventListener("touchstart", function(e) {
-      _isDragging = true;
-      _dragStartClientY = e.touches[0].clientY;
-      _dragStartPct = _pickerPosPct;
-      e.preventDefault();
-    }, { passive: false });
-    document.addEventListener("touchmove", function(e) {
-      if (!_isDragging) return;
-      const rect = phoneFrame.getBoundingClientRect();
-      const delta = ((e.touches[0].clientY - _dragStartClientY) / rect.height) * 100;
-      updateBar(_dragStartPct + delta);
-    }, { passive: false });
-    document.addEventListener("touchend", function() { _isDragging = false; });
-
-    document.getElementById("confirmPhonePosBtn").addEventListener("click", function() {
-      _subtitlePositionY = _pickerPosPct / 100;
-      localStorage.setItem("subtitle_position_y", String(_subtitlePositionY));
-      posHint.textContent = (_pickerPosPct.toFixed(1) + "%");
-      backdrop.classList.add("hidden");
-    });
-  })();
-</script>
-
-<script>
   // ⓘ prompt info tooltip (multi_translate only)
   document.querySelectorAll(".prompt-info").forEach(el => {
     el.addEventListener("mouseenter", async () => {
@@ -2436,3 +2325,5 @@
     });
   });
 </script>
+
+

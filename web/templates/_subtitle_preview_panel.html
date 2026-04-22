@@ -1,0 +1,202 @@
+<template id="subtitlePreviewTemplate">
+  <section class="subtitle-preview-panel" data-component="subtitle-preview" style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(240px,320px);gap:16px;align-items:start;">
+    <style>
+      .subtitle-preview-panel {
+        padding: 0;
+      }
+      .subtitle-preview-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: none;
+        overflow: hidden;
+      }
+      .subtitle-preview-media {
+        position: relative;
+        background: oklch(22% 0.02 235);
+        min-height: 360px;
+      }
+      .subtitle-preview-video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 360px;
+        object-fit: cover;
+        background: oklch(22% 0.02 235);
+      }
+      .subtitle-preview-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+      }
+      .subtitle-preview-overlay:active {
+        cursor: grabbing;
+      }
+      .subtitle-preview-overlay__block {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%) translateY(-50%);
+        text-align: center;
+        min-width: min(88%, 520px);
+        padding: 8px 12px;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.42);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+      }
+      .subtitle-preview-line {
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+        line-height: 1.18;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .subtitle-preview-line + .subtitle-preview-line {
+        margin-top: 2px;
+      }
+      .subtitle-preview-hint {
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.3;
+        color: oklch(94% 0.04 225);
+      }
+      .subtitle-preview-controls {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--bg);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .subtitle-preview-field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .subtitle-preview-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--fg);
+      }
+      .subtitle-preview-select,
+      .subtitle-preview-range {
+        width: 100%;
+      }
+      .subtitle-preview-select {
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid var(--border-strong);
+        background: #fff;
+        color: var(--fg);
+        padding: 0 10px;
+        font-size: 14px;
+      }
+      .subtitle-preview-select:focus,
+      .subtitle-preview-range:focus {
+        outline: none;
+      }
+      .subtitle-preview-range {
+        accent-color: oklch(56% 0.16 230);
+      }
+      .subtitle-preview-size-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .subtitle-preview-size-btn {
+        height: 32px;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--fg);
+        font-size: 13px;
+        cursor: pointer;
+        transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+      }
+      .subtitle-preview-size-btn:hover {
+        background: var(--bg-muted);
+      }
+      .subtitle-preview-size-btn.is-active {
+        border-color: var(--accent);
+        background: var(--accent-subtle);
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .subtitle-preview-position-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .subtitle-preview-position-value {
+        min-width: 56px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--fg-muted);
+      }
+      @media (max-width: 960px) {
+        .subtitle-preview-panel {
+          grid-template-columns: 1fr;
+        }
+        .subtitle-preview-media,
+        .subtitle-preview-video {
+          min-height: 300px;
+        }
+        .subtitle-preview-size-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+    </style>
+    <div class="subtitle-preview-card subtitle-preview-media" data-role="media">
+      <video class="subtitle-preview-video" data-role="video" playsinline muted controls></video>
+      <div class="subtitle-preview-overlay" data-role="overlay" aria-label="字幕位置预览与拖动区域">
+        <div class="subtitle-preview-overlay__block" data-role="subtitle-block">
+          <div class="subtitle-preview-line" data-role="line-a">Tiktok and facebook shot videos!</div>
+          <div class="subtitle-preview-line" data-role="line-b">Tiktok and facebook shot videos!</div>
+          <div class="subtitle-preview-hint">拖动字幕块可调整纵向位置</div>
+        </div>
+      </div>
+    </div>
+    <div class="subtitle-preview-controls">
+      <div class="subtitle-preview-field">
+        <div class="subtitle-preview-label">字幕字体</div>
+        <select class="subtitle-preview-select" data-role="font">
+          <option value="Impact">Impact</option>
+          <option value="Oswald Bold">Oswald</option>
+          <option value="Bebas Neue">Bebas Neue</option>
+          <option value="Montserrat ExtraBold">Montserrat</option>
+          <option value="Poppins Bold">Poppins</option>
+          <option value="Anton">Anton</option>
+        </select>
+      </div>
+      <div class="subtitle-preview-field">
+        <div class="subtitle-preview-label">字幕字号</div>
+        <div class="subtitle-preview-size-grid" data-role="size-group">
+          <button type="button" class="subtitle-preview-size-btn" data-size="8">8</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="10">10</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="12">12</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="14">14</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="16">16</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="18">18</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="20">20</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="22">22</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="24">24</button>
+          <button type="button" class="subtitle-preview-size-btn" data-size="28">28</button>
+        </div>
+      </div>
+      <div class="subtitle-preview-field">
+        <div class="subtitle-preview-label">字幕位置</div>
+        <div class="subtitle-preview-position-row">
+          <input class="subtitle-preview-range" data-role="position" type="range" min="0.12" max="0.92" step="0.01" />
+          <span class="subtitle-preview-position-value" data-role="position-label">68.0%</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>

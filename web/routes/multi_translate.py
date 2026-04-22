@@ -12,6 +12,7 @@ from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import task_state
+from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
 from pipeline.alignment import build_script_segments
@@ -113,6 +114,19 @@ def detail(task_id: str):
         target_lang=target_lang,
         translate_pref=translate_pref,
     )
+
+
+@bp.route("/api/multi-translate/<task_id>/subtitle-preview", methods=["GET"])
+@login_required
+def subtitle_preview(task_id: str):
+    row = db_query_one(
+        "SELECT id FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+        (task_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+    payload = build_multi_translate_preview_payload(task_id, current_user.id)
+    return jsonify(payload)
 
 
 # ── API 路由 ──────────────────────────────────────────

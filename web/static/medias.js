@@ -309,7 +309,7 @@
       const cls = filled ? 'filled' : 'empty';
       const title = `${langDisplayName(l.code)}: ${c.items} 视频 / ${c.copy} 文案 / ${c.cover ? '有主图' : '无主图'}`;
       return `<span class="oc-lang-chip ${cls}" title="${escapeHtml(title)}">`
-           + `${langDisplayName(l.code)}${filled ? `<span class="count">${c.items}</span>` : ''}`
+           + `${escapeHtml(langDisplayName(l.code))}`
            + `</span>`;
     }).join('') + `</div>`;
   }
@@ -644,7 +644,7 @@
         <col style="width:96px">
         <col style="width:100px">
         <col style="width:60px">
-        <col style="width:184px">
+        <col style="width:336px">
         <col style="width:108px">
         <col style="width:284px">
       </colgroup>
@@ -1214,13 +1214,29 @@
   }
 
   function edAppendCopyFieldValue(target, key, rawValue) {
-    const value = String(rawValue || '')
+    const normalizedValue = String(rawValue || '')
       .replace(/\r\n?/g, '\n')
       .replace(/\n+/g, ' ')
       .replace(/[ \t\u00A0]+/g, ' ')
       .trim();
+    const value = edStripLeadingCopyFieldLabel(normalizedValue, key);
     if (!value) return;
     target[key] = target[key] ? `${target[key]} ${value}`.trim() : value;
+  }
+
+  function edStripLeadingCopyFieldLabel(rawValue, expectedKey) {
+    let value = String(rawValue || '').trim();
+    if (!value) return '';
+    const nestedFieldPattern = /^(\u6807\u9898|title|headline|subject|\u6587\u6848|copy|body|text|content|\u63cf\u8ff0|description|desc|detail)\s*(?:[:\uff1a]|[-\u2014]\s*|\s+)?(.*)$/i;
+    for (let pass = 0; pass < 3; pass += 1) {
+      const match = value.match(nestedFieldPattern);
+      const nestedKey = match ? edCanonicalCopyField(match[1]) : '';
+      if (!nestedKey || (expectedKey && nestedKey !== expectedKey)) break;
+      const nextValue = String(match[2] || '').trim();
+      if (!nextValue || nextValue === value) break;
+      value = nextValue;
+    }
+    return value;
   }
 
   function edParseCopywritingBody(raw) {
@@ -1291,6 +1307,14 @@
       `文案: ${parsed.body}`,
       `描述: ${parsed.description}`,
     ].join('\n');
+  }
+
+  function edValidateCopyTranslateSource(rawText) {
+    const text = String(rawText || '').replace(/\r\n?/g, '\n').trim();
+    if (!text) {
+      return { ok: false, message: '\u82f1\u6587\u6587\u6848\u4e3a\u7a7a\uff0c\u65e0\u6cd5\u7ffb\u8bd1' };
+    }
+    return { ok: true, value: text };
   }
 
   function edNormalizeCopywritingsData(raw) {
@@ -1442,20 +1466,6 @@
     btn.title = source ? '读取英文文案并生成当前语种文案' : '当前没有可用的英文文案';
   }
 
-  async function edTranslateCopyField(text, language) {
-    const value = String(text || '').trim();
-    if (!value) return '';
-    const response = await fetchJSON('/api/title-translate/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language,
-        source_text: value,
-      }),
-    });
-    return String(response.result || '').trim();
-  }
-
   async function edTranslateEnglishCopywriting() {
     const btn = $('edCwTranslateBtn');
     const targetLang = (edState.activeLang || '').trim().toLowerCase();
@@ -1467,12 +1477,8 @@
       return;
     }
 
-    const sourceFields = edParseCopywritingBody(source.body);
-    const tasks = Object.entries(sourceFields)
-      .filter(([, value]) => String(value || '').trim())
-      .map(([key, value]) => edTranslateCopyField(value, targetLang).then((translated) => [key, translated]));
-
-    if (!tasks.length) {
+    const sourceValidation = edValidateCopyTranslateSource(source.body);
+    if (!sourceValidation.ok) {
       alert('英文文案为空，无法翻译');
       return;
     }
@@ -1485,16 +1491,15 @@
 
     try {
       edFlushCopywritings();
-      const translatedEntries = await Promise.all(tasks);
-      const translatedFields = { title: '', body: '', description: '' };
-      translatedEntries.forEach(([key, value]) => {
-        translatedFields[key] = String(value || '').trim();
+      const response = await fetchJSON('/api/title-translate/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: targetLang,
+          source_text: sourceValidation.value,
+        }),
       });
-      const translatedBody = edNormalizeCopywritingBody([
-        `标题: ${translatedFields.title}`,
-        `文案: ${translatedFields.body}`,
-        `描述: ${translatedFields.description}`,
-      ].join('\n'));
+      const translatedBody = edNormalizeCopywritingBody(response.result || '');
 
       const copies = edEnsureCopywritingsArray();
       copies.push({ lang: targetLang, body: translatedBody });
