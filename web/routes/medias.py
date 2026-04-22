@@ -474,11 +474,6 @@ def api_update_product(pid: int):
             return jsonify({"error": "product_code already exists"}), 409
         update_fields["product_code"] = product_code
 
-    # EN 涓诲浘纭牎楠屼粎鍦ㄤ慨鏀瑰熀纭€淇℃伅鏃惰Е鍙?
-    touches_base = any(k in body for k in ("name", "product_code", "copywritings"))
-    if touches_base and not medias.has_english_cover(pid):
-        return jsonify({"error": "english cover required before saving base fields"}), 400
-
     # 鏄庣┖ ID锛坢k_id锛夛細閫夊～锛?-8 浣嶆暟瀛楋紝绌轰覆浠ｈ〃娓呴櫎
     if "mk_id" in body:
         update_fields["mk_id"] = body.get("mk_id")
