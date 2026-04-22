@@ -902,18 +902,8 @@
     const code = $('mCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('mCode').focus(); return; }
-    if (!state.current || !state.current.product || (!state.current.product.cover_object_key && !state.current.product.has_en_cover)) {
-      alert('请上传商品主图'); return;
-    }
     const cw = collectCopywritings();
     if (!cw.length) { alert('请填写文案'); $('cwBody') && $('cwBody').focus(); return; }
-    const items = (state.current && state.current.items) || [];
-    if (!items.length) { alert('请上传至少一条视频素材'); return; }
-    const missingCover = items.filter(it => !it.cover_object_key);
-    if (missingCover.length) {
-      alert('每条视频素材都必须有视频封面图，请先上传封面再选视频源');
-      return;
-    }
     const pid = state.current.product.id;
     try {
       await fetchJSON('/medias/api/products/' + pid, {
@@ -2382,10 +2372,6 @@
     if (!name) { alert('产品名称必填'); $('edName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('edCode').focus(); return; }
 
-    // EN 主图硬校验
-    const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
-    if (!hasEn) { alert('必须先上传英文（EN）产品主图才能保存'); return; }
-
     // 保存前 flush 当前语种文案 + 产品链接
     edFlushCopywritings();
     edFlushProductUrl();
@@ -2396,6 +2382,7 @@
     const rawList = (Array.isArray(edState.productData.copywritings)
       ? edState.productData.copywritings
       : []).filter(c => (c.body || '').trim());
+    if (!rawList.length) { alert('请填写文案'); return; }
     const cwDict = {};
     rawList.forEach(c => {
       if (!c.lang || !c.body) return;
