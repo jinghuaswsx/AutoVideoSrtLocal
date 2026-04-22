@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.parse
 from typing import Any
 
 import requests
@@ -58,7 +59,9 @@ def build_media_public_url(object_key: str | None) -> str | None:
     if not object_key:
         return None
     base = (getattr(config, "LOCAL_SERVER_BASE_URL", "") or "").rstrip("/")
-    return f"{base}/medias/obj/{object_key}"
+    # object_key 可能含中文/空格，下游 Dify / 浏览器不一定会自动做 URL encode
+    encoded = urllib.parse.quote(object_key, safe="/")
+    return f"{base}/medias/obj/{encoded}"
 
 
 def build_localized_texts_target_url(mk_id: int | None) -> str:
