@@ -160,97 +160,141 @@
 @keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
 .oc-modal { width:960px; max-width:100%; max-height:94vh; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-xl); overflow:hidden; box-shadow:var(--oc-shadow-lg); animation:oc-rise var(--oc-dur-slow) var(--oc-ease); }
 @keyframes oc-rise { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
-.oc-rs-drawer-wrap { justify-content:flex-end; padding:var(--oc-sp-4); }
-.oc-rs-drawer {
-  width:min(520px, calc(100vw - 24px));
-  max-width:100%;
-  height:min(100%, calc(100vh - 32px));
-  background:var(--oc-bg);
-  border:1px solid var(--oc-border);
-  border-radius:var(--oc-r-xl);
-  box-shadow:var(--oc-shadow-lg);
+.oc-rs-modal {
+  width:min(66vw, 1200px);
+  max-width:min(92vw, 1200px);
+  max-height:min(88vh, 960px);
   display:flex;
   flex-direction:column;
-  overflow:hidden;
-  animation:oc-rs-slide var(--oc-dur-slow) var(--oc-ease);
 }
-@keyframes oc-rs-slide { from{opacity:0; transform:translateX(16px);} to{opacity:1; transform:translateX(0);} }
-.oc-rs-drawer-head {
+.oc-rs-modal-head {
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
-  gap:var(--oc-sp-3);
-  padding:var(--oc-sp-4) var(--oc-sp-5);
+  gap:var(--oc-sp-4);
+  padding:var(--oc-sp-5);
   border-bottom:1px solid var(--oc-border);
 }
-.oc-rs-drawer-head h3 { margin:0; font-size:16px; font-weight:600; color:var(--oc-fg); }
+.oc-rs-modal-head h3 { margin:0; font-size:16px; font-weight:600; color:var(--oc-fg); }
 .oc-rs-summary { margin:6px 0 0; font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
-.oc-rs-drawer-toolbar {
+.oc-rs-modal-toolbar {
   display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:var(--oc-sp-3);
-  padding:var(--oc-sp-4) var(--oc-sp-5);
-  border-bottom:1px solid var(--oc-border);
-  background:var(--oc-bg-subtle);
+  justify-content:flex-start;
+  padding:0 var(--oc-sp-5) var(--oc-sp-4);
 }
-.oc-rs-drawer-body { flex:1; overflow:auto; padding:var(--oc-sp-4) var(--oc-sp-5) var(--oc-sp-5); }
-.oc-rs-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--oc-sp-3); }
+.oc-rs-modal-body {
+  flex:1;
+  overflow:auto;
+  padding:0 var(--oc-sp-5) var(--oc-sp-5);
+}
+.oc-rs-list {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, 180px);
+  gap:var(--oc-sp-4);
+  justify-content:flex-start;
+}
 .oc-rs-empty {
+  grid-column:1 / -1;
   padding:var(--oc-sp-6);
   border:1px dashed var(--oc-border-strong);
   border-radius:var(--oc-r-lg);
   background:var(--oc-bg-subtle);
-  color:var(--oc-fg-muted);
   text-align:center;
+  color:var(--oc-fg-muted);
   font-size:13px;
   line-height:1.6;
 }
-.oc-rs-row {
-  display:grid;
-  grid-template-columns:88px minmax(0, 1fr) auto;
-  gap:var(--oc-sp-3);
-  align-items:center;
-  padding:var(--oc-sp-3);
-  border:1px solid var(--oc-border);
-  border-radius:var(--oc-r-lg);
-  background:var(--oc-bg-subtle);
+.oc-rs-empty.err {
+  border-style:solid;
+  border-color:var(--oc-danger);
+  background:var(--oc-danger-bg);
+  color:var(--oc-danger-fg);
 }
-.oc-rs-thumb {
-  width:88px;
-  height:88px;
-  border-radius:var(--oc-r-md);
+.oc-rs-card.oc-vitem {
+  width:180px;
+  padding:0;
+  gap:0;
   overflow:hidden;
-  background:linear-gradient(135deg, var(--oc-accent-subtle), var(--oc-cyan-subtle));
-  color:var(--oc-accent);
+}
+.oc-rs-card.oc-vitem .vname {
+  padding:var(--oc-sp-3) var(--oc-sp-3) 0;
+}
+.oc-rs-card.oc-vitem .vtabs {
+  padding:0 var(--oc-sp-3);
+  margin-top:var(--oc-sp-2);
+}
+.oc-rs-card.oc-vitem .vbody {
+  width:180px;
+  height:320px;
+  max-width:none;
+  border-radius:0;
+  margin-top:var(--oc-sp-2);
+}
+.oc-rs-card.oc-vitem .oc-rs-meta-line {
+  padding:var(--oc-sp-3) var(--oc-sp-3) 0;
+  font-size:12px;
+  color:var(--oc-fg-muted);
+  line-height:1.5;
+}
+.oc-rs-card.oc-vitem .vactions {
+  padding:var(--oc-sp-2) var(--oc-sp-3) var(--oc-sp-3);
+}
+.oc-rs-card.oc-vitem .vactions .oc-hint {
+  margin-top:0;
+}
+.oc-rs-upload-modal { width:min(980px, calc(100vw - 48px)); }
+.oc-rs-upload-form { display:flex; flex-direction:column; min-height:0; }
+.oc-rs-upload-body {
   display:flex;
-  align-items:center;
+  flex-direction:column;
+  gap:var(--oc-sp-5);
+}
+.oc-rs-upload-grid {
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:var(--oc-sp-5);
+  align-items:start;
   justify-content:center;
 }
-.oc-rs-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-.oc-rs-meta { min-width:0; display:flex; flex-direction:column; gap:var(--oc-sp-2); text-align:left; }
-.oc-rs-title { font-size:14px; font-weight:600; color:var(--oc-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.oc-rs-subtitle { font-size:12px; color:var(--oc-fg-muted); line-height:1.55; }
-.oc-rs-links { display:flex; gap:var(--oc-sp-2); flex-wrap:wrap; }
-.oc-rs-link {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  height:24px;
-  padding:0 8px;
-  border-radius:var(--oc-r-md);
-  background:var(--oc-accent-subtle);
-  color:var(--oc-accent);
-  font-size:11px;
-  font-weight:600;
-  text-decoration:none;
+.oc-rs-upload-grid .oc-new-item-col {
+  align-items:stretch;
 }
-.oc-rs-link:hover { background:var(--oc-bg-muted); }
-.oc-rs-actions { display:flex; align-items:center; justify-content:flex-end; }
-.oc-rs-upload-modal { width:min(520px, calc(100vw - 24px)); }
-.oc-rs-upload-form { display:flex; flex-direction:column; min-height:0; }
-.oc-rs-upload-body { display:grid; gap:var(--oc-sp-4); }
-.oc-rs-upload-body .oc-input[type="file"] { padding:5px 8px; }
+.oc-rs-upload-grid .oc-cover-9-16,
+.oc-rs-upload-grid .oc-video-pick {
+  width:min(270px, 100%);
+  margin:0 auto;
+}
+.oc-rs-upload-grid .oc-cover-9-16 {
+  height:480px;
+}
+.oc-rs-upload-grid .oc-video-pick {
+  min-height:480px;
+}
+.oc-rs-upload-note {
+  text-align:center;
+  color:var(--oc-fg-subtle);
+}
+.oc-rs-upload-video-fill {
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:var(--oc-sp-2);
+  padding:var(--oc-sp-4);
+  background:var(--oc-bg-muted);
+}
+@media (max-width: 720px) {
+  .oc-rs-upload-grid { grid-template-columns:1fr; }
+  .oc-rs-upload-grid .oc-cover-9-16,
+  .oc-rs-upload-grid .oc-video-pick {
+    width:100%;
+  }
+}
+@media (max-width: 1024px) {
+  .oc-rs-modal { width:min(92vw, 1200px); }
+}
 .oc-rst-modal { width:min(920px, calc(100vw - 24px)); }
 .oc-rst-grid { display:grid; grid-template-columns:minmax(0, 1.2fr) minmax(0, 1fr); gap:var(--oc-sp-4); }
 .oc-rst-panel {
@@ -1284,31 +1328,31 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
-<div id="rsDrawerMask" class="oc-modal-mask oc oc-rs-drawer-wrap" hidden>
-  <aside id="rsDrawer" class="oc-rs-drawer" role="dialog" aria-modal="true" aria-labelledby="rsDrawerTitle">
-    <div class="oc-rs-drawer-head">
+<div id="rsModalMask" class="oc-modal-mask oc" hidden>
+  <div id="rsModal" class="oc-modal oc-rs-modal" role="dialog" aria-modal="true" aria-labelledby="rsModalTitle">
+    <div class="oc-rs-modal-head">
       <div>
-        <h3 id="rsDrawerTitle">原始去字幕素材</h3>
-        <p id="rsSummary" class="oc-rs-summary">加载中…</p>
+        <h3 id="rsModalTitle">原始去字幕素材</h3>
+        <p id="rsSummary" class="oc-rs-summary">加载中</p>
       </div>
-      <button type="button" id="rsDrawerClose" class="oc-icon-btn" aria-label="关闭">
+      <button type="button" id="rsModalClose" class="oc-icon-btn" aria-label="关闭">
         <svg width="16" height="16"><use href="#ic-close"/></svg>
       </button>
     </div>
-    <div class="oc-rs-drawer-toolbar">
+    <div class="oc-rs-modal-toolbar">
       <button type="button" id="rsUploadBtn" class="oc-btn primary">
         <svg width="14" height="14"><use href="#ic-upload"/></svg>
         <span>上传素材</span>
       </button>
     </div>
-    <div class="oc-rs-drawer-body">
-      <ul id="rsList" class="oc-rs-list"></ul>
+    <div class="oc-rs-modal-body">
+      <div id="rsList" class="oc-rs-list"></div>
     </div>
-  </aside>
+  </div>
 </div>
 
 <div id="rsUploadMask" class="oc-modal-mask oc" hidden>
-  <div class="oc-modal oc-modal-narrow oc-rs-upload-modal" role="dialog" aria-modal="true" aria-labelledby="rsUploadTitle">
+  <div class="oc-modal oc-rs-upload-modal" role="dialog" aria-modal="true" aria-labelledby="rsUploadTitle">
     <div class="oc-modal-head">
       <h3 id="rsUploadTitle">上传原始去字幕素材</h3>
       <button type="button" id="rsUploadClose" class="oc-icon-btn" aria-label="关闭">
@@ -1317,19 +1361,41 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
     </div>
     <form id="rsUploadForm" class="oc-rs-upload-form">
       <div class="oc-modal-body oc-rs-upload-body">
-        <label class="oc-field">
-          <span class="oc-label">视频<span class="req">*</span></span>
-          <input id="rsVideoInput" class="oc-input" type="file" name="video" accept="video/mp4,video/quicktime" required>
-          <span class="oc-hint">支持 MP4 / MOV，保持与上传接口的 MIME 校验一致。</span>
-        </label>
-        <label class="oc-field">
-          <span class="oc-label">封面<span class="req">*</span></span>
-          <input id="rsCoverInput" class="oc-input" type="file" name="cover" accept="image/jpeg,image/png,image/webp" required>
-        </label>
+        <div class="oc-rs-upload-grid">
+          <div class="oc-new-item-col">
+            <div class="oc-new-item-label">视频封面图<span class="req">*</span></div>
+            <div id="rsUploadCoverBox" class="oc-cover-9-16" tabindex="0" role="button" aria-label="上传视频封面图">
+              <label for="rsCoverInput" id="rsUploadCoverDropzone" class="cover-dz">
+                <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                <div class="dz-title">点击或拖拽上传封面</div>
+                <div class="dz-hint">建议 9:16 / 1080×1920</div>
+              </label>
+              <img id="rsUploadCoverPreview" alt="原始素材封面预览" hidden>
+            </div>
+          </div>
+          <div class="oc-new-item-col">
+            <div class="oc-new-item-label">视频源<span class="req">*</span></div>
+            <div id="rsUploadVideoBox" class="oc-video-pick" tabindex="0" role="button" aria-label="上传原始视频">
+              <label for="rsVideoInput" id="rsUploadVideoEmpty" class="cover-dz">
+                <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                <div class="dz-title">点击或拖拽选择视频</div>
+                <div class="dz-hint">支持 MP4 / MOV</div>
+              </label>
+              <div id="rsUploadVideoFilled" class="oc-video-filled oc-rs-upload-video-fill" hidden>
+                <div class="oc-video-filled-icon"><svg width="28" height="28"><use href="#ic-film"/></svg></div>
+                <div id="rsUploadVideoName" class="oc-video-filled-name"></div>
+                <div id="rsUploadVideoSize" class="oc-video-filled-size"></div>
+              </div>
+            </div>
+          </div>
+        </div>
         <label class="oc-field">
           <span class="oc-label">名称</span>
-          <input id="rsDisplayName" class="oc-input" type="text" name="display_name" maxlength="64" placeholder="例如：英文原始主视频">
+          <input id="rsDisplayName" class="oc-input" type="text" name="display_name" maxlength="64" placeholder="默认读取所选视频文件名，可按需修改">
         </label>
+        <input id="rsVideoInput" type="file" name="video" accept="video/mp4,video/quicktime,.mp4,.mov" required hidden>
+        <input id="rsCoverInput" type="file" name="cover" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" required hidden>
+        <div class="oc-hint oc-rs-upload-note">支持点击或直接拖拽文件到上传框内，名称会默认带出实际视频文件名。</div>
       </div>
       <div class="oc-modal-foot">
         <button type="button" id="rsUploadCancel" class="oc-btn ghost">取消</button>

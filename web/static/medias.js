@@ -2898,12 +2898,23 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
-  const drawerMask = $('rsDrawerMask');
+  const modalMask = $('rsModalMask');
+  const modalClose = $('rsModalClose');
   const summary = $('rsSummary');
   const list = $('rsList');
   const uploadMask = $('rsUploadMask');
   const uploadForm = $('rsUploadForm');
   const uploadSubmit = $('rsUploadSubmit');
+  const uploadVideoInput = $('rsVideoInput');
+  const uploadCoverInput = $('rsCoverInput');
+  const uploadNameInput = $('rsDisplayName');
+  const uploadCoverBox = $('rsUploadCoverBox');
+  const uploadCoverPreview = $('rsUploadCoverPreview');
+  const uploadVideoBox = $('rsUploadVideoBox');
+  const uploadVideoEmpty = $('rsUploadVideoEmpty');
+  const uploadVideoFilled = $('rsUploadVideoFilled');
+  const uploadVideoName = $('rsUploadVideoName');
+  const uploadVideoSize = $('rsUploadVideoSize');
   const translateMask = $('rsTranslateMask');
   const translateTitleMeta = $('rstTitleMeta');
   const translateRsList = $('rstRsList');
@@ -2916,8 +2927,9 @@
     translatePid: null,
     translateName: '',
   };
+  let rawSourceCoverObjectUrl = '';
 
-  if (!drawerMask || !list || !uploadMask || !uploadForm || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
+  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !uploadSubmit || !uploadVideoInput || !uploadCoverInput || !uploadNameInput || !uploadCoverBox || !uploadCoverPreview || !uploadVideoBox || !uploadVideoEmpty || !uploadVideoFilled || !uploadVideoName || !uploadVideoSize || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
     return;
   }
 
@@ -2941,8 +2953,31 @@
 
   function fmtRawSize(bytes) {
     const value = Number(bytes || 0);
-    if (!value) return '大小 —';
+    if (!value) return '大小 -';
     return `大小 ${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function fmtUploadSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!value && value !== 0) return '';
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  }
+
+  function isRawSourceVideoFile(file) {
+    if (!file) return false;
+    const type = String(file.type || '').toLowerCase();
+    if (type === 'video/mp4' || type === 'video/quicktime') return true;
+    return /\.(mp4|mov)$/i.test(file.name || '');
+  }
+
+  function isRawSourceCoverFile(file) {
+    if (!file) return false;
+    const type = String(file.type || '').toLowerCase();
+    if (['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(type)) return true;
+    return /\.(jpe?g|png|webp|gif)$/i.test(file.name || '');
   }
 
   async function requestJSON(url, options) {
@@ -2960,43 +2995,185 @@
 
   function setSummary(items) {
     const name = uiState.currentName || (uiState.currentPid ? `产品 #${uiState.currentPid}` : '当前产品');
-    summary.textContent = `${name} · 共 ${items.length} 条原始去字幕素材`;
+    summary.textContent = `${name} · 共 ${items.length} 条素材`;
   }
 
-  function renderRawSourceRow(it) {
-    const thumb = it.cover_url
-      ? `<img src="${escapeHtml(it.cover_url)}" alt="${escapeHtml(it.display_name || '原始素材封面')}" loading="lazy">`
-      : `<svg width="24" height="24" aria-hidden="true"><use href="#ic-film"/></svg>`;
+  function renderRawSourceCard(it) {
     const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
+    const coverPane = it.cover_url
+      ? `<img src="${escapeHtml(it.cover_url)}" alt="${title}" loading="lazy">`
+      : `<div class="thumb-ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></div>`;
     return `
-      <li class="oc-rs-row">
-        <div class="oc-rs-thumb">${thumb}</div>
-        <div class="oc-rs-meta">
-          <div class="oc-rs-title" title="${title}">${title}</div>
-          <div class="oc-rs-subtitle">${fmtRawDuration(it.duration_seconds)} · ${fmtRawSize(it.file_size)}</div>
-          <div class="oc-rs-links">
-            <a class="oc-rs-link" href="${escapeHtml(it.video_url)}" target="_blank" rel="noopener noreferrer">查看视频</a>
-            <a class="oc-rs-link" href="${escapeHtml(it.cover_url)}" target="_blank" rel="noopener noreferrer">查看封面</a>
+      <article class="oc-rs-card oc-vitem" data-rs-id="${it.id}" data-video-url="${escapeHtml(it.video_url || '')}">
+        <div class="vname" title="${title}">${title}</div>
+        <div class="vtabs">
+          <button type="button" class="vtab active" data-tab="cover">封面图</button>
+          <button type="button" class="vtab" data-tab="video">视频</button>
+        </div>
+        <div class="vbody">
+          <div class="vpane active" data-pane="cover">${coverPane}</div>
+          <div class="vpane" data-pane="video">
+            <div class="vvideo-ph">点击“视频”后加载播放</div>
           </div>
         </div>
-        <div class="oc-rs-actions">
-          <button type="button" class="oc-btn sm ghost js-rs-del" data-rid="${it.id}">删除</button>
+        <div class="oc-rs-meta-line">${fmtRawDuration(it.duration_seconds)} · ${fmtRawSize(it.file_size)}</div>
+        <div class="vactions">
+          <span class="oc-hint">9:16 预览</span>
+          <button type="button" class="oc-btn text sm danger-txt js-rs-del" data-rid="${it.id}">删除</button>
         </div>
-      </li>`;
+      </article>`;
   }
 
-  function openRawSourceDrawer(pid, name) {
+  function ensureRawSourceVideoLoaded(card) {
+    const pane = card.querySelector('[data-pane="video"]');
+    if (!pane || pane.dataset.loaded === '1') return;
+    const videoUrl = card.dataset.videoUrl || '';
+    if (!videoUrl) {
+      pane.innerHTML = '<div class="vvideo-ph err">视频地址缺失，请重新上传后重试</div>';
+      pane.dataset.loaded = '';
+      return;
+    }
+    pane.innerHTML = '<div class="vvideo-ph">加载视频中...</div>';
+    const loading = pane.firstElementChild;
+    const video = document.createElement('video');
+    video.controls = true;
+    video.preload = 'metadata';
+    video.src = videoUrl;
+    video.addEventListener('loadedmetadata', () => {
+      if (loading) loading.remove();
+      pane.dataset.loaded = '1';
+    }, { once: true });
+    video.addEventListener('error', () => {
+      pane.innerHTML = '<div class="vvideo-ph err">视频加载失败，请重试</div>';
+      pane.dataset.loaded = '';
+    }, { once: true });
+    pane.appendChild(video);
+  }
+
+  function bindRawSourceCards() {
+    list.querySelectorAll('[data-rs-id]').forEach((card) => {
+      const tabs = card.querySelectorAll('.vtab');
+      const panes = card.querySelectorAll('.vpane');
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+          tabs.forEach((node) => node.classList.toggle('active', node === tab));
+          panes.forEach((pane) => pane.classList.toggle('active', pane.dataset.pane === tab.dataset.tab));
+          if (tab.dataset.tab === 'video') ensureRawSourceVideoLoaded(card);
+        });
+      });
+    });
+  }
+
+  function renderRawSourceState(message, kind = '') {
+    const isError = kind === 'error';
+    list.innerHTML = `
+      <div class="oc-rs-empty${isError ? ' err' : ''}">
+        <div>${escapeHtml(message)}</div>
+        ${isError ? '<button type="button" id="rsRetryBtn" class="oc-btn ghost sm">重新加载</button>' : ''}
+      </div>`;
+    const retryBtn = $('rsRetryBtn');
+    if (retryBtn && uiState.currentPid) {
+      retryBtn.addEventListener('click', async () => {
+        await loadRawSourceList(uiState.currentPid);
+      });
+    }
+  }
+
+  function assignFilesToInput(input, files) {
+    if (!input || !files || !files.length) return;
+    const transfer = new DataTransfer();
+    files.forEach((file) => transfer.items.add(file));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function setRawSourceUploadCover(file) {
+    const coverDropzone = uploadCoverBox.querySelector('.cover-dz');
+    if (rawSourceCoverObjectUrl) {
+      URL.revokeObjectURL(rawSourceCoverObjectUrl);
+      rawSourceCoverObjectUrl = '';
+    }
+    if (!file) {
+      uploadCoverPreview.hidden = true;
+      uploadCoverPreview.removeAttribute('src');
+      if (coverDropzone) coverDropzone.hidden = false;
+      return;
+    }
+    rawSourceCoverObjectUrl = URL.createObjectURL(file);
+    uploadCoverPreview.src = rawSourceCoverObjectUrl;
+    uploadCoverPreview.hidden = false;
+    if (coverDropzone) coverDropzone.hidden = true;
+  }
+
+  function setRawSourceUploadVideo(file) {
+    if (file) {
+      uploadVideoEmpty.hidden = true;
+      uploadVideoFilled.hidden = false;
+      uploadVideoName.textContent = file.name;
+      uploadVideoSize.textContent = fmtUploadSize(file.size);
+      uploadNameInput.value = file.name;
+      return;
+    }
+    uploadVideoEmpty.hidden = false;
+    uploadVideoFilled.hidden = true;
+    uploadVideoName.textContent = '';
+    uploadVideoSize.textContent = '';
+    uploadNameInput.value = '';
+  }
+
+  function bindRawSourceUploadDropzone(box, input, acceptFile) {
+    if (!box || !input) return;
+    box.addEventListener('click', (event) => {
+      if (event.target.closest('label')) return;
+      const activeControl = event.target.closest('button, input, a');
+      if (activeControl) return;
+      input.click();
+    });
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    box.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      box.classList.add('drag');
+    });
+    box.addEventListener('dragleave', () => box.classList.remove('drag'));
+    box.addEventListener('drop', (event) => {
+      event.preventDefault();
+      box.classList.remove('drag');
+      const file = [...(event.dataTransfer.files || [])].find(acceptFile);
+      if (file) assignFilesToInput(input, [file]);
+    });
+  }
+
+  function openRawSourceModal(pid, name) {
     uiState.currentPid = String(pid);
     uiState.currentName = name || '';
-    drawerMask.hidden = false;
+    summary.textContent = '加载中';
+    renderRawSourceState('素材列表加载中...');
+    modalMask.hidden = false;
   }
 
-  function closeRawSourceDrawer() {
-    drawerMask.hidden = true;
+  function closeRawSourceModal() {
+    modalMask.hidden = true;
     uiState.currentPid = null;
     uiState.currentName = '';
     list.innerHTML = '';
-    summary.textContent = '加载中…';
+    summary.textContent = '加载中';
+  }
+
+  async function loadRawSourceList(pid) {
+    summary.textContent = '加载中';
+    renderRawSourceState('素材列表加载中...');
+    try {
+      return await refreshRawSourceList(pid);
+    } catch (err) {
+      renderRawSourceState(`加载失败：${err.message || err}`, 'error');
+      summary.textContent = '素材列表加载失败';
+      return null;
+    }
   }
 
   function openRawSourceUpload() {
@@ -3005,24 +3182,33 @@
       return;
     }
     uploadMask.hidden = false;
-    if ($('rsVideoInput')) $('rsVideoInput').focus();
+    uploadVideoBox.focus();
   }
 
   function closeRawSourceUpload() {
     uploadMask.hidden = true;
     uploadForm.reset();
     uploadSubmit.disabled = false;
+    setRawSourceUploadCover(null);
+    setRawSourceUploadVideo(null);
   }
 
   async function refreshRawSourceList(pid) {
-    const data = await requestJSON(`/medias/api/products/${pid}/raw-sources`);
-    const items = data.items || [];
-    setSummary(items);
-    list.innerHTML = items.length
-      ? items.map(renderRawSourceRow).join('')
-      : '<li class="oc-rs-empty">还没有原始去字幕素材，先上传第一条再发起视频翻译。</li>';
-    syncRawSourceCount(pid, items.length);
-    return items;
+    try {
+      const data = await requestJSON(`/medias/api/products/${pid}/raw-sources`);
+      const items = data.items || [];
+      setSummary(items);
+      list.innerHTML = items.length
+        ? items.map(renderRawSourceCard).join('')
+        : '<div class="oc-rs-empty">还没有原始去字幕素材，先上传第一条再发起视频翻译。</div>';
+      bindRawSourceCards();
+      syncRawSourceCount(pid, items.length);
+      return items;
+    } catch (err) {
+      summary.textContent = '加载失败';
+      renderRawSourceState(`加载失败：${err.message || err}`, 'error');
+      throw err;
+    }
   }
 
   async function submitRawSourceUpload(event) {
@@ -3176,6 +3362,32 @@
 
   translateRsList.addEventListener('change', updateTranslatePreview);
   translateLangs.addEventListener('change', updateTranslatePreview);
+  uploadCoverInput.addEventListener('change', (event) => {
+    const file = event.target.files[0] || null;
+    if (file && !isRawSourceCoverFile(file)) {
+      alert('仅支持 JPG / PNG / WebP / GIF 图片');
+      uploadCoverInput.value = '';
+      setRawSourceUploadCover(null);
+      return;
+    }
+    setRawSourceUploadCover(file);
+  });
+  uploadVideoInput.addEventListener('change', (event) => {
+    const file = event.target.files[0] || null;
+    if (file && !isRawSourceVideoFile(file)) {
+      alert('仅支持 MP4 / MOV 视频');
+      uploadVideoInput.value = '';
+      setRawSourceUploadVideo(null);
+      return;
+    }
+    setRawSourceUploadVideo(file);
+  });
+  bindRawSourceUploadDropzone(uploadCoverBox, uploadCoverInput, isRawSourceCoverFile);
+  bindRawSourceUploadDropzone(
+    uploadVideoBox,
+    uploadVideoInput,
+    isRawSourceVideoFile,
+  );
   uploadForm.addEventListener('submit', submitRawSourceUpload);
   translateSubmit.addEventListener('click', submitTranslateTask);
 
@@ -3183,13 +3395,8 @@
     const openBtn = event.target.closest('.js-raw-sources');
     if (openBtn) {
       event.preventDefault();
-      openRawSourceDrawer(openBtn.dataset.pid, openBtn.dataset.name || '');
-      try {
-        await refreshRawSourceList(openBtn.dataset.pid);
-      } catch (err) {
-        list.innerHTML = `<li class="oc-rs-empty">加载失败：${escapeHtml(err.message || err)}</li>`;
-        summary.textContent = '原始素材列表加载失败';
-      }
+      openRawSourceModal(openBtn.dataset.pid, openBtn.dataset.name || '');
+      await loadRawSourceList(openBtn.dataset.pid);
       return;
     }
 
@@ -3200,8 +3407,8 @@
       return;
     }
 
-    if (event.target === drawerMask || event.target.closest('#rsDrawerClose')) {
-      closeRawSourceDrawer();
+    if (event.target === modalMask || event.target.closest('#rsModalClose')) {
+      closeRawSourceModal();
       return;
     }
 

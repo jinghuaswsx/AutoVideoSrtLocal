@@ -1926,19 +1926,35 @@ def test_medias_page_removes_archived_filter_chip(authed_user_client_no_db):
     assert 'id="chipArchived"' not in body
 
 
-def test_medias_page_contains_raw_sources_drawer_and_upload_modal(authed_client_no_db):
+def test_medias_page_contains_raw_sources_modal_and_upload_modal(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="rsDrawerMask"' in body
-    assert 'id="rsDrawer"' in body
+    assert '.oc-rs-list {' in body
+    assert 'grid-template-columns:repeat(auto-fill, 180px);' in body
+    assert '.oc-rs-card.oc-vitem {' in body
+    assert '.oc-rs-card.oc-vitem .vbody {' in body
+    assert 'height:320px;' in body
+    assert '.oc-rs-upload-grid {' in body
+    assert '.oc-rs-upload-video-fill {' in body
+    assert 'id="rsModalMask"' in body
+    assert 'id="rsModal"' in body
+    assert 'id="rsModalClose"' in body
     assert 'id="rsSummary"' in body
+    assert '<div id="rsList" class="oc-rs-list"></div>' in body
     assert 'id="rsUploadMask"' in body
     assert 'id="rsUploadForm"' in body
     assert 'id="rsVideoInput"' in body
     assert 'id="rsCoverInput"' in body
     assert 'id="rsDisplayName"' in body
+    assert 'id="rsUploadCoverBox"' in body
+    assert 'id="rsUploadCoverPreview"' in body
+    assert 'id="rsUploadVideoBox"' in body
+    assert 'id="rsUploadVideoFilled"' in body
+    assert 'id="rsUploadVideoName"' in body
+    assert '支持 MP4 / MOV' in body
+    assert 'WebM / MKV' not in body
 
 
 def test_medias_page_contains_raw_source_translate_dialog(authed_client_no_db):
@@ -1989,12 +2005,32 @@ def test_medias_scripts_do_not_use_archived_filter_chip():
     assert "chipArchived" not in events_block
 
 
-def test_medias_scripts_wire_raw_sources_drawer_flow():
+def test_medias_scripts_wire_raw_sources_modal_flow():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
     assert "js-raw-sources" in medias_js
-    assert "rsDrawerMask" in medias_js
+    assert "rsModalMask" in medias_js
+    assert "rsModalClose" in medias_js
+    assert "loadRawSourceList" in medias_js
+    assert "await loadRawSourceList(uiState.currentPid)" in medias_js
     assert "rsUploadForm" in medias_js
+    assert "renderRawSourceCard" in medias_js
+    assert "data-rs-id" in medias_js
+    assert "ensureRawSourceVideoLoaded" in medias_js
+    assert "bindRawSourceCards" in medias_js
+    assert 'data-tab="cover"' in medias_js
+    assert 'data-tab="video"' in medias_js
+    assert "document.createElement('video')" in medias_js
+    assert "video.addEventListener('loadedmetadata'" in medias_js
+    assert "video.addEventListener('error'" in medias_js
+    assert "isRawSourceCoverFile" in medias_js
+    assert "isRawSourceVideoFile" in medias_js
+    assert "仅支持 JPG / PNG / WebP / GIF 图片" in medias_js
+    assert "仅支持 MP4 / MOV 视频" in medias_js
+    assert "setRawSourceUploadCover" in medias_js
+    assert "setRawSourceUploadVideo" in medias_js
+    assert "bindRawSourceUploadDropzone" in medias_js
+    assert "uploadNameInput.value = file.name" in medias_js
     assert '/medias/api/products/${pid}/raw-sources' in medias_js
     assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js
     assert "refreshRawSourceList" in medias_js
