@@ -1,4 +1,4 @@
-"""Gemini 图像生成封装（Nano Banana 系列）。
+﻿"""Gemini 图像生成封装（Nano Banana 系列）。
 
 对外暴露 generate_image()，根据 system_settings 里的 image_translate.channel
 分发到三条通道：AI Studio / Google Cloud (Vertex AI) / OpenRouter。
@@ -29,14 +29,48 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
-IMAGE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
-    ("gemini-3-pro-image-preview",   "Nano Banana Pro（高保真）"),
-]
+IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
+    "aistudio": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "cloud": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "openrouter": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "doubao": [
+        ("doubao-seedream-5-0-260128", "Seedream 5.0（豆包）"),
+    ],
+}
+IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
 
 
-def is_valid_image_model(model_id: str) -> bool:
-    return any(m[0] == model_id for m in IMAGE_MODELS)
+def normalize_image_channel(channel: str | None) -> str:
+    value = (channel or "").strip().lower()
+    return value if value in IMAGE_MODELS_BY_CHANNEL else "aistudio"
+
+
+def list_image_models(channel: str | None = None) -> list[tuple[str, str]]:
+    return list(IMAGE_MODELS_BY_CHANNEL[normalize_image_channel(channel)])
+
+
+def default_image_model(channel: str | None = None) -> str:
+    models = list_image_models(channel)
+    return models[0][0] if models else "gemini-3.1-flash-image-preview"
+
+
+def is_valid_image_model(model_id: str, channel: str | None = None) -> bool:
+    return any(mid == model_id for mid, _ in list_image_models(channel))
+
+
+def coerce_image_model(model_id: str | None, channel: str | None = None) -> str:
+    if model_id and is_valid_image_model(model_id, channel=channel):
+        return model_id
+    return default_image_model(channel)
 
 
 class GeminiImageError(RuntimeError):

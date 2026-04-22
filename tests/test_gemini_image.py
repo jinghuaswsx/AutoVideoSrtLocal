@@ -199,3 +199,21 @@ def test_generate_image_raises_when_no_image_part():
     assert kwargs["provider"] == "gemini_aistudio"
     assert kwargs["success"] is False
     assert "NO_IMAGE_RETURNED" not in kwargs["extra"]["error"]
+
+
+def test_image_model_registry_is_channel_scoped():
+    from appcore import gemini_image
+
+    assert gemini_image.default_image_model("doubao") == "doubao-seedream-5-0-260128"
+    assert gemini_image.is_valid_image_model(
+        "doubao-seedream-5-0-260128",
+        channel="doubao",
+    )
+    assert not gemini_image.is_valid_image_model(
+        "gemini-3-pro-image-preview",
+        channel="doubao",
+    )
+    assert gemini_image.coerce_image_model(
+        "gemini-3-pro-image-preview",
+        channel="doubao",
+    ) == "doubao-seedream-5-0-260128"

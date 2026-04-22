@@ -14,11 +14,12 @@ SUPPORTED_LANGS: tuple[str, ...] = ("de", "fr", "es", "it", "ja", "pt")
 PRESETS: tuple[str, ...] = ("cover", "detail")
 
 # 图片翻译 Gemini 通道（全局配置，存 system_settings）
-CHANNELS: tuple[str, ...] = ("aistudio", "cloud", "openrouter")
+CHANNELS: tuple[str, ...] = ("aistudio", "cloud", "openrouter", "doubao")
 CHANNEL_LABELS: dict[str, str] = {
     "aistudio": "Google AI Studio",
     "cloud": "Google Cloud (Vertex AI)",
     "openrouter": "OpenRouter",
+    "doubao": "豆包",
 }
 _CHANNEL_KEY = "image_translate.channel"
 _DEFAULT_CHANNEL = "aistudio"
