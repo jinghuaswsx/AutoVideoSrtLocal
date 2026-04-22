@@ -284,3 +284,115 @@ def test_logs_returns_history(logged_in_client, seeded_item):
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["logs"]) >= 1
+
+
+# ================================================================
+# 新增：推送凭据 + 小语种文案推送
+# ================================================================
+
+
+def test_push_credentials_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/pushes/api/push-credentials")
+    assert resp.status_code == 403
+    resp = authed_user_client_no_db.post(
+        "/pushes/api/push-credentials",
+        json={"push_localized_texts_base_url": "http://x"},
+    )
+    assert resp.status_code == 403
+
+
+def test_push_credentials_get_masks_secrets(logged_in_client, monkeypatch):
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer verylongsecrettoken1234567890")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie",
+                        lambda: "sessionid=abcdefg12345; token=xyz")
+    resp = logged_in_client.get("/pushes/api/push-credentials")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["push_localized_texts_authorization_present"] is True
+    assert data["push_localized_texts_cookie_present"] is True
+    assert "…" in data["push_localized_texts_authorization_masked"]
+    assert "Bearer verylongsecrettoken1234567890" not in data["push_localized_texts_authorization_masked"]
+
+
+def test_push_credentials_post_saves(logged_in_client):
+    payload = {
+        "push_localized_texts_base_url": "https://os.wedev.vip",
+        "push_localized_texts_authorization": "Bearer test-token-xyz",
+    }
+    resp = logged_in_client.post("/pushes/api/push-credentials", json=payload)
+    assert resp.status_code == 200
+    assert set(resp.get_json()["updated"]) >= {
+        "push_localized_texts_base_url", "push_localized_texts_authorization",
+    }
+    from appcore.settings import get_setting
+    assert get_setting("push_localized_texts_base_url") == "https://os.wedev.vip"
+    assert get_setting("push_localized_texts_authorization") == "Bearer test-token-xyz"
+
+
+def test_payload_endpoint_includes_mk_id_and_localized_texts(
+    logged_in_client, seeded_item, monkeypatch,
+):
+    pid, item_id = seeded_item
+    _stub_probe_ok(monkeypatch)
+    _seed_en_push_texts(pid)
+    from appcore import medias
+    medias.update_product(pid, mk_id=9999)
+    medias.replace_copywritings(
+        pid,
+        [{"title": "T_DE", "body": "标题: 德标题\n文案: 德文案\n描述: 德描述"}],
+        lang="de",
+    )
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    resp = logged_in_client.get(f"/pushes/api/items/{item_id}/payload")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["mk_id"] == 9999
+    assert data["localized_push_target_url"] == "https://os.wedev.vip/api/marketing/medias/9999/texts"
+    assert isinstance(data["localized_texts_request"]["texts"], list)
+
+
+def test_push_localized_texts_rejects_missing_credentials(
+    logged_in_client, seeded_item, monkeypatch,
+):
+    pid, item_id = seeded_item
+    from appcore import medias
+    medias.update_product(pid, mk_id=8888)
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization", lambda: "")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push-localized-texts")
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == "push_localized_texts_credentials_missing"
+
+
+def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    from appcore import medias
+    medias.update_product(pid, mk_id=7777)
+    medias.replace_copywritings(
+        pid,
+        [{"title": "T_DE", "body": "标题: 德标题\n文案: 德文案\n描述: 德描述"}],
+        lang="de",
+    )
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer sometoken")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+
+    captured = {}
+    def fake_post(url, **kw):
+        captured["url"] = url
+        captured["json"] = kw.get("json")
+        captured["headers"] = kw.get("headers")
+        return _FakeResponse(200, '{"ok":true}')
+    monkeypatch.setattr("web.routes.pushes.requests.post", fake_post)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push-localized-texts")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert captured["url"] == "https://os.wedev.vip/api/marketing/medias/7777/texts"
+    assert captured["headers"]["Authorization"] == "Bearer sometoken"
+    assert isinstance(captured["json"]["texts"], list) and captured["json"]["texts"]

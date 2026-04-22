@@ -144,9 +144,16 @@ def api_build_payload(item_id: int):
         }), 400
 
     payload = pushes.build_item_payload(item, product)
+    mk_id = product.get("mk_id")
+    localized_text = pushes.resolve_localized_text_payload(item)
+    localized_texts_request = pushes.build_localized_texts_request(item)
     return jsonify({
         "payload": payload,
-        "push_url": config.PUSH_TARGET_URL,
+        "push_url": pushes.get_push_target_url(),
+        "mk_id": mk_id,
+        "localized_text": localized_text,
+        "localized_texts_request": localized_texts_request,
+        "localized_push_target_url": pushes.build_localized_texts_target_url(mk_id),
     })
 
 
@@ -155,7 +162,8 @@ def api_build_payload(item_id: int):
 @admin_required
 def api_push(item_id: int):
     """推送入口：进程内组装 payload + 写日志/状态，只对下游外部系统发一次 HTTP。"""
-    if not config.PUSH_TARGET_URL:
+    push_url = pushes.get_push_target_url()
+    if not push_url:
         return jsonify({"error": "push_target_not_configured"}), 500
 
     item = medias.get_item(item_id)
@@ -186,7 +194,7 @@ def api_push(item_id: int):
 
     try:
         resp = requests.post(
-            config.PUSH_TARGET_URL,
+            push_url,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=30,
@@ -285,3 +293,119 @@ def api_logs(item_id: int):
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         })
     return jsonify({"logs": serialized})
+
+
+# ================================================================
+# 小语种文案推送：进程内组装 → 一次 HTTP POST 到 wedev
+# ================================================================
+
+
+@bp.route("/api/items/<int:item_id>/push-localized-texts", methods=["POST"])
+@login_required
+@admin_required
+def api_push_localized_texts(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item_not_found"}), 404
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return jsonify({"error": "product_not_found"}), 404
+    mk_id = product.get("mk_id")
+    if not mk_id:
+        return jsonify({"error": "mk_id_missing", "detail": "产品缺少 mk_id"}), 400
+
+    target_url = pushes.build_localized_texts_target_url(mk_id)
+    if not target_url:
+        return jsonify({"error": "push_localized_texts_base_url_missing"}), 500
+
+    headers = pushes.build_localized_texts_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return jsonify({"error": "push_localized_texts_credentials_missing"}), 500
+
+    body = pushes.build_localized_texts_request(item)
+    if not body.get("texts"):
+        return jsonify({"error": "localized_texts_empty"}), 400
+
+    try:
+        resp = requests.post(target_url, json=body, headers=headers, timeout=30)
+    except requests.RequestException as exc:
+        return jsonify({
+            "error": "downstream_unreachable",
+            "detail": str(exc),
+            "target_url": target_url,
+        }), 502
+
+    body_text = resp.text or ""
+    if resp.ok:
+        return jsonify({
+            "ok": True,
+            "upstream_status": resp.status_code,
+            "response_body": body_text[:4000],
+            "target_url": target_url,
+        })
+    return jsonify({
+        "error": "downstream_error",
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+        "target_url": target_url,
+    }), 502
+
+
+# ================================================================
+# 推送凭据读写（admin only）
+# 在 /settings?tab=push 页面维护；或通过 tools/wedev_sync.py 自动同步。
+# ================================================================
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 12:
+        return "*" * len(value)
+    return f"{value[:6]}…{value[-4:]}  (len={len(value)})"
+
+
+@bp.route("/api/push-credentials", methods=["GET"])
+@login_required
+@admin_required
+def api_get_push_credentials():
+    """返回当前凭据（auth / cookie 脱敏）+ 目标地址。"""
+    auth = pushes.get_localized_texts_authorization()
+    cookie = pushes.get_localized_texts_cookie()
+    return jsonify({
+        "push_target_url": pushes.get_push_target_url(),
+        "push_localized_texts_base_url": pushes.get_localized_texts_base_url(),
+        "push_localized_texts_authorization_masked": _mask_secret(auth),
+        "push_localized_texts_authorization_present": bool(auth),
+        "push_localized_texts_cookie_masked": _mask_secret(cookie),
+        "push_localized_texts_cookie_present": bool(cookie),
+    })
+
+
+_ALLOWED_PUSH_SETTING_KEYS = {
+    "push_target_url",
+    "push_localized_texts_base_url",
+    "push_localized_texts_authorization",
+    "push_localized_texts_cookie",
+}
+
+
+@bp.route("/api/push-credentials", methods=["POST"])
+@login_required
+@admin_required
+def api_set_push_credentials():
+    """admin 保存凭据。支持部分更新：未传或空字符串的键不会覆盖（除非显式带 clear=true）。"""
+    from appcore.settings import set_setting
+    body = request.get_json(silent=True) or {}
+    clear_flags = body.get("clear") or {}
+    if not isinstance(clear_flags, dict):
+        clear_flags = {}
+
+    updated: list[str] = []
+    for key in _ALLOWED_PUSH_SETTING_KEYS:
+        if key in body:
+            value = (body.get(key) or "").strip()
+            if value or clear_flags.get(key):
+                set_setting(key, value)
+                updated.append(key)
+    return jsonify({"ok": True, "updated": updated})

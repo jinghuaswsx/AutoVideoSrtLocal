@@ -61,6 +61,10 @@ OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
 OPENAPI_MEDIA_API_KEY = _env("OPENAPI_MEDIA_API_KEY")
 # 推送管理
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")
+# 小语种文案推送（运行时可在 /settings?tab=push 覆盖；env 为兜底默认）
+PUSH_LOCALIZED_TEXTS_BASE_URL = _env("PUSH_LOCALIZED_TEXTS_BASE_URL", "https://os.wedev.vip")
+PUSH_LOCALIZED_TEXTS_AUTHORIZATION = _env("PUSH_LOCALIZED_TEXTS_AUTHORIZATION", "")
+PUSH_LOCALIZED_TEXTS_COOKIE = _env("PUSH_LOCALIZED_TEXTS_COOKIE", "")
 AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
                        "https://newjoyloo.com/{lang}/products/{product_code}")
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))

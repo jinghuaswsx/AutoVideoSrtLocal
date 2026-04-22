@@ -9,10 +9,62 @@ from typing import Any
 import requests
 
 import config
-from appcore import medias, tos_clients
+from appcore import medias, settings as system_settings, tos_clients
 from appcore.db import query, query_one, execute
 
 log = logging.getLogger(__name__)
+
+
+# ---------- 推送目标 + 小语种文案推送凭据（DB 优先，env 兜底） ----------
+# 管理员在 /settings?tab=push 页面维护；或通过 tools/wedev_sync.py 自动同步。
+
+_PUSH_SETTING_ENV_FALLBACK = {
+    "push_target_url": "PUSH_TARGET_URL",
+    "push_localized_texts_base_url": "PUSH_LOCALIZED_TEXTS_BASE_URL",
+    "push_localized_texts_authorization": "PUSH_LOCALIZED_TEXTS_AUTHORIZATION",
+    "push_localized_texts_cookie": "PUSH_LOCALIZED_TEXTS_COOKIE",
+}
+
+
+def _get_push_setting(key: str) -> str:
+    val = system_settings.get_setting(key)
+    if not val:
+        val = getattr(config, _PUSH_SETTING_ENV_FALLBACK.get(key, ""), "") or ""
+    return (val or "").strip()
+
+
+def get_push_target_url() -> str:
+    return _get_push_setting("push_target_url")
+
+
+def get_localized_texts_base_url() -> str:
+    return _get_push_setting("push_localized_texts_base_url").rstrip("/")
+
+
+def get_localized_texts_authorization() -> str:
+    return _get_push_setting("push_localized_texts_authorization")
+
+
+def get_localized_texts_cookie() -> str:
+    return _get_push_setting("push_localized_texts_cookie")
+
+
+def build_localized_texts_target_url(mk_id: int | None) -> str:
+    base = get_localized_texts_base_url()
+    if not base or not mk_id:
+        return ""
+    return f"{base}/api/marketing/medias/{int(mk_id)}/texts"
+
+
+def build_localized_texts_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    auth = get_localized_texts_authorization()
+    if auth:
+        headers["Authorization"] = auth if auth.lower().startswith("bearer ") else f"Bearer {auth}"
+    cookie = get_localized_texts_cookie()
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
 
 
 class CopywritingMissingError(Exception):

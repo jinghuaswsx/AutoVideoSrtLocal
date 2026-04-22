@@ -60,6 +60,8 @@ def index():
         tab = (request.form.get("tab") or "providers").strip()
         if tab == "bindings":
             _handle_bindings_post()
+        elif tab == "push":
+            _handle_push_post()
         else:
             _handle_providers_post()  # 兼容老表单（无 tab）和 tab=providers/general
         flash("配置已保存")
@@ -83,8 +85,21 @@ def index():
     allowed_tabs = {"providers", "bindings"}
     if is_admin:
         allowed_tabs.add("pricing")
+        allowed_tabs.add("push")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
+
+    from appcore import pushes as _pushes_mod
+    push_credentials_view = {
+        "push_target_url": _pushes_mod.get_push_target_url(),
+        "push_localized_texts_base_url": _pushes_mod.get_localized_texts_base_url(),
+        "push_localized_texts_authorization_present": bool(
+            _pushes_mod.get_localized_texts_authorization()
+        ),
+        "push_localized_texts_cookie_present": bool(
+            _pushes_mod.get_localized_texts_cookie()
+        ),
+    }
 
     return render_template(
         "settings.html",
@@ -105,6 +120,7 @@ def index():
         active_tab=active_tab,
         can_manage_pricing=is_admin,
         pricing_units_types=PRICING_UNITS_TYPES,
+        push_credentials_view=push_credentials_view,
     )
 
 
@@ -154,6 +170,28 @@ def _handle_bindings_post() -> None:
         llm_bindings.upsert(
             code, provider=provider, model=model, updated_by=current_user.id,
         )
+
+
+def _handle_push_post() -> None:
+    """推送 tab：保存推送目标 + 小语种文案推送凭据到 system_settings。"""
+    if getattr(current_user, "role", None) != "admin":
+        return
+
+    from appcore.settings import set_setting
+
+    field_keys = (
+        "push_target_url",
+        "push_localized_texts_base_url",
+        "push_localized_texts_authorization",
+        "push_localized_texts_cookie",
+    )
+    clear_keys = set((request.form.getlist("clear") or []))
+    for key in field_keys:
+        raw = (request.form.get(key) or "").strip()
+        if raw:
+            set_setting(key, raw)
+        elif key in clear_keys:
+            set_setting(key, "")
 
 
 def _parse_price_decimal(raw_value, field_label: str) -> float | None:

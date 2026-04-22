@@ -109,6 +109,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   {% if can_manage_pricing %}
   <a href="{{ url_for('settings.index', tab='pricing') }}"
      class="settings-tab {{ 'active' if active_tab == 'pricing' }}">AI 定价</a>
+  <a href="{{ url_for('settings.index', tab='push') }}"
+     class="settings-tab {{ 'active' if active_tab == 'push' }}">推送</a>
   {% endif %}
 </div>
 
@@ -475,6 +477,77 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   } | tojson }}
 </script>
 <script src="{{ url_for('static', filename='admin_pricing.js') }}"></script>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab 4 · 推送（管理员）— 目标地址 + 小语种文案推送凭据
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'push' %}
+<form method="post" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="push">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">推送配置</h1>
+    <button class="btn btn-primary save-btn" type="submit" style="margin:0">保存</button>
+  </div>
+
+  <div class="settings-card">
+    <h2>推送目标</h2>
+    <div class="step-desc">
+      "素材推送"端点：主项目后端进程内 POST 到这里（Dify / Shopify 工作流入口）。
+    </div>
+    <label for="push_target_url">PUSH_TARGET_URL</label>
+    <input type="text" id="push_target_url" name="push_target_url"
+           value="{{ push_credentials_view.push_target_url or '' }}"
+           placeholder="http://172.17.254.77:22400/dify/shopify/medias">
+    <p class="hint">当前值：{{ push_credentials_view.push_target_url or '(未设置)' }}</p>
+  </div>
+
+  <div class="settings-card">
+    <h2>小语种文案推送（wedev）</h2>
+    <div class="step-desc">
+      调用 <code>{{ push_credentials_view.push_localized_texts_base_url or '(未设置 base_url)' }}/api/marketing/medias/&lt;mk_id&gt;/texts</code>。
+      可在「推送管理」弹窗的"推送小语种文案"胶囊里触发。Authorization 和 Cookie 至少需要其一。
+    </div>
+
+    <label for="push_localized_texts_base_url">Base URL</label>
+    <input type="text" id="push_localized_texts_base_url" name="push_localized_texts_base_url"
+           value="{{ push_credentials_view.push_localized_texts_base_url or '' }}"
+           placeholder="https://os.wedev.vip">
+
+    <label for="push_localized_texts_authorization">Authorization（Bearer token）</label>
+    <input type="text" id="push_localized_texts_authorization" name="push_localized_texts_authorization"
+           value="" placeholder="{{ '已配置（提交新值覆盖；留空不改动）' if push_credentials_view.push_localized_texts_authorization_present else 'Bearer eyJhbGciOi...' }}">
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="clear" value="push_localized_texts_authorization">
+        清空该字段
+      </label>
+      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_localized_texts_authorization_present else '未配置' }}</span>
+    </div>
+
+    <label for="push_localized_texts_cookie">Cookie（完整 cookie header）</label>
+    <input type="text" id="push_localized_texts_cookie" name="push_localized_texts_cookie"
+           value="" placeholder="{{ '已配置（提交新值覆盖；留空不改动）' if push_credentials_view.push_localized_texts_cookie_present else 'sessionid=...; token=...' }}">
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="clear" value="push_localized_texts_cookie">
+        清空该字段
+      </label>
+      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_localized_texts_cookie_present else '未配置' }}</span>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <h2>自动同步工具</h2>
+    <div class="step-desc">
+      想要一键从本地 Chrome 浏览器抓 wedev 的 Cookie + Bearer token？在本地运行：
+    </div>
+    <pre style="background:var(--settings-surface-muted);border:1px solid var(--settings-border);border-radius:8px;padding:12px;font-size:12px;overflow:auto;font-family:ui-monospace,Consolas,monospace;color:var(--settings-fg)">python tools/wedev_sync.py</pre>
+    <p class="hint">工具会打开浏览器让你登录 <code>os.wedev.vip</code>，然后读 Chrome cookies + localStorage token + 主项目 session，一键 POST 到 <code>/pushes/api/push-credentials</code>。Windows 也可直接双击 <code>tools/wedev_sync.bat</code>。</p>
+  </div>
+</form>
 {% endif %}
 
 {% endblock %}
