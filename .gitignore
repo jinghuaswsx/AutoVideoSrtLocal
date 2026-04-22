@@ -35,7 +35,9 @@ img/
 # Logs
 *.log
 uploads/
+uploads
 output/
+output
 capcut_example/
 example.mp4
 

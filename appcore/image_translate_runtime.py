@@ -8,7 +8,7 @@ import time
 from collections import deque
 from datetime import datetime
 
-from appcore import gemini_image, medias, tos_clients
+from appcore import gemini_image, local_media_storage, medias, tos_clients
 from appcore.events import Event, EventBus
 from web import store
 
@@ -162,11 +162,7 @@ class ImageTranslateRuntime:
                 # 3. 写临时文件 + 上传 TOS
                 dst_ext = self._ext_from_mime(out_mime) or ".png"
                 dst_key = self._build_dst_key(task, idx, dst_ext)
-                dst_fd, dst_path = tempfile.mkstemp(suffix=dst_ext, prefix="it_dst_")
-                os.close(dst_fd)
-                with open(dst_path, "wb") as f:
-                    f.write(out_bytes)
-                tos_clients.upload_file(dst_path, dst_key)
+                local_media_storage.write_bytes(dst_key, out_bytes)
 
                 item["status"] = "done"
                 item["dst_tos_key"] = dst_key
@@ -224,14 +220,20 @@ class ImageTranslateRuntime:
                             pass
 
     def _download_source_image(self, task: dict, item: dict, local_path: str) -> str:
+        object_key = item["src_tos_key"]
+        if local_media_storage.exists(object_key):
+            return local_media_storage.download_to(object_key, local_path)
         source_bucket = (
             item.get("source_bucket")
             or (task.get("medias_context") or {}).get("source_bucket")
             or "upload"
         ).strip().lower()
         if source_bucket == "media":
-            return tos_clients.download_media_file(item["src_tos_key"], local_path)
-        return tos_clients.download_file(item["src_tos_key"], local_path)
+            try:
+                return local_media_storage.download_to(object_key, local_path)
+            except FileNotFoundError:
+                return tos_clients.download_media_file(object_key, local_path)
+        return tos_clients.download_file(object_key, local_path)
 
     def _finalize_auto_apply(self, task: dict) -> None:
         ctx = task.get("medias_context") or {}
@@ -362,7 +364,10 @@ def apply_translated_detail_images_from_task(
         download_fd, download_path = tempfile.mkstemp(suffix=ext, prefix="it_apply_")
         os.close(download_fd)
         try:
-            tos_clients.download_file(dst_key, download_path)
+            if local_media_storage.exists(dst_key):
+                local_media_storage.download_to(dst_key, download_path)
+            else:
+                tos_clients.download_file(dst_key, download_path)
             with open(download_path, "rb") as f:
                 data = f.read()
         finally:
@@ -378,7 +383,7 @@ def apply_translated_detail_images_from_task(
         filename = f"{base_name or 'detail'}{ext}"
         object_key = tos_clients.build_media_object_key(resolved_uid, product_id, filename)
         content_type = ImageTranslateRuntime._guess_mime(dst_key)
-        tos_clients.upload_media_object(object_key, data, content_type=content_type)
+        local_media_storage.write_bytes(object_key, data)
         created_images.append({
             "object_key": object_key,
             "content_type": content_type,

@@ -2,6 +2,7 @@ import json
 import io
 import threading
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -170,7 +171,7 @@ def test_detail_images_from_url_background_worker_uses_captured_user_id(
         lambda user_id, pid, filename: object_key_calls.append((user_id, pid, filename))
         or f"{user_id}/{pid}/{filename}",
     )
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args, **kwargs: None)
     monkeypatch.setattr(r.medias, "add_detail_image", lambda *args, **kwargs: 99)
     monkeypatch.setattr(
         r.medias,
@@ -454,8 +455,8 @@ def test_download_image_to_tos_accepts_image_gif(monkeypatch):
         lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
     )
     monkeypatch.setattr(
-        r.tos_clients,
-        "upload_media_object",
+        r.local_media_storage,
+        "write_bytes",
         lambda *a, **kw: captured_uploads.append((a, kw)),
     )
 
@@ -478,7 +479,6 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
     monkeypatch.setattr(r.tos_clients, "build_media_object_key", lambda *a, **kw: "1/medias/1/anim.gif")
-    monkeypatch.setattr(r.tos_clients, "generate_signed_media_upload_url", lambda *a, **kw: "https://signed")
 
     resp = authed_client_no_db.post(
         "/medias/api/products/123/detail-images/bootstrap",
@@ -491,7 +491,7 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     assert resp.status_code == 200
     body = resp.get_json()
     assert body.get("uploads")
-    assert body["uploads"][0]["upload_url"] == "https://signed"
+    assert "/medias/api/local-media-upload/" in body["uploads"][0]["upload_url"]
 
 
 def _run_from_url_worker(monkeypatch, *, body_json):
@@ -549,7 +549,7 @@ def _run_from_url_worker(monkeypatch, *, body_json):
         "build_media_object_key",
         lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
     )
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         r.medias,
         "soft_delete_detail_images_by_lang",
@@ -606,98 +606,120 @@ def test_detail_images_from_url_skips_clear_by_default(authed_client_no_db, monk
         f"未传 clear_existing 时 worker 不应清空，实际 {soft_delete_calls}"
     )
     assert task_state.get("status") == "done"
-
-
-def test_item_upload_goes_through_local_proxy(authed_client_no_db, monkeypatch, tmp_path):
-    """浏览器 → 本服务 → TOS 代理上传：bootstrap 签本地 URL，
-    PUT 本地路由落盘，complete 时服务端把本地文件推到 TOS。"""
+def test_detail_images_bootstrap_uses_local_upload_when_tos_media_bucket_disabled(
+    authed_client_no_db, monkeypatch
+):
     from web.routes import medias as r
 
-    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: False)
     monkeypatch.setattr(
         r.medias,
         "get_product",
-        lambda pid: {"id": pid, "user_id": 1, "name": "盒子", "product_code": "box"},
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
-    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
     monkeypatch.setattr(
         r.tos_clients,
         "build_media_object_key",
-        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/stub_{filename}",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
     )
-    monkeypatch.setattr(r.tos_clients, "media_object_exists", lambda k: False)
-
-    uploaded = {}
-
-    def fake_upload_media_file(local_path, object_key, bucket=None):
-        with open(local_path, "rb") as f:
-            uploaded["payload"] = f.read()
-        uploaded["object_key"] = object_key
-
-    monkeypatch.setattr(r.tos_clients, "upload_media_file", fake_upload_media_file)
-    monkeypatch.setattr(r.medias, "create_item", lambda *a, **kw: 42)
-    monkeypatch.setattr(
-        r.tos_clients,
-        "download_media_file",
-        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("not needed")),
-    )
-
-    # 1. bootstrap 返回本地代理 URL，不是 TOS 公网签名
-    boot_resp = authed_client_no_db.post(
-        "/medias/api/products/123/items/bootstrap",
-        json={"filename": "clip.mp4"},
-    )
-    assert boot_resp.status_code == 200, boot_resp.get_data(as_text=True)
-    boot = boot_resp.get_json()
-    assert boot["object_key"] == "1/medias/123/stub_clip.mp4"
-    assert "tos-cn-shanghai" not in boot["upload_url"], "upload_url 不应指向 TOS 公网"
-    assert "/items/upload/local/" in boot["upload_url"], boot["upload_url"]
-
-    # 2. PUT 本地路由，服务端落盘到 stage
-    payload = b"fake-mp4-bytes"
-    put_resp = authed_client_no_db.put(
-        boot["upload_url"], data=payload, content_type="application/octet-stream",
-    )
-    assert put_resp.status_code == 204
-
-    # 3. complete：服务端从本地 stage 推到 TOS
-    cmpl_resp = authed_client_no_db.post(
-        "/medias/api/products/123/items/complete",
-        json={
-            "object_key": boot["object_key"],
-            "filename": "clip.mp4",
-            "file_size": len(payload),
-            "lang": "en",
-        },
-    )
-    assert cmpl_resp.status_code == 201, cmpl_resp.get_data(as_text=True)
-    assert uploaded["object_key"] == boot["object_key"]
-    assert uploaded["payload"] == payload
-
-
-def test_item_complete_rejects_when_stage_missing_and_no_tos_object(
-    authed_client_no_db, monkeypatch
-):
-    """伪造 object_key、未经 bootstrap 直接 complete，应该被拒。"""
-    from web.routes import medias as r
-
-    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
-    monkeypatch.setattr(
-        r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "x"},
-    )
-    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
-    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en"})
-    monkeypatch.setattr(r.tos_clients, "media_object_exists", lambda k: False)
 
     resp = authed_client_no_db.post(
-        "/medias/api/products/123/items/complete",
+        "/medias/api/products/123/detail-images/bootstrap",
         json={
-            "object_key": "1/medias/123/forged.mp4",
-            "filename": "forged.mp4",
-            "file_size": 0,
             "lang": "en",
+            "files": [{"filename": "demo.jpg", "content_type": "image/jpeg", "size": 12}],
         },
     )
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "对象不存在"
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["uploads"][0]["object_key"] == "1/medias/123/detail_en_00_demo.jpg"
+    assert "/medias/api/local-media-upload/" in body["uploads"][0]["upload_url"]
+
+
+def test_cover_complete_accepts_local_media_object_without_tos_lookup(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    object_key = "1/medias/123/cover_en_demo.jpg"
+    downloaded = tmp_path / "cover.jpg"
+    downloaded.write_bytes(b"cover-bytes")
+    captured = {}
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {})
+    monkeypatch.setattr(
+        r.medias,
+        "set_product_cover",
+        lambda pid, lang, key: captured.update({"pid": pid, "lang": lang, "object_key": key}),
+    )
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda key: key == object_key)
+
+    def fake_download_to(key, destination):
+        Path(destination).write_bytes(downloaded.read_bytes())
+        return str(destination)
+
+    monkeypatch.setattr(r.local_media_storage, "download_to", fake_download_to)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "media_object_exists",
+        lambda key: (_ for _ in ()).throw(AssertionError("should not query TOS media bucket")),
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/cover/complete",
+        json={"lang": "en", "object_key": object_key},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {"pid": 123, "lang": "en", "object_key": object_key}
+
+
+def test_detail_image_proxy_serves_local_media_store_file(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    object_key = "1/medias/123/detail_en_demo.jpg"
+    local_file = tmp_path / "detail.jpg"
+    local_file.write_bytes(b"detail-bytes")
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id,
+            "product_id": 123,
+            "lang": "en",
+            "sort_order": 0,
+            "object_key": object_key,
+            "deleted_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda key: key == object_key)
+    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda key: local_file)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "generate_signed_media_download_url",
+        lambda key: (_ for _ in ()).throw(AssertionError("should not redirect to TOS")),
+    )
+
+    resp = authed_client_no_db.get("/medias/detail-image/77")
+
+    assert resp.status_code == 200
+    assert resp.data == b"detail-bytes"

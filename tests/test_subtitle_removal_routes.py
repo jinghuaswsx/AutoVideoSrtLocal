@@ -63,6 +63,13 @@ def _bootstrap_subtitle_removal_upload(authed_client_no_db):
     return response.get_json()
 
 
+def _mock_public_source_stage(monkeypatch, url: str = "https://example.com/source.mp4"):
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal._ensure_public_source_url",
+        lambda task_id, task: url,
+    )
+
+
 def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_client_no_db, monkeypatch):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
 
@@ -324,7 +331,7 @@ def test_subtitle_removal_source_artifact_returns_404_without_thumbnail(authed_c
     assert response.status_code == 404
 
 
-def test_subtitle_removal_source_artifact_returns_404_for_other_users_task(tmp_path, authed_client_no_db):
+def test_subtitle_removal_source_artifact_serves_other_users_task_when_global_visible(tmp_path, authed_client_no_db):
     thumbnail = tmp_path / "thumbnail.jpg"
     thumbnail.write_bytes(b"jpg")
     task = store.create_subtitle_removal(
@@ -338,7 +345,8 @@ def test_subtitle_removal_source_artifact_returns_404_for_other_users_task(tmp_p
 
     response = authed_client_no_db.get(f"/api/subtitle-removal/{task['id']}/artifact/source")
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.data == b"jpg"
 
 
 def test_subtitle_removal_source_artifact_returns_404_for_non_subtitle_removal_task(tmp_path, authed_client_no_db):
@@ -428,6 +436,7 @@ def test_subtitle_removal_submit_persists_mode_and_starts_runner(authed_client_n
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     started = {}
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
@@ -470,6 +479,7 @@ def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeyp
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
 
     response = authed_client_no_db.post(
@@ -481,6 +491,57 @@ def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeyp
     saved = store.get("sr-submit-full")
     assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
     assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_submit_stages_public_source_on_demand(tmp_path, authed_client_no_db, monkeypatch):
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"video")
+    store.create_subtitle_removal(
+        "sr-submit-public-source",
+        str(source_video),
+        str(tmp_path / "task"),
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-public-source",
+        status="ready",
+        video_path=str(source_video),
+        source_tos_key="",
+        media_info={
+            "width": 1280,
+            "height": 720,
+            "resolution": "1280x720",
+            "duration": 8.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
+    monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.build_source_object_key",
+        lambda user_id, task_id, original_filename: f"uploads/{user_id}/{task_id}/{original_filename}",
+    )
+    uploaded = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.upload_file",
+        lambda local_path, object_key: uploaded.append((local_path, object_key)),
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.generate_signed_download_url",
+        lambda object_key, expires=86400: f"https://example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-public-source/submit",
+        json={"remove_mode": "full", "erase_text_type": "subtitle"},
+    )
+
+    assert response.status_code == 202
+    saved = store.get("sr-submit-public-source")
+    assert saved["source_tos_key"] == "uploads/1/sr-submit-public-source/demo.mp4"
+    assert uploaded == [(str(source_video), "uploads/1/sr-submit-public-source/demo.mp4")]
 
 
 def test_subtitle_removal_submit_rejects_duration_over_limit(authed_client_no_db, monkeypatch):
@@ -676,6 +737,7 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
         result_video_path=str(result_path),
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     started = {}
     deleted = []
     monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
@@ -799,6 +861,7 @@ def test_subtitle_removal_submit_persists_erase_text_type_text(authed_client_no_
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     started = {}
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
@@ -836,6 +899,7 @@ def test_subtitle_removal_submit_defaults_erase_text_type_to_subtitle(authed_cli
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
         lambda task_id, user_id=None: None,
@@ -908,6 +972,7 @@ def test_subtitle_removal_resubmit_overrides_erase_text_type(authed_client_no_db
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
         lambda task_id, user_id=None: None,

@@ -63,6 +63,31 @@ def test_preview_redirect_returns_none_when_not_uploaded():
     assert artifact_download.preview_artifact_tos_redirect(task, "hard_video") is None
 
 
+def test_preview_redirect_prefers_local_file_for_local_primary_task(tmp_path, monkeypatch):
+    local_path = tmp_path / "hard.mp4"
+    local_path.write_bytes(b"video")
+    task = {
+        "_user_id": 1,
+        "delivery_mode": "local_primary",
+        "result": {"hard_video": str(local_path)},
+        "preview_files": {"hard_video": str(local_path)},
+        "tos_uploads": {
+            "normal:hard_video": {
+                "tos_key": "artifacts/1/task-xxx/normal/file.bin",
+                "artifact_kind": "hard_video",
+                "variant": "normal",
+            }
+        },
+    }
+    monkeypatch.setattr(
+        artifact_download.tos_clients,
+        "generate_signed_download_url",
+        lambda key, expires=None: f"https://tos.example/{key}",
+    )
+
+    assert artifact_download.preview_artifact_tos_redirect(task, "hard_video") is None
+
+
 def test_preview_redirect_ignored_for_non_uploaded_names():
     task = _task_with_upload("hard_video")
     # audio_extract / tts_full_audio 不在 TOS 上传产物之列，必须走本地

@@ -1,4 +1,5 @@
 (function() {
+  window.MEDIAS_TOS_READY = true;
   const state = { page: 1, current: null, pendingItemCover: null };
   const $ = (id) => document.getElementById(id);
 

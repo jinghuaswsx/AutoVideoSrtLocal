@@ -8,10 +8,10 @@ import uuid
 import zipfile
 from datetime import datetime
 
-from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request
+from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import medias, task_state, tos_clients
+from appcore import local_media_storage, medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
@@ -56,6 +56,8 @@ def _compose_project_name(product_name: str, preset: str, lang_name: str) -> str
 
 _upload_guard = threading.Lock()
 _upload_reservations: dict[str, dict] = {}
+_local_upload_guard = threading.Lock()
+_local_upload_reservations: dict[str, dict] = {}
 
 
 def _get_owned_task(task_id: str) -> dict:
@@ -107,9 +109,61 @@ def _resolve_source_bucket(task: dict, item: dict) -> str:
 
 
 def _signed_source_url(task: dict, item: dict) -> str:
+    object_key = (item.get("src_tos_key") or "").strip()
+    if not object_key:
+        abort(404)
+    if local_media_storage.exists(object_key):
+        return url_for("medias.media_object_proxy", object_key=object_key)
     if _resolve_source_bucket(task, item) == "media":
-        return tos_clients.generate_signed_media_download_url(item["src_tos_key"])
-    return tos_clients.generate_signed_download_url(item["src_tos_key"])
+        return url_for("medias.media_object_proxy", object_key=object_key)
+    return tos_clients.generate_signed_download_url(object_key)
+
+
+def _result_artifact_url(object_key: str) -> str:
+    key = (object_key or "").strip()
+    if not key:
+        abort(404)
+    if local_media_storage.exists(key):
+        return url_for("medias.media_object_proxy", object_key=key)
+    return tos_clients.generate_signed_download_url(key)
+
+
+def _download_artifact_object(object_key: str, destination: str) -> str:
+    key = (object_key or "").strip()
+    if local_media_storage.exists(key):
+        return local_media_storage.download_to(key, destination)
+    return tos_clients.download_file(key, destination)
+
+
+def _delete_artifact_object(object_key: str | None) -> None:
+    key = (object_key or "").strip()
+    if not key:
+        return
+    try:
+        local_media_storage.delete(key)
+    except Exception:
+        pass
+    try:
+        tos_clients.delete_object(key)
+    except Exception:
+        pass
+
+
+def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object_key: str, filename: str) -> dict:
+    upload_id = uuid.uuid4().hex
+    with _local_upload_guard:
+        _local_upload_reservations[upload_id] = {
+            "user_id": int(user_id),
+            "task_id": task_id,
+            "idx": int(idx),
+            "object_key": object_key,
+            "filename": filename,
+        }
+    return {
+        "idx": idx,
+        "object_key": object_key,
+        "upload_url": url_for("image_translate.api_local_source_upload", upload_id=upload_id),
+    }
 
 
 def _state_payload(task: dict) -> dict:
@@ -156,14 +210,12 @@ def api_system_prompts():
 @bp.route("/api/image-translate/upload/bootstrap", methods=["POST"])
 @login_required
 def api_upload_bootstrap():
-    if not tos_clients.is_tos_configured():
-        return jsonify({"error": "TOS 未配置"}), 503
     body = request.get_json(silent=True) or {}
     files = body.get("files") or []
     if not files:
-        return jsonify({"error": "files 不能为空"}), 400
+        return jsonify({"error": "files required"}), 400
     if len(files) > _MAX_ITEMS:
-        return jsonify({"error": f"单次最多 {_MAX_ITEMS} 张"}), 400
+        return jsonify({"error": f"too many files (max {_MAX_ITEMS})"}), 400
 
     task_id = str(uuid.uuid4())
     uploads = []
@@ -171,17 +223,19 @@ def api_upload_bootstrap():
     for idx, f in enumerate(files):
         filename = (f.get("filename") or "").strip()
         if not filename:
-            return jsonify({"error": f"第 {idx} 张缺少 filename"}), 400
+            return jsonify({"error": f"missing filename for file #{idx}"}), 400
         dot_idx = filename.rfind(".")
         ext = filename[dot_idx:].lower() if dot_idx >= 0 else ""
         if ext not in _ALLOWED_EXT:
-            return jsonify({"error": f"不支持的图片格式: {filename}"}), 400
+            return jsonify({"error": f"unsupported image extension: {filename}"}), 400
         key = _build_source_object_key(current_user.id, task_id, idx, ext)
-        uploads.append({
-            "idx": idx,
-            "object_key": key,
-            "upload_url": tos_clients.generate_signed_upload_url(key),
-        })
+        uploads.append(_reserve_local_source_upload(
+            user_id=current_user.id,
+            task_id=task_id,
+            idx=idx,
+            object_key=key,
+            filename=filename,
+        ))
         reserved.append({"idx": idx, "object_key": key, "filename": filename})
     with _upload_guard:
         _upload_reservations[task_id] = {
@@ -189,6 +243,17 @@ def api_upload_bootstrap():
             "files": reserved,
         }
     return jsonify({"task_id": task_id, "uploads": uploads})
+
+
+@bp.route("/api/image-translate/upload/local/<upload_id>", methods=["PUT"])
+@login_required
+def api_local_source_upload(upload_id: str):
+    with _local_upload_guard:
+        reservation = _local_upload_reservations.get(upload_id)
+    if not reservation or int(reservation.get("user_id") or 0) != int(current_user.id):
+        abort(404)
+    local_media_storage.write_stream(reservation["object_key"], request.stream)
+    return ("", 204)
 
 
 @bp.route("/api/image-translate/upload/complete", methods=["POST"])
@@ -206,22 +271,22 @@ def api_upload_complete():
     with _upload_guard:
         rv = _upload_reservations.get(task_id)
     if not rv or rv["user_id"] != current_user.id:
-        return jsonify({"error": "task_id 非法或过期"}), 403
+        return jsonify({"error": "invalid or expired task_id"}), 403
     if preset not in {"cover", "detail"}:
-        return jsonify({"error": "preset 必须是 cover 或 detail"}), 400
+        return jsonify({"error": "preset must be cover or detail"}), 400
     if not medias.is_valid_language(lang_code) or lang_code == "en":
-        return jsonify({"error": "目标语言不支持"}), 400
+        return jsonify({"error": "unsupported target language"}), 400
     if not is_valid_image_model(model_id):
-        return jsonify({"error": "模型不支持"}), 400
+        return jsonify({"error": "unsupported model"}), 400
     if not prompt_tpl:
-        return jsonify({"error": "prompt 不能为空"}), 400
+        return jsonify({"error": "prompt required"}), 400
     product_name = _sanitize_product_name(product_name_raw)
     if not product_name:
-        return jsonify({"error": "产品名不能为空"}), 400
+        return jsonify({"error": "product_name required"}), 400
     if len(product_name) > _PRODUCT_NAME_MAX_LEN:
-        return jsonify({"error": f"产品名长度不能超过 {_PRODUCT_NAME_MAX_LEN} 字符"}), 400
+        return jsonify({"error": f"product_name too long (max {_PRODUCT_NAME_MAX_LEN})"}), 400
     if not uploaded:
-        return jsonify({"error": "uploaded 不能为空"}), 400
+        return jsonify({"error": "uploaded required"}), 400
 
     reserved = {f["idx"]: f for f in rv["files"]}
     items = []
@@ -244,15 +309,19 @@ def api_upload_complete():
         key = (u.get("object_key") or "").strip()
         filename = (u.get("filename") or reserved.get(idx, {}).get("filename") or "").strip()
         if idx not in reserved or reserved[idx]["object_key"] != key:
-            return jsonify({"error": f"上传项不匹配 idx={idx}"}), 400
-        if not tos_clients.object_exists(key):
-            return jsonify({"error": f"对象不存在 idx={idx}"}), 400
-        items.append({"idx": idx, "filename": filename, "src_tos_key": key})
+            return jsonify({"error": f"uploaded item mismatch idx={idx}"}), 400
+        if not local_media_storage.exists(key):
+            return jsonify({"error": f"uploaded object missing idx={idx}"}), 400
+        items.append({
+            "idx": idx,
+            "filename": filename,
+            "src_tos_key": key,
+            "source_bucket": "upload",
+        })
     if seen_idxs != set(reserved):
         return jsonify({"error": "uploaded items must exactly match reserved items"}), 400
 
     lang_name = _target_language_name(lang_code)
-    # Prompts are language-specific (no placeholders). Use as-is.
     final_prompt = prompt_tpl
     task_dir = ""
     project_name = _compose_project_name(product_name, preset, lang_name)
@@ -269,7 +338,6 @@ def api_upload_complete():
         product_name=product_name,
         project_name=project_name,
     )
-    # 记用户偏好（容错，失败不影响提交）
     try:
         from appcore.api_keys import set_key
         set_key(current_user.id, "image_translate", "", {"default_model_id": model_id})
@@ -278,6 +346,13 @@ def api_upload_complete():
 
     with _upload_guard:
         _upload_reservations.pop(task_id, None)
+    with _local_upload_guard:
+        stale_upload_ids = [
+            upload_id for upload_id, reservation in _local_upload_reservations.items()
+            if reservation.get("task_id") == task_id and int(reservation.get("user_id") or 0) == int(current_user.id)
+        ]
+        for upload_id in stale_upload_ids:
+            _local_upload_reservations.pop(upload_id, None)
 
     _start_runner(task_id, current_user.id)
     return jsonify({"task_id": task_id}), 201
@@ -314,7 +389,7 @@ def api_result_artifact(task_id: str, idx: int):
     item = _get_item(task, idx)
     if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
         abort(404)
-    return redirect(tos_clients.generate_signed_download_url(item["dst_tos_key"]))
+    return redirect(_result_artifact_url(item["dst_tos_key"]))
 
 
 @bp.route("/api/image-translate/<task_id>/download/result/<int:idx>", methods=["GET"])
@@ -324,7 +399,7 @@ def api_download_result(task_id: str, idx: int):
     item = _get_item(task, idx)
     if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
         abort(404)
-    return redirect(tos_clients.generate_signed_download_url(item["dst_tos_key"]))
+    return redirect(_result_artifact_url(item["dst_tos_key"]))
 
 
 @bp.route("/api/image-translate/<task_id>/retry/<int:idx>", methods=["POST"])
@@ -338,10 +413,7 @@ def api_retry_item(task_id: str, idx: int):
         return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
     old_dst = (item.get("dst_tos_key") or "").strip()
     if old_dst:
-        try:
-            tos_clients.delete_object(old_dst)
-        except Exception:
-            pass
+        _delete_artifact_object(old_dst)
     item["status"] = "pending"
     item["attempts"] = 0
     item["error"] = ""
@@ -370,6 +442,7 @@ def api_retry_failed(task_id: str):
     reset_count = 0
     for item in items:
         if item.get("status") == "failed":
+            _delete_artifact_object(item.get("dst_tos_key"))
             item["status"] = "pending"
             item["attempts"] = 0
             item["error"] = ""
@@ -408,10 +481,7 @@ def api_retry_unfinished(task_id: str):
             continue
         old_dst = (item.get("dst_tos_key") or "").strip()
         if old_dst:
-            try:
-                tos_clients.delete_object(old_dst)
-            except Exception:
-                pass
+            _delete_artifact_object(old_dst)
         item["status"] = "pending"
         item["attempts"] = 0
         item["error"] = ""
@@ -450,7 +520,7 @@ def api_download_zip(task_id: str):
             fd, tmp_path = tempfile.mkstemp(suffix=suffix, prefix="it_zip_")
             os.close(fd)
             try:
-                tos_clients.download_file(key, tmp_path)
+                _download_artifact_object(key, tmp_path)
                 with open(tmp_path, "rb") as f:
                     raw = f.read()
             finally:
@@ -539,17 +609,11 @@ def api_delete_task(task_id: str):
         # 源图：来自 media bucket 的是素材库永久资源，不得清理；只清 upload bucket 里任务自己上传的 src。
         src_key = (it.get("src_tos_key") or "").strip()
         if src_key and _resolve_source_bucket(task, it) != "media":
-            try:
-                tos_clients.delete_object(src_key)
-            except Exception:
-                pass
+            _delete_artifact_object(src_key)
         # 输出始终是 upload bucket 的 artifacts/ 路径，删除任务时可以一起清。
         dst_key = (it.get("dst_tos_key") or "").strip()
         if dst_key:
-            try:
-                tos_clients.delete_object(dst_key)
-            except Exception:
-                pass
+            _delete_artifact_object(dst_key)
     try:
         db_execute(
             "UPDATE projects SET deleted_at = NOW() WHERE id=%s AND user_id=%s",

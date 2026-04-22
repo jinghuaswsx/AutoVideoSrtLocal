@@ -111,9 +111,9 @@ def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
         open(local_path, "wb").write(b"OUT")
         return local_path
 
-    def fake_upload_media_object(object_key, data, content_type=None, bucket=None):
+    def fake_write_bytes(object_key, data):
         applied["uploaded_key"] = object_key
-        applied["uploaded_type"] = content_type
+        applied["uploaded_size"] = len(data)
 
     def fake_replace(product_id, lang, images):
         applied["replace"] = (product_id, lang, images)
@@ -124,7 +124,7 @@ def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
          patch.object(rt.tos_clients, "download_media_file", side_effect=fake_download_media), \
          patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
          patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
-         patch.object(rt.tos_clients, "upload_media_object", side_effect=fake_upload_media_object), \
+         patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
          patch.object(rt.tos_clients, "build_media_object_key", return_value="1/medias/100/de_1.png"), \
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")), \
          patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
@@ -316,14 +316,14 @@ def _patch_tos_success(rt, applied: dict):
     def fake_download(key, lp):
         open(lp, "wb").write(b"PNG-" + key.encode())
         return lp
-    def fake_upload(object_key, data, content_type=None, bucket=None):
-        applied.setdefault("uploaded", []).append((object_key, content_type, len(data)))
+    def fake_write_bytes(object_key, data):
+        applied.setdefault("uploaded", []).append((object_key, len(data)))
     def fake_replace(product_id, lang, images):
         applied["replace"] = (product_id, lang, list(images))
         return list(range(900, 900 + len(images)))
     return (
         patch.object(rt.tos_clients, "download_file", side_effect=fake_download),
-        patch.object(rt.tos_clients, "upload_media_object", side_effect=fake_upload),
+        patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes),
         patch.object(rt.tos_clients, "build_media_object_key",
                      side_effect=lambda uid, pid, fn: f"{uid}/medias/{pid}/{fn}"),
         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace),
@@ -431,3 +431,73 @@ def test_apply_raises_when_medias_context_missing():
         rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
         )
+
+
+def test_runtime_prefers_local_media_store_before_legacy_tos(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([
+        {
+            **_item(0, src="1/medias/1/en_1.jpg"),
+            "source_bucket": "media",
+        }
+    ])
+
+    def fake_download_local(key, local_path):
+        open(local_path, "wb").write(b"LOCAL-" + key.encode())
+        return local_path
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.local_media_storage, "download_to", side_effect=fake_download_local) as local_dl, \
+         patch.object(
+             rt.tos_clients,
+             "download_media_file",
+             side_effect=AssertionError("should not fall back to legacy TOS when local copy exists"),
+         ), \
+         patch.object(rt.tos_clients, "upload_file", lambda local_path, key: None), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert local_dl.call_count == 1
+    assert task["items"][0]["status"] == "done"
+
+
+def test_apply_translated_detail_images_writes_local_media_store_instead_of_tos_media(
+    tmp_path,
+):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _apply_test_task([_done_item(0)])
+    applied = {}
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"PNG-" + key.encode())
+        return local_path
+
+    def fake_write_bytes(object_key, payload):
+        applied["stored"] = (object_key, payload)
+
+    def fake_replace(product_id, lang, images):
+        applied["replace"] = (product_id, lang, list(images))
+        return [901]
+
+    with patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
+         patch.object(
+             rt.tos_clients,
+             "upload_media_object",
+             side_effect=AssertionError("should not upload long-lived detail images back to TOS media"),
+         ), \
+         patch.object(rt.tos_clients, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
+         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
+        result = rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+    assert result["apply_status"] == "applied"
+    assert applied["stored"][0] == "1/medias/100/detail_0.png"
+    assert applied["replace"][2][0]["object_key"] == "1/medias/100/detail_0.png"

@@ -1,18 +1,10 @@
-"""任务重跑服务 —— 清掉上一轮产物，保留源视频，从 extract 重新起跑。
+"""Task restart service.
 
-路由层（task.py / de_translate.py / fr_translate.py）只负责：
-  - 鉴权
-  - 解析新参数
-  - 把 task_id + 新参数 + 对应 pipeline_runner 交给 restart_task
-
-本模块保证：
-  - TOS 里 tos_uploads 登记的所有成品对象被删除；source_tos_key 保持
-  - task_dir 下除缩略图外中间/结果文件被清干净
-  - task state 回到 "刚上传完" 的形态（steps 全部 pending、variants/result/... 清空）
-  - 新的音色/字幕参数写入
-  - source 视频若本地丢失但 TOS 有备份则拉回
-  - pipeline_runner.start 触发完整流水线
+This resets derived artifacts, keeps source identity fields, and restarts the
+pipeline from ``extract``. Source availability is verified before we purge any
+existing outputs so a missing local source blocks the restart cleanly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,13 +21,16 @@ log = logging.getLogger(__name__)
 
 
 _STEPS = (
-    "extract", "asr", "alignment", "translate",
-    "tts", "subtitle", "compose", "export",
+    "extract",
+    "asr",
+    "alignment",
+    "translate",
+    "tts",
+    "subtitle",
+    "compose",
+    "export",
 )
 
-# 重跑时要重置为空的 state 字段。身份/source 相关字段（task_id, display_name,
-# type, video_path, task_dir, source_tos_key, source_object_info, delivery_mode,
-# _user_id）都不在此列表里，天然保留。
 _RESET_FIELDS: dict[str, Any] = {
     "status": "uploaded",
     "current_review_step": "",
@@ -64,7 +59,6 @@ _RESET_FIELDS: dict[str, Any] = {
     "error": "",
 }
 
-# 不清理 thumbnail：列表页缩略图仰赖它，且重跑不会重新生成
 _TASK_DIR_KEEP_PREFIXES: tuple[str, ...] = ("thumbnail",)
 
 
@@ -110,33 +104,33 @@ def restart_task(
     user_id: int | None,
     runner,
 ) -> dict:
-    """重跑翻译任务。返回重置后的 task state。runner 须暴露 start(task_id, user_id=)。"""
+    """Restart a translation task and return the refreshed task state."""
     task = store.get(task_id) or {}
     if not task:
         raise ValueError(f"task {task_id} not found")
+
+    # Do not purge outputs or start the runner unless the source can be used.
+    ensure_local_source_video(task_id)
 
     _clear_tos_uploads(task.get("tos_uploads"))
     _purge_task_dir(task.get("task_dir") or "")
 
     payload = dict(_RESET_FIELDS)
-    payload.update({
-        "steps": {step: "pending" for step in _STEPS},
-        "step_messages": {step: "" for step in _STEPS},
-        "variants": {"normal": _empty_variant_state("普通版")},
-        "voice_id": voice_id,
-        "voice_gender": voice_gender,
-        "subtitle_font": subtitle_font,
-        "subtitle_size": subtitle_size,
-        "subtitle_position_y": subtitle_position_y,
-        "subtitle_position": subtitle_position,
-        "interactive_review": interactive_review,
-    })
+    payload.update(
+        {
+            "steps": {step: "pending" for step in _STEPS},
+            "step_messages": {step: "" for step in _STEPS},
+            "variants": {"normal": _empty_variant_state("普通版")},
+            "voice_id": voice_id,
+            "voice_gender": voice_gender,
+            "subtitle_font": subtitle_font,
+            "subtitle_size": subtitle_size,
+            "subtitle_position_y": subtitle_position_y,
+            "subtitle_position": subtitle_position,
+            "interactive_review": interactive_review,
+        }
+    )
     store.update(task_id, **payload)
-
-    try:
-        ensure_local_source_video(task_id)
-    except Exception:
-        log.warning("[restart] ensure_local_source_video failed for %s", task_id, exc_info=True)
 
     runner.start(task_id, user_id=user_id)
     return store.get(task_id) or {}

@@ -1,6 +1,7 @@
 ﻿from datetime import datetime
 from pathlib import Path
 import json
+import io
 
 from web import store
 from web.app import create_app
@@ -64,14 +65,76 @@ def test_index_page_supports_action_preview_items(authed_client_no_db):
     assert "triggerAction(" in body
 
 
-def test_index_page_uses_tos_direct_upload_bootstrap(authed_client_no_db):
+def test_index_page_uses_local_multipart_upload_entrypoint(authed_client_no_db):
     response = authed_client_no_db.get("/api/tasks/upload-page")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "/api/tos-upload/bootstrap" in body
-    assert "/api/tos-upload/complete" in body
-    assert 'xhr.open("PUT", bootstrap.upload_url, true)' in body
+    assert 'formData.append("video", file);' in body
+    assert 'fetch("/api/tasks", {' in body
+    assert "/api/tos-upload/bootstrap" not in body
+    assert "/api/tos-upload/complete" not in body
+    assert "/api/tos-upload/compat-bootstrap" not in body
+    assert "/api/tos-upload/compat-complete" not in body
+    assert 'xhr.open("PUT", bootstrap.upload_url, true)' not in body
+
+
+def test_task_upload_route_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.task.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/tasks",
+        data={"video": (io.BytesIO(b"video-bytes"), "demo.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    task = store.get(payload["task_id"])
+    assert task["delivery_mode"] == "local_primary"
+    assert task["source_tos_key"] == ""
+    assert task["source_object_info"]["original_filename"] == "demo.mp4"
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert task["source_object_info"]["file_size"] == len(b"video-bytes")
+    assert task["source_object_info"]["storage_backend"] == "local"
+    assert task["source_object_info"]["uploaded_at"]
+    assert task["video_path"].endswith(f'{payload["task_id"]}.mp4')
+    assert Path(task["video_path"]).read_bytes() == b"video-bytes"
+    assert started == {}
+
+
+def test_de_translate_list_page_uses_local_multipart_upload():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "de_translate_list.html").read_text(encoding="utf-8")
+
+    assert "new FormData(uploadForm)" in template
+    assert "fetch('/api/de-translate/start'" in template
+    assert "/api/de-translate/bootstrap" not in template
+    assert "/api/de-translate/complete" not in template
+    assert "/api/de-translate/compat-bootstrap" not in template
+    assert "/api/de-translate/compat-complete" not in template
+    assert "xhr.open('PUT'" not in template
+
+
+def test_fr_translate_list_page_uses_local_multipart_upload():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "fr_translate_list.html").read_text(encoding="utf-8")
+
+    assert "new FormData(uploadForm)" in template
+    assert "fetch('/api/fr-translate/start'" in template
+    assert "/api/fr-translate/bootstrap" not in template
+    assert "/api/fr-translate/complete" not in template
+    assert "/api/fr-translate/compat-bootstrap" not in template
+    assert "/api/fr-translate/compat-complete" not in template
+    assert "xhr.open('PUT'" not in template
 
 
 def test_subtitle_removal_upload_template_exposes_real_upload_entrypoints():
@@ -995,6 +1058,35 @@ def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_cl
 
     assert response.status_code == 302
     assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-tos/normal/example_soft.mp4"
+
+
+def test_download_route_prefers_local_file_for_local_primary_task(tmp_path, authed_client_no_db, monkeypatch):
+    result_path = tmp_path / "hard.mp4"
+    result_path.write_bytes(b"video")
+
+    store.create("task-download-local-primary", "video.mp4", str(tmp_path), user_id=1)
+    store.update(
+        "task-download-local-primary",
+        delivery_mode="local_primary",
+        result={"hard_video": str(result_path)},
+        tos_uploads={
+            "normal:hard_video": {
+                "tos_key": "artifacts/1/task-download-local-primary/normal/example_hard.mp4",
+                "artifact_kind": "hard_video",
+                "variant": "normal",
+            }
+        },
+    )
+
+    monkeypatch.setattr(
+        "web.services.artifact_download.tos_clients.generate_signed_download_url",
+        lambda object_key: f"https://signed.example.com/{object_key}",
+    )
+
+    response = authed_client_no_db.get("/api/tasks/task-download-local-primary/download/hard")
+
+    assert response.status_code == 200
+    assert response.data == b"video"
 
 
 def test_download_route_rejects_local_capcut_fallback_for_pure_tos_task(tmp_path, authed_client_no_db, monkeypatch):

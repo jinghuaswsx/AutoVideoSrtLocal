@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 def _patch_tos_and_runner(monkeypatch, tos_ok=True, obj_exists=True):
     from web.routes import image_translate as r
-    monkeypatch.setattr(r.tos_clients, "is_tos_configured", lambda: tos_ok)
-    monkeypatch.setattr(r.tos_clients, "generate_signed_upload_url", lambda k: f"https://tos/{k}?sig=1")
-    monkeypatch.setattr(r.tos_clients, "object_exists", lambda k: obj_exists)
+    del tos_ok
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda k: obj_exists)
+    monkeypatch.setattr(r.local_media_storage, "write_stream", lambda object_key, stream: None)
     monkeypatch.setattr(r, "_start_runner", lambda tid, uid: True)
 
 
@@ -25,6 +25,7 @@ def _patch_task_state(monkeypatch):
         task = {"id": tid, "type": "image_translate", "status": "queued", "task_dir": task_dir,
                 "_user_id": kw["user_id"], **{k: v for k, v in kw.items() if k != "user_id"},
                 "items": [{"idx": it["idx"], "filename": it["filename"], "src_tos_key": it["src_tos_key"],
+                            "source_bucket": it.get("source_bucket"),
                             "dst_tos_key": "", "status": "pending", "attempts": 0, "error": ""} for it in kw["items"]],
                 "progress": {"total": len(kw["items"]), "done": 0, "failed": 0, "running": 0},
                 "steps": {"prepare": "done", "process": "pending"},
@@ -138,7 +139,7 @@ def test_image_translate_page_emphasizes_product_name_before_submit(authed_clien
     assert 'class="it-product-name-input"' in body
 
 
-def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):
+def test_bootstrap_returns_local_upload_urls(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     resp = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
         "count": 2,
@@ -151,7 +152,7 @@ def test_bootstrap_returns_signed_urls(authed_client_no_db, monkeypatch):
     data = resp.get_json()
     assert data["task_id"]
     assert len(data["uploads"]) == 2
-    assert data["uploads"][0]["upload_url"].startswith("https://tos/")
+    assert data["uploads"][0]["upload_url"].startswith("/api/image-translate/upload/local/")
     # object_key 符合路径规范
     assert "uploads/image_translate/1/" in data["uploads"][0]["object_key"]
 
@@ -316,6 +317,7 @@ def test_get_state(authed_client_no_db, monkeypatch):
     assert state["preset"] == "cover"
     assert state["target_language_name"] == "德语"
     assert len(state["items"]) == 1
+    assert state["items"][0]["source_bucket"] == "media"
 
 
 def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
@@ -379,14 +381,11 @@ def _prep_task(client, monkeypatch, with_done=True):
 
 
 def test_source_artifact_redirects(authed_client_no_db, monkeypatch):
-    from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
-    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
-                         lambda k, expires=None: f"https://tos-dl/{k}")
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}/artifact/source/0",
                                     follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["Location"].startswith("https://tos-dl/")
+    assert resp.headers["Location"].startswith("/medias/object?object_key=")
 
 
 def test_result_artifact_404_when_not_done(authed_client_no_db, monkeypatch):
@@ -485,7 +484,7 @@ def test_complete_rejects_missing_product_name(authed_client_no_db, monkeypatch)
         "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
     })
     assert resp.status_code == 400
-    assert "产品名" in resp.get_json().get("error", "")
+    assert "product_name required" == resp.get_json().get("error", "")
 
 
 def test_complete_rejects_overlong_product_name(authed_client_no_db, monkeypatch):

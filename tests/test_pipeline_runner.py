@@ -571,6 +571,52 @@ def test_tail_steps_emit_readable_chinese_messages(tmp_path, monkeypatch):
     assert ("export", "done", "CapCut 项目已导出") in messages
 
 
+def test_video_creation_generate_uploads_local_assets_with_task_scoped_keys(tmp_path, monkeypatch):
+    from web.routes.video_creation import _do_generate_v2
+
+    video_path = tmp_path / "source.mp4"
+    image_path = tmp_path / "cover.png"
+    audio_path = tmp_path / "voice.wav"
+    video_path.write_bytes(b"video")
+    image_path.write_bytes(b"image")
+    audio_path.write_bytes(b"audio")
+
+    state = {
+        "task_dir": str(tmp_path),
+        "prompt": "demo prompt",
+        "video_path": str(video_path),
+        "image_paths": [str(image_path)],
+        "audio_path": str(audio_path),
+        "ratio": "9:16",
+        "duration": 5,
+        "generate_audio": True,
+        "watermark": False,
+        "user_id": 1,
+    }
+
+    monkeypatch.setattr("web.routes.video_creation._update_state", lambda task_id, updates: None)
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.video_creation._emit_to_task", lambda task_id, event, payload: None)
+    monkeypatch.setattr("web.routes.video_creation._shrink_image_if_oversize", lambda path: path)
+    uploaded = []
+    monkeypatch.setattr(
+        "web.routes.video_creation.tos_upload",
+        lambda local_path, object_key=None, expires=3600: uploaded.append((local_path, object_key, expires)) or f"https://example.com/{object_key}",
+    )
+    monkeypatch.setattr(
+        "pipeline.seedance.generate_video_v2",
+        lambda **kwargs: {"task_id": "seed-task-1", "video_url": ""},
+    )
+
+    _do_generate_v2("vc-public-source", "seedance-key", state)
+
+    assert uploaded == [
+        (str(video_path), "video-creation/1/vc-public-source/video/source.mp4", 86400),
+        (str(image_path), "video-creation/1/vc-public-source/images/0-cover.png", 86400),
+        (str(audio_path), "video-creation/1/vc-public-source/audio/voice.wav", 86400),
+    ]
+
+
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
     store.create("task-start-auto", "video.mp4", "output/task-start-auto", user_id=1)
     captured = {}

@@ -1,17 +1,3 @@
-"""字幕移除 - 火山 VOD provider runtime。
-
-与 SubtitleRemovalRuntime 并列；通过 `config.SUBTITLE_REMOVAL_PROVIDER` 在 runner 层切换。
-
-链路：
-  TOS 签名 URL
-    → UploadMediaByUrl  → JobId
-    → wait_for_upload    → Vid
-    → StartExecution     → RunId   [step `submit` done]
-    → wait_for_execution → Success [step `poll` done]
-    → GetPlayInfo        → MainPlayUrl (写入 provider_result_url) [step `download_result` done]
-  step `upload_result` 直接标 done（产物托管在 VOD，不再回传 TOS）
-"""
-
 from __future__ import annotations
 
 import logging
@@ -35,6 +21,23 @@ from appcore.vod_erase_provider import (
 log = logging.getLogger(__name__)
 
 
+def _ensure_public_source_url(task_id: str, task: dict, user_id: int | None = None) -> str:
+    source_tos_key = (task.get("source_tos_key") or "").strip()
+    if not source_tos_key:
+        video_path = (task.get("video_path") or "").strip()
+        if not video_path:
+            raise RuntimeError("source_tos_key is missing")
+        original_filename = (task.get("original_filename") or "source.mp4").strip() or "source.mp4"
+        source_tos_key = tos_clients.build_source_object_key(
+            user_id if user_id is not None else task.get("_user_id"),
+            task_id,
+            original_filename,
+        )
+        tos_clients.upload_file(video_path, source_tos_key)
+        task_state.update(task_id, source_tos_key=source_tos_key)
+    return tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+
+
 class SubtitleRemovalVodRuntime:
     def __init__(self, bus: EventBus, user_id: int | None = None):
         self._bus = bus
@@ -52,12 +55,8 @@ class SubtitleRemovalVodRuntime:
         self._emit(task_id, EVT_SR_STEP_UPDATE, {"step": step, "status": status, "message": message})
 
     def start(self, task_id: str) -> None:
-        """Runner 只负责 submit（UploadMediaByUrl → StartExecution），
-        拿到 RunId 后立即退出；后续 poll 与 GetPlayInfo 由 scheduler 接力。"""
         task = task_state.get(task_id)
-        if not task:
-            return
-        if _task_is_deleted(task_id):
+        if not task or _task_is_deleted(task_id):
             return
         try:
             task_state.update(task_id, status="running", error="")
@@ -77,14 +76,12 @@ class SubtitleRemovalVodRuntime:
             raise RuntimeError("subtitle removal task not found")
         if _task_is_deleted(task_id):
             raise SubtitleRemovalTaskDeleted(task_id)
-        source_tos_key = (task.get("source_tos_key") or "").strip()
-        if not source_tos_key:
-            raise RuntimeError("source_tos_key is missing")
+
         remove_mode = (task.get("remove_mode") or "full").strip().lower()
         selection_box = task.get("selection_box") or task.get("position_payload") or {}
 
         self._set_step(task_id, "submit", "running", "正在拉取视频到 VOD 空间")
-        source_url = tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+        source_url = _ensure_public_source_url(task_id, task, self._user_id)
         try:
             job_id = upload_media_by_url(source_url=source_url, title=f"sr_{task_id}")
             task_state.update(task_id, vod_upload_job_id=job_id)
@@ -97,10 +94,9 @@ class SubtitleRemovalVodRuntime:
         self._set_step(task_id, "submit", "running", "正在提交字幕擦除任务")
         try:
             locations = _selection_to_locations(selection_box, task.get("media_info") or {}) if remove_mode == "box" else None
-            mode = "Auto"  # MVP：默认 Auto 模式；box 模式传 Locations 限定区域
             run_id = start_erase_execution(
                 vid=vid,
-                mode=mode,
+                mode="Auto",
                 target_type="Subtitle",
                 locations=locations,
                 new_vid=True,
@@ -151,14 +147,12 @@ class SubtitleRemovalVodRuntime:
 
         erase = (((result.get("Output") or {}).get("Task") or {}).get("Erase") or {})
         file_info = erase.get("File") or {}
-        new_vid = file_info.get("Vid") or ""
-        file_name = file_info.get("FileName") or ""
         task_state.update(
             task_id,
             provider_raw=result,
             provider_status="success",
-            vod_result_vid=new_vid,
-            vod_result_file_name=file_name,
+            vod_result_vid=file_info.get("Vid") or "",
+            vod_result_file_name=file_info.get("FileName") or "",
             vod_result_size=int(file_info.get("Size") or 0),
             vod_result_duration=float(erase.get("Duration") or 0.0),
         )
@@ -205,7 +199,6 @@ class SubtitleRemovalVodRuntime:
 
 
 def _selection_to_locations(box: Any, media_info: dict) -> list[dict] | None:
-    """把 UI 的 selection_box 转成 VOD Manual/Auto Locations（比例坐标）。"""
     if not isinstance(box, dict):
         return None
     width = float(media_info.get("width") or 0)

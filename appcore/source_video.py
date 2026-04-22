@@ -2,33 +2,53 @@
 
 Tasks may have their source video uploaded to TOS (direct upload flow) or
 only stored locally (multipart upload flow). Either way, downstream pipeline
-steps (extract/compose) require a local file at `task.video_path`.
+steps (extract/compose) require a local file at ``task.video_path``.
 
-`ensure_local_source_video(task_id)` is the universal entry point:
-  - If `task.video_path` exists on disk, no-op.
-  - Else, if `task.source_tos_key` is set, download it from TOS.
-  - Else, raise RuntimeError (no recoverable source).
+``ensure_local_source_video(task_id)`` is the universal entry point:
+  - If ``task.video_path`` exists on disk, no-op.
+  - Else, if ``task.source_tos_key`` is set, download it from TOS.
+  - Else, raise ``RuntimeError`` with a clear recovery message.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 
-from appcore import tos_clients
 from appcore import task_state
+from appcore import tos_clients
 
 log = logging.getLogger(__name__)
 
 
-def ensure_local_source_video(task_id: str) -> str:
-    """Ensure `task.video_path` points at an existing local file.
+def _delivery_mode(task: dict) -> str:
+    return (task.get("delivery_mode") or "").strip()
 
-    Returns the video_path on success. Raises RuntimeError if the source
-    cannot be recovered.
-    """
+
+def _missing_local_source_error(task_id: str, video_path: str, delivery_mode: str) -> RuntimeError:
+    if delivery_mode and delivery_mode != "pure_tos":
+        return RuntimeError(
+            f"task {task_id} 的本地源文件缺失: {video_path} 不存在，"
+            "且当前任务没有 source_tos_key 可用于恢复，请重新上传源视频。"
+        )
+    return RuntimeError(
+        f"task {task_id} 的源文件缺失: {video_path} 不存在，"
+        "且 source_tos_key 为空，无法从 TOS 恢复。"
+    )
+
+
+def _restore_failed_error(task_id: str, source_tos_key: str, video_path: str) -> RuntimeError:
+    return RuntimeError(
+        f"task {task_id} 从 TOS 恢复源文件失败: {source_tos_key} -> {video_path}"
+    )
+
+
+def ensure_local_source_video(task_id: str) -> str:
+    """Ensure ``task.video_path`` points at an existing local file."""
     task = task_state.get(task_id) or {}
     video_path = (task.get("video_path") or "").strip()
     source_tos_key = (task.get("source_tos_key") or "").strip()
+    delivery_mode = _delivery_mode(task)
 
     if not video_path:
         raise RuntimeError(f"task {task_id} has no video_path")
@@ -37,40 +57,59 @@ def ensure_local_source_video(task_id: str) -> str:
         return video_path
 
     if not source_tos_key:
-        raise RuntimeError(
-            f"源视频文件丢失: {video_path} 不存在且 source_tos_key 为空，"
-            f"无法从 TOS 恢复。请重新上传该项目。"
+        raise _missing_local_source_error(task_id, video_path, delivery_mode)
+
+    video_dir = os.path.dirname(video_path)
+    if video_dir:
+        os.makedirs(video_dir, exist_ok=True)
+
+    if delivery_mode and delivery_mode != "pure_tos":
+        log.warning(
+            "[source_video] local-primary source missing for %s, restoring %s from TOS key %s",
+            task_id,
+            video_path,
+            source_tos_key,
         )
+    else:
+        log.warning("[source_video] restoring %s from TOS key %s", video_path, source_tos_key)
 
-    os.makedirs(os.path.dirname(video_path), exist_ok=True)
-    log.warning("[source_video] restoring %s from TOS key %s", video_path, source_tos_key)
-    tos_clients.download_file(source_tos_key, video_path)
+    try:
+        tos_clients.download_file(source_tos_key, video_path)
+    except Exception as exc:
+        raise _restore_failed_error(task_id, source_tos_key, video_path) from exc
+
     if not os.path.exists(video_path):
-        raise RuntimeError(f"TOS 下载后文件仍不存在: {video_path}")
+        raise _restore_failed_error(task_id, source_tos_key, video_path)
 
-    # Generate a thumbnail on first local materialisation (idempotent; skips if existing).
+    # Generate a thumbnail on first local materialization. This is idempotent.
     try:
         from pipeline.ffutil import extract_thumbnail
+
         task_dir = task.get("task_dir") or os.path.dirname(video_path)
         thumb_path = os.path.join(task_dir, "thumbnail.jpg")
         if not os.path.exists(thumb_path):
             thumb = extract_thumbnail(video_path, task_dir)
             if thumb:
                 from appcore.db import execute as db_execute
+
                 db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
     except Exception:
         log.warning("[source_video] thumbnail generation failed for task %s", task_id, exc_info=True)
+
     return video_path
 
 
 def upload_local_source_video(
-    task_id: str, video_path: str, original_filename: str, user_id: int,
+    task_id: str,
+    video_path: str,
+    original_filename: str,
+    user_id: int,
 ) -> str | None:
     """Upload a just-saved local video to TOS and return the object key.
 
     Used as a backup when the primary upload path is local (multipart) so
-    that a later disk cleanup doesn't orphan the task. Silently returns
-    None if TOS is not configured or upload fails.
+    that a later disk cleanup does not orphan the task. Silently returns
+    ``None`` if TOS is not configured or upload fails.
     """
     if not tos_clients.is_tos_configured():
         return None

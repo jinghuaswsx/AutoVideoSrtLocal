@@ -1,4 +1,5 @@
-"""TOS storage helpers used by the pipeline."""
+"""Public-exchange TOS helpers used by provider pull flows."""
+
 import os
 
 from appcore import tos_clients
@@ -6,17 +7,7 @@ from config import TOS_PREFIX
 
 
 def upload_file(local_path: str, object_key: str = None, expires: int = 3600) -> str:
-    """
-    上传本地文件到 TOS，返回带签名的临时访问 URL（供豆包 ASR 等第三方服务拉取）
-
-    Args:
-        local_path: 本地文件路径
-        object_key: TOS 对象键，默认用 PREFIX + 文件名
-        expires: 预签名 URL 有效期（秒），默认 1 小时
-
-    Returns:
-        str: 预签名 HTTPS URL
-    """
+    """Upload a local file to TOS and return a signed download URL."""
     if object_key is None:
         filename = os.path.basename(local_path)
         object_key = TOS_PREFIX + filename
@@ -26,5 +17,5 @@ def upload_file(local_path: str, object_key: str = None, expires: int = 3600) ->
 
 
 def delete_file(object_key: str):
-    """删除 TOS 上的文件（用于任务完成后清理临时音频）"""
+    """Delete a temporary public-exchange object from TOS."""
     tos_clients.delete_object(object_key)

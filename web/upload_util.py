@@ -1,4 +1,5 @@
 """上传文件校验工具。"""
+import mimetypes
 import os
 import re
 
@@ -27,3 +28,38 @@ def secure_filename_component(filename: str) -> str:
     name = os.path.basename(filename)
     name = re.sub(r'[^\w\u4e00-\u9fff.\-]', '_', name)
     return name[:100] if name else "unnamed"
+
+
+def detect_upload_content_type(file_storage, original_filename: str) -> str:
+    content_type = (
+        getattr(file_storage, "content_type", "")
+        or getattr(file_storage, "mimetype", "")
+        or mimetypes.guess_type(original_filename)[0]
+        or "application/octet-stream"
+    )
+    return str(content_type).strip() or "application/octet-stream"
+
+
+def save_uploaded_video(file_storage, upload_dir: str, task_id: str, original_filename: str) -> tuple[str, int, str]:
+    ext = os.path.splitext(original_filename)[1].lower()
+    video_path = os.path.join(upload_dir, f"{task_id}{ext}")
+    os.makedirs(upload_dir, exist_ok=True)
+    file_storage.save(video_path)
+    return video_path, os.path.getsize(video_path), detect_upload_content_type(file_storage, original_filename)
+
+
+def build_source_object_info(
+    *,
+    original_filename: str,
+    content_type: str,
+    file_size: int,
+    storage_backend: str,
+    uploaded_at: str,
+) -> dict:
+    return {
+        "file_size": int(file_size or 0),
+        "content_type": content_type,
+        "original_filename": original_filename,
+        "storage_backend": storage_backend,
+        "uploaded_at": uploaded_at,
+    }

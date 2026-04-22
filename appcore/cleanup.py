@@ -1,20 +1,21 @@
 """Hourly cleanup: delete expired project files and TOS objects."""
+
 from __future__ import annotations
+
 import json
+import logging
 import os
 import shutil
-import logging
 from datetime import datetime, timezone
 
-from appcore.db import query, execute
 from appcore import tos_clients
+from appcore.db import execute, query
 from config import TOS_BROWSER_UPLOAD_PREFIX, TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS
 
 log = logging.getLogger(__name__)
 
 
 def run_cleanup() -> None:
-    # ── 清理已过期的项目 ──
     rows = query(
         "SELECT id, task_dir, user_id, state_json FROM projects "
         "WHERE expires_at < NOW() AND deleted_at IS NULL"
@@ -28,10 +29,9 @@ def run_cleanup() -> None:
                 (task_id,),
             )
             log.info("Cleaned up expired project %s", task_id)
-        except Exception as e:
-            log.error("Cleanup failed for %s: %s", task_id, e)
+        except Exception as exc:
+            log.error("Cleanup failed for %s: %s", task_id, exc)
 
-    # ── 僵尸项目兜底清理 ── image_translate 作为永久存档不参与兜底清理
     zombie_rows = query(
         "SELECT id, task_dir, user_id, state_json FROM projects "
         "WHERE expires_at IS NULL "
@@ -49,24 +49,23 @@ def run_cleanup() -> None:
                 (task_id,),
             )
             log.info("Cleaned up zombie project %s", task_id)
-        except Exception as e:
-            log.error("Zombie cleanup failed for %s: %s", task_id, e)
+        except Exception as exc:
+            log.error("Zombie cleanup failed for %s: %s", task_id, exc)
 
-    # ── 清理 uploads 目录中的孤儿文件 ──
     try:
         _cleanup_orphan_uploads()
-    except Exception as e:
-        log.error("Orphan upload file cleanup failed: %s", e)
+    except Exception as exc:
+        log.error("Orphan upload file cleanup failed: %s", exc)
 
     try:
         _trim_local_uploads_with_tos_backup()
-    except Exception as e:
-        log.error("TOS-backed local upload trim failed: %s", e)
+    except Exception as exc:
+        log.error("TOS-backed local upload trim failed: %s", exc)
 
     try:
         delete_stale_upload_objects()
-    except Exception as e:
-        log.error("Orphan upload cleanup failed: %s", e)
+    except Exception as exc:
+        log.error("Orphan upload cleanup failed: %s", exc)
 
 
 def delete_task_storage(task_or_row: dict) -> None:
@@ -74,7 +73,6 @@ def delete_task_storage(task_or_row: dict) -> None:
     if task_dir and os.path.isdir(task_dir):
         shutil.rmtree(task_dir, ignore_errors=True)
 
-    # 清理 uploads 目录中的原始视频文件
     state = _load_task_state(task_or_row)
     video_path = state.get("video_path") or task_or_row.get("video_path") or ""
     if video_path and os.path.isfile(video_path):
@@ -113,8 +111,8 @@ def delete_stale_upload_objects() -> None:
 
     now = _utcnow()
     cutoff = TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS
-    stale_objects = []
-    candidate_task_ids = set()
+    stale_objects: list[tuple[str, str]] = []
+    candidate_task_ids: set[str] = set()
 
     for obj in objects:
         key = (getattr(obj, "key", "") or "").strip()
@@ -187,38 +185,33 @@ def _load_active_task_ids(task_ids: set[str]) -> set[str]:
 
 
 def _cleanup_orphan_uploads() -> None:
-    """Remove upload files whose project has been deleted or doesn't exist."""
+    """Remove upload files whose project has been deleted or does not exist."""
     from config import UPLOAD_DIR
+
     if not UPLOAD_DIR or not os.path.isdir(UPLOAD_DIR):
         return
 
     alive_rows = query("SELECT id FROM projects WHERE deleted_at IS NULL")
-    alive_ids = {r["id"] for r in alive_rows}
+    alive_ids = {row["id"] for row in alive_rows}
 
     for filename in os.listdir(UPLOAD_DIR):
         task_id = os.path.splitext(filename)[0]
         if task_id in alive_ids:
             continue
-        fpath = os.path.join(UPLOAD_DIR, filename)
-        if not os.path.isfile(fpath):
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        if not os.path.isfile(file_path):
             continue
         try:
-            os.remove(fpath)
+            os.remove(file_path)
             log.info("Deleted orphan upload: %s", filename)
         except Exception:
             pass
 
 
 def _trim_local_uploads_with_tos_backup() -> None:
-    """Delete local upload files for finished tasks that have a TOS backup.
-
-    Policy: if a task is not actively running (status done/error/composing_done)
-    and has a non-empty source_tos_key, the local mp4 in UPLOAD_DIR is
-    redundant — it can be re-fetched from TOS on demand via
-    appcore.source_video.ensure_local_source_video().
-    Keeps disk usage low without losing recoverability.
-    """
+    """Delete local source files only for finished ``pure_tos`` tasks."""
     from config import UPLOAD_DIR
+
     if not UPLOAD_DIR or not os.path.isdir(UPLOAD_DIR):
         return
 
@@ -227,25 +220,32 @@ def _trim_local_uploads_with_tos_backup() -> None:
         "WHERE deleted_at IS NULL AND status IN ('done', 'error', 'composing_done')"
     )
     trimmed = 0
+    upload_root = os.path.abspath(UPLOAD_DIR)
+
     for row in rows:
         try:
             state = json.loads(row["state_json"]) if row.get("state_json") else {}
         except Exception:
             continue
+
+        delivery_mode = (state.get("delivery_mode") or "").strip()
         source_tos_key = (state.get("source_tos_key") or "").strip()
         video_path = (state.get("video_path") or "").strip()
-        if not source_tos_key or not video_path:
+        if delivery_mode != "pure_tos" or not source_tos_key or not video_path:
             continue
-        if not video_path.startswith(os.path.abspath(UPLOAD_DIR) + os.sep) \
-                and not video_path.startswith(UPLOAD_DIR):
+
+        normalized_path = os.path.abspath(video_path)
+        if not normalized_path.startswith(upload_root + os.sep) and normalized_path != upload_root:
             continue
-        if not os.path.isfile(video_path):
+        if not os.path.isfile(normalized_path):
             continue
+
         try:
-            os.remove(video_path)
+            os.remove(normalized_path)
             trimmed += 1
-            log.info("Trimmed TOS-backed local upload: %s (task %s)", video_path, row["id"])
+            log.info("Trimmed pure_tos local upload: %s (task %s)", normalized_path, row["id"])
         except Exception:
             pass
+
     if trimmed:
-        log.info("Trimmed %d local upload files backed by TOS", trimmed)
+        log.info("Trimmed %d pure_tos local upload files", trimmed)

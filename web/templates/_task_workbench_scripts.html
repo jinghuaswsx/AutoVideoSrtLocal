@@ -412,63 +412,24 @@
         <p id="uploadPercent" style="margin-top: 8px; font-weight: 600; color: var(--primary-color);">0%</p>
       `;
     }
-    fetch("/api/tos-upload/bootstrap", {
+    const progressEl = document.getElementById("uploadProgress");
+    const percentEl = document.getElementById("uploadPercent");
+    const formData = new FormData();
+    formData.append("video", file);
+    if (progressEl) progressEl.style.width = "35%";
+    if (percentEl) percentEl.textContent = "35%";
+
+    fetch("/api/tasks", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        original_filename: file.name,
-        file_size: file.size,
-        content_type: file.type || "application/octet-stream",
-      }),
-    }).then(async bootstrapRes => {
-      const bootstrap = await bootstrapRes.json();
-      if (!bootstrapRes.ok) throw new Error(bootstrap.error || "上传初始化失败");
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", bootstrap.upload_url, true);
-
-      xhr.upload.onprogress = function(event) {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          const progressEl = document.getElementById("uploadProgress");
-          const percentEl = document.getElementById("uploadPercent");
-          if (progressEl) progressEl.style.width = percent + "%";
-          if (percentEl) percentEl.textContent = percent + "%";
-        }
-      };
-
-      xhr.onload = async function() {
-        if (xhr.status < 200 || xhr.status >= 300) {
-          showError("视频上传到 TOS 失败");
-          return;
-        }
-        try {
-          const completeRes = await fetch("/api/tos-upload/complete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              task_id: bootstrap.task_id,
-              object_key: bootstrap.object_key,
-              original_filename: file.name,
-              file_size: file.size,
-              content_type: file.type || "application/octet-stream",
-            }),
-          });
-          const data = await completeRes.json();
-          if (!completeRes.ok) throw new Error(data.error || "创建任务失败");
-          window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
-        } catch (err) {
-          showError(err.message || "创建任务失败");
-        }
-      };
-
-      xhr.onerror = function() {
-        showError("网络或系统异常，上传失败");
-      };
-
-      xhr.send(file);
+      body: formData,
+    }).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "鍒涘缓浠诲姟澶辫触");
+      if (progressEl) progressEl.style.width = "100%";
+      if (percentEl) percentEl.textContent = "100%";
+      window.location.href = TASK_WORKBENCH_CONFIG.detailUrlTemplate.replace("__TASK_ID__", data.task_id);
     }).catch(err => {
-      showError(err.message || "上传失败");
+      showError(err.message || "涓婁紶澶辫触");
     });
   }
 

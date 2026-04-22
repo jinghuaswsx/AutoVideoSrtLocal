@@ -1,5 +1,13 @@
 # AutoVideoSrtLocal
 
+## 当前正式契约
+
+- 正式入口：`http://172.30.254.14/`
+- 运行方式：无 nginx，`gunicorn` 直接监听 `80` 端口
+- 运行目录：`/opt/autovideosrt`
+- 数据目录：`/data/autovideosrt/uploads` 和 `/data/autovideosrt/output`
+- MySQL 库名：`auto_video`
+
 > 仓库说明：当前默认开发仓库是 `jinghuaswsx/AutoVideoSrtLocal`。旧服务器版仓库 `jinghuaswsx/AutoVideoSrt` 暂时保留不动，仅作为迁移参考；本地工作区默认 `origin` 应指向本仓库，旧仓库建议保留为单独备用远程（如 `server-origin`）。
 
 > 产品名称说明：仓库已切换为本地版，但应用内产品名、页面标题和历史设计文档里仍大量使用 `AutoVideoSrt`，这些文案默认视为产品名，不等同于 GitHub 仓库名。
@@ -312,7 +320,7 @@ python main.py
 
 默认访问：
 
-- 本地：`http://127.0.0.1:5000`
+- 本地开发：`http://127.0.0.1:5000`
 
 测试：
 

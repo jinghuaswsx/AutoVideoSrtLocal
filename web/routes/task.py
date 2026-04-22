@@ -6,6 +6,7 @@
 """
 import os
 import subprocess
+import uuid
 from datetime import datetime, timezone
 
 import mimetypes
@@ -322,11 +323,49 @@ def upload():
     if not file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
-    from web.upload_util import validate_video_extension
-    if not validate_video_extension(file.filename):
-        return jsonify({"error": "不支持的视频格式"}), 400
+    from web.upload_util import build_source_object_info, save_uploaded_video, validate_video_extension
 
-    return jsonify({"error": "新建翻译任务已切换为 TOS 直传，请先调用 bootstrap/complete 接口"}), 410
+    original_filename = os.path.basename(file.filename)
+    if not validate_video_extension(original_filename):
+        return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
+
+    task_id = str(uuid.uuid4())
+    task_dir = os.path.join(OUTPUT_DIR, task_id)
+    os.makedirs(task_dir, exist_ok=True)
+
+    video_path, file_size, content_type = save_uploaded_video(file, UPLOAD_DIR, task_id, original_filename)
+    user_id = current_user.id if current_user.is_authenticated else None
+
+    store.create(
+        task_id,
+        video_path,
+        task_dir,
+        original_filename=original_filename,
+        user_id=user_id,
+    )
+
+    display_name = _default_display_name(original_filename)
+    if user_id is not None:
+        display_name = _resolve_name_conflict(user_id, display_name)
+        db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
+
+    store.update(
+        task_id,
+        display_name=display_name,
+        source_language="zh",
+        pipeline_version="av",
+        av_translate_inputs=build_default_av_translate_inputs(),
+        source_tos_key="",
+        source_object_info=build_source_object_info(
+            original_filename=original_filename,
+            content_type=content_type,
+            file_size=file_size,
+            storage_backend="local",
+            uploaded_at=datetime.now().isoformat(timespec="seconds"),
+        ),
+        delivery_mode="local_primary",
+    )
+    return jsonify({"task_id": task_id}), 201
 
 
 @bp.route("/<task_id>", methods=["GET"])

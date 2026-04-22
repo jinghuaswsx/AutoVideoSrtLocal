@@ -42,6 +42,6 @@ ssh -i "$KEY" -p "$SERVER_PORT" -o StrictHostKeyChecking=accept-new \
 # 3) 健康检查
 echo "[3/3] 健康检查..."
 ssh -i "$KEY" -p "$SERVER_PORT" "$SERVER_USER@$SERVER_HOST" \
-  "curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8888/ || true"
+  "curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1/ || true"
 
-echo "发布完成：http://$SERVER_HOST:8888"
+echo "发布完成：http://$SERVER_HOST/"

@@ -173,6 +173,20 @@ def _cleanup_result_artifacts(task: dict) -> None:
             pass
 
 
+def _ensure_public_source_url(task_id: str, task: dict) -> str:
+    source_tos_key = (task.get("source_tos_key") or "").strip()
+    if not source_tos_key:
+        video_path = (task.get("video_path") or "").strip()
+        if not video_path or not os.path.exists(video_path):
+            raise RuntimeError("source video is missing; cannot stage public source")
+        user_id = task.get("_user_id")
+        original_filename = (task.get("original_filename") or os.path.basename(video_path) or "source.mp4").strip()
+        source_tos_key = tos_clients.build_source_object_key(user_id, task_id, original_filename)
+        tos_clients.upload_file(video_path, source_tos_key)
+        store.update(task_id, source_tos_key=source_tos_key)
+    return tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+
+
 def _task_needs_resume(task: dict) -> bool:
     steps = task.get("steps") or {}
     submit_status = (steps.get("submit") or "").strip().lower()
@@ -276,6 +290,11 @@ def _submit_locked(task_id: str, task: dict, body: dict):
     erase_text_type = (body.get("erase_text_type") or "subtitle").strip().lower()
     if erase_text_type not in {"subtitle", "text"}:
         return jsonify({"error": "erase_text_type must be subtitle or text"}), 400
+    try:
+        _ensure_public_source_url(task_id, task)
+    except Exception as exc:
+        log.exception("[subtitle_removal] failed to stage public source task_id=%s", task_id)
+        return jsonify({"error": f"unable to stage public source: {exc}"}), 502
 
     next_steps = dict(task.get("steps") or {})
     next_steps.update(
