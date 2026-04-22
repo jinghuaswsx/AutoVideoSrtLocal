@@ -303,7 +303,7 @@
 
   function renderLangBar(coverage) {
     if (!LANGUAGES.length) return '';
-    return `<div class="oc-lang-bar">` + LANGUAGES.map(l => {
+    const chips = LANGUAGES.map(l => {
       const c = (coverage || {})[l.code] || { items: 0, copy: 0, cover: false };
       const filled = c.items > 0;
       const cls = filled ? 'filled' : 'empty';
@@ -311,7 +311,12 @@
       return `<span class="oc-lang-chip ${cls}" title="${escapeHtml(title)}">`
            + `${escapeHtml(langDisplayName(l.code))}`
            + `</span>`;
-    }).join('') + `</div>`;
+    });
+    const midpoint = Math.ceil(chips.length / 2);
+    const rows = [chips.slice(0, midpoint), chips.slice(midpoint)];
+    return `<div class="oc-lang-bar">`
+         + rows.filter((row) => row.length).map((row) => `<div class="oc-lang-row">${row.join('')}</div>`).join('')
+         + `</div>`;
   }
 
   function icon(name, size = 14) {

@@ -1928,11 +1928,13 @@ def test_medias_page_wraps_language_coverage_with_full_labels():
     assert "if (l && l.name_zh) return `${l.name_zh} (${l.code})`;" in medias_js
     assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
     assert '<col style="width:336px">' in medias_js
+    assert "const midpoint = Math.ceil(chips.length / 2);" in medias_js
+    assert 'class="oc-lang-row"' in medias_js
     assert ".oc-lang-bar {" in template
-    assert "display:grid;" in template
-    assert "grid-template-rows:repeat(2, minmax(0, auto));" in template
-    assert "grid-auto-flow:column;" in template
-    assert "align-items:start;" in template
+    assert "flex-direction:column;" in template
+    assert ".oc-lang-row {" in template
+    assert "display:flex;" in template
+    assert "flex-wrap:nowrap;" in template
 
 
 def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
