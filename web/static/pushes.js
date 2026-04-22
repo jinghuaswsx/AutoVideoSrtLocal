@@ -463,6 +463,8 @@
       respMkIdTip.hidden = false;
       if (match.status === 'ok' && match.mk_id) {
         respMkIdTip.textContent = `配对 mk_id : ${match.mk_id}`;
+      } else if (match.status === 'credentials_expired') {
+        respMkIdTip.textContent = '配对 mk_id 失败：wedev 登录凭据已失效，请在本机跑 tools/wedev_sync.py 重新同步';
       } else {
         respMkIdTip.textContent = '配对 mk_id 失败，请检查，当前无法完成小语种文案推送，缺失 mk_id';
       }

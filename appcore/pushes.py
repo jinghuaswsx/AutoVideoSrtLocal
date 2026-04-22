@@ -108,6 +108,15 @@ def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
     except ValueError:
         return None, "request_failed"
 
+    # wedev 凭据失效时会返回 HTTP 200 + {is_guest:true, message:"登录已失效"}，
+    # 这里显式识别，避免误报 no_match
+    if isinstance(data, dict) and (
+        data.get("is_guest") is True
+        or (data.get("message") or "").startswith("登录")
+    ):
+        log.warning("lookup_mk_id credentials expired: %s", data.get("message"))
+        return None, "credentials_expired"
+
     items = ((data.get("data") or {}).get("items") or [])
     matched_ids: list[int] = []
     for item in items:
