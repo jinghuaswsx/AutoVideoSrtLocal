@@ -1270,6 +1270,18 @@
     return links[lang] || _defaultProductUrl(lang, code) || '';
   }
 
+  function edOpenLocalizedProductUrl() {
+    edFlushProductUrl();
+    const lang = edState.activeLang;
+    const url = edCurrentLinkUrl(lang);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      alert('请先填写有效的商品链接');
+      $('edProductUrl') && $('edProductUrl').focus();
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
+  }
+
   function edLinkCheckNeedsPolling(task) {
     if (!task || !task.status) return false;
     return !['done', 'review_ready', 'failed'].includes(task.status);
@@ -1345,10 +1357,8 @@
   function edRenderLinkCheckSummary(task) {
     const box = $('edLinkCheckSummary');
     const viewBtn = $('edLinkCheckViewBtn');
-    const actionBtn = $('edLinkCheckBtn');
-    if (!box || !viewBtn || !actionBtn) return;
-
-    actionBtn.innerHTML = `${icon('search', 14)}<span>${task ? '重新检测' : '链接检测'}</span>`;
+    const openBtn = $('edOpenProductUrlBtn');
+    if (!box || !viewBtn || !openBtn) return;
     if (!task) {
       viewBtn.hidden = true;
       box.innerHTML = '<span class="oc-link-check-empty">当前语种会使用该链接、主图和详情图作为检测输入。</span>';
@@ -2202,7 +2212,10 @@
         <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
       </div>
     `;
-    d.querySelector('[data-field="body"]').value = (c && c.body) || '';
+    const textarea = d.querySelector('[data-field="body"]');
+    textarea.rows = 3;
+    textarea.wrap = 'off';
+    textarea.value = (c && c.body) || '';
     d.querySelector('.rm').addEventListener('click', () => {
       d.remove();
       [...$('edCwList').children].forEach((e, i) => {
@@ -2521,7 +2534,7 @@
         edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
       });
     }
-    $('edLinkCheckBtn') && $('edLinkCheckBtn').addEventListener('click', edStartLinkCheck);
+    $('edOpenProductUrlBtn') && $('edOpenProductUrlBtn').addEventListener('click', edOpenLocalizedProductUrl);
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
     $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);
     $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);

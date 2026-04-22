@@ -1835,6 +1835,36 @@ def test_medias_page_contains_aligned_edit_modal_layout(authed_client_no_db):
     assert "oc-edit-video-grid" in body
 
 
+def test_medias_page_prioritizes_push_audit_sections_in_edit_modal(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert body.index('id="edTitle"') < body.index('id="edAdSupportedLangsBox"')
+    assert body.index('id="edAdSupportedLangsBox"') < body.index('id="edLangTabs"')
+    assert body.index('id="edCwSection"') < body.index('id="edItemsSection"')
+    assert body.index('id="edItemsSection"') < body.index('id="edCoverSection"')
+    assert body.index('id="edCoverSection"') < body.index('id="edDetailImagesSection"')
+    assert body.index('id="edDetailImagesSection"') < body.index('for="edMkId"')
+    assert '.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-4); }' in body
+    assert '.oc-modal-head-main {' in body
+    assert '.oc-modal-head-meta {' in body
+
+
+def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'class="oc-section-head oc-section-head-between"' in body
+    assert 'id="edCwAddBtn"' in body
+    assert "添加文案" in body
+    assert '.oc-cw-grid { display:grid; grid-template-columns:1fr; gap:var(--oc-sp-2); }' in body
+    assert "textarea.rows = 3;" in medias_js
+
+
 def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 
@@ -1873,7 +1903,7 @@ def test_medias_page_shrinks_edit_modal_video_cards_to_eighty_percent(authed_cli
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert '.oc-edit-form #edItemsGrid {' in body
-    assert 'grid-template-columns:repeat(auto-fill, 208px);' in body
+    assert 'grid-template-columns:repeat(auto-fill, 196px);' in body
     assert 'justify-content:flex-start;' in body
 
 
@@ -2020,7 +2050,8 @@ def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db)
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="edLinkCheckBtn"' in body
+    assert 'id="edOpenProductUrlBtn"' in body
+    assert "访问商品链接" in body
     assert 'id="edLinkCheckSummary"' in body
     assert 'id="edLinkCheckViewBtn"' in body
     assert 'id="edLinkCheckMask"' in body
@@ -2031,6 +2062,8 @@ def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db)
 def test_medias_scripts_wire_material_link_check_flow():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
+    assert 'function edOpenLocalizedProductUrl()' in medias_js
+    assert "window.open(url, '_blank', 'noopener')" in medias_js
     assert 'function edStartLinkCheck()' in medias_js
     assert 'function edPollLinkCheck(lang)' in medias_js
     assert 'function edOpenLinkCheckModal()' in medias_js

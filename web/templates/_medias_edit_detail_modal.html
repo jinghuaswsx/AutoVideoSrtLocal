@@ -1,7 +1,13 @@
 <div class="oc-modal-mask oc" id="edMask" hidden>
   <div class="oc-modal oc-modal-narrow oc-modal-edit" role="dialog" aria-modal="true" aria-labelledby="edTitle">
     <div class="oc-modal-head">
-      <h3 id="edTitle">编辑产品素材</h3>
+      <div class="oc-modal-head-main">
+        <h3 id="edTitle">编辑产品素材</h3>
+        <div class="oc-modal-head-meta oc-field-ad-supported">
+          <div class="oc-modal-head-meta-title">主站已适配语种</div>
+          <div id="edAdSupportedLangsBox" class="oc-lang-checkbox-group"></div>
+        </div>
+      </div>
       <button class="oc-icon-btn" id="edClose" title="关闭" aria-label="关闭">
         <svg width="16" height="16"><use href="#ic-close"/></svg>
       </button>
@@ -17,13 +23,6 @@
 
       <section class="oc-section oc-section-card">
         <div class="oc-section-title">必要信息<span class="req">*</span></div>
-        <div class="oc-field" style="margin-bottom:var(--oc-sp-3)">
-          <label class="oc-label" for="edMkId">明空 ID</label>
-          <input id="edMkId" class="oc-input" type="text"
-                 inputmode="numeric" maxlength="8"
-                 placeholder="选填，1-8 位数字" autocomplete="off">
-          <div class="oc-hint">对应明空系统的产品 ID，用于后续推送</div>
-        </div>
         <div class="oc-edit-hero-grid">
           <div class="oc-field">
             <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
@@ -42,9 +41,9 @@
             <input id="edProductUrl" class="oc-input" type="url"
                    placeholder="留空则用默认模板"
                    autocomplete="off">
-            <button type="button" class="oc-btn ghost sm" id="edLinkCheckBtn">
+            <button type="button" class="oc-btn ghost sm" id="edOpenProductUrlBtn">
               <svg width="14" height="14"><use href="#ic-search"/></svg>
-              <span>链接检测</span>
+              <span>访问商品链接</span>
             </button>
             <button type="button" class="oc-btn text sm" id="edLinkCheckViewBtn" hidden>查看结果</button>
           </div>
@@ -54,22 +53,98 @@
             </div>
           </div>
         </div>
-        <div class="oc-field oc-field-ad-supported" style="margin-top:var(--oc-sp-4)">
-          <label class="oc-label">主站已适配语种</label>
-          <div id="edAdSupportedLangsBox" class="oc-lang-checkbox-group"></div>
-          <div class="oc-hint">勾选的语种将在推送时视为「链接已适配」，不会再提醒需要后端翻译。</div>
-        </div>
       </section>
 
-      <div class="oc-edit-main-grid">
-        <!-- 产品主图（JS 将按 activeLang 重渲染 edCoverBlock 内容） -->
+      <div class="oc-edit-audit-stack">
+        <section class="oc-section oc-section-card oc-edit-copy-panel" id="edCwSection">
+          <div class="oc-section-head oc-section-head-between">
+            <div class="oc-section-title">
+              <span>文案</span>
+              <span class="optional" id="edCwLangLabel"></span>
+              <span class="count" id="edCwBadge">0</span>
+            </div>
+            <button class="oc-btn ghost sm" type="button" id="edCwAddBtn">
+              <svg width="14" height="14"><use href="#ic-plus"/></svg>
+              <span>添加文案</span>
+            </button>
+          </div>
+          <div id="edCwList" class="oc-cw-grid"></div>
+        </section>
+
+        <section class="oc-section oc-section-card" id="edItemsSection">
+          <div class="oc-section-title">
+            <span>视频素材</span>
+            <span class="optional" id="edItemsLangLabel"></span>
+            <span class="count" id="edItemsBadge">0</span>
+          </div>
+
+          <div id="edItemsGrid" class="oc-items-grid"></div>
+
+          <div class="oc-new-item oc-edit-new-item" id="edNewItemBox">
+            <div class="oc-new-item-title">新增素材</div>
+            <div class="oc-new-item-body oc-edit-video-grid">
+              <div class="oc-new-item-col">
+                <div class="oc-new-item-label">视频封面图<span class="req">*</span></div>
+                <div id="edItemCoverBox" class="oc-cover-9-16">
+                  <div id="edItemCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传视频封面图">
+                    <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                    <div class="dz-title">点击或拖拽上传封面</div>
+                    <div class="dz-hint">建议 9:16 / 1080×1920</div>
+                  </div>
+                  <img id="edItemCoverImg" alt="视频封面" hidden>
+                </div>
+                <div class="oc-cover-actions">
+                  <button type="button" class="oc-btn ghost sm" id="edItemCoverReplace" hidden>更换封面</button>
+                  <button type="button" class="oc-btn text sm" id="edItemCoverClear" hidden>清空</button>
+                </div>
+                <div class="oc-url-row">
+                  <input type="url" id="edItemCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
+                  <button type="button" class="oc-btn ghost sm" id="edItemCoverFromUrlBtn">从 URL 导入</button>
+                </div>
+                <input type="file" id="edItemCoverInput" accept="image/*" hidden>
+              </div>
+
+              <div class="oc-new-item-col">
+                <div class="oc-new-item-label">视频源<span class="req">*</span></div>
+                <div id="edVideoPickBox" class="oc-video-pick" tabindex="0" role="button" aria-label="选择视频源文件">
+                  <div id="edVideoPickEmpty" class="cover-dz">
+                    <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
+                    <div class="dz-title">点击或拖拽选择视频</div>
+                    <div class="dz-hint">mp4 / mov / webm / mkv</div>
+                  </div>
+                  <div id="edVideoPickFilled" class="oc-video-filled" hidden>
+                    <div class="oc-video-filled-icon">
+                      <svg width="28" height="28"><use href="#ic-film"/></svg>
+                    </div>
+                    <div class="oc-video-filled-name" id="edVideoPickName"></div>
+                    <div class="oc-video-filled-size" id="edVideoPickSize"></div>
+                    <button type="button" class="oc-btn text sm" id="edVideoPickClear">清空</button>
+                  </div>
+                </div>
+                <input type="file" id="edVideoInput" accept="video/*" hidden>
+                <div class="oc-hint" style="margin-top:6px">只选不传，点击下方「提交新素材」才真正上传。</div>
+              </div>
+            </div>
+
+            <div id="edUploadProgress" class="oc-upload-list"></div>
+
+            <div class="oc-new-item-footer">
+              <button type="button" class="oc-btn primary" id="edItemSubmitBtn">
+                <svg width="14" height="14"><use href="#ic-plus"/></svg>
+                <span>提交新素材</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="oc-edit-main-grid oc-edit-secondary-grid">
         <section class="oc-section oc-section-card oc-edit-cover-panel" id="edCoverSection">
           <div class="oc-section-title">
             <span>产品主图</span>
             <span id="edCoverSectionHint" class="optional">(EN 必填，其他语种可选)</span>
           </div>
           <div id="edCoverBlock">
-            <!-- 初始静态结构，openEditDetail 后由 renderCoverBlock() 替换 -->
             <div class="oc-cover-row">
               <div id="edCoverBox" class="oc-cover-square-480">
                 <div id="edCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传产品主图">
@@ -91,100 +166,94 @@
           </div>
         </section>
 
-        <!-- 文案（JS 按 activeLang 过滤渲染） -->
-        <section class="oc-section oc-section-card oc-edit-copy-panel" id="edCwSection">
+        <section class="oc-section oc-section-card" id="edDetailImagesSection" hidden>
           <div class="oc-section-title">
-            <span>文案</span>
-            <span class="optional" id="edCwLangLabel"></span>
-            <span class="count" id="edCwBadge">0</span>
+            <span>商品详情图</span>
+            <span class="optional">(英文原始版，用于后续图片翻译)</span>
+            <span class="count" id="edDetailImagesBadge">0</span>
           </div>
-          <div id="edCwList" class="oc-cw-grid"></div>
-          <button class="oc-add-btn" type="button" id="edCwAddBtn">
-            <svg width="14" height="14"><use href="#ic-plus"/></svg>
-            <span>添加文案条目</span>
-          </button>
+          <div id="edDetailTranslateStatus" class="oc-hint" hidden
+               style="margin-bottom:var(--oc-sp-3);padding:10px 12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);color:var(--oc-fg);"></div>
+
+          <div class="oc-detail-subgroup" data-kind="static">
+            <div class="oc-detail-subgroup-title">
+              <span>静态图（参与翻译）</span>
+            </div>
+            <div id="edDetailImagesGrid" class="oc-detail-images-grid"></div>
+            <div class="oc-detail-images-actions">
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesPickBtn">
+                <svg width="14" height="14"><use href="#ic-upload"/></svg>
+                <span>选择图片批量上传</span>
+              </button>
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesFromUrlBtn" title="从商品链接抓取轮播+详情图">
+                <svg width="14" height="14"><use href="#ic-upload"/></svg>
+                <span>从商品链接一键下载</span>
+              </button>
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesDownloadZipBtn" disabled>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 2.5v5.5"></path>
+                  <path d="M4.75 5.75 7 8l2.25-2.25"></path>
+                  <path d="M2.5 10.75h9"></path>
+                </svg>
+                <span>打包下载静态图</span>
+              </button>
+              <span class="oc-hint">JPG / PNG / WebP / GIF，单次 ≤ 20 张，单张 ≤ 15MB；GIF 不参与翻译但会归入 GIF 栏</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);flex-wrap:wrap;">
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesTranslateBtn" hidden>
+                <svg width="14" height="14"><use href="#ic-languages"/></svg>
+                <span>从英语版一键翻译</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="oc-detail-subgroup" data-kind="gif" style="margin-top:var(--oc-sp-5);padding-top:var(--oc-sp-4);border-top:1px solid var(--oc-border);">
+            <div class="oc-detail-subgroup-title" style="display:flex;align-items:center;gap:var(--oc-sp-2);">
+              <span>GIF 动图</span>
+              <span class="optional">(不参与翻译，单独打包给美工)</span>
+              <span class="count" id="edDetailGifImagesBadge">0</span>
+            </div>
+            <div id="edDetailGifImagesGrid" class="oc-detail-images-grid"></div>
+            <div class="oc-detail-images-actions">
+              <button type="button" class="oc-btn ghost sm" id="edDetailGifImagesPickBtn">
+                <svg width="14" height="14"><use href="#ic-upload"/></svg>
+                <span>选择 GIF 批量上传</span>
+              </button>
+              <input type="file" id="edDetailGifImagesInput"
+                     accept="image/gif" multiple hidden>
+              <button type="button" class="oc-btn ghost sm" id="edDetailGifImagesDownloadZipBtn" disabled>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 2.5v5.5"></path>
+                  <path d="M4.75 5.75 7 8l2.25-2.25"></path>
+                  <path d="M2.5 10.75h9"></path>
+                </svg>
+                <span>一键打包下载 GIF</span>
+              </button>
+              <span class="oc-hint">系统不会翻译 GIF，下载 zip 后人工处理</span>
+            </div>
+          </div>
+
+          <input type="file" id="edDetailImagesInput"
+                 accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+          <div id="edDetailImagesProgress" class="oc-upload-list" hidden></div>
+          <div id="edDetailTranslateHistoryWrap" hidden
+               style="margin-top:var(--oc-sp-4);padding-top:var(--oc-sp-4);border-top:1px solid var(--oc-border);">
+            <div style="font-size:13px;font-weight:600;color:var(--oc-fg);margin-bottom:var(--oc-sp-3);">翻译任务记录</div>
+            <div id="edDetailTranslateHistory"></div>
+          </div>
         </section>
       </div>
 
-      <!-- 商品详情图（仅英语可编辑，其他语种后续由翻译流程生成） -->
-      <section class="oc-section oc-section-card" id="edDetailImagesSection" hidden>
-        <div class="oc-section-title">
-          <span>商品详情图</span>
-          <span class="optional">(英文原始版，用于后续图片翻译)</span>
-          <span class="count" id="edDetailImagesBadge">0</span>
-        </div>
-        <div id="edDetailTranslateStatus" class="oc-hint" hidden
-             style="margin-bottom:var(--oc-sp-3);padding:10px 12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);color:var(--oc-fg);"></div>
-
-        <!-- 静态图（参与翻译） -->
-        <div class="oc-detail-subgroup" data-kind="static">
-          <div class="oc-detail-subgroup-title">
-            <span>静态图（参与翻译）</span>
-          </div>
-          <div id="edDetailImagesGrid" class="oc-detail-images-grid"></div>
-          <div class="oc-detail-images-actions">
-            <button type="button" class="oc-btn ghost sm" id="edDetailImagesPickBtn">
-              <svg width="14" height="14"><use href="#ic-upload"/></svg>
-              <span>选择图片批量上传</span>
-            </button>
-            <button type="button" class="oc-btn ghost sm" id="edDetailImagesFromUrlBtn" title="从商品链接抓取轮播+详情图">
-              <svg width="14" height="14"><use href="#ic-upload"/></svg>
-              <span>从商品链接一键下载</span>
-            </button>
-            <button type="button" class="oc-btn ghost sm" id="edDetailImagesDownloadZipBtn" disabled>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M7 2.5v5.5"></path>
-                <path d="M4.75 5.75 7 8l2.25-2.25"></path>
-                <path d="M2.5 10.75h9"></path>
-              </svg>
-              <span>打包下载静态图</span>
-            </button>
-            <span class="oc-hint">JPG / PNG / WebP / GIF，单次 ≤ 20 张，单张 ≤ 15MB；GIF 不参与翻译但会归入 GIF 栏</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);flex-wrap:wrap;">
-            <button type="button" class="oc-btn ghost sm" id="edDetailImagesTranslateBtn" hidden>
-              <svg width="14" height="14"><use href="#ic-languages"/></svg>
-              <span>从英语版一键翻译</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- GIF 动图（不参与翻译，单独打包给美工） -->
-        <div class="oc-detail-subgroup" data-kind="gif" style="margin-top:var(--oc-sp-5);padding-top:var(--oc-sp-4);border-top:1px solid var(--oc-border);">
-          <div class="oc-detail-subgroup-title" style="display:flex;align-items:center;gap:var(--oc-sp-2);">
-            <span>GIF 动图</span>
-            <span class="optional">(不参与翻译，单独打包给美工)</span>
-            <span class="count" id="edDetailGifImagesBadge">0</span>
-          </div>
-          <div id="edDetailGifImagesGrid" class="oc-detail-images-grid"></div>
-          <div class="oc-detail-images-actions">
-            <button type="button" class="oc-btn ghost sm" id="edDetailGifImagesPickBtn">
-              <svg width="14" height="14"><use href="#ic-upload"/></svg>
-              <span>选择 GIF 批量上传</span>
-            </button>
-            <input type="file" id="edDetailGifImagesInput"
-                   accept="image/gif" multiple hidden>
-            <button type="button" class="oc-btn ghost sm" id="edDetailGifImagesDownloadZipBtn" disabled>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
-                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M7 2.5v5.5"></path>
-                <path d="M4.75 5.75 7 8l2.25-2.25"></path>
-                <path d="M2.5 10.75h9"></path>
-              </svg>
-              <span>一键打包下载 GIF</span>
-            </button>
-            <span class="oc-hint">系统不会翻译 GIF，下载 zip 后人工处理</span>
-          </div>
-        </div>
-
-        <input type="file" id="edDetailImagesInput"
-               accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
-        <div id="edDetailImagesProgress" class="oc-upload-list" hidden></div>
-        <div id="edDetailTranslateHistoryWrap" hidden
-             style="margin-top:var(--oc-sp-4);padding-top:var(--oc-sp-4);border-top:1px solid var(--oc-border);">
-          <div style="font-size:13px;font-weight:600;color:var(--oc-fg);margin-bottom:var(--oc-sp-3);">翻译任务记录</div>
-          <div id="edDetailTranslateHistory"></div>
+      <section class="oc-section oc-section-card oc-edit-meta-section" id="edMkIdSection">
+        <div class="oc-section-title">明空 ID</div>
+        <div class="oc-field">
+          <label class="oc-label" for="edMkId">明空 ID</label>
+          <input id="edMkId" class="oc-input" type="text"
+                 inputmode="numeric" maxlength="8"
+                 placeholder="选填，1-8 位数字" autocomplete="off">
+          <div class="oc-hint">对应明空系统的产品 ID，用于后续推送</div>
         </div>
       </section>
 
@@ -308,77 +377,6 @@
           </div>
         </div>
       </div>
-
-      <section class="oc-section oc-section-card" id="edItemsSection">
-        <div class="oc-section-title">
-          <span>视频素材</span>
-          <span class="optional" id="edItemsLangLabel"></span>
-          <span class="count" id="edItemsBadge">0</span>
-        </div>
-
-        <!-- 已上传素材列表 -->
-        <div id="edItemsGrid" class="oc-items-grid"></div>
-
-        <!-- 新增素材大框：视频封面图 + 视频源 + 提交按钮（两者都有才能提交） -->
-        <div class="oc-new-item oc-edit-new-item" id="edNewItemBox">
-          <div class="oc-new-item-title">新增素材</div>
-          <div class="oc-new-item-body oc-edit-video-grid">
-            <!-- 左：视频封面图 -->
-            <div class="oc-new-item-col">
-              <div class="oc-new-item-label">视频封面图<span class="req">*</span></div>
-              <div id="edItemCoverBox" class="oc-cover-9-16">
-                <div id="edItemCoverDropzone" class="cover-dz" tabindex="0" role="button" aria-label="上传视频封面图">
-                  <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
-                  <div class="dz-title">点击或拖拽上传封面</div>
-                  <div class="dz-hint">建议 9:16 / 1080×1920</div>
-                </div>
-                <img id="edItemCoverImg" alt="视频封面" hidden>
-              </div>
-              <div class="oc-cover-actions">
-                <button type="button" class="oc-btn ghost sm" id="edItemCoverReplace" hidden>更换封面</button>
-                <button type="button" class="oc-btn text sm" id="edItemCoverClear" hidden>清空</button>
-              </div>
-              <div class="oc-url-row">
-                <input type="url" id="edItemCoverUrl" class="oc-input sm" placeholder="粘贴图片 URL 导入…">
-                <button type="button" class="oc-btn ghost sm" id="edItemCoverFromUrlBtn">从 URL 导入</button>
-              </div>
-              <input type="file" id="edItemCoverInput" accept="image/*" hidden>
-            </div>
-
-            <!-- 右：视频源 -->
-            <div class="oc-new-item-col">
-              <div class="oc-new-item-label">视频源<span class="req">*</span></div>
-              <div id="edVideoPickBox" class="oc-video-pick" tabindex="0" role="button" aria-label="选择视频源文件">
-                <div id="edVideoPickEmpty" class="cover-dz">
-                  <div class="dz-icon"><svg width="18" height="18"><use href="#ic-upload"/></svg></div>
-                  <div class="dz-title">点击或拖拽选择视频</div>
-                  <div class="dz-hint">mp4 / mov / webm / mkv</div>
-                </div>
-                <div id="edVideoPickFilled" class="oc-video-filled" hidden>
-                  <div class="oc-video-filled-icon">
-                    <svg width="28" height="28"><use href="#ic-film"/></svg>
-                  </div>
-                  <div class="oc-video-filled-name" id="edVideoPickName"></div>
-                  <div class="oc-video-filled-size" id="edVideoPickSize"></div>
-                  <button type="button" class="oc-btn text sm" id="edVideoPickClear">清空</button>
-                </div>
-              </div>
-              <input type="file" id="edVideoInput" accept="video/*" hidden>
-              <div class="oc-hint" style="margin-top:6px">只选不传，点击下方「提交新素材」才真正上传。</div>
-            </div>
-          </div>
-
-          <!-- 上传进度 -->
-          <div id="edUploadProgress" class="oc-upload-list"></div>
-
-          <div class="oc-new-item-footer">
-            <button type="button" class="oc-btn primary" id="edItemSubmitBtn">
-              <svg width="14" height="14"><use href="#ic-plus"/></svg>
-              <span>提交新素材</span>
-            </button>
-          </div>
-        </div>
-      </section>
 
     </div>
 
