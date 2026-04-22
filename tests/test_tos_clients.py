@@ -106,6 +106,31 @@ def test_private_probe_failure_falls_back_to_public(monkeypatch):
     assert probes == [("private.tos.example.com", "auto-video-srt")]
 
 
+def test_private_probe_uses_fast_probe_client_settings(monkeypatch):
+    constructed = []
+
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+            self.kwargs = kwargs
+            constructed.append((endpoint, dict(kwargs)))
+
+        def head_bucket(self, bucket):
+            raise RuntimeError("private unavailable")
+
+    fake_tos = types.SimpleNamespace(TosClientV2=FakeClient)
+    monkeypatch.setitem(sys.modules, "tos", fake_tos)
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=True)
+
+    assert tos_clients.private_endpoint_ready(force=True) is False
+
+    private_inits = [kwargs for endpoint, kwargs in constructed if endpoint == "private.tos.example.com"]
+    assert private_inits
+    assert private_inits[0]["max_retry_count"] == 0
+    assert private_inits[0]["connection_time"] == 2
+    assert private_inits[0]["socket_timeout"] == 2
+
+
 def test_private_probe_failure_is_shared_across_concurrent_callers(monkeypatch):
     probe_calls = 0
     probe_calls_lock = threading.Lock()

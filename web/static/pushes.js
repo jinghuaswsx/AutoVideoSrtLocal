@@ -542,10 +542,21 @@
           showMkIdMatch(body.mk_id_match);
           materialPushed = true;
           anyPushSucceeded = true;
-          // mk_id 若匹配成功，顺手更新弹窗上部显示的 mk_id（再打开小语种胶囊时就能看到）
+          // mk_id 匹配成功 → 同步刷新顶部信息 + 小语种文案 pane + JSON 预览 + 推送按钮状态
           if (body.mk_id_match && body.mk_id_match.mk_id) {
             mkId = body.mk_id_match.mk_id;
             mkIdValue.textContent = String(mkId);
+            localizedTargetUrl = body.mk_id_match.localized_push_target_url || '';
+            clear(paneLocalized);
+            paneLocalized.appendChild(
+              renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId),
+            );
+            paneLocalizedJson.textContent = JSON.stringify({
+              mk_id: mkId,
+              target_url: localizedTargetUrl,
+              texts: localizedTexts,
+            }, null, 2);
+            syncPushButton();
           }
         }
       } catch (err) {

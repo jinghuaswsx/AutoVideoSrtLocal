@@ -236,6 +236,10 @@ def api_push(item_id: int):
                 log.warning("update_product mk_id failed: %s", exc)
                 mk_id_match["status"] = "db_conflict"
                 mk_id_match["detail"] = str(exc)
+            # 返回新 mk_id 对应的 wedev target_url，让前端刷新"推送小语种文案"胶囊
+            mk_id_match["localized_push_target_url"] = pushes.build_localized_texts_target_url(
+                int(matched_mk_id)
+            )
 
         return jsonify({
             "ok": True,

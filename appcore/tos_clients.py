@@ -11,6 +11,13 @@ import config
 _client_cache: dict[str, tos.TosClientV2] = {}
 _private_probe_cache = {"value": None, "expires_at": 0.0}
 _private_probe_lock = threading.Lock()
+_private_probe_client: tos.TosClientV2 | None = None
+
+# 私网探测只用于“是否可达”的健康检查，不应该继承默认 10s 建连 / 30s 读写 / 3 次重试，
+# 否则一旦 ivolces 链路异常，首个 TOS 操作会被这段探测白白拖慢十几秒。
+_PRIVATE_PROBE_CONNECTION_TIME = 2
+_PRIVATE_PROBE_SOCKET_TIMEOUT = 2
+_PRIVATE_PROBE_MAX_RETRY_COUNT = 0
 
 
 def is_tos_configured() -> bool:
@@ -22,12 +29,21 @@ def is_tos_configured() -> bool:
     )
 
 
-def _build_client(endpoint: str) -> tos.TosClientV2:
+def _build_client(
+    endpoint: str,
+    *,
+    max_retry_count: int = 3,
+    connection_time: int = 10,
+    socket_timeout: int = 30,
+) -> tos.TosClientV2:
     return tos.TosClientV2(
         ak=config.TOS_ACCESS_KEY,
         sk=config.TOS_SECRET_KEY,
         endpoint=endpoint,
         region=config.TOS_REGION,
+        max_retry_count=max_retry_count,
+        connection_time=connection_time,
+        socket_timeout=socket_timeout,
     )
 
 
@@ -47,6 +63,20 @@ def get_private_client() -> tos.TosClientV2:
     return _get_client(config.TOS_PRIVATE_ENDPOINT)
 
 
+def get_private_probe_client() -> tos.TosClientV2:
+    global _private_probe_client
+    client = _private_probe_client
+    if client is None:
+        client = _build_client(
+            config.TOS_PRIVATE_ENDPOINT,
+            max_retry_count=_PRIVATE_PROBE_MAX_RETRY_COUNT,
+            connection_time=_PRIVATE_PROBE_CONNECTION_TIME,
+            socket_timeout=_PRIVATE_PROBE_SOCKET_TIMEOUT,
+        )
+        _private_probe_client = client
+    return client
+
+
 def private_endpoint_ready(force: bool = False) -> bool:
     if not is_tos_configured() or not config.TOS_USE_PRIVATE_ENDPOINT:
         return False
@@ -61,7 +91,7 @@ def private_endpoint_ready(force: bool = False) -> bool:
             return bool(_private_probe_cache["value"])
 
         try:
-            get_private_client().head_bucket(config.TOS_BUCKET)
+            get_private_probe_client().head_bucket(config.TOS_BUCKET)
         except Exception:
             ready = False
         else:
