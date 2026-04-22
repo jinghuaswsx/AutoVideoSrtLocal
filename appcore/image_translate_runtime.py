@@ -155,9 +155,10 @@ class ImageTranslateRuntime:
 
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
-        item["status"] = "running"
-        _update_progress(task)
-        store.update(task_id, items=task["items"], progress=task["progress"])
+        with self._state_lock:
+            item["status"] = "running"
+            _update_progress(task)
+            store.update(task_id, items=task["items"], progress=task["progress"])
         self._emit_item(task_id, item)
 
         attempts = 0
@@ -196,39 +197,43 @@ class ImageTranslateRuntime:
                     f.write(out_bytes)
                 tos_clients.upload_file(dst_path, dst_key)
 
-                item["status"] = "done"
-                item["dst_tos_key"] = dst_key
-                item["error"] = ""
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "done"
+                    item["dst_tos_key"] = dst_key
+                    item["error"] = ""
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
             except gemini_image.GeminiImageError as e:
-                item["status"] = "failed"
-                item["error"] = str(e)
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = str(e)
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
             except gemini_image.GeminiImageRetryable as e:
                 # 任务级熔断：先记一次速率事件，超阈值立刻终止整任务
                 if self._record_rate_limit_hit():
-                    item["status"] = "failed"
-                    item["error"] = f"已熔断（上游持续限流）：{e}"
-                    _update_progress(task)
-                    store.update(task_id, items=task["items"], progress=task["progress"])
+                    with self._state_lock:
+                        item["status"] = "failed"
+                        item["error"] = f"已熔断（上游持续限流）：{e}"
+                        _update_progress(task)
+                        store.update(task_id, items=task["items"], progress=task["progress"])
                     self._emit_item(task_id, item)
                     self._emit_progress(task_id, task["progress"])
                     raise _CircuitOpen(str(e)) from e
                 if attempts < _MAX_ATTEMPTS:
                     _sleep(_BACKOFF_BASE * (2 ** (attempts - 1)))
                     continue
-                item["status"] = "failed"
-                item["error"] = f"重试 {attempts} 次仍失败：{e}"
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = f"重试 {attempts} 次仍失败：{e}"
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
@@ -236,10 +241,11 @@ class ImageTranslateRuntime:
                 if attempts < _MAX_ATTEMPTS:
                     _sleep(_BACKOFF_BASE * (2 ** (attempts - 1)))
                     continue
-                item["status"] = "failed"
-                item["error"] = f"未知错误：{e}"
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = f"未知错误：{e}"
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return

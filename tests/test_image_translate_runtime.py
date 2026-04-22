@@ -565,3 +565,97 @@ def test_parallel_skips_already_terminal_items(tmp_path):
     assert task["items"][1]["status"] == "failed"
     for i in range(2, 12):
         assert task["items"][i]["status"] == "done"
+
+
+def test_parallel_circuit_breaker_aborts_remaining(tmp_path):
+    """并行下若上游持续 429，_CircuitOpen 穿透后剩余 items 全部标 failed。"""
+    from appcore import image_translate_runtime as rt
+    from web import store
+    from appcore.gemini_image import GeminiImageRetryable
+
+    task = _fake_task([_item(i) for i in range(15)])
+    task["concurrency_mode"] = "parallel"
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    def fake_gen(*a, **kw):
+        raise GeminiImageRetryable("429 Too Many Requests")
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt, "_sleep"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    for it in task["items"]:
+        assert it["status"] == "failed", (it["idx"], it)
+    reasons = [it.get("error", "") for it in task["items"]]
+    assert any("限流" in r or "熔断" in r for r in reasons), reasons
+    assert task["status"] == "error"
+
+
+def test_parallel_progress_is_consistent(tmp_path):
+    """并行跑完后 progress 自洽：total=sum(done+failed+running+pending)，running=0。"""
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(15)])
+    task["concurrency_mode"] = "parallel"
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    p = task["progress"]
+    assert p["total"] == 15
+    assert p["done"] == 15
+    assert p["failed"] == 0
+    assert p["running"] == 0
+
+
+def test_parallel_no_lost_updates_under_contention(tmp_path):
+    """20 个 item 并发 done，最终 items 列表每个 status=done，无丢失更新。"""
+    import time as _time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(20)])
+    task["concurrency_mode"] = "parallel"
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    def fake_gen(*a, **kw):
+        _time.sleep(0.02)
+        return b"OUT", "image/png"
+
+    store_updates = []
+
+    def rec_update(task_id, **kw):
+        if "progress" in kw:
+            p = kw["progress"]
+            store_updates.append(dict(p))
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update", side_effect=rec_update), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert all(it["status"] == "done" for it in task["items"])
+    for p in store_updates:
+        assert p["done"] + p["failed"] + p["running"] <= p["total"], p
+    assert task["progress"]["done"] == 20
