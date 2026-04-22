@@ -114,23 +114,163 @@
   function assertMaterialFilenameOrAlert(filename, productName, langCode) {
     const errs = validateMaterialFilename(filename, productName, langCode);
     if (!errs.length) return true;
+    showFilenameErrorModal(String(filename || ''), errs, productName, langCode);
+    return false;
+  }
+
+  function todayYMD() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  }
+
+  // 从原文件名抽取 YYYY.MM.DD（合法才用，否则用今天），再按语种拼合规文件名
+  function buildSuggestedFilename(filename, productName, langCode) {
+    const fn = String(filename || '');
     const lang = (LANGUAGES || []).find(l => l.code === langCode);
     const langZh = (lang && lang.name_zh) || langCode;
-    let spec, example;
-    if (langCode === 'en') {
-      spec = 'YYYY.MM.DD-{商品名}（后面内容不限）';
-      example = `例如：2026.04.17-${productName || '商品名'}-原素材.mp4`;
-    } else {
-      spec = 'YYYY.MM.DD-{商品名}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4';
-      example = `例如：2026.04.17-${productName || '商品名'}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+    const datePart = fn.slice(0, 10);
+    let date = todayYMD();
+    const m = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(datePart);
+    if (m) {
+      const y = +m[1], mo = +m[2], d = +m[3];
+      const obj = new Date(y, mo - 1, d);
+      if (obj.getFullYear() === y && obj.getMonth() === mo - 1 && obj.getDate() === d) {
+        date = datePart;
+      }
     }
-    alert(
-      '文件名不符合命名规范，请修改后再上传：\n\n'
-      + '• ' + errs.join('\n• ')
-      + '\n\n规范：' + spec + '\n'
-      + example
-    );
-    return false;
+    const pn = productName || '{产品名}';
+    if (langCode === 'en') {
+      return `${date}-${pn}-原素材.mp4`;
+    }
+    return `${date}-${pn}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+  }
+
+  // 将原文件名拆成段，合规的正常显示、不合规的红底粗体
+  function renderHighlightedFilename(filename, productName, langCode) {
+    const fn = String(filename || '');
+    const lang = (LANGUAGES || []).find(l => l.code === langCode);
+    const langZh = (lang && lang.name_zh) || '';
+    const ERR_STYLE = 'color:#d64045;font-weight:700;background:#fde8ea;padding:0 2px;border-radius:3px;';
+    const OK_STYLE  = 'color:#1b5e20;';
+    const wrap = (text, ok) => {
+      if (!text) return '';
+      const esc = escapeHtml(text);
+      return `<span style="${ok ? OK_STYLE : ERR_STYLE}">${esc}</span>`;
+    };
+    const datePart = fn.slice(0, 10);
+    const sepPart = fn.slice(10, 11);
+    const rest = fn.slice(11);
+    const dm = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(datePart);
+    let dateOk = false;
+    if (dm) {
+      const y = +dm[1], mo = +dm[2], d = +dm[3];
+      const obj = new Date(y, mo - 1, d);
+      dateOk = obj.getFullYear() === y && obj.getMonth() === mo - 1 && obj.getDate() === d;
+    }
+    const sepOk = sepPart === '-';
+    const prodOk = !!productName && rest.startsWith(productName);
+    const out = [];
+    out.push(wrap(datePart || '(缺)', dateOk));
+    out.push(wrap(sepPart || '(缺-)', sepOk));
+    if (prodOk) {
+      out.push(wrap(productName, true));
+      const after = rest.slice(productName.length);
+      if (langCode === 'en') {
+        // 英语：产品名之后任何内容都算 OK
+        if (after) out.push(wrap(after, true));
+      } else {
+        const expectedTail = `-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+        const tailOk = after === expectedTail;
+        if (after) out.push(wrap(after, tailOk));
+      }
+    } else {
+      out.push(wrap(rest || '(缺产品名)', false));
+    }
+    return out.join('');
+  }
+
+  function showFilenameErrorModal(filename, errs, productName, langCode) {
+    const lang = (LANGUAGES || []).find(l => l.code === langCode);
+    const langZh = (lang && lang.name_zh) || langCode;
+    const spec = langCode === 'en'
+      ? 'YYYY.MM.DD-{产品名}（后面内容不限）'
+      : 'YYYY.MM.DD-{产品名}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4';
+    const highlighted = renderHighlightedFilename(filename, productName, langCode);
+    const suggestion = buildSuggestedFilename(filename, productName, langCode);
+
+    // 若旧窗口还在，先清掉
+    const old = document.getElementById('filenameErrModal');
+    if (old) old.remove();
+
+    const mask = document.createElement('div');
+    mask.id = 'filenameErrModal';
+    mask.setAttribute('style',
+      'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9999;'
+      + 'display:flex;align-items:center;justify-content:center;padding:24px;');
+    const errItems = (errs || []).map(e => `<li>${escapeHtml(e)}</li>`).join('');
+    mask.innerHTML = `
+      <div role="dialog" aria-modal="true" style="background:#fff;border-radius:12px;
+           max-width:720px;width:100%;max-height:90vh;overflow:auto;
+           box-shadow:0 12px 32px -6px rgba(15,23,42,0.25);padding:20px 22px;
+           font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <h3 style="margin:0;font-size:16px;color:#1f2937;">文件名不符合命名规范</h3>
+          <button type="button" data-act="close" style="border:none;background:transparent;
+                  font-size:20px;line-height:1;color:#6b7280;cursor:pointer;padding:4px 8px;">×</button>
+        </div>
+        <div style="font-size:13px;color:#374151;line-height:1.55;">
+          <div style="margin-bottom:8px;color:#374151;">规范：<code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:12px;">${escapeHtml(spec)}</code></div>
+          <div style="margin-bottom:8px;">错误明细：</div>
+          <ul style="margin:0 0 14px 0;padding-left:20px;color:#b91c1c;">${errItems}</ul>
+          <div style="margin-bottom:6px;color:#6b7280;font-size:12px;">你的文件名（不合规部分已红色标出）：</div>
+          <div style="font-family:Consolas,'SF Mono',ui-monospace,monospace;font-size:13px;
+                      background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;
+                      padding:10px 12px;margin-bottom:14px;word-break:break-all;user-select:text;">
+            ${highlighted}
+          </div>
+          <div style="margin-bottom:6px;color:#6b7280;font-size:12px;">建议文件名（基于日期段和产品名拼出，可一键复制）：</div>
+          <div style="display:flex;gap:8px;align-items:stretch;">
+            <code id="filenameErrSuggestion" style="flex:1;font-family:Consolas,'SF Mono',ui-monospace,monospace;
+                   font-size:13px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;
+                   border-radius:6px;padding:10px 12px;word-break:break-all;user-select:all;">${escapeHtml(suggestion)}</code>
+            <button type="button" data-act="copy" style="flex-shrink:0;border:1px solid #2563eb;
+                    background:#2563eb;color:#fff;border-radius:6px;padding:0 14px;
+                    font-size:13px;cursor:pointer;font-weight:500;">复制</button>
+          </div>
+          <div id="filenameErrCopyTip" style="margin-top:6px;font-size:12px;color:#16a34a;height:16px;"></div>
+        </div>
+        <div style="text-align:right;margin-top:6px;">
+          <button type="button" data-act="close" style="border:1px solid #d1d5db;background:#fff;
+                  color:#374151;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;">关闭</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(mask);
+
+    function close() { mask.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    mask.addEventListener('click', (e) => {
+      if (e.target === mask) { close(); return; }
+      const act = e.target.getAttribute('data-act');
+      if (act === 'close') close();
+      else if (act === 'copy') {
+        const text = suggestion;
+        const tip = mask.querySelector('#filenameErrCopyTip');
+        const done = () => { if (tip) { tip.textContent = '已复制 ✓'; setTimeout(() => { if (tip) tip.textContent = ''; }, 2000); } };
+        const fail = () => { if (tip) { tip.textContent = '复制失败，请手动选择并 Ctrl+C'; tip.style.color = '#b91c1c'; } };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(fail);
+        } else {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text; document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); ta.remove(); done();
+          } catch (_) { fail(); }
+        }
+      }
+    });
   }
 
   function renderLangBar(coverage) {
