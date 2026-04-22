@@ -219,6 +219,50 @@
 .oc-rs-card.oc-vitem .vname {
   padding:var(--oc-sp-3) var(--oc-sp-3) 0;
 }
+.oc-rs-title-display {
+  width:100%;
+  height:calc(2 * 1.45em);
+  padding:0;
+  border:0;
+  background:none;
+  color:var(--oc-fg);
+  font:inherit;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.45;
+  text-align:left;
+  cursor:text;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  word-break:break-word;
+}
+.oc-rs-title-display:hover { color:var(--oc-accent); }
+.oc-rs-title-display:focus-visible {
+  outline:none;
+  border-radius:var(--oc-rad-sm);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
+.oc-rs-title-input {
+  width:100%;
+  height:calc(2 * 1.45em + 14px);
+  padding:6px 8px;
+  border:1px solid var(--oc-border-strong);
+  border-radius:var(--oc-rad);
+  background:var(--oc-bg);
+  color:var(--oc-fg);
+  font:inherit;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.45;
+  resize:none;
+}
+.oc-rs-title-input:focus {
+  outline:none;
+  border-color:var(--oc-accent);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
 .oc-rs-card.oc-vitem .vtabs {
   padding:0 var(--oc-sp-3);
   margin-top:var(--oc-sp-2);
