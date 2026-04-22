@@ -11,10 +11,12 @@ from __future__ import annotations
 import os
 
 
-bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", "0.0.0.0:8888")
+bind = "0.0.0.0:80"
 worker_class = "gthread"
 workers = 1
 threads = 32
+bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", bind)
+threads = int(os.getenv("AUTOVIDEOSRT_GUNICORN_THREADS", str(threads)))
 timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_TIMEOUT", "300"))
 graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "30"))
 keepalive = int(os.getenv("AUTOVIDEOSRT_GUNICORN_KEEPALIVE", "10"))
