@@ -1848,7 +1848,10 @@ def test_medias_page_prioritizes_push_audit_sections_in_edit_modal(authed_client
     assert body.index('id="edDetailImagesSection"') < body.index('for="edMkId"')
     assert '.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-4); }' in body
     assert '.oc-modal-head-main {' in body
+    assert '.oc-modal-head-main {\n  display:flex;\n  align-items:center;\n  justify-content:flex-start;' in body
     assert '.oc-modal-head-meta {' in body
+    assert '.oc-modal-head-main h3 {\n  flex:0 0 auto;\n  padding-top:0;\n  font-weight:700;' in body
+    assert '主站已适配语种' not in body
 
 
 def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
