@@ -1191,14 +1191,314 @@
     }).join('');
   }
 
+  function edCanonicalCopyField(label) {
+    const text = String(label || '').trim().toLowerCase();
+    if (!text) return '';
+    if (['标题', 'title', 'headline', 'subject'].includes(text)) return 'title';
+    if (['文案', 'copy', 'body', 'text', 'content'].includes(text)) return 'body';
+    if (['描述', 'description', 'desc', 'detail'].includes(text)) return 'description';
+    return '';
+  }
+
+  function edAppendCopyFieldValue(target, key, rawValue) {
+    const value = String(rawValue || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\n+/g, ' ')
+      .replace(/[ \t\u00A0]+/g, ' ')
+      .trim();
+    if (!value) return;
+    target[key] = target[key] ? `${target[key]} ${value}`.trim() : value;
+  }
+
+  function edParseCopywritingBody(raw) {
+    const text = String(raw || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u00A0/g, ' ')
+      .trim();
+    const fields = { title: '', body: '', description: '' };
+    if (!text) return fields;
+
+    const looseLines = [];
+    let activeKey = '';
+    let hasLabeledField = false;
+    const fieldPattern = /^(标题|title|headline|subject|文案|copy|body|text|content|描述|description|desc|detail)\s*(?:[:：]|[-—]\s*|\s+)?(.*)$/i;
+
+    text.split('\n').forEach((rawLine) => {
+      const line = String(rawLine || '').trim();
+      if (!line) return;
+      const match = line.match(fieldPattern);
+      const key = match ? edCanonicalCopyField(match[1]) : '';
+      if (key) {
+        hasLabeledField = true;
+        activeKey = key;
+        edAppendCopyFieldValue(fields, key, match[2] || '');
+        return;
+      }
+      if (activeKey) {
+        edAppendCopyFieldValue(fields, activeKey, line);
+        return;
+      }
+      looseLines.push(line);
+    });
+
+    if (!hasLabeledField && looseLines.length) {
+      if (looseLines.length === 1) {
+        edAppendCopyFieldValue(fields, 'body', looseLines[0]);
+      } else if (looseLines.length === 2) {
+        edAppendCopyFieldValue(fields, 'title', looseLines[0]);
+        edAppendCopyFieldValue(fields, 'body', looseLines[1]);
+      } else {
+        edAppendCopyFieldValue(fields, 'title', looseLines[0]);
+        edAppendCopyFieldValue(fields, 'body', looseLines[1]);
+        edAppendCopyFieldValue(fields, 'description', looseLines.slice(2).join(' '));
+      }
+      return fields;
+    }
+
+    if (hasLabeledField && looseLines.length) {
+      looseLines.forEach((line) => {
+        const fallbackKey = !fields.title ? 'title' : (!fields.body ? 'body' : 'description');
+        edAppendCopyFieldValue(fields, fallbackKey, line);
+      });
+    }
+    return fields;
+  }
+
+  function edHasMeaningfulCopywritingBody(raw) {
+    const parsed = edParseCopywritingBody(raw);
+    return !!(parsed.title || parsed.body || parsed.description);
+  }
+
+  function edNormalizeCopywritingBody(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return '';
+    const parsed = edParseCopywritingBody(text);
+    return [
+      `标题: ${parsed.title}`,
+      `文案: ${parsed.body}`,
+      `描述: ${parsed.description}`,
+    ].join('\n');
+  }
+
+  function edNormalizeCopywritingsData(raw) {
+    if (Array.isArray(raw)) {
+      return raw.map((item) => ({
+        ...item,
+        body: edNormalizeCopywritingBody(item && item.body),
+      }));
+    }
+    if (raw && typeof raw === 'object') {
+      const normalized = {};
+      Object.keys(raw).forEach((lang) => {
+        const list = Array.isArray(raw[lang]) ? raw[lang] : [];
+        normalized[lang] = list.map((item) => ({
+          ...item,
+          body: edNormalizeCopywritingBody(item && item.body),
+        }));
+      });
+      return normalized;
+    }
+    return raw;
+  }
+
+  function edSetProductData(data) {
+    if (data && typeof data === 'object') {
+      data.copywritings = edNormalizeCopywritingsData(data.copywritings);
+    }
+    edState.current = data;
+    edState.productData = data;
+  }
+
+  function edGetCopywritingsByLang(lang) {
+    const code = String(lang || '').trim().toLowerCase();
+    const raw = (edState.productData && edState.productData.copywritings) || [];
+    if (Array.isArray(raw)) {
+      return raw.filter((item) => (item.lang || '').trim().toLowerCase() === code);
+    }
+    if (raw && typeof raw === 'object') {
+      return Array.isArray(raw[code]) ? raw[code] : [];
+    }
+    return [];
+  }
+
+  function edEnsureCopywritingsArray() {
+    if (!edState.productData) return [];
+    const raw = edState.productData.copywritings;
+    if (Array.isArray(raw)) return raw;
+    const arr = [];
+    if (raw && typeof raw === 'object') {
+      Object.keys(raw).forEach((lang) => {
+        const list = Array.isArray(raw[lang]) ? raw[lang] : [];
+        list.forEach((item) => arr.push({ ...item, lang }));
+      });
+    }
+    edState.productData.copywritings = arr;
+    return arr;
+  }
+
+  function edBuildCopywritingsPayload() {
+    const rawList = edEnsureCopywritingsArray().filter((item) => (
+      item.lang && edHasMeaningfulCopywritingBody(item.body)
+    ));
+    const cwDict = {};
+    rawList.forEach((item) => {
+      const body = edNormalizeCopywritingBody(item.body);
+      if (!body) return;
+      if (!cwDict[item.lang]) cwDict[item.lang] = [];
+      cwDict[item.lang].push({ body });
+    });
+    return cwDict;
+  }
+
+  function edCollectProductPayload(options = {}) {
+    const {
+      flushCopywritings = true,
+      flushProductUrl = true,
+    } = options;
+    const name = $('edName').value.trim();
+    const code = $('edCode').value.trim().toLowerCase();
+    if (!name) {
+      $('edName').focus();
+      throw new Error('产品名称必填');
+    }
+    if (!SLUG_RE.test(code)) {
+      $('edCode').focus();
+      throw new Error('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）');
+    }
+
+    if (flushCopywritings) edFlushCopywritings();
+    if (flushProductUrl) edFlushProductUrl();
+
+    const copywritings = edBuildCopywritingsPayload();
+    if (!Object.keys(copywritings).length) {
+      throw new Error('请填写文案');
+    }
+
+    const mkIdRaw = ($('edMkId').value || '').trim();
+    if (mkIdRaw && !/^\d{1,8}$/.test(mkIdRaw)) {
+      $('edMkId').focus();
+      throw new Error('明空 ID 必须是 1-8 位数字');
+    }
+
+    const adSupportedLangs = [...document.querySelectorAll(
+      '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
+    )].map(i => i.value).join(',');
+
+    return {
+      pid: edState.productData && edState.productData.product && edState.productData.product.id,
+      payload: {
+        name,
+        product_code: code,
+        mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
+        copywritings,
+        localized_links: edState.productData.product.localized_links || {},
+        ad_supported_langs: adSupportedLangs,
+      },
+    };
+  }
+
+  function edGetEnglishSourceCopy() {
+    const englishList = edGetCopywritingsByLang('en');
+    return englishList.find((item) => edHasMeaningfulCopywritingBody(item && item.body)) || null;
+  }
+
+  function edRenderCopyTranslateButton() {
+    const btn = $('edCwTranslateBtn');
+    if (!btn) return;
+    const lang = (edState.activeLang || '').trim().toLowerCase();
+    const source = edGetEnglishSourceCopy();
+    btn.hidden = lang === 'en';
+    if (lang === 'en') return;
+    btn.disabled = !source;
+    btn.title = source ? '读取英文文案并生成当前语种文案' : '当前没有可用的英文文案';
+  }
+
+  async function edTranslateCopyField(text, language) {
+    const value = String(text || '').trim();
+    if (!value) return '';
+    const response = await fetchJSON('/api/title-translate/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language,
+        source_text: value,
+      }),
+    });
+    return String(response.result || '').trim();
+  }
+
+  async function edTranslateEnglishCopywriting() {
+    const btn = $('edCwTranslateBtn');
+    const targetLang = (edState.activeLang || '').trim().toLowerCase();
+    if (!targetLang || targetLang === 'en') return;
+
+    const source = edGetEnglishSourceCopy();
+    if (!source || !edHasMeaningfulCopywritingBody(source.body)) {
+      alert('当前没有可用的英文文案');
+      return;
+    }
+
+    const sourceFields = edParseCopywritingBody(source.body);
+    const tasks = Object.entries(sourceFields)
+      .filter(([, value]) => String(value || '').trim())
+      .map(([key, value]) => edTranslateCopyField(value, targetLang).then((translated) => [key, translated]));
+
+    if (!tasks.length) {
+      alert('英文文案为空，无法翻译');
+      return;
+    }
+
+    const originalLabel = btn ? btn.textContent.trim() : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '翻译中...';
+    }
+
+    try {
+      edFlushCopywritings();
+      const translatedEntries = await Promise.all(tasks);
+      const translatedFields = { title: '', body: '', description: '' };
+      translatedEntries.forEach(([key, value]) => {
+        translatedFields[key] = String(value || '').trim();
+      });
+      const translatedBody = edNormalizeCopywritingBody([
+        `标题: ${translatedFields.title}`,
+        `文案: ${translatedFields.body}`,
+        `描述: ${translatedFields.description}`,
+      ].join('\n'));
+
+      const copies = edEnsureCopywritingsArray();
+      copies.push({ lang: targetLang, body: translatedBody });
+
+      const { pid, payload } = edCollectProductPayload({ flushCopywritings: false });
+      await fetchJSON('/medias/api/products/' + pid, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const full = await fetchJSON('/medias/api/products/' + pid);
+      edSetProductData(full);
+      edRenderLangTabs();
+      await edRenderActiveLangView();
+      loadList();
+    } catch (e) {
+      alert('一键翻译英文文案失败：' + (e.message || e));
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalLabel || '一键翻译英文文案';
+      }
+      edRenderCopyTranslateButton();
+    }
+  }
+
   async function openEditDetail(pid) {
     try {
       await ensureLanguages();
       edStopLinkCheckPoll();
       edCloseLinkCheckModal();
       const data = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = data;
-      edState.productData = data;
+      edSetProductData(data);
       edState.activeLang = 'en';
       edState.linkCheckDetailTask = null;
       edState.linkCheckDetailError = '';
@@ -2081,6 +2381,7 @@
     edRenderCoverBlock(lang);
     edRenderItemsBlock(lang);
     edRenderCopyBlock(lang);
+    edRenderCopyTranslateButton();
     edRenderProductUrl(lang);
     edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
     if (edGetLinkCheckTask(lang)) {
@@ -2208,8 +2509,7 @@
       });
       // 重拉数据刷新视图
       const fresh = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = fresh;
-      edState.productData = fresh;
+      edSetProductData(fresh);
       edRenderLangTabs();
       edRenderActiveLangView();
     } catch (e) {
@@ -2231,8 +2531,7 @@
       });
       if (urlInput) urlInput.value = '';
       const fresh = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = fresh;
-      edState.productData = fresh;
+      edSetProductData(fresh);
       edRenderLangTabs();
       edRenderActiveLangView();
     } catch (e) {
@@ -2248,8 +2547,7 @@
     try {
       await fetchJSON(`/medias/api/products/${pid}/cover?lang=${lang}`, { method: 'DELETE' });
       const fresh = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = fresh;
-      edState.productData = fresh;
+      edSetProductData(fresh);
       edRenderLangTabs();
       edRenderActiveLangView();
     } catch (e) {
@@ -2281,12 +2579,11 @@
     const lang = edState.activeLang;
     const items = [...$('edCwList').children].map(card => ({
       lang,
-      body: card.querySelector('[data-field="body"]').value || null,
+      body: edNormalizeCopywritingBody(card.querySelector('[data-field="body"]').value) || null,
     }));
     // 确保 productData.copywritings 是 array 格式（按 lang 存储）
     if (!edState.productData) return;
-    const raw = edState.productData.copywritings || [];
-    let arr = Array.isArray(raw) ? raw : [];
+    let arr = edEnsureCopywritingsArray();
     // 移除当前语种旧数据，写入新数据
     arr = arr.filter(c => c.lang !== lang);
     arr = arr.concat(items);
@@ -2437,8 +2734,7 @@
     }
     try {
       const full = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = full;
-      edState.productData = full;
+      edSetProductData(full);
       edRenderLangTabs();
       edRenderActiveLangView();
       loadList();
@@ -2464,13 +2760,17 @@
       <button class="oc-icon-btn rm" type="button" aria-label="删除该条">${icon('close', 14)}</button>
       <div class="idx">#${idx}${autoBadge}</div>
       <div class="stack">
-        <textarea class="oc-textarea" data-field="body" placeholder="请输入文案"></textarea>
+        <textarea class="oc-textarea" data-field="body"></textarea>
       </div>
     `;
     const textarea = d.querySelector('[data-field="body"]');
     textarea.rows = 3;
     textarea.wrap = 'off';
-    textarea.value = (c && c.body) || '';
+    textarea.placeholder = '标题: \n文案: \n描述: ';
+    textarea.value = edNormalizeCopywritingBody((c && c.body) || '');
+    textarea.addEventListener('blur', () => {
+      textarea.value = edNormalizeCopywritingBody(textarea.value);
+    });
     d.querySelector('.rm').addEventListener('click', () => {
       d.remove();
       [...$('edCwList').children].forEach((e, i) => {
@@ -2483,7 +2783,7 @@
 
   function edCollectCopywritings() {
     return [...$('edCwList').children].map(card => ({
-      body: card.querySelector('[data-field="body"]').value || null,
+      body: edNormalizeCopywritingBody(card.querySelector('[data-field="body"]').value) || null,
     }));
   }
 
@@ -2569,8 +2869,7 @@
         body: JSON.stringify({ object_key: boot.object_key }),
       });
       const full = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = full;
-      edState.productData = full;
+      edSetProductData(full);
       edRenderLangTabs();
       edRenderActiveLangView();
     } catch (e) {
@@ -2586,56 +2885,21 @@
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (pid) {
       const full = await fetchJSON('/medias/api/products/' + pid);
-      edState.current = full;
-      edState.productData = full;
+      edSetProductData(full);
       edRenderLangTabs();
       edRenderActiveLangView();
     }
   }
 
   async function edSave() {
-    const name = $('edName').value.trim();
-    const code = $('edCode').value.trim().toLowerCase();
-    if (!name) { alert('产品名称必填'); $('edName').focus(); return; }
-    if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('edCode').focus(); return; }
-
-    // 保存前 flush 当前语种文案 + 产品链接
-    edFlushCopywritings();
-    edFlushProductUrl();
-
-    const pid = edState.productData.product.id;
-
-    // 将 copywritings array 转为 dict {lang: [{body},...]}，保存前过滤空 body
-    const rawList = (Array.isArray(edState.productData.copywritings)
-      ? edState.productData.copywritings
-      : []).filter(c => (c.body || '').trim());
-    if (!rawList.length) { alert('请填写文案'); return; }
-    const cwDict = {};
-    rawList.forEach(c => {
-      if (!c.lang || !c.body) return;
-      if (!cwDict[c.lang]) cwDict[c.lang] = [];
-      cwDict[c.lang].push({ body: c.body });
-    });
-
-    const adSupportedLangs = [...document.querySelectorAll(
-      '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
-    )].map(i => i.value).join(',');
-
-    const mkIdRaw = ($('edMkId').value || '').trim();
-    if (mkIdRaw && !/^\d{1,8}$/.test(mkIdRaw)) {
-      alert('明空 ID 必须是 1-8 位数字');
-      $('edMkId').focus();
+    let pid = null;
+    let payload = null;
+    try {
+      ({ pid, payload } = edCollectProductPayload());
+    } catch (e) {
+      alert(e.message || String(e));
       return;
     }
-
-    const payload = {
-      name,
-      product_code: code,
-      mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
-      copywritings: cwDict,
-      localized_links: edState.productData.product.localized_links || {},
-      ad_supported_langs: adSupportedLangs,
-    };
     try {
       await fetchJSON('/medias/api/products/' + pid, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -3056,6 +3320,11 @@
     $('edCwAddBtn').addEventListener('click', () => {
       $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
       $('edCwBadge').textContent = $('edCwList').children.length;
+    });
+    $('edCwTranslateBtn') && $('edCwTranslateBtn').addEventListener('click', () => {
+      edTranslateEnglishCopywriting().catch((err) => {
+        console.error('[copywriting] translate from english failed:', err);
+      });
     });
 
     // 编辑弹窗封面事件由 edRenderCoverBlock() 动态绑定，此处不再静态绑定

@@ -1846,7 +1846,7 @@ def test_medias_page_prioritizes_push_audit_sections_in_edit_modal(authed_client
     assert body.index('id="edItemsSection"') < body.index('id="edCoverSection"')
     assert body.index('id="edCoverSection"') < body.index('id="edDetailImagesSection"')
     assert body.index('id="edDetailImagesSection"') < body.index('for="edMkId"')
-    assert '.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-4); }' in body
+    assert '.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-2); }' in body
     assert '.oc-modal-head-main {' in body
     assert '.oc-modal-head-main {\n  display:flex;\n  align-items:center;\n  justify-content:flex-start;' in body
     assert '.oc-modal-head-meta {' in body
@@ -1863,9 +1863,15 @@ def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
 
     assert 'class="oc-section-head oc-section-head-between"' in body
     assert 'id="edCwAddBtn"' in body
+    assert 'id="edCwTranslateBtn"' in body
+    assert "一键翻译英文文案" in body
     assert "添加文案" in body
     assert '.oc-cw-grid { display:grid; grid-template-columns:1fr; gap:var(--oc-sp-2); }' in body
     assert "textarea.rows = 3;" in medias_js
+    assert "function edNormalizeCopywritingBody" in medias_js
+    assert "function edTranslateEnglishCopywriting()" in medias_js
+    assert "'/api/title-translate/translate'" in medias_js
+    assert "textarea.placeholder = '标题: \\n文案: \\n描述: ';" in medias_js
 
 
 def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
