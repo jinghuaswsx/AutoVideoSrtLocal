@@ -1883,7 +1883,9 @@ def public_media_object(object_key: str):
     # 最低限度的防护：禁止 path traversal 和空值
     if not key or ".." in key.split("/") or key.startswith("/"):
         abort(404)
-    # 仅允许素材命名空间 u/<uid>/m/<pid>/...，避免被用来读无关文件
-    if not key.startswith("u/"):
+    # 实际 object_key 形如 "<uid>/medias/<pid>/<filename>" —— 要求至少 3 段且
+    # 第二段是 "medias"，拦住误读无关本地文件
+    parts = key.split("/")
+    if len(parts) < 3 or parts[1] != "medias":
         abort(404)
     return _send_media_object(key)

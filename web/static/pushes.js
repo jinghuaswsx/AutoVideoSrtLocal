@@ -491,6 +491,13 @@
         mkIdValue.textContent = mkId ? String(mkId) : '-';
 
         clear(paneConfirm);
+        // 顶部显式打印推送地址
+        const pushUrlRow = el('div', { class: 'pm-kv', style: 'margin-bottom:12px' });
+        pushUrlRow.appendChild(el('span', { class: 'k' }, '推送地址'));
+        pushUrlRow.appendChild(el('span', { class: 'v' }, [
+          el('code', {}, data.push_url || '(未配置)'),
+        ]));
+        paneConfirm.appendChild(pushUrlRow);
         paneConfirm.appendChild(renderPayloadView(payloadData));
         paneJson.textContent = JSON.stringify(payloadData, null, 2);
 
