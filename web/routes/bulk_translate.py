@@ -15,7 +15,6 @@ Phase 5 会追加:
 """
 from __future__ import annotations
 
-import eventlet
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
@@ -38,6 +37,7 @@ from appcore.video_translate_defaults import (
     load_effective_params,
     save_profile,
 )
+from web.background import start_background_task
 
 bp = Blueprint("bulk_translate", __name__, url_prefix="/api/bulk-translate")
 profile_bp = Blueprint("video_translate_profile", __name__,
@@ -249,7 +249,7 @@ def start_endpoint(task_id):
         start_task(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    eventlet.spawn(_spawn_scheduler, task_id)
+    start_background_task(_spawn_scheduler, task_id)
     return jsonify({"ok": True}), 202
 
 
@@ -340,7 +340,7 @@ def resume_endpoint(task_id):
         resume_task(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    eventlet.spawn(_spawn_scheduler, task_id)
+    start_background_task(_spawn_scheduler, task_id)
     return jsonify({"ok": True}), 202
 
 
@@ -377,7 +377,7 @@ def retry_item_endpoint(task_id):
         retry_item(task_id, idx=idx, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    eventlet.spawn(_spawn_scheduler, task_id)
+    start_background_task(_spawn_scheduler, task_id)
     return jsonify({"ok": True}), 202
 
 
@@ -394,7 +394,7 @@ def retry_failed_endpoint(task_id):
         retry_failed_items(task_id, user_id=current_user.id)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    eventlet.spawn(_spawn_scheduler, task_id)
+    start_background_task(_spawn_scheduler, task_id)
     return jsonify({"ok": True}), 202
 
 

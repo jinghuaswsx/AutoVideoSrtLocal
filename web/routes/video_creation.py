@@ -6,7 +6,6 @@ import logging
 import os
 import uuid
 
-import eventlet
 from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
@@ -21,6 +20,7 @@ from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as tos_upload
+from web.background import start_background_task
 from web.extensions import socketio
 
 log = logging.getLogger(__name__)
@@ -223,7 +223,7 @@ def upload():
         return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
 
     register_active_task("video_creation", task_id)
-    eventlet.spawn(_run_generate_with_tracking, task_id, api_key, state)
+    start_background_task(_run_generate_with_tracking, task_id, api_key, state)
 
     return jsonify({"id": task_id}), 201
 
@@ -515,7 +515,7 @@ def regenerate(task_id: str):
     )
 
     register_active_task("video_creation", task_id)
-    eventlet.spawn(_run_generate_with_tracking, task_id, api_key, state)
+    start_background_task(_run_generate_with_tracking, task_id, api_key, state)
     return jsonify({"status": "ok"})
 
 

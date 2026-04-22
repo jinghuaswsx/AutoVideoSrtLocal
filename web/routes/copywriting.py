@@ -8,7 +8,6 @@ import json
 import os
 import uuid
 
-import eventlet
 from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
@@ -19,6 +18,7 @@ from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
 from appcore.db import get_conn as get_connection
 from config import UPLOAD_DIR, OUTPUT_DIR
+from web.background import start_background_task
 
 bp = Blueprint("copywriting", __name__)
 
@@ -208,7 +208,7 @@ def upload():
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
     register_active_task("copywriting", task_id)
-    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.start)
+    start_background_task(_run_copywriting_with_tracking, task_id, runner.start)
 
     return jsonify(task_id=task_id), 201
 
@@ -338,7 +338,7 @@ def generate(task_id: str):
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
     register_active_task("copywriting", task_id)
-    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.generate_copy)
+    start_background_task(_run_copywriting_with_tracking, task_id, runner.generate_copy)
 
     return jsonify(ok=True)
 
@@ -470,7 +470,7 @@ def start_tts(task_id: str):
     _subscribe_socketio(bus, socketio)
     runner = CopywritingRunner(bus, user_id=current_user.id)
     register_active_task("copywriting", task_id)
-    eventlet.spawn(_run_copywriting_with_tracking, task_id, runner.start_tts_compose)
+    start_background_task(_run_copywriting_with_tracking, task_id, runner.start_tts_compose)
 
     return jsonify(ok=True)
 

@@ -32,7 +32,7 @@ def client_patched(monkeypatch):
         spawned.append({"fn": fn, "args": a, "kwargs": kw})
 
     monkeypatch.setattr("web.routes.copywriting_translate.db_execute", fake_execute)
-    monkeypatch.setattr("web.routes.copywriting_translate.eventlet.spawn", fake_spawn)
+    monkeypatch.setattr("web.routes.copywriting_translate.start_background_task", fake_spawn)
 
     from web.app import create_app
     app = create_app()

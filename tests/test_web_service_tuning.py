@@ -1,0 +1,150 @@
+import io
+import json
+from pathlib import Path
+
+import pytest
+
+
+def _make_file(filename: str, content: bytes = b"fake-video-data"):
+    return (io.BytesIO(content), filename)
+
+
+@pytest.fixture
+def authed_client(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+
+    fake_user = {"id": 1, "username": "test-admin", "role": "admin", "is_active": 1}
+    monkeypatch.setattr("web.auth.get_by_id", lambda uid: fake_user if int(uid) == 1 else None)
+
+    from web.app import create_app
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "1"
+        session["_fresh"] = True
+    return client
+
+
+def test_background_helper_proxies_to_socketio(monkeypatch):
+    calls = []
+
+    class FakeSocketIO:
+        def start_background_task(self, target, *args, **kwargs):
+            calls.append((target, args, kwargs))
+            return "task-handle"
+
+    monkeypatch.setattr("web.extensions.socketio", FakeSocketIO())
+
+    from web.background import start_background_task
+
+    def runner():
+        return None
+
+    result = start_background_task(runner, 1, mode="demo")
+
+    assert result == "task-handle"
+    assert calls == [(runner, (1,), {"mode": "demo"})]
+
+
+def test_copywriting_generate_uses_background_helper(authed_client, monkeypatch):
+    from appcore import task_state
+
+    task_state._tasks["cw-task"] = {"id": "cw-task", "_user_id": 1, "type": "copywriting"}
+    background_calls = []
+
+    monkeypatch.setattr("web.routes.copywriting.register_active_task", lambda *args: None)
+    monkeypatch.setattr(
+        "web.routes.copywriting.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    class FakeRunner:
+        def __init__(self, bus, user_id):
+            self.generate_copy = lambda task_id: None
+
+    monkeypatch.setattr("web.routes.copywriting.CopywritingRunner", FakeRunner)
+
+    response = authed_client.post("/api/copywriting/cw-task/generate", json={})
+
+    assert response.status_code == 200
+    assert len(background_calls) == 1
+    assert background_calls[0][1][0] == "cw-task"
+
+
+def test_video_creation_upload_uses_background_helper(authed_client, monkeypatch, tmp_path):
+    background_calls = []
+
+    monkeypatch.setattr("web.routes.video_creation.resolve_key", lambda *args: "seedance-key")
+    monkeypatch.setattr("web.routes.video_creation.register_active_task", lambda *args: None)
+    monkeypatch.setattr("web.routes.video_creation.get_retention_hours", lambda *_: 24)
+    monkeypatch.setattr(
+        "web.routes.video_creation.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.video_creation.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.video_creation.UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    response = authed_client.post(
+        "/api/video-creation/upload",
+        data={"prompt": "make a nice ad video"},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    assert len(background_calls) == 1
+    assert len(background_calls[0][1]) == 3
+
+
+def test_video_review_start_review_uses_background_helper(authed_client, monkeypatch, tmp_path):
+    video_path = tmp_path / "review.mp4"
+    video_path.write_bytes(b"video-bytes")
+    background_calls = []
+
+    row = {
+        "id": "vr-task",
+        "user_id": 1,
+        "type": "video_review",
+        "deleted_at": None,
+        "state_json": json.dumps(
+            {
+                "video_path": str(video_path),
+                "model": "gemini-3.1-pro-preview",
+                "steps": {"review": "pending"},
+            },
+            ensure_ascii=False,
+        ),
+    }
+
+    monkeypatch.setattr("web.routes.video_review.db_query_one", lambda *args, **kwargs: row)
+    monkeypatch.setattr("web.routes.video_review._update_state", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.video_review.db_execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.video_review.register_active_task", lambda *args: None)
+    monkeypatch.setattr(
+        "web.routes.video_review.start_background_task",
+        lambda fn, *args: background_calls.append((fn, args)),
+    )
+
+    response = authed_client.post("/api/video-review/vr-task/review", json={})
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "started"
+    assert len(background_calls) == 1
+    assert background_calls[0][1][0] == "vr-task"
+
+
+def test_gunicorn_service_uses_threaded_config():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "deploy" / "autovideosrt.service").read_text(encoding="utf-8")
+    config = (root / "deploy" / "gunicorn.conf.py").read_text(encoding="utf-8")
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+
+    assert "eventlet" not in service
+    assert "gunicorn.conf.py" in service
+    assert 'worker_class = "gthread"' in config
+    assert "workers = 1" in config
+    assert "threads = 32" in config
+    assert "simple-websocket" in requirements
+    assert "\neventlet" not in requirements
