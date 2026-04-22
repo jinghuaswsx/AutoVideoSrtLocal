@@ -44,6 +44,16 @@
     </div>
 
     <div class="form-row">
+      <label>处理模式</label>
+      <div id="itConcurrencyPills" class="it-pill-group" role="radiogroup">
+        <button type="button" class="it-pill is-active" data-value="sequential" role="radio" aria-checked="true">串行（默认）</button>
+        <button type="button" class="it-pill" data-value="parallel" role="radio" aria-checked="false">并行</button>
+      </div>
+      <p class="hint">串行：一张一张跑，稳。并行：单批最多 10 张同时跑，快但对上游限流更敏感。</p>
+      <input type="hidden" id="itConcurrencyMode" value="sequential">
+    </div>
+
+    <div class="form-row">
       <label>提示词（可编辑，切换语言/预设会加载对应系统默认）</label>
       <textarea id="itPrompt" rows="16" style="width:100%;font-family:var(--font-mono,monospace);font-size:13px"></textarea>
     </div>
