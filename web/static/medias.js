@@ -16,6 +16,8 @@
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
   function validateMaterialFilename(filename, productName, langCode) {
+    // 英语素材维护无需语种标记/蔡靖华末尾约束，跳过文件名格式校验
+    if (langCode === 'en') return [];
     const TAIL = '-指派-蔡靖华.mp4';
     const MID_PREFIX = '-原素材-补充素材(';
     const fn = String(filename || '');
