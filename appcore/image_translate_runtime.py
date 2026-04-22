@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
 import time
 from collections import deque
 from datetime import datetime
@@ -46,15 +47,17 @@ class ImageTranslateRuntime:
         self.bus = bus
         self.user_id = user_id
         self._rate_limit_hits: deque[float] = deque()
+        self._state_lock = threading.Lock()
 
     def _record_rate_limit_hit(self) -> bool:
         """记一次可重试错误（429/5xx），返回 True 表示应熔断整任务。"""
         now = time.monotonic()
         cutoff = now - _RATE_LIMIT_WINDOW_SEC
-        while self._rate_limit_hits and self._rate_limit_hits[0] < cutoff:
-            self._rate_limit_hits.popleft()
-        self._rate_limit_hits.append(now)
-        return len(self._rate_limit_hits) >= _RATE_LIMIT_THRESHOLD
+        with self._state_lock:
+            while self._rate_limit_hits and self._rate_limit_hits[0] < cutoff:
+                self._rate_limit_hits.popleft()
+            self._rate_limit_hits.append(now)
+            return len(self._rate_limit_hits) >= _RATE_LIMIT_THRESHOLD
 
     def start(self, task_id: str) -> None:
         task = store.get(task_id)
@@ -70,13 +73,13 @@ class ImageTranslateRuntime:
         store.update(task_id, status="running", steps=task["steps"],
                      step_model_tags=task.get("step_model_tags", {}))
 
-        items = task.get("items") or []
         circuit_msg = ""
         try:
-            for idx in range(len(items)):
-                if items[idx]["status"] in {"done", "failed"}:
-                    continue
-                self._process_one(task, task_id, idx)
+            mode = (task.get("concurrency_mode") or "sequential").strip().lower()
+            if mode == "parallel":
+                self._run_parallel(task, task_id)
+            else:
+                self._run_sequential(task, task_id)
         except _CircuitOpen as exc:
             circuit_msg = str(exc) or "上游持续限流，已熔断"
             logger.warning(
@@ -114,6 +117,16 @@ class ImageTranslateRuntime:
             task_id=task_id,
             payload={"task_id": task_id, "status": task["status"]},
         ))
+
+    def _run_sequential(self, task: dict, task_id: str) -> None:
+        items = task.get("items") or []
+        for idx in range(len(items)):
+            if items[idx]["status"] in {"done", "failed"}:
+                continue
+            self._process_one(task, task_id, idx)
+
+    def _run_parallel(self, task: dict, task_id: str) -> None:
+        raise NotImplementedError("_run_parallel 将在 Task 5 实现")
 
     def _abort_remaining_items(self, task: dict, task_id: str, reason: str) -> None:
         for it in task["items"]:
