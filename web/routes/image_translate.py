@@ -558,6 +558,13 @@ def page_list():
         """,
         (current_user.id,),
     )
+    _STATUS_LABELS = {
+        "queued": "排队中",
+        "running": "运行中",
+        "done": "完成",
+        "error": "失败",
+        "interrupted": "中断",
+    }
     history = []
     for row in rows or []:
         state = {}
@@ -569,10 +576,13 @@ def page_list():
         done = sum(1 for it in items if it.get("status") == "done")
         preset = state.get("preset") or ""
         preset_label = "封面图翻译" if preset == "cover" else ("产品详情图翻译" if preset == "detail" else "")
+        raw_status = row.get("status") or state.get("status") or ""
         history.append({
             "id": row["id"],
             "created_at": row.get("created_at"),
-            "status": row.get("status") or state.get("status") or "",
+            "status": raw_status,
+            "status_label": _STATUS_LABELS.get(raw_status, raw_status),
+            "is_interrupted": raw_status == "interrupted",
             "preset": preset,
             "preset_label": preset_label,
             "target_language_name": state.get("target_language_name") or "",

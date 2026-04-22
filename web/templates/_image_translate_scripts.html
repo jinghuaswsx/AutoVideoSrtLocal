@@ -222,6 +222,44 @@
     loadModels().then(function(){
       bindPillGroup(modelPills, modelEl, null);
     });
+
+    var historyTable = document.getElementById("itHistoryTable");
+    if (historyTable) {
+      historyTable.addEventListener("click", function(ev){
+        var retryBtn = ev.target.closest("button.it-list-retry");
+        var row = ev.target.closest("tr[data-task-id]");
+        if (!row) return;
+        var historyTaskId = row.getAttribute("data-task-id") || "";
+        if (!historyTaskId) return;
+        if (retryBtn) {
+          ev.stopPropagation();
+          ev.preventDefault();
+          if (retryBtn.disabled) return;
+          retryBtn.disabled = true;
+          var original = retryBtn.textContent;
+          retryBtn.textContent = "提交中...";
+          fetch("/api/image-translate/" + encodeURIComponent(historyTaskId) + "/retry-unfinished",
+                {method:"POST", credentials:"same-origin"})
+            .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+            .then(function(res){
+              if (!res.ok) {
+                alert((res.body && res.body.error) || "重新生成失败");
+                retryBtn.disabled = false;
+                retryBtn.textContent = original;
+                return;
+              }
+              location.href = "/image-translate/" + encodeURIComponent(historyTaskId);
+            })
+            .catch(function(){
+              alert("网络错误，稍后再试");
+              retryBtn.disabled = false;
+              retryBtn.textContent = original;
+            });
+          return;
+        }
+        location.href = "/image-translate/" + encodeURIComponent(historyTaskId);
+      });
+    }
     return;
   }
 
@@ -278,6 +316,9 @@
       progressText.textContent = p.done + " / " + p.total + " 完成，" + p.failed + " 失败";
       var pct = p.total ? Math.round((p.done + p.failed) / p.total * 100) : 0;
       progressFill.style.width = pct + "%";
+      var isInterrupted = (state.status || "") === "interrupted";
+      var banner = document.getElementById("itInterruptedBanner");
+      if (banner) banner.hidden = !isInterrupted;
       if (retryUnfinishedBtn) {
         var total = p.total || 0;
         var done = p.done || 0;
@@ -286,6 +327,7 @@
         retryUnfinishedBtn.hidden = !showBtn;
         retryUnfinishedBtn.disabled = isRunning;
         retryUnfinishedBtn.title = isRunning ? "任务正在跑，等跑完再重试" : "";
+        retryUnfinishedBtn.textContent = isInterrupted ? "恢复中断的任务" : "重试未完成的图片";
       }
     }
 

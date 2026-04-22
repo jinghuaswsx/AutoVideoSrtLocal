@@ -11,11 +11,13 @@ import appcore.task_state as task_state
 log = logging.getLogger(__name__)
 
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
+IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
 LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
-RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check"} | PIPELINE_PROJECT_TYPES
+RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check", "image_translate"} | PIPELINE_PROJECT_TYPES
 LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")
+IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES = ("queued", "running")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -72,6 +74,32 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         if summary.get("overall_decision") == "running":
             summary["overall_decision"] = "unfinished"
         return True, recovered, "failed"
+    elif project_type == "image_translate" and recovered.get("status") in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES:
+        # image_translate 不复用「把 running step 标 error」的语义：它的执行单位是
+        # items[].status，需要把 item 级 running 退回 pending，任务整体标为 interrupted，
+        # 并重算 progress，让前端显示「中断」并开放「重新生成」按钮。
+        items = recovered.get("items") or []
+        for it in items:
+            if (it.get("status") or "") == "running":
+                it["status"] = "pending"
+                it["error"] = ""
+                it["attempts"] = 0
+        total = len(items)
+        done = sum(1 for it in items if (it.get("status") or "") == "done")
+        failed = sum(1 for it in items if (it.get("status") or "") == "failed")
+        recovered["items"] = items
+        recovered["progress"] = {
+            "total": total,
+            "done": done,
+            "failed": failed,
+            "running": 0,
+        }
+        steps = recovered.setdefault("steps", {})
+        if steps.get("process") == "running":
+            steps["process"] = "interrupted"
+        recovered["status"] = "interrupted"
+        recovered["error"] = IMAGE_TRANSLATE_INTERRUPTED_MESSAGE
+        return True, recovered, "interrupted"
     elif project_type in PIPELINE_PROJECT_TYPES:
         changed = _mark_running_steps_as_error(recovered)
         if recovered.get("current_review_step"):
@@ -129,17 +157,20 @@ def recover_task_if_needed(task_id: str) -> dict | None:
 
 
 def recover_all_interrupted_tasks() -> int:
-    non_link_check_types = tuple(sorted(RECOVERABLE_PROJECT_TYPES - {"link_check"}))
-    placeholders = ", ".join(["%s"] * len(non_link_check_types))
+    # link_check / image_translate 各自有独立的启动恢复状态集，其余类型统一按 status='running' 扫。
+    generic_types = tuple(sorted(RECOVERABLE_PROJECT_TYPES - {"link_check", "image_translate"}))
+    placeholders = ", ".join(["%s"] * len(generic_types))
     link_check_statuses = ", ".join(f"'{status}'" for status in LINK_CHECK_STARTUP_RECOVERY_STATUSES)
+    image_translate_statuses = ", ".join(f"'{status}'" for status in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES)
     try:
         rows = db_query(
             f"SELECT id, type, status, state_json FROM projects "
             f"WHERE deleted_at IS NULL AND ("
             f"(type = 'link_check' AND status IN ({link_check_statuses})) "
+            f"OR (type = 'image_translate' AND status IN ({image_translate_statuses})) "
             f"OR (status = 'running' AND type IN ({placeholders}))"
             f")",
-            non_link_check_types,
+            generic_types,
         )
     except Exception:
         log.warning("[task_recovery] startup recovery query failed", exc_info=True)

@@ -1,10 +1,13 @@
-"""图片翻译后台任务管理器（线程启动 + 重启恢复）。"""
+"""图片翻译后台任务管理器（仅管理内存中的运行线程）。
+
+启动期的「中断恢复」由 appcore.task_recovery.recover_all_interrupted_tasks()
+统一处理：重启后 DB 里 queued/running 的任务被标为 interrupted，由用户在前端
+手动点「重新生成」再次入队。本模块不再承担 resume 逻辑。
+"""
 from __future__ import annotations
 
-import json
 import threading
 
-from appcore.db import query as db_query
 from appcore.events import EventBus
 from appcore.image_translate_runtime import ImageTranslateRuntime
 from web.extensions import socketio
@@ -44,40 +47,3 @@ def start(task_id: str, user_id: int | None = None) -> bool:
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     return True
-
-
-def resume_inflight_tasks() -> list[str]:
-    """服务重启时扫描未完成的 image_translate 任务并重新拉起。"""
-    restored: list[str] = []
-    try:
-        rows = db_query(
-            """
-            SELECT id, user_id, status, state_json
-            FROM projects
-            WHERE type='image_translate'
-              AND deleted_at IS NULL
-              AND status IN ('queued','running')
-            ORDER BY created_at ASC
-            """,
-            (),
-        )
-    except Exception:
-        return restored
-
-    for row in rows:
-        tid = (row.get("id") or "").strip()
-        if not tid or is_running(tid):
-            continue
-        state_json = row.get("state_json") or ""
-        try:
-            state = json.loads(state_json) if state_json else None
-        except Exception:
-            state = None
-        if not state or state.get("type") != "image_translate":
-            continue
-        items = state.get("items") or []
-        if items and all(it.get("status") in {"done", "failed"} for it in items):
-            continue
-        if start(tid, user_id=row.get("user_id")):
-            restored.append(tid)
-    return restored

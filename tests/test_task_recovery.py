@@ -288,6 +288,126 @@ def test_recover_all_interrupted_tasks_skips_active_link_check_rows(monkeypatch)
     assert persisted == []
 
 
+def test_recover_project_state_marks_image_translate_running_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-orphan",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "steps": {"process": "running"},
+            "items": [
+                {"idx": 0, "status": "done"},
+                {"idx": 1, "status": "running", "attempts": 2, "error": "mid-flight"},
+                {"idx": 2, "status": "pending"},
+                {"idx": 3, "status": "failed", "error": "boom"},
+            ],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["steps"]["process"] == "interrupted"
+    # item 级 running 必须退回 pending 才能被 retry-unfinished 拣起
+    assert recovered["items"][1]["status"] == "pending"
+    assert recovered["items"][1]["attempts"] == 0
+    assert recovered["items"][1]["error"] == ""
+    # 其他状态原样保留
+    assert recovered["items"][0]["status"] == "done"
+    assert recovered["items"][2]["status"] == "pending"
+    assert recovered["items"][3]["status"] == "failed"
+    assert recovered["progress"] == {"total": 4, "done": 1, "failed": 1, "running": 0}
+    assert "中断" in recovered["error"]
+
+
+def test_recover_project_state_marks_queued_image_translate_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-queued",
+        state={
+            "type": "image_translate",
+            "status": "queued",
+            "items": [{"idx": 0, "status": "pending"}],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["progress"]["total"] == 1
+
+
+def test_recover_project_state_keeps_active_image_translate_running():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-live",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "items": [{"idx": 0, "status": "running"}],
+        },
+        active=True,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "running"
+    assert recovered["items"][0]["status"] == "running"
+
+
+def test_recover_all_interrupted_tasks_picks_up_image_translate_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "it-boot",
+        "type": "image_translate",
+        "status": "running",
+        "state_json": json.dumps(
+            {
+                "type": "image_translate",
+                "status": "running",
+                "items": [
+                    {"idx": 0, "status": "done"},
+                    {"idx": 1, "status": "running"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    def fake_db_query(sql, args=()):
+        # 确认 SQL 覆盖了 image_translate 的 queued/running 两种状态
+        assert "'image_translate'" in sql
+        assert "'queued'" in sql
+        assert "'running'" in sql
+        return [row]
+
+    monkeypatch.setattr(task_recovery, "db_query", fake_db_query)
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert persisted[0][0] == "it-boot"
+    assert persisted[0][2] == "interrupted"
+    assert persisted[0][1]["items"][1]["status"] == "pending"
+
+
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 

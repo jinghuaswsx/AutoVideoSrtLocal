@@ -67,20 +67,30 @@
     {% if not history %}
       <div class="empty">暂无任务</div>
     {% else %}
-      <table class="table">
+      <table class="table" id="itHistoryTable">
         <thead>
-          <tr><th>时间</th><th>项目名</th><th>预设</th><th>目标语言</th><th>模型</th><th>进度</th><th>状态</th></tr>
+          <tr><th>时间</th><th>项目名</th><th>预设</th><th>目标语言</th><th>模型</th><th>进度</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody>
           {% for item in history %}
-          <tr onclick="location.href='/image-translate/{{ item.id }}'" style="cursor:pointer">
+          <tr data-task-id="{{ item.id }}"
+              data-status="{{ item.status }}"
+              data-interrupted="{{ '1' if item.is_interrupted else '0' }}"
+              style="cursor:pointer">
             <td>{{ item.created_at }}</td>
             <td>{{ item.project_name or '—' }}</td>
             <td>{{ item.preset_label }}</td>
             <td>{{ item.target_language_name }}</td>
             <td>{{ item.model_id }}</td>
             <td>{{ item.done }} / {{ item.total }}</td>
-            <td><span class="chip">{{ item.status }}</span></td>
+            <td><span class="chip chip--status is-{{ item.status or 'queued' }}">{{ item.status_label or item.status }}</span></td>
+            <td>
+              {% if item.is_interrupted %}
+              <button type="button" class="it-list-retry" data-action="retry">重新生成</button>
+              {% else %}
+              <span style="color:var(--fg-subtle,#9ca3af);font-size:12px">—</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

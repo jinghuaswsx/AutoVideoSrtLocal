@@ -83,11 +83,8 @@ def _run_startup_recovery() -> None:
     except Exception:
         log.warning("subtitle removal startup recovery failed", exc_info=True)
     _recover_translate_lab_tasks_on_startup()
-    try:
-        from web.services.image_translate_runner import resume_inflight_tasks as resume_image_translate
-        resume_image_translate()
-    except Exception:
-        log.warning("image translate startup recovery failed", exc_info=True)
+    # image_translate 不再自动续跑：重启后由 recover_all_interrupted_tasks()
+    # 把 queued/running 的行标成 interrupted，用户在前端手动「重新生成」再入队。
 
 
 def _recover_translate_lab_tasks_on_startup() -> list[str]:
