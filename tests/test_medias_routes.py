@@ -469,6 +469,61 @@ def test_download_image_to_tos_accepts_image_gif(monkeypatch):
     assert len(captured_uploads) == 1, "GIF 也应该触发一次 TOS 上传"
 
 
+def _setup_detail_translate(monkeypatch):
+    """共用 fixture patch：让 detail-images/translate-from-en 跑通但不触发真实 IO。"""
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "灯"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias, "list_detail_images",
+        lambda pid, lang: [{"id": 11, "object_key": "1/medias/1/a.jpg"}] if lang == "en" else [],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: "德语")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "翻"})
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    created = {}
+    monkeypatch.setattr(
+        r.task_state, "create_image_translate",
+        lambda task_id, task_dir, **kw: created.update(kw) or {"id": task_id},
+    )
+    return created
+
+
+def test_detail_translate_defaults_to_sequential(authed_client_no_db, monkeypatch):
+    created = _setup_detail_translate(monkeypatch)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/1/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+    assert resp.status_code == 201, resp.get_json()
+    assert created["concurrency_mode"] == "sequential"
+
+
+def test_detail_translate_accepts_parallel(authed_client_no_db, monkeypatch):
+    created = _setup_detail_translate(monkeypatch)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/1/detail-images/translate-from-en",
+        json={"lang": "de", "concurrency_mode": "parallel"},
+    )
+    assert resp.status_code == 201, resp.get_json()
+    assert created["concurrency_mode"] == "parallel"
+
+
+def test_detail_translate_rejects_invalid_mode(authed_client_no_db, monkeypatch):
+    _setup_detail_translate(monkeypatch)
+    resp = authed_client_no_db.post(
+        "/medias/api/products/1/detail-images/translate-from-en",
+        json={"lang": "de", "concurrency_mode": "fast"},
+    )
+    assert resp.status_code == 400
+    assert "concurrency_mode" in resp.get_json()["error"]
+
+
 def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, monkeypatch):
     """本地上传 GIF 应拿到签名直传 URL。"""
     from web.routes import medias as r
