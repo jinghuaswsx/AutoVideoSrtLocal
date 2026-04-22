@@ -26,14 +26,22 @@ def main(argv: list[str] | None = None) -> int:
         only_active=bool(args.only_active),
         limit=max(int(args.limit or 0), 0),
     )
+    all_ok = True
     for row in rows:
-        print(json.dumps(migration.build_project_report(row), ensure_ascii=False))
+        state = migration._parse_state_json(row.get("state_json"))
+        if args.dry_run:
+            payload = migration.build_project_report(row)
+        else:
+            payload = migration.materialize_project_row(str(row.get("id") or ""), state)
+            all_ok = all_ok and bool(payload.get("ok"))
+        print(json.dumps(payload, ensure_ascii=False))
+    summary_ok = True if args.dry_run else all_ok
     print(json.dumps({
         "checked": len(rows),
         "dry_run": bool(args.dry_run),
-        "ok": True,
+        "ok": summary_ok,
     }, ensure_ascii=False))
-    return 0
+    return 0 if summary_ok else 1
 
 
 if __name__ == "__main__":

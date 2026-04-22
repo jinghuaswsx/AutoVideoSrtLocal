@@ -37,6 +37,18 @@ def _emit_to_task(task_id: str, event: str, payload: dict):
     socketio.emit(event, payload, room=task_id)
 
 
+def _build_public_exchange_key(task_id: str, state: dict, asset_kind: str, filename: str, *, index: int | None = None) -> str:
+    user_id = state.get("user_id") or "anon"
+    safe_name = os.path.basename(filename or f"{asset_kind}.bin")
+    base = f"video-creation/{user_id}/{task_id}"
+    if asset_kind == "image":
+        prefix = f"{index}-" if index is not None else ""
+        return f"{base}/images/{prefix}{safe_name}"
+    if asset_kind == "audio":
+        return f"{base}/audio/{safe_name}"
+    return f"{base}/video/{safe_name}"
+
+
 from pipeline.ffutil import extract_thumbnail
 
 
@@ -188,6 +200,7 @@ def upload():
 
     state = {
         "task_dir": task_dir,
+        "user_id": current_user.id,
         "display_name": display_name,
         "prompt": prompt,
         "video_path": video_path,
@@ -242,17 +255,31 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         # 上传本地文件到 TOS 获取公网 URL
         video_url = None
         if state.get("video_path") and os.path.exists(state["video_path"]):
-            video_url = tos_upload(state["video_path"], expires=86400)
+            video_url = tos_upload(
+                state["video_path"],
+                _build_public_exchange_key(task_id, state, "video", os.path.basename(state["video_path"])),
+                expires=86400,
+            )
 
         image_urls = []
-        for img_path in (state.get("image_paths") or []):
+        for index, img_path in enumerate(state.get("image_paths") or []):
             if os.path.exists(img_path):
                 _shrink_image_if_oversize(img_path)
-                image_urls.append(tos_upload(img_path, expires=86400))
+                image_urls.append(
+                    tos_upload(
+                        img_path,
+                        _build_public_exchange_key(task_id, state, "image", os.path.basename(img_path), index=index),
+                        expires=86400,
+                    )
+                )
 
         audio_url = None
         if state.get("audio_path") and os.path.exists(state["audio_path"]):
-            audio_url = tos_upload(state["audio_path"], expires=86400)
+            audio_url = tos_upload(
+                state["audio_path"],
+                _build_public_exchange_key(task_id, state, "audio", os.path.basename(state["audio_path"])),
+                expires=86400,
+            )
 
         _emit_to_task(task_id, EVT_VC_STEP, {"step": "generate", "status": "running", "message": "已提交生成任务，等待结果..."})
 

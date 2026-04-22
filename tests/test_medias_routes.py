@@ -2,6 +2,7 @@ import json
 import io
 import threading
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -170,7 +171,7 @@ def test_detail_images_from_url_background_worker_uses_captured_user_id(
         lambda user_id, pid, filename: object_key_calls.append((user_id, pid, filename))
         or f"{user_id}/{pid}/{filename}",
     )
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args, **kwargs: None)
     monkeypatch.setattr(r.medias, "add_detail_image", lambda *args, **kwargs: 99)
     monkeypatch.setattr(
         r.medias,
@@ -454,8 +455,8 @@ def test_download_image_to_tos_accepts_image_gif(monkeypatch):
         lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
     )
     monkeypatch.setattr(
-        r.tos_clients,
-        "upload_media_object",
+        r.local_media_storage,
+        "write_bytes",
         lambda *a, **kw: captured_uploads.append((a, kw)),
     )
 
@@ -478,7 +479,6 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
     monkeypatch.setattr(r.tos_clients, "build_media_object_key", lambda *a, **kw: "1/medias/1/anim.gif")
-    monkeypatch.setattr(r.tos_clients, "generate_signed_media_upload_url", lambda *a, **kw: "https://signed")
 
     resp = authed_client_no_db.post(
         "/medias/api/products/123/detail-images/bootstrap",
@@ -491,7 +491,7 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     assert resp.status_code == 200
     body = resp.get_json()
     assert body.get("uploads")
-    assert body["uploads"][0]["upload_url"] == "https://signed"
+    assert "/medias/api/local-media-upload/" in body["uploads"][0]["upload_url"]
 
 
 def _run_from_url_worker(monkeypatch, *, body_json):
@@ -549,7 +549,7 @@ def _run_from_url_worker(monkeypatch, *, body_json):
         "build_media_object_key",
         lambda user_id, pid, filename: f"{user_id}/{pid}/{filename}",
     )
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", lambda *args, **kwargs: None)
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         r.medias,
         "soft_delete_detail_images_by_lang",
@@ -606,3 +606,120 @@ def test_detail_images_from_url_skips_clear_by_default(authed_client_no_db, monk
         f"未传 clear_existing 时 worker 不应清空，实际 {soft_delete_calls}"
     )
     assert task_state.get("status") == "done"
+def test_detail_images_bootstrap_uses_local_upload_when_tos_media_bucket_disabled(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: False)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/bootstrap",
+        json={
+            "lang": "en",
+            "files": [{"filename": "demo.jpg", "content_type": "image/jpeg", "size": 12}],
+        },
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["uploads"][0]["object_key"] == "1/medias/123/detail_en_00_demo.jpg"
+    assert "/medias/api/local-media-upload/" in body["uploads"][0]["upload_url"]
+
+
+def test_cover_complete_accepts_local_media_object_without_tos_lookup(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    object_key = "1/medias/123/cover_en_demo.jpg"
+    downloaded = tmp_path / "cover.jpg"
+    downloaded.write_bytes(b"cover-bytes")
+    captured = {}
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {})
+    monkeypatch.setattr(
+        r.medias,
+        "set_product_cover",
+        lambda pid, lang, key: captured.update({"pid": pid, "lang": lang, "object_key": key}),
+    )
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda key: key == object_key)
+
+    def fake_download_to(key, destination):
+        Path(destination).write_bytes(downloaded.read_bytes())
+        return str(destination)
+
+    monkeypatch.setattr(r.local_media_storage, "download_to", fake_download_to)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "media_object_exists",
+        lambda key: (_ for _ in ()).throw(AssertionError("should not query TOS media bucket")),
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/cover/complete",
+        json={"lang": "en", "object_key": object_key},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {"pid": 123, "lang": "en", "object_key": object_key}
+
+
+def test_detail_image_proxy_serves_local_media_store_file(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    from web.routes import medias as r
+
+    object_key = "1/medias/123/detail_en_demo.jpg"
+    local_file = tmp_path / "detail.jpg"
+    local_file.write_bytes(b"detail-bytes")
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_detail_image",
+        lambda image_id: {
+            "id": image_id,
+            "product_id": 123,
+            "lang": "en",
+            "sort_order": 0,
+            "object_key": object_key,
+            "deleted_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "娴嬭瘯鍟嗗搧"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda key: key == object_key)
+    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda key: local_file)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "generate_signed_media_download_url",
+        lambda key: (_ for _ in ()).throw(AssertionError("should not redirect to TOS")),
+    )
+
+    resp = authed_client_no_db.get("/medias/detail-image/77")
+
+    assert resp.status_code == 200
+    assert resp.data == b"detail-bytes"

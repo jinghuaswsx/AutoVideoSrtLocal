@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from appcore import medias
+from appcore import local_media_storage, medias
 from appcore.bulk_translate_estimator import (
     COST_PER_1K_TOKENS_CNY,
     COST_PER_IMAGE_CNY,
@@ -561,6 +561,8 @@ def _download_media_to_tmp(object_key: str, suffix: str = ".bin") -> str:
     prefix = f"bt_{Path(source_name).stem[:32] or 'raw'}_"
     fd, local_path = tempfile.mkstemp(suffix=suffix, prefix=prefix)
     os.close(fd)
+    if local_media_storage.exists(object_key):
+        return local_media_storage.download_to(object_key, local_path)
     return tos_clients.download_media_file(object_key, local_path)
 
 
@@ -594,7 +596,7 @@ def _translate_video_to_media_key(local_video, target_lang, product_id, user_id,
         payload = fh.read()
     output_name = f"{target_lang}_{Path(local_video).stem}{Path(result_path).suffix or '.mp4'}"
     object_key = tos_clients.build_media_object_key(user_id, product_id, output_name)
-    tos_clients.upload_media_object(object_key, payload, content_type="video/mp4")
+    local_media_storage.write_bytes(object_key, payload)
     return sub_id, object_key
 
 
@@ -643,7 +645,10 @@ def _translate_cover_to_media_key(source_cover_key, target_lang, product_id, use
     fd, local_path = tempfile.mkstemp(suffix=ext, prefix="bt_cover_")
     os.close(fd)
     try:
-        tos_clients.download_file(dst_key, local_path)
+        if local_media_storage.exists(dst_key):
+            local_media_storage.download_to(dst_key, local_path)
+        else:
+            tos_clients.download_file(dst_key, local_path)
         with open(local_path, "rb") as fh:
             payload = fh.read()
     finally:
@@ -655,11 +660,7 @@ def _translate_cover_to_media_key(source_cover_key, target_lang, product_id, use
 
     filename = f"cover_{target_lang}_{Path(source_cover_key).name or f'{target_lang}{ext}'}"
     object_key = tos_clients.build_media_object_key(user_id, product_id, filename)
-    tos_clients.upload_media_object(
-        object_key,
-        payload,
-        content_type=_image_content_type_from_key(dst_key),
-    )
+    local_media_storage.write_bytes(object_key, payload)
     return object_key
 
 

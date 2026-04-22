@@ -58,8 +58,8 @@ def test_upload_bad_video_mime(authed_client_no_db, monkeypatch):
 
 def test_upload_ok(authed_client_no_db, monkeypatch):
     r = _stub_product(monkeypatch)
-    fake_upload = MagicMock()
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", fake_upload)
+    fake_write = MagicMock()
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
     monkeypatch.setattr(
         r.tos_clients,
         "build_media_raw_source_key",
@@ -100,7 +100,7 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
     item = resp.get_json()["item"]
     assert item["display_name"] == "demo"
     assert item["video_url"].endswith("/video")
-    assert fake_upload.call_count == 2
+    assert fake_write.call_count == 2
 
 
 def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
@@ -113,13 +113,14 @@ def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
         lambda uid, pid, kind, filename: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
     )
 
-    def fake_upload(key, data, content_type=None):
-        del data, content_type
+    def fake_write(key, payload):
+        del payload
         if "cover_" in key:
             raise RuntimeError("boom")
 
-    monkeypatch.setattr(r.tos_clients, "upload_media_object", fake_upload)
-    monkeypatch.setattr(r.tos_clients, "delete_media_object", lambda key: deletes.append(key))
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda key: deletes.append(key))
+    monkeypatch.setattr(r.tos_clients, "delete_media_object", lambda key: None)
     monkeypatch.setattr(r.medias, "list_raw_sources", lambda pid: [])
 
     resp = authed_client_no_db.post(
@@ -189,6 +190,7 @@ def test_update_raw_source_ok(authed_client_no_db, monkeypatch):
 
 def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
+    from pathlib import Path
 
     monkeypatch.setattr(
         r.medias,
@@ -197,16 +199,16 @@ def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypat
     )
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "t-rs"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
-    monkeypatch.setattr(
-        r.tos_clients,
-        "generate_signed_media_download_url",
-        lambda object_key, expires=None: f"https://signed/{object_key}",
-    )
+    temp_video = Path(authed_client_no_db.application.instance_path) / "raw-source-video.mp4"
+    temp_video.parent.mkdir(parents=True, exist_ok=True)
+    temp_video.write_bytes(b"raw-video-bytes")
+    monkeypatch.setattr(r.local_media_storage, "exists", lambda object_key: object_key == "vvv.mp4")
+    monkeypatch.setattr(r.local_media_storage, "local_path_for", lambda object_key: temp_video)
 
-    resp = authed_client_no_db.get("/medias/raw-sources/66/video", follow_redirects=False)
+    resp = authed_client_no_db.get("/medias/raw-sources/66/video")
 
-    assert resp.status_code == 302
-    assert resp.headers["Location"] == "https://signed/vvv.mp4"
+    assert resp.status_code == 200
+    assert resp.data == b"raw-video-bytes"
 
 
 def test_products_list_includes_raw_sources_count(authed_client_no_db, monkeypatch):

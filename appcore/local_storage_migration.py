@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -179,6 +180,53 @@ def _resolve_media_path(value: str, output_dir: str | Path | None = None) -> Pat
     return root / Path(value)
 
 
+def _is_media_logical_key(logical_key: str) -> bool:
+    normalized = logical_key.replace("\\", "/").lstrip("/")
+    parts = normalized.split("/")
+    return len(parts) >= 2 and parts[1] == "medias"
+
+
+def _download_logical_key(logical_key: str, destination: Path) -> str:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if _is_media_logical_key(logical_key):
+        return tos_clients.download_media_file(logical_key, destination)
+    return tos_clients.download_file(logical_key, str(destination))
+
+
+def _materialize_logical_key_targets(
+    logical_key: str,
+    targets: list[str],
+    *,
+    resolver,
+) -> dict[str, Any]:
+    resolved_targets = [resolver(target) for target in _dedupe_sorted(targets)]
+    if not resolved_targets:
+        return {
+            "logical_key": logical_key,
+            "downloaded": False,
+            "targets": [],
+        }
+
+    source_path = next((path for path in resolved_targets if path.exists()), None)
+    downloaded = False
+    if source_path is None:
+        source_path = resolved_targets[0]
+        _download_logical_key(logical_key, source_path)
+        downloaded = True
+
+    for target in resolved_targets:
+        if target == source_path or target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, target)
+
+    return {
+        "logical_key": logical_key,
+        "downloaded": downloaded,
+        "targets": [str(path) for path in resolved_targets],
+    }
+
+
 def verify_project_row(task_id: str, state: Mapping[str, Any]) -> dict[str, Any]:
     refs = collect_project_refs(task_id, state)
     missing_local_paths = [
@@ -220,6 +268,50 @@ def verify_media_row(row: Mapping[str, Any], output_dir: str | Path | None = Non
         "missing_relative_paths": missing_relative_paths,
         "missing_logical_keys": missing_logical_keys,
     }
+
+
+def materialize_project_row(task_id: str, state: Mapping[str, Any]) -> dict[str, Any]:
+    refs = collect_project_refs(task_id, state)
+    materialized = [
+        _materialize_logical_key_targets(
+            logical_key,
+            targets,
+            resolver=_resolve_existing_path,
+        )
+        for logical_key, targets in refs["logical_key_targets"].items()
+    ]
+    report = verify_project_row(task_id, state)
+    report["downloaded_keys"] = [
+        item["logical_key"]
+        for item in materialized
+        if item["downloaded"]
+    ]
+    report["materialized"] = materialized
+    return report
+
+
+def materialize_media_row(
+    row: Mapping[str, Any],
+    *,
+    output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    refs = collect_media_refs(row)
+    materialized = [
+        _materialize_logical_key_targets(
+            logical_key,
+            targets,
+            resolver=lambda target: _resolve_media_path(target, output_dir=output_dir),
+        )
+        for logical_key, targets in refs["logical_key_targets"].items()
+    ]
+    report = verify_media_row(row, output_dir=output_dir)
+    report["downloaded_keys"] = [
+        item["logical_key"]
+        for item in materialized
+        if item["downloaded"]
+    ]
+    report["materialized"] = materialized
+    return report
 
 
 def _parse_state_json(raw: object) -> dict[str, Any]:

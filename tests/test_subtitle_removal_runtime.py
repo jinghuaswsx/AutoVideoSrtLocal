@@ -430,3 +430,59 @@ def test_runtime_submit_defaults_to_subtitle_when_field_missing(monkeypatch, tmp
     runner._submit("sr-runtime-default")
 
     assert captured.get("erase_text_type") == "subtitle"
+
+
+def test_vod_runtime_submit_stages_public_source_on_demand(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"video")
+    task_state.create_subtitle_removal(
+        "sr-vod-public-source",
+        str(source_video),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-vod-public-source",
+        status="queued",
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 720, "y2": 1280},
+        position_payload={"l": 0, "t": 0, "w": 720, "h": 1280},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        source_tos_key="",
+    )
+
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime_vod.tos_clients.build_source_object_key",
+        lambda user_id, task_id, original_filename: f"uploads/{user_id}/{task_id}/{original_filename}",
+    )
+    uploaded = []
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime_vod.tos_clients.upload_file",
+        lambda local_path, object_key: uploaded.append((local_path, object_key)),
+    )
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime_vod.tos_clients.generate_signed_download_url",
+        lambda object_key, expires=86400: f"https://example.com/{object_key}",
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime_vod.upload_media_by_url",
+        lambda source_url, title="": captured.setdefault("source_url", source_url) or "job-1",
+    )
+    monkeypatch.setattr("appcore.subtitle_removal_runtime_vod.wait_for_upload", lambda job_id, timeout_seconds=None: "vid-1")
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime_vod.start_erase_execution",
+        lambda **kwargs: captured.setdefault("start_kwargs", kwargs) or "run-1",
+    )
+
+    runner = SubtitleRemovalVodRuntime(bus=EventBus(), user_id=1)
+    runner._submit("sr-vod-public-source")
+
+    saved = task_state.get("sr-vod-public-source")
+    assert uploaded == [(str(source_video), "uploads/1/sr-vod-public-source/source.mp4")]
+    assert saved["source_tos_key"] == "uploads/1/sr-vod-public-source/source.mp4"
+    assert captured["source_url"] == "https://example.com/uploads/1/sr-vod-public-source/source.mp4"
+    assert captured["start_kwargs"]["vid"] == "vid-1"

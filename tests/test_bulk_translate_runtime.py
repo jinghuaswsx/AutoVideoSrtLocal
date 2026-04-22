@@ -684,6 +684,145 @@ def test_dispatch_video_from_raw_source_creates_media_item_and_updates_source_ra
     assert result.video_minutes == pytest.approx(1.5)
 
 
+def test_download_media_to_tmp_prefers_local_media_store(tmp_path, monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+
+    source_file = tmp_path / "source.mp4"
+    source_file.write_bytes(b"local-media")
+    downloaded = []
+
+    monkeypatch.setattr(mod.local_media_storage, "exists", lambda object_key: object_key == "demo.mp4")
+
+    def fake_download_to(object_key, destination):
+        downloaded.append((object_key, destination))
+        with open(destination, "wb") as fh:
+            fh.write(source_file.read_bytes())
+        return str(destination)
+
+    monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
+
+    target = mod._download_media_to_tmp("demo.mp4", suffix=".mp4")
+
+    with open(target, "rb") as fh:
+        assert fh.read() == b"local-media"
+    assert downloaded and downloaded[0][0] == "demo.mp4"
+
+
+def test_translate_video_to_media_key_writes_local_media_store(tmp_path, monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+    import appcore.task_state as task_state
+    import appcore.tos_clients as tos_clients
+    import appcore.runtime_v2 as runtime_v2
+
+    local_video = tmp_path / "source.mp4"
+    local_video.write_bytes(b"raw")
+    result_video = tmp_path / "translated.mp4"
+    result_video.write_bytes(b"translated-video")
+    created = {}
+    writes = []
+
+    monkeypatch.setattr(
+        task_state,
+        "create_translate_lab",
+        lambda task_id, source_file, task_dir, **kwargs: created.update(
+            {"task_id": task_id, "source_file": source_file, "task_dir": task_dir, **kwargs}
+        ),
+    )
+
+    class DummyRunner:
+        def __init__(self, bus=None, user_id=None):
+            self.bus = bus
+            self.user_id = user_id
+
+        def start(self, task_id):
+            created["started_task_id"] = task_id
+
+    monkeypatch.setattr(runtime_v2, "PipelineRunnerV2", DummyRunner)
+    monkeypatch.setattr(mod, "_resolve_translated_video_path", lambda task: str(result_video))
+    monkeypatch.setattr(task_state, "get", lambda task_id: {"id": task_id})
+    monkeypatch.setattr(
+        tos_clients,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(
+        mod.local_media_storage,
+        "write_bytes",
+        lambda object_key, payload: writes.append((object_key, bytes(payload))),
+    )
+
+    sub_id, object_key = mod._translate_video_to_media_key(
+        str(local_video),
+        "de",
+        77,
+        1,
+        {"video_params_snapshot": {}},
+    )
+
+    assert sub_id
+    assert object_key == "1/medias/77/de_source.mp4"
+    assert writes == [("1/medias/77/de_source.mp4", b"translated-video")]
+
+
+def test_translate_cover_to_media_key_writes_local_media_store(tmp_path, monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+    import appcore.task_state as task_state
+    import appcore.tos_clients as tos_clients
+    import appcore.image_translate_runtime as image_translate_runtime
+    import appcore.image_translate_settings as image_translate_settings
+
+    translated_cover = tmp_path / "translated.png"
+    translated_cover.write_bytes(b"cover-payload")
+    writes = []
+
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda lang: "德语")
+    monkeypatch.setattr(image_translate_settings, "get_prompt", lambda preset, lang: "translate")
+    monkeypatch.setattr(
+        task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kwargs: {"id": task_id},
+    )
+
+    class DummyImageRuntime:
+        def __init__(self, bus=None, user_id=None):
+            self.bus = bus
+            self.user_id = user_id
+
+        def start(self, task_id):
+            return None
+
+    monkeypatch.setattr(image_translate_runtime, "ImageTranslateRuntime", DummyImageRuntime)
+    monkeypatch.setattr(
+        task_state,
+        "get",
+        lambda task_id: {
+            "items": [{"status": "done", "dst_tos_key": "projects/demo/result.png"}],
+        },
+    )
+
+    def fake_download_file(src, dest):
+        with open(dest, "wb") as fh:
+            fh.write(translated_cover.read_bytes())
+        return str(dest)
+
+    monkeypatch.setattr(tos_clients, "download_file", fake_download_file)
+    monkeypatch.setattr(
+        tos_clients,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(
+        mod.local_media_storage,
+        "write_bytes",
+        lambda object_key, payload: writes.append((object_key, bytes(payload))),
+    )
+
+    object_key = mod._translate_cover_to_media_key("1/medias/77/raw_sources/cover_demo.png", "de", 77, 1)
+
+    assert object_key == "1/medias/77/cover_de_cover_demo.png"
+    assert writes == [("1/medias/77/cover_de_cover_demo.png", b"cover-payload")]
+
+
 # ============================================================
 # Task 20:人工恢复三路径
 # ============================================================

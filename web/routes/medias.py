@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import mimetypes
 import os
 import tempfile
+import threading
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -11,10 +13,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 import requests
-from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file
+from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import medias, task_state, tos_clients
+from appcore import local_media_storage, medias, task_state, tos_clients
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -37,10 +39,10 @@ _MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
-    """返回 (lang, error)。lang 校验不通过返回 (None, error msg)。"""
+    """Return (lang, error). When validation fails, return (None, error)."""
     lang = (body.get("lang") or default).strip().lower()
     if not medias.is_valid_language(lang):
-        return None, f"不支持的语种: {lang}"
+        return None, f"涓嶆敮鎸佺殑璇: {lang}"
     return lang, None
 
 
@@ -57,7 +59,7 @@ def _resolve_upload_user_id(user_id: int | None = None) -> int | None:
 def _download_image_to_tos(
     url: str, pid: int, prefix: str, *, user_id: int | None = None
 ) -> tuple[str, bytes, str] | tuple[None, None, str]:
-    """从 URL 抓图并上传到 TOS media bucket。返回 (object_key, content, ext) 或失败时 (None, None, error_msg)。"""
+    """Download an image from URL and store it in local media storage."""
     if not url:
         return None, None, "url required"
     upload_user_id = _resolve_upload_user_id(user_id)
@@ -65,21 +67,21 @@ def _download_image_to_tos(
         return None, None, "missing upload user"
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        return None, None, "仅支持 http/https 链接"
+        return None, None, "only http/https links are supported"
     try:
         resp = requests.get(url, timeout=20, stream=True,
                             headers={"User-Agent": "Mozilla/5.0 AutoVideoSrt-Importer"})
         resp.raise_for_status()
         ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0].strip().lower()
         if not ct.startswith("image/"):
-            return None, None, f"非图片类型: {ct}"
+            return None, None, f"闈炲浘鐗囩被鍨? {ct}"
         data = b""
         for chunk in resp.iter_content(chunk_size=64 * 1024):
             data += chunk
             if len(data) > _MAX_IMAGE_BYTES:
-                return None, None, "图片过大（>15MB）"
+                return None, None, "image too large (>15MB)"
     except requests.RequestException as e:
-        return None, None, f"下载失败: {e}"
+        return None, None, f"涓嬭浇澶辫触: {e}"
 
     ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(ct, ".jpg")
     name_from_url = os.path.basename(parsed.path or "") or "from_url"
@@ -87,7 +89,7 @@ def _download_image_to_tos(
     if not filename.endswith(ext):
         filename += ext
     object_key = tos_clients.build_media_object_key(upload_user_id, pid, filename)
-    tos_clients.upload_media_object(object_key, data, content_type=ct)
+    local_media_storage.write_bytes(object_key, data)
     return object_key, data, ext
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
@@ -95,18 +97,102 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not code:
-        return False, "产品 ID 必填"
+        return False, "浜у搧 ID 蹇呭～"
     if not _SLUG_RE.match(code):
-        return False, "产品 ID 只能使用小写字母、数字和连字符，长度 3-128，且首尾不能是连字符"
+        return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
     return True, None
 
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
+_local_upload_guard = threading.Lock()
+_local_upload_reservations: dict[str, dict] = {}
+
+
+def _reserve_local_media_upload(object_key: str) -> dict[str, str]:
+    upload_id = uuid.uuid4().hex
+    with _local_upload_guard:
+        _local_upload_reservations[upload_id] = {
+            "user_id": int(current_user.id),
+            "object_key": object_key,
+        }
+    return {
+        "object_key": object_key,
+        "upload_url": url_for("medias.api_local_media_upload", upload_id=upload_id),
+    }
+
+
+def _is_media_available(object_key: str) -> bool:
+    if not object_key:
+        return False
+    if local_media_storage.exists(object_key):
+        return True
+    try:
+        local_path = local_media_storage.local_path_for(object_key)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        tos_clients.download_media_file(object_key, str(local_path))
+        return local_path.exists()
+    except Exception:
+        return False
+
+
+def _download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
+    if local_media_storage.exists(object_key):
+        return local_media_storage.download_to(object_key, destination)
+    try:
+        local_path = local_media_storage.local_path_for(object_key)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        tos_clients.download_media_file(object_key, str(local_path))
+        return local_media_storage.download_to(object_key, destination)
+    except Exception:
+        return tos_clients.download_media_file(object_key, destination)
+
+
+def _delete_media_object(object_key: str | None) -> None:
+    key = (object_key or "").strip()
+    if not key:
+        return
+    try:
+        local_media_storage.delete(key)
+    except Exception:
+        pass
+    try:
+        tos_clients.delete_media_object(key)
+    except Exception:
+        pass
+
+
+def _send_media_object(object_key: str):
+    if _is_media_available(object_key):
+        return send_file(
+            str(local_media_storage.local_path_for(object_key)),
+            mimetype=mimetypes.guess_type(object_key)[0] or "application/octet-stream",
+        )
+    abort(404)
+
+
+@bp.route("/api/local-media-upload/<upload_id>", methods=["PUT"])
+@login_required
+def api_local_media_upload(upload_id: str):
+    with _local_upload_guard:
+        reservation = _local_upload_reservations.get(upload_id)
+    if not reservation or int(reservation.get("user_id") or 0) != int(current_user.id):
+        abort(404)
+    local_media_storage.write_stream(reservation["object_key"], request.stream)
+    return ("", 204)
+
+
+@bp.route("/object", methods=["GET"])
+@login_required
+def media_object_proxy():
+    object_key = (request.args.get("object_key") or "").strip()
+    if not object_key:
+        abort(404)
+    return _send_media_object(object_key)
 
 def _can_access_product(product: dict | None) -> bool:
-    # 共享媒体库：只要产品存在就允许访问。
+    # 鍏变韩濯掍綋搴擄細鍙浜у搧瀛樺湪灏卞厑璁歌闂€?
     return product is not None
 
 
@@ -141,7 +227,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
     cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
         f"/medias/thumb/{cover_item_id}" if cover_item_id else None
     )
-    # localized_links_json 可能是 str / dict / None
+    # localized_links_json 鍙兘鏄?str / dict / None
     raw_links = p.get("localized_links_json")
     localized_links: dict = {}
     if isinstance(raw_links, dict):
@@ -262,7 +348,7 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
     if cover_key:
         cover_suffix = Path(cover_key).suffix or ".jpg"
         cover_local = ref_dir / f"cover_{lang}{cover_suffix}"
-        tos_clients.download_media_file(cover_key, cover_local)
+        _download_media_object(cover_key, cover_local)
         references.append({
             "id": f"cover-{lang}",
             "filename": f"cover_{lang}{cover_suffix}",
@@ -273,7 +359,7 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
         object_key = row.get("object_key") or ""
         detail_suffix = Path(object_key).suffix or ".jpg"
         detail_local = ref_dir / f"detail_{idx:03d}{detail_suffix}"
-        tos_clients.download_media_file(object_key, detail_local)
+        _download_media_object(object_key, detail_local)
         references.append({
             "id": f"detail-{row['id']}",
             "filename": f"detail_{idx:03d}{detail_suffix}",
@@ -283,18 +369,20 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
     return references
 
 
-# ---------- 页面 ----------
+# ---------- 椤甸潰 ----------
 
 @bp.route("/")
 @login_required
 def index():
     return render_template(
         "medias_list.html",
-        tos_ready=tos_clients.is_media_bucket_configured(),
+        # Media uploads are local-first now; keep the old template flag for
+        # compatibility while always enabling the upload UI.
+        tos_ready=True,
     )
 
 
-# ---------- 产品 API ----------
+# ---------- 浜у搧 API ----------
 
 @bp.route("/api/products", methods=["GET"])
 @login_required
@@ -340,7 +428,7 @@ def api_create_product():
         if not ok:
             return jsonify({"error": err}), 400
         if medias.get_product_by_code(product_code):
-            return jsonify({"error": "产品 ID 已被占用"}), 409
+            return jsonify({"error": "product_code already exists"}), 409
     pid = medias.create_product(
         current_user.id, name,
         product_code=product_code,
@@ -371,8 +459,8 @@ def api_update_product(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
 
-    # 基础信息字段：只有 body 里显式带了才校验+写回，支持部分更新
-    # （列表 inline edit 之类的轻量更新只会携带 mk_id / ad_supported_langs 等单字段）
+    # 鍩虹淇℃伅瀛楁锛氬彧鏈?body 閲屾樉寮忓甫浜嗘墠鏍￠獙+鍐欏洖锛屾敮鎸侀儴鍒嗘洿鏂?
+    # 锛堝垪琛?inline edit 涔嬬被鐨勮交閲忔洿鏂板彧浼氭惡甯?mk_id / ad_supported_langs 绛夊崟瀛楁锛?
     update_fields: dict = {}
 
     if "name" in body:
@@ -386,19 +474,19 @@ def api_update_product(pid: int):
             return jsonify({"error": err}), 400
         exist = medias.get_product_by_code(product_code)
         if exist and exist["id"] != pid:
-            return jsonify({"error": "产品 ID 已被占用"}), 409
+            return jsonify({"error": "product_code already exists"}), 409
         update_fields["product_code"] = product_code
 
-    # EN 主图硬校验仅在修改基础信息时触发
+    # EN 涓诲浘纭牎楠屼粎鍦ㄤ慨鏀瑰熀纭€淇℃伅鏃惰Е鍙?
     touches_base = any(k in body for k in ("name", "product_code", "copywritings"))
     if touches_base and not medias.has_english_cover(pid):
-        return jsonify({"error": "必须先上传英文（EN）产品主图才能保存"}), 400
+        return jsonify({"error": "english cover required before saving base fields"}), 400
 
-    # 明空 ID（mk_id）：选填，1-8 位数字，空串代表清除
+    # 鏄庣┖ ID锛坢k_id锛夛細閫夊～锛?-8 浣嶆暟瀛楋紝绌轰覆浠ｈ〃娓呴櫎
     if "mk_id" in body:
         update_fields["mk_id"] = body.get("mk_id")
 
-    # 可选：localized_links — 每语言覆盖商品链接（dict {lang: url}）
+    # 鍙€夛細localized_links 鈥?姣忚瑷€瑕嗙洊鍟嗗搧閾炬帴锛坉ict {lang: url}锛?
     if isinstance(body.get("localized_links"), dict):
         cleaned = {}
         for lang, url in body["localized_links"].items():
@@ -413,7 +501,7 @@ def api_update_product(pid: int):
             parts = [str(x).strip().lower() for x in raw if str(x).strip()]
         else:
             parts = [p.strip().lower() for p in str(raw).split(",") if p.strip()]
-        # 过滤掉非法语种 & 去重 & 排除 en
+        # 杩囨护鎺夐潪娉曡绉?& 鍘婚噸 & 鎺掗櫎 en
         seen: set[str] = set()
         kept: list[str] = []
         for code in parts:
@@ -433,7 +521,7 @@ def api_update_product(pid: int):
         if code == 1062 and "uk_media_products_mk_id" in str(e):
             return jsonify({
                 "error": "mk_id_conflict",
-                "message": "明空 ID 已被其他产品占用",
+                "message": "鏄庣┖ ID 宸茶鍏朵粬浜у搧鍗犵敤",
             }), 409
         raise
 
@@ -456,22 +544,22 @@ def api_product_link_check_create(pid: int):
     body = request.get_json(silent=True) or {}
     lang = (body.get("lang") or "").strip().lower()
     if not lang or not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"unsupported language: {lang}"}), 400
 
     link_url = (body.get("link_url") or "").strip()
     if not link_url.startswith(("http://", "https://")):
-        return jsonify({"error": "请先填写有效的商品链接"}), 400
+        return jsonify({"error": "valid product link_url required"}), 400
 
     language = medias.get_language(lang)
     if not language or not language.get("enabled"):
-        return jsonify({"error": "target_language 非法"}), 400
+        return jsonify({"error": "target language is invalid"}), 400
 
     task_id = str(uuid.uuid4())
     task_dir = Path(OUTPUT_DIR) / "link_check" / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
     references = _collect_link_check_reference_images(pid, lang, task_dir)
     if not references:
-        return jsonify({"error": "当前语种缺少参考图，至少需要主图或详情图之一"}), 400
+        return jsonify({"error": "current language is missing reference images"}), 400
 
     store.create_link_check(
         task_id,
@@ -505,7 +593,7 @@ def api_product_link_check_get(pid: int, lang: str):
     if not _can_access_product(p):
         abort(404)
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
 
     tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
     meta = tasks.get(lang)
@@ -544,7 +632,7 @@ def api_product_link_check_detail(pid: int, lang: str):
     if not _can_access_product(p):
         abort(404)
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
 
     tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
     meta = tasks.get(lang)
@@ -567,7 +655,7 @@ def api_delete_product(pid: int):
     return jsonify({"ok": True})
 
 
-# ---------- 素材上传 ----------
+# ---------- 绱犳潗涓婁紶 ----------
 
 @bp.route("/api/products/<int:pid>/raw-sources", methods=["GET"])
 @login_required
@@ -622,13 +710,13 @@ def api_create_raw_source(pid: int):
         return jsonify({"error": "cover too large (>15MB)"}), 400
 
     try:
-        tos_clients.upload_media_object(video_key, video_bytes, content_type=video_ct)
+        local_media_storage.write_bytes(video_key, video_bytes)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"upload video failed: {exc}"}), 500
     try:
-        tos_clients.upload_media_object(cover_key, cover_bytes, content_type=cover_ct)
+        local_media_storage.write_bytes(cover_key, cover_bytes)
     except Exception as exc:  # noqa: BLE001
-        tos_clients.delete_media_object(video_key)
+        _delete_media_object(video_key)
         return jsonify({"error": f"upload cover failed: {exc}"}), 500
 
     duration_seconds = None
@@ -665,8 +753,8 @@ def api_create_raw_source(pid: int):
             height=height,
         )
     except Exception as exc:  # noqa: BLE001
-        tos_clients.delete_media_object(video_key)
-        tos_clients.delete_media_object(cover_key)
+        _delete_media_object(video_key)
+        _delete_media_object(cover_key)
         return jsonify({"error": f"db insert failed: {exc}"}), 500
 
     row = medias.get_raw_source(rid)
@@ -723,24 +811,24 @@ def api_product_translate(pid: int):
     content_types = body.get("content_types") or ["video"]
 
     if not raw_ids:
-        return jsonify({"error": "raw_ids 不能为空"}), 400
+        return jsonify({"error": "raw_ids 涓嶈兘涓虹┖"}), 400
     if not target_langs:
-        return jsonify({"error": "target_langs 不能为空"}), 400
+        return jsonify({"error": "target_langs 涓嶈兘涓虹┖"}), 400
 
     try:
         raw_ids_int = [int(x) for x in raw_ids]
     except (TypeError, ValueError):
-        return jsonify({"error": "raw_ids 必须是整数数组"}), 400
+        return jsonify({"error": "raw_ids must be integers"}), 400
 
     rows = medias.list_raw_sources(pid)
     valid_ids = {int(r["id"]) for r in rows}
     bad = [rid for rid in raw_ids_int if rid not in valid_ids]
     if bad:
-        return jsonify({"error": f"raw_ids 不属于该产品或已删除: {bad}"}), 400
+        return jsonify({"error": f"raw_ids 涓嶅睘浜庤浜у搧鎴栧凡鍒犻櫎: {bad}"}), 400
 
     for lang in target_langs:
         if lang == "en" or not medias.is_valid_language(lang):
-            return jsonify({"error": f"target_langs 非法: {lang}"}), 400
+            return jsonify({"error": f"target_langs 闈炴硶: {lang}"}), 400
 
     from appcore.bulk_translate_runtime import create_bulk_translate_task, start_task
 
@@ -768,8 +856,6 @@ def api_product_translate(pid: int):
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])
 @login_required
 def api_item_bootstrap(pid: int):
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -780,7 +866,7 @@ def api_item_bootstrap(pid: int):
     object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
     return jsonify({
         "object_key": object_key,
-        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         "bucket": TOS_MEDIA_BUCKET,
         "region": TOS_REGION,
         "endpoint": TOS_PUBLIC_ENDPOINT,
@@ -803,11 +889,11 @@ def api_item_complete(pid: int):
     file_size = int(body.get("file_size") or 0)
     if not object_key or not filename:
         return jsonify({"error": "object_key and filename required"}), 400
-    if not tos_clients.media_object_exists(object_key):
-        return jsonify({"error": "对象不存在"}), 400
+    if not _is_media_available(object_key):
+        return jsonify({"error": "object not found"}), 400
 
     cover_object_key = (body.get("cover_object_key") or "").strip() or None
-    if cover_object_key and not tos_clients.media_object_exists(cover_object_key):
+    if cover_object_key and not _is_media_available(cover_object_key):
         cover_object_key = None
 
     item_id = medias.create_item(
@@ -817,25 +903,25 @@ def api_item_complete(pid: int):
         lang=lang,
     )
 
-    # 下载用户封面到本地缓存供代理
+    # 涓嬭浇鐢ㄦ埛灏侀潰鍒版湰鍦扮紦瀛樹緵浠ｇ悊
     if cover_object_key:
         try:
             product_dir = THUMB_DIR / str(pid)
             product_dir.mkdir(parents=True, exist_ok=True)
             ext = Path(cover_object_key).suffix or ".jpg"
-            tos_clients.download_media_file(
+            _download_media_object(
                 cover_object_key, str(product_dir / f"item_cover_{item_id}{ext}"),
             )
         except Exception:
             pass
 
-    # 抽缩略图（失败不阻断入库）
+    # 鎶界缉鐣ュ浘锛堝け璐ヤ笉闃绘柇鍏ュ簱锛?
     try:
         THUMB_DIR.mkdir(parents=True, exist_ok=True)
         product_dir = THUMB_DIR / str(pid)
         product_dir.mkdir(exist_ok=True)
         tmp_video = product_dir / f"tmp_{item_id}_{Path(filename).name}"
-        tos_clients.download_media_file(object_key, str(tmp_video))
+        _download_media_object(object_key, str(tmp_video))
         duration = get_media_duration(str(tmp_video))
         thumb = extract_thumbnail(str(tmp_video), str(product_dir), scale="360:-1")
         if thumb:
@@ -859,8 +945,6 @@ def api_item_complete(pid: int):
 @bp.route("/api/products/<int:pid>/cover/from-url", methods=["POST"])
 @login_required
 def api_cover_from_url(pid: int):
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -876,7 +960,7 @@ def api_cover_from_url(pid: int):
     old = medias.get_product_covers(pid).get(lang)
     if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old)
+            _delete_media_object(old)
         except Exception:
             pass
     medias.set_product_cover(pid, lang, object_key)
@@ -892,9 +976,7 @@ def api_cover_from_url(pid: int):
 @bp.route("/api/products/<int:pid>/item-cover/from-url", methods=["POST"])
 @login_required
 def api_item_cover_from_url(pid: int):
-    """为尚未创建的 item 预上传一张 URL 图片，返回 object_key。"""
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    """Fetch an item cover from URL before the item record is created."""
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -925,7 +1007,7 @@ def api_item_cover_set_from_url(item_id: int):
     old = it.get("cover_object_key")
     if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old)
+            _delete_media_object(old)
         except Exception:
             pass
     medias.update_item_cover(item_id, object_key)
@@ -941,9 +1023,7 @@ def api_item_cover_set_from_url(item_id: int):
 @bp.route("/api/products/<int:pid>/item-cover/bootstrap", methods=["POST"])
 @login_required
 def api_item_cover_bootstrap(pid: int):
-    """为产品下新建素材或已有素材的封面图申请 TOS 签名直传。"""
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    """Reserve a local upload target for an item cover image."""
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -956,7 +1036,7 @@ def api_item_cover_bootstrap(pid: int):
     )
     return jsonify({
         "object_key": object_key,
-        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         "expires_in": TOS_SIGNED_URL_EXPIRES,
     })
 
@@ -964,7 +1044,7 @@ def api_item_cover_bootstrap(pid: int):
 @bp.route("/api/items/<int:item_id>/cover/set", methods=["POST"])
 @login_required
 def api_item_cover_set(item_id: int):
-    """把已上传到 TOS 的 object_key 绑定到某个 item 作为封面。"""
+    """Bind an uploaded object key as the cover for an item."""
     it = medias.get_item(item_id)
     if not it:
         abort(404)
@@ -975,13 +1055,13 @@ def api_item_cover_set(item_id: int):
     object_key = (body.get("object_key") or "").strip()
     if not object_key:
         return jsonify({"error": "object_key required"}), 400
-    if not tos_clients.media_object_exists(object_key):
-        return jsonify({"error": "对象不存在"}), 400
+    if not _is_media_available(object_key):
+        return jsonify({"error": "object not found"}), 400
 
     old = it.get("cover_object_key")
     if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old)
+            _delete_media_object(old)
         except Exception:
             pass
 
@@ -992,7 +1072,7 @@ def api_item_cover_set(item_id: int):
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
         local = product_dir / f"item_cover_{item_id}{ext}"
-        tos_clients.download_media_file(object_key, str(local))
+        _download_media_object(object_key, str(local))
     except Exception:
         pass
 
@@ -1018,7 +1098,7 @@ def item_cover(item_id: int):
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(it["cover_object_key"]).suffix or ".jpg"
         local = product_dir / f"item_cover_{item_id}{ext}"
-        tos_clients.download_media_file(it["cover_object_key"], str(local))
+        _download_media_object(it["cover_object_key"], str(local))
         mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
         return send_file(str(local), mimetype=mime)
     except Exception:
@@ -1034,10 +1114,7 @@ def raw_source_video_url(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
-    url = tos_clients.generate_signed_media_download_url(
-        row["video_object_key"], expires=TOS_SIGNED_URL_EXPIRES,
-    )
-    return redirect(url, code=302)
+    return _send_media_object(row["video_object_key"])
 
 
 @bp.route("/raw-sources/<int:rid>/cover", methods=["GET"])
@@ -1049,17 +1126,12 @@ def raw_source_cover_url(rid: int):
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
-    url = tos_clients.generate_signed_media_download_url(
-        row["cover_object_key"], expires=TOS_SIGNED_URL_EXPIRES,
-    )
-    return redirect(url, code=302)
+    return _send_media_object(row["cover_object_key"])
 
 
 @bp.route("/api/products/<int:pid>/cover/bootstrap", methods=["POST"])
 @login_required
 def api_cover_bootstrap(pid: int):
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -1075,7 +1147,7 @@ def api_cover_bootstrap(pid: int):
     )
     return jsonify({
         "object_key": object_key,
-        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         "expires_in": TOS_SIGNED_URL_EXPIRES,
     })
 
@@ -1093,13 +1165,13 @@ def api_cover_complete(pid: int):
     object_key = (body.get("object_key") or "").strip()
     if not object_key:
         return jsonify({"error": "object_key required"}), 400
-    if not tos_clients.media_object_exists(object_key):
-        return jsonify({"error": "对象不存在"}), 400
+    if not _is_media_available(object_key):
+        return jsonify({"error": "object not found"}), 400
 
     old = medias.get_product_covers(pid).get(lang)
     if old and old != object_key:
         try:
-            tos_clients.delete_media_object(old)
+            _delete_media_object(old)
         except Exception:
             pass
 
@@ -1110,7 +1182,7 @@ def api_cover_complete(pid: int):
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
         local = product_dir / f"cover_{lang}{ext}"
-        tos_clients.download_media_file(object_key, str(local))
+        _download_media_object(object_key, str(local))
     except Exception:
         pass
 
@@ -1125,13 +1197,13 @@ def api_cover_delete(pid: int):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
     if lang == "en":
-        return jsonify({"error": "英文主图不能删除"}), 400
+        return jsonify({"error": "鑻辨枃涓诲浘涓嶈兘鍒犻櫎"}), 400
     old = medias.get_product_covers(pid).get(lang)
     if old:
         try:
-            tos_clients.delete_media_object(old)
+            _delete_media_object(old)
         except Exception:
             pass
     medias.delete_product_cover(pid, lang)
@@ -1149,13 +1221,13 @@ def api_delete_item(item_id: int):
         abort(404)
     medias.soft_delete_item(item_id)
     try:
-        tos_clients.delete_media_object(it["object_key"])
+        _delete_media_object(it["object_key"])
     except Exception:
         pass
     return jsonify({"ok": True})
 
 
-# ---------- 缩略图代理 ----------
+# ---------- 缂╃暐鍥句唬鐞?----------
 
 @bp.route("/thumb/<int:item_id>")
 @login_required
@@ -1196,14 +1268,14 @@ def cover(pid: int):
         product_dir.mkdir(parents=True, exist_ok=True)
         ext = Path(object_key).suffix or ".jpg"
         local = product_dir / f"cover_{actual_lang}{ext}"
-        tos_clients.download_media_file(object_key, str(local))
+        _download_media_object(object_key, str(local))
         mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
         return send_file(str(local), mimetype=mime)
     except Exception:
         abort(404)
 
 
-# ---------- 签名下载（播放） ----------
+# ---------- 绛惧悕涓嬭浇锛堟挱鏀撅級 ----------
 
 @bp.route("/api/items/<int:item_id>/play_url")
 @login_required
@@ -1214,8 +1286,7 @@ def api_play_url(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    url = tos_clients.generate_signed_media_download_url(it["object_key"])
-    return jsonify({"url": url})
+    return jsonify({"url": url_for("medias.media_object_proxy", object_key=it["object_key"])})
 
 
 @bp.route("/api/languages", methods=["GET"])
@@ -1225,9 +1296,9 @@ def api_list_languages():
 
 
 # ======================================================================
-# 商品详情图（product detail images）
+# 鍟嗗搧璇︽儏鍥撅紙product detail images锛?
 # ----------------------------------------------------------------------
-# 第一轮只在英语语种暴露入口，其他语种的版本将由后续图片翻译集成自动生成。
+# 绗竴杞彧鍦ㄨ嫳璇绉嶆毚闇插叆鍙ｏ紝鍏朵粬璇鐨勭増鏈皢鐢卞悗缁浘鐗囩炕璇戦泦鎴愯嚜鍔ㄧ敓鎴愩€?
 # ======================================================================
 
 _DETAIL_IMAGES_MAX_BATCH = 20
@@ -1275,7 +1346,7 @@ def api_detail_images_list(pid: int):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
     rows = medias.list_detail_images(pid, lang)
     return jsonify({"items": [_serialize_detail_image(r) for r in rows]})
 
@@ -1288,11 +1359,11 @@ def api_detail_images_download_zip(pid: int):
         abort(404)
     lang = (request.args.get("lang") or "en").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
 
     kind = (request.args.get("kind") or "image").strip().lower()
     if kind not in {"image", "gif", "all"}:
-        return jsonify({"error": f"不支持的 kind: {kind}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑 kind: {kind}"}), 400
 
     rows = medias.list_detail_images(pid, lang)
     if not rows:
@@ -1319,7 +1390,7 @@ def api_detail_images_download_zip(pid: int):
                     continue
                 suffix = Path(object_key).suffix or ".jpg"
                 local_path = Path(tmp_dir) / f"detail_{idx:02d}{suffix}"
-                tos_clients.download_media_file(object_key, str(local_path))
+                _download_media_object(object_key, str(local_path))
                 zf.write(local_path, arcname=f"{archive_base}/{idx:02d}{suffix}")
     buf.seek(0)
     return send_file(
@@ -1333,9 +1404,7 @@ def api_detail_images_download_zip(pid: int):
 @bp.route("/api/products/<int:pid>/detail-images/from-url", methods=["POST"])
 @login_required
 def api_detail_images_from_url(pid: int):
-    """启动后台抓取任务，立即返回 task_id。前端用 /status 轮询进度。"""
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    """Start a background detail-image fetch task and return its task id."""
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -1343,10 +1412,10 @@ def api_detail_images_from_url(pid: int):
     body = request.get_json(silent=True) or {}
     lang = (body.get("lang") or "en").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"unsupported language: {lang}"}), 400
     clear_existing = bool(body.get("clear_existing"))
 
-    # 解析商品链接
+    # 瑙ｆ瀽鍟嗗搧閾炬帴
     url = (body.get("url") or "").strip()
     if not url:
         raw_links = p.get("localized_links_json")
@@ -1364,48 +1433,48 @@ def api_detail_images_from_url(pid: int):
         if not url:
             code = (p.get("product_code") or "").strip()
             if not code:
-                return jsonify({"error": "产品未设置 product_code，无法生成默认链接"}), 400
+                return jsonify({"error": "product_code required before inferring a default link"}), 400
             url = (f"https://newjoyloo.com/products/{code}" if lang == "en"
                    else f"https://newjoyloo.com/{lang}/products/{code}")
 
     uid = current_user.id
 
     def _worker(task_id: str, update):
-        """在后台线程跑：fetch → 逐张下载 → update 进度。"""
+        """Fetch the page, download images, and update task progress."""
         from appcore.link_check_fetcher import LinkCheckFetcher, LocaleLockError
-        update(status="fetching", message=f"正在抓取页面 {url}")
+        update(status="fetching", message=f"fetching page {url}")
         try:
             fetcher = LinkCheckFetcher()
             page = fetcher.fetch_page(url, lang)
         except LocaleLockError as e:
             update(status="failed", error=str(e),
-                   message=f"语种锁失败：{e}")
+                   message=f"locale lock failed: {e}")
             return
         except requests.HTTPError as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             if status == 404:
                 update(status="failed",
-                       error=f"链接 404：{url} 不存在",
+                       error=f"link returned 404: {url}",
                        message=(
-                           f"链接 404：{url} 不存在。\n"
-                           f"产品 ID（{p.get('product_code')}）与 Shopify handle 可能不一致。\n"
-                           "请到「产品链接」字段填入真实 URL 后重试。"
+                           f"link returned 404: {url}\n"
+                           f"product_code={p.get('product_code')} may not match the storefront handle.\n"
+                           "Please fill a real product link and retry."
                        ))
             else:
                 update(status="failed",
                        error=f"HTTP {status}",
-                       message=f"抓取失败：HTTP {status}")
+                       message=f"fetch failed: HTTP {status}")
             return
         except requests.RequestException as e:
             update(status="failed", error=str(e),
-                   message=f"抓取失败：{e}")
+                   message=f"fetch failed: {e}")
             return
 
         images = page.images or []
         if not images:
             update(status="failed",
                    error="no images found",
-                   message="页面上未识别到任何轮播/详情图")
+                   message="no carousel/detail images detected on the page")
             return
         if len(images) > _DETAIL_IMAGES_MAX_BATCH:
             images = images[:_DETAIL_IMAGES_MAX_BATCH]
@@ -1415,20 +1484,20 @@ def api_detail_images_from_url(pid: int):
                 cleared = medias.soft_delete_detail_images_by_lang(pid, lang)
             except Exception as exc:
                 update(status="failed", error=str(exc),
-                       message=f"清空原有详情图失败：{exc}")
+                       message=f"failed to clear existing detail images: {exc}")
                 return
             update(status="downloading", total=len(images),
-                   message=f"已清空 {cleared} 张原有详情图，共识别到 {len(images)} 张，开始下载...")
+                   message=f"cleared {cleared} existing detail images; found {len(images)} images, starting download")
         else:
             update(status="downloading", total=len(images),
-                   message=f"共识别到 {len(images)} 张，开始下载...")
+                   message=f"found {len(images)} images, starting download")
 
         created: list[dict] = []
         errors: list[str] = []
         for idx, img in enumerate(images):
             src = img.get("source_url") or ""
             update(progress=idx, current_url=src,
-                   message=f"下载中 {idx + 1}/{len(images)}")
+                   message=f"downloading image {idx + 1}/{len(images)}")
             filename = f"from_url_{lang}_{idx:02d}"
             try:
                 obj_key, data, err = _download_image_to_tos(
@@ -1453,8 +1522,8 @@ def api_detail_images_from_url(pid: int):
                inserted=created,
                errors=errors,
                current_url="",
-               message=f"完成：识别 {len(images)} 张，入库 {len(created)} 张" +
-                       (f"，失败 {len(errors)} 张" if errors else ""))
+               message=f"done: detected {len(images)} images, inserted {len(created)}"
+                       + (f", failed {len(errors)}" if errors else ""))
 
     from appcore import medias_detail_fetch_tasks as mdf
     task_id = mdf.create(user_id=uid, product_id=pid, url=url, lang=lang, worker=_worker)
@@ -1464,7 +1533,7 @@ def api_detail_images_from_url(pid: int):
 @bp.route("/api/products/<int:pid>/detail-images/from-url/status/<task_id>", methods=["GET"])
 @login_required
 def api_detail_images_from_url_status(pid: int, task_id: str):
-    """轮询抓取任务进度。"""
+    """Return the current status for a detail-image fetch task."""
     from appcore import medias_detail_fetch_tasks as mdf
     t = mdf.get(task_id, user_id=current_user.id)
     if not t or t.get("product_id") != pid:
@@ -1475,9 +1544,7 @@ def api_detail_images_from_url_status(pid: int, task_id: str):
 @bp.route("/api/products/<int:pid>/detail-images/bootstrap", methods=["POST"])
 @login_required
 def api_detail_images_bootstrap(pid: int):
-    """批量申请 TOS 签名直传 URL。"""
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+    """Reserve local upload targets for detail images."""
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -1490,27 +1557,27 @@ def api_detail_images_bootstrap(pid: int):
     if not isinstance(files, list) or not files:
         return jsonify({"error": "files required"}), 400
     if len(files) > _DETAIL_IMAGES_MAX_BATCH:
-        return jsonify({"error": f"单次最多上传 {_DETAIL_IMAGES_MAX_BATCH} 张"}), 400
+        return jsonify({"error": f"too many files (max {_DETAIL_IMAGES_MAX_BATCH})"}), 400
 
     uploads = []
     for idx, f in enumerate(files):
         if not isinstance(f, dict):
-            return jsonify({"error": f"files[{idx}] 格式错误"}), 400
+            return jsonify({"error": f"files[{idx}] must be an object"}), 400
         raw_name = (f.get("filename") or "").strip()
         if not raw_name:
             return jsonify({"error": f"files[{idx}].filename required"}), 400
         filename = os.path.basename(raw_name)
         if not filename:
-            return jsonify({"error": f"files[{idx}].filename 非法"}), 400
+            return jsonify({"error": f"files[{idx}].filename is invalid"}), 400
         ct = (f.get("content_type") or "").strip().lower()
         if ct not in _ALLOWED_IMAGE_TYPES:
-            return jsonify({"error": f"files[{idx}] 不支持的图片格式: {ct}"}), 400
+            return jsonify({"error": f"files[{idx}] unsupported image content_type: {ct}"}), 400
         try:
             size = int(f.get("size") or 0)
         except (TypeError, ValueError):
             size = 0
         if size and size > _MAX_IMAGE_BYTES:
-            return jsonify({"error": f"files[{idx}] 超过 15MB"}), 400
+            return jsonify({"error": f"files[{idx}] exceeds 15MB"}), 400
 
         object_key = tos_clients.build_media_object_key(
             current_user.id, pid, f"detail_{lang}_{idx:02d}_{filename}",
@@ -1518,7 +1585,7 @@ def api_detail_images_bootstrap(pid: int):
         uploads.append({
             "idx": idx,
             "object_key": object_key,
-            "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+                "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         })
 
     return jsonify({
@@ -1530,7 +1597,7 @@ def api_detail_images_bootstrap(pid: int):
 @bp.route("/api/products/<int:pid>/detail-images/complete", methods=["POST"])
 @login_required
 def api_detail_images_complete(pid: int):
-    """浏览器直传完成后通知后端落库。"""
+    """Persist detail-image records after browser uploads complete."""
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
@@ -1543,17 +1610,17 @@ def api_detail_images_complete(pid: int):
     if not isinstance(images, list) or not images:
         return jsonify({"error": "images required"}), 400
     if len(images) > _DETAIL_IMAGES_MAX_BATCH:
-        return jsonify({"error": f"单次最多 {_DETAIL_IMAGES_MAX_BATCH} 张"}), 400
+        return jsonify({"error": f"too many images (max {_DETAIL_IMAGES_MAX_BATCH})"}), 400
 
     created: list[dict] = []
     for idx, img in enumerate(images):
         if not isinstance(img, dict):
-            return jsonify({"error": f"images[{idx}] 格式错误"}), 400
+            return jsonify({"error": f"images[{idx}] must be an object"}), 400
         object_key = (img.get("object_key") or "").strip()
         if not object_key:
             return jsonify({"error": f"images[{idx}].object_key required"}), 400
-        if not tos_clients.media_object_exists(object_key):
-            return jsonify({"error": f"images[{idx}] 对象不存在: {object_key}"}), 400
+        if not _is_media_available(object_key):
+            return jsonify({"error": f"images[{idx}] object missing: {object_key}"}), 400
 
         def _opt_int(v):
             try:
@@ -1588,7 +1655,7 @@ def api_detail_images_delete(pid: int, image_id: int):
 
     medias.soft_delete_detail_image(image_id)
     try:
-        tos_clients.delete_media_object(row["object_key"])
+        _delete_media_object(row["object_key"])
     except Exception:
         pass
     return jsonify({"ok": True})
@@ -1621,22 +1688,20 @@ def api_detail_images_translate_from_en(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
 
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body, default="")
     if err:
         return jsonify({"error": err}), 400
     if lang == "en":
-        return jsonify({"error": "英文详情图不需要从英语版翻译"}), 400
+        return jsonify({"error": "english detail images do not need translate-from-en"}), 400
 
     source_rows = medias.list_detail_images(pid, "en")
     if not source_rows:
-        return jsonify({"error": "请先准备英语版商品详情图"}), 409
+        return jsonify({"error": "english detail images are required first"}), 409
 
-    # GIF 不参与翻译（UI 里 "GIF 不参与翻译但会归入 GIF 栏"），直接过滤掉，
-    # 只翻译可翻的静态图，不要因为夹带 GIF 就整单失败。
+    # Skip GIF files in translate-from-en. Static images can still be translated
+    # even when the source set contains GIFs.
     def _is_gif_row(row: dict) -> bool:
         return (
             (row.get("object_key") or "").lower().endswith(".gif")
@@ -1645,11 +1710,11 @@ def api_detail_images_translate_from_en(pid: int):
 
     translatable_rows = [row for row in source_rows if not _is_gif_row(row)]
     if not translatable_rows:
-        return jsonify({"error": "英语版详情图全部为 GIF 动图，无可翻译的静态图"}), 409
+        return jsonify({"error": "鑻辫鐗堣鎯呭浘鍏ㄩ儴涓?GIF 鍔ㄥ浘锛屾棤鍙炕璇戠殑闈欐€佸浘"}), 409
 
     prompt_tpl = (its.get_prompts_for_lang(lang).get("detail") or "").strip()
     if not prompt_tpl:
-        return jsonify({"error": "当前语种未配置详情图翻译 prompt"}), 409
+        return jsonify({"error": "褰撳墠璇鏈厤缃鎯呭浘缈昏瘧 prompt"}), 409
     lang_name = medias.get_language_name(lang)
     task_id = uuid.uuid4().hex
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -1701,7 +1766,7 @@ def api_detail_image_translate_tasks(pid: int):
         abort(404)
     lang = (request.args.get("lang") or "").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"涓嶆敮鎸佺殑璇: {lang}"}), 400
 
     rows = db_query(
         "SELECT id, created_at, state_json "
@@ -1745,22 +1810,19 @@ def api_detail_image_translate_tasks(pid: int):
 )
 @login_required
 def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
-    """手动回填：从已完成的 image_translate 任务里取成功项，允许忽略失败项。
+    """Manually apply successful outputs from a finished image-translate task.
 
-    自动回填在任一失败时会整单 skip（apply_status='skipped_failed'），
-    本端点让用户在任务已 done、但存在顽固失败项的场景下手动把成功项回填回来，
-    仅替换 origin_type='image_translate' 的旧条目，保留手动上传/链接下载的图。
+    Auto-apply skips the whole batch when any row fails. This endpoint lets the
+    operator keep successful rows and ignore failed ones.
     """
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
     lang = (lang or "").strip().lower()
     if not medias.is_valid_language(lang):
-        return jsonify({"error": f"不支持的语种: {lang}"}), 400
+        return jsonify({"error": f"unsupported language: {lang}"}), 400
     if lang == "en":
-        return jsonify({"error": "英文详情图不需要回填"}), 400
-    if not tos_clients.is_media_bucket_configured():
-        return jsonify({"error": "TOS_MEDIA_BUCKET 未配置"}), 503
+        return jsonify({"error": "english detail images do not need manual apply"}), 400
 
     task = store.get(task_id)
     if not task or task.get("type") != "image_translate":
@@ -1771,14 +1833,14 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
 
     ctx = task.get("medias_context") or {}
     if int(ctx.get("product_id") or 0) != pid:
-        return jsonify({"error": "任务不属于该商品"}), 400
+        return jsonify({"error": "task does not belong to this product"}), 400
     if (ctx.get("target_lang") or "").strip().lower() != lang:
-        return jsonify({"error": "任务的目标语种与当前语种不一致"}), 400
+        return jsonify({"error": "task target language does not match current language"}), 400
 
     if image_translate_runner.is_running(task_id):
-        return jsonify({"error": "任务还在跑，请等跑完再回填"}), 409
+        return jsonify({"error": "task is still running"}), 409
     if (task.get("status") or "") not in {"done", "error"}:
-        return jsonify({"error": "任务尚未结束，无法手动回填"}), 409
+        return jsonify({"error": "task has not finished yet"}), 409
 
     try:
         result = image_translate_runtime.apply_translated_detail_images_from_task(
@@ -1799,12 +1861,11 @@ def api_detail_images_apply_translate_task(pid: int, lang: str, task_id: str):
 @bp.route("/detail-image/<int:image_id>", methods=["GET"])
 @login_required
 def detail_image_proxy(image_id: int):
-    """返回详情图的签名下载 URL（302 重定向）。"""
+    """Serve or redirect to the stored detail image asset."""
     row = medias.get_detail_image(image_id)
     if not row or row.get("deleted_at") is not None:
         abort(404)
     p = medias.get_product(int(row["product_id"]))
     if not _can_access_product(p):
         abort(404)
-    url = tos_clients.generate_signed_media_download_url(row["object_key"])
-    return redirect(url, code=302)
+    return _send_media_object(row["object_key"])
