@@ -176,6 +176,8 @@ def upload_and_start():
 @bp.route("/api/multi-translate/bootstrap", methods=["POST"])
 @login_required
 def bootstrap_upload():
+    return jsonify({"error": "新建多语种翻译任务已切换为本地上传，请改用 multipart /api/multi-translate/start"}), 410
+
     """前端上传前先请求签名 URL（TOS 直传路径）."""
     from appcore import tos_clients
     from web.upload_util import validate_video_extension
@@ -206,6 +208,8 @@ def bootstrap_upload():
 @bp.route("/api/multi-translate/complete", methods=["POST"])
 @login_required
 def complete_upload():
+    return jsonify({"error": "新建多语种翻译任务已切换为本地上传，禁止继续通过 TOS complete 创建任务"}), 410
+
     """TOS 直传完成后，后端创建任务记录（不再 save 本地，由 runner 按需从 TOS 拉取）."""
     from appcore import tos_clients
 

@@ -112,3 +112,18 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     assert "/api/multi-translate/compat-bootstrap" not in template
     assert "/api/multi-translate/compat-complete" not in template
     assert "xhr.open('PUT'" not in template
+
+
+def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no_db):
+    resp = authed_client_no_db.post(
+        "/api/multi-translate/complete",
+        json={
+            "task_id": "multi-task-from-tos",
+            "object_key": "uploads/1/multi-task-from-tos/demo.mp4",
+            "original_filename": "demo.mp4",
+            "target_lang": "de",
+        },
+    )
+
+    assert resp.status_code == 410
+    assert "本地" in resp.get_json()["error"]

@@ -1,5 +1,5 @@
 (function() {
-  window.MEDIAS_TOS_READY = true;
+  window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
   const state = { page: 1, current: null, pendingItemCover: null };
   const $ = (id) => document.getElementById(id);
 
@@ -264,8 +264,8 @@
       return '';
     }
 
-    async function uploadFiles(rawFiles) {
-      if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+  async function uploadFiles(rawFiles) {
+      if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
       const all = [...(rawFiles || [])];
       const files = all.filter(f => !!resolveMime(f));
       if (!files.length) {
@@ -311,7 +311,7 @@
             headers: { 'Content-Type': resolveMime(f) || 'application/octet-stream' },
             body: f,
           });
-          if (!putRes.ok) throw new Error(`TOS 上传失败 (${i + 1}/${files.length})`);
+          if (!putRes.ok) throw new Error(`上传失败 (${i + 1}/${files.length})`);
         }
 
         setProgress('登记中…');
@@ -716,7 +716,7 @@
   }
 
   async function uploadItemCover(file) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
@@ -726,7 +726,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       state.pendingItemCover = boot.object_key;
       const blobUrl = URL.createObjectURL(file);
       setItemCover(blobUrl);
@@ -741,7 +741,7 @@
   }
 
   async function uploadCover(file) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
@@ -751,7 +751,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       const done = await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ object_key: boot.object_key }),
@@ -814,7 +814,7 @@
   }
 
   async function uploadVideo(file) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
     const productName = state.current && state.current.product && state.current.product.name;
@@ -830,7 +830,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -916,7 +916,7 @@
   // ========== Edit Detail Modal ==========
   const edState = {
     current: null, activeLang: 'en', productData: null,
-    // 新增素材提交大框 - 待上传的视频封面图 TOS object_key
+    // 新增素材提交大框 - 待上传的视频封面图本地 object_key
     pendingItemCover: null,
     // 新增素材提交大框 - 待提交的视频 File 对象
     pendingVideoFile: null,
@@ -1897,7 +1897,7 @@
 
   async function edUploadCover(file, lang) {
     lang = lang || edState.activeLang;
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
@@ -1907,7 +1907,7 @@
         body: JSON.stringify({ filename: file.name, lang }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       await fetchJSON(`/medias/api/products/${pid}/cover/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ object_key: boot.object_key, lang }),
@@ -2054,7 +2054,7 @@
   }
 
   async function edUploadPendingItemCover(file) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) { alert('产品数据未加载'); return; }
@@ -2064,7 +2064,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       edState.pendingItemCover = boot.object_key;
       edSetItemCover(URL.createObjectURL(file));
     } catch (e) {
@@ -2091,7 +2091,7 @@
   }
 
   async function edSubmitNewItem() {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!edState.pendingItemCover) {
       alert('请先上传视频封面图');
       $('edItemCoverDropzone') && $('edItemCoverDropzone').focus();
@@ -2121,7 +2121,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       await fetchJSON(`/medias/api/products/${pid}/items/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2257,7 +2257,7 @@
   }
 
   async function edUploadItemCover(itemId, file) {
-    if (!window.MEDIAS_TOS_READY) { alert('TOS 未配置，无法上传'); return; }
+    if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
@@ -2266,7 +2266,7 @@
         body: JSON.stringify({ filename: file.name }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
-      if (!putRes.ok) throw new Error('TOS 上传失败');
+      if (!putRes.ok) throw new Error('上传失败');
       await fetchJSON(`/medias/api/items/${itemId}/cover/set`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ object_key: boot.object_key }),
@@ -2918,8 +2918,8 @@
   }
 
   function openRawSourceUpload() {
-    if (!window.MEDIAS_TOS_READY) {
-      alert('TOS 未配置，无法上传原始素材');
+    if (!window.MEDIAS_UPLOAD_READY) {
+      alert('本地上传未就绪，无法上传原始素材');
       return;
     }
     uploadMask.hidden = false;

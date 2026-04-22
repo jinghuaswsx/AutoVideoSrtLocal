@@ -143,7 +143,7 @@
             resolve();
             return;
           }
-          reject(new Error("视频上传到对象存储失败"));
+          reject(new Error("视频上传失败"));
         };
         xhr.onerror = function () {
           reject(new Error("网络异常，上传失败"));

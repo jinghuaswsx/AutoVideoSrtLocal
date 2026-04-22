@@ -4,7 +4,7 @@ from appcore.events import EventBus
 from appcore import task_state
 
 
-def test_runtime_success_downloads_and_uploads_result(monkeypatch, tmp_path):
+def test_runtime_success_downloads_result_and_finishes_locally(monkeypatch, tmp_path):
     from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
 
     task = task_state.create_subtitle_removal(
@@ -43,19 +43,14 @@ def test_runtime_success_downloads_and_uploads_result(monkeypatch, tmp_path):
         "appcore.subtitle_removal_runtime._download_result_file",
         lambda url, path: str(tmp_path / "result.cleaned.mp4"),
     )
-    monkeypatch.setattr("appcore.subtitle_removal_runtime.tos_clients.upload_file", lambda local_path, object_key: None)
-    monkeypatch.setattr(
-        "appcore.subtitle_removal_runtime.tos_clients.build_artifact_object_key",
-        lambda user_id, task_id, variant, filename: f"artifacts/{user_id}/{task_id}/{variant}/{filename}",
-    )
-
     runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
     runner.start("sr-runtime")
 
     saved = task_state.get("sr-runtime")
     assert saved["status"] == "done"
     assert saved["provider_task_id"] == "provider-task-1"
-    assert saved["result_tos_key"].endswith("result.cleaned.mp4")
+    assert saved["result_video_path"].endswith("result.cleaned.mp4")
+    assert saved["result_tos_key"] == ""
 
 
 def test_download_result_file_streams_content_to_disk(monkeypatch, tmp_path):
@@ -296,6 +291,55 @@ def test_resume_inflight_tasks_recovers_after_download_before_upload(monkeypatch
     assert subtitle_removal.task_state.get("sr-download-window")["result_video_path"] == "/tmp/result.cleaned.mp4"
 
 
+def _legacy_test_runtime_resumes_existing_result_upload_without_re_submitting_provider(monkeypatch, tmp_path):
+    from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
+
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"result-video")
+
+    task_state.create_subtitle_removal(
+        "sr-runtime-resume-upload",
+        str(tmp_path / "source.mp4"),
+        str(tmp_path),
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    task_state.update(
+        "sr-runtime-resume-upload",
+        status="running",
+        provider_task_id="provider-task-1",
+        remove_mode="full",
+        selection_box={"x1": 0, "y1": 0, "x2": 720, "y2": 1280},
+        position_payload={"l": 0, "t": 0, "w": 720, "h": 1280},
+        media_info={"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0, "file_size_mb": 2.09},
+        result_video_path=str(result_path),
+        steps={
+            "prepare": "done",
+            "submit": "done",
+            "poll": "done",
+            "download_result": "done",
+            "upload_result": "pending",
+        },
+    )
+
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime.submit_task",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("submit_task should not run during upload resume")),
+    )
+    monkeypatch.setattr(
+        "appcore.subtitle_removal_runtime.query_progress",
+        lambda task_id: (_ for _ in ()).throw(AssertionError("query_progress should not run during upload resume")),
+    )
+    runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
+    runner.start("sr-runtime-resume-upload")
+
+    saved = task_state.get("sr-runtime-resume-upload")
+    assert saved["status"] == "done"
+    assert saved["result_video_path"] == str(result_path)
+    assert saved["result_tos_key"] == ""
+    assert saved["step_messages"]["upload_result"] == "结果已回传到TOS"
+
+
 def test_runtime_resumes_existing_result_upload_without_re_submitting_provider(monkeypatch, tmp_path):
     from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
 
@@ -335,24 +379,15 @@ def test_runtime_resumes_existing_result_upload_without_re_submitting_provider(m
         "appcore.subtitle_removal_runtime.query_progress",
         lambda task_id: (_ for _ in ()).throw(AssertionError("query_progress should not run during upload resume")),
     )
-    uploaded = []
-    monkeypatch.setattr(
-        "appcore.subtitle_removal_runtime.tos_clients.upload_file",
-        lambda local_path, object_key: uploaded.append((local_path, object_key)),
-    )
-    monkeypatch.setattr(
-        "appcore.subtitle_removal_runtime.tos_clients.build_artifact_object_key",
-        lambda user_id, task_id, variant, filename: f"artifacts/{user_id}/{task_id}/{variant}/{filename}",
-    )
 
     runner = SubtitleRemovalRuntime(bus=EventBus(), user_id=1)
     runner.start("sr-runtime-resume-upload")
 
     saved = task_state.get("sr-runtime-resume-upload")
     assert saved["status"] == "done"
-    assert uploaded == [(str(result_path), "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4")]
-    assert saved["result_tos_key"] == "artifacts/1/sr-runtime-resume-upload/subtitle_removal/result.cleaned.mp4"
-    assert saved["step_messages"]["upload_result"] == "结果已回传到TOS"
+    assert saved["result_video_path"] == str(result_path)
+    assert saved["result_tos_key"] == ""
+    assert saved["step_messages"]["upload_result"] == "结果已保存到本地，无需回传TOS"
 
 
 def test_runtime_submit_passes_erase_text_type_text(monkeypatch, tmp_path):

@@ -316,8 +316,9 @@ function onModelChange() {
         hint.textContent = "支持直接视频输入 + 图片输入（Vision）";
         hint.style.color = "#16a34a";
     } else if (provider === "doubao") {
-        hint.textContent = "支持直接视频输入 + 图片输入（需上传到 TOS）";
+        hint.textContent = "支持直接视频输入 + 图片输入，必要时会自动处理公网地址";
         hint.style.color = "#16a34a";
+        hint.textContent = "支持直接视频输入 + 图片输入，必要时会自动处理公网地址";
     } else {
         hint.textContent = "支持图片输入（Vision），不支持视频";
         hint.style.color = "#9ca3af";

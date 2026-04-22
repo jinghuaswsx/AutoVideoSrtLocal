@@ -374,12 +374,7 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 @bp.route("/")
 @login_required
 def index():
-    return render_template(
-        "medias_list.html",
-        # Media uploads are local-first now; keep the old template flag for
-        # compatibility while always enabling the upload UI.
-        tos_ready=True,
-    )
+    return render_template("medias_list.html")
 
 
 # ---------- 浜у搧 API ----------

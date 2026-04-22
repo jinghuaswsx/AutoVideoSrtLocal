@@ -90,14 +90,12 @@ class SubtitleRemovalRuntime:
 
     def start(self, task_id: str) -> None:
         task = task_state.get(task_id)
-        if not task:
-            return
-        if _task_is_deleted(task_id):
+        if not task or _task_is_deleted(task_id):
             return
         try:
             task_state.update(task_id, status="running", error="")
             if _should_resume_existing_upload(task):
-                self._upload_existing_result(task_id)
+                self._finalize_existing_result(task_id)
                 return
             if not task.get("provider_task_id"):
                 self._submit(task_id)
@@ -115,38 +113,49 @@ class SubtitleRemovalRuntime:
             task_state.set_expires_at(task_id, "subtitle_removal")
             self._emit(task_id, EVT_SR_ERROR, {"message": str(exc)})
 
-    def _upload_existing_result(self, task_id: str) -> None:
-        task = task_state.get(task_id)
-        if not task:
-            raise RuntimeError("subtitle removal task not found")
-        if _task_is_deleted(task_id):
-            raise SubtitleRemovalTaskDeleted(task_id)
-        result_path = (task.get("result_video_path") or "").strip()
-        if not result_path or not os.path.exists(result_path):
-            raise RuntimeError("subtitle removal result_video_path is missing")
-
-        self._set_step(task_id, "upload_result", "running", "正在上传结果到TOS")
-        user_id = self._user_id if self._user_id is not None else task.get("_user_id")
-        result_key = tos_clients.build_artifact_object_key(user_id, task_id, "subtitle_removal", os.path.basename(result_path))
-        try:
-            tos_clients.upload_file(result_path, result_key)
-        except Exception as exc:
-            self._set_step(task_id, "upload_result", "error", f"上传结果到TOS失败: {exc}")
-            raise
+    def _mark_local_result_done(
+        self,
+        task_id: str,
+        *,
+        result_path: str,
+        result_url: str = "",
+        provider_emsg: str = "",
+    ) -> None:
+        self._set_step(task_id, "upload_result", "running", "正在整理本地结果")
         if _task_is_deleted(task_id):
             raise SubtitleRemovalTaskDeleted(task_id)
         task_state.update(
             task_id,
             status="done",
             provider_status="success",
-            result_tos_key=result_key,
+            provider_emsg=provider_emsg,
+            provider_result_url=result_url,
+            result_video_path=result_path,
+            result_tos_key="",
             result_object_info={
-                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                "result_url": "",
+                "storage_backend": "local",
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "result_url": result_url,
             },
         )
-        self._set_step(task_id, "upload_result", "done", "结果已回传到TOS")
-        self._emit(task_id, EVT_SR_DONE, {"task_id": task_id, "result_tos_key": result_key})
+        self._set_step(task_id, "upload_result", "done", "结果已保存到本地，无需回传TOS")
+        self._emit(task_id, EVT_SR_DONE, {"task_id": task_id, "result_video_path": result_path})
+
+    def _finalize_existing_result(self, task_id: str) -> None:
+        task = task_state.get(task_id)
+        if not task:
+            raise RuntimeError("subtitle removal task not found")
+        if _task_is_deleted(task_id):
+            raise SubtitleRemovalTaskDeleted(task_id)
+        result_path = (task.get("result_video_path") or "").strip()
+        if not result_path:
+            raise RuntimeError("subtitle removal result_video_path is missing")
+        self._mark_local_result_done(
+            task_id,
+            result_path=result_path,
+            result_url=(task.get("provider_result_url") or "").strip(),
+            provider_emsg=(task.get("provider_emsg") or "").strip(),
+        )
 
     def _submit(self, task_id: str) -> None:
         task = task_state.get(task_id)
@@ -218,7 +227,7 @@ class SubtitleRemovalRuntime:
             )
 
             if status == "success":
-                self._download_and_upload_result(task_id, progress)
+                self._download_and_finalize_result(task_id, progress)
                 return
             if status == "failed":
                 self._set_step(task_id, "poll", "error", progress.get("emsg") or "subtitle removal failed")
@@ -231,7 +240,7 @@ class SubtitleRemovalRuntime:
             )
             time.sleep(max(1, int(sleep_seconds)))
 
-    def _download_and_upload_result(self, task_id: str, progress: dict) -> None:
+    def _download_and_finalize_result(self, task_id: str, progress: dict) -> None:
         task = task_state.get(task_id)
         if not task:
             raise RuntimeError("subtitle removal task not found")
@@ -253,28 +262,9 @@ class SubtitleRemovalRuntime:
             raise SubtitleRemovalTaskDeleted(task_id)
         task_state.update(task_id, result_video_path=result_path)
         self._set_step(task_id, "download_result", "done", "处理结果下载完成")
-
-        self._set_step(task_id, "upload_result", "running", "正在上传结果到TOS")
-        user_id = self._user_id if self._user_id is not None else task.get("_user_id")
-        result_key = tos_clients.build_artifact_object_key(user_id, task_id, "subtitle_removal", "result.cleaned.mp4")
-        try:
-            tos_clients.upload_file(result_path, result_key)
-        except Exception as exc:
-            self._set_step(task_id, "upload_result", "error", f"上传结果到TOS失败: {exc}")
-            raise
-        if _task_is_deleted(task_id):
-            raise SubtitleRemovalTaskDeleted(task_id)
-        task_state.update(
+        self._mark_local_result_done(
             task_id,
-            status="done",
-            provider_status="success",
+            result_path=result_path,
+            result_url=result_url,
             provider_emsg=progress.get("emsg") or "",
-            provider_result_url=result_url,
-            result_tos_key=result_key,
-            result_object_info={
-                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                "result_url": result_url,
-            },
         )
-        self._set_step(task_id, "upload_result", "done", "结果已回传到TOS")
-        self._emit(task_id, EVT_SR_DONE, {"task_id": task_id, "result_tos_key": result_key})
