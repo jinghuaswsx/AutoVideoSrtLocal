@@ -85,7 +85,14 @@ def get_title_translate_language(code: str) -> dict:
     raise ValueError(f"unsupported language: {normalized}")
 
 
-def _build_prompt(lang_name: str, *, intro: str, locale: str | None = None, extra: str | None = None) -> str:
+def _build_prompt(
+    lang_name: str,
+    *,
+    intro: str,
+    locale: str | None = None,
+    extra: str | None = None,
+    include_length_limits: bool = False,
+) -> str:
     lines = [
         intro,
         "",
@@ -110,6 +117,14 @@ def _build_prompt(lang_name: str, *, intro: str, locale: str | None = None, extr
         lines.append(f"- 优先采用符合 {locale} 的自然表达。")
     if extra:
         lines.append(f"- {extra}")
+    if include_length_limits:
+        lines.extend(
+            [
+                "- 标题最多 100 个字符。",
+                "- 文案最多 200 个字符。",
+                "- 描述最多 50 个字符。",
+            ]
+        )
 
     lines.extend(
         [
@@ -122,7 +137,13 @@ def _build_prompt(lang_name: str, *, intro: str, locale: str | None = None, extr
 
 def _build_special_prompt(lang_name: str, expert: str, audience: str, locale: str, extra: str) -> str:
     intro = f"你是一位{expert}，擅长将面向{audience}的内容翻译并本土化为自然的三段式文案。"
-    return _build_prompt(lang_name, intro=intro, locale=locale, extra=extra)
+    return _build_prompt(
+        lang_name,
+        intro=intro,
+        locale=locale,
+        extra=extra,
+        include_length_limits=True,
+    )
 
 
 def _build_generic_prompt(lang_name: str) -> str:
