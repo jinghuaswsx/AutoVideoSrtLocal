@@ -1141,7 +1141,13 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 .oc-video-filled-icon { color:var(--oc-accent); }
 .oc-video-filled-name {
   font-size:13px; font-weight:600; color:var(--oc-fg);
-  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  max-width:100%;
+  min-height:calc(1.45em * 3);
+  line-height:1.45;
+  text-align:center;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-all;
 }
 .oc-video-filled-size { font-size:12px; color:var(--oc-fg-muted); font-variant-numeric:tabular-nums; }
 
