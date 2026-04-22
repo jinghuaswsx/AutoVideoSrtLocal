@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from appcore import gemini_image, medias, tos_clients
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
+_BATCH_SIZE = 10  # 并行模式单批最大并发数
 
 # 任务级熔断：当上游持续返回 429/5xx 时，避免把所有 items 都跑完 3 次重试
 # 形成 retry 风暴，进而触发宿主机 watchdog 强制重启 VM（2026-04-17 事故）
@@ -126,7 +128,20 @@ class ImageTranslateRuntime:
             self._process_one(task, task_id, idx)
 
     def _run_parallel(self, task: dict, task_id: str) -> None:
-        raise NotImplementedError("_run_parallel 将在 Task 5 实现")
+        items = task.get("items") or []
+        pending_idxs = [
+            i for i, it in enumerate(items)
+            if it["status"] not in {"done", "failed"}
+        ]
+        for batch_start in range(0, len(pending_idxs), _BATCH_SIZE):
+            batch = pending_idxs[batch_start: batch_start + _BATCH_SIZE]
+            with ThreadPoolExecutor(max_workers=_BATCH_SIZE) as pool:
+                futures = [
+                    pool.submit(self._process_one, task, task_id, idx)
+                    for idx in batch
+                ]
+                for fut in as_completed(futures):
+                    fut.result()
 
     def _abort_remaining_items(self, task: dict, task_id: str, reason: str) -> None:
         for it in task["items"]:

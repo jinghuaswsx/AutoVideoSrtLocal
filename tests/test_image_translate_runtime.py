@@ -462,3 +462,106 @@ def test_create_image_translate_stores_concurrency_mode():
     with ts._lock:
         ts._tasks.pop("t-cm-1", None)
         ts._tasks.pop("t-cm-2", None)
+
+
+def test_parallel_runs_all_items_and_is_faster_than_sequential(tmp_path):
+    """并行模式：20 张图每张 sleep 50ms，总耗时 << 串行 1s。"""
+    import time as _time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(20)])
+    task["concurrency_mode"] = "parallel"
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    def fake_gen(*a, **kw):
+        _time.sleep(0.05)
+        return b"OUT", "image/png"
+
+    t0 = _time.monotonic()
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+    elapsed = _time.monotonic() - t0
+
+    assert elapsed < 0.5, f"parallel should be fast, got {elapsed:.2f}s"
+    for it in task["items"]:
+        assert it["status"] == "done", (it["idx"], it)
+
+
+def test_parallel_runs_in_batches_of_10(tmp_path):
+    """21 个 item：前 10 个并发，第二批在第一批之后启动，第 21 个自成一批。"""
+    import time as _time
+    import threading
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(21)])
+    task["concurrency_mode"] = "parallel"
+
+    starts = {}
+    lock = threading.Lock()
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    def fake_gen(*a, **kw):
+        with lock:
+            starts[_time.monotonic()] = True
+        _time.sleep(0.1)
+        return b"OUT", "image/png"
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    start_times = sorted(starts.keys())
+    assert len(start_times) == 21
+    assert start_times[9] - start_times[0] < 0.1, f"first batch spread: {start_times[9]-start_times[0]:.3f}s"
+    assert start_times[10] - start_times[0] > 0.08, f"batch 2 gap: {start_times[10]-start_times[0]:.3f}s"
+    for it in task["items"]:
+        assert it["status"] == "done"
+
+
+def test_parallel_skips_already_terminal_items(tmp_path):
+    """已 done/failed 的 item 在并行模式下也不重跑。"""
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(i) for i in range(12)])
+    task["concurrency_mode"] = "parallel"
+    task["items"][0]["status"] = "done"
+    task["items"][1]["status"] = "failed"
+
+    call_count = [0]
+
+    def fake_download(key, lp):
+        open(lp, "wb").write(b"IMG")
+        return lp
+
+    def fake_gen(*a, **kw):
+        call_count[0] += 1
+        return b"OUT", "image/png"
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
+         patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert call_count[0] == 10
+    assert task["items"][0]["status"] == "done"
+    assert task["items"][1]["status"] == "failed"
+    for i in range(2, 12):
+        assert task["items"][i]["status"] == "done"
