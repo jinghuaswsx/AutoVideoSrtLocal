@@ -166,6 +166,11 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
     monkeypatch.setattr(medias_dao, "create_raw_source", fake_create_raw_source)
     monkeypatch.setattr(medias_dao, "get_raw_source", lambda rid: state["raw_sources"].get(int(rid)))
+    monkeypatch.setattr(
+        medias_dao,
+        "update_raw_source",
+        lambda rid, **fields: state["raw_sources"][int(rid)].update(fields) or 1,
+    )
     monkeypatch.setattr(medias_dao, "soft_delete_raw_source", lambda rid: state["raw_sources"][int(rid)].update({"deleted_at": _now()}))
 
     monkeypatch.setattr(medias_routes, "_can_access_product", lambda product: True)
@@ -279,9 +284,16 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(page.get_by_role("button", name="原始视频 (1)")).to_be_visible()
             card = page.locator("#rsList [data-rs-id='1001']")
             expect(card).to_be_visible()
+            expect(card.locator(".js-rs-title-display")).to_have_text("sample.mp4")
             expect(card.get_by_role("button", name="封面图")).to_be_visible()
             expect(card.get_by_role("button", name="视频")).to_be_visible()
             expect(card.locator(".oc-rs-meta-line")).to_contain_text("时长")
+            card.locator(".js-rs-title-display").click()
+            title_input = card.locator(".js-rs-title-input")
+            expect(title_input).to_be_visible()
+            title_input.fill("改名后的原始去字幕素材标题")
+            title_input.press("Enter")
+            expect(card.locator(".js-rs-title-display")).to_have_text("改名后的原始去字幕素材标题")
 
             card.get_by_role("button", name="视频").click()
             expect(card.locator("video")).to_be_visible()
@@ -300,7 +312,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
             page.locator(".js-translate").first.click()
             expect(page.locator("#rsTranslateDialog")).to_be_visible()
-            expect(page.locator("#rstRsList")).to_contain_text("sample.mp4")
+            expect(page.locator("#rstRsList")).to_contain_text("改名后的原始去字幕素材标题")
             page.locator("#rstLangs label", has_text="德语").click()
             expect(page.locator("#rstPreview")).to_contain_text("1 × 1 = 1")
             page.get_by_role("button", name="提交翻译").click()

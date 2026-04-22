@@ -1958,6 +1958,9 @@ def test_medias_page_contains_raw_sources_modal_and_upload_modal(authed_client_n
     assert 'id="rsUploadVideoName"' in body
     assert '支持 MP4 / MOV' in body
     assert 'WebM / MKV' not in body
+    assert ".oc-rs-title-display {" in body
+    assert ".oc-rs-title-input {" in body
+    assert "-webkit-line-clamp:2;" in body
 
 
 def test_medias_page_contains_raw_source_translate_dialog(authed_client_no_db):
@@ -2036,6 +2039,11 @@ def test_medias_scripts_wire_raw_sources_modal_flow():
     assert "uploadNameInput.value = file.name" in medias_js
     assert '/medias/api/products/${pid}/raw-sources' in medias_js
     assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js
+    assert "js-rs-title-display" in medias_js
+    assert "js-rs-title-input" in medias_js
+    assert "startRawSourceTitleEdit" in medias_js
+    assert "saveRawSourceTitle" in medias_js
+    assert "cancelRawSourceTitleEdit" in medias_js
     assert "refreshRawSourceList" in medias_js
 
 

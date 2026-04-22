@@ -3222,19 +3222,45 @@
     });
   }
 
+  function normalizeRawSourceTitle(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function getRawSourceDefaultTitle(rid) {
+    return `原始视频 #${rid}`;
+  }
+
   function setSummary(items) {
     const name = uiState.currentName || (uiState.currentPid ? `产品 #${uiState.currentPid}` : '当前产品');
     summary.textContent = `${name} · 共 ${items.length} 条素材`;
   }
 
   function renderRawSourceCard(it) {
-    const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
+    const rawDisplayName = it.display_name || '';
+    const defaultTitle = getRawSourceDefaultTitle(it.id);
+    const titleText = rawDisplayName || defaultTitle;
+    const title = escapeHtml(titleText);
     const coverPane = it.cover_url
       ? `<img src="${escapeHtml(it.cover_url)}" alt="${title}" loading="lazy">`
       : `<div class="thumb-ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></div>`;
     return `
-      <article class="oc-rs-card oc-vitem" data-rs-id="${it.id}" data-video-url="${escapeHtml(it.video_url || '')}">
-        <div class="vname" title="${title}">${title}</div>
+      <article
+        class="oc-rs-card oc-vitem"
+        data-rs-id="${it.id}"
+        data-video-url="${escapeHtml(it.video_url || '')}"
+        data-display-name="${escapeHtml(rawDisplayName)}"
+        data-default-title="${escapeHtml(defaultTitle)}"
+      >
+        <div class="vname">
+          <button type="button" class="oc-rs-title-display js-rs-title-display" title="${title}">${title}</button>
+          <textarea
+            class="oc-rs-title-input js-rs-title-input"
+            rows="2"
+            maxlength="64"
+            aria-label="编辑原始素材名称"
+            hidden
+          >${title}</textarea>
+        </div>
         <div class="vtabs">
           <button type="button" class="vtab active" data-tab="cover">封面图</button>
           <button type="button" class="vtab" data-tab="video">视频</button>
@@ -3251,6 +3277,94 @@
           <button type="button" class="oc-btn text sm danger-txt js-rs-del" data-rid="${it.id}">删除</button>
         </div>
       </article>`;
+  }
+
+  function getRawSourceCardTitle(card) {
+    return card?.dataset.displayName || card?.dataset.defaultTitle || getRawSourceDefaultTitle(card?.dataset.rsId || '');
+  }
+
+  function syncRawSourceCardTitle(card, displayName) {
+    if (!card) return;
+    const nextDisplayName = displayName || '';
+    const nextTitle = nextDisplayName || card.dataset.defaultTitle || getRawSourceDefaultTitle(card.dataset.rsId || '');
+    const display = card.querySelector('.js-rs-title-display');
+    const input = card.querySelector('.js-rs-title-input');
+    const coverImage = card.querySelector('[data-pane="cover"] img');
+    card.dataset.displayName = nextDisplayName;
+    if (display) {
+      display.textContent = nextTitle;
+      display.title = nextTitle;
+    }
+    if (input) {
+      input.value = nextTitle;
+    }
+    if (coverImage) {
+      coverImage.alt = nextTitle;
+    }
+  }
+
+  function setRawSourceTitleEditing(card, editing) {
+    const display = card?.querySelector('.js-rs-title-display');
+    const input = card?.querySelector('.js-rs-title-input');
+    if (!display || !input) return;
+    display.hidden = !!editing;
+    input.hidden = !editing;
+    if (editing) {
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+    }
+  }
+
+  function startRawSourceTitleEdit(trigger) {
+    const card = trigger?.closest('[data-rs-id]');
+    if (!card || card.dataset.saving === '1') return;
+    const input = card.querySelector('.js-rs-title-input');
+    if (!input) return;
+    input.value = getRawSourceCardTitle(card);
+    setRawSourceTitleEditing(card, true);
+  }
+
+  function cancelRawSourceTitleEdit(card) {
+    const input = card?.querySelector('.js-rs-title-input');
+    if (!input) return;
+    input.value = getRawSourceCardTitle(card);
+    setRawSourceTitleEditing(card, false);
+  }
+
+  async function saveRawSourceTitle(card) {
+    if (!card || card.dataset.saving === '1') return;
+    const input = card.querySelector('.js-rs-title-input');
+    if (!input) return;
+    const rid = card.dataset.rsId;
+    const currentDisplayName = card.dataset.displayName || '';
+    const defaultTitle = card.dataset.defaultTitle || getRawSourceDefaultTitle(rid);
+    const normalized = normalizeRawSourceTitle(input.value);
+    const nextDisplayName = (!currentDisplayName && normalized === defaultTitle) ? '' : normalized;
+    if (nextDisplayName === currentDisplayName) {
+      cancelRawSourceTitleEdit(card);
+      return;
+    }
+
+    card.dataset.saving = '1';
+    input.disabled = true;
+    try {
+      const data = await requestJSON(`/medias/api/raw-sources/${rid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: nextDisplayName }),
+      });
+      syncRawSourceCardTitle(card, data.item?.display_name || '');
+      setRawSourceTitleEditing(card, false);
+    } catch (err) {
+      alert(`改名失败：${err.message || err}`);
+      input.disabled = false;
+      input.focus();
+      input.setSelectionRange(0, input.value.length);
+      return;
+    } finally {
+      card.dataset.saving = '';
+      input.disabled = false;
+    }
   }
 
   function ensureRawSourceVideoLoaded(card) {
@@ -3283,6 +3397,8 @@
     list.querySelectorAll('[data-rs-id]').forEach((card) => {
       const tabs = card.querySelectorAll('.vtab');
       const panes = card.querySelectorAll('.vpane');
+      const titleDisplay = card.querySelector('.js-rs-title-display');
+      const titleInput = card.querySelector('.js-rs-title-input');
       tabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           tabs.forEach((node) => node.classList.toggle('active', node === tab));
@@ -3290,6 +3406,25 @@
           if (tab.dataset.tab === 'video') ensureRawSourceVideoLoaded(card);
         });
       });
+      if (titleDisplay) {
+        titleDisplay.addEventListener('click', () => startRawSourceTitleEdit(titleDisplay));
+      }
+      if (titleInput) {
+        titleInput.addEventListener('keydown', async (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelRawSourceTitleEdit(card);
+            return;
+          }
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            await saveRawSourceTitle(card);
+          }
+        });
+        titleInput.addEventListener('blur', async () => {
+          await saveRawSourceTitle(card);
+        });
+      }
     });
   }
 
