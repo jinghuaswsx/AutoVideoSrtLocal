@@ -1591,9 +1591,23 @@
     }
   }
 
-  function edOpenDetailTranslateTaskModal() {
+  function edOpenDetailTranslateTaskModal(langOverride) {
     const mask = $('edDetailTranslateTaskMask');
-    if (mask) mask.hidden = false;
+    if (!mask) return;
+    const config = $('edDetailTranslateTaskConfig');
+    const result = $('edDetailTranslateTaskResult');
+    if (config) config.hidden = false;
+    if (result) result.hidden = true;
+    const group = $('edDetailTranslateModeGroup');
+    if (group) {
+      group.querySelectorAll('.oc-chip').forEach(ch => {
+        const active = ch.dataset.mode === 'sequential';
+        ch.classList.toggle('on', active);
+        ch.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
+    }
+    mask.dataset.lang = (langOverride || edState.activeLang || '').trim().toLowerCase();
+    mask.hidden = false;
   }
 
   function edCloseDetailTranslateTaskModal() {
@@ -1605,15 +1619,30 @@
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     const lang = (langOverride || edState.activeLang || '').trim().toLowerCase();
     if (!pid || !lang || lang === 'en') return;
+    edOpenDetailTranslateTaskModal(lang);
+  }
+
+  async function edSubmitDetailTranslate() {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    const mask = $('edDetailTranslateTaskMask');
+    const lang = mask ? (mask.dataset.lang || '').trim().toLowerCase() : '';
+    if (!pid || !lang || lang === 'en') return;
 
     const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    const group = $('edDetailTranslateModeGroup');
+    const active = group ? group.querySelector('.oc-chip.on') : null;
+    const mode = active ? active.dataset.mode : 'sequential';
+
+    const config = $('edDetailTranslateTaskConfig');
+    const result = $('edDetailTranslateTaskResult');
     const msg = $('edDetailTranslateTaskMsg');
     const meta = $('edDetailTranslateTaskMeta');
     const link = $('edDetailTranslateTaskLink');
 
-    edOpenDetailTranslateTaskModal();
+    if (config) config.hidden = true;
+    if (result) result.hidden = false;
     if (msg) msg.textContent = '正在创建翻译任务...';
-    if (meta) meta.textContent = `${langName} · 商品详情图`;
+    if (meta) meta.textContent = `${langName} · 商品详情图（${mode === 'parallel' ? '并行' : '串行'}）`;
     if (link) {
       link.hidden = true;
       link.removeAttribute('href');
@@ -1624,10 +1653,10 @@
       const data = await fetchJSON(`/medias/api/products/${pid}/detail-images/translate-from-en`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lang }),
+        body: JSON.stringify({ lang, concurrency_mode: mode }),
       });
       if (msg) msg.textContent = '翻译任务已创建，可以留在当前页查看历史记录，也可以打开详情页跟踪进度。';
-      if (meta) meta.textContent = `任务 ID：${data.task_id} · ${langName}`;
+      if (meta) meta.textContent = `任务 ID：${data.task_id} · ${langName} · ${mode === 'parallel' ? '并行' : '串行'}`;
       if (link) {
         link.href = data.detail_url || `/image-translate/${data.task_id}`;
         link.dataset.taskId = data.task_id || '';
@@ -2704,9 +2733,24 @@
         console.error('[detail-images] start translate failed:', err);
       });
     });
+    $('edDetailTranslateStartBtn') && $('edDetailTranslateStartBtn').addEventListener('click', () => {
+      edSubmitDetailTranslate().catch((err) => {
+        console.error('[detail-images] submit translate failed:', err);
+      });
+    });
+    $('edDetailTranslateCancelBtn') && $('edDetailTranslateCancelBtn').addEventListener('click', edCloseDetailTranslateTaskModal);
     $('edDetailTranslateTaskClose') && $('edDetailTranslateTaskClose').addEventListener('click', edCloseDetailTranslateTaskModal);
     $('edDetailTranslateTaskMask') && $('edDetailTranslateTaskMask').addEventListener('click', (e) => {
       if (e.target.id === 'edDetailTranslateTaskMask') edCloseDetailTranslateTaskModal();
+    });
+    $('edDetailTranslateModeGroup') && $('edDetailTranslateModeGroup').addEventListener('click', (ev) => {
+      const chip = ev.target.closest('.oc-chip');
+      if (!chip) return;
+      $('edDetailTranslateModeGroup').querySelectorAll('.oc-chip').forEach((c) => {
+        const active = c === chip;
+        c.classList.toggle('on', active);
+        c.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
     });
     $('edDetailTranslateHistory') && $('edDetailTranslateHistory').addEventListener('click', (e) => {
       const btn = e.target && e.target.closest('[data-retranslate-lang]');

@@ -285,6 +285,9 @@ def api_upload_complete():
         return jsonify({"error": "product_name required"}), 400
     if len(product_name) > _PRODUCT_NAME_MAX_LEN:
         return jsonify({"error": f"product_name too long (max {_PRODUCT_NAME_MAX_LEN})"}), 400
+    mode_raw = (body.get("concurrency_mode") or "sequential").strip().lower()
+    if mode_raw not in {"sequential", "parallel"}:
+        return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
     if not uploaded:
         return jsonify({"error": "uploaded required"}), 400
 
@@ -337,6 +340,7 @@ def api_upload_complete():
         items=items,
         product_name=product_name,
         project_name=project_name,
+        concurrency_mode=mode_raw,
     )
     try:
         from appcore.api_keys import set_key

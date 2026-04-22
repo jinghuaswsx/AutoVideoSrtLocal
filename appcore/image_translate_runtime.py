@@ -4,8 +4,10 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from appcore import gemini_image, local_media_storage, medias, tos_clients
@@ -17,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
+_BATCH_SIZE = 10  # 并行模式单批最大并发数
 
 # 任务级熔断：当上游持续返回 429/5xx 时，避免把所有 items 都跑完 3 次重试
 # 形成 retry 风暴，进而触发宿主机 watchdog 强制重启 VM（2026-04-17 事故）
@@ -46,15 +49,17 @@ class ImageTranslateRuntime:
         self.bus = bus
         self.user_id = user_id
         self._rate_limit_hits: deque[float] = deque()
+        self._state_lock = threading.Lock()
 
     def _record_rate_limit_hit(self) -> bool:
         """记一次可重试错误（429/5xx），返回 True 表示应熔断整任务。"""
         now = time.monotonic()
         cutoff = now - _RATE_LIMIT_WINDOW_SEC
-        while self._rate_limit_hits and self._rate_limit_hits[0] < cutoff:
-            self._rate_limit_hits.popleft()
-        self._rate_limit_hits.append(now)
-        return len(self._rate_limit_hits) >= _RATE_LIMIT_THRESHOLD
+        with self._state_lock:
+            while self._rate_limit_hits and self._rate_limit_hits[0] < cutoff:
+                self._rate_limit_hits.popleft()
+            self._rate_limit_hits.append(now)
+            return len(self._rate_limit_hits) >= _RATE_LIMIT_THRESHOLD
 
     def start(self, task_id: str) -> None:
         task = store.get(task_id)
@@ -70,13 +75,13 @@ class ImageTranslateRuntime:
         store.update(task_id, status="running", steps=task["steps"],
                      step_model_tags=task.get("step_model_tags", {}))
 
-        items = task.get("items") or []
         circuit_msg = ""
         try:
-            for idx in range(len(items)):
-                if items[idx]["status"] in {"done", "failed"}:
-                    continue
-                self._process_one(task, task_id, idx)
+            mode = (task.get("concurrency_mode") or "sequential").strip().lower()
+            if mode == "parallel":
+                self._run_parallel(task, task_id)
+            else:
+                self._run_sequential(task, task_id)
         except _CircuitOpen as exc:
             circuit_msg = str(exc) or "上游持续限流，已熔断"
             logger.warning(
@@ -115,6 +120,29 @@ class ImageTranslateRuntime:
             payload={"task_id": task_id, "status": task["status"]},
         ))
 
+    def _run_sequential(self, task: dict, task_id: str) -> None:
+        items = task.get("items") or []
+        for idx in range(len(items)):
+            if items[idx]["status"] in {"done", "failed"}:
+                continue
+            self._process_one(task, task_id, idx)
+
+    def _run_parallel(self, task: dict, task_id: str) -> None:
+        items = task.get("items") or []
+        pending_idxs = [
+            i for i, it in enumerate(items)
+            if it["status"] not in {"done", "failed"}
+        ]
+        for batch_start in range(0, len(pending_idxs), _BATCH_SIZE):
+            batch = pending_idxs[batch_start: batch_start + _BATCH_SIZE]
+            with ThreadPoolExecutor(max_workers=_BATCH_SIZE) as pool:
+                futures = [
+                    pool.submit(self._process_one, task, task_id, idx)
+                    for idx in batch
+                ]
+                for fut in as_completed(futures):
+                    fut.result()
+
     def _abort_remaining_items(self, task: dict, task_id: str, reason: str) -> None:
         for it in task["items"]:
             if it["status"] in {"done", "failed"}:
@@ -127,9 +155,10 @@ class ImageTranslateRuntime:
 
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
-        item["status"] = "running"
-        _update_progress(task)
-        store.update(task_id, items=task["items"], progress=task["progress"])
+        with self._state_lock:
+            item["status"] = "running"
+            _update_progress(task)
+            store.update(task_id, items=task["items"], progress=task["progress"])
         self._emit_item(task_id, item)
 
         attempts = 0
@@ -164,39 +193,43 @@ class ImageTranslateRuntime:
                 dst_key = self._build_dst_key(task, idx, dst_ext)
                 local_media_storage.write_bytes(dst_key, out_bytes)
 
-                item["status"] = "done"
-                item["dst_tos_key"] = dst_key
-                item["error"] = ""
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "done"
+                    item["dst_tos_key"] = dst_key
+                    item["error"] = ""
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
             except gemini_image.GeminiImageError as e:
-                item["status"] = "failed"
-                item["error"] = str(e)
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = str(e)
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
             except gemini_image.GeminiImageRetryable as e:
                 # 任务级熔断：先记一次速率事件，超阈值立刻终止整任务
                 if self._record_rate_limit_hit():
-                    item["status"] = "failed"
-                    item["error"] = f"已熔断（上游持续限流）：{e}"
-                    _update_progress(task)
-                    store.update(task_id, items=task["items"], progress=task["progress"])
+                    with self._state_lock:
+                        item["status"] = "failed"
+                        item["error"] = f"已熔断（上游持续限流）：{e}"
+                        _update_progress(task)
+                        store.update(task_id, items=task["items"], progress=task["progress"])
                     self._emit_item(task_id, item)
                     self._emit_progress(task_id, task["progress"])
                     raise _CircuitOpen(str(e)) from e
                 if attempts < _MAX_ATTEMPTS:
                     _sleep(_BACKOFF_BASE * (2 ** (attempts - 1)))
                     continue
-                item["status"] = "failed"
-                item["error"] = f"重试 {attempts} 次仍失败：{e}"
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = f"重试 {attempts} 次仍失败：{e}"
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return
@@ -204,10 +237,11 @@ class ImageTranslateRuntime:
                 if attempts < _MAX_ATTEMPTS:
                     _sleep(_BACKOFF_BASE * (2 ** (attempts - 1)))
                     continue
-                item["status"] = "failed"
-                item["error"] = f"未知错误：{e}"
-                _update_progress(task)
-                store.update(task_id, items=task["items"], progress=task["progress"])
+                with self._state_lock:
+                    item["status"] = "failed"
+                    item["error"] = f"未知错误：{e}"
+                    _update_progress(task)
+                    store.update(task_id, items=task["items"], progress=task["progress"])
                 self._emit_item(task_id, item)
                 self._emit_progress(task_id, task["progress"])
                 return

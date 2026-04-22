@@ -284,10 +284,26 @@
             </button>
           </div>
           <div class="oc-modal-body" style="padding:var(--oc-sp-5);display:grid;gap:var(--oc-sp-3);">
-            <div id="edDetailTranslateTaskMsg" style="font-size:14px;color:var(--oc-fg);">准备中...</div>
-            <div id="edDetailTranslateTaskMeta" class="oc-hint"></div>
-            <div style="display:flex;justify-content:flex-end;gap:var(--oc-sp-2);flex-wrap:wrap;">
-              <a class="oc-btn primary" id="edDetailTranslateTaskLink" href="#" target="_blank" rel="noopener" hidden>查看任务详情</a>
+            <div id="edDetailTranslateTaskConfig" style="display:grid;gap:var(--oc-sp-3);">
+              <div>
+                <div style="font-size:13px;font-weight:600;margin-bottom:var(--oc-sp-2);">处理模式</div>
+                <div id="edDetailTranslateModeGroup" style="display:flex;gap:var(--oc-sp-2);flex-wrap:wrap;">
+                  <button type="button" class="oc-chip on" data-mode="sequential" role="radio" aria-checked="true">串行（默认）</button>
+                  <button type="button" class="oc-chip" data-mode="parallel" role="radio" aria-checked="false">并行</button>
+                </div>
+                <p class="oc-hint" style="margin-top:var(--oc-sp-2);">串行稳；并行单批 10 张同时跑，遇限流更容易熔断。</p>
+              </div>
+              <div style="display:flex;justify-content:flex-end;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);">
+                <button class="oc-btn ghost" id="edDetailTranslateCancelBtn">取消</button>
+                <button class="oc-btn primary" id="edDetailTranslateStartBtn">开始翻译</button>
+              </div>
+            </div>
+            <div id="edDetailTranslateTaskResult" hidden style="display:grid;gap:var(--oc-sp-3);">
+              <div id="edDetailTranslateTaskMsg" style="font-size:14px;color:var(--oc-fg);">准备中...</div>
+              <div id="edDetailTranslateTaskMeta" class="oc-hint"></div>
+              <div style="display:flex;justify-content:flex-end;gap:var(--oc-sp-2);flex-wrap:wrap;">
+                <a class="oc-btn primary" id="edDetailTranslateTaskLink" href="#" target="_blank" rel="noopener" hidden>查看任务详情</a>
+              </div>
             </div>
           </div>
         </div>

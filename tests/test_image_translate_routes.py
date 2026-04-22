@@ -727,3 +727,58 @@ def test_retry_unfinished_409_when_all_done(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-unfinished")
     assert resp.status_code == 409
     assert "没有" in resp.get_json().get("error", "")
+def _post_complete(client, body_extra=None):
+    """共用：提交一张图走完 bootstrap -> complete 的 happy path，返回 complete 响应。"""
+    bootstrap = client.post("/api/image-translate/upload/bootstrap", json={
+        "files": [{"filename": "a.jpg"}],
+    })
+    assert bootstrap.status_code == 200
+    bd = bootstrap.get_json()
+    body = {
+        "task_id": bd["task_id"],
+        "product_name": "灯",
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "p",
+        "uploaded": [{
+            "idx": bd["uploads"][0]["idx"],
+            "object_key": bd["uploads"][0]["object_key"],
+            "filename": "a.jpg",
+        }],
+    }
+    if body_extra:
+        body.update(body_extra)
+    return client.post("/api/image-translate/upload/complete", json=body)
+
+
+def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+
+    resp = _post_complete(authed_client_no_db)
+    assert resp.status_code == 201, resp.get_json()
+    task_id = resp.get_json()["task_id"]
+    assert mem[task_id]["concurrency_mode"] == "sequential"
+
+
+def test_upload_complete_accepts_parallel(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+
+    resp = _post_complete(authed_client_no_db, {"concurrency_mode": "parallel"})
+    assert resp.status_code == 201, resp.get_json()
+    task_id = resp.get_json()["task_id"]
+    assert mem[task_id]["concurrency_mode"] == "parallel"
+
+
+def test_upload_complete_rejects_invalid_mode(authed_client_no_db, monkeypatch):
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+
+    resp = _post_complete(authed_client_no_db, {"concurrency_mode": "fast"})
+    assert resp.status_code == 400
+    assert "concurrency_mode" in resp.get_json()["error"]

@@ -15,6 +15,8 @@
     var langPills = document.getElementById("itLanguagePills");
     var langEmpty = document.getElementById("itLanguageEmpty");
     var modelPills = document.getElementById("itModelPills");
+    var concurrencyEl = document.getElementById("itConcurrencyMode");
+    var concurrencyPills = document.getElementById("itConcurrencyPills");
     var promptEl = document.getElementById("itPrompt");
     var fileInput = document.getElementById("itFileInput");
     var thumbsEl = document.getElementById("itThumbs");
@@ -126,6 +128,7 @@
 
     bindPillGroup(presetPills, presetEl, function(){ loadPromptForCurrent(); });
     setPillActive(presetPills, presetEl.value || "cover");
+    bindPillGroup(concurrencyPills, concurrencyEl, null);
 
     fileInput.onchange = function(){
       var chosen = Array.prototype.slice.call(fileInput.files || []);
@@ -200,6 +203,7 @@
             target_language: langEl.value,
             model_id: modelEl.value,
             prompt: promptEl.value,
+            concurrency_mode: concurrencyEl.value,
             uploaded: bootstrap.uploads.map(function(u,idx){
               return {idx: u.idx, object_key: u.object_key, filename: state.files[idx].name, size: state.files[idx].size};
             }),

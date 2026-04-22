@@ -1695,6 +1695,9 @@ def api_detail_images_translate_from_en(pid: int):
         return jsonify({"error": err}), 400
     if lang == "en":
         return jsonify({"error": "english detail images do not need translate-from-en"}), 400
+    mode_raw = (body.get("concurrency_mode") or "sequential").strip().lower()
+    if mode_raw not in {"sequential", "parallel"}:
+        return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
 
     source_rows = medias.list_detail_images(pid, "en")
     if not source_rows:
@@ -1753,6 +1756,7 @@ def api_detail_images_translate_from_en(pid: int):
         product_name=(p.get("name") or "").strip(),
         project_name=image_translate_routes._compose_project_name((p.get("name") or "").strip(), "detail", lang_name),
         medias_context=medias_context,
+        concurrency_mode=mode_raw,
     )
     _start_image_translate_runner(task_id, current_user.id)
     return jsonify({"task_id": task_id, "detail_url": f"/image-translate/{task_id}"}), 201
