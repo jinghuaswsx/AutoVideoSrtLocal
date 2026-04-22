@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 import types
 
 
@@ -103,6 +104,49 @@ def test_private_probe_failure_falls_back_to_public(monkeypatch):
 
     assert client.endpoint == "public.tos.example.com"
     assert probes == [("private.tos.example.com", "auto-video-srt")]
+
+
+def test_private_probe_failure_is_shared_across_concurrent_callers(monkeypatch):
+    probe_calls = 0
+    probe_calls_lock = threading.Lock()
+    release_probe = threading.Event()
+    workers_ready = threading.Barrier(9)
+
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def head_bucket(self, bucket):
+            nonlocal probe_calls
+            with probe_calls_lock:
+                probe_calls += 1
+            release_probe.wait(timeout=1)
+            raise RuntimeError("private unavailable")
+
+    fake_tos = types.SimpleNamespace(TosClientV2=FakeClient)
+    monkeypatch.setitem(sys.modules, "tos", fake_tos)
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=True)
+
+    results: list[str] = []
+
+    def _worker():
+        workers_ready.wait(timeout=1)
+        results.append(tos_clients.get_server_client().endpoint)
+
+    threads = [threading.Thread(target=_worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+
+    workers_ready.wait(timeout=1)
+    release_probe.wait(0.05)
+
+    assert probe_calls == 1
+
+    release_probe.set()
+    for thread in threads:
+        thread.join(timeout=1)
+
+    assert results == ["public.tos.example.com"] * 8
 
 
 def test_collect_task_tos_keys_includes_source_and_uploaded_artifacts(monkeypatch):

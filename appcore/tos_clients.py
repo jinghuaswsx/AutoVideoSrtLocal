@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import config
 
 _client_cache: dict[str, tos.TosClientV2] = {}
 _private_probe_cache = {"value": None, "expires_at": 0.0}
+_private_probe_lock = threading.Lock()
 
 
 def is_tos_configured() -> bool:
@@ -53,16 +55,21 @@ def private_endpoint_ready(force: bool = False) -> bool:
     if not force and _private_probe_cache["value"] is not None and now < _private_probe_cache["expires_at"]:
         return bool(_private_probe_cache["value"])
 
-    try:
-        get_private_client().head_bucket(config.TOS_BUCKET)
-    except Exception:
-        ready = False
-    else:
-        ready = True
+    with _private_probe_lock:
+        now = time.time()
+        if not force and _private_probe_cache["value"] is not None and now < _private_probe_cache["expires_at"]:
+            return bool(_private_probe_cache["value"])
 
-    _private_probe_cache["value"] = ready
-    _private_probe_cache["expires_at"] = now + max(config.TOS_PRIVATE_PROBE_TTL, 1)
-    return ready
+        try:
+            get_private_client().head_bucket(config.TOS_BUCKET)
+        except Exception:
+            ready = False
+        else:
+            ready = True
+
+        _private_probe_cache["value"] = ready
+        _private_probe_cache["expires_at"] = now + max(config.TOS_PRIVATE_PROBE_TTL, 1)
+        return ready
 
 
 def get_server_client() -> tos.TosClientV2:
