@@ -606,3 +606,98 @@ def test_detail_images_from_url_skips_clear_by_default(authed_client_no_db, monk
         f"未传 clear_existing 时 worker 不应清空，实际 {soft_delete_calls}"
     )
     assert task_state.get("status") == "done"
+
+
+def test_item_upload_goes_through_local_proxy(authed_client_no_db, monkeypatch, tmp_path):
+    """浏览器 → 本服务 → TOS 代理上传：bootstrap 签本地 URL，
+    PUT 本地路由落盘，complete 时服务端把本地文件推到 TOS。"""
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "盒子", "product_code": "box"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/stub_{filename}",
+    )
+    monkeypatch.setattr(r.tos_clients, "media_object_exists", lambda k: False)
+
+    uploaded = {}
+
+    def fake_upload_media_file(local_path, object_key, bucket=None):
+        with open(local_path, "rb") as f:
+            uploaded["payload"] = f.read()
+        uploaded["object_key"] = object_key
+
+    monkeypatch.setattr(r.tos_clients, "upload_media_file", fake_upload_media_file)
+    monkeypatch.setattr(r.medias, "create_item", lambda *a, **kw: 42)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "download_media_file",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("not needed")),
+    )
+
+    # 1. bootstrap 返回本地代理 URL，不是 TOS 公网签名
+    boot_resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={"filename": "clip.mp4"},
+    )
+    assert boot_resp.status_code == 200, boot_resp.get_data(as_text=True)
+    boot = boot_resp.get_json()
+    assert boot["object_key"] == "1/medias/123/stub_clip.mp4"
+    assert "tos-cn-shanghai" not in boot["upload_url"], "upload_url 不应指向 TOS 公网"
+    assert "/items/upload/local/" in boot["upload_url"], boot["upload_url"]
+
+    # 2. PUT 本地路由，服务端落盘到 stage
+    payload = b"fake-mp4-bytes"
+    put_resp = authed_client_no_db.put(
+        boot["upload_url"], data=payload, content_type="application/octet-stream",
+    )
+    assert put_resp.status_code == 204
+
+    # 3. complete：服务端从本地 stage 推到 TOS
+    cmpl_resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": boot["object_key"],
+            "filename": "clip.mp4",
+            "file_size": len(payload),
+            "lang": "en",
+        },
+    )
+    assert cmpl_resp.status_code == 201, cmpl_resp.get_data(as_text=True)
+    assert uploaded["object_key"] == boot["object_key"]
+    assert uploaded["payload"] == payload
+
+
+def test_item_complete_rejects_when_stage_missing_and_no_tos_object(
+    authed_client_no_db, monkeypatch
+):
+    """伪造 object_key、未经 bootstrap 直接 complete，应该被拒。"""
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(
+        r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "x"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en"})
+    monkeypatch.setattr(r.tos_clients, "media_object_exists", lambda k: False)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "1/medias/123/forged.mp4",
+            "filename": "forged.mp4",
+            "file_size": 0,
+            "lang": "en",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "对象不存在"

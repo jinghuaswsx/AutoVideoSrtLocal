@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
+import shutil
 import tempfile
+import threading
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -11,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import uuid
 import requests
-from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file
+from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import medias, task_state, tos_clients
@@ -20,7 +23,7 @@ from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
 from appcore.gemini_image import IMAGE_MODELS
-from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
+from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
 from web.routes import image_translate as image_translate_routes
@@ -30,10 +33,69 @@ import re
 
 import pymysql.err
 
+log = logging.getLogger(__name__)
+
 _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 _ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
 _MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+
+# 浏览器→服务端→TOS 代理上传：绕开浏览器直连 TOS 预签名 URL
+# 的公网链路（服务器迁到内网后会卡 Failed to fetch）。
+_item_upload_reservations: dict[str, dict] = {}
+_item_upload_guard = threading.Lock()
+
+
+def _reserve_item_upload(
+    *,
+    user_id: int,
+    product_id: int,
+    object_key: str,
+    filename: str,
+) -> dict:
+    reservation_id = uuid.uuid4().hex
+    ext = Path(filename).suffix.lower() or ".bin"
+    stage_path = os.path.join(UPLOAD_DIR, "medias_stage", f"{reservation_id}{ext}")
+    reservation = {
+        "reservation_id": reservation_id,
+        "user_id": int(user_id),
+        "product_id": int(product_id),
+        "object_key": object_key,
+        "filename": filename,
+        "stage_path": stage_path,
+    }
+    with _item_upload_guard:
+        _item_upload_reservations[reservation_id] = reservation
+    return reservation
+
+
+def _get_item_upload_reservation(reservation_id: str) -> dict | None:
+    with _item_upload_guard:
+        reservation = _item_upload_reservations.get(reservation_id)
+        return dict(reservation) if reservation else None
+
+
+def _pop_item_upload_reservation_by_key(object_key: str) -> dict | None:
+    with _item_upload_guard:
+        match = None
+        for rid, reservation in _item_upload_reservations.items():
+            if reservation.get("object_key") == object_key:
+                match = rid
+                break
+        if match is None:
+            return None
+        return _item_upload_reservations.pop(match, None)
+
+
+def _cleanup_item_stage_file(stage_path: str) -> None:
+    if not stage_path:
+        return
+    try:
+        os.remove(stage_path)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        log.warning("failed to remove stage file %s", stage_path, exc_info=True)
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
@@ -778,14 +840,44 @@ def api_item_bootstrap(pid: int):
     if not filename:
         return jsonify({"error": "filename required"}), 400
     object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    reservation = _reserve_item_upload(
+        user_id=current_user.id,
+        product_id=pid,
+        object_key=object_key,
+        filename=filename,
+    )
     return jsonify({
         "object_key": object_key,
-        "upload_url": tos_clients.generate_signed_media_upload_url(object_key),
+        "upload_url": url_for(
+            "medias.api_item_upload_local",
+            pid=pid,
+            reservation_id=reservation["reservation_id"],
+        ),
         "bucket": TOS_MEDIA_BUCKET,
         "region": TOS_REGION,
         "endpoint": TOS_PUBLIC_ENDPOINT,
         "expires_in": TOS_SIGNED_URL_EXPIRES,
     })
+
+
+@bp.route(
+    "/api/products/<int:pid>/items/upload/local/<reservation_id>",
+    methods=["PUT"],
+)
+@login_required
+def api_item_upload_local(pid: int, reservation_id: str):
+    reservation = _get_item_upload_reservation(reservation_id)
+    if (
+        not reservation
+        or int(reservation.get("user_id") or 0) != int(current_user.id)
+        or int(reservation.get("product_id") or 0) != int(pid)
+    ):
+        abort(404)
+    stage_path = reservation["stage_path"]
+    os.makedirs(os.path.dirname(stage_path), exist_ok=True)
+    with open(stage_path, "wb") as handle:
+        shutil.copyfileobj(request.stream, handle)
+    return ("", 204)
 
 
 @bp.route("/api/products/<int:pid>/items/complete", methods=["POST"])
@@ -803,7 +895,28 @@ def api_item_complete(pid: int):
     file_size = int(body.get("file_size") or 0)
     if not object_key or not filename:
         return jsonify({"error": "object_key and filename required"}), 400
-    if not tos_clients.media_object_exists(object_key):
+
+    reservation = _pop_item_upload_reservation_by_key(object_key)
+    if reservation is not None:
+        if int(reservation.get("user_id") or 0) != int(current_user.id):
+            _cleanup_item_stage_file(reservation.get("stage_path") or "")
+            return jsonify({"error": "reservation mismatch"}), 403
+        stage_path = reservation.get("stage_path") or ""
+        if not stage_path or not os.path.exists(stage_path):
+            return jsonify({"error": "uploaded object not staged"}), 400
+        try:
+            tos_clients.upload_media_file(stage_path, object_key)
+        except Exception:
+            log.exception("upload staged media to TOS failed object_key=%s", object_key)
+            _cleanup_item_stage_file(stage_path)
+            return jsonify({"error": "upload to media bucket failed"}), 502
+        if not file_size:
+            try:
+                file_size = int(os.path.getsize(stage_path) or 0)
+            except OSError:
+                file_size = 0
+        _cleanup_item_stage_file(stage_path)
+    elif not tos_clients.media_object_exists(object_key):
         return jsonify({"error": "对象不存在"}), 400
 
     cover_object_key = (body.get("cover_object_key") or "").strip() or None

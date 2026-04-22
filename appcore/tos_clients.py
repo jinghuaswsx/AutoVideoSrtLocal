@@ -290,6 +290,14 @@ def download_media_file(
     return str(destination)
 
 
+def upload_media_file(
+    local_path: str,
+    object_key: str,
+    bucket: str | None = None,
+) -> None:
+    get_server_client().put_object_from_file(get_media_bucket(bucket), object_key, local_path)
+
+
 def upload_media_object(
     object_key: str,
     data: bytes,
