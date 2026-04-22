@@ -255,7 +255,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
             raw_modal = page.locator("#rsModal")
             expect(raw_modal).to_be_visible()
-            expect(raw_modal.get_by_text("原始去字幕素材")).to_be_visible()
+            expect(raw_modal.get_by_role("heading", name="原始去字幕素材")).to_be_visible()
             expect(raw_modal.get_by_role("button", name="上传素材")).to_be_visible()
             close_btn = page.locator("#rsModalClose")
             expect(close_btn).to_be_visible()
@@ -263,18 +263,44 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
             page.get_by_role("button", name="上传素材").click()
             expect(page.locator("#rsUploadMask")).to_be_visible()
-            page.locator("#rsVideoInput").set_input_files(str(video_path))
-            page.locator("#rsCoverInput").set_input_files(str(cover_path))
-            page.locator("#rsDisplayName").fill("英文原始主视频")
+            expect(page.locator("#rsUploadCoverBox")).to_be_visible()
+            expect(page.locator("#rsUploadVideoBox")).to_be_visible()
+            with page.expect_file_chooser() as video_chooser:
+                page.locator("#rsUploadVideoBox").click()
+            video_chooser.value.set_files(str(video_path))
+            with page.expect_file_chooser() as cover_chooser:
+                page.locator("#rsUploadCoverBox").click()
+            cover_chooser.value.set_files(str(cover_path))
+            expect(page.locator("#rsUploadCoverPreview")).to_be_visible()
+            expect(page.locator("#rsUploadVideoName")).to_contain_text("sample.mp4")
+            expect(page.locator("#rsDisplayName")).to_have_value("sample.mp4")
             page.get_by_role("button", name="提交").click()
 
             expect(page.get_by_role("button", name="原始视频 (1)")).to_be_visible()
-            expect(page.locator("#rsList")).to_contain_text("英文原始主视频")
+            card = page.locator("#rsList [data-rs-id='1001']")
+            expect(card).to_be_visible()
+            expect(card.get_by_role("button", name="封面图")).to_be_visible()
+            expect(card.get_by_role("button", name="视频")).to_be_visible()
+            expect(card.locator(".oc-rs-meta-line")).to_contain_text("时长")
+
+            card.get_by_role("button", name="视频").click()
+            expect(card.locator("video")).to_be_visible()
+            video_src = card.locator("video").first.get_attribute("src")
+            assert video_src is not None
+            assert video_src.endswith("/medias/raw-sources/1001/video")
             close_btn.click()
+
+            state["objects"].pop(state["raw_sources"][1001]["video_object_key"], None)
+            page.get_by_role("button", name="原始视频 (1)").click()
+            failing_card = page.locator("#rsList [data-rs-id='1001']")
+            expect(failing_card).to_be_visible()
+            failing_card.get_by_role("button", name="视频").click()
+            expect(failing_card.locator(".vvideo-ph.err")).to_contain_text("视频加载失败")
+            page.locator("#rsModalClose").click()
 
             page.locator(".js-translate").first.click()
             expect(page.locator("#rsTranslateDialog")).to_be_visible()
-            expect(page.locator("#rstRsList")).to_contain_text("英文原始主视频")
+            expect(page.locator("#rstRsList")).to_contain_text("sample.mp4")
             page.locator("#rstLangs label", has_text="德语").click()
             expect(page.locator("#rstPreview")).to_contain_text("1 × 1 = 1")
             page.get_by_role("button", name="提交翻译").click()
