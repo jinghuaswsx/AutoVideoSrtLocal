@@ -253,7 +253,12 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(raw_btn).to_be_visible()
             raw_btn.click()
 
-            expect(page.locator("#rsDrawer")).to_be_visible()
+            raw_modal = page.locator("#rsModal")
+            expect(raw_modal).to_be_visible()
+            expect(raw_modal.get_by_text("原始去字幕素材")).to_be_visible()
+            expect(raw_modal.get_by_role("button", name="上传素材")).to_be_visible()
+            expect(page.locator("#rsDrawer")).to_have_count(0)
+
             page.get_by_role("button", name="上传素材").click()
             expect(page.locator("#rsUploadMask")).to_be_visible()
             page.locator("#rsVideoInput").set_input_files(str(video_path))
@@ -263,7 +268,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
 
             expect(page.get_by_role("button", name="原始视频 (1)")).to_be_visible()
             expect(page.locator("#rsList")).to_contain_text("英文原始主视频")
-            page.locator("#rsDrawerClose").click()
+            page.locator("#rsModalClose").click()
 
             page.locator(".js-translate").first.click()
             expect(page.locator("#rsTranslateDialog")).to_be_visible()

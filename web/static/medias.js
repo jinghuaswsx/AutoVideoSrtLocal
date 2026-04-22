@@ -2860,7 +2860,8 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
-  const drawerMask = $('rsDrawerMask');
+  const modalMask = $('rsModalMask');
+  const modalClose = $('rsModalClose');
   const summary = $('rsSummary');
   const list = $('rsList');
   const uploadMask = $('rsUploadMask');
@@ -2879,7 +2880,7 @@
     translateName: '',
   };
 
-  if (!drawerMask || !list || !uploadMask || !uploadForm || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
+  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
     return;
   }
 
@@ -2922,7 +2923,7 @@
 
   function setSummary(items) {
     const name = uiState.currentName || (uiState.currentPid ? `产品 #${uiState.currentPid}` : '当前产品');
-    summary.textContent = `${name} · 共 ${items.length} 条原始去字幕素材`;
+    summary.textContent = `${name} · 共 ${items.length} 条素材`;
   }
 
   function renderRawSourceRow(it) {
@@ -2947,18 +2948,33 @@
       </li>`;
   }
 
-  function openRawSourceDrawer(pid, name) {
-    uiState.currentPid = String(pid);
-    uiState.currentName = name || '';
-    drawerMask.hidden = false;
+  function renderRawSourceState(message, kind = '') {
+    const isError = kind === 'error';
+    list.innerHTML = `
+      <div class="oc-rs-empty${isError ? ' err' : ''}">
+        <div>${escapeHtml(message)}</div>
+        ${isError ? '<button type="button" id="rsRetryBtn" class="oc-btn ghost sm">重新加载</button>' : ''}
+      </div>`;
+    const retryBtn = $('rsRetryBtn');
+    if (retryBtn && uiState.currentPid) {
+      retryBtn.addEventListener('click', () => refreshRawSourceList(uiState.currentPid));
+    }
   }
 
-  function closeRawSourceDrawer() {
-    drawerMask.hidden = true;
+  function openRawSourceModal(pid, name) {
+    uiState.currentPid = String(pid);
+    uiState.currentName = name || '';
+    summary.textContent = '加载中';
+    renderRawSourceState('素材列表加载中...');
+    modalMask.hidden = false;
+  }
+
+  function closeRawSourceModal() {
+    modalMask.hidden = true;
     uiState.currentPid = null;
     uiState.currentName = '';
     list.innerHTML = '';
-    summary.textContent = '加载中…';
+    summary.textContent = '加载中';
   }
 
   function openRawSourceUpload() {
@@ -2982,7 +2998,7 @@
     setSummary(items);
     list.innerHTML = items.length
       ? items.map(renderRawSourceRow).join('')
-      : '<li class="oc-rs-empty">还没有原始去字幕素材，先上传第一条再发起视频翻译。</li>';
+      : '<div class="oc-rs-empty">还没有素材，先上传第一条再发起视频翻译。</div>';
     syncRawSourceCount(pid, items.length);
     return items;
   }
@@ -3145,12 +3161,12 @@
     const openBtn = event.target.closest('.js-raw-sources');
     if (openBtn) {
       event.preventDefault();
-      openRawSourceDrawer(openBtn.dataset.pid, openBtn.dataset.name || '');
+      openRawSourceModal(openBtn.dataset.pid, openBtn.dataset.name || '');
       try {
         await refreshRawSourceList(openBtn.dataset.pid);
       } catch (err) {
-        list.innerHTML = `<li class="oc-rs-empty">加载失败：${escapeHtml(err.message || err)}</li>`;
-        summary.textContent = '原始素材列表加载失败';
+        renderRawSourceState(`加载失败：${err.message || err}`, 'error');
+        summary.textContent = '素材列表加载失败';
       }
       return;
     }
@@ -3162,8 +3178,8 @@
       return;
     }
 
-    if (event.target === drawerMask || event.target.closest('#rsDrawerClose')) {
-      closeRawSourceDrawer();
+    if (event.target === modalMask || event.target.closest('#rsModalClose')) {
+      closeRawSourceModal();
       return;
     }
 
