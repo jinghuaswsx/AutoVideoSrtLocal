@@ -7,7 +7,6 @@ import os
 import time
 import uuid
 
-import eventlet
 from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
@@ -21,6 +20,7 @@ from appcore.task_recovery import (
 from appcore.settings import get_retention_hours
 from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.video_review import get_review_prompts, save_review_prompts
+from web.background import start_background_task
 from web.extensions import socketio
 
 log = logging.getLogger(__name__)
@@ -179,7 +179,15 @@ def start_review(task_id: str):
     db_execute("UPDATE projects SET status = 'running' WHERE id = %s", (task_id,))
 
     register_active_task("video_review", task_id)
-    eventlet.spawn(_run_review_with_tracking, task_id, video_path, model, custom_prompt, current_user.id, prompt_lang)
+    start_background_task(
+        _run_review_with_tracking,
+        task_id,
+        video_path,
+        model,
+        custom_prompt,
+        current_user.id,
+        prompt_lang,
+    )
 
     return jsonify({"status": "started"})
 

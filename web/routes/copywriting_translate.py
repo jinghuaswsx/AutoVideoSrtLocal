@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import uuid
 
-import eventlet
 from flask import Blueprint, jsonify, request
 from flask_login import current_user, login_required
 
 from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
 from appcore.db import execute as db_execute
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
+from web.background import start_background_task
 
 bp = Blueprint("copywriting_translate", __name__,
                 url_prefix="/api/copywriting-translate")
@@ -93,5 +93,5 @@ def start():
         (task_id, current_user.id, json.dumps(state, ensure_ascii=False)),
     )
 
-    eventlet.spawn(_spawn_runner, task_id)
+    start_background_task(_spawn_runner, task_id)
     return jsonify({"task_id": task_id}), 202

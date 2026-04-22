@@ -8,7 +8,7 @@ git pull
 
 # Install/update deps
 source venv/bin/activate
-pip install -r requirements.txt gunicorn -i https://pypi.org/simple/
+pip install -r requirements.txt -i https://pypi.org/simple/
 
 # Run DB migration
 python db/migrate.py

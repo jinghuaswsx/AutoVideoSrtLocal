@@ -245,7 +245,7 @@ def phase5_client(client, monkeypatch):
     action_log = []
 
     monkeypatch.setattr(
-        "web.routes.bulk_translate.eventlet.spawn",
+        "web.routes.bulk_translate.start_background_task",
         lambda fn, *a, **k: spawn_log.append((fn.__name__, a, k)),
     )
     client._spawn_log = spawn_log
