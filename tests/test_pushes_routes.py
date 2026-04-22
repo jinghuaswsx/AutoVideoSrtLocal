@@ -156,6 +156,125 @@ def test_reset_clears_state(logged_in_client, seeded_item):
     assert it["latest_push_id"] is None
 
 
+class _FakeResponse:
+    def __init__(self, status_code: int, text: str = ""):
+        self.status_code = status_code
+        self.text = text
+        self.ok = 200 <= status_code < 400
+
+
+def _stub_probe_ok(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "appcore.pushes.tos_clients.generate_signed_media_download_url",
+        lambda key: f"https://signed/{key}",
+    )
+
+
+def _seed_en_push_texts(product_id: int):
+    """推送就绪要求英文 idx=1 文案能解析成「标题/文案/描述」三段。"""
+    from appcore import medias
+    medias.replace_copywritings(
+        product_id,
+        [{
+            "title": "T_EN",
+            "body": "标题: 产品标题\n文案: 产品文案\n描述: 产品描述",
+        }],
+        lang="en",
+    )
+
+
+def test_push_rejects_not_configured(logged_in_client, seeded_item, monkeypatch):
+    _, item_id = seeded_item
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "")
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == "push_target_not_configured"
+
+
+def test_push_rejects_not_ready(logged_in_client, seeded_item, monkeypatch):
+    _, item_id = seeded_item
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+    from appcore.db import execute as db_execute
+    db_execute("UPDATE media_items SET cover_object_key=NULL WHERE id=%s", (item_id,))
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "not_ready"
+    assert "has_cover" in data["missing"]
+
+
+def test_push_success_marks_pushed(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+
+    captured = {}
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["payload"] = kwargs.get("json")
+        return _FakeResponse(200, '{"ok":true}')
+    monkeypatch.setattr("web.routes.pushes.requests.post", fake_post)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["upstream_status"] == 200
+    assert captured["url"] == "http://downstream.invalid/push"
+    assert captured["payload"]["mode"] == "create"
+
+    from appcore import medias
+    it = medias.get_item(item_id)
+    assert it["pushed_at"] is not None
+
+
+def test_push_downstream_4xx_records_failure(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+    monkeypatch.setattr(
+        "web.routes.pushes.requests.post",
+        lambda url, **kw: _FakeResponse(400, "bad request"),
+    )
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == "downstream_error"
+
+    from appcore import medias
+    it = medias.get_item(item_id)
+    assert it["pushed_at"] is None
+    assert it["latest_push_id"] is not None
+
+
+def test_push_network_error_records_failure(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+
+    import requests as _req
+    def boom(url, **kw):
+        raise _req.ConnectionError("connection refused")
+    monkeypatch.setattr("web.routes.pushes.requests.post", boom)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == "downstream_unreachable"
+
+    from appcore import medias
+    it = medias.get_item(item_id)
+    assert it["pushed_at"] is None
+    assert it["latest_push_id"] is not None
+
+
+def test_push_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.post("/pushes/api/items/99999/push")
+    assert resp.status_code == 403
+
+
 def test_logs_returns_history(logged_in_client, seeded_item):
     pid, item_id = seeded_item
     from appcore import pushes as pushes_mod

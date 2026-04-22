@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from functools import wraps
 
+import requests
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
@@ -147,6 +148,85 @@ def api_build_payload(item_id: int):
         "payload": payload,
         "push_url": config.PUSH_TARGET_URL,
     })
+
+
+@bp.route("/api/items/<int:item_id>/push", methods=["POST"])
+@login_required
+@admin_required
+def api_push(item_id: int):
+    """推送入口：进程内组装 payload + 写日志/状态，只对下游外部系统发一次 HTTP。"""
+    if not config.PUSH_TARGET_URL:
+        return jsonify({"error": "push_target_not_configured"}), 500
+
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item_not_found"}), 404
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return jsonify({"error": "product_not_found"}), 404
+    if item.get("pushed_at"):
+        return jsonify({"error": "already_pushed"}), 409
+
+    readiness = pushes.compute_readiness(item, product)
+    if not pushes.is_ready(readiness):
+        missing = [k for k, v in readiness.items() if not v]
+        return jsonify({"error": "not_ready", "missing": missing}), 400
+
+    lang = item.get("lang") or "en"
+    product_code = (product.get("product_code") or "").strip().lower()
+    ad_url = pushes.build_product_link(lang, product_code)
+    ok, err = pushes.probe_ad_url(ad_url)
+    if not ok:
+        return jsonify({"error": "link_not_adapted", "url": ad_url, "detail": err}), 400
+
+    try:
+        payload = pushes.build_item_payload(item, product)
+    except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
+        return jsonify({"error": "copywriting_invalid", "detail": str(exc)}), 400
+
+    try:
+        resp = requests.post(
+            config.PUSH_TARGET_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        pushes.record_push_failure(
+            item_id=item_id,
+            operator_user_id=current_user.id,
+            payload=payload,
+            error_message=f"network_error: {exc}",
+            response_body=None,
+        )
+        return jsonify({"error": "downstream_unreachable", "detail": str(exc)}), 502
+
+    body_text = resp.text or ""
+    if resp.ok:
+        pushes.record_push_success(
+            item_id=item_id,
+            operator_user_id=current_user.id,
+            payload=payload,
+            response_body=body_text,
+        )
+        return jsonify({
+            "ok": True,
+            "upstream_status": resp.status_code,
+            "response_body": body_text[:4000],
+        })
+
+    pushes.record_push_failure(
+        item_id=item_id,
+        operator_user_id=current_user.id,
+        payload=payload,
+        error_message=f"HTTP {resp.status_code}",
+        response_body=body_text,
+    )
+    return jsonify({
+        "error": "downstream_error",
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+    }), 502
 
 
 @bp.route("/api/items/<int:item_id>/mark-pushed", methods=["POST"])

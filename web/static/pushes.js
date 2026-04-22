@@ -79,10 +79,6 @@
     return `<span class="badge ${s.cls}">${s.text}</span>`;
   }
 
-  // 服务端与内网不通，所有状态下「推送」按钮一律禁用。
-  // 状态流转由推送端通过 openapi 回写，这里仅保留展示 + 历史 / 重置。
-  const PUSH_DISABLED_TITLE = '服务端与内网不通，暂不可从管理后台发起推送';
-
   function renderActionCell(it) {
     if (!window.PUSH_IS_ADMIN) return '';
     if (it.status === 'pushed') {
@@ -95,11 +91,14 @@
     }
     if (it.status === 'not_ready') {
       const missing = Object.entries(it.readiness)
-        .filter(([, v]) => !v).map(([k]) => READINESS_LABELS[k]).join(' / ');
+        .filter(([, v]) => !v).map(([k]) => READINESS_LABELS[k] || k).join(' / ');
       return `<button class="btn-push" disabled title="缺少：${missing}">推送</button>`;
     }
-    const label = it.status === 'failed' ? '× 失败' : '推送';
-    return `<button class="btn-push" disabled title="${PUSH_DISABLED_TITLE}">${label}</button>`;
+    const label = it.status === 'failed' ? '重试推送' : '推送';
+    const historyBtn = it.status === 'failed'
+      ? `<button class="btn-mini" data-action="view-logs" data-id="${it.id}">历史</button>`
+      : '';
+    return `<button class="btn-push" data-action="push" data-id="${it.id}">${label}</button>${historyBtn}`;
   }
 
   function renderRow(it) {
@@ -174,63 +173,35 @@
     });
   }
 
+  function describePushError(e) {
+    let body = {};
+    try { body = JSON.parse(e.body || '{}'); } catch (_) { /* non-JSON */ }
+    const err = body.error || '';
+    const detail = body.detail || body.response_body || e.body || e.message || '';
+    if (err === 'not_ready') {
+      const missing = (body.missing || []).map(k => (READINESS_LABELS[k] || k)).join(' / ');
+      return `素材未就绪：缺少 ${missing || '未知项'}`;
+    }
+    if (err === 'link_not_adapted') return `产品链接未适配：${body.url || ''}（${detail || ''}）`;
+    if (err === 'already_pushed') return '该素材已推送过';
+    if (err === 'copywriting_invalid') return `文案不合规：${detail}`;
+    if (err === 'push_target_not_configured') return '后端未配置 PUSH_TARGET_URL';
+    if (err === 'downstream_unreachable') return `下游不可达：${detail}`;
+    if (err === 'downstream_error') {
+      const preview = (body.response_body || '').slice(0, 200);
+      return `下游返回 HTTP ${body.upstream_status}\n${preview}`;
+    }
+    return detail || e.message;
+  }
+
   async function doPush(itemId, btn) {
     btn.disabled = true;
     btn.textContent = '推送中…';
-    let payloadData;
     try {
-      const data = await fetchJSON(`/pushes/api/items/${itemId}/payload`);
-      payloadData = data.payload;
-      const pushUrl = data.push_url;
-      if (!pushUrl) throw new Error('推送目标未配置');
-
-      let resp;
-      try {
-        resp = await fetch(pushUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payloadData),
-        });
-      } catch (e) {
-        await fetchJSON(`/pushes/api/items/${itemId}/mark-failed`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            request_payload: payloadData,
-            error_message: `网络或 CORS 失败: ${e.message}`,
-          }),
-        });
-        alert(`推送失败（网络/CORS）：${e.message}`);
-        return load();
-      }
-      const body = await resp.text();
-      if (resp.ok) {
-        await fetchJSON(`/pushes/api/items/${itemId}/mark-pushed`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ request_payload: payloadData, response_body: body }),
-        });
-        alert('推送成功');
-      } else {
-        await fetchJSON(`/pushes/api/items/${itemId}/mark-failed`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            request_payload: payloadData,
-            response_body: body,
-            error_message: `HTTP ${resp.status}`,
-          }),
-        });
-        alert(`推送失败：HTTP ${resp.status}\n${body.slice(0, 200)}`);
-      }
+      await fetchJSON(`/pushes/api/items/${itemId}/push`, { method: 'POST' });
+      alert('推送成功');
     } catch (e) {
-      if (e.status === 400 || e.status === 409) {
-        let info = '';
-        try { info = JSON.parse(e.body).error || ''; } catch (_) {}
-        alert(`无法推送：${info || e.message}`);
-      } else {
-        alert(`推送失败：${e.message}`);
-      }
+      alert(`推送失败：${describePushError(e)}`);
     } finally {
       await load();
     }
