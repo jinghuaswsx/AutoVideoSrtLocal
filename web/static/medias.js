@@ -1477,14 +1477,14 @@
     if (!targetLang || targetLang === 'en') return;
 
     const source = edGetEnglishSourceCopy();
-    if (!source || !edHasMeaningfulCopywritingBody(source.body)) {
+    if (!source) {
       alert('当前没有可用的英文文案');
       return;
     }
 
     const sourceValidation = edValidateCopyTranslateSource(source.body);
     if (!sourceValidation.ok) {
-      alert('英文文案为空，无法翻译');
+      alert(sourceValidation.message);
       return;
     }
 
