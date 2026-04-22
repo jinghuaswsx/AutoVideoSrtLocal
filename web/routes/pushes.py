@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import urllib.parse
 from functools import wraps
 
 import requests
@@ -68,8 +69,10 @@ def _serialize_row(row: dict) -> dict:
         "pushed_at": row["pushed_at"].isoformat() if row.get("pushed_at") else None,
         "status": status,
         "readiness": readiness,
+        # 走本地代理 /medias/obj/<key>（local-first：先查本地，缺了再从 TOS 懒加载），
+        # 适配 local-first 存储下 TOS 尚无对象的素材
         "cover_url": (
-            tos_clients.generate_signed_media_download_url(cover_key) if cover_key else None
+            f"/medias/obj/{urllib.parse.quote(cover_key, safe='/')}" if cover_key else None
         ),
     }
 
