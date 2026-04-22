@@ -544,3 +544,25 @@ def test_lookup_mk_id_skips_items_with_non_matching_tail(monkeypatch):
     mk_id, status = pushes.lookup_mk_id("foo-bar-rjc")
     assert status == "ok"
     assert mk_id == 222  # 只有裸末段匹配
+
+
+# ================================================================
+# 素材本地 URL（不再用 TOS 签名 URL）
+# ================================================================
+
+
+def test_build_media_public_url_handles_none_and_format(monkeypatch):
+    from appcore import pushes
+    monkeypatch.setattr("config.LOCAL_SERVER_BASE_URL", "http://172.30.254.14")
+    assert pushes.build_media_public_url(None) is None
+    assert pushes.build_media_public_url("") is None
+    assert pushes.build_media_public_url("u/1/m/320/demo.mp4") == \
+        "http://172.30.254.14/medias/obj/u/1/m/320/demo.mp4"
+
+
+def test_public_media_object_rejects_traversal_and_non_user_scope():
+    from web.app import create_app
+    client = create_app().test_client()
+    # 空 / 含 .. / 不以 u/ 开头 —— 一律 404
+    assert client.get("/medias/obj/../etc/passwd").status_code in (301, 302, 404)
+    assert client.get("/medias/obj/not-user/xxx.mp4").status_code == 404

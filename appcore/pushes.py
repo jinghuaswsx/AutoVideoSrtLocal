@@ -49,6 +49,18 @@ def get_localized_texts_cookie() -> str:
     return _get_push_setting("push_localized_texts_cookie")
 
 
+def build_media_public_url(object_key: str | None) -> str | None:
+    """素材对外可访问 URL，走主项目无鉴权路由 /medias/obj/<key>。
+
+    用于推送 payload 里 videos[].url / image_url —— 下游 Dify/Shopify 工作流
+    (内网) 通过这个 URL 去拉文件，不再依赖 TOS 公网。
+    """
+    if not object_key:
+        return None
+    base = (getattr(config, "LOCAL_SERVER_BASE_URL", "") or "").rstrip("/")
+    return f"{base}/medias/obj/{object_key}"
+
+
 def build_localized_texts_target_url(mk_id: int | None) -> str:
     base = get_localized_texts_base_url()
     if not base or not mk_id:
@@ -421,11 +433,8 @@ def build_item_payload(item: dict, product: dict) -> dict:
         "size": int(item.get("file_size") or 0),
         "width": 1080,
         "height": 1920,
-        "url": tos_clients.generate_signed_media_download_url(object_key) if object_key else None,
-        "image_url": (
-            tos_clients.generate_signed_media_download_url(cover_object_key)
-            if cover_object_key else None
-        ),
+        "url": build_media_public_url(object_key),
+        "image_url": build_media_public_url(cover_object_key),
     }
 
     enabled_langs = [c for c in medias.list_enabled_language_codes() if c != "en"]

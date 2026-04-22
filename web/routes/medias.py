@@ -1868,3 +1868,20 @@ def detail_image_proxy(image_id: int):
     if not _can_access_product(p):
         abort(404)
     return _send_media_object(row["object_key"])
+
+
+# ----------------------------------------------------------------
+# 无鉴权素材下载（仅用于推送给外部下游系统作为 video.url / image_url）。
+# 安全模型：和 TOS 签名 URL 一致 —— 知 object_key 者即可访问。
+# 下游 Dify / Shopify 工作流在内网，主项目也在内网，不暴露到公网。
+# ----------------------------------------------------------------
+@bp.route("/obj/<path:object_key>")
+def public_media_object(object_key: str):
+    key = (object_key or "").strip()
+    # 最低限度的防护：禁止 path traversal 和空值
+    if not key or ".." in key.split("/") or key.startswith("/"):
+        abort(404)
+    # 仅允许素材命名空间 u/<uid>/m/<pid>/...，避免被用来读无关文件
+    if not key.startswith("u/"):
+        abort(404)
+    return _send_media_object(key)
