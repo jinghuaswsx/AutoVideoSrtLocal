@@ -21,6 +21,7 @@
   };
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
+  let LANGUAGES = [];
 
   // ---------- 工具 ----------
 
@@ -54,19 +55,29 @@
     return resp.json();
   }
 
+  function formatLanguageLabel(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    if (!normalized) return '';
+    const lang = LANGUAGES.find(l => l && l.code === normalized);
+    const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
+    return name ? `${name} (${normalized})` : raw;
+  }
+
   // ---------- 筛选与列表 ----------
 
   async function loadLanguages() {
     try {
       const data = await fetchJSON('/medias/api/languages');
+      LANGUAGES = data.languages || [];
       const sel = document.getElementById('f-lang');
       const all = document.createElement('option');
       all.value = ''; all.textContent = '全部';
       sel.innerHTML = ''; sel.appendChild(all);
-      (data.languages || []).forEach(l => {
+      LANGUAGES.forEach(l => {
         if (l.code === 'en') return;
         const opt = document.createElement('option');
-        opt.value = l.code; opt.textContent = `${l.name_zh} (${l.code})`;
+        opt.value = l.code; opt.textContent = formatLanguageLabel(l.code);
         sel.appendChild(opt);
       });
     } catch (e) {
@@ -143,7 +154,7 @@
         <div class="item-name">${it.display_name || it.filename || ''}</div>
         <div class="item-meta">${durStr} · ${sizeStr}</div>
       </td>
-      <td><span class="lang-pill">${it.lang || ''}</span></td>
+      <td><span class="lang-pill">${formatLanguageLabel(it.lang)}</span></td>
       <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
       <td>${renderStatusBadge(it.status)}</td>
       <td class="time">${(it.created_at || '').replace('T', ' ').slice(0, 16)}</td>
@@ -297,7 +308,7 @@
     texts.forEach((t, index) => {
       const card = el('div', { class: 'pm-sub', style: index > 0 ? 'margin-top:12px' : '' });
       const kv = el('div', { class: 'pm-kv' });
-      [['语种', t.lang || ''], ['标题', t.title || ''], ['文案', t.message || ''], ['描述', t.description || '']]
+      [['语种', formatLanguageLabel(t.lang) || ''], ['标题', t.title || ''], ['文案', t.message || ''], ['描述', t.description || '']]
         .forEach(([k, v]) => {
           kv.appendChild(el('span', { class: 'k' }, k));
           kv.appendChild(el('span', { class: 'v' }, v));
@@ -371,7 +382,7 @@
       else infoKV.appendChild(el('span', { class: 'v' }, v));
     };
     addKV('产品', `${item.product_name || ''}  ·  ${item.product_code || ''}`);
-    addKV('语种', item.lang || '-');
+    addKV('语种', formatLanguageLabel(item.lang));
     addKV('文件', item.display_name || item.filename || '-');
     addKV('item_id', String(item.id));
     addKV('mk_id', mkIdValue);

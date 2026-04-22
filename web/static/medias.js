@@ -12,6 +12,15 @@
     return LANGUAGES;
   }
 
+  function langDisplayName(code) {
+    const raw = String(code || '').trim();
+    const normalized = raw.toLowerCase();
+    if (!normalized) return '';
+    const l = (LANGUAGES || []).find(x => x && x.code === normalized);
+    if (l && l.name_zh) return `${l.name_zh} (${l.code})`;
+    return raw;
+  }
+
   // 素材文件名命名规范校验
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
@@ -298,9 +307,9 @@
       const c = (coverage || {})[l.code] || { items: 0, copy: 0, cover: false };
       const filled = c.items > 0;
       const cls = filled ? 'filled' : 'empty';
-      const title = `${l.name_zh}: ${c.items} 视频 / ${c.copy} 文案 / ${c.cover ? '有主图' : '无主图'}`;
+      const title = `${langDisplayName(l.code)}: ${c.items} 视频 / ${c.copy} 文案 / ${c.cover ? '有主图' : '无主图'}`;
       return `<span class="oc-lang-chip ${cls}" title="${escapeHtml(title)}">`
-           + `${l.code.toUpperCase()}${filled ? `<span class="count">${c.items}</span>` : ''}`
+           + `${langDisplayName(l.code)}${filled ? `<span class="count">${c.items}</span>` : ''}`
            + `</span>`;
     }).join('') + `</div>`;
   }
@@ -1190,7 +1199,7 @@
       const checked = selectedSet.has(l.code) ? 'checked' : '';
       return `<label class="oc-lang-checkbox">`
            + `<input type="checkbox" name="ad_supported_langs" value="${escapeHtml(l.code)}" ${checked}/>`
-           + `<span>${escapeHtml(l.name_zh || l.code.toUpperCase())}</span>`
+           + `<span>${escapeHtml(langDisplayName(l.code))}</span>`
            + `</label>`;
     }).join('');
   }
@@ -1562,8 +1571,8 @@
       const badgeCls = t.items > 0 ? 'badge has' : 'badge';
       const badgeHtml = `<span class="${badgeCls}">${t.items}</span>`;
       const active = edState.activeLang === l.code ? ' active' : '';
-      return `<button class="oc-lang-tab${active}" data-lang="${escapeHtml(l.code)}" title="${escapeHtml(l.name_zh || l.code)}">`
-           + `${l.code.toUpperCase()}${badgeHtml}`
+      return `<button class="oc-lang-tab${active}" data-lang="${escapeHtml(l.code)}" title="${escapeHtml(langDisplayName(l.code))}">`
+           + `${langDisplayName(l.code)}${badgeHtml}`
            + `</button>`;
     }).join('');
     box.querySelectorAll('[data-lang]').forEach(btn => {
@@ -1605,7 +1614,7 @@
     input.value = override || def || '';
     input.placeholder = def || '留空则用默认模板';
     if (hint) {
-      const label = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+      const label = langDisplayName(lang);
       hint.textContent = override
         ? `（${label} · 已自定义）`
         : `（${label} · 使用默认：${def || '未设置产品 ID'}）`;
@@ -2067,8 +2076,8 @@
             </div>
             <div class="oc-link-check-item-url">${escapeHtml(item.source_url || '-')}</div>
             <div class="oc-link-check-item-meta">
-              <span><strong>识别语种：</strong>${escapeHtml(analysis.detected_language || '-')}</span>
-              <span><strong>页面语种：</strong>${escapeHtml(task.page_language || '-')}</span>
+              <span><strong>识别语种：</strong>${escapeHtml(langDisplayName(analysis.detected_language || '-'))}</span>
+              <span><strong>页面语种：</strong>${escapeHtml(langDisplayName(task.page_language || '-'))}</span>
               <span><strong>二值快检：</strong>${escapeHtml(edLinkCheckBinaryText(binary))}</span>
               <span><strong>同图判断：</strong>${escapeHtml(edLinkCheckSameImageText(sameImage))}</span>
             </div>
@@ -2085,7 +2094,7 @@
     const translateBtn = $('edDetailImagesTranslateBtn');
     const title = section && section.querySelector('.oc-section-title > span');
     const subtitle = section && section.querySelector('.oc-section-title .optional');
-    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    const langName = langDisplayName(lang);
     if (section) section.hidden = false;
     if (title) title.textContent = '商品详情图';
     if (subtitle) {
@@ -2213,7 +2222,7 @@
     const lang = mask ? (mask.dataset.lang || '').trim().toLowerCase() : '';
     if (!pid || !lang || lang === 'en') return;
 
-    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    const langName = langDisplayName(lang);
     const group = $('edDetailTranslateModeGroup');
     const active = group ? group.querySelector('.oc-chip.on') : null;
     const mode = active ? active.dataset.mode : 'sequential';
@@ -2394,7 +2403,7 @@
     // 更新语种标签提示
     const cwLabel = $('edCwLangLabel');
     const itemsLabel = $('edItemsLangLabel');
-    const langName = (LANGUAGES.find(l => l.code === lang) || {}).name_zh || lang.toUpperCase();
+    const langName = langDisplayName(lang);
     if (cwLabel) cwLabel.textContent = `(${langName})`;
     if (itemsLabel) itemsLabel.textContent = `(${langName})`;
 
@@ -2561,7 +2570,7 @@
 
   async function edDeleteCover(lang) {
     if (lang === 'en') { alert('EN 主图不可删除'); return; }
-    if (!confirm(`确认删除 ${lang.toUpperCase()} 语种主图？`)) return;
+    if (!confirm(`确认删除 ${langDisplayName(lang)} 语种主图？`)) return;
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) return;
     try {
@@ -3177,11 +3186,6 @@
       $('edFromUrlMask').addEventListener('click', (e) => {
         if (e.target.id === 'edFromUrlMask') closeFromUrlModal();
       });
-
-      function langDisplayName(code) {
-        const l = (LANGUAGES || []).find(x => x && x.code === code);
-        return (l && (l.name_zh || l.code)) || (code || '').toUpperCase();
-      }
 
       function awaitFromUrlConfirm(existingCount, langCode) {
         return new Promise((resolve) => {
@@ -3908,7 +3912,7 @@
   }
 
   function renderTranslateLanguageChoice(lang) {
-    const name = escapeHtml(lang.name_zh || lang.code.toUpperCase());
+    const name = escapeHtml(langDisplayName(lang.code));
     return `
       <label class="oc-rst-lang">
         <input type="checkbox" value="${escapeHtml(lang.code)}">
