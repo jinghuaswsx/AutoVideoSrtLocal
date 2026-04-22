@@ -220,6 +220,9 @@ def api_upload_complete():
         return jsonify({"error": "产品名不能为空"}), 400
     if len(product_name) > _PRODUCT_NAME_MAX_LEN:
         return jsonify({"error": f"产品名长度不能超过 {_PRODUCT_NAME_MAX_LEN} 字符"}), 400
+    mode_raw = (body.get("concurrency_mode") or "sequential").strip().lower()
+    if mode_raw not in {"sequential", "parallel"}:
+        return jsonify({"error": "concurrency_mode 必须是 sequential 或 parallel"}), 400
     if not uploaded:
         return jsonify({"error": "uploaded 不能为空"}), 400
 
@@ -268,6 +271,7 @@ def api_upload_complete():
         items=items,
         product_name=product_name,
         project_name=project_name,
+        concurrency_mode=mode_raw,
     )
     # 记用户偏好（容错，失败不影响提交）
     try:
