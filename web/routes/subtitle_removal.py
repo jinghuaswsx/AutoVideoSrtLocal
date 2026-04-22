@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import threading
 import uuid
 from datetime import datetime
@@ -126,13 +127,23 @@ def _get_submit_lock(task_id: str) -> threading.Lock:
         return lock
 
 
-def _reserve_upload_bootstrap(task_id: str, user_id: int, original_filename: str, object_key: str) -> None:
+def _reserve_upload_bootstrap(
+    task_id: str,
+    user_id: int,
+    original_filename: str,
+    object_key: str,
+    *,
+    video_path: str = "",
+    content_type: str = "",
+) -> None:
     with _upload_bootstrap_guard:
         _upload_bootstrap_reservations[task_id] = {
             "task_id": task_id,
             "user_id": user_id,
             "original_filename": original_filename,
             "object_key": object_key,
+            "video_path": video_path,
+            "content_type": content_type,
         }
 
 
@@ -463,14 +474,39 @@ def bootstrap_upload():
 
     task_id = str(uuid.uuid4())
     object_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
-    _reserve_upload_bootstrap(task_id, current_user.id, original_filename, object_key)
+    ext = os.path.splitext(original_filename)[1].lower()
+    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    content_type = (body.get("content_type") or "").strip() or "application/octet-stream"
+    _reserve_upload_bootstrap(
+        task_id,
+        current_user.id,
+        original_filename,
+        object_key,
+        video_path=video_path,
+        content_type=content_type,
+    )
     return jsonify(
         {
             "task_id": task_id,
             "object_key": object_key,
-            "upload_url": tos_clients.generate_signed_upload_url(object_key),
+            "upload_url": url_for("subtitle_removal.api_local_upload", task_id=task_id),
         }
     )
+
+
+@bp.route("/api/subtitle-removal/upload/local/<task_id>", methods=["PUT"])
+@login_required
+def api_local_upload(task_id: str):
+    reservation = _consume_upload_bootstrap(task_id)
+    if not reservation or int(reservation.get("user_id") or 0) != int(current_user.id):
+        abort(404)
+    video_path = (reservation.get("video_path") or "").strip()
+    if not video_path:
+        abort(404)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    with open(video_path, "wb") as handle:
+        shutil.copyfileobj(request.stream, handle)
+    return ("", 204)
 
 
 @bp.route("/api/subtitle-removal/upload/complete", methods=["POST"])
@@ -495,11 +531,6 @@ def complete_upload():
     if not validate_video_extension(original_filename):
         return jsonify({"error": "invalid video file type"}), 400
 
-    expected_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
-    if object_key != expected_key:
-        return jsonify({"error": "object_key mismatch"}), 400
-    if not tos_clients.object_exists(object_key):
-        return jsonify({"error": "Uploaded object not found"}), 400
     reservation = _consume_upload_bootstrap(task_id)
     if not reservation:
         return jsonify({"error": "bootstrap reservation required"}), 403
@@ -508,15 +539,23 @@ def complete_upload():
     if reservation.get("original_filename") != original_filename or reservation.get("object_key") != object_key:
         return jsonify({"error": "bootstrap reservation mismatch"}), 403
 
+    expected_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    if object_key != expected_key:
+        return jsonify({"error": "object_key mismatch"}), 400
+
     ext = os.path.splitext(original_filename)[1].lower()
     task_dir = os.path.join(OUTPUT_DIR, task_id)
-    video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    video_path = (reservation.get("video_path") or "").strip() or os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+    if not os.path.exists(video_path):
+        return jsonify({"error": "uploaded video file missing"}), 400
+
+    object_size = int(os.path.getsize(video_path) or file_size or 0)
     source_object_info = {
-        "file_size": file_size,
-        "content_type": content_type,
+        "file_size": object_size,
+        "content_type": content_type or reservation.get("content_type") or "application/octet-stream",
         "original_filename": original_filename,
     }
 
@@ -535,20 +574,11 @@ def complete_upload():
     )
 
     try:
-        object_head = tos_clients.head_object(object_key)
+        tos_clients.upload_file(video_path, object_key)
     except Exception:
-        store.update(task_id, error="head object failed")
-        return jsonify({"error": "Unable to inspect uploaded source object"}), 502
-
-    object_size = int(getattr(object_head, "content_length", 0) or file_size or 0)
-    source_object_info["file_size"] = object_size
-    store.update(task_id, source_object_info=source_object_info)
-
-    try:
-        tos_clients.download_file(object_key, video_path)
-    except Exception:
-        store.update(task_id, error="download source failed")
-        return jsonify({"error": "Unable to download uploaded source object"}), 502
+        log.exception("[subtitle_removal] upload source to TOS failed task_id=%s", task_id)
+        store.update(task_id, error="upload source to TOS failed")
+        return jsonify({"error": "Unable to upload source object to TOS"}), 502
 
     media_info = dict(probe_media_info(video_path) or {})
     media_info["file_size_mb"] = round(object_size / (1024 * 1024), 2) if object_size else 0.0
