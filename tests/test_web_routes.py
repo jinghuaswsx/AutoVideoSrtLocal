@@ -1905,6 +1905,7 @@ def test_medias_page_contains_raw_sources_modal_and_upload_modal(authed_client_n
     assert 'id="rsModal"' in body
     assert 'id="rsModalClose"' in body
     assert 'id="rsSummary"' in body
+    assert '<ul id="rsList" class="oc-rs-list"></ul>' in body
     assert 'id="rsUploadMask"' in body
     assert 'id="rsUploadForm"' in body
     assert 'id="rsVideoInput"' in body
@@ -1966,6 +1967,8 @@ def test_medias_scripts_wire_raw_sources_modal_flow():
     assert "js-raw-sources" in medias_js
     assert "rsModalMask" in medias_js
     assert "rsModalClose" in medias_js
+    assert "loadRawSourceList" in medias_js
+    assert "await loadRawSourceList(uiState.currentPid)" in medias_js
     assert "rsUploadForm" in medias_js
     assert '/medias/api/products/${pid}/raw-sources' in medias_js
     assert '/medias/api/raw-sources/${del.dataset.rid}' in medias_js

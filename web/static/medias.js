@@ -2951,13 +2951,15 @@
   function renderRawSourceState(message, kind = '') {
     const isError = kind === 'error';
     list.innerHTML = `
-      <div class="oc-rs-empty${isError ? ' err' : ''}">
+      <li class="oc-rs-empty${isError ? ' err' : ''}">
         <div>${escapeHtml(message)}</div>
         ${isError ? '<button type="button" id="rsRetryBtn" class="oc-btn ghost sm">重新加载</button>' : ''}
-      </div>`;
+      </li>`;
     const retryBtn = $('rsRetryBtn');
     if (retryBtn && uiState.currentPid) {
-      retryBtn.addEventListener('click', () => refreshRawSourceList(uiState.currentPid));
+      retryBtn.addEventListener('click', async () => {
+        await loadRawSourceList(uiState.currentPid);
+      });
     }
   }
 
@@ -2975,6 +2977,18 @@
     uiState.currentName = '';
     list.innerHTML = '';
     summary.textContent = '加载中';
+  }
+
+  async function loadRawSourceList(pid) {
+    summary.textContent = '加载中';
+    renderRawSourceState('素材列表加载中...');
+    try {
+      return await refreshRawSourceList(pid);
+    } catch (err) {
+      renderRawSourceState(`加载失败：${err.message || err}`, 'error');
+      summary.textContent = '素材列表加载失败';
+      return null;
+    }
   }
 
   function openRawSourceUpload() {
@@ -2998,7 +3012,7 @@
     setSummary(items);
     list.innerHTML = items.length
       ? items.map(renderRawSourceRow).join('')
-      : '<div class="oc-rs-empty">还没有素材，先上传第一条再发起视频翻译。</div>';
+      : '<li class="oc-rs-empty">还没有素材，先上传第一条再发起视频翻译。</li>';
     syncRawSourceCount(pid, items.length);
     return items;
   }
@@ -3162,12 +3176,7 @@
     if (openBtn) {
       event.preventDefault();
       openRawSourceModal(openBtn.dataset.pid, openBtn.dataset.name || '');
-      try {
-        await refreshRawSourceList(openBtn.dataset.pid);
-      } catch (err) {
-        renderRawSourceState(`加载失败：${err.message || err}`, 'error');
-        summary.textContent = '素材列表加载失败';
-      }
+      await loadRawSourceList(openBtn.dataset.pid);
       return;
     }
 
