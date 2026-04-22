@@ -10,7 +10,7 @@
     has_cover: '封面',
     has_copywriting: '文案',
     lang_supported: '链接',
-    has_push_texts: '英文合规',
+    has_push_texts: '英文文案格式正确',
   };
 
   const PUSH_MODAL_MODES = {
