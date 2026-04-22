@@ -1403,12 +1403,28 @@
   }
 
   function edRenderCopyTranslateButton() {
-    const btn = $('edCwTranslateBtn');
-    if (!btn) return;
+    const slot = $('edCwTranslateSlot');
+    if (!slot) return;
     const lang = (edState.activeLang || '').trim().toLowerCase();
+    if (lang === 'en') {
+      slot.innerHTML = '';
+      return;
+    }
+    let btn = slot.querySelector('#edCwTranslateBtn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'oc-btn ghost sm';
+      btn.type = 'button';
+      btn.id = 'edCwTranslateBtn';
+      btn.textContent = '一键翻译英文文案';
+      btn.addEventListener('click', () => {
+        edTranslateEnglishCopywriting().catch((err) => {
+          console.error('[copywriting] translate from english failed:', err);
+        });
+      });
+      slot.replaceChildren(btn);
+    }
     const source = edGetEnglishSourceCopy();
-    btn.hidden = lang === 'en';
-    if (lang === 'en') return;
     btn.disabled = !source;
     btn.title = source ? '读取英文文案并生成当前语种文案' : '当前没有可用的英文文案';
   }
@@ -3321,12 +3337,6 @@
       $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
       $('edCwBadge').textContent = $('edCwList').children.length;
     });
-    $('edCwTranslateBtn') && $('edCwTranslateBtn').addEventListener('click', () => {
-      edTranslateEnglishCopywriting().catch((err) => {
-        console.error('[copywriting] translate from english failed:', err);
-      });
-    });
-
     // 编辑弹窗封面事件由 edRenderCoverBlock() 动态绑定，此处不再静态绑定
 
     // ===== 新增素材大框：视频封面图 =====

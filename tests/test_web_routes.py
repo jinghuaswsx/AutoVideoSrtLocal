@@ -1863,14 +1863,16 @@ def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
 
     assert 'class="oc-section-head oc-section-head-between"' in body
     assert 'id="edCwAddBtn"' in body
-    assert 'id="edCwTranslateBtn"' in body
-    assert "一键翻译英文文案" in body
+    assert 'id="edCwTranslateSlot"' in body
     assert "添加文案" in body
     assert '.oc-cw-grid { display:grid; grid-template-columns:1fr; gap:var(--oc-sp-2); }' in body
     assert "textarea.rows = 3;" in medias_js
     assert "function edNormalizeCopywritingBody" in medias_js
     assert "function edTranslateEnglishCopywriting()" in medias_js
     assert "'/api/title-translate/translate'" in medias_js
+    assert "slot.innerHTML = '';" in medias_js
+    assert "slot.replaceChildren(btn);" in medias_js
+    assert "btn.textContent = '一键翻译英文文案';" in medias_js
     assert "textarea.placeholder = '标题: \\n文案: \\n描述: ';" in medias_js
 
 
