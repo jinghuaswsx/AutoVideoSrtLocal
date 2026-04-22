@@ -282,27 +282,44 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
     return images
 
 
+def _media_product_owner_name_expr() -> str:
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'xingming'"
+    )
+    if row:
+        return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
+    return "u.username"
+
+
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
                   offset: int = 0, limit: int = 20) -> tuple[list[dict], int]:
-    where = ["deleted_at IS NULL"]
+    where = ["p.deleted_at IS NULL"]
     args: list[Any] = []
     if user_id is not None:
-        where.append("user_id=%s")
+        where.append("p.user_id=%s")
         args.append(user_id)
-    where.append("archived=%s")
+    where.append("p.archived=%s")
     args.append(1 if archived else 0)
     if keyword:
-        where.append("(name LIKE %s OR product_code LIKE %s)")
+        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         like = f"%{keyword}%"
         args.extend([like, like])
     where_sql = " AND ".join(where)
+    owner_name_expr = _media_product_owner_name_expr()
 
-    total_row = query_one(f"SELECT COUNT(*) AS c FROM media_products WHERE {where_sql}", tuple(args))
+    total_row = query_one(
+        f"SELECT COUNT(*) AS c FROM media_products p WHERE {where_sql}",
+        tuple(args),
+    )
     total = int((total_row or {}).get("c") or 0)
 
     rows = query(
-        f"SELECT * FROM media_products WHERE {where_sql} "
-        "ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
+        f"SELECT p.*, {owner_name_expr} AS owner_name "
+        "FROM media_products p "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        f"WHERE {where_sql} "
+        "ORDER BY p.created_at DESC, p.id DESC LIMIT %s OFFSET %s",
         tuple(args + [limit, offset]),
     )
     return rows, total
