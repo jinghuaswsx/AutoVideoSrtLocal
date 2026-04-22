@@ -277,6 +277,17 @@ def test_set_channel_rejects_invalid(monkeypatch):
         its.set_channel("gpt-router")
 
 
+def test_get_channel_accepts_doubao(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    store = {}
+    _patch_store(monkeypatch, store)
+    its.set_channel("DOUBAO")
+
+    assert store["image_translate.channel"] == "doubao"
+    assert its.get_channel() == "doubao"
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 

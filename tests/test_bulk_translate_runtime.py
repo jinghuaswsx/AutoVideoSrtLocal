@@ -823,6 +823,18 @@ def test_translate_cover_to_media_key_writes_local_media_store(tmp_path, monkeyp
     assert writes == [("1/medias/77/cover_de_cover_demo.png", b"cover-payload")]
 
 
+def test_default_image_translate_model_id_uses_seedream_for_doubao_channel(monkeypatch):
+    from appcore import bulk_translate_runtime as mod
+
+    monkeypatch.setattr("appcore.image_translate_settings.get_channel", lambda: "doubao")
+    monkeypatch.setattr(
+        "appcore.api_keys.resolve_extra",
+        lambda user_id, service: {"default_model_id": "gemini-3-pro-image-preview"},
+    )
+
+    assert mod._default_image_translate_model_id(1) == "doubao-seedream-5-0-260128"
+
+
 # ============================================================
 # Task 20:人工恢复三路径
 # ============================================================

@@ -1,4 +1,4 @@
-"""Gemini 图像生成封装（Nano Banana 系列）。
+﻿"""Gemini 图像生成封装（Nano Banana 系列）。
 
 对外暴露 generate_image()，根据 system_settings 里的 image_translate.channel
 分发到三条通道：AI Studio / Google Cloud (Vertex AI) / OpenRouter。
@@ -9,34 +9,78 @@ from __future__ import annotations
 
 import base64
 from decimal import Decimal
+import io
 import logging
+import math
 import re
 from typing import Any
 
 from google import genai
 from google.genai import types as genai_types
+from PIL import Image
+import requests
 
 from appcore import ai_billing
 from appcore.gemini import resolve_config
 from config import (
+    DOUBAO_LLM_API_KEY,
+    DOUBAO_LLM_BASE_URL,
     GEMINI_AISTUDIO_API_KEY,
     GEMINI_CLOUD_API_KEY,
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
     USD_TO_CNY,
+    VOLC_API_KEY,
 )
 
 logger = logging.getLogger(__name__)
 
-
-IMAGE_MODELS: list[tuple[str, str]] = [
-    ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
-    ("gemini-3-pro-image-preview",   "Nano Banana Pro（高保真）"),
-]
+_SEEDREAM_MIN_PIXELS = 2560 * 1440
+_SEEDREAM_MAX_PIXELS = 10_404_496
 
 
-def is_valid_image_model(model_id: str) -> bool:
-    return any(m[0] == model_id for m in IMAGE_MODELS)
+IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
+    "aistudio": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "cloud": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "openrouter": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+    ],
+    "doubao": [
+        ("doubao-seedream-5-0-260128", "Seedream 5.0（豆包）"),
+    ],
+}
+IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
+
+
+def normalize_image_channel(channel: str | None) -> str:
+    value = (channel or "").strip().lower()
+    return value if value in IMAGE_MODELS_BY_CHANNEL else "aistudio"
+
+
+def list_image_models(channel: str | None = None) -> list[tuple[str, str]]:
+    return list(IMAGE_MODELS_BY_CHANNEL[normalize_image_channel(channel)])
+
+
+def default_image_model(channel: str | None = None) -> str:
+    models = list_image_models(channel)
+    return models[0][0] if models else "gemini-3.1-flash-image-preview"
+
+
+def is_valid_image_model(model_id: str, channel: str | None = None) -> bool:
+    return any(mid == model_id for mid, _ in list_image_models(channel))
+
+
+def coerce_image_model(model_id: str | None, channel: str | None = None) -> str:
+    if model_id and is_valid_image_model(model_id, channel=channel):
+        return model_id
+    return default_image_model(channel)
 
 
 class GeminiImageError(RuntimeError):
@@ -107,6 +151,8 @@ def _classify_error(exc: Exception) -> type[Exception]:
 
 
 def _channel_provider(channel: str) -> str:
+    if channel == "doubao":
+        return "doubao"
     if channel == "openrouter":
         return "openrouter"
     if channel == "cloud":
@@ -250,6 +296,55 @@ def _extract_openrouter_image(resp: Any) -> tuple[bytes, str] | None:
     return None
 
 
+def _resolve_doubao_credentials(user_id: int | None) -> tuple[str, str]:
+    from appcore.api_keys import get_key, resolve_extra
+
+    user_key = ""
+    extra: dict[str, Any] = {}
+    if user_id is not None:
+        try:
+            user_key = (get_key(user_id, "doubao_llm") or "").strip()
+        except Exception:
+            logger.debug("读取 doubao_llm 用户 key 失败", exc_info=True)
+        try:
+            extra = resolve_extra(user_id, "doubao_llm") or {}
+        except Exception:
+            logger.debug("读取 doubao_llm extra 失败", exc_info=True)
+    api_key = user_key or (DOUBAO_LLM_API_KEY or "").strip() or (VOLC_API_KEY or "").strip()
+    if not api_key:
+        raise GeminiImageError(
+            "豆包 ARK API key 未配置（请在系统设置中配置 doubao_llm，或设置 DOUBAO_LLM_API_KEY / VOLC_API_KEY）"
+        )
+    base_url = (extra.get("base_url") or "").strip() or DOUBAO_LLM_BASE_URL
+    return api_key, (base_url or "").rstrip("/")
+
+
+def _resolve_seedream_size(source_image: bytes) -> str:
+    try:
+        with Image.open(io.BytesIO(source_image)) as img:
+            width, height = img.size
+        if width <= 0 or height <= 0:
+            return "2K"
+        ratio = width / height
+        if ratio < (1 / 16) or ratio > 16:
+            return "2K"
+        pixels = width * height
+        if _SEEDREAM_MIN_PIXELS <= pixels <= _SEEDREAM_MAX_PIXELS:
+            return f"{width}x{height}"
+        if pixels < _SEEDREAM_MIN_PIXELS:
+            scale = math.sqrt(_SEEDREAM_MIN_PIXELS / pixels)
+            width = max(16, math.ceil(width * scale))
+            height = max(16, math.ceil(height * scale))
+        else:
+            scale = math.sqrt(_SEEDREAM_MAX_PIXELS / pixels)
+            width = max(16, math.floor(width * scale))
+            height = max(16, math.floor(height * scale))
+        return f"{width}x{height}"
+    except Exception:
+        logger.debug("解析 Seedream 原图尺寸失败，回退 2K", exc_info=True)
+    return "2K"
+
+
 def _openrouter_finish_reason(resp: Any) -> str:
     for choice in getattr(resp, "choices", None) or []:
         reason = getattr(choice, "finish_reason", None)
@@ -310,6 +405,74 @@ def _generate_via_openrouter(
     return image_bytes, mime, resp
 
 
+def _generate_via_seedream(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    model_id: str,
+    *,
+    api_key: str,
+    base_url: str,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError("豆包 ARK API key 未配置")
+    api_base = (base_url or DOUBAO_LLM_BASE_URL).rstrip("/")
+    if not api_base:
+        raise GeminiImageError("豆包 ARK Base URL 未配置")
+    model = model_id or default_image_model("doubao")
+    mime = source_mime or "image/png"
+    data_url = f"data:{mime};base64,{base64.b64encode(source_image).decode('ascii')}"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "image": data_url,
+        "size": _resolve_seedream_size(source_image),
+        "response_format": "b64_json",
+        "output_format": "png",
+        "watermark": False,
+        "stream": False,
+        "sequential_image_generation": "disabled",
+    }
+    try:
+        resp = requests.post(
+            f"{api_base}/images/generations",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=120,
+        )
+    except requests.RequestException as e:
+        raise GeminiImageRetryable(f"Seedream 请求失败：{e}") from e
+
+    try:
+        resp_json = resp.json()
+    except Exception:
+        resp_json = {}
+
+    if resp.status_code >= 400:
+        err = resp_json.get("error") if isinstance(resp_json, dict) else None
+        message = ""
+        if isinstance(err, dict):
+            message = str(err.get("message") or "").strip()
+        message = message or (resp.text or "").strip() or f"HTTP {resp.status_code}"
+        if resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(f"Seedream 请求失败（HTTP {resp.status_code}）：{message}")
+        raise GeminiImageError(f"Seedream 请求失败（HTTP {resp.status_code}）：{message}")
+
+    data = resp_json.get("data") if isinstance(resp_json, dict) else None
+    first = data[0] if isinstance(data, list) and data else None
+    b64_json = first.get("b64_json") if isinstance(first, dict) else None
+    if not b64_json:
+        raise GeminiImageError("Seedream 未返回图像")
+    try:
+        image_bytes = base64.b64decode(b64_json, validate=False)
+    except Exception as e:
+        raise GeminiImageError(f"Seedream 图像 base64 解析失败：{e}") from e
+    return image_bytes, "image/png", resp_json
+
+
 # ---------------------------------------------------------------------------
 # 对外入口
 # ---------------------------------------------------------------------------
@@ -326,44 +489,57 @@ def generate_image(
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
     channel = _resolve_channel()
-
-    api_key_from_gemini, resolved_model = resolve_config(
-        user_id, service=service, default_model=model,
-    )
-    model_id = model or resolved_model
+    model_id = coerce_image_model(model, channel=channel)
     provider = _channel_provider(channel)
 
     try:
-        if channel == "openrouter":
-            api_key = OPENROUTER_API_KEY
-            image_bytes, mime, resp = _generate_via_openrouter(
-                prompt, source_image, source_mime, model_id, api_key=api_key,
+        if channel == "doubao":
+            api_key, base_url = _resolve_doubao_credentials(user_id)
+            image_bytes, mime, resp = _generate_via_seedream(
+                prompt=prompt,
+                source_image=source_image,
+                source_mime=source_mime,
+                model_id=model_id,
+                api_key=api_key,
+                base_url=base_url,
             )
             input_tokens = output_tokens = None
-            response_cost_cny = _extract_openrouter_cost_cny(resp)
-            usage = getattr(resp, "usage", None)
-            if usage is not None:
-                input_tokens = getattr(usage, "prompt_tokens", None)
-                output_tokens = getattr(usage, "completion_tokens", None)
-        else:
             response_cost_cny = None
-            if channel == "cloud":
-                api_key = GEMINI_CLOUD_API_KEY
-                if not api_key:
-                    raise GeminiImageError(
-                        "Google Cloud ????????? GEMINI_CLOUD_API_KEY ?????"
-                    )
-            else:
-                api_key = api_key_from_gemini or GEMINI_AISTUDIO_API_KEY
-                if not api_key:
-                    raise GeminiImageError("Gemini API key ???")
-            image_bytes, mime, resp = _generate_via_genai(
-                prompt, source_image, source_mime, model_id,
-                backend=channel, api_key=api_key,
+        else:
+            api_key_from_gemini, resolved_model = resolve_config(
+                user_id, service=service, default_model=model,
             )
-            meta = getattr(resp, "usage_metadata", None)
-            input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None
-            output_tokens = int(getattr(meta, "candidates_token_count", 0) or 0) if meta else None
+            model_id = coerce_image_model(model or resolved_model, channel=channel)
+            if channel == "openrouter":
+                api_key = OPENROUTER_API_KEY
+                image_bytes, mime, resp = _generate_via_openrouter(
+                    prompt, source_image, source_mime, model_id, api_key=api_key,
+                )
+                input_tokens = output_tokens = None
+                response_cost_cny = _extract_openrouter_cost_cny(resp)
+                usage = getattr(resp, "usage", None)
+                if usage is not None:
+                    input_tokens = getattr(usage, "prompt_tokens", None)
+                    output_tokens = getattr(usage, "completion_tokens", None)
+            else:
+                response_cost_cny = None
+                if channel == "cloud":
+                    api_key = GEMINI_CLOUD_API_KEY
+                    if not api_key:
+                        raise GeminiImageError(
+                            "Google Cloud ????????? GEMINI_CLOUD_API_KEY ?????"
+                        )
+                else:
+                    api_key = api_key_from_gemini or GEMINI_AISTUDIO_API_KEY
+                    if not api_key:
+                        raise GeminiImageError("Gemini API key ???")
+                image_bytes, mime, resp = _generate_via_genai(
+                    prompt, source_image, source_mime, model_id,
+                    backend=channel, api_key=api_key,
+                )
+                meta = getattr(resp, "usage_metadata", None)
+                input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None
+                output_tokens = int(getattr(meta, "candidates_token_count", 0) or 0) if meta else None
     except Exception as e:
         _log_usage(
             user_id=user_id,
