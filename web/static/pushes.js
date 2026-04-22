@@ -395,8 +395,10 @@
     const respWrap = el('section', { class: 'pm-section pm-response', hidden: true });
     const respTitle = el('h4', {}, '推送响应');
     const respPre = el('pre', { class: 'pm-json' });
+    const respMkIdTip = el('div', { class: 'pm-mk-id-tip', hidden: true });
     respWrap.appendChild(respTitle);
     respWrap.appendChild(respPre);
+    respWrap.appendChild(respMkIdTip);
     modal.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
@@ -452,6 +454,18 @@
       respTitle.textContent = title || '推送响应';
       respPre.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
       respPre.classList.toggle('pm-json-error', !!isError);
+      respMkIdTip.hidden = true;
+      respMkIdTip.textContent = '';
+    }
+
+    function showMkIdMatch(match) {
+      if (!match) return;
+      respMkIdTip.hidden = false;
+      if (match.status === 'ok' && match.mk_id) {
+        respMkIdTip.textContent = `配对 mk_id : ${match.mk_id}`;
+      } else {
+        respMkIdTip.textContent = '配对 mk_id 失败，请检查，当前无法完成小语种文案推送，缺失 mk_id';
+      }
     }
 
     function close() {
@@ -516,8 +530,14 @@
             headers: { 'Content-Type': 'application/json' },
           });
           showResponse(body, false, '素材推送响应');
+          showMkIdMatch(body.mk_id_match);
           materialPushed = true;
           anyPushSucceeded = true;
+          // mk_id 若匹配成功，顺手更新弹窗上部显示的 mk_id（再打开小语种胶囊时就能看到）
+          if (body.mk_id_match && body.mk_id_match.mk_id) {
+            mkId = body.mk_id_match.mk_id;
+            mkIdValue.textContent = String(mkId);
+          }
         }
       } catch (err) {
         showResponse(describeError(err), true,

@@ -660,6 +660,13 @@
   background: var(--oc-bg-subtle);
 }
 .pm-response h4 { margin-top: 0; }
+.pm-mk-id-tip {
+  margin-top: var(--oc-sp-3);
+  color: var(--oc-danger-fg);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.55;
+}
 .pm-footer {
   display: flex; gap: var(--oc-sp-2); justify-content: flex-end;
   padding: var(--oc-sp-3) var(--oc-sp-5);

@@ -56,6 +56,63 @@ def build_localized_texts_target_url(mk_id: int | None) -> str:
     return f"{base}/api/marketing/medias/{int(mk_id)}/texts"
 
 
+def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
+    """推送素材成功后，调 wedev /api/marketing/medias 按 q=product_code 搜索，
+    遍历 items.product_links，取 URL 末段精准匹配 product_code，
+    多条命中时按 id 最大优先（最新推送的那条）。
+
+    返回 (mk_id|None, status)。status 枚举：
+      ok / no_match / not_configured / request_failed / credentials_missing
+    """
+    code = (product_code or "").strip().lower()
+    if not code:
+        return None, "no_product_code"
+
+    base = get_localized_texts_base_url()
+    if not base:
+        return None, "not_configured"
+
+    headers = build_localized_texts_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return None, "credentials_missing"
+
+    url = f"{base}/api/marketing/medias"
+    params = {"page": 1, "q": code, "source": "", "level": "", "show_attention": 0}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+    except requests.RequestException as exc:
+        log.warning("lookup_mk_id request failed: %s", exc)
+        return None, "request_failed"
+
+    if not resp.ok:
+        log.warning("lookup_mk_id HTTP %s body=%s", resp.status_code, resp.text[:200])
+        return None, "request_failed"
+
+    try:
+        data = resp.json() or {}
+    except ValueError:
+        return None, "request_failed"
+
+    items = ((data.get("data") or {}).get("items") or [])
+    matched_ids: list[int] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        if not isinstance(item_id, int):
+            continue
+        for link in item.get("product_links") or []:
+            if not isinstance(link, str):
+                continue
+            tail = link.rstrip("/").rsplit("/", 1)[-1].strip().lower()
+            if tail == code:
+                matched_ids.append(item_id)
+                break
+    if not matched_ids:
+        return None, "no_match"
+    return max(matched_ids), "ok"
+
+
 def build_localized_texts_headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     auth = get_localized_texts_authorization()

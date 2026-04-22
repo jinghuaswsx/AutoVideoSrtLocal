@@ -217,10 +217,31 @@ def api_push(item_id: int):
             payload=payload,
             response_body=body_text,
         )
+
+        # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
+        mk_id_match: dict[str, Any] = {"status": "skipped", "mk_id": None}
+        try:
+            matched_mk_id, status = pushes.lookup_mk_id(product_code)
+        except Exception as exc:  # defensive — 任何异常都不能破坏推送成功响应
+            log.warning("lookup_mk_id unexpected error: %s", exc)
+            matched_mk_id, status = None, "request_failed"
+
+        mk_id_match["status"] = status
+        mk_id_match["mk_id"] = matched_mk_id
+        if matched_mk_id:
+            try:
+                medias.update_product(product["id"], mk_id=int(matched_mk_id))
+            except Exception as exc:
+                # 唯一键冲突（已被其他产品占用）或别的 DB 错误
+                log.warning("update_product mk_id failed: %s", exc)
+                mk_id_match["status"] = "db_conflict"
+                mk_id_match["detail"] = str(exc)
+
         return jsonify({
             "ok": True,
             "upstream_status": resp.status_code,
             "response_body": body_text[:4000],
+            "mk_id_match": mk_id_match,
         })
 
     pushes.record_push_failure(

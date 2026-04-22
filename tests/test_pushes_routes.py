@@ -162,6 +162,10 @@ class _FakeResponse:
         self.text = text
         self.ok = 200 <= status_code < 400
 
+    def json(self):
+        import json as _json
+        return _json.loads(self.text or "{}")
+
 
 def _stub_probe_ok(monkeypatch):
     monkeypatch.setattr("appcore.pushes.probe_ad_url", lambda url: (True, None))
@@ -336,8 +340,9 @@ def test_payload_endpoint_includes_mk_id_and_localized_texts(
     pid, item_id = seeded_item
     _stub_probe_ok(monkeypatch)
     _seed_en_push_texts(pid)
+    mk_id = pid + 900000
     from appcore import medias
-    medias.update_product(pid, mk_id=9999)
+    medias.update_product(pid, mk_id=mk_id)
     medias.replace_copywritings(
         pid,
         [{"title": "T_DE", "body": "标题: 德标题\n文案: 德文案\n描述: 德描述"}],
@@ -348,8 +353,8 @@ def test_payload_endpoint_includes_mk_id_and_localized_texts(
     resp = logged_in_client.get(f"/pushes/api/items/{item_id}/payload")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["mk_id"] == 9999
-    assert data["localized_push_target_url"] == "https://os.wedev.vip/api/marketing/medias/9999/texts"
+    assert data["mk_id"] == mk_id
+    assert data["localized_push_target_url"] == f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts"
     assert isinstance(data["localized_texts_request"]["texts"], list)
 
 
@@ -357,8 +362,9 @@ def test_push_localized_texts_rejects_missing_credentials(
     logged_in_client, seeded_item, monkeypatch,
 ):
     pid, item_id = seeded_item
+    mk_id = pid + 800000
     from appcore import medias
-    medias.update_product(pid, mk_id=8888)
+    medias.update_product(pid, mk_id=mk_id)
     monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
                         lambda: "https://os.wedev.vip")
     monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization", lambda: "")
@@ -370,8 +376,9 @@ def test_push_localized_texts_rejects_missing_credentials(
 
 def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch):
     pid, item_id = seeded_item
+    mk_id = pid + 700000
     from appcore import medias
-    medias.update_product(pid, mk_id=7777)
+    medias.update_product(pid, mk_id=mk_id)
     medias.replace_copywritings(
         pid,
         [{"title": "T_DE", "body": "标题: 德标题\n文案: 德文案\n描述: 德描述"}],
@@ -393,6 +400,147 @@ def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch
 
     resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push-localized-texts")
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert captured["url"] == "https://os.wedev.vip/api/marketing/medias/7777/texts"
+    assert captured["url"] == f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts"
     assert captured["headers"]["Authorization"] == "Bearer sometoken"
     assert isinstance(captured["json"]["texts"], list) and captured["json"]["texts"]
+
+
+# ================================================================
+# mk_id 回填（推送成功 → lookup_mk_id → 写回 media_products）
+# ================================================================
+
+
+def _mk_requests_get(url, params=None, **kw):
+    """默认的 GET 拦截占位，各测试覆盖。"""
+    raise AssertionError("unexpected GET")
+
+
+def _mk_push_ok_response():
+    return _FakeResponse(200, '{"ok":true}')
+
+
+def test_push_mk_id_match_writes_back(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer tok")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+
+    # 拦截下游推送
+    monkeypatch.setattr("web.routes.pushes.requests.post",
+                        lambda url, **kw: _mk_push_ok_response())
+
+    # 拦截 wedev 列表查询：返回两条都精准匹配的 items，要求取 id 最大的
+    from appcore import medias
+    product = medias.get_product(pid)
+    product_code = product["product_code"]
+    # 动态两个 id（避免被其他 test 占用了 mk_id 唯一键）
+    id_small = pid + 1_000_000
+    id_large = pid + 2_000_000
+    def fake_get(url, params=None, **kw):
+        assert url.endswith("/api/marketing/medias")
+        assert params["q"] == product_code
+        body = {
+            "data": {
+                "items": [
+                    {"id": id_small, "product_links": [f"https://x/y/{product_code}"]},
+                    {"id": id_large, "product_links": [f"https://x/y/{product_code}"]},
+                ]
+            }
+        }
+        return _FakeResponse(200, __import__("json").dumps(body))
+    monkeypatch.setattr("appcore.pushes.requests.get", fake_get)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["mk_id_match"]["status"] == "ok"
+    assert body["mk_id_match"]["mk_id"] == id_large  # 取 id 最大
+
+    # DB 已回填
+    assert medias.get_product(pid)["mk_id"] == id_large
+
+
+def test_push_mk_id_no_match_tells_frontend(logged_in_client, seeded_item, monkeypatch):
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer tok")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+    monkeypatch.setattr("web.routes.pushes.requests.post",
+                        lambda url, **kw: _mk_push_ok_response())
+
+    # wedev 返回的 product_links 末段都对不上
+    def fake_get(url, params=None, **kw):
+        body = {"data": {"items": [
+            {"id": 3001, "product_links": ["https://x/y/unrelated-product-abc"]},
+        ]}}
+        return _FakeResponse(200, __import__("json").dumps(body))
+    monkeypatch.setattr("appcore.pushes.requests.get", fake_get)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["mk_id_match"]["status"] == "no_match"
+    assert body["mk_id_match"]["mk_id"] is None
+
+
+def test_push_mk_id_lookup_failure_does_not_block_success(
+    logged_in_client, seeded_item, monkeypatch,
+):
+    """wedev 不可达时，主推送仍应成功返回，mk_id_match 记 request_failed。"""
+    pid, item_id = seeded_item
+    _seed_en_push_texts(pid)
+    _stub_probe_ok(monkeypatch)
+    monkeypatch.setattr("config.PUSH_TARGET_URL", "http://downstream.invalid/push")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer tok")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+    monkeypatch.setattr("web.routes.pushes.requests.post",
+                        lambda url, **kw: _mk_push_ok_response())
+
+    import requests as _req
+    def boom(url, params=None, **kw):
+        raise _req.ConnectionError("wedev timeout")
+    monkeypatch.setattr("appcore.pushes.requests.get", boom)
+
+    resp = logged_in_client.post(f"/pushes/api/items/{item_id}/push")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["mk_id_match"]["status"] == "request_failed"
+    assert body["mk_id_match"]["mk_id"] is None
+
+
+def test_lookup_mk_id_skips_items_with_non_matching_tail(monkeypatch):
+    """直接单测：query 带 ?utm=... 的 link 末段不应误匹配裸 product_code。"""
+    from appcore import pushes
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url",
+                        lambda: "https://os.wedev.vip")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization",
+                        lambda: "Bearer tok")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+
+    def fake_get(url, params=None, **kw):
+        body = {"data": {"items": [
+            {"id": 111, "product_links": ["https://x/y/foo-bar-rjc?utm=a"]},
+            {"id": 222, "product_links": ["https://x/y/foo-bar-rjc"]},
+        ]}}
+        return _FakeResponse(200, __import__("json").dumps(body))
+    monkeypatch.setattr("appcore.pushes.requests.get", fake_get)
+
+    mk_id, status = pushes.lookup_mk_id("foo-bar-rjc")
+    assert status == "ok"
+    assert mk_id == 222  # 只有裸末段匹配
