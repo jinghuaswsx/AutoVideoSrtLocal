@@ -554,7 +554,8 @@ def create_image_translate(task_id: str, task_dir: str, *,
                             items: list[dict],
                             product_name: str = "",
                             project_name: str = "",
-                            medias_context: dict | None = None) -> dict:
+                            medias_context: dict | None = None,
+                            concurrency_mode: str = "sequential") -> dict:
     """创建图片翻译任务的初始状态。product_name/project_name 作为存档标识写入 state。"""
     normalized_items = []
     for idx, raw in enumerate(items):
@@ -594,6 +595,7 @@ def create_image_translate(task_id: str, task_dir: str, *,
         },
         "items": normalized_items,
         "medias_context": dict(medias_context or {}),
+        "concurrency_mode": concurrency_mode if concurrency_mode in {"sequential", "parallel"} else "sequential",
         "error": "",
         "_user_id": user_id,
     }

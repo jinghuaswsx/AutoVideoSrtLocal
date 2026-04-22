@@ -431,3 +431,34 @@ def test_apply_raises_when_medias_context_missing():
         rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
         )
+
+
+def test_create_image_translate_stores_concurrency_mode():
+    """task_state.create_image_translate 接受 concurrency_mode 并写入 state；默认 sequential。"""
+    from appcore import task_state as ts
+    from unittest.mock import patch
+
+    with patch.object(ts, "_db_upsert"):  # 不走 DB
+        # 1) 默认
+        t1 = ts.create_image_translate(
+            "t-cm-1", "/tmp/x",
+            user_id=1, preset="cover", target_language="de",
+            target_language_name="德语", model_id="gemini-x",
+            prompt="p", items=[],
+        )
+        assert t1["concurrency_mode"] == "sequential"
+
+        # 2) 显式 parallel
+        t2 = ts.create_image_translate(
+            "t-cm-2", "/tmp/x",
+            user_id=1, preset="cover", target_language="de",
+            target_language_name="德语", model_id="gemini-x",
+            prompt="p", items=[],
+            concurrency_mode="parallel",
+        )
+        assert t2["concurrency_mode"] == "parallel"
+
+    # cleanup
+    with ts._lock:
+        ts._tasks.pop("t-cm-1", None)
+        ts._tasks.pop("t-cm-2", None)
