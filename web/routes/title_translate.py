@@ -73,9 +73,8 @@ def api_translate():
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
+            temperature=0.0,
             max_tokens=2048,
-            extra_body={"plugins": [{"id": "response-healing"}]},
         )
     except Exception as exc:
         return jsonify({"error": f"翻译失败: {exc}"}), 502
