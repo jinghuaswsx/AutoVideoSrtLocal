@@ -2137,3 +2137,27 @@ def test_medias_scripts_wire_material_link_check_flow():
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}' in medias_js
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail' in medias_js
     assert "edState.productData.product.link_check_tasks" in medias_js
+
+
+def test_pushes_scripts_format_language_as_chinese_plus_code():
+    pushes_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.js").read_text(encoding="utf-8")
+
+    assert "function formatLanguageLabel" in pushes_js
+    assert "const raw = String(code || '').trim();" in pushes_js
+    assert "${name} (${normalized})" in pushes_js
+    assert '<span class="lang-pill">${formatLanguageLabel(it.lang)}</span>' in pushes_js
+    assert "[['语种', formatLanguageLabel(t.lang)" in pushes_js
+    assert "addKV('语种', formatLanguageLabel(item.lang));" in pushes_js
+
+
+def test_medias_scripts_format_language_as_chinese_plus_code():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function langDisplayName(code)" in medias_js
+    assert "const raw = String(code || '').trim();" in medias_js
+    assert "${l.name_zh} (${l.code})" in medias_js
+    assert "${langDisplayName(l.code)}${badgeHtml}" in medias_js
+    assert "const label = langDisplayName(lang);" in medias_js
+    assert "确认删除 ${langDisplayName(lang)} 语种主图" in medias_js
+    assert "langDisplayName(analysis.detected_language || '-')" in medias_js
+    assert "langDisplayName(task.page_language || '-')" in medias_js
