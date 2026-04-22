@@ -16,11 +16,40 @@
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
   function validateMaterialFilename(filename, productName, langCode) {
-    // 英语素材维护无需语种标记/蔡靖华末尾约束，跳过文件名格式校验
-    if (langCode === 'en') return [];
+    const fn = String(filename || '');
+
+    // 英语素材只校验 "YYYY.MM.DD-{产品名}" 开头两段，其他部分不限制
+    if (langCode === 'en') {
+      const errs = [];
+      if (!productName) {
+        errs.push('当前产品尚未加载，请重试');
+        return errs;
+      }
+      if (fn.length < 11 || fn[10] !== '-') {
+        errs.push('开头必须是 "YYYY.MM.DD-" 格式');
+        return errs;
+      }
+      const dateStr = fn.slice(0, 10);
+      const dateMatch = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateStr);
+      if (!dateMatch) {
+        errs.push(`日期段 "${dateStr}" 格式必须是 YYYY.MM.DD`);
+        return errs;
+      }
+      const y = +dateMatch[1], mo = +dateMatch[2], d = +dateMatch[3];
+      const dObj = new Date(y, mo - 1, d);
+      if (dObj.getFullYear() !== y || dObj.getMonth() !== mo - 1 || dObj.getDate() !== d) {
+        errs.push(`日期 "${dateStr}" 不是合法日期`);
+        return errs;
+      }
+      const rest = fn.slice(11);
+      if (rest !== productName && !rest.startsWith(productName + '-') && !rest.startsWith(productName + '.')) {
+        errs.push(`商品名不符：日期之后必须紧跟 "${productName}"`);
+      }
+      return errs;
+    }
+
     const TAIL = '-指派-蔡靖华.mp4';
     const MID_PREFIX = '-原素材-补充素材(';
-    const fn = String(filename || '');
     const errs = [];
 
     const lang = (LANGUAGES || []).find(l => l.code === langCode);
@@ -87,11 +116,18 @@
     if (!errs.length) return true;
     const lang = (LANGUAGES || []).find(l => l.code === langCode);
     const langZh = (lang && lang.name_zh) || langCode;
-    const example = `例如：2026.04.17-${productName || '商品名'}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+    let spec, example;
+    if (langCode === 'en') {
+      spec = 'YYYY.MM.DD-{商品名}（后面内容不限）';
+      example = `例如：2026.04.17-${productName || '商品名'}-原素材.mp4`;
+    } else {
+      spec = 'YYYY.MM.DD-{商品名}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4';
+      example = `例如：2026.04.17-${productName || '商品名'}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+    }
     alert(
       '文件名不符合命名规范，请修改后再上传：\n\n'
       + '• ' + errs.join('\n• ')
-      + '\n\n规范：YYYY.MM.DD-{商品名}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4\n'
+      + '\n\n规范：' + spec + '\n'
       + example
     );
     return false;
