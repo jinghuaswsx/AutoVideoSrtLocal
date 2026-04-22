@@ -628,28 +628,30 @@
     grid.innerHTML = `
       <table class="oc-table" style="table-layout:fixed;">
         <colgroup>
-          <col style="width:48px">
-          <col style="width:96px">
-          <col style="width:120px">
-          <col style="width:120px">
-          <col style="width:96px">
-          <col style="width:60px">
-          <col style="width:200px">
-          <col style="width:108px">
-          <col style="width:300px">
-        </colgroup>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>主图</th>
-            <th>产品名称</th>
-            <th>产品 ID</th>
-            <th>明空 ID</th>
-            <th>素材数</th>
-            <th>语种覆盖</th>
-            <th>修改时间</th>
-            <th>操作</th>
-          </tr>
+        <col style="width:48px">
+        <col style="width:96px">
+        <col style="width:120px">
+        <col style="width:120px">
+        <col style="width:96px">
+        <col style="width:100px">
+        <col style="width:60px">
+        <col style="width:184px">
+        <col style="width:108px">
+        <col style="width:284px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>主图</th>
+          <th>产品名称</th>
+          <th>产品 ID</th>
+          <th>明空 ID</th>
+          <th>负责人</th>
+          <th>素材数</th>
+          <th>语种覆盖</th>
+          <th>修改时间</th>
+          <th>操作</th>
+        </tr>
         </thead>
         <tbody>
           ${items.map(rowHTML).join('')}
@@ -673,6 +675,7 @@
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
+    const ownerName = (p.owner_name || '').trim();
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
@@ -683,6 +686,7 @@
         <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
         <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
+        <td class="wrap" title="${escapeHtml(ownerName)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>

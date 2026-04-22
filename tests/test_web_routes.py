@@ -1635,6 +1635,7 @@ def test_medias_list_is_shared_for_normal_users(authed_user_client_no_db, monkey
         "product_code": "shared-product",
         "color_people": None,
         "source": None,
+        "owner_name": "张三",
         "archived": False,
         "created_at": datetime(2026, 4, 16, 10, 0, 0),
         "updated_at": datetime(2026, 4, 16, 10, 0, 0),
@@ -1646,6 +1647,7 @@ def test_medias_list_is_shared_for_normal_users(authed_user_client_no_db, monkey
 
     monkeypatch.setattr("web.routes.medias.medias.list_products", fake_list_products)
     monkeypatch.setattr("web.routes.medias.medias.count_items_by_product", lambda pids: {7: 1})
+    monkeypatch.setattr("web.routes.medias.medias.count_raw_sources_by_product", lambda pids: {7: 0})
     monkeypatch.setattr("web.routes.medias.medias.first_thumb_item_by_product", lambda pids: {7: None})
     monkeypatch.setattr("web.routes.medias.medias.list_item_filenames_by_product", lambda pids, limit_per=5: {7: ["shared.mp4"]})
     monkeypatch.setattr("web.routes.medias.medias.lang_coverage_by_product", lambda pids: {7: {"en": 1}})
@@ -1660,6 +1662,7 @@ def test_medias_list_is_shared_for_normal_users(authed_user_client_no_db, monkey
     assert payload["items"][0]["name"] == "shared-product"
     assert payload["items"][0]["id"] == 7
     assert payload["items"][0]["product_code"] == "shared-product"
+    assert payload["items"][0]["owner_name"] == "张三"
 
 
 def test_medias_normal_user_can_read_update_and_delete_other_users_product(authed_user_client_no_db, monkeypatch):
@@ -2066,6 +2069,13 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert '/medias/api/languages' in medias_js
     assert '/medias/api/products/${pid}/translate' in medias_js
     assert "window.location.href = `/tasks/${taskId}`" in medias_js
+
+
+def test_medias_scripts_include_owner_column():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "<th>负责人</th>" in medias_js
+    assert "p.owner_name" in medias_js
 
 
 def test_image_translate_detail_template_contains_medias_context_block():

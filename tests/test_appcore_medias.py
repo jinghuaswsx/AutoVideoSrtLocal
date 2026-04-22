@@ -277,5 +277,58 @@ def test_list_products_orders_by_created_at_desc(monkeypatch):
 
     assert rows == []
     assert total == 0
-    assert "ORDER BY created_at DESC, id DESC" in captured["list_sql"]
+    assert "ORDER BY p.created_at DESC, p.id DESC" in captured["list_sql"]
     assert captured["list_args"][-2:] == (20, 20)
+
+
+def test_list_products_prefers_users_xingming_when_available(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        if "information_schema.COLUMNS" in sql:
+            return {"ok": 1}
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args=()):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    rows, total = medias.list_products(None, archived=False, offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "LEFT JOIN users u ON u.id = p.user_id" in captured["list_sql"]
+    assert "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username) AS owner_name" in captured["list_sql"]
+
+
+def test_list_products_falls_back_to_username_when_xingming_column_missing(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        if "information_schema.COLUMNS" in sql:
+            return None
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args=()):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    rows, total = medias.list_products(None, archived=False, offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "LEFT JOIN users u ON u.id = p.user_id" in captured["list_sql"]
+    assert "u.username AS owner_name" in captured["list_sql"]
+    assert "u.xingming" not in captured["list_sql"]
