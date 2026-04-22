@@ -47,40 +47,13 @@ from web.preview_artifacts import (
 
 
 def _upload_artifacts_to_tos(task: dict, task_id: str) -> None:
-    """Upload final video/srt artifacts to TOS. Errors are silently ignored."""
-    try:
-        if not tos_clients.is_tos_configured():
-            return
-        user_id = task.get("_user_id", "anon")
-        tos_uploads = dict(task.get("tos_uploads") or {})
-        uploaded_at = datetime.now().isoformat(timespec="seconds")
+    """Compatibility shim for legacy TOS-backed downloads.
 
-        for variant, variant_state in (task.get("variants") or {}).items():
-            result = variant_state.get("result", {})
-            export_state = variant_state.get("exports", {})
-            artifact_paths = {
-                "soft_video": result.get("soft_video"),
-                "hard_video": result.get("hard_video"),
-                "srt": variant_state.get("srt_path"),
-                "capcut_archive": export_state.get("capcut_archive"),
-            }
-            for artifact_kind, path in artifact_paths.items():
-                if path and os.path.exists(path):
-                    tos_key = tos_clients.build_artifact_object_key(user_id, task_id, variant, os.path.basename(path))
-                    tos_clients.upload_file(path, tos_key)
-                    tos_uploads[f"{variant}:{artifact_kind}"] = {
-                        "tos_key": tos_key,
-                        "artifact_kind": artifact_kind,
-                        "variant": variant,
-                        "file_size": os.path.getsize(path),
-                        "uploaded_at": uploaded_at,
-                    }
-
-        if tos_uploads:
-            import appcore.task_state as _ts
-            _ts.update(task_id, tos_uploads=tos_uploads)
-    except Exception:
-        log.warning("[runtime] TOS artifact upload failed for task %s", task_id, exc_info=True)
+    New tasks keep generated artifacts in local storage. Historical `tos_uploads`
+    metadata remains readable through download routes, but runtime no longer
+    uploads final outputs to object storage by default.
+    """
+    return
 
 
 def _save_json(task_dir: str, filename: str, data) -> None:

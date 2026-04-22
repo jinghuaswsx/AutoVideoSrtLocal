@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 import web.routes.subtitle_removal as subtitle_removal
@@ -34,15 +32,6 @@ def _mock_subtitle_removal_upload_env(tmp_path, monkeypatch, *, probe_media_info
         "web.routes.subtitle_removal.tos_clients.generate_signed_upload_url",
         lambda key: f"https://upload.example/{key}",
     )
-    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.object_exists", lambda object_key: True)
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.head_object",
-        lambda object_key: SimpleNamespace(content_length=2048),
-    )
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.download_file",
-        lambda object_key, local_path: str(source_video),
-    )
     monkeypatch.setattr(
         "web.routes.subtitle_removal.probe_media_info",
         probe_media_info or (lambda path: {"width": 720, "height": 1280, "resolution": "720x1280", "duration": 10.0}),
@@ -63,6 +52,15 @@ def _bootstrap_subtitle_removal_upload(authed_client_no_db):
     return response.get_json()
 
 
+def _put_uploaded_subtitle_removal_video(authed_client_no_db, payload, *, data: bytes = b"video", content_type: str = "video/mp4"):
+    response = authed_client_no_db.put(
+        payload["upload_url"],
+        data=data,
+        content_type=content_type,
+    )
+    assert response.status_code == 204
+
+
 def _mock_public_source_stage(monkeypatch, url: str = "https://example.com/source.mp4"):
     monkeypatch.setattr(
         "web.routes.subtitle_removal._ensure_public_source_url",
@@ -74,6 +72,7 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
 
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
 
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/complete",
@@ -92,6 +91,8 @@ def test_subtitle_removal_complete_upload_prepares_first_frame(tmp_path, authed_
     assert task["step_messages"]["prepare"] == "首帧提取和媒体信息解析已完成"
     assert task["thumbnail_path"].endswith("thumbnail.jpg")
     assert task["media_info"]["resolution"] == "720x1280"
+    assert task["source_tos_key"] == ""
+    assert task["source_object_info"]["storage_backend"] == "local"
 
 
 def test_subtitle_removal_complete_upload_rejects_unreserved_task_id(tmp_path, authed_client_no_db, monkeypatch):
@@ -151,6 +152,23 @@ def test_subtitle_removal_bootstrap_rejects_invalid_video_extension(authed_clien
     assert response.status_code == 400
 
 
+def test_subtitle_removal_bootstrap_allows_local_upload_without_tos(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.is_tos_configured", lambda: False)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.build_source_object_key",
+        lambda user_id, task_id, name: f"uploads/{user_id}/{task_id}/{name}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/bootstrap",
+        json={"original_filename": "source.mp4"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["upload_url"].endswith(f"/api/subtitle-removal/upload/local/{payload['task_id']}")
+
+
 def test_subtitle_removal_complete_upload_rejects_invalid_file_size(tmp_path, authed_client_no_db, monkeypatch):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
@@ -194,6 +212,7 @@ def test_subtitle_removal_complete_upload_rejects_probe_failure(tmp_path, authed
         probe_media_info=lambda path: {"width": 0, "height": 0, "resolution": "", "duration": 0.0},
     )
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
 
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/complete",
@@ -210,15 +229,17 @@ def test_subtitle_removal_complete_upload_rejects_probe_failure(tmp_path, authed
     task = store.get(payload["task_id"])
     assert task["status"] != "ready"
     assert task["steps"]["prepare"] == "pending"
-    assert task["source_tos_key"] == payload["object_key"]
-    assert task["source_object_info"]["file_size"] == 2048
+    assert task["source_tos_key"] == ""
+    assert task["source_object_info"]["file_size"] == len(b"video")
     assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert task["source_object_info"]["storage_backend"] == "local"
 
 
 def test_subtitle_removal_complete_upload_rejects_thumbnail_failure(tmp_path, authed_client_no_db, monkeypatch):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch, thumbnail_path=None)
     monkeypatch.setattr("web.routes.subtitle_removal.extract_thumbnail", lambda video_path, output_dir: None)
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
 
     response = authed_client_no_db.post(
         "/api/subtitle-removal/upload/complete",
@@ -237,14 +258,44 @@ def test_subtitle_removal_complete_upload_rejects_thumbnail_failure(tmp_path, au
     assert task["steps"]["prepare"] == "pending"
 
 
-def test_subtitle_removal_complete_upload_rejects_head_object_failure_but_keeps_source_state(
+def test_subtitle_removal_complete_upload_keeps_source_local_until_submit(
     tmp_path, authed_client_no_db, monkeypatch
 ):
     _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
+    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
+    _put_uploaded_subtitle_removal_video(authed_client_no_db, payload)
+    uploaded = []
     monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.head_object",
-        lambda object_key: (_ for _ in ()).throw(RuntimeError("head failed")),
+        "web.routes.subtitle_removal.tos_clients.upload_file",
+        lambda local_path, object_key: uploaded.append((local_path, object_key)),
     )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/upload/complete",
+        json={
+            "task_id": payload["task_id"],
+            "original_filename": "source.mp4",
+            "object_key": payload["object_key"],
+            "content_type": "video/mp4",
+            "file_size": 2048,
+        },
+    )
+
+    assert response.status_code == 201
+    task = store.get(payload["task_id"])
+    assert task is not None
+    assert task["status"] == "ready"
+    assert task["source_tos_key"] == ""
+    assert task["source_object_info"]["file_size"] == len(b"video")
+    assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert task["source_object_info"]["storage_backend"] == "local"
+    assert uploaded == []
+
+
+def test_subtitle_removal_complete_upload_rejects_when_local_file_missing(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
     payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
 
     response = authed_client_no_db.post(
@@ -258,45 +309,8 @@ def test_subtitle_removal_complete_upload_rejects_head_object_failure_but_keeps_
         },
     )
 
-    assert response.status_code != 201
-    task = store.get(payload["task_id"])
-    assert task is not None
-    assert task["status"] != "ready"
-    assert task["steps"]["prepare"] == "pending"
-    assert task["source_tos_key"] == payload["object_key"]
-    assert task["source_object_info"]["file_size"] == 2048
-    assert task["source_object_info"]["content_type"] == "video/mp4"
-
-
-def test_subtitle_removal_complete_upload_rejects_download_failure_but_keeps_source_state(
-    tmp_path, authed_client_no_db, monkeypatch
-):
-    _mock_subtitle_removal_upload_env(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal.tos_clients.download_file",
-        lambda object_key, local_path: (_ for _ in ()).throw(RuntimeError("download failed")),
-    )
-    payload = _bootstrap_subtitle_removal_upload(authed_client_no_db)
-
-    response = authed_client_no_db.post(
-        "/api/subtitle-removal/upload/complete",
-        json={
-            "task_id": payload["task_id"],
-            "original_filename": "source.mp4",
-            "object_key": payload["object_key"],
-            "content_type": "video/mp4",
-            "file_size": 2048,
-        },
-    )
-
-    assert response.status_code != 201
-    task = store.get(payload["task_id"])
-    assert task is not None
-    assert task["status"] != "ready"
-    assert task["steps"]["prepare"] == "pending"
-    assert task["source_tos_key"] == payload["object_key"]
-    assert task["source_object_info"]["file_size"] == 2048
-    assert task["source_object_info"]["content_type"] == "video/mp4"
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "uploaded video file missing"
 
 
 def test_subtitle_removal_source_artifact_serves_owned_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
@@ -479,7 +493,6 @@ def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeyp
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
-    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
 
     response = authed_client_no_db.post(
@@ -517,7 +530,6 @@ def test_subtitle_removal_submit_stages_public_source_on_demand(tmp_path, authed
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
-    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
     monkeypatch.setattr(
         "web.routes.subtitle_removal.tos_clients.build_source_object_key",

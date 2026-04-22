@@ -1189,10 +1189,10 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
     </button>
   </header>
 
-  {% if not tos_ready %}
+  {% if false %}
   <div class="oc-banner">
     <svg width="18" height="18"><use href="#ic-alert"/></svg>
-    <span>素材上传需要先配置 <strong>TOS_MEDIA_BUCKET</strong>，请联系管理员。</span>
+    <span>素材上传服务暂未就绪，请联系管理员检查本地存储配置。</span>
   </div>
   {% endif %}
 
@@ -1304,7 +1304,7 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
 <link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
 
 <script>
-  window.MEDIAS_TOS_READY = {{ 'true' if tos_ready else 'false' }};
+  window.MEDIAS_UPLOAD_READY = true;
 </script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 {% endblock %}

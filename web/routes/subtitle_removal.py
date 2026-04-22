@@ -481,9 +481,6 @@ def list_tasks():
 @bp.route("/api/subtitle-removal/upload/bootstrap", methods=["POST"])
 @login_required
 def bootstrap_upload():
-    if not tos_clients.is_tos_configured():
-        return jsonify({"error": "TOS is not configured"}), 503
-
     body = request.get_json(silent=True) or {}
     original_filename = os.path.basename((body.get("original_filename") or "").strip())
     if not original_filename:
@@ -531,6 +528,8 @@ def api_local_upload(task_id: str):
 @bp.route("/api/subtitle-removal/upload/complete", methods=["POST"])
 @login_required
 def complete_upload():
+    from web.upload_util import build_source_object_info
+
     body = request.get_json(silent=True) or {}
     task_id = (body.get("task_id") or "").strip()
     original_filename = os.path.basename((body.get("original_filename") or "").strip())
@@ -572,11 +571,13 @@ def complete_upload():
         return jsonify({"error": "uploaded video file missing"}), 400
 
     object_size = int(os.path.getsize(video_path) or file_size or 0)
-    source_object_info = {
-        "file_size": object_size,
-        "content_type": content_type or reservation.get("content_type") or "application/octet-stream",
-        "original_filename": original_filename,
-    }
+    source_object_info = build_source_object_info(
+        original_filename=original_filename,
+        content_type=content_type or reservation.get("content_type") or "application/octet-stream",
+        file_size=object_size,
+        storage_backend="local",
+        uploaded_at=datetime.now().isoformat(timespec="seconds"),
+    )
 
     store.create_subtitle_removal(
         task_id,
@@ -587,17 +588,10 @@ def complete_upload():
     )
     store.update(
         task_id,
-        source_tos_key=object_key,
+        source_tos_key="",
         source_object_info=source_object_info,
         erase_text_type=erase_text_type,
     )
-
-    try:
-        tos_clients.upload_file(video_path, object_key)
-    except Exception:
-        log.exception("[subtitle_removal] upload source to TOS failed task_id=%s", task_id)
-        store.update(task_id, error="upload source to TOS failed")
-        return jsonify({"error": "Unable to upload source object to TOS"}), 502
 
     media_info = dict(probe_media_info(video_path) or {})
     media_info["file_size_mb"] = round(object_size / (1024 * 1024), 2) if object_size else 0.0

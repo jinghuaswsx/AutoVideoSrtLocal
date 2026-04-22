@@ -53,6 +53,8 @@ def _resolve_name_conflict(user_id: int, desired_name: str, exclude_task_id: str
 @bp.route("/bootstrap", methods=["POST"])
 @login_required
 def bootstrap_upload():
+    return jsonify({"error": "新建翻译任务已切换为本地上传，禁止继续走通用 TOS 直传入口"}), 410
+
     if not tos_clients.is_tos_configured():
         return jsonify({"error": "TOS is not configured"}), 503
 
@@ -82,6 +84,8 @@ def bootstrap_upload():
 @bp.route("/complete", methods=["POST"])
 @login_required
 def complete_upload():
+    return jsonify({"error": "新建翻译任务已切换为本地上传，禁止继续通过 TOS complete 创建任务"}), 410
+
     body = request.get_json(silent=True) or {}
     task_id = (body.get("task_id") or "").strip()
     original_filename = os.path.basename((body.get("original_filename") or "").strip())

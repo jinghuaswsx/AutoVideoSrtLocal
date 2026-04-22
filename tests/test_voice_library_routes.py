@@ -3,9 +3,12 @@
 使用 authed_client_no_db + unittest.mock.patch，避免触达真实数据库。
 风格对齐 tests/test_voice_library.py。
 """
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+import web.routes.voice_library as voice_library
 
 
 def test_filters_no_language_returns_languages_and_empty_options(authed_client_no_db):
@@ -100,26 +103,33 @@ def test_page_renders(authed_client_no_db):
     assert b"voice-library-root" in resp.data
 
 
+@pytest.fixture(autouse=True)
+def clear_voice_library_upload_reservations():
+    voice_library._upload_reservations.clear()
+    yield
+    voice_library._upload_reservations.clear()
+
+
 # ---------------------------------------------------------------------------
 # Task 4.1: POST /voice-library/api/match/upload-url
 # ---------------------------------------------------------------------------
 
 
-def test_match_upload_url_returns_signed(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr(
-        "web.routes.voice_library.generate_signed_upload_url",
-        lambda key, expires=600: "https://signed",
-    )
+def test_match_upload_url_returns_local_upload_reservation(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.voice_library.UPLOAD_DIR", str(tmp_path / "uploads"))
     resp = authed_client_no_db.post(
         "/voice-library/api/match/upload-url",
         json={"filename": "demo.mp4", "content_type": "video/mp4"},
     )
     data = resp.get_json()
     assert resp.status_code == 200
-    assert data["upload_url"] == "https://signed"
-    assert data["object_key"].startswith("voice_match/1/")
-    assert data["object_key"].endswith("/demo.mp4")
+    assert data["upload_url"].startswith("/voice-library/api/match/upload/")
+    assert data["upload_token"]
+    assert data["filename"] == "demo.mp4"
     assert data["expires_in"] == 600
+    reservation = voice_library._upload_reservations[data["upload_token"]]
+    assert reservation["user_id"] == 1
+    assert reservation["video_path"].endswith("demo.mp4")
 
 
 def test_match_upload_url_rejects_bad_content_type(authed_client_no_db):
@@ -131,27 +141,36 @@ def test_match_upload_url_rejects_bad_content_type(authed_client_no_db):
     assert resp.get_json()["error"] == "unsupported content_type"
 
 
-def test_match_upload_url_sanitizes_filename(authed_client_no_db, monkeypatch):
-    captured = {}
-
-    def fake(key, expires=600):
-        captured["key"] = key
-        return "https://signed"
-
-    monkeypatch.setattr(
-        "web.routes.voice_library.generate_signed_upload_url", fake
-    )
+def test_match_upload_url_sanitizes_filename(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.voice_library.UPLOAD_DIR", str(tmp_path / "uploads"))
     resp = authed_client_no_db.post(
         "/voice-library/api/match/upload-url",
         json={"filename": "../../evil.mp4", "content_type": "video/mp4"},
     )
+    data = resp.get_json()
     assert resp.status_code == 200
-    assert "/../" not in captured["key"]
-    assert (
-        captured["key"].endswith("/.._.._evil.mp4")
-        or captured["key"].endswith("/___evil.mp4")
-        or "evil" in captured["key"]
+    assert data["filename"] in {".._.._evil.mp4", "___evil.mp4", "evil.mp4"}
+    reservation = voice_library._upload_reservations[data["upload_token"]]
+    assert "..\\" not in reservation["video_path"]
+    assert "/../" not in reservation["video_path"].replace("\\", "/")
+
+
+def test_match_local_upload_writes_reserved_file(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.voice_library.UPLOAD_DIR", str(tmp_path / "uploads"))
+    bootstrap = authed_client_no_db.post(
+        "/voice-library/api/match/upload-url",
+        json={"filename": "demo.mp4", "content_type": "video/mp4"},
+    ).get_json()
+
+    response = authed_client_no_db.put(
+        bootstrap["upload_url"],
+        data=b"video-bytes",
+        content_type="video/mp4",
     )
+
+    assert response.status_code == 204
+    reservation = voice_library._upload_reservations[bootstrap["upload_token"]]
+    assert Path(reservation["video_path"]).read_bytes() == b"video-bytes"
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +178,19 @@ def test_match_upload_url_sanitizes_filename(authed_client_no_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_match_start_returns_task_id(authed_client_no_db, monkeypatch):
+def test_match_start_returns_task_id(authed_client_no_db, monkeypatch, tmp_path):
+    video_path = tmp_path / "demo.mp4"
+    video_path.write_bytes(b"video")
+
+    monkeypatch.setattr(
+        "web.routes.voice_library._consume_upload_token",
+        lambda upload_token: {
+            "user_id": 1,
+            "video_path": str(video_path),
+            "filename": "demo.mp4",
+            "uploaded": True,
+        },
+    )
     monkeypatch.setattr(
         "web.routes.voice_library.vmt.create_task",
         lambda **kw: "vm_fake",
@@ -171,7 +202,7 @@ def test_match_start_returns_task_id(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.post(
         "/voice-library/api/match/start",
         json={
-            "object_key": "voice_match/1/abc/demo.mp4",
+            "upload_token": "upload-token-1",
             "language": "de",
             "gender": "male",
         },
@@ -180,12 +211,20 @@ def test_match_start_returns_task_id(authed_client_no_db, monkeypatch):
     assert resp.get_json()["task_id"] == "vm_fake"
 
 
-def test_match_start_rejects_foreign_object_key(authed_client_no_db):
-    # authed user is id=1; posting key under /2/ should 403
+def test_match_start_rejects_foreign_upload_token(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.voice_library._consume_upload_token",
+        lambda upload_token: {
+            "user_id": 2,
+            "video_path": "uploads/voice_match/demo.mp4",
+            "filename": "demo.mp4",
+            "uploaded": True,
+        },
+    )
     resp = authed_client_no_db.post(
         "/voice-library/api/match/start",
         json={
-            "object_key": "voice_match/2/abc/demo.mp4",
+            "upload_token": "foreign-token",
             "language": "de",
             "gender": "male",
         },
@@ -195,13 +234,22 @@ def test_match_start_rejects_foreign_object_key(authed_client_no_db):
 
 def test_match_start_rejects_disabled_language(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
+        "web.routes.voice_library._consume_upload_token",
+        lambda upload_token: {
+            "user_id": 1,
+            "video_path": "uploads/voice_match/demo.mp4",
+            "filename": "demo.mp4",
+            "uploaded": True,
+        },
+    )
+    monkeypatch.setattr(
         "web.routes.voice_library.medias.list_enabled_language_codes",
         lambda: ["de"],
     )
     resp = authed_client_no_db.post(
         "/voice-library/api/match/start",
         json={
-            "object_key": "voice_match/1/abc/demo.mp4",
+            "upload_token": "upload-token-1",
             "language": "fr",
             "gender": "male",
         },
@@ -211,18 +259,45 @@ def test_match_start_rejects_disabled_language(authed_client_no_db, monkeypatch)
 
 def test_match_start_rejects_invalid_gender(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
+        "web.routes.voice_library._consume_upload_token",
+        lambda upload_token: {
+            "user_id": 1,
+            "video_path": "uploads/voice_match/demo.mp4",
+            "filename": "demo.mp4",
+            "uploaded": True,
+        },
+    )
+    monkeypatch.setattr(
         "web.routes.voice_library.medias.list_enabled_language_codes",
         lambda: ["de"],
     )
     resp = authed_client_no_db.post(
         "/voice-library/api/match/start",
         json={
-            "object_key": "voice_match/1/abc/demo.mp4",
+            "upload_token": "upload-token-1",
             "language": "de",
             "gender": "other",
         },
     )
     assert resp.status_code == 400
+
+
+def test_match_start_rejects_missing_local_upload(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.voice_library._consume_upload_token", lambda upload_token: None)
+    monkeypatch.setattr(
+        "web.routes.voice_library.medias.list_enabled_language_codes",
+        lambda: ["de"],
+    )
+    resp = authed_client_no_db.post(
+        "/voice-library/api/match/start",
+        json={
+            "upload_token": "missing-token",
+            "language": "de",
+            "gender": "male",
+        },
+    )
+    assert resp.status_code == 404
+    assert resp.get_json()["error"] == "upload token not found"
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +310,16 @@ def test_match_status_returns_task_state(authed_client_no_db, monkeypatch):
         "web.routes.voice_library.vmt.get_task",
         lambda tid, user_id: {
             "task_id": tid, "status": "done", "progress": 100,
-            "error": None, "result": {"candidates": []},
+            "error": None,
+            "result": {"candidates": [], "sample_audio_path": "uploads/voice_match/vm_x/clip.wav"},
         },
     )
     resp = authed_client_no_db.get("/voice-library/api/match/status/vm_x")
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "done"
+    payload = resp.get_json()
+    assert payload["status"] == "done"
+    assert payload["result"]["sample_audio_url"].endswith("/voice-library/api/match/artifact/vm_x/sample-audio")
+    assert "sample_audio_path" not in payload["result"]
 
 
 def test_match_status_missing_returns_404(authed_client_no_db, monkeypatch):
@@ -250,3 +329,20 @@ def test_match_status_missing_returns_404(authed_client_no_db, monkeypatch):
     )
     resp = authed_client_no_db.get("/voice-library/api/match/status/vm_nope")
     assert resp.status_code == 404
+
+
+def test_match_sample_audio_serves_owned_file(tmp_path, authed_client_no_db, monkeypatch):
+    clip = tmp_path / "clip.wav"
+    clip.write_bytes(b"wav-data")
+    monkeypatch.setattr(
+        "web.routes.voice_library.vmt.get_task",
+        lambda tid, user_id: {
+            "task_id": tid,
+            "result": {"sample_audio_path": str(clip)},
+        },
+    )
+
+    resp = authed_client_no_db.get("/voice-library/api/match/artifact/vm_x/sample-audio")
+
+    assert resp.status_code == 200
+    assert resp.data == b"wav-data"

@@ -269,7 +269,7 @@
     $("#vl-progress-label").textContent = label;
   }
 
-  async function uploadViaSignedPut(file) {
+  async function uploadViaLocalPut(file) {
     const pre = await fetch("/voice-library/api/match/upload-url", {
       method: "POST", headers: {"Content-Type": "application/json"},
       credentials: "same-origin",
@@ -286,7 +286,7 @@
       xhr.onerror = () => reject(new Error("upload network error"));
       xhr.send(file);
     });
-    return pre.object_key;
+    return pre.upload_token;
   }
 
   const PHASE_LABEL = {
@@ -330,12 +330,12 @@
     }
     setProgress(0, "准备上传");
     try {
-      const objectKey = await uploadViaSignedPut(file);
+      const uploadToken = await uploadViaLocalPut(file);
       setProgress(92, "任务启动中");
       const r = await fetch("/voice-library/api/match/start", {
         method: "POST", headers: {"Content-Type": "application/json"},
         credentials: "same-origin",
-        body: JSON.stringify({object_key: objectKey, language: match.language, gender: match.gender}),
+        body: JSON.stringify({upload_token: uploadToken, language: match.language, gender: match.gender}),
       });
       if (!r.ok) throw new Error("start " + r.status);
       match.taskId = (await r.json()).task_id;
