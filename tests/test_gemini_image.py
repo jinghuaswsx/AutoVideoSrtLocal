@@ -217,3 +217,133 @@ def test_image_model_registry_is_channel_scoped():
         "gemini-3-pro-image-preview",
         channel="doubao",
     ) == "doubao-seedream-5-0-260128"
+
+
+def test_generate_image_doubao_channel_uses_seedream_without_resolve_config():
+    from appcore import gemini_image
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="doubao"), \
+         patch.object(gemini_image, "resolve_config", side_effect=AssertionError("should not resolve gemini config")), \
+         patch.object(
+             gemini_image,
+             "_resolve_doubao_credentials",
+             return_value=("DB-KEY", "https://ark.example.com"),
+         ) as resolve_creds, \
+         patch.object(
+             gemini_image,
+             "_generate_via_seedream",
+             return_value=(b"PNG-SEEDREAM", "image/png", {"data": [{"b64_json": "x"}]}),
+         ) as generate_seedream, \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="缈昏瘧",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="doubao-seedream-5-0-260128",
+            user_id=9,
+            project_id="seedream-1",
+        )
+
+    assert out == b"PNG-SEEDREAM"
+    assert mime == "image/png"
+    resolve_creds.assert_called_once_with(9)
+    generate_seedream.assert_called_once()
+    kwargs = generate_seedream.call_args.kwargs
+    assert kwargs["api_key"] == "DB-KEY"
+    assert kwargs["base_url"] == "https://ark.example.com"
+    assert kwargs["model_id"] == "doubao-seedream-5-0-260128"
+    assert m_log.call_args.kwargs["provider"] == "doubao"
+
+
+def test_generate_via_seedream_maps_429_to_retryable():
+    from appcore import gemini_image
+
+    response = MagicMock()
+    response.status_code = 429
+    response.text = "rate limited"
+    response.json.return_value = {"error": {"message": "too many requests"}}
+
+    with patch("appcore.gemini_image.requests.post", return_value=response):
+        with pytest.raises(gemini_image.GeminiImageRetryable):
+            gemini_image._generate_via_seedream(
+                "缈昏瘧",
+                b"RAW",
+                "image/jpeg",
+                "doubao-seedream-5-0-260128",
+                api_key="DB-KEY",
+                base_url="https://ark.example.com",
+            )
+
+
+def test_generate_via_seedream_maps_401_to_error():
+    from appcore import gemini_image
+
+    response = MagicMock()
+    response.status_code = 401
+    response.text = "unauthorized"
+    response.json.return_value = {"error": {"message": "bad key"}}
+
+    with patch("appcore.gemini_image.requests.post", return_value=response):
+        with pytest.raises(gemini_image.GeminiImageError):
+            gemini_image._generate_via_seedream(
+                "缈昏瘧",
+                b"RAW",
+                "image/jpeg",
+                "doubao-seedream-5-0-260128",
+                api_key="DB-KEY",
+                base_url="https://ark.example.com",
+            )
+
+
+def test_resolve_seedream_size_preserves_supported_dimensions():
+    from appcore import gemini_image
+
+    fake_image = MagicMock()
+    fake_image.size = (2048, 2048)
+    fake_ctx = MagicMock()
+    fake_ctx.__enter__.return_value = fake_image
+    fake_ctx.__exit__.return_value = False
+
+    with patch.object(gemini_image.Image, "open", return_value=fake_ctx):
+        assert gemini_image._resolve_seedream_size(b"PNG") == "2048x2048"
+
+
+def test_resolve_seedream_size_scales_small_images_up():
+    from appcore import gemini_image
+
+    fake_image = MagicMock()
+    fake_image.size = (640, 480)
+    fake_ctx = MagicMock()
+    fake_ctx.__enter__.return_value = fake_image
+    fake_ctx.__exit__.return_value = False
+
+    with patch.object(gemini_image.Image, "open", return_value=fake_ctx):
+        size = gemini_image._resolve_seedream_size(b"PNG")
+
+    width, height = [int(part) for part in size.split("x", 1)]
+    assert width * height >= gemini_image._SEEDREAM_MIN_PIXELS
+    assert pytest.approx(width / height, rel=0.01) == (640 / 480)
+
+
+def test_resolve_seedream_size_scales_large_images_down():
+    from appcore import gemini_image
+
+    fake_image = MagicMock()
+    fake_image.size = (5000, 5000)
+    fake_ctx = MagicMock()
+    fake_ctx.__enter__.return_value = fake_image
+    fake_ctx.__exit__.return_value = False
+
+    with patch.object(gemini_image.Image, "open", return_value=fake_ctx):
+        size = gemini_image._resolve_seedream_size(b"PNG")
+
+    width, height = [int(part) for part in size.split("x", 1)]
+    assert width * height <= gemini_image._SEEDREAM_MAX_PIXELS
+    assert pytest.approx(width / height, rel=0.01) == 1.0
+
+
+def test_resolve_seedream_size_falls_back_to_2k():
+    from appcore import gemini_image
+
+    with patch.object(gemini_image.Image, "open", side_effect=OSError("bad image")):
+        assert gemini_image._resolve_seedream_size(b"not-an-image") == "2K"

@@ -51,6 +51,10 @@ BINDING_ALLOWED_PROVIDERS = (
     "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
 )
 PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
+IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
+    **IMAGE_TRANSLATE_CHANNEL_LABELS,
+    "doubao": "豆包 ARK（Seedream）",
+}
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -96,7 +100,7 @@ def index():
         video_analysis_models=VIDEO_CAPABLE_MODELS,
         image_translate_channel=current_image_channel,
         image_translate_channels=[
-            (code, IMAGE_TRANSLATE_CHANNEL_LABELS.get(code, code))
+            (code, IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS.get(code, code))
             for code in IMAGE_TRANSLATE_CHANNELS
         ],
         bindings_grouped=bindings_grouped,

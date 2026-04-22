@@ -666,18 +666,21 @@ def _translate_cover_to_media_key(source_cover_key, target_lang, product_id, use
 
 def _default_image_translate_model_id(user_id: int | None) -> str:
     from appcore.api_keys import resolve_extra
-    from appcore.gemini_image import IMAGE_MODELS
+    from appcore.gemini_image import coerce_image_model
+    from appcore import image_translate_settings as its
 
+    channel = "aistudio"
+    preferred = ""
+    try:
+        channel = its.get_channel()
+    except Exception:
+        pass
     try:
         extra = resolve_extra(user_id, "image_translate") or {}
         preferred = (extra.get("default_model_id") or "").strip()
-        if preferred:
-            return preferred
     except Exception:
         pass
-    if IMAGE_MODELS:
-        return IMAGE_MODELS[0][0]
-    return "gemini-3.1-flash-image-preview"
+    return coerce_image_model(preferred, channel=channel)
 
 
 def _resolve_translated_video_path(task: dict) -> str:

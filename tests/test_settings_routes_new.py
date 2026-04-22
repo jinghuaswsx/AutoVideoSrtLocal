@@ -54,6 +54,19 @@ def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):
     assert "video_score.run" in body or "视频评分" in body
 
 
+def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="doubao"):
+        resp = admin_no_db_client.get("/settings")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "豆包 ARK（Seedream）" in body
+    assert "DOUBAO_LLM_API_KEY" in body
+    assert "VOLC_API_KEY" in body
+
+
 def test_settings_post_bindings_tab_calls_upsert(admin_no_db_client):
     with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
          patch("web.routes.settings.llm_bindings.delete"):

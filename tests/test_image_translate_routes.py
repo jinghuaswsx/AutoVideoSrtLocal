@@ -49,7 +49,7 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert any(m["id"] == "gemini-3-pro-image-preview" for m in data["items"])
-    assert data["default_model_id"] == ""
+    assert data["default_model_id"] == "gemini-3.1-flash-image-preview"
     # 用户没有设置偏好时，前端 items[0] 就是默认模型 → 应是 Nano Banana 2 快速版
     assert data["items"][0]["id"] == "gemini-3.1-flash-image-preview"
 
@@ -85,6 +85,64 @@ def test_medias_default_image_model_is_flash_when_no_user_preference(authed_clie
     )
     assert resp.status_code == 201
     assert created["model_id"] == "gemini-3.1-flash-image-preview"
+
+
+def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: "doubao")
+    monkeypatch.setattr(
+        "appcore.api_keys.resolve_extra",
+        lambda uid, svc: {"default_model_id": "gemini-3-pro-image-preview"},
+    )
+
+    resp = authed_client_no_db.get("/api/image-translate/models")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {
+        "items": [{
+            "id": "doubao-seedream-5-0-260128",
+            "name": "Seedream 5.0（豆包）",
+        }],
+        "default_model_id": "doubao-seedream-5-0-260128",
+    }
+
+
+def test_medias_default_image_model_uses_seedream_for_doubao_channel(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    created = {}
+
+    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "demo"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [{"id": 11, "object_key": "1/medias/1/a.jpg"}] if lang == "en" else [],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: "German")
+    monkeypatch.setattr(r.its, "get_channel", lambda: "doubao")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "translate {target_language_name}"})
+    monkeypatch.setattr(
+        "appcore.api_keys.resolve_extra",
+        lambda uid, svc: {"default_model_id": "gemini-3-pro-image-preview"},
+    )
+    monkeypatch.setattr(
+        r.task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kw: created.update(kw) or {"id": task_id},
+    )
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+
+    assert resp.status_code == 201
+    assert created["model_id"] == "doubao-seedream-5-0-260128"
 
 
 def test_system_prompts_endpoint_requires_lang(authed_client_no_db, monkeypatch):
@@ -198,6 +256,36 @@ def test_complete_creates_task(authed_client_no_db, monkeypatch):
     })
     assert resp.status_code == 201
     assert resp.get_json()["task_id"] == tid
+
+
+def test_complete_rejects_gemini_model_for_doubao_channel(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "doubao")
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 100, "content_type": "image/jpeg"}],
+    })
+    bd = b.get_json()
+    tid = bd["task_id"]
+    key = bd["uploads"][0]["object_key"]
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": tid,
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "gemini-3-pro-image-preview",
+        "prompt": "鎶婂浘涓枃瀛楃炕璇戞垚 {target_language_name}",
+        "product_name": "娴嬭瘯浜у搧",
+        "uploaded": [{"idx": 0, "object_key": key, "filename": "a.jpg", "size": 100}],
+    })
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported model"
 
 
 def test_complete_rejects_invalid_language(authed_client_no_db, monkeypatch):

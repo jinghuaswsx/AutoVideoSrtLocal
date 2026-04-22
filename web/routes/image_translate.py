@@ -14,13 +14,14 @@ from flask_login import current_user, login_required
 from appcore import local_media_storage, medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
-from appcore.gemini_image import IMAGE_MODELS, is_valid_image_model
+from appcore.gemini_image import coerce_image_model, is_valid_image_model, list_image_models
 from appcore import image_translate_settings as its
 
 _BACKEND_LABELS = {
     "aistudio":   "Google AI Studio",
     "cloud":      "Google Cloud (Vertex AI)",
     "openrouter": "OpenRouter",
+    "doubao":     "豆包 ARK（Seedream）",
 }
 
 
@@ -191,10 +192,15 @@ def _state_payload(task: dict) -> dict:
 @login_required
 def api_models():
     from appcore.api_keys import resolve_extra
+    try:
+        channel = its.get_channel()
+    except Exception:
+        channel = "aistudio"
     extra = resolve_extra(current_user.id, "image_translate") or {}
+    preferred = (extra.get("default_model_id") or "").strip()
     return jsonify({
-        "items": [{"id": mid, "name": label} for mid, label in IMAGE_MODELS],
-        "default_model_id": (extra.get("default_model_id") or "").strip(),
+        "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
+        "default_model_id": coerce_image_model(preferred, channel=channel),
     })
 
 
@@ -276,7 +282,8 @@ def api_upload_complete():
         return jsonify({"error": "preset must be cover or detail"}), 400
     if not medias.is_valid_language(lang_code) or lang_code == "en":
         return jsonify({"error": "unsupported target language"}), 400
-    if not is_valid_image_model(model_id):
+    channel = its.get_channel()
+    if not is_valid_image_model(model_id, channel=channel):
         return jsonify({"error": "unsupported model"}), 400
     if not prompt_tpl:
         return jsonify({"error": "prompt required"}), 400

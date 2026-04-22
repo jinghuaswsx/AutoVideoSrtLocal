@@ -149,9 +149,10 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       {% endfor %}
     </select>
     <p class="hint">
-      选择图片翻译走哪个通道调用 Gemini 图像模型。
-      AI Studio / Google Cloud 使用环境变量中的 <code>GEMINI_API_KEY</code> / <code>GEMINI_CLOUD_API_KEY</code>；
-      OpenRouter 自动复用上方「OpenRouter」已配置的 Key（环境变量 <code>OPENROUTER_API_KEY</code>），模型 ID 会自动补齐 <code>google/</code> 前缀。
+      选择图片翻译走哪个通道。
+      AI Studio / Google Cloud 继续调用 Gemini 图像模型；
+      OpenRouter 调用 OpenRouter 的 Gemini 图像能力；
+      豆包 ARK 调用 Seedream 5.0，并复用下方豆包 ARK 的 Key，或环境变量 <code>DOUBAO_LLM_API_KEY</code>（未设置时继续回落 <code>VOLC_API_KEY</code>）。
     </p>
   </div>
 
@@ -261,7 +262,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <p class="hint">仅列出 Gemini 2.x 及以上、支持视频输入的模型。</p>
 
     <hr class="divider">
-    <span class="service-tag orange">豆包 2.0 Pro · via 火山引擎 ARK</span>
+    <span class="service-tag orange">豆包 ARK · 文本翻译 / Seedream 共用</span>
+    <p class="hint">这里配置的 Key 会同时用于豆包文本翻译，以及图片翻译通道中的 Seedream 5.0。</p>
     <label>API Key</label>
     <input type="password" name="doubao_llm_key" placeholder="留空则保持当前配置"
            value="{{ keys.get('doubao_llm', {}).get('key_value', '') }}">

@@ -21,7 +21,7 @@ from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
-from appcore.gemini_image import IMAGE_MODELS
+from appcore.gemini_image import coerce_image_model
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
@@ -201,18 +201,20 @@ def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
 
 
 def _default_image_translate_model_id() -> str:
+    channel = "aistudio"
+    try:
+        channel = its.get_channel()
+    except Exception:
+        pass
+    preferred = ""
     try:
         from appcore.api_keys import resolve_extra
 
         extra = resolve_extra(current_user.id, "image_translate") or {}
         preferred = (extra.get("default_model_id") or "").strip()
-        if preferred:
-            return preferred
     except Exception:
         pass
-    if IMAGE_MODELS:
-        return IMAGE_MODELS[0][0]
-    return "gemini-3.1-flash-image-preview"
+    return coerce_image_model(preferred, channel=channel)
 
 
 def _serialize_product(p: dict, items_count: int | None = None,
