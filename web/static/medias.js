@@ -1298,6 +1298,72 @@
     return links[lang] || _defaultProductUrl(lang, code) || '';
   }
 
+  function copyText(text) {
+    const value = String(text || '').trim();
+    if (!value) return Promise.reject(new Error('empty'));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value);
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (!ok) throw new Error('copy failed');
+        resolve();
+      } catch (err) {
+        document.body.removeChild(ta);
+        reject(err);
+      }
+    });
+  }
+
+  function flashCopiedButton(btn) {
+    if (!btn) return;
+    const original = btn.dataset.copyLabel || btn.textContent.trim() || '复制';
+    btn.dataset.copyLabel = original;
+    if (btn._copyTimer) window.clearTimeout(btn._copyTimer);
+    btn.textContent = '已复制';
+    btn.disabled = true;
+    btn._copyTimer = window.setTimeout(() => {
+      btn.textContent = original;
+      btn.disabled = false;
+    }, 1200);
+  }
+
+  function edCopyProductId(btn) {
+    const code = ($('edCode') && $('edCode').value || '').trim();
+    if (!code) {
+      alert('请先填写产品 ID');
+      $('edCode') && $('edCode').focus();
+      return;
+    }
+    copyText(code)
+      .then(() => flashCopiedButton(btn))
+      .catch(() => alert('复制失败，请手动复制'));
+  }
+
+  function edCopyLocalizedProductUrl(btn) {
+    edFlushProductUrl();
+    const url = edCurrentLinkUrl(edState.activeLang);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      alert('请先填写有效的商品链接');
+      $('edProductUrl') && $('edProductUrl').focus();
+      return;
+    }
+    copyText(url)
+      .then(() => flashCopiedButton(btn))
+      .catch(() => alert('复制失败，请手动复制'));
+  }
+
   function edOpenLocalizedProductUrl() {
     edFlushProductUrl();
     const lang = edState.activeLang;
@@ -1389,10 +1455,12 @@
     if (!box || !viewBtn || !openBtn) return;
     if (!task) {
       viewBtn.hidden = true;
-      box.innerHTML = '<span class="oc-link-check-empty">当前语种会使用该链接、主图和详情图作为检测输入。</span>';
+      box.hidden = true;
+      box.innerHTML = '';
       return;
     }
 
+    box.hidden = false;
     const summary = task.summary || {};
     const currentUrl = edCurrentLinkUrl(edState.activeLang);
     const urlChanged = currentUrl && task.link_url && currentUrl !== task.link_url;
@@ -2560,6 +2628,8 @@
       });
     }
     $('edOpenProductUrlBtn') && $('edOpenProductUrlBtn').addEventListener('click', edOpenLocalizedProductUrl);
+    $('edCopyProductIdBtn') && $('edCopyProductIdBtn').addEventListener('click', (e) => edCopyProductId(e.currentTarget));
+    $('edCopyProductUrlBtn') && $('edCopyProductUrlBtn').addEventListener('click', (e) => edCopyLocalizedProductUrl(e.currentTarget));
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
     $('edLinkCheckClose') && $('edLinkCheckClose').addEventListener('click', edCloseLinkCheckModal);
     $('edLinkCheckDoneBtn') && $('edLinkCheckDoneBtn').addEventListener('click', edCloseLinkCheckModal);

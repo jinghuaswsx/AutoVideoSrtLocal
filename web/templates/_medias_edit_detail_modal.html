@@ -4,7 +4,6 @@
       <div class="oc-modal-head-main">
         <h3 id="edTitle">编辑产品素材</h3>
         <div class="oc-modal-head-meta oc-field-ad-supported">
-          <div class="oc-modal-head-meta-title">主站已适配语种</div>
           <div id="edAdSupportedLangsBox" class="oc-lang-checkbox-group"></div>
         </div>
       </div>
@@ -24,19 +23,18 @@
       <section class="oc-section oc-section-card">
         <div class="oc-section-title">必要信息<span class="req">*</span></div>
         <div class="oc-edit-hero-grid">
-          <div class="oc-field">
-            <label class="oc-label" for="edName">产品名称<span class="req">*</span></label>
+          <div class="oc-field oc-inline-field">
+            <label class="oc-label oc-inline-label" for="edName">产品名称<span class="req">*</span>：</label>
             <input id="edName" class="oc-input" maxlength="120">
           </div>
-          <div class="oc-field">
-            <label class="oc-label" for="edCode">产品 ID<span class="req">*</span></label>
+          <div class="oc-field oc-inline-field">
+            <label class="oc-label oc-inline-label" for="edCode">产品 ID<span class="req">*</span>：</label>
             <input id="edCode" class="oc-input" maxlength="128" autocomplete="off">
+            <button type="button" class="oc-btn ghost sm" id="edCopyProductIdBtn">复制</button>
           </div>
         </div>
-        <div class="oc-field" style="margin-top:var(--oc-sp-3)">
-          <label class="oc-label" for="edProductUrl">
-            产品链接 <span class="oc-hint" id="edProductUrlHint" style="font-weight:400;"></span>
-          </label>
+        <div class="oc-field oc-inline-field oc-inline-field-full" style="margin-top:var(--oc-sp-2)">
+          <label class="oc-label oc-inline-label" for="edProductUrl">产品链接：</label>
           <div class="oc-url-row oc-link-check-row">
             <input id="edProductUrl" class="oc-input" type="url"
                    placeholder="留空则用默认模板"
@@ -45,12 +43,11 @@
               <svg width="14" height="14"><use href="#ic-search"/></svg>
               <span>访问商品链接</span>
             </button>
+            <button type="button" class="oc-btn ghost sm" id="edCopyProductUrlBtn">复制</button>
             <button type="button" class="oc-btn text sm" id="edLinkCheckViewBtn" hidden>查看结果</button>
           </div>
           <div class="oc-link-check-inline">
-            <div id="edLinkCheckSummary" class="oc-link-check-summary">
-              <span class="oc-link-check-empty">当前语种会使用该链接、主图和详情图作为检测输入。</span>
-            </div>
+            <div id="edLinkCheckSummary" class="oc-link-check-summary" hidden></div>
           </div>
         </div>
       </section>
