@@ -10,7 +10,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from appcore import gemini_image, local_media_storage, medias, tos_clients
+from appcore import gemini_image, llm_client, local_media_storage, medias, tos_clients
 from appcore.events import Event, EventBus
 from web import store
 
@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
 _BATCH_SIZE = 10  # 并行模式单批最大并发数
+_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
+_TEXT_DETECT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "has_text": {"type": "boolean"},
+        "reason": {"type": "string"},
+    },
+    "required": ["has_text"],
+}
+_TEXT_DETECT_PROMPT = (
+    "判断这张图片里是否存在任何可读文字，包括商品包装、标签、标题、"
+    "水印、数字、字母或短语。只要有可读文字就返回 has_text=true；"
+    "如果没有可读文字，或只有无法辨认的纹理/装饰，就返回 has_text=false。"
+    "reason 用一句简短中文说明判断依据。"
+)
 
 # 任务级熔断：当上游持续返回 429/5xx 时，避免把所有 items 都跑完 3 次重试
 # 形成 retry 风暴，进而触发宿主机 watchdog 强制重启 VM（2026-04-17 事故）
@@ -153,6 +168,51 @@ class ImageTranslateRuntime:
         _update_progress(task)
         self._emit_progress(task_id, task["progress"])
 
+    def _detect_source_text(self, task: dict, task_id: str, item: dict, src_path: str) -> bool:
+        cached = item.get("text_detect_has_text")
+        if isinstance(cached, bool) and item.get("text_detect_status") in {"done", "error"}:
+            return cached
+
+        with self._state_lock:
+            item["text_detect_status"] = "running"
+            item["text_detect_has_text"] = None
+            item["text_detect_reason"] = ""
+            item["text_detect_error"] = ""
+            store.update(task_id, items=task["items"], progress=task["progress"])
+        self._emit_item(task_id, item)
+
+        try:
+            result = llm_client.invoke_generate(
+                "image_translate.detect",
+                prompt=_TEXT_DETECT_PROMPT,
+                media=[src_path],
+                user_id=task.get("_user_id"),
+                project_id=task_id,
+                response_schema=_TEXT_DETECT_SCHEMA,
+                temperature=0,
+                max_output_tokens=128,
+                provider_override="gemini_aistudio",
+                model_override=_TEXT_DETECT_MODEL,
+            )
+            has_text, reason = _parse_text_detection_result(result)
+            status = "done"
+            error = ""
+        except Exception as exc:
+            # 检测失败时保守按“有文字”处理，避免误跳过需要翻译的图片。
+            has_text = True
+            reason = "文字检测失败，已按有文字处理"
+            status = "error"
+            error = str(exc)
+
+        with self._state_lock:
+            item["text_detect_status"] = status
+            item["text_detect_has_text"] = has_text
+            item["text_detect_reason"] = reason
+            item["text_detect_error"] = error
+            store.update(task_id, items=task["items"], progress=task["progress"])
+        self._emit_item(task_id, item)
+        return has_text
+
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
         with self._state_lock:
@@ -177,25 +237,32 @@ class ImageTranslateRuntime:
                     src_bytes = f.read()
                 mime = self._guess_mime(item["src_tos_key"])
 
-                # 2. 调 gemini_image
-                out_bytes, out_mime = gemini_image.generate_image(
-                    prompt=task["prompt"],
-                    source_image=src_bytes,
-                    source_mime=mime,
-                    model=task["model_id"],
-                    user_id=task.get("_user_id"),
-                    project_id=task_id,
-                    service="image_translate.generate",
-                )
-
-                # 3. 写临时文件 + 上传 TOS
-                dst_ext = self._ext_from_mime(out_mime) or ".png"
-                dst_key = self._build_dst_key(task, idx, dst_ext)
-                local_media_storage.write_bytes(dst_key, out_bytes)
+                # 2. 先判断图片是否有文字；无文字时直接复制源图，保持一图一结果。
+                has_text = self._detect_source_text(task, task_id, item, src_path)
+                if has_text:
+                    out_bytes, out_mime = gemini_image.generate_image(
+                        prompt=task["prompt"],
+                        source_image=src_bytes,
+                        source_mime=mime,
+                        model=task["model_id"],
+                        user_id=task.get("_user_id"),
+                        project_id=task_id,
+                        service="image_translate.generate",
+                    )
+                    dst_ext = self._ext_from_mime(out_mime) or ".png"
+                    dst_key = self._build_dst_key(task, idx, dst_ext)
+                    local_media_storage.write_bytes(dst_key, out_bytes)
+                    result_source = "image_translate"
+                else:
+                    dst_ext = self._ext_from_key(item["src_tos_key"]) or self._ext_from_mime(mime) or ".jpg"
+                    dst_key = self._build_dst_key(task, idx, dst_ext)
+                    local_media_storage.write_bytes(dst_key, src_bytes)
+                    result_source = "copied_source"
 
                 with self._state_lock:
                     item["status"] = "done"
                     item["dst_tos_key"] = dst_key
+                    item["result_source"] = result_source
                     item["error"] = ""
                     _update_progress(task)
                     store.update(task_id, items=task["items"], progress=task["progress"])
@@ -323,6 +390,11 @@ class ImageTranslateRuntime:
                 "attempts": item["attempts"],
                 "error": item["error"],
                 "dst_tos_key": item.get("dst_tos_key") or "",
+                "text_detect_status": item.get("text_detect_status") or "pending",
+                "text_detect_has_text": item.get("text_detect_has_text"),
+                "text_detect_reason": item.get("text_detect_reason") or "",
+                "text_detect_error": item.get("text_detect_error") or "",
+                "result_source": item.get("result_source") or "",
             },
         ))
 
@@ -332,6 +404,23 @@ class ImageTranslateRuntime:
             task_id=task_id,
             payload={"task_id": task_id, **progress},
         ))
+
+
+def _parse_text_detection_result(result: dict) -> tuple[bool, str]:
+    data = result.get("json") if isinstance(result, dict) else None
+    if not isinstance(data, dict):
+        return True, "文字检测未返回结构化结果，已按有文字处理"
+
+    raw_has_text = data.get("has_text")
+    if isinstance(raw_has_text, bool):
+        has_text = raw_has_text
+    elif isinstance(raw_has_text, str):
+        has_text = raw_has_text.strip().lower() in {"true", "yes", "1", "有", "有文字"}
+    else:
+        return True, "文字检测结果缺少 has_text，已按有文字处理"
+
+    reason = str(data.get("reason") or "").strip()
+    return has_text, reason[:200]
 
 
 def apply_translated_detail_images_from_task(

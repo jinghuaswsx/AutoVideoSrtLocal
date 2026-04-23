@@ -568,6 +568,11 @@ def create_image_translate(task_id: str, task_dir: str, *,
             "dst_tos_key": "",
             "status": "pending",
             "attempts": 0,
+            "text_detect_status": "pending",
+            "text_detect_has_text": None,
+            "text_detect_reason": "",
+            "text_detect_error": "",
+            "result_source": "",
             "error": "",
         })
     task = {

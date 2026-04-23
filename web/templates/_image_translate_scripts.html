@@ -276,24 +276,87 @@
     var delBtn = document.getElementById("itDelete");
     var retryUnfinishedBtn = document.getElementById("itRetryUnfinished");
 
+    function textDetectBadge(it){
+      var status = it.text_detect_status || "pending";
+      var hasText = it.text_detect_has_text;
+      var label = "文字判断：等待检测";
+      var tone = "pending";
+      if (status === "running") {
+        label = "文字判断：检测中";
+        tone = "running";
+      } else if (status === "error") {
+        label = "文字判断：检测失败，按有文字处理";
+        tone = "warning";
+      } else if (hasText === true) {
+        label = "文字判断：有文字";
+        tone = "yes";
+      } else if (hasText === false) {
+        label = "文字判断：无文字";
+        tone = "no";
+      }
+      return {label: label, tone: tone, title: it.text_detect_reason || it.text_detect_error || ""};
+    }
+
+    function resultSourceBadge(it){
+      var source = it.result_source || "";
+      if (source === "copied_source") {
+        return {label: "结果来源：复制原图", tone: "copy"};
+      }
+      if (source === "image_translate" || (it.status === "done" && it.dst_tos_key)) {
+        return {label: "结果来源：图片翻译", tone: "translate"};
+      }
+      return {label: "结果来源：待生成", tone: "pending"};
+    }
+
+    function appendBadge(meta, badge, classBase){
+      var el = document.createElement("span");
+      el.className = classBase + " is-" + badge.tone;
+      el.textContent = badge.label;
+      if (badge.title) el.title = badge.title;
+      meta.appendChild(el);
+    }
+
+    function appendItemMeta(container, it){
+      var meta = document.createElement("div");
+      meta.className = "it-item-meta";
+      appendBadge(meta, textDetectBadge(it), "it-meta-chip it-meta-chip--detect");
+      appendBadge(meta, resultSourceBadge(it), "it-meta-chip it-meta-chip--source");
+      container.appendChild(meta);
+    }
+
     function renderItems(state){
       listEl.innerHTML = "";
       var isRunning = state.is_running === true;
       (state.items || []).forEach(function(it){
         var row = document.createElement("div");
         row.className = "it-item";
+        var leftPane = document.createElement("div");
+        leftPane.className = "it-item-pane";
         var left = document.createElement("img");
         left.src = "/api/image-translate/"+taskId+"/artifact/source/"+it.idx;
-        row.appendChild(left);
+        leftPane.appendChild(left);
+        var leftCaption = document.createElement("div");
+        leftCaption.className = "it-item-caption";
+        leftCaption.textContent = "原图";
+        leftPane.appendChild(leftCaption);
+        row.appendChild(leftPane);
         var right = document.createElement("div");
+        right.className = "it-item-pane";
         if (it.status === "done") {
           var imgOut = document.createElement("img");
           imgOut.src = "/api/image-translate/"+taskId+"/artifact/result/"+it.idx + "?t=" + Date.now();
           right.appendChild(imgOut);
+          var rightCaption = document.createElement("div");
+          rightCaption.className = "it-item-caption";
+          rightCaption.textContent = "结果图";
+          right.appendChild(rightCaption);
         } else {
-          right.innerHTML = '<div class="it-item-status">状态：'+(it.status||"pending")+
-                            (it.error ? '<br>错误：'+it.error : '')+'</div>';
+          var statusBox = document.createElement("div");
+          statusBox.className = "it-item-status";
+          statusBox.textContent = "状态：" + (it.status || "pending") + (it.error ? "；错误：" + it.error : "");
+          right.appendChild(statusBox);
         }
+        appendItemMeta(right, it);
         row.appendChild(right);
         var actions = document.createElement("div");
         actions.className = "it-item-actions";

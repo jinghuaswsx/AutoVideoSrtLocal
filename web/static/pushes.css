@@ -269,6 +269,55 @@
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
+.product-link {
+  display: inline-block;
+  color: var(--oc-fg);
+  text-decoration: none;
+  transition: color var(--oc-dur-fast) var(--oc-ease);
+}
+.product-link:hover {
+  color: var(--oc-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.product-code-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-sp-2);
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.product-copy-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--oc-dur-fast) var(--oc-ease),
+              border-color var(--oc-dur-fast) var(--oc-ease),
+              color var(--oc-dur-fast) var(--oc-ease);
+}
+.product-copy-btn:hover {
+  background: var(--oc-bg-subtle);
+  border-color: var(--oc-accent);
+  color: var(--oc-accent);
+}
+.product-copy-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
+.mk-id-cell {
+  color: var(--oc-fg-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-family: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  white-space: nowrap;
+}
 
 /* ---------- 语种圆片 ---------- */
 .lang-pill {

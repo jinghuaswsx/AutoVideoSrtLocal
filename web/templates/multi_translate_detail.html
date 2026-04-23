@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+﻿{% extends "layout.html" %}
 {% if not project.deleted_at %}
 {% set allow_upload = false %}
 {% set show_back_link = false %}
@@ -26,6 +26,9 @@
   #configPanel { display: none !important; }
   /* 源语言 zh/en 由 ASR 后自动判别，不给用户看无意义的选择器 */
   #sourceLangPanel { display: none !important; }
+  /* 仅调整多语种详情页的前端展示位置；实际流程仍按 STEP_ORDER: extract -> asr 执行 */
+  #pipelineCard .steps > #step-asr { order: -2; }
+  #pipelineCard .steps > #step-extract { order: -1; }
 </style>
 {% endblock %}
 {% block content %}
@@ -46,14 +49,22 @@
   🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
 </p>
 {% endif %}
+<div class="card" style="margin-bottom:16px;">
+  <h2>字幕预览</h2>
+  <div id="sharedSubtitlePreviewMount"></div>
+</div>
 {# 新音色选择器放到工作台前面，用户一进来就能看到 #}
+{% include "_subtitle_preview_panel.html" %}
 {% include "_voice_selector_multi.html" %}
 {% include "_task_workbench.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}
 {% if not project.deleted_at %}
+<script src="{{ url_for('static', filename='subtitle_preview.js') }}"></script>
 {% include "_task_workbench_scripts.html" %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
 {% endblock %}
+
+

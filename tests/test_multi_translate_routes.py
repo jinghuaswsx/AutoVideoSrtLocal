@@ -133,7 +133,62 @@ def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     assert "vsPreviewSubtitle" in script
     assert "pointerdown" in script
 
+def test_multi_translate_subtitle_preview_route(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.multi_translate.build_multi_translate_preview_payload",
+        lambda task_id, user_id: {
+            "video_url": "/media/demo.mp4",
+            "subtitle_font": "Impact",
+            "subtitle_size": 14,
+            "subtitle_position_y": 0.68,
+            "sample_lines": [
+                "Tiktok and facebook shot videos!",
+                "Tiktok and facebook shot videos!",
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.multi_translate.db_query_one",
+        lambda sql, args: {"id": args[0], "state_json": "{}"},
+    )
 
+    resp = authed_client_no_db.get("/api/multi-translate/task-1/subtitle-preview")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["video_url"] == "/media/demo.mp4"
+    assert payload["sample_lines"] == [
+        "Tiktok and facebook shot videos!",
+        "Tiktok and facebook shot videos!",
+    ]
+
+
+def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
+    preview_panel = (root / "web" / "templates" / "_subtitle_preview_panel.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    workbench = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+
+    assert "_subtitle_preview_panel.html" in template
+    assert "subtitle_preview.js" in template
+    assert "--subtitle-preview-w: 270px;" in preview_panel
+    assert "--subtitle-preview-h: 480px;" in preview_panel
+    assert "sharedSubtitlePreviewMount" in workbench
+    assert "openPhonePickerBtn" not in scripts
+    assert "phoneFrame" not in scripts
+    assert "pfSubtitleBar" not in scripts
+    assert "createSubtitlePreviewController" in scripts
+
+
+def test_multi_translate_detail_displays_asr_result_before_extracted_audio():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "#pipelineCard .steps > #step-asr" in template
+    assert "#pipelineCard .steps > #step-extract" in template
+    assert 'const STEP_ORDER = ["extract", "asr"' in scripts
 def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no_db):
     resp = authed_client_no_db.post(
         "/api/multi-translate/complete",

@@ -384,10 +384,16 @@ def index():
 @bp.route("/products/<int:pid>/translation-tasks", methods=["GET"])
 @login_required
 def translation_tasks_page(pid: int):
-    p = medias.get_product(pid)
-    if not _can_access_product(p):
+    product = medias.get_product(pid)
+    if not _can_access_product(product):
         abort(404)
-    return render_template("medias_translation_tasks.html", product=p)
+    return render_template(
+        "medias_translation_tasks.html",
+        product=product,
+        product_id=pid,
+    )
+# ---------- 缈昏瘧浠诲姟 ----------
+
 
 
 # ---------- 浜у搧 API ----------

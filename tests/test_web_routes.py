@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import io
+import subprocess
 
 from web import store
 from web.app import create_app
@@ -1879,16 +1880,74 @@ def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
     assert "textarea.placeholder = '标题: \\n文案: \\n描述: ';" in medias_js
 
 
-def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
+def test_medias_page_translates_copywriting_as_single_structured_block():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function edValidateCopyTranslateSource(rawText)" in medias_js
+    assert "const sourceValidation = edValidateCopyTranslateSource(source.body);" in medias_js
+    assert "source_text: sourceValidation.value" in medias_js
+    assert "const translatedBody = edNormalizeCopywritingBody(response.result || '');" in medias_js
+    assert "const sourceBody = edNormalizeCopywritingBody(source.body);" not in medias_js
+    assert "function edTranslateCopyField" not in medias_js
+
+
+def test_medias_copywriting_normalizer_strips_nested_field_labels():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    fn_block = (
+        "function edCanonicalCopyField"
+        + medias_js.split("function edCanonicalCopyField", 1)[1]
+        .split("function edNormalizeCopywritingsData", 1)[0]
+    )
+    expected = "标题: Magnet\n文案: Strong hold\n描述: Easy install"
+    source = "标题: 标题: Magnet\n文案: 文案: Strong hold\n描述: 描述: Easy install"
+    script = f"""
+{fn_block}
+const normalized = edNormalizeCopywritingBody({source!r});
+if (normalized !== {expected!r}) {{
+  throw new Error(`unexpected normalized copywriting: ${{normalized}}`);
+}}
+"""
+
+    result = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_medias_page_wraps_language_coverage_with_full_labels():
+    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function langDisplayName(code)" in medias_js
+    assert "if (l && l.name_zh) return `${l.name_zh} (${l.code})`;" in medias_js
+    assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
+    assert '<col style="width:336px">' in medias_js
+    assert "const midpoint = Math.ceil(chips.length / 2);" in medias_js
+    assert 'class="oc-lang-row"' in medias_js
+    assert ".oc-lang-bar {" in template
+    assert "flex-direction:column;" in template
+    assert ".oc-lang-row {" in template
+    assert "display:flex;" in template
+    assert "flex-wrap:nowrap;" in template
+
+
+def test_medias_page_marks_copy_as_optional_in_add_modal(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert '<span>文案<span class="req">*</span></span>' in body
-    assert '<span>文案<span class="optional">可选</span></span>' not in body
-    assert '没有可以留空' not in body
+    assert '<span>文案<span class="req">*</span></span>' not in body
+    assert '<span>文案<span class="optional">可选</span></span>' in body
+    assert '没有可以留空' in body
 
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    assert "if (!cw.length) { alert('请填写文案');" not in medias_js
     assert 'copywritings: { en: cw }' in medias_js
 
 
@@ -1986,6 +2045,10 @@ def test_medias_page_contains_raw_source_translate_dialog(authed_client_no_db):
     assert 'id="rstPreview"' in body
     assert 'id="rstSubmit"' in body
     assert 'id="rstCancel"' in body
+    assert ".oc-rst-choice-row {" in body
+    assert "--rst-preview-w:90px;" in body
+    assert "--rst-preview-h:160px;" in body
+    assert ".oc-rst-choice-video {" in body
 
 
 def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
@@ -2068,7 +2131,14 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert "rstPreview" in medias_js
     assert '/medias/api/languages' in medias_js
     assert '/medias/api/products/${pid}/translate' in medias_js
-    assert "window.location.href = `/tasks/${taskId}`" in medias_js
+    assert "const videoUrl = escapeHtml(it.video_url || '')" in medias_js
+    assert "poster=\"${escapeHtml(it.cover_url)}\"" in medias_js
+    assert 'class="oc-rst-choice-video"' in medias_js
+    assert 'controls playsinline preload="metadata"' in medias_js
+    assert "function rawSourceLangDisplayName(lang)" in medias_js
+    assert "const name = escapeHtml(rawSourceLangDisplayName(lang));" in medias_js
+    assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer')" in medias_js
+    assert "window.location.href = `/tasks/${taskId}`" not in medias_js
 
 
 def test_medias_scripts_include_owner_column():
@@ -2137,3 +2207,27 @@ def test_medias_scripts_wire_material_link_check_flow():
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}' in medias_js
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail' in medias_js
     assert "edState.productData.product.link_check_tasks" in medias_js
+
+
+def test_pushes_scripts_format_language_as_chinese_plus_code():
+    pushes_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.js").read_text(encoding="utf-8")
+
+    assert "function formatLanguageLabel" in pushes_js
+    assert "const raw = String(code || '').trim();" in pushes_js
+    assert "${name} (${normalized})" in pushes_js
+    assert '<span class="lang-pill">${formatLanguageLabel(it.lang)}</span>' in pushes_js
+    assert "[['语种', formatLanguageLabel(t.lang)" in pushes_js
+    assert "addKV('语种', formatLanguageLabel(item.lang));" in pushes_js
+
+
+def test_medias_scripts_format_language_as_chinese_plus_code():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function langDisplayName(code)" in medias_js
+    assert "const raw = String(code || '').trim();" in medias_js
+    assert "${l.name_zh} (${l.code})" in medias_js
+    assert "${langDisplayName(l.code)}${badgeHtml}" in medias_js
+    assert "const label = langDisplayName(lang);" in medias_js
+    assert "确认删除 ${langDisplayName(lang)} 语种主图" in medias_js
+    assert "langDisplayName(analysis.detected_language || '-')" in medias_js
+    assert "langDisplayName(task.page_language || '-')" in medias_js

@@ -315,9 +315,12 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
             expect(page.locator("#rstRsList")).to_contain_text("改名后的原始去字幕素材标题")
             page.locator("#rstLangs label", has_text="德语").click()
             expect(page.locator("#rstPreview")).to_contain_text("1 × 1 = 1")
-            page.get_by_role("button", name="提交翻译").click()
+            with page.expect_popup() as popup_info:
+                page.get_by_role("button", name="提交翻译").click()
 
-            page.wait_for_url(f"{base_url}/tasks/task-e2e-1")
+            task_page = popup_info.value
+            task_page.wait_for_url(f"{base_url}/tasks/task-e2e-1")
+            assert page.url == f"{base_url}/medias/"
             browser.close()
 
     assert len(state["translate_calls"]) == 1
