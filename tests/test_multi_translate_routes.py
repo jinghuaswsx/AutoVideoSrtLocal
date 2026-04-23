@@ -218,6 +218,40 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
     assert started["task_id"] == payload["task_id"]
 
 
+def test_multi_translate_start_generates_thumbnail_from_uploaded_video(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    db_updates = []
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: db_updates.append((sql, args)))
+    monkeypatch.setattr("web.routes.multi_translate.multi_pipeline_runner.start", lambda task_id, user_id=None: None)
+
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        thumb = Path(output_dir) / "thumbnail.jpg"
+        thumb.write_bytes(b"first-frame")
+        return str(thumb)
+
+    monkeypatch.setattr("pipeline.ffutil.extract_thumbnail", fake_extract_thumbnail)
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+
+    task = store.get(payload["task_id"])
+    expected_thumb = str(tmp_path / "output" / payload["task_id"] / "thumbnail.jpg")
+    assert task["thumbnail_path"] == expected_thumb
+    assert ("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (expected_thumb, payload["task_id"])) in db_updates
+
+
 def test_multi_translate_list_page_uses_local_multipart_upload():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")

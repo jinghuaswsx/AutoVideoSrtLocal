@@ -57,6 +57,10 @@ def _parse_bool(value) -> bool:
     return bool(value)
 
 
+def _is_admin_user() -> bool:
+    return getattr(current_user, "role", "") == "admin"
+
+
 def _request_payload() -> dict:
     if request.is_json:
         return request.get_json(silent=True) or {}
@@ -381,10 +385,16 @@ def get_task(task_id):
 @bp.route("/<task_id>/thumbnail")
 @login_required
 def thumbnail(task_id: str):
-    row = db_query_one(
-        "SELECT thumbnail_path FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    if _is_admin_user():
+        row = db_query_one(
+            "SELECT thumbnail_path FROM projects WHERE id = %s AND deleted_at IS NULL",
+            (task_id,),
+        )
+    else:
+        row = db_query_one(
+            "SELECT thumbnail_path FROM projects WHERE id = %s AND user_id = %s",
+            (task_id, current_user.id),
+        )
     if not row or not row.get("thumbnail_path") or not os.path.exists(row["thumbnail_path"]):
         abort(404)
     return send_file(row["thumbnail_path"], mimetype="image/jpeg")
