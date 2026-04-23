@@ -6,6 +6,141 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
+def _stub_material_filename_product(monkeypatch, *, name="窗帘挂钩"):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": name, "product_code": "curtain-hook"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_languages",
+        lambda: [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "fr", "name_zh": "法语", "enabled": 1},
+        ],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "fr"})
+    return r
+
+
+def test_item_bootstrap_rejects_bad_localized_material_filename(
+    authed_client_no_db, monkeypatch
+):
+    _stub_material_filename_product(monkeypatch)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4",
+            "lang": "en",
+        },
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "filename_invalid"
+    assert data["effective_lang"] == "fr"
+    assert data["suggested_filename"] == (
+        "2026.04.17-窗帘挂钩-原素材-补充素材(法语)-指派-蔡靖华.mp4"
+    )
+
+
+def test_item_bootstrap_accepts_valid_english_material_filename(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2026.04.17-窗帘挂钩-原素材.mp4",
+            "lang": "en",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["effective_lang"] == "en"
+    assert data["object_key"].endswith("/2026.04.17-窗帘挂钩-原素材.mp4")
+
+
+def test_item_complete_rejects_bad_localized_material_filename_before_insert(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    created = []
+    monkeypatch.setattr(r, "_is_media_available", lambda object_key: True)
+    monkeypatch.setattr(r.medias, "create_item", lambda *args, **kwargs: created.append((args, kwargs)) or 99)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "1/medias/123/bad.mp4",
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4",
+            "file_size": 123,
+            "lang": "en",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "filename_invalid"
+    assert created == []
+
+
+def test_item_complete_uses_detected_language_for_valid_localized_filename(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    created = []
+    monkeypatch.setattr(r, "_is_media_available", lambda object_key: True)
+    monkeypatch.setattr(
+        r.medias,
+        "create_item",
+        lambda *args, **kwargs: created.append((args, kwargs)) or 99,
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 123,
+            "lang": "fr",
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+            "display_name": "",
+            "object_key": "1/medias/123/fr.mp4",
+            "file_url": "",
+            "thumbnail_path": "",
+            "cover_object_key": None,
+            "duration_seconds": None,
+            "file_size": 123,
+            "sort_order": 0,
+            "created_at": None,
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "1/medias/123/fr.mp4",
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+            "file_size": 123,
+            "lang": "en",
+        },
+    )
+
+    assert resp.status_code == 201
+    assert created[0][1]["lang"] == "fr"
+
+
 def test_detail_images_translate_from_en_creates_bound_task(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

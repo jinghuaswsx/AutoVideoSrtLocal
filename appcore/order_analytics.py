@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from appcore.db import query, query_one, execute
+from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +172,13 @@ def import_orders(rows: list[dict]) -> dict:
             "total, subtotal, shipping, currency, financial_status, "
             "fulfillment_status, vendor) VALUES " + placeholders
         )
-        affected = execute(sql, tuple(flat))
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(flat))
+                affected = cur.rowcount
+        finally:
+            conn.close()
         imported += affected
         skipped += len(values) - affected
 

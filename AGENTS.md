@@ -7,6 +7,12 @@
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `Codex-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.
 
+## Worktree 隔离原则（强制）
+
+- 大需求改动、大动作、跨模块改动、流程/行为调整或需要较长探索的任务，必须先创建 worktree 并在独立分支完成，不允许直接在 `master` 上开发。
+- `master` 只允许小范围 hotfix 和文档/配置级轻量维护；如果任务复杂度不确定，先暂停并询问用户是否创建 worktree。
+- 创建 worktree 时优先使用项目内 `.worktrees/`（已被 git ignore），并遵循 `superpowers:using-git-worktrees` 的忽略校验、环境准备和基线验证流程。
+
 ## 服务器环境使用规则（强制）
 
 - 服务器环境说明见 `docs/server-environments.md`。

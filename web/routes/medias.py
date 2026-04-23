@@ -22,6 +22,7 @@ from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
+from appcore.material_filename_rules import validate_material_filename
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
@@ -102,6 +103,35 @@ def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not _SLUG_RE.match(code):
         return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
     return True, None
+
+
+def _language_name_map() -> dict[str, str]:
+    return {
+        str(row.get("code") or "").strip().lower(): str(row.get("name_zh") or "").strip()
+        for row in medias.list_languages()
+        if str(row.get("code") or "").strip()
+    }
+
+
+def _validate_material_filename_for_product(filename: str, product: dict, lang: str):
+    result = validate_material_filename(
+        filename,
+        (product or {}).get("name") or "",
+        lang,
+        _language_name_map(),
+    )
+    if result.ok:
+        return result, None
+    return result, (
+        jsonify({
+            "error": "filename_invalid",
+            "message": "文件名不符合命名规范",
+            "details": list(result.errors),
+            "effective_lang": result.effective_lang,
+            "suggested_filename": result.suggested_filename,
+        }),
+        400,
+    )
 
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
@@ -890,12 +920,19 @@ def api_item_bootstrap(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body)
+    if err:
+        return jsonify({"error": err}), 400
     filename = os.path.basename((body.get("filename") or "").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
+    validation, error_response = _validate_material_filename_for_product(filename, p, lang)
+    if error_response:
+        return error_response
     object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
     return jsonify({
         "object_key": object_key,
+        "effective_lang": validation.effective_lang,
         "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         "bucket": TOS_MEDIA_BUCKET,
         "region": TOS_REGION,
@@ -919,6 +956,10 @@ def api_item_complete(pid: int):
     file_size = int(body.get("file_size") or 0)
     if not object_key or not filename:
         return jsonify({"error": "object_key and filename required"}), 400
+    validation, error_response = _validate_material_filename_for_product(filename, p, lang)
+    if error_response:
+        return error_response
+    lang = validation.effective_lang
     if not _is_media_available(object_key):
         return jsonify({"error": "object not found"}), 400
 

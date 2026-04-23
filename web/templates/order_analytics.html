@@ -586,8 +586,8 @@
     // 统计卡片
     var totalQty = 0, totalOrders = 0, totalRevenue = 0;
     data.products.forEach(function(p) {
-      totalQty += p.total_qty;
-      totalOrders += p.order_count;
+      totalQty += (parseInt(p.total_qty) || 0);
+      totalOrders += (parseInt(p.order_count) || 0);
       totalRevenue += (parseFloat(p.total_revenue) || 0);
     });
     document.getElementById('monthStatsCards').innerHTML =
@@ -628,14 +628,14 @@
       };
 
       addTd(tr, 'oa-col-product', dn);
-      addTd(tr, 'oa-col-num', (p.total_qty || 0).toLocaleString());
-      addTd(tr, 'oa-col-num', (p.order_count || 0).toLocaleString());
+      addTd(tr, 'oa-col-num', (parseInt(p.total_qty) || 0).toLocaleString());
+      addTd(tr, 'oa-col-num', (parseInt(p.order_count) || 0).toLocaleString());
       if (!currentProductId) {
         addTd(tr, 'oa-col-num', '$' + (parseFloat(p.total_revenue) || 0).toFixed(2));
       }
 
-      totalsQty += (p.total_qty || 0);
-      totalsOrders += (p.order_count || 0);
+      totalsQty += (parseInt(p.total_qty) || 0);
+      totalsOrders += (parseInt(p.order_count) || 0);
 
       data.country_list.forEach(function(c, i) {
         var v = (data.matrix[dn] || {})[c] || 0;
@@ -692,8 +692,8 @@
       if (!byDate[d]) byDate[d] = {};
       var key = (r.display_name || '未知');
       if (!byDate[d][key]) byDate[d][key] = { qty: 0, countries: {} };
-      byDate[d][key].qty += r.total_qty;
-      byDate[d][key].countries[r.billing_country || '未知'] = r.total_qty;
+      byDate[d][key].qty += (parseInt(r.total_qty) || 0);
+      byDate[d][key].countries[r.billing_country || '未知'] = (parseInt(r.total_qty) || 0);
       allProducts[key] = true;
     });
 
@@ -789,7 +789,7 @@
         if (!data.products || !data.products.length) { showEl('weekEmpty'); return; }
 
         var totalQty = 0;
-        data.products.forEach(function(p) { totalQty += p.total_qty; });
+        data.products.forEach(function(p) { totalQty += (parseInt(p.total_qty) || 0); });
         document.getElementById('weekStatsCards').innerHTML =
           statCard('活跃商品', data.products.length) +
           statCard('总单量', totalQty.toLocaleString()) +
@@ -806,8 +806,8 @@
         data.products.forEach(function(p) {
           var tr = document.createElement('tr');
           addTd(tr, 'oa-col-product', p.display_name || '未知');
-          addTd(tr, 'oa-col-num', p.total_qty.toLocaleString());
-          addTd(tr, 'oa-col-num', (p.order_count || 0).toLocaleString());
+          addTd(tr, 'oa-col-num', (parseInt(p.total_qty) || 0).toLocaleString());
+          addTd(tr, 'oa-col-num', (parseInt(p.order_count) || 0).toLocaleString());
           tbody.appendChild(tr);
         });
 
@@ -890,7 +890,7 @@
     lines.push(['商品名', '总单量', '订单数'].concat(d.country_list).join(','));
     d.product_order.forEach(function(dn) {
       var p = d.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
-      var vals = [dn, p.total_qty || 0, p.order_count || 0];
+      var vals = [dn, parseInt(p.total_qty) || 0, parseInt(p.order_count) || 0];
       d.country_list.forEach(function(c) {
         vals.push((d.matrix[dn] || {})[c] || 0);
       });

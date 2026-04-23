@@ -21,6 +21,18 @@
     return raw;
   }
 
+  function resolveMaterialFilenameLang(filename, fallbackLang) {
+    const lang = String(fallbackLang || 'en').trim().toLowerCase() || 'en';
+    if (lang !== 'en') return lang;
+    const fn = String(filename || '');
+    if (!fn.includes('补充素材')) return lang;
+    const detected = (LANGUAGES || []).find((item) => {
+      if (!item || item.code === 'en' || !item.name_zh) return false;
+      return fn.includes(item.name_zh);
+    });
+    return detected ? detected.code : lang;
+  }
+
   // 素材文件名命名规范校验
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
@@ -121,9 +133,10 @@
   }
 
   function assertMaterialFilenameOrAlert(filename, productName, langCode) {
-    const errs = validateMaterialFilename(filename, productName, langCode);
+    const effectiveLang = resolveMaterialFilenameLang(filename, langCode);
+    const errs = validateMaterialFilename(filename, productName, effectiveLang);
     if (!errs.length) return true;
-    showFilenameErrorModal(String(filename || ''), errs, productName, langCode);
+    showFilenameErrorModal(String(filename || ''), errs, productName, effectiveLang);
     return false;
   }
 
@@ -1032,8 +1045,10 @@
     if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     const pid = await ensureProductIdForUpload();
     if (!pid) return;
+    await ensureLanguages();
     const productName = state.current && state.current.product && state.current.product.name;
     if (!assertMaterialFilenameOrAlert(file.name, productName, 'en')) return;
+    const lang = resolveMaterialFilenameLang(file.name, 'en');
     const box = $('uploadProgress');
     const row = document.createElement('div');
     row.className = 'oc-upload-row';
@@ -1042,7 +1057,7 @@
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name }),
+        body: JSON.stringify({ filename: file.name, lang }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
       if (!putRes.ok) throw new Error('上传失败');
@@ -1053,6 +1068,7 @@
           filename: file.name,
           file_size: file.size,
           cover_object_key: state.pendingItemCover || null,
+          lang,
         }),
       });
       state.pendingItemCover = null;
@@ -2729,7 +2745,8 @@
     const file = edState.pendingVideoFile;
     const pid = edState.productData && edState.productData.product && edState.productData.product.id;
     if (!pid) { alert('产品数据未加载'); return; }
-    const lang = edState.activeLang;
+    await ensureLanguages();
+    const lang = resolveMaterialFilenameLang(file.name, edState.activeLang);
     const productName = edState.productData && edState.productData.product && edState.productData.product.name;
     if (!assertMaterialFilenameOrAlert(file.name, productName, lang)) return;
     const box = $('edUploadProgress');
@@ -2742,7 +2759,7 @@
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name }),
+        body: JSON.stringify({ filename: file.name, lang }),
       });
       const putRes = await fetch(boot.upload_url, { method: 'PUT', body: file });
       if (!putRes.ok) throw new Error('上传失败');
