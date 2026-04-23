@@ -210,6 +210,11 @@ _DEFAULT_WPS = {
 }
 
 
+def _tts_final_target_range(video_duration: float) -> tuple[float, float]:
+    """Return the accepted final TTS duration range: [video-1s, video+2s]."""
+    return max(0.0, video_duration - 1.0), video_duration + 2.0
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,
@@ -391,7 +396,7 @@ class PipelineRunner:
         tts_language_code: str | None = None,
     ) -> dict:
         """Iterate translate_rewrite → tts_script_regen → audio_gen → measure
-        up to 5 rounds until audio duration lands in [video-3, video].
+        up to 5 rounds until audio duration lands in [video-1, video+2].
 
         Returns dict with: localized_translation, tts_script, tts_audio_path,
         tts_segments, rounds, final_round.
@@ -407,8 +412,7 @@ class PipelineRunner:
 
         MAX_ROUNDS = 5
         # Final target range (shown to the user, used for final success judgement):
-        final_target_lo = max(0.0, video_duration - 3.0)
-        final_target_hi = video_duration
+        final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
         stage1_lo = video_duration * 0.9
         stage1_hi = video_duration * 1.1
@@ -713,7 +717,7 @@ class PipelineRunner:
             last_audio_duration = audio_duration
             last_word_count = word_count
 
-        # MAX_ROUNDS rounds completed without landing in [video-3, video].
+        # MAX_ROUNDS rounds completed without landing in [video-1, video+2].
         # Pick the round whose audio_duration is closest to the final target range.
         import appcore.task_state as task_state
         best_i = min(
@@ -818,32 +822,30 @@ class PipelineRunner:
         tts_segments: list, tts_script: dict, localized_translation: dict,
         video_duration: float,
     ) -> dict:
-        """Drop trailing blocks to land in [video-3, video].
+        """Drop trailing blocks to land in [video-1, video+2].
 
         Policy:
-          - If total audio ≤ video_duration, skip (short is acceptable).
+          - If total audio is within the final upper bound, skip.
           - Otherwise, drop blocks from the tail one at a time:
-              * If a drop lands duration in [video-3, video] → stop, adopt it.
-              * If a drop overshoots below video-3 → stop, pick the candidate
-                (any drop state with duration ≤ video) whose duration is
-                closest to [video-3, video]. Never return a state with
-                duration > video (hard upper bound).
+              * If a drop lands duration in [video-1, video+2] → stop, adopt it.
+              * If a drop overshoots below video-1 → stop, pick the candidate
+                (any drop state with duration <= video+2) whose duration is
+                closest to [video-1, video+2]. Never return a state above the
+                final upper bound.
               * Else (still > video) → keep dropping.
           - If we run out of blocks, raise.
 
         Returns dict with keys:
-          - skipped: True if total ≤ video_duration
+          - skipped: True if total is within the final upper bound
           - audio_path, tts_script, localized_translation, tts_segments
           - removed_count, removed_duration, final_duration
         """
         import subprocess
 
         total = sum(float(s.get("tts_duration", 0.0) or 0.0) for s in tts_segments)
-        if total <= video_duration:
+        final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
+        if total <= final_target_hi:
             return {"skipped": True}
-
-        final_target_lo = max(0.0, video_duration - 3.0)
-        final_target_hi = video_duration
 
         kept = list(tts_segments)
         removed: list[dict] = []
@@ -1233,6 +1235,7 @@ class PipelineRunner:
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
         video_duration = get_video_duration(task["video_path"])
+        final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         variant_order = [name for name in variants.keys() if name != "normal"]
         if "normal" in variants:
             variant_order.append("normal")
@@ -1292,20 +1295,22 @@ class PipelineRunner:
             final_round = loop_result["final_round"]
             pre_trim_duration = _get_audio_duration(loop_result["tts_audio_path"])
             final_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
-            if pre_trim_duration > video_duration:
+            if pre_trim_duration > final_target_hi:
                 trim_record = {
                     "pre_trim_duration": pre_trim_duration,
                     "video_duration": video_duration,
+                    "duration_lo": final_target_lo,
+                    "duration_hi": final_target_hi,
                     "message": (
-                        f"音频 {pre_trim_duration:.1f}s 超过视频 {video_duration:.1f}s，"
-                        "正在直接截断到视频时长..."
+                        f"音频 {pre_trim_duration:.1f}s 超过目标上限 {final_target_hi:.1f}s，"
+                        "正在直接截断到目标上限..."
                     ),
                 }
                 self._emit_duration_round(task_id, final_round, "truncate_audio", trim_record)
                 trim_result = self._truncate_audio_to_duration(
                     input_audio_path=loop_result["tts_audio_path"],
                     output_audio_path=final_audio_path,
-                    duration=video_duration,
+                    duration=final_target_hi,
                     tts_segments=loop_result["tts_segments"],
                     tts_script=loop_result["tts_script"],
                     localized_translation=loop_result["localized_translation"],
@@ -1321,9 +1326,11 @@ class PipelineRunner:
                         "removed_duration": trim_result["removed_duration"],
                         "final_duration": trim_result["final_duration"],
                         "video_duration": video_duration,
+                        "duration_lo": final_target_lo,
+                        "duration_hi": final_target_hi,
                         "message": (
                             f"截断完成：最终音频 {trim_result['final_duration']:.1f}s，"
-                            f"对齐视频 {video_duration:.1f}s"
+                            f"目标上限 {final_target_hi:.1f}s"
                         ),
                     }
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
