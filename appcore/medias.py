@@ -524,6 +524,15 @@ def list_items(product_id: int, lang: str | None = None) -> list[dict]:
     )
 
 
+def get_earliest_english_item(product_id: int) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "ORDER BY created_at ASC, id ASC LIMIT 1",
+        (product_id, "en"),
+    )
+
+
 def list_raw_source_video_translation_statuses(
     product_id: int,
     raw_source_ids: list[int] | None = None,

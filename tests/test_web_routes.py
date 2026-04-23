@@ -1768,7 +1768,7 @@ def test_medias_normal_user_can_read_update_and_delete_other_users_product(authe
     read_response = authed_user_client_no_db.get("/medias/api/products/7")
     update_response = authed_user_client_no_db.put(
         "/medias/api/products/7",
-        json={"name": "共享改名", "product_code": "shared-edited"},
+        json={"name": "共享改名", "product_code": "shared-edited-rjc"},
     )
     delete_response = authed_user_client_no_db.delete("/medias/api/products/7")
 
@@ -1783,7 +1783,7 @@ def test_medias_normal_user_can_read_update_and_delete_other_users_product(authe
 
     if update_response.status_code != 200:
         failures.append(f"PUT /medias/api/products/7 returned {update_response.status_code}")
-    if updated != {"pid": 7, "name": "共享改名", "product_code": "shared-edited"}:
+    if updated != {"pid": 7, "name": "共享改名", "product_code": "shared-edited-rjc"}:
         failures.append(f"PUT captured {updated!r}")
 
     if delete_response.status_code != 200:
@@ -1833,9 +1833,40 @@ def test_medias_create_product_rejects_bad_slug(logged_in_client):
     assert "产品 ID" in body["error"]
 
 
+def test_medias_create_product_requires_rjc_suffix(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.medias.medias.get_product_by_code", lambda code: None)
+    monkeypatch.setattr("web.routes.medias.medias.create_product", lambda *args, **kwargs: 123)
+
+    rv = authed_client_no_db.post(
+        "/medias/api/products",
+        json={"name": "rjc-guard", "product_code": "sonic-lens-refresher"},
+    )
+    assert rv.status_code == 400
+    body = rv.get_json()
+    assert body["error"] == "Product ID 必须以 -RJC 结尾"
+
+
+def test_medias_update_product_requires_rjc_suffix(authed_user_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.medias.medias.get_product",
+        lambda pid: {"id": pid, "user_id": 2, "name": "共享产品", "product_code": "shared-rjc"},
+    )
+    monkeypatch.setattr("web.routes.medias._can_access_product", lambda product: True)
+    monkeypatch.setattr("web.routes.medias.medias.get_product_by_code", lambda code: None)
+    monkeypatch.setattr("web.routes.medias.medias.update_product", lambda pid, **fields: None)
+
+    rv = authed_user_client_no_db.put(
+        "/medias/api/products/7",
+        json={"product_code": "shared-edited"},
+    )
+    assert rv.status_code == 400
+    body = rv.get_json()
+    assert body["error"] == "Product ID 必须以 -RJC 结尾"
+
+
 def test_medias_create_product_rejects_duplicate_slug(logged_in_client):
     from appcore.db import execute as db_execute
-    code = "dup-slug-test"
+    code = "dup-slug-test-rjc"
     db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
     try:
         rv1 = logged_in_client.post(
@@ -1854,7 +1885,7 @@ def test_medias_create_product_rejects_duplicate_slug(logged_in_client):
 
 def test_medias_put_product_requires_cover_and_items(logged_in_client):
     from appcore.db import execute as db_execute
-    code = "save-guard-test"
+    code = "save-guard-test-rjc"
     db_execute("DELETE FROM media_products WHERE product_code=%s", (code,))
     rv = logged_in_client.post(
         "/medias/api/products",
@@ -2008,6 +2039,16 @@ def test_medias_page_marks_copy_as_optional_in_add_modal(authed_client_no_db):
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     assert "if (!cw.length) { alert('请填写文案');" not in medias_js
     assert 'copywritings: { en: cw }' in medias_js
+
+
+def test_medias_js_submit_requires_rjc_suffix():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function validateProductCodeForSubmit(code)" in medias_js
+    assert "Product ID 必须以 -RJC 结尾" in medias_js
+    assert medias_js.count("validateProductCodeForSubmit(code)") >= 3
+    assert "alert(codeError);" in medias_js
+    assert "throw new Error(codeError);" in medias_js
 
 
 def test_medias_page_wraps_video_titles_in_edit_modal(authed_client_no_db):

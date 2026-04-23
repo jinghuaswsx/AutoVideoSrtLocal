@@ -56,26 +56,94 @@ def test_upload_bad_video_mime(authed_client_no_db, monkeypatch):
     assert "video mimetype not allowed" in resp.get_json()["error"]
 
 
-def test_upload_ok(authed_client_no_db, monkeypatch):
+def test_upload_requires_english_video(authed_client_no_db, monkeypatch):
+    r = _stub_product(monkeypatch)
+    monkeypatch.setattr(r.medias, "list_items", lambda pid, lang=None: [])
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/raw-sources",
+        data={
+            "video": (io.BytesIO(b"FAKE_MP4_BYTES"), "v.mp4", "video/mp4"),
+            "cover": (io.BytesIO(b"\x89PNG"), "c.png", "image/png"),
+            "display_name": "manual-name.mp4",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["error"] == "english_video_required"
+    assert payload["english_filenames"] == []
+
+
+def test_upload_rejects_filename_not_matching_any_english_video(authed_client_no_db, monkeypatch):
+    r = _stub_product(monkeypatch)
+    monkeypatch.setattr(
+        r.medias,
+        "list_items",
+        lambda pid, lang=None: [
+            {"id": 5, "product_id": pid, "lang": "en", "filename": "2026.04.24-a.mp4", "created_at": None},
+            {"id": 6, "product_id": pid, "lang": "en", "filename": "2026.04.24-b.mp4", "created_at": None},
+        ],
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/raw-sources",
+        data={
+            "video": (io.BytesIO(b"FAKE_MP4_BYTES"), "not-match.mp4", "video/mp4"),
+            "cover": (io.BytesIO(b"\x89PNG"), "c.png", "image/png"),
+            "display_name": "manual-name.mp4",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    payload = resp.get_json()
+    assert payload["error"] == "raw_source_filename_mismatch"
+    assert payload["uploaded_filename"] == "not-match.mp4"
+    assert payload["english_filenames"] == ["2026.04.24-a.mp4", "2026.04.24-b.mp4"]
+
+
+def test_upload_accepts_matching_english_video_filename(authed_client_no_db, monkeypatch):
     r = _stub_product(monkeypatch)
     fake_write = MagicMock()
-    display_name = "2026.04.23-t-rs-demo.mp4"
-    monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
+    key_calls = []
+    create_calls = []
+
     monkeypatch.setattr(
-        r.object_keys,
-        "build_media_raw_source_key",
-        lambda uid, pid, kind, filename: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
+        r.medias,
+        "list_items",
+        lambda pid, lang=None: [
+            {"id": 6, "product_id": pid, "lang": "en", "filename": "2026.04.24-english-canonical.mp4", "created_at": None},
+            {"id": 7, "product_id": pid, "lang": "en", "filename": "2026.04.25-english-other.mp4", "created_at": None},
+        ],
     )
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
+    def fake_build_media_raw_source_key(uid, pid, kind, filename, **kwargs):
+        key_calls.append({
+            "uid": uid,
+            "pid": pid,
+            "kind": kind,
+            "filename": filename,
+            "kwargs": kwargs,
+        })
+        return f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}"
+
+    monkeypatch.setattr(r.object_keys, "build_media_raw_source_key", fake_build_media_raw_source_key)
     monkeypatch.setattr(r, "get_media_duration", lambda path: 12.3)
     monkeypatch.setattr(r, "probe_media_info_safe", lambda path: {"width": 1280, "height": 720})
-    monkeypatch.setattr(r.medias, "create_raw_source", lambda *args, **kwargs: 77)
+    def fake_create_raw_source(*args, **kwargs):
+        create_calls.append({"args": args, "kwargs": kwargs})
+        return 77
+
+    monkeypatch.setattr(r.medias, "create_raw_source", fake_create_raw_source)
     monkeypatch.setattr(
         r.medias,
         "get_raw_source",
         lambda rid: {
             "id": rid,
             "product_id": 123,
-            "display_name": display_name,
+            "display_name": "manual-name.mp4",
             "video_object_key": "1/medias/123/raw_sources/video_v.mp4",
             "cover_object_key": "1/medias/123/raw_sources/cover_c.cover.png",
             "duration_seconds": 12.3,
@@ -90,16 +158,20 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
     resp = authed_client_no_db.post(
         "/medias/api/products/123/raw-sources",
         data={
-            "video": (io.BytesIO(b"FAKE_MP4_BYTES"), "v.mp4", "video/mp4"),
+            "video": (io.BytesIO(b"FAKE_MP4_BYTES"), "2026.04.24-english-canonical.mp4", "video/mp4"),
             "cover": (io.BytesIO(b"\x89PNG"), "c.png", "image/png"),
-            "display_name": display_name,
+            "display_name": "manual-name.mp4",
         },
         content_type="multipart/form-data",
     )
 
     assert resp.status_code == 201
     item = resp.get_json()["item"]
-    assert item["display_name"] == display_name
+    assert item["display_name"] == "manual-name.mp4"
+    assert key_calls[0]["kind"] == "video"
+    assert key_calls[0]["filename"] == "2026.04.24-english-canonical.mp4"
+    assert key_calls[0]["kwargs"] == {}
+    assert create_calls[0]["kwargs"]["display_name"] == "manual-name.mp4"
     assert item["video_url"].endswith("/video")
     assert fake_write.call_count == 2
 
@@ -107,11 +179,16 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
 def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
     r = _stub_product(monkeypatch)
     deletes = []
+    monkeypatch.setattr(
+        r.medias,
+        "list_items",
+        lambda pid, lang=None: [{"id": 6, "product_id": pid, "lang": "en", "filename": "v.mp4", "created_at": None}],
+    )
 
     monkeypatch.setattr(
         r.object_keys,
         "build_media_raw_source_key",
-        lambda uid, pid, kind, filename: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
+        lambda uid, pid, kind, filename, **kwargs: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
     )
 
     def fake_write(key, payload):

@@ -113,11 +113,15 @@ def _download_image_to_local_media(
     return object_key, data, ext
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
+_PRODUCT_CODE_SUFFIX = "-rjc"
+_PRODUCT_CODE_SUFFIX_ERROR = "Product ID 必须以 -RJC 结尾"
 
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not code:
         return False, "浜у搧 ID 蹇呭～"
+    if not code.endswith(_PRODUCT_CODE_SUFFIX):
+        return False, _PRODUCT_CODE_SUFFIX_ERROR
     if not _SLUG_RE.match(code):
         return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
     return True, None
@@ -236,6 +240,26 @@ def _validate_raw_source_display_name(title: str, product: dict) -> list[str]:
     if not tail.strip():
         errors.append("产品名之后的描述不能为空")
     return errors
+
+
+def _list_raw_source_allowed_english_filenames(product_id: int) -> list[str]:
+    rows = medias.list_items(product_id, lang="en") or []
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            row.get("created_at") if isinstance(row.get("created_at"), datetime) else datetime.max,
+            int(row.get("id") or 0),
+        ),
+    )
+    seen: set[str] = set()
+    filenames: list[str] = []
+    for row in rows:
+        filename = Path(str(row.get("filename") or "").strip()).name
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        filenames.append(filename)
+    return filenames
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
@@ -1001,22 +1025,30 @@ def api_create_raw_source(pid: int):
     if cover_ct not in _ALLOWED_IMAGE_TYPES:
         return jsonify({"error": f"cover mimetype not allowed: {cover_ct}"}), 400
 
-    display_name = (request.form.get("display_name") or "").strip()
-    title_errors = _validate_raw_source_display_name(display_name, p)
-    if title_errors:
+    uploaded_filename = Path(str(video.filename or "").strip()).name
+    english_filenames = _list_raw_source_allowed_english_filenames(pid)
+    if not english_filenames:
         return jsonify({
-            "error": "raw_source_title_invalid",
-            "message": "原始去字幕视频素材名称不符合命名规范",
-            "details": title_errors,
-            "suggested_title": _suggest_raw_source_title(p),
+            "error": "english_video_required",
+            "message": "请先上传至少一条英语视频后，再提交原始视频",
+            "uploaded_filename": uploaded_filename,
+            "english_filenames": [],
         }), 400
+    if uploaded_filename not in english_filenames:
+        return jsonify({
+            "error": "raw_source_filename_mismatch",
+            "message": "提交的原始视频文件名必须与现有某个英语视频文件名完全一致",
+            "uploaded_filename": uploaded_filename,
+            "english_filenames": english_filenames,
+        }), 400
+    display_name = (request.form.get("display_name") or uploaded_filename).strip()
 
     uid = _resolve_upload_user_id()
     if uid is None:
         return jsonify({"error": "missing upload user"}), 400
 
     video_key = object_keys.build_media_raw_source_key(
-        uid, pid, kind="video", filename=video.filename or "video.mp4",
+        uid, pid, kind="video", filename=uploaded_filename or "video.mp4",
     )
     cover_key = object_keys.build_media_raw_source_key(
         uid, pid, kind="cover", filename=cover.filename or "cover.jpg",
