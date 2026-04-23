@@ -6,12 +6,13 @@ from pathlib import Path
 def test_mk_selection_video_cards_use_single_preview_with_metrics():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "--mk-video-media-w: 135px;" in template
-    assert "--mk-video-media-h: 240px;" in template
+    assert "--mk-video-media-w:" in template
+    assert "--mk-video-media-h:" in template
+    assert "repeat(auto-fill, minmax(248px, 248px))" in template
     assert "mk-video-card-title" in template
-    assert "mk-video-preview-row" in template
-    assert "mk-video-preview-shell" in template
+    assert "mk-video-summary-row" in template
     assert "mk-video-tabs" in template
+    assert "mk-video-frame" in template
     assert "mk-video-cover-frame" in template
     assert "mk-video-source-frame" not in template
     assert "mk-video-media-frame" not in template
@@ -27,6 +28,7 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "activateMkVideoTab" in template
     assert "/medias/api/mk-video?path=" in template
     assert "controls" in template
+    assert "loading=\"lazy\"" in template
 
 
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
