@@ -1981,15 +1981,23 @@ def public_media_object(object_key: str):
 
 # ---------- 明空选品 ----------
 
+def _is_admin() -> bool:
+    return getattr(current_user, "role", "") == "admin"
+
+
 @bp.route("/mk-selection")
 @login_required
 def mk_selection_page():
+    if not _is_admin():
+        abort(403)
     return render_template("mk_selection.html")
 
 
 @bp.route("/api/mk-selection", methods=["GET"])
 @login_required
 def api_mk_selection():
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可访问"}), 403
     """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
     snapshot = (request.args.get("snapshot") or "2026-04-23").strip()
     keyword = (request.args.get("keyword") or "").strip()
