@@ -311,6 +311,7 @@
         </div>
         <div class="oa-table-scroll">
           <table class="oa-table" id="monthTable">
+            <colgroup id="monthColGroup"></colgroup>
             <thead><tr id="monthTableHead"></tr></thead>
             <tbody id="monthTableBody"></tbody>
           </table>
@@ -617,10 +618,14 @@
       addTh(headRow, 'oa-col-country', c);
     });
 
-    // 设置表格宽度（table-layout: fixed 需要明确宽度）
-    var numCols = currentProductId ? 3 : 4;
-    var tableW = 200 + numCols * 64 + data.country_list.length * 56;
-    document.getElementById('monthTable').style.width = tableW + 'px';
+    // 设置列宽（table-layout: fixed 需要 colgroup）
+    var colGroup = document.getElementById('monthColGroup');
+    colGroup.innerHTML = '';
+    addCol(colGroup, '200px'); // 商品名
+    addCol(colGroup, '64px');  // 总单量
+    addCol(colGroup, '64px');  // 订单数
+    if (!currentProductId) addCol(colGroup, '72px'); // 收入
+    data.country_list.forEach(function() { addCol(colGroup, '56px'); });
 
     // 表体
     var tbody = document.getElementById('monthTableBody');
@@ -928,6 +933,11 @@
     if (cls) td.className = cls;
     td.textContent = text;
     row.appendChild(td);
+  }
+  function addCol(colGroup, width) {
+    var col = document.createElement('col');
+    col.style.width = width;
+    colGroup.appendChild(col);
   }
 
   function escHtml(s) {
