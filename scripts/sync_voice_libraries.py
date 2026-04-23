@@ -35,12 +35,25 @@ from appcore import medias  # noqa: E402
 from appcore.db import query  # noqa: E402
 
 FALLBACK_LANGUAGES: list[str] = ["en", "de", "fr", "es", "it", "ja", "nl", "pt", "sv", "fi"]
-MAX_VOICES_PER_LANGUAGE = 500
+MAX_VOICES_PER_LANGUAGE = 1000
 CACHE_DIR = str(ROOT / "uploads" / "voice_preview_cache")
 STATE_PATH = ROOT / "logs" / "voice_sync.state.json"
 LOG_PATH = ROOT / "logs" / "voice_sync.log"
 
 log = logging.getLogger("voice_sync_driver")
+
+
+def _max_voices_per_language() -> int:
+    raw = (os.getenv("VOICE_SYNC_MAX_PER_LANGUAGE") or "").strip()
+    if not raw:
+        return MAX_VOICES_PER_LANGUAGE
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("invalid VOICE_SYNC_MAX_PER_LANGUAGE=%r, fallback to %d",
+                    raw, MAX_VOICES_PER_LANGUAGE)
+        return MAX_VOICES_PER_LANGUAGE
+    return value if value > 0 else MAX_VOICES_PER_LANGUAGE
 
 
 def _setup_logging() -> None:
@@ -118,10 +131,11 @@ def _on_page(lang: str, state: dict):
 def _on_total_count(lang: str, state: dict):
     def _cb(total_available: int) -> None:
         total_available = int(total_available or 0)
+        max_voices = _max_voices_per_language()
         target_total = (
-            min(MAX_VOICES_PER_LANGUAGE, total_available)
+            min(max_voices, total_available)
             if total_available
-            else MAX_VOICES_PER_LANGUAGE
+            else max_voices
         )
         upsert_library_stats(lang, total_available)
         entry = state["languages"].setdefault(lang, {})
@@ -148,11 +162,12 @@ def _on_progress(lang: str, state: dict, throttle: dict):
 
 
 def _target_from_entry(entry: dict) -> int:
-    target_total = int(entry.get("target_total") or 0)
-    if target_total:
-        return target_total
+    max_voices = _max_voices_per_language()
     remote_total = int(entry.get("remote_total") or 0)
-    return min(MAX_VOICES_PER_LANGUAGE, remote_total) if remote_total else MAX_VOICES_PER_LANGUAGE
+    if remote_total:
+        return min(max_voices, remote_total)
+    target_total = int(entry.get("target_total") or 0)
+    return target_total or max_voices
 
 
 def _is_complete(lang: str, entry: dict) -> bool:
@@ -178,7 +193,7 @@ def _sync_language(lang: str, api_key: str, state: dict) -> None:
     pulled = sync_shared_voice_variants(
         api_key=api_key,
         language=lang,
-        max_voices=MAX_VOICES_PER_LANGUAGE,
+        max_voices=_max_voices_per_language(),
         on_page=_on_page(lang, state),
         on_total_count=_on_total_count(lang, state),
     )
@@ -226,8 +241,9 @@ def main() -> int:
 
     state = _load_state()
     languages = _target_languages()
+    max_voices = _max_voices_per_language()
     log.info("driver start, languages=%s max=%d state=%s",
-             languages, MAX_VOICES_PER_LANGUAGE, state)
+             languages, max_voices, state)
 
     for lang in languages:
         try:

@@ -132,7 +132,7 @@ def test_summarize_prefers_voice_variants_when_available(monkeypatch):
     def fake_query(sql, *args):
         if "elevenlabs_voice_variants" in sql:
             return [
-                {"language": "nl", "total_rows": 500, "embedded_rows": 500,
+                {"language": "nl", "total_rows": 521, "embedded_rows": 521,
                  "last_synced_at": None}
             ]
         if "elevenlabs_voice_library_stats" in sql:
@@ -150,11 +150,11 @@ def test_summarize_prefers_voice_variants_when_available(monkeypatch):
 
     out = vlst.summarize()
 
-    assert out[0]["total_rows"] == 500
-    assert out[0]["embedded_rows"] == 500
+    assert out[0]["total_rows"] == 521
+    assert out[0]["embedded_rows"] == 521
     assert out[0]["total_available"] == 521
 
 
 def test_max_voices_per_language_constant():
     from appcore.voice_library_sync_task import MAX_VOICES_PER_LANGUAGE
-    assert MAX_VOICES_PER_LANGUAGE == 500
+    assert MAX_VOICES_PER_LANGUAGE == 1000

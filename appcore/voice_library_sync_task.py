@@ -22,7 +22,20 @@ log = logging.getLogger(__name__)
 _CURRENT: dict[str, Any] = {"task": None, "summary": {}}
 _LOCK = threading.Lock()
 
-MAX_VOICES_PER_LANGUAGE = 500
+MAX_VOICES_PER_LANGUAGE = 1000
+
+
+def _max_voices_per_language() -> int:
+    raw = (os.getenv("VOICE_SYNC_MAX_PER_LANGUAGE") or "").strip()
+    if not raw:
+        return MAX_VOICES_PER_LANGUAGE
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("invalid VOICE_SYNC_MAX_PER_LANGUAGE=%r, fallback to %d",
+                    raw, MAX_VOICES_PER_LANGUAGE)
+        return MAX_VOICES_PER_LANGUAGE
+    return value if value > 0 else MAX_VOICES_PER_LANGUAGE
 
 
 def _get_api_key() -> str:
@@ -138,13 +151,13 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
                 upsert_library_stats(language, int(n))
             except Exception as exc:
                 log.warning("upsert_library_stats failed: %s", exc)
-            cap = min(MAX_VOICES_PER_LANGUAGE, int(n)) if n else 0
+            cap = min(_max_voices_per_language(), int(n)) if n else 0
             _set(phase="pull_metadata", done=total_pulled[0], total=cap)
 
         def on_page(idx, voices):
             total_pulled[0] += len(voices)
             cap = min(
-                MAX_VOICES_PER_LANGUAGE,
+                _max_voices_per_language(),
                 total_available_holder[0] or total_pulled[0],
             )
             _set(phase="pull_metadata", done=total_pulled[0], total=cap)
@@ -152,7 +165,7 @@ def _run_sync_sync(sync_id: str, language: str, api_key: str) -> None:
         sync_all_shared_voices(
             api_key=api_key,
             language=language,
-            max_voices=MAX_VOICES_PER_LANGUAGE,
+            max_voices=_max_voices_per_language(),
             on_page=on_page,
             on_total_count=on_total_count,
         )
