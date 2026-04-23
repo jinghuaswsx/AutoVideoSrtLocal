@@ -66,6 +66,19 @@
            padding:12px; border:1px solid var(--border-main,#e5e7eb); border-radius:10px; }
 .it-item img { max-width:100%; max-height:240px; object-fit:contain; border-radius:6px;
                background:#f8fafc; }
+.it-item-pane { display:grid; gap:8px; align-content:start; min-width:0; }
+.it-item-caption { color:var(--fg-muted,#64748b); font-size:12px; font-weight:600; }
+.it-item-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.it-meta-chip { display:inline-flex; align-items:center; min-height:22px; padding:2px 8px;
+                border-radius:999px; border:1px solid transparent; font-size:12px; line-height:1.35; }
+.it-meta-chip--detect.is-pending,
+.it-meta-chip--source.is-pending { background:var(--bg-muted,#eef2f7); color:var(--fg-muted,#64748b); border-color:var(--border,#dbe3ee); }
+.it-meta-chip--detect.is-running { background:var(--info-bg,#e6f2ff); color:var(--info,#0b4fb0); border-color:#bcd8ff; }
+.it-meta-chip--detect.is-yes,
+.it-meta-chip--source.is-translate { background:var(--accent-subtle,#e6f2ff); color:var(--accent-active,#175bc6); border-color:#bcd8ff; }
+.it-meta-chip--detect.is-no,
+.it-meta-chip--source.is-copy { background:var(--success-bg,#ecfdf5); color:var(--success-fg,#047857); border-color:#bbf7d0; }
+.it-meta-chip--detect.is-warning { background:var(--warning-bg,#fef3c7); color:var(--warning-fg,#92400e); border-color:#fde68a; }
 .it-item .it-item-status { font-size:12px; color:#6b7280; }
 .it-item .it-item-actions { display:flex; gap:8px; align-items:center; }
 .it-meta-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
@@ -97,6 +110,8 @@
 .table th, .table td { padding:10px 12px; border-bottom:1px solid var(--border-main,#e5e7eb); text-align:left; font-size:14px; }
 .table tbody tr:hover { background:#f8fbff; }
 @media (max-width: 767px) {
+  .it-item { grid-template-columns: 1fr; align-items:stretch; }
+  .it-item .it-item-actions { justify-content:flex-start; }
   .it-product-name-callout { font-size: 24px; }
   .it-product-name-input {
     min-height: 88px;
