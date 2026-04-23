@@ -39,6 +39,11 @@
 - 语法自检：`@'import py_compile; [py_compile.compile(path, doraise=True) for path in [r"tools/shopify_image_localizer/main.py", r"tools/shopify_image_localizer/gui.py", r"tools/shopify_image_localizer/controller.py", r"tools/shopify_image_localizer/browser/orchestrator.py"]] ; print("ok")'@ | python -`
 - 打包：`python -m tools.shopify_image_localizer.build_exe`
 
+## Test Deploy Commands
+
+- 测试环境发布当前分支：`bash deploy/publish-test.sh`
+- 测试环境发布指定分支：`bash deploy/publish-test.sh codex/shopify-image-localizer-design`
+
 ---
 
 # Frontend Design System — Ocean Blue Admin
