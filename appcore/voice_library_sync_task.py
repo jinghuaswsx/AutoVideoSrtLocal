@@ -109,16 +109,24 @@ def summarize() -> list[dict]:
     variant_stats = {r["language"]: r for r in variant_rows}
     avail_stats = {r["language"]: r for r in stats_rows}
     out: list[dict] = []
+    max_voices = _max_voices_per_language()
     for code, name in medias.list_enabled_languages_kv():
         s = variant_stats.get(code) or voice_stats.get(code, {}) or {}
         a = avail_stats.get(code, {}) or {}
         last_synced = s.get("last_synced_at")
+        total_available = int(a.get("total_available") or 0)
+        target_total = (
+            min(max_voices, total_available)
+            if total_available
+            else max_voices
+        )
         out.append({
             "language": code,
             "name_zh": name,
             "total_rows": int(s.get("total_rows") or 0),
             "embedded_rows": int(s.get("embedded_rows") or 0),
-            "total_available": int(a.get("total_available") or 0),
+            "total_available": total_available,
+            "target_total": target_total,
             "last_synced_at": last_synced.isoformat() if last_synced else None,
         })
     return out

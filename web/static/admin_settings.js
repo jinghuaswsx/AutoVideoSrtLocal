@@ -287,6 +287,15 @@
   if (!document.getElementById("voice-library-sync")) return;
   const $ = s => document.querySelector(s);
 
+  function placeVoiceLibraryCardFirst() {
+    const section = document.getElementById("voice-library-sync");
+    const stack = document.querySelector(".settings-stack");
+    if (!section || !stack) return;
+    if (stack.firstElementChild !== section) {
+      stack.prepend(section);
+    }
+  }
+
   async function fetchStatus() {
     const r = await fetch("/admin/voice-library/sync-status", {credentials: "same-origin"});
     return r.json();
@@ -300,8 +309,9 @@
     (status.summary || []).forEach(row => {
       const tr = document.createElement("tr");
       const ratio = row.total_rows ? ((row.embedded_rows / row.total_rows * 100).toFixed(1) + "%") : "-";
-      const entryCell = row.total_available
-        ? `${row.total_rows} / ${row.total_available}`
+      const targetTotal = Number(row.target_total || 0);
+      const entryCell = targetTotal
+        ? `${row.total_rows} / ${targetTotal}`
         : `${row.total_rows}`;
       const availCell = row.total_available || "-";
       tr.innerHTML = `
@@ -361,6 +371,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    placeVoiceLibraryCardFirst();
     refresh();
     initSocket();
     setInterval(refresh, 10000);

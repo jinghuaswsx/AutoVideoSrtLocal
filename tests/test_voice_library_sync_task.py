@@ -123,6 +123,7 @@ def test_summarize_includes_total_available(monkeypatch):
     out = vlst.summarize()
     assert out[0]["language"] == "en"
     assert out[0]["total_available"] == 6308
+    assert out[0]["target_total"] == 1000
     assert out[0]["total_rows"] == 100
 
 
@@ -153,6 +154,7 @@ def test_summarize_prefers_voice_variants_when_available(monkeypatch):
     assert out[0]["total_rows"] == 521
     assert out[0]["embedded_rows"] == 521
     assert out[0]["total_available"] == 521
+    assert out[0]["target_total"] == 521
 
 
 def test_max_voices_per_language_constant():
