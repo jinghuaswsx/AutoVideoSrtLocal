@@ -47,6 +47,49 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
         n += 1
 
 
+def _is_admin_user() -> bool:
+    return getattr(current_user, "role", "") == "admin"
+
+
+def _task_belongs_to_current_user(task: dict) -> bool:
+    return str(task.get("_user_id")) == str(getattr(current_user, "id", ""))
+
+
+def _can_view_task(task: dict) -> bool:
+    return _task_belongs_to_current_user(task) or _is_admin_user()
+
+
+def _get_viewable_task(task_id: str) -> dict | None:
+    task = store.get(task_id)
+    if not task or not _can_view_task(task):
+        return None
+    return task
+
+
+def _query_viewable_project(
+    task_id: str,
+    columns: str = "*",
+    *,
+    include_deleted: bool = True,
+) -> dict | None:
+    deleted_sql = "" if include_deleted else " AND deleted_at IS NULL"
+    if _is_admin_user():
+        return db_query_one(
+            f"SELECT {columns} FROM projects WHERE id = %s AND type = 'multi_translate'{deleted_sql}",
+            (task_id,),
+        )
+    return db_query_one(
+        f"SELECT {columns} FROM projects WHERE id = %s AND user_id = %s AND type = 'multi_translate'{deleted_sql}",
+        (task_id, current_user.id),
+    )
+
+
+def _multi_translate_list_scope() -> tuple[str, tuple]:
+    if _is_admin_user():
+        return "type = 'multi_translate' AND deleted_at IS NULL", ()
+    return "user_id = %s AND type = 'multi_translate' AND deleted_at IS NULL", (current_user.id,)
+
+
 # ── 页面路由 ──────────────────────────────────────────
 
 @bp.route("/multi-translate")
@@ -59,23 +102,25 @@ def index():
         lang = ""
 
     if lang:
+        scope_sql, scope_args = _multi_translate_list_scope()
         rows = db_query(
             "SELECT id, original_filename, display_name, thumbnail_path, status, "
             "       state_json, created_at, expires_at, deleted_at "
             "FROM projects "
-            "WHERE user_id = %s AND type = 'multi_translate' AND deleted_at IS NULL "
+            f"WHERE {scope_sql} "
             "  AND JSON_EXTRACT(state_json, '$.target_lang') = %s "
             "ORDER BY created_at DESC",
-            (current_user.id, lang),
+            (*scope_args, lang),
         )
     else:
+        scope_sql, scope_args = _multi_translate_list_scope()
         rows = db_query(
             "SELECT id, original_filename, display_name, thumbnail_path, status, "
             "       state_json, created_at, expires_at, deleted_at "
             "FROM projects "
-            "WHERE user_id = %s AND type = 'multi_translate' AND deleted_at IS NULL "
+            f"WHERE {scope_sql} "
             "ORDER BY created_at DESC",
-            (current_user.id,),
+            scope_args,
         )
 
     from appcore.settings import get_retention_hours
@@ -92,10 +137,7 @@ def index():
 @login_required
 def detail(task_id: str):
     recover_project_if_needed(task_id, "multi_translate")
-    row = db_query_one(
-        "SELECT * FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id)
     if not row:
         abort(404)
     state = {}
@@ -119,13 +161,10 @@ def detail(task_id: str):
 @bp.route("/api/multi-translate/<task_id>/subtitle-preview", methods=["GET"])
 @login_required
 def subtitle_preview(task_id: str):
-    row = db_query_one(
-        "SELECT id FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
         return jsonify({"error": "Task not found"}), 404
-    payload = build_multi_translate_preview_payload(task_id, current_user.id)
+    payload = build_multi_translate_preview_payload(task_id, row.get("user_id") or current_user.id)
     return jsonify(payload)
 
 
@@ -304,8 +343,8 @@ def complete_upload():
 @login_required
 def get_task(task_id):
     recover_task_if_needed(task_id)
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(task)
 
@@ -487,8 +526,8 @@ def resume(task_id):
 @login_required
 def download(task_id, file_type):
     """下载多语种任务产物，TOS 优先 / 本地兜底。"""
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant", "normal")
@@ -528,8 +567,8 @@ def delete(task_id):
 @bp.route("/api/multi-translate/<task_id>/artifact/<name>")
 @login_required
 def get_artifact(task_id, name):
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     variant = request.args.get("variant") or None
@@ -567,8 +606,8 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
     if attempt not in (1, 2, 3, 4, 5):
         abort(404)
 
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     filename = f"localized_translation.round_{round_index}.attempt_{attempt}.json"
@@ -590,8 +629,8 @@ def get_round_file(task_id: str, round_index: int, kind: str):
     if kind not in _ALLOWED_ROUND_KINDS:
         abort(404)
 
-    task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    task = _get_viewable_task(task_id)
+    if not task:
         return jsonify({"error": "Task not found"}), 404
 
     filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
@@ -673,10 +712,7 @@ def update_voice(task_id: str):
 @login_required
 def voice_library_for_task(task_id: str):
     """返回任务目标语言下的所有音色（给前端滚动列表铺全库用）。"""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
         abort(404)
     state = json.loads(row["state_json"] or "{}")
@@ -708,7 +744,8 @@ def voice_library_for_task(task_id: str):
     # 优先用 user_voice_defaults 里用户自己设的，没有就走 resolve_default_voice 兜底
     from appcore.video_translate_defaults import resolve_default_voice
     default_voice = None
-    default_voice_id = resolve_default_voice(lang, user_id=current_user.id) if lang else None
+    owner_user_id = row.get("user_id") or current_user.id
+    default_voice_id = resolve_default_voice(lang, user_id=owner_user_id) if lang else None
     if default_voice_id:
         row2 = db_query_one(
             "SELECT voice_id, name, gender, accent, age, descriptive, preview_url "

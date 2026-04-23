@@ -40,6 +40,117 @@ def test_detail_404_for_other_user(authed_client_no_db):
     assert resp.status_code == 404
 
 
+def test_admin_list_does_not_scope_multi_translate_projects_to_self(authed_client_no_db):
+    with patch("web.routes.multi_translate.db_query", return_value=[]) as m_q, \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("web.routes.multi_translate.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args.args[0].lower()
+    args = m_q.call_args.args[1]
+    assert "user_id = %s" not in sql
+    assert "user_id=%s" not in sql
+    assert args == ()
+
+
+def test_admin_detail_can_view_other_users_multi_translate_project(authed_client_no_db):
+    project = {
+        "id": "foreign-multi-task",
+        "user_id": 237,
+        "type": "multi_translate",
+        "display_name": "Foreign multi",
+        "original_filename": "foreign.mp4",
+        "status": "done",
+        "deleted_at": None,
+        "state_json": json.dumps({"target_lang": "de"}, ensure_ascii=False),
+    }
+
+    def fake_query_one(sql, args):
+        if "user_id = %s" in sql.lower() or "user_id=%s" in sql.lower():
+            return None
+        return project
+
+    with patch("web.routes.multi_translate.db_query_one", side_effect=fake_query_one), \
+         patch("web.routes.multi_translate.recover_project_if_needed"), \
+         patch("appcore.api_keys.get_key", return_value="openrouter"):
+        resp = authed_client_no_db.get("/multi-translate/foreign-multi-task")
+
+    assert resp.status_code == 200
+
+
+def test_admin_can_get_other_users_multi_translate_task(authed_client_no_db, monkeypatch):
+    from web.routes import multi_translate as r
+
+    task = {
+        "id": "foreign-multi-task",
+        "type": "multi_translate",
+        "status": "done",
+        "_user_id": 237,
+    }
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+    monkeypatch.setattr(r, "recover_task_if_needed", lambda task_id: None)
+
+    resp = authed_client_no_db.get("/api/multi-translate/foreign-multi-task")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["id"] == "foreign-multi-task"
+
+
+def test_normal_user_cannot_get_other_users_multi_translate_task(authed_user_client_no_db, monkeypatch):
+    from web.routes import multi_translate as r
+
+    task = {
+        "id": "foreign-multi-task",
+        "type": "multi_translate",
+        "status": "done",
+        "_user_id": 237,
+    }
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+    monkeypatch.setattr(r, "recover_task_if_needed", lambda task_id: None)
+
+    resp = authed_user_client_no_db.get("/api/multi-translate/foreign-multi-task")
+
+    assert resp.status_code == 404
+
+
+def test_admin_can_read_other_users_multi_translate_subtitle_preview(authed_client_no_db, monkeypatch):
+    def fake_query_one(sql, args):
+        if "user_id = %s" in sql.lower() or "user_id=%s" in sql.lower():
+            return None
+        return {"id": args[0], "user_id": 237}
+
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", fake_query_one)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.build_multi_translate_preview_payload",
+        lambda task_id, user_id: {"video_url": "/media/demo.mp4", "sample_lines": []},
+    )
+
+    resp = authed_client_no_db.get("/api/multi-translate/foreign-multi-task/subtitle-preview")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["video_url"] == "/media/demo.mp4"
+
+
+def test_admin_can_read_other_users_multi_translate_voice_library(authed_client_no_db, monkeypatch):
+    def fake_query_one(sql, args):
+        if "user_id = %s" in sql.lower() or "user_id=%s" in sql.lower():
+            return None
+        return {"state_json": json.dumps({"target_lang": "de"}, ensure_ascii=False)}
+
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", fake_query_one)
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.list_voices",
+        lambda **kwargs: {"items": [{"voice_id": "v1"}], "total": 1},
+    )
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.get("/api/multi-translate/foreign-multi-task/voice-library")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"voice_id": "v1"}]
+
+
 def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
     state = {
         "target_lang": "de",
