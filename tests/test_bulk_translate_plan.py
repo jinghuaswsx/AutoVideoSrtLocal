@@ -3,14 +3,28 @@ import pytest
 
 
 class _FakeDB:
-    def __init__(self, copies=None, details=None, covers=None, raw_sources=None):
+    def __init__(
+        self,
+        copies=None,
+        details=None,
+        covers=None,
+        raw_sources=None,
+        existing_items=None,
+        existing_raw_covers=None,
+    ):
         self.copies = copies or []   # [{"id": N}, ...]
         self.details = details or [] # [N, ...]
         self.covers = covers or []
         self.raw_sources = raw_sources or []   # [{"id": N}, ...]
+        self.existing_items = existing_items or []
+        self.existing_raw_covers = existing_raw_covers or []
 
     def query(self, sql, args=None):
         s = sql.lower()
+        if "from media_items" in s and "source_raw_id" in s:
+            return list(self.existing_items)
+        if "from media_raw_source_translations" in s:
+            return list(self.existing_raw_covers)
         if "from media_copywritings" in s:
             return list(self.copies)
         if "from media_product_detail_images" in s:
@@ -209,6 +223,72 @@ def test_videos_have_two_minute_dispatch_spacing(monkeypatch):
     )
 
     assert [item["dispatch_after_seconds"] for item in plan] == [0, 120, 240, 360]
+
+
+def test_videos_skip_existing_raw_source_language_pairs(monkeypatch):
+    _patch(monkeypatch, _FakeDB(
+        raw_sources=[{"id": 1}, {"id": 2}],
+        existing_items=[{"source_raw_id": 1, "lang": "de"}],
+    ))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de", "fr"],
+        ["videos"],
+        False,
+        raw_source_ids=[1, 2],
+    )
+
+    assert [(item["ref"]["source_raw_id"], item["lang"]) for item in plan] == [
+        (1, "fr"),
+        (2, "de"),
+        (2, "fr"),
+    ]
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 120, 240]
+
+
+def test_videos_force_retranslate_keeps_existing_pairs(monkeypatch):
+    _patch(monkeypatch, _FakeDB(
+        raw_sources=[{"id": 1}],
+        existing_items=[{"source_raw_id": 1, "lang": "de"}],
+    ))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de"],
+        ["videos"],
+        True,
+        raw_source_ids=[1],
+    )
+
+    assert [(item["ref"]["source_raw_id"], item["lang"]) for item in plan] == [(1, "de")]
+
+
+def test_video_covers_skip_existing_raw_source_language_pairs(monkeypatch):
+    _patch(monkeypatch, _FakeDB(
+        raw_sources=[{"id": 11}, {"id": 12}],
+        existing_raw_covers=[{"source_ref_id": 11, "lang": "de"}],
+    ))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de"],
+        ["video_covers"],
+        False,
+        raw_source_ids=[11, 12],
+    )
+
+    assert len(plan) == 1
+    assert plan[0]["ref"]["source_raw_ids"] == [12]
 
 
 def test_new_schema_tracks_child_task_and_result_sync(monkeypatch):

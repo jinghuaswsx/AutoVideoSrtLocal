@@ -55,6 +55,26 @@ def test_medias_js_copy_translate_uses_validation_message():
     assert "alert(sourceValidation.message);" in script
 
 
+def test_medias_edit_items_render_translation_source_badge():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "function itemSourceLabel(it)" in script
+    assert 'class="vsource"' in script
+    assert ".oc-vitem .vsource" in template
+
+
+def test_medias_translate_modal_marks_completed_raw_language_pairs():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translate_modal.js").read_text(encoding="utf-8")
+
+    assert "function rawHasTranslation(raw, langCode)" in script
+    assert "function selectedRawTranslationStats(langCode)" in script
+    assert "mt-choice--done" in script
+    assert "input.disabled" in script
+
+
 def test_medias_js_material_filename_validation_detects_localized_language():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")

@@ -2878,17 +2878,30 @@
     }));
   }
 
+  function itemSourceLabel(it) {
+    const source = it && it.source_raw;
+    if (source && source.display_name) return source.display_name;
+    const rawId = it && (it.source_raw_id || (it.auto_translated && it.source_ref_id));
+    if (rawId) return `原始去字幕素材 #${rawId}`;
+    return '';
+  }
+
   function edRenderItems(items) {
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
       const cover = it.cover_url || it.thumbnail_url;
       const name = escapeHtml(it.display_name || it.filename);
+      const sourceLabel = itemSourceLabel(it);
+      const sourceHtml = sourceLabel
+        ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
+        : '';
       const imgTag = cover
         ? `<img src="${escapeHtml(cover)}?_=${Date.now()}" loading="lazy" alt="">`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
       <div class="oc-vitem" data-item="${it.id}">
         <div class="vname" title="${name}">${name}</div>
+        ${sourceHtml}
         <div class="vtabs">
           <button type="button" class="vtab active" data-tab="img">图片</button>
           <button type="button" class="vtab" data-tab="video">视频</button>

@@ -20,7 +20,7 @@ def generate_plan(
     force_retranslate: bool,
     raw_source_ids: list[int] | None = None,
 ) -> list[dict]:
-    del user_id, force_retranslate
+    del user_id
     plan: list[dict] = []
     idx_counter = _Counter()
 
@@ -77,30 +77,62 @@ def generate_plan(
             raw_rows = _list_requested_raw_source_rows(product_id, raw_source_ids)
             raw_ids = [int(row["id"]) for row in raw_rows]
             if raw_ids:
+                existing_cover_pairs = (
+                    set()
+                    if force_retranslate
+                    else _list_existing_source_lang_pairs(
+                        "media_raw_source_translations",
+                        "source_ref_id",
+                        product_id,
+                        raw_ids,
+                        target_langs,
+                    )
+                )
                 for lang in target_langs:
+                    pending_raw_ids = [
+                        raw_id for raw_id in raw_ids
+                        if (raw_id, lang) not in existing_cover_pairs
+                    ]
+                    if not pending_raw_ids:
+                        continue
                     plan.append(
                         _new_item(
                             idx_counter.next(),
                             cover_kind,
                             lang,
-                            {"source_raw_ids": raw_ids},
+                            {"source_raw_ids": pending_raw_ids},
                         )
                     )
 
     video_kind = _pick_kind(content_types, "videos", "video")
     if video_kind:
         raw_rows = _list_requested_raw_source_rows(product_id, raw_source_ids)
+        raw_ids = [int(row["id"]) for row in raw_rows]
+        existing_video_pairs = (
+            set()
+            if force_retranslate or video_kind != "videos"
+            else _list_existing_source_lang_pairs(
+                "media_items",
+                "source_raw_id",
+                product_id,
+                raw_ids,
+                target_langs,
+            )
+        )
         dispatch_index = 0
         for row in raw_rows:
+            raw_id = int(row["id"])
             for lang in target_langs:
                 if video_kind == "video" and lang not in VIDEO_SUPPORTED_LANGS:
+                    continue
+                if (raw_id, lang) in existing_video_pairs:
                     continue
                 plan.append(
                     _new_item(
                         idx_counter.next(),
                         video_kind,
                         lang,
-                        {"source_raw_id": row["id"]},
+                        {"source_raw_id": raw_id},
                         dispatch_after_seconds=120 * dispatch_index if video_kind == "videos" else 0,
                     )
                 )
@@ -164,6 +196,35 @@ def _list_en_ids(product_id: int, table: str) -> list[int]:
         (product_id,),
     )
     return [int(row["id"]) for row in rows]
+
+
+def _list_existing_source_lang_pairs(
+    table: str,
+    source_column: str,
+    product_id: int,
+    source_ids: list[int],
+    target_langs: list[str],
+) -> set[tuple[int, str]]:
+    if not source_ids or not target_langs:
+        return set()
+    source_placeholders = ",".join(["%s"] * len(source_ids))
+    lang_placeholders = ",".join(["%s"] * len(target_langs))
+    del_clause = " AND deleted_at IS NULL" if table in {"media_items", "media_raw_source_translations"} else ""
+    rows = query(
+        f"SELECT {source_column}, lang FROM {table} "
+        f"WHERE product_id = %s "
+        f"  AND {source_column} IN ({source_placeholders}) "
+        f"  AND lang IN ({lang_placeholders})"
+        f"{del_clause}",
+        (product_id, *source_ids, *target_langs),
+    )
+    result: set[tuple[int, str]] = set()
+    for row in rows:
+        raw_id = int(row.get(source_column) or 0)
+        lang = str(row.get("lang") or "").strip()
+        if raw_id and lang:
+            result.add((raw_id, lang))
+    return result
 
 
 def _list_requested_raw_source_rows(

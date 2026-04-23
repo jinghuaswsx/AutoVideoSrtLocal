@@ -165,6 +165,40 @@ def test_list_empty_new_product(authed_client_no_db, monkeypatch):
     assert resp.get_json()["items"] == []
 
 
+def test_list_raw_sources_includes_translated_language_status(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "t-rs"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_raw_sources",
+        lambda pid: [{
+            "id": 88,
+            "product_id": pid,
+            "display_name": "clean source",
+            "video_object_key": "v",
+            "cover_object_key": "c",
+            "sort_order": 0,
+            "created_at": None,
+            "translations": {
+                "de": {
+                    "status": "translated",
+                    "item_id": 701,
+                    "display_name": "German final",
+                },
+            },
+        }],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/123/raw-sources")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["translations"]["de"]["status"] == "translated"
+    assert item["translations"]["de"]["item_id"] == 701
+
+
 def test_update_raw_source_ok(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

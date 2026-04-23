@@ -126,3 +126,38 @@ def test_collect_refs_includes_raw_sources(user_id):
         assert "ccc" in keys and "raw_source_cover" in keys["ccc"]
     finally:
         _hard_cleanup_product(pid)
+
+
+def test_list_raw_sources_attaches_video_translation_status(monkeypatch):
+    rows_by_sql = []
+
+    def fake_query(sql, args=None):
+        rows_by_sql.append((sql, args))
+        if "FROM media_raw_sources" in sql:
+            return [{
+                "id": 88,
+                "product_id": 123,
+                "display_name": "clean source",
+                "video_object_key": "raw.mp4",
+                "cover_object_key": "raw.jpg",
+            }]
+        if "FROM media_items" in sql:
+            return [{
+                "id": 701,
+                "source_raw_id": 88,
+                "lang": "de",
+                "filename": "de-final.mp4",
+                "display_name": "German final",
+                "auto_translated": 1,
+                "bulk_task_id": "bt-1",
+                "created_at": None,
+            }]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    rows = medias.list_raw_sources(123)
+
+    assert rows[0]["translations"]["de"]["status"] == "translated"
+    assert rows[0]["translations"]["de"]["item_id"] == 701
+    assert rows[0]["translations"]["de"]["display_name"] == "German final"
