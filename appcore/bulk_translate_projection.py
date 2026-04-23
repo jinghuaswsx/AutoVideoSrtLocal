@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from appcore import medias
 from appcore.bulk_translate_runtime import compute_progress, sync_task_with_children_once
@@ -168,7 +169,16 @@ def _serialize_admin_task(row: dict, state: dict) -> dict:
 
 def _serialize_task(row: dict, state: dict) -> dict:
     detail_url = f"/tasks/{row['id']}"
-    plan = [_serialize_item(item, parent_detail_url=detail_url) for item in (state.get("plan") or [])]
+    raw_source_ids = _collect_source_raw_ids(state)
+    raw_source_name_map = _resolve_raw_source_name_map(raw_source_ids)
+    plan = [
+        _serialize_item(
+            item,
+            parent_detail_url=detail_url,
+            raw_source_name_map=raw_source_name_map,
+        )
+        for item in (state.get("plan") or [])
+    ]
     progress = dict(state.get("progress") or compute_progress(plan))
     waiting_voice_count = sum(1 for item in plan if item["status"] in _WAITING_ITEM_STATUSES)
     failed_count = sum(1 for item in plan if item["status"] in _RETRYABLE_ITEM_STATUSES)
@@ -191,6 +201,10 @@ def _serialize_task(row: dict, state: dict) -> dict:
         "detail_url": detail_url,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "raw_source_display_names": [
+            raw_source_name_map.get(raw_source_id) or f"原始视频 #{raw_source_id}"
+            for raw_source_id in raw_source_ids
+        ],
         "video_params_snapshot": dict(state.get("video_params_snapshot") or {}),
         "can_resume": status in _PARENT_RESUMABLE_STATUSES,
         "can_retry_failed": failed_count > 0,
@@ -260,7 +274,12 @@ def _float_or_zero(value) -> float:
         return 0.0
 
 
-def _serialize_item(raw_item: dict, *, parent_detail_url: str) -> dict:
+def _serialize_item(
+    raw_item: dict,
+    *,
+    parent_detail_url: str,
+    raw_source_name_map: dict[int, str] | None = None,
+) -> dict:
     item = dict(raw_item or {})
     kind = (item.get("kind") or "").strip()
     lang = (item.get("lang") or "").strip().lower()
@@ -288,12 +307,12 @@ def _serialize_item(raw_item: dict, *, parent_detail_url: str) -> dict:
         "parent_detail_url": parent_detail_url,
         "retryable": status in _RETRYABLE_ITEM_STATUSES,
         "manual_step": manual_step,
-        "summary": _item_summary(kind, ref),
+        "summary": _item_summary(kind, ref, raw_source_name_map=raw_source_name_map),
         "ref": ref,
     }
 
 
-def _item_summary(kind: str, ref: dict) -> str:
+def _item_summary(kind: str, ref: dict, *, raw_source_name_map: dict[int, str] | None = None) -> str:
     if kind in {"copy", "copywriting"}:
         return f"英文文案 #{int(ref.get('source_copy_id') or 0)}"
     if kind in {"detail", "detail_images"}:
@@ -304,8 +323,59 @@ def _item_summary(kind: str, ref: dict) -> str:
         return f"{count} 条视频封面"
     if kind in {"video", "videos"}:
         source_raw_id = int(ref.get("source_raw_id") or 0)
+        display_name = (raw_source_name_map or {}).get(source_raw_id)
+        if display_name:
+            return f"原始视频 {display_name}"
         return f"原始视频 #{source_raw_id}"
     return "翻译子任务"
+
+
+def _collect_source_raw_ids(state: dict) -> list[int]:
+    raw_source_ids: list[int] = []
+    for raw_source_id in state.get("raw_source_ids") or []:
+        _append_unique_raw_source_id(raw_source_ids, raw_source_id)
+    for item in state.get("plan") or []:
+        ref = dict((item or {}).get("ref") or {})
+        _append_unique_raw_source_id(raw_source_ids, ref.get("source_raw_id"))
+        for raw_source_id in ref.get("source_raw_ids") or []:
+            _append_unique_raw_source_id(raw_source_ids, raw_source_id)
+        for raw_source_id in ref.get("source_cover_ids") or []:
+            _append_unique_raw_source_id(raw_source_ids, raw_source_id)
+    return raw_source_ids
+
+
+def _append_unique_raw_source_id(raw_source_ids: list[int], raw_source_id) -> None:
+    try:
+        normalized = int(raw_source_id or 0)
+    except (TypeError, ValueError):
+        return
+    if normalized <= 0 or normalized in raw_source_ids:
+        return
+    raw_source_ids.append(normalized)
+
+
+def _resolve_raw_source_name_map(raw_source_ids: list[int]) -> dict[int, str]:
+    return {
+        raw_source_id: _resolve_raw_source_display_name(raw_source_id)
+        for raw_source_id in raw_source_ids
+    }
+
+
+def _resolve_raw_source_display_name(raw_source_id: int) -> str:
+    try:
+        raw_source = medias.get_raw_source(raw_source_id) or {}
+    except Exception:
+        log.warning("bulk_translate raw source lookup failed: %s", raw_source_id, exc_info=True)
+        raw_source = {}
+    display_name = (raw_source.get("display_name") or "").strip()
+    if display_name:
+        return display_name
+    video_object_key = (raw_source.get("video_object_key") or "").strip()
+    if video_object_key:
+        filename = Path(video_object_key).name.strip()
+        if filename:
+            return filename
+    return ""
 
 
 def _child_detail_url(task_type: str | None, child_task_id: str | None) -> str | None:
