@@ -90,9 +90,8 @@ def main() -> None:
     _prepare_dist_root(dist_root)
 
     env = dict(os.environ)
-    env["PYTHONNOUSERSITE"] = "1"
     subprocess.run(
-        [str(python_exe), "-s", "-m", "PyInstaller", "--noconfirm", str(spec_path)],
+        [str(python_exe), "-m", "PyInstaller", "--noconfirm", str(spec_path)],
         cwd=repo_root,
         env=env,
         check=True,

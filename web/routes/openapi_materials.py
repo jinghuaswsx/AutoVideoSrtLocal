@@ -155,7 +155,10 @@ def shopify_localizer_bootstrap():
 
     shopify_product_id = medias.resolve_shopify_product_id(int(product["id"]))
     if not shopify_product_id:
-        return jsonify({"error": "shopify product id not found"}), 409
+        return jsonify({
+            "error": "shopify_product_id_missing",
+            "message": "未找到 Shopify ID。请先到产品编辑页最底部填写 Shopify ID 后，再执行图片本地化工具。",
+        }), 409
 
     reference_images = medias.list_shopify_localizer_images(int(product["id"]), "en")
     localized_images = medias.list_shopify_localizer_images(int(product["id"]), lang)
