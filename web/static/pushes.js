@@ -45,6 +45,20 @@
 
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function escapeAttr(value) {
+    return escapeHtml(value).replace(/`/g, '&#96;');
+  }
+
   async function fetchJSON(url, options) {
     const resp = await fetch(url, options);
     if (!resp.ok && resp.status !== 204) {
@@ -62,6 +76,38 @@
     const lang = LANGUAGES.find(l => l && l.code === normalized);
     const name = lang && lang.name_zh ? String(lang.name_zh).trim() : '';
     return name ? `${name} (${normalized})` : raw;
+  }
+
+  async function copyText(text) {
+    const value = String(text || '');
+    if (!value) throw new Error('empty text');
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (!ok) throw new Error('copy failed');
+  }
+
+  function flashCopyButton(btn, text) {
+    if (!btn) return;
+    const original = btn.dataset.originalLabel || btn.textContent || '复制';
+    btn.dataset.originalLabel = original;
+    btn.textContent = text;
+    if (btn._copyTimer) window.clearTimeout(btn._copyTimer);
+    btn._copyTimer = window.setTimeout(() => {
+      btn.textContent = original;
+    }, 1200);
   }
 
   // ---------- 筛选与列表 ----------
@@ -138,7 +184,7 @@
     return `<button class="btn-push" data-action="open-modal" data-id="${it.id}">${label}</button>${historyBtn}`;
   }
 
-  function renderRow(it) {
+  function renderRowLegacy(it) {
     const thumb = it.cover_url
       ? `<img class="thumb" src="${it.cover_url}" alt="">`
       : `<div class="thumb thumb-empty"></div>`;
@@ -162,9 +208,45 @@
     </tr>`;
   }
 
+  function renderRow(it) {
+    const thumb = it.cover_url
+      ? `<img class="thumb" src="${escapeAttr(it.cover_url)}" alt="">`
+      : `<div class="thumb thumb-empty"></div>`;
+    const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
+    const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
+    const productNameHtml = it.product_page_url
+      ? `<a class="product-name product-link" href="${escapeAttr(it.product_page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
+      : `<div class="product-name">${escapeHtml(it.product_name || '')}</div>`;
+    const productCode = it.product_code || '';
+    const productCodeHtml = productCode
+      ? `<div class="product-code-row">
+           <span class="product-code">${escapeHtml(productCode)}</span>
+           <button type="button" class="product-copy-btn" data-copy-product-code="${escapeAttr(productCode)}">复制</button>
+         </div>`
+      : `<div class="product-code-row"><span class="product-code"></span></div>`;
+    const mkId = (it.mk_id === null || it.mk_id === undefined || it.mk_id === '') ? '—' : String(it.mk_id);
+    return `<tr data-id="${it.id}">
+      <td>${thumb}</td>
+      <td>
+        ${productNameHtml}
+        ${productCodeHtml}
+      </td>
+      <td class="mk-id-cell">${escapeHtml(mkId)}</td>
+      <td>
+        <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
+        <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
+      </td>
+      <td><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
+      <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td>${renderStatusBadge(it.status)}</td>
+      <td class="time">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}
+    </tr>`;
+  }
+
   async function load() {
     const tbody = document.getElementById('push-tbody');
-    const colspan = window.PUSH_IS_ADMIN ? 8 : 7;
+    const colspan = window.PUSH_IS_ADMIN ? 9 : 8;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());
@@ -613,6 +695,17 @@
   }
 
   // ---------- 绑定 ----------
+
+  document.getElementById('push-tbody').addEventListener('click', async ev => {
+    const copyBtn = ev.target.closest('button[data-copy-product-code]');
+    if (!copyBtn) return;
+    try {
+      await copyText(copyBtn.getAttribute('data-copy-product-code') || '');
+      flashCopyButton(copyBtn, '已复制');
+    } catch (err) {
+      flashCopyButton(copyBtn, '复制失败');
+    }
+  });
 
   document.getElementById('push-tbody').addEventListener('click', ev => {
     const btn = ev.target.closest('button[data-action]');

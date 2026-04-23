@@ -1,6 +1,9 @@
 """推送管理蓝图骨架测试。"""
 
 
+from datetime import datetime
+
+
 def test_pushes_index_requires_login():
     from web.app import create_app
     app = create_app()
@@ -18,6 +21,7 @@ def test_pushes_index_loads_for_admin(authed_client_no_db):
     resp = authed_client_no_db.get("/pushes/")
     assert resp.status_code == 200
     assert b"\xe6\x8e\xa8\xe9\x80\x81\xe7\xae\xa1\xe7\x90\x86" in resp.data  # "推送管理"
+    assert "mk_id" in resp.get_data(as_text=True)
 
 
 def test_pushes_api_items_requires_login():
@@ -44,6 +48,64 @@ def test_pushes_api_items_filter_status(logged_in_client):
     data = resp.get_json()
     for it in data["items"]:
         assert it["status"] == "pending"
+
+
+def test_pushes_api_items_includes_language_specific_product_page_url(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 101,
+        "product_id": 12,
+        "product_name": "表彰证书套装",
+        "product_code": "gold-foil-naturalization-display-rjc",
+        "mk_id": 998877,
+        "localized_links_json": {
+            "de": "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special",
+        },
+        "lang": "de",
+        "filename": "demo.mp4",
+        "display_name": "demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/demo.jpg",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tos_clients.generate_signed_media_download_url",
+        lambda key: f"https://signed/{key}",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?page=1")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["items"][0]["mk_id"] == 998877
+    assert data["items"][0]["product_page_url"] == (
+        "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special"
+    )
 
 
 import pytest

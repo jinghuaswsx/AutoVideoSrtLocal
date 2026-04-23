@@ -290,6 +290,58 @@ def build_product_link(lang: str, product_code: str) -> str:
     return tpl.format(lang=lang, product_code=product_code)
 
 
+def _parse_product_localized_links(product: dict | None) -> dict[str, str]:
+    import json as _json
+
+    result: dict[str, str] = {}
+    if not isinstance(product, dict):
+        return result
+
+    for raw_value in (
+        product.get("localized_links_json"),
+        product.get("localized_links"),
+    ):
+        parsed: dict[Any, Any] = {}
+        if isinstance(raw_value, dict):
+            parsed = raw_value
+        elif raw_value:
+            try:
+                loaded = _json.loads(raw_value)
+            except (_json.JSONDecodeError, TypeError, ValueError):
+                loaded = {}
+            if isinstance(loaded, dict):
+                parsed = loaded
+
+        for key, value in parsed.items():
+            lang_code = str(key or "").strip().lower()
+            url = str(value or "").strip()
+            if lang_code and url:
+                result[lang_code] = url
+
+    return result
+
+
+def _default_product_page_url(lang: str, product_code: str) -> str:
+    code = (product_code or "").strip()
+    if not code:
+        return ""
+
+    lang_code = (lang or "en").strip().lower() or "en"
+    if lang_code == "en":
+        return f"https://newjoyloo.com/products/{code}"
+    return f"https://newjoyloo.com/{lang_code}/products/{code}"
+
+
+def resolve_product_page_url(lang: str, product: dict | None) -> str:
+    product = product or {}
+    lang_code = (lang or "en").strip().lower() or "en"
+    links = _parse_product_localized_links(product)
+    override = (links.get(lang_code) or "").strip()
+    if override:
+        return override
+    return _default_product_page_url(lang_code, product.get("product_code") or "")
+
+
 def probe_ad_url(url: str) -> tuple[bool, str | None]:
     """HEAD 请求探活。返回 (ok, error_message)。"""
     if not url:
@@ -571,8 +623,9 @@ def list_items_for_push(
     total = int((total_row or {}).get("c") or 0)
 
     base_sql = (
-        f"SELECT i.*, p.name AS product_name, p.product_code, "
-        f"       p.ad_supported_langs, p.selling_points, p.importance "
+        f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
+        f"       p.localized_links_json, p.ad_supported_langs, "
+        f"       p.selling_points, p.importance "
         f"FROM media_items i "
         f"JOIN media_products p ON p.id = i.product_id "
         f"WHERE {where_sql} "

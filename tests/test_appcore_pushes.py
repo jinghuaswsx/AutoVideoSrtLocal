@@ -151,6 +151,30 @@ def test_build_product_link():
         config.AD_URL_TEMPLATE = original
 
 
+def test_resolve_product_page_url_prefers_localized_link():
+    product = {
+        "product_code": "gold-foil-naturalization-display-rjc",
+        "localized_links_json": {
+            "de": "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special",
+        },
+    }
+
+    assert pushes.resolve_product_page_url("de", product) == (
+        "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special"
+    )
+
+
+def test_resolve_product_page_url_falls_back_to_default_template():
+    product = {"product_code": "led-bubble-blaster-rjc"}
+
+    assert pushes.resolve_product_page_url("en", product) == (
+        "https://newjoyloo.com/products/led-bubble-blaster-rjc"
+    )
+    assert pushes.resolve_product_page_url("fr", product) == (
+        "https://newjoyloo.com/fr/products/led-bubble-blaster-rjc"
+    )
+
+
 def test_build_item_payload_basic(monkeypatch, product_with_item):
     import config
     pid, item_id = product_with_item
