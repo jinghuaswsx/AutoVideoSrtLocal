@@ -496,6 +496,22 @@ def test_retry_failed_endpoint(phase5_client, monkeypatch):
     assert any("_spawn_scheduler" in s[0] for s in phase5_client._spawn_log)
 
 
+def test_force_backfill_item_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="error")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.force_backfill_item",
+        lambda task_id, idx, user_id: called.append((task_id, idx, user_id)),
+        raising=False,
+    )
+    resp = phase5_client.post(
+        "/api/bulk-translate/bt_xxx/force-backfill-item",
+        json={"idx": 2},
+    )
+    assert resp.status_code == 202
+    assert called == [("bt_xxx", 2, 1)]
+
+
 # ----- audit -----
 
 def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
@@ -520,6 +536,7 @@ def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
     ("/api/bulk-translate/bt_xxx/resume", "post"),
     ("/api/bulk-translate/bt_xxx/cancel", "post"),
     ("/api/bulk-translate/bt_xxx/retry-failed", "post"),
+    ("/api/bulk-translate/bt_xxx/force-backfill-item", "post"),
     ("/api/bulk-translate/bt_xxx", "get"),
     ("/api/bulk-translate/bt_xxx/audit", "get"),
 ])

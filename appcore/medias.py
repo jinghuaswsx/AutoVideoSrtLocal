@@ -68,6 +68,23 @@ def list_enabled_languages_kv() -> list[tuple[str, str]]:
     return [(r["code"], r["name_zh"]) for r in rows]
 
 
+def list_shopify_localizer_languages() -> list[dict]:
+    items: list[dict] = []
+    for row in list_languages():
+        code = str(row.get("code") or "").strip().lower()
+        if not code:
+            continue
+        name_zh = str(row.get("name_zh") or code).strip() or code
+        items.append({
+            "code": code,
+            "name_zh": name_zh,
+            "shop_locale": code,
+            "folder_code": code,
+            "label": f"{name_zh}（{code.upper()}/{code}）",
+        })
+    return items
+
+
 def get_language_name(code: str) -> str:
     row = get_language((code or "").strip().lower())
     return (row or {}).get("name_zh") or (code or "").strip().lower()
@@ -299,6 +316,19 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
         })
     return images
 
+def resolve_shopify_product_id(product_id: int) -> str | None:
+    try:
+        product = get_product(product_id) or {}
+    except Exception:
+        product = {}
+
+    direct_value = str(product.get("shopifyid") or "").strip()
+    return direct_value or None
+
+
+def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:
+    return list_reference_images_for_lang(product_id, (lang or "").strip().lower())
+
 
 def _media_product_owner_name_expr() -> str:
     row = query_one(
@@ -308,8 +338,6 @@ def _media_product_owner_name_expr() -> str:
     if row:
         return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
     return "u.username"
-
-
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
                   offset: int = 0, limit: int = 20) -> tuple[list[dict], int]:
     where = ["p.deleted_at IS NULL"]
