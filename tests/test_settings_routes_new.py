@@ -57,7 +57,9 @@ def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):
 def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
-         patch("web.routes.settings.get_image_translate_channel", return_value="doubao"):
+         patch("web.routes.settings.get_image_translate_channel", return_value="doubao"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="doubao-seedream-5-0-260128"):
         resp = admin_no_db_client.get("/settings")
 
     assert resp.status_code == 200
@@ -65,6 +67,39 @@ def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
     assert "豆包 ARK（Seedream）" in body
     assert "DOUBAO_LLM_API_KEY" in body
     assert "VOLC_API_KEY" in body
+
+
+def test_settings_get_renders_global_image_translate_model_select(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3-pro-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "选通道" in body
+    assert 'name="image_translate_default_model"' in body
+    assert 'value="gemini-3-pro-image-preview" selected' in body
+    assert '"openrouter"' in body
+    assert "Nano Banana Pro（高保真）" in body
+
+
+def test_settings_post_providers_saves_global_image_translate_channel_and_model(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel") as m_set_channel, \
+         patch("web.routes.settings.set_image_translate_default_model") as m_set_model:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "jianying_project_root": "/custom/path",
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_set_channel.assert_called_once_with("openrouter")
+    m_set_model.assert_called_once_with("openrouter", "gemini-3-pro-image-preview")
 
 
 def test_settings_post_bindings_tab_calls_upsert(admin_no_db_client):

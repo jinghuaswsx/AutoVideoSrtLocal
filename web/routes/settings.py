@@ -21,8 +21,11 @@ from appcore.image_translate_settings import (
     CHANNEL_LABELS as IMAGE_TRANSLATE_CHANNEL_LABELS,
     CHANNELS as IMAGE_TRANSLATE_CHANNELS,
     get_channel as get_image_translate_channel,
+    get_default_model as get_image_translate_default_model,
     set_channel as set_image_translate_channel,
+    set_default_model as set_image_translate_default_model,
 )
+from appcore.gemini_image import coerce_image_model, list_image_models
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
 from web.auth import admin_required
 
@@ -67,6 +70,13 @@ IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
 }
 
 
+def _image_translate_models_by_channel() -> dict[str, list[dict]]:
+    return {
+        code: [{"id": mid, "label": label} for mid, label in list_image_models(code)]
+        for code in IMAGE_TRANSLATE_CHANNELS
+    }
+
+
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 def index():
@@ -88,6 +98,14 @@ def index():
         current_image_channel = get_image_translate_channel()
     except Exception:
         current_image_channel = "aistudio"
+    try:
+        current_image_default_model = get_image_translate_default_model(current_image_channel)
+    except Exception:
+        current_image_default_model = coerce_image_model("", channel=current_image_channel)
+    image_translate_models_by_channel = _image_translate_models_by_channel()
+    image_translate_current_models = image_translate_models_by_channel.get(
+        current_image_channel, image_translate_models_by_channel.get("aistudio", []),
+    )
 
     bindings_rows = llm_bindings.list_all()
     bindings_grouped: dict[str, list] = {}
@@ -140,6 +158,9 @@ def index():
             (code, IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS.get(code, code))
             for code in IMAGE_TRANSLATE_CHANNELS
         ],
+        image_translate_default_model=current_image_default_model,
+        image_translate_current_models=image_translate_current_models,
+        image_translate_models_by_channel=image_translate_models_by_channel,
         bindings_grouped=bindings_grouped,
         module_labels=MODULE_LABELS,
         binding_allowed_providers=BINDING_ALLOWED_PROVIDERS,
@@ -173,6 +194,11 @@ def _handle_providers_post() -> None:
     image_translate_channel = request.form.get("image_translate_channel", "").strip().lower()
     if image_translate_channel in IMAGE_TRANSLATE_CHANNELS:
         set_image_translate_channel(image_translate_channel)
+        image_translate_model = request.form.get("image_translate_default_model", "").strip()
+        set_image_translate_default_model(
+            image_translate_channel,
+            coerce_image_model(image_translate_model, channel=image_translate_channel),
+        )
 
 
 def _handle_bindings_post() -> None:

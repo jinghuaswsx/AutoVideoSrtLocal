@@ -405,6 +405,52 @@ def test_get_channel_accepts_doubao(monkeypatch):
     assert its.get_channel() == "doubao"
 
 
+def test_get_default_model_returns_channel_default_when_unset(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(monkeypatch, {})
+
+    assert its.get_default_model("aistudio") == "gemini-3.1-flash-image-preview"
+    assert its.get_default_model("doubao") == "doubao-seedream-5-0-260128"
+
+
+def test_get_default_model_returns_persisted_model_for_channel(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(
+        monkeypatch,
+        {
+            "image_translate.default_model.openrouter": "gemini-3-pro-image-preview",
+            "image_translate.default_model.doubao": "gemini-3-pro-image-preview",
+        },
+    )
+
+    assert its.get_default_model("openrouter") == "gemini-3-pro-image-preview"
+    assert its.get_default_model("doubao") == "doubao-seedream-5-0-260128"
+
+
+def test_set_default_model_writes_valid_channel_model(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    store = {}
+    _patch_store(monkeypatch, store)
+
+    its.set_default_model("cloud", "gemini-3-pro-image-preview")
+
+    assert store["image_translate.default_model.cloud"] == "gemini-3-pro-image-preview"
+
+
+def test_set_default_model_rejects_invalid_channel_or_model(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(monkeypatch, {})
+
+    with pytest.raises(ValueError):
+        its.set_default_model("mystery", "gemini-3-pro-image-preview")
+    with pytest.raises(ValueError):
+        its.set_default_model("doubao", "gemini-3-pro-image-preview")
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 

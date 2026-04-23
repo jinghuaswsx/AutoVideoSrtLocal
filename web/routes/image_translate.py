@@ -14,7 +14,7 @@ from flask_login import current_user, login_required
 from appcore import local_media_storage, medias, task_state, tos_clients
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
-from appcore.gemini_image import coerce_image_model, is_valid_image_model, list_image_models
+from appcore.gemini_image import is_valid_image_model, list_image_models
 from appcore import image_translate_settings as its
 
 _BACKEND_LABELS = {
@@ -27,10 +27,7 @@ _BACKEND_LABELS = {
 
 def _backend_badge() -> dict:
     """读 system_settings 里的全局通道；DB 异常时回落 aistudio，避免页面 500。"""
-    try:
-        key = its.get_channel()
-    except Exception:
-        key = "aistudio"
+    key = _safe_image_translate_channel()
     return {"key": key, "label": _BACKEND_LABELS.get(key, key or "unknown")}
 from web import store
 from web.services import image_translate_runner
@@ -41,6 +38,22 @@ _MAX_ITEMS = 20
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _PRODUCT_NAME_MAX_LEN = 60
 _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
+
+
+def _safe_image_translate_channel() -> str:
+    try:
+        return its.get_channel()
+    except Exception:
+        return "aistudio"
+
+
+def _safe_image_translate_default_model(channel: str) -> str:
+    try:
+        return its.get_default_model(channel)
+    except Exception:
+        from appcore.gemini_image import coerce_image_model
+
+        return coerce_image_model("", channel=channel)
 
 
 def _sanitize_product_name(value: str) -> str:
@@ -235,16 +248,10 @@ def _state_payload(task: dict) -> dict:
 @bp.route("/api/image-translate/models", methods=["GET"])
 @login_required
 def api_models():
-    from appcore.api_keys import resolve_extra
-    try:
-        channel = its.get_channel()
-    except Exception:
-        channel = "aistudio"
-    extra = resolve_extra(current_user.id, "image_translate") or {}
-    preferred = (extra.get("default_model_id") or "").strip()
+    channel = _safe_image_translate_channel()
     return jsonify({
         "items": [{"id": mid, "name": label} for mid, label in list_image_models(channel)],
-        "default_model_id": coerce_image_model(preferred, channel=channel),
+        "default_model_id": _safe_image_translate_default_model(channel),
     })
 
 
@@ -326,7 +333,7 @@ def api_upload_complete():
         return jsonify({"error": "preset must be cover or detail"}), 400
     if not medias.is_valid_language(lang_code) or lang_code == "en":
         return jsonify({"error": "unsupported target language"}), 400
-    channel = its.get_channel()
+    channel = _safe_image_translate_channel()
     if not is_valid_image_model(model_id, channel=channel):
         return jsonify({"error": "unsupported model"}), 400
     if not prompt_tpl:
@@ -393,12 +400,6 @@ def api_upload_complete():
         project_name=project_name,
         concurrency_mode=mode_raw,
     )
-    try:
-        from appcore.api_keys import set_key
-        set_key(current_user.id, "image_translate", "", {"default_model_id": model_id})
-    except Exception:
-        pass
-
     with _upload_guard:
         _upload_reservations.pop(task_id, None)
     with _local_upload_guard:

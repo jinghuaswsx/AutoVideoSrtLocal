@@ -144,18 +144,52 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <div class="settings-card">
     <h2>全局配置</h2>
     <p class="step-desc">对所有用户生效，非管理员也可修改</p>
-    <label>图片翻译通道</label>
-    <select name="image_translate_channel">
+    <label>图片翻译选通道</label>
+    <select id="imageTranslateChannel" name="image_translate_channel">
       {% for code, label in image_translate_channels %}
       <option value="{{ code }}" {{ 'selected' if image_translate_channel == code }}>{{ label }}</option>
       {% endfor %}
     </select>
+    <label>默认模型</label>
+    <select id="imageTranslateDefaultModel" name="image_translate_default_model">
+      {% for model in image_translate_current_models %}
+      <option value="{{ model.id }}" {{ 'selected' if image_translate_default_model == model.id }}>{{ model.label }}</option>
+      {% endfor %}
+    </select>
     <p class="hint">
-      选择图片翻译走哪个通道。
+      选择图片翻译走哪个供应商通道，并指定该通道下新建任务默认选中的图像模型。
       AI Studio / Google Cloud 继续调用 Gemini 图像模型；
       OpenRouter 调用 OpenRouter 的 Gemini 图像能力；
       豆包 ARK 调用 Seedream 5.0，并复用下方豆包 ARK 的 Key，或环境变量 <code>DOUBAO_LLM_API_KEY</code>（未设置时继续回落 <code>VOLC_API_KEY</code>）。
     </p>
+    <script id="imageTranslateModelOptions" type="application/json">
+      {{ image_translate_models_by_channel | tojson }}
+    </script>
+    <script>
+      (function() {
+        var channelEl = document.getElementById('imageTranslateChannel');
+        var modelEl = document.getElementById('imageTranslateDefaultModel');
+        var dataEl = document.getElementById('imageTranslateModelOptions');
+        if (!channelEl || !modelEl || !dataEl) return;
+        var modelsByChannel = {};
+        try { modelsByChannel = JSON.parse(dataEl.textContent || '{}'); } catch (e) { modelsByChannel = {}; }
+
+        function renderModels(channel, preferred) {
+          var models = modelsByChannel[channel] || [];
+          var picked = preferred && models.some(function(m) { return m.id === preferred; })
+            ? preferred
+            : (models[0] && models[0].id) || '';
+          modelEl.innerHTML = models.map(function(m) {
+            var selected = m.id === picked ? ' selected' : '';
+            return '<option value="' + m.id + '"' + selected + '>' + m.label + '</option>';
+          }).join('');
+        }
+
+        channelEl.addEventListener('change', function() {
+          renderModels(channelEl.value, '');
+        });
+      })();
+    </script>
   </div>
 
   {# ── 第一步：语音识别 ── #}
