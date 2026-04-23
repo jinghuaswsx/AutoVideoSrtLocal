@@ -36,6 +36,8 @@ img/
 *.log
 uploads/
 uploads
+media_store/
+media_store
 output/
 output
 capcut_example/
