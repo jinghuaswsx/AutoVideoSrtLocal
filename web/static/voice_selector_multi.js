@@ -41,6 +41,8 @@
 
   // 字体预览：下拉变化 → 预览文字换字体
   let previewDragging = false;
+  let previewFallbackTimer = null;
+  let previewPayloadVideoUrl = "";
 
   const FONT_FAMILIES = {
     "Impact": 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
@@ -50,6 +52,37 @@
     "Poppins Bold": '"Poppins", "Arial Black", sans-serif',
     "Anton": '"Anton", Impact, sans-serif',
   };
+
+  function coerceSubtitleSize(value) {
+    const next = parseInt(value, 10);
+    return Number.isFinite(next) ? next : 14;
+  }
+
+  function coerceSubtitlePositionY(value) {
+    const next = parseFloat(value);
+    if (!Number.isFinite(next)) return 0.68;
+    return Math.max(0.12, Math.min(0.92, next));
+  }
+
+  function setSubtitleSize(value) {
+    subSize = coerceSubtitleSize(value);
+    subSizeGroup.querySelectorAll("button[data-size]").forEach(btn => {
+      btn.classList.toggle("active", coerceSubtitleSize(btn.dataset.size) === subSize);
+    });
+    syncSubtitlePreview();
+  }
+
+  function setSubtitlePositionY(value) {
+    subPosYEl.value = String(coerceSubtitlePositionY(value));
+    updatePosHint();
+  }
+
+  function setSubtitleFont(value) {
+    const next = value || "Impact";
+    const option = Array.from(subFontEl.options || []).find(opt => opt.value === next);
+    if (option) subFontEl.value = option.value;
+    updateFontPreview();
+  }
 
   function updateFontPreview() {
     const val = subFontEl.value || "Impact";
@@ -65,10 +98,7 @@
   subSizeGroup.addEventListener("click", e => {
     const btn = e.target.closest("button[data-size]");
     if (!btn) return;
-    subSize = parseInt(btn.dataset.size, 10) || 14;
-    subSizeGroup.querySelectorAll("button").forEach(b =>
-      b.classList.toggle("active", b === btn));
-    syncSubtitlePreview();
+    setSubtitleSize(btn.dataset.size);
   });
 
   // 位置滑块：实时回显百分比
@@ -112,6 +142,62 @@
     return true;
   }
 
+  function attachPreviewVideo(src, message) {
+    if (!previewVideo || !src) return false;
+    if (previewVideo.getAttribute("src") === src) return true;
+    previewPayloadVideoUrl = src;
+    previewVideo.preload = "metadata";
+    previewVideo.src = src;
+    previewVideo.load();
+    previewVideo.play().catch(() => {});
+    if (message) setPreviewNote(message, "success");
+    return true;
+  }
+
+  function schedulePreviewReuseFallback() {
+    if (previewFallbackTimer) return;
+    if (tryAttachPreviewVideo()) return;
+    let previewRetries = 0;
+    previewFallbackTimer = setInterval(() => {
+      previewRetries += 1;
+      if (tryAttachPreviewVideo() || previewRetries >= 20) {
+        clearInterval(previewFallbackTimer);
+        previewFallbackTimer = null;
+      }
+    }, 1000);
+  }
+
+  function applySubtitlePreviewPayload(payload) {
+    const data = payload || {};
+    if (data.subtitle_font) setSubtitleFont(data.subtitle_font);
+    if (data.subtitle_size !== undefined && data.subtitle_size !== null) {
+      setSubtitleSize(data.subtitle_size);
+    }
+    if (data.subtitle_position_y !== undefined && data.subtitle_position_y !== null) {
+      setSubtitlePositionY(data.subtitle_position_y);
+    }
+
+    const videoUrl = String(data.video_url || "").trim();
+    if (videoUrl) {
+      attachPreviewVideo(videoUrl, "已加载当前任务的英文原版视频，字幕样式会在这里实时预览。");
+      return;
+    }
+    schedulePreviewReuseFallback();
+  }
+
+  async function loadSubtitlePreviewPayload() {
+    setPreviewNote("正在加载英文原版视频预览...", "note");
+    try {
+      const resp = await fetch(`/api/multi-translate/${taskId}/subtitle-preview`, { cache: "no-store" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      applySubtitlePreviewPayload(await resp.json());
+    } catch (err) {
+      console.error("[voice-selector] subtitle preview payload failed:", err);
+      setPreviewNote("英文原版视频预览加载失败，正在尝试复用页面里的原始视频预览。", "error");
+      schedulePreviewReuseFallback();
+    }
+  }
+
   function updatePreviewPosition(clientY) {
     if (!previewFrame) return;
     const rect = previewFrame.getBoundingClientRect();
@@ -143,16 +229,21 @@
     previewSubtitle.addEventListener("pointercancel", endPreviewDrag);
   }
 
-  syncSubtitlePreview();
-  if (!tryAttachPreviewVideo()) {
-    let previewRetries = 0;
-    const previewTimer = setInterval(() => {
-      previewRetries += 1;
-      if (tryAttachPreviewVideo() || previewRetries >= 20) {
-        clearInterval(previewTimer);
+  if (previewVideo) {
+    previewVideo.addEventListener("loadeddata", () => {
+      if (previewPayloadVideoUrl && previewVideo.getAttribute("src") === previewPayloadVideoUrl) {
+        setPreviewNote("英文原版视频已加载，可直接检查字幕位置和字号。", "success");
       }
-    }, 1000);
+    });
+    previewVideo.addEventListener("error", () => {
+      if (!previewPayloadVideoUrl || previewVideo.getAttribute("src") !== previewPayloadVideoUrl) return;
+      setPreviewNote("英文原版视频加载失败，正在等待页面里的原始视频预览同步。", "error");
+      schedulePreviewReuseFallback();
+    });
   }
+
+  syncSubtitlePreview();
+  loadSubtitlePreviewPayload();
 
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");

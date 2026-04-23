@@ -127,8 +127,13 @@ def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
 
     assert 'id="vsPreviewFrame"' in template
     assert 'id="vsPreviewVideo"' in template
+    assert 'preload="metadata"' in template
     assert 'id="vsPreviewSubtitle"' in template
     assert 'id="vsPreviewNote"' in template
+    assert "loadSubtitlePreviewPayload" in script
+    assert "`/api/multi-translate/${taskId}/subtitle-preview`" in script
+    assert "applySubtitlePreviewPayload" in script
+    assert "attachPreviewVideo" in script
     assert "tryAttachPreviewVideo" in script
     assert "vsPreviewSubtitle" in script
     assert "pointerdown" in script
@@ -163,15 +168,17 @@ def test_multi_translate_subtitle_preview_route(authed_client_no_db, monkeypatch
     ]
 
 
-def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
+def test_multi_translate_detail_removes_top_shared_subtitle_preview_assets():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
     preview_panel = (root / "web" / "templates" / "_subtitle_preview_panel.html").read_text(encoding="utf-8")
     scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
     workbench = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
 
-    assert "_subtitle_preview_panel.html" in template
-    assert "subtitle_preview.js" in template
+    assert "_subtitle_preview_panel.html" not in template
+    assert "subtitle_preview.js" not in template
+    assert 'id="sharedSubtitlePreviewMount"' not in template
+    assert "voice_selector_multi.js" in template
     assert "--subtitle-preview-w: 270px;" in preview_panel
     assert "--subtitle-preview-h: 480px;" in preview_panel
     assert "sharedSubtitlePreviewMount" in workbench
