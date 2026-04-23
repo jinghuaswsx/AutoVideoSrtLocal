@@ -43,6 +43,29 @@ def _restore_failed_error(task_id: str, source_tos_key: str, video_path: str) ->
     )
 
 
+def _ensure_thumbnail(task_id: str, video_path: str, task: dict) -> None:
+    """Generate and persist a thumbnail after the source video is local."""
+    try:
+        from pipeline.ffutil import extract_thumbnail
+
+        existing_thumb = (task.get("thumbnail_path") or "").strip()
+        if existing_thumb and os.path.exists(existing_thumb):
+            return
+
+        task_dir = task.get("task_dir") or os.path.dirname(video_path)
+        if task_dir:
+            os.makedirs(task_dir, exist_ok=True)
+        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
+        thumb = thumb_path if os.path.exists(thumb_path) else extract_thumbnail(video_path, task_dir)
+        if thumb:
+            from appcore.db import execute as db_execute
+
+            db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+            task_state.update(task_id, thumbnail_path=thumb)
+    except Exception:
+        log.warning("[source_video] thumbnail generation failed for task %s", task_id, exc_info=True)
+
+
 def ensure_local_source_video(task_id: str) -> str:
     """Ensure ``task.video_path`` points at an existing local file."""
     task = task_state.get(task_id) or {}
@@ -54,6 +77,7 @@ def ensure_local_source_video(task_id: str) -> str:
         raise RuntimeError(f"task {task_id} has no video_path")
 
     if os.path.exists(video_path):
+        _ensure_thumbnail(task_id, video_path, task)
         return video_path
 
     if not source_tos_key:
@@ -81,21 +105,7 @@ def ensure_local_source_video(task_id: str) -> str:
     if not os.path.exists(video_path):
         raise _restore_failed_error(task_id, source_tos_key, video_path)
 
-    # Generate a thumbnail on first local materialization. This is idempotent.
-    try:
-        from pipeline.ffutil import extract_thumbnail
-
-        task_dir = task.get("task_dir") or os.path.dirname(video_path)
-        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
-        if not os.path.exists(thumb_path):
-            thumb = extract_thumbnail(video_path, task_dir)
-            if thumb:
-                from appcore.db import execute as db_execute
-
-                db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
-    except Exception:
-        log.warning("[source_video] thumbnail generation failed for task %s", task_id, exc_info=True)
-
+    _ensure_thumbnail(task_id, video_path, task)
     return video_path
 
 
