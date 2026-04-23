@@ -40,6 +40,59 @@ def test_mk_selection_video_cards_include_local_video_preview():
     assert "loading=\"lazy\"" in template
 
 
+def test_mk_selection_api_handles_legacy_rankings_schema_without_mk_columns(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import medias as route_mod
+
+    route_mod._dianxiaomi_rankings_columns.cache_clear()
+
+    def fake_db_query(sql, args=()):
+        if sql == "SHOW COLUMNS FROM dianxiaomi_rankings":
+            return [
+                {"Field": "id"},
+                {"Field": "product_id"},
+                {"Field": "product_name"},
+                {"Field": "product_url"},
+                {"Field": "store"},
+                {"Field": "sales_count"},
+                {"Field": "order_count"},
+                {"Field": "revenue_main"},
+                {"Field": "revenue_split"},
+                {"Field": "media_product_id"},
+                {"Field": "snapshot_date"},
+                {"Field": "rank_position"},
+            ]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            assert "mk_product_name" not in sql
+            assert args == ["2026-04-23", "%tooth%"]
+            return [{"cnt": 0}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            assert "NULL AS mk_product_id" in sql
+            assert "NULL AS mk_product_name" in sql
+            assert "0 AS mk_total_spends" in sql
+            assert "0 AS mk_video_count" in sql
+            assert "0 AS mk_total_ads" in sql
+            assert "ORDER BY dr.rank_position ASC" in sql
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(route_mod, "db_query", fake_db_query)
+
+    response = authed_client_no_db.get("/medias/api/mk-selection?keyword=tooth")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "items": [],
+        "total": 0,
+        "page": 1,
+        "page_size": 50,
+    }
+
+    route_mod._dianxiaomi_rankings_columns.cache_clear()
+
+
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
     authed_client_no_db,
     monkeypatch,

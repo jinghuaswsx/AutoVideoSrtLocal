@@ -11,6 +11,7 @@ import threading
 import uuid
 import zipfile
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, urlparse
 import uuid
@@ -120,6 +121,16 @@ def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not _SLUG_RE.match(code):
         return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
     return True, None
+
+
+@lru_cache(maxsize=1)
+def _dianxiaomi_rankings_columns() -> frozenset[str]:
+    rows = db_query("SHOW COLUMNS FROM dianxiaomi_rankings")
+    return frozenset(
+        str(row.get("Field") or "").strip()
+        for row in rows
+        if row.get("Field")
+    )
 
 
 def _language_name_map() -> dict[str, str]:
@@ -2370,13 +2381,30 @@ def api_mk_selection():
     page_num = max(1, int(request.args.get("page", 1)))
     page_size = min(100, max(10, int(request.args.get("page_size", 50))))
     offset = (page_num - 1) * page_size
+    ranking_columns = _dianxiaomi_rankings_columns()
+    has_mk_product_id = "mk_product_id" in ranking_columns
+    has_mk_product_name = "mk_product_name" in ranking_columns
+    has_mk_total_spends = "mk_total_spends" in ranking_columns
+    has_mk_video_count = "mk_video_count" in ranking_columns
+    has_mk_total_ads = "mk_total_ads" in ranking_columns
 
     where = "dr.snapshot_date = %s"
     params: list = [snapshot]
 
     if keyword:
-        where += " AND (dr.product_name LIKE %s OR dr.mk_product_name LIKE %s)"
-        params.extend([f"%{keyword}%", f"%{keyword}%"])
+        keyword_clauses = ["dr.product_name LIKE %s"]
+        params.append(f"%{keyword}%")
+        if has_mk_product_name:
+            keyword_clauses.append("dr.mk_product_name LIKE %s")
+            params.append(f"%{keyword}%")
+        where += " AND (" + " OR ".join(keyword_clauses) + ")"
+
+    mk_product_id_select = "dr.mk_product_id" if has_mk_product_id else "NULL AS mk_product_id"
+    mk_product_name_select = "dr.mk_product_name" if has_mk_product_name else "NULL AS mk_product_name"
+    mk_total_spends_select = "dr.mk_total_spends" if has_mk_total_spends else "0 AS mk_total_spends"
+    mk_video_count_select = "dr.mk_video_count" if has_mk_video_count else "0 AS mk_video_count"
+    mk_total_ads_select = "dr.mk_total_ads" if has_mk_total_ads else "0 AS mk_total_ads"
+    order_by = "dr.mk_total_spends DESC, dr.rank_position ASC" if has_mk_total_spends else "dr.rank_position ASC"
 
     count_row = db_query(
         f"SELECT COUNT(*) AS cnt FROM dianxiaomi_rankings dr WHERE {where}",
@@ -2391,14 +2419,14 @@ def api_mk_selection():
             dr.product_name, dr.product_url,
             dr.store, dr.sales_count, dr.order_count,
             dr.revenue_main, dr.revenue_split,
-            dr.mk_product_id, dr.mk_product_name,
-            dr.mk_total_spends, dr.mk_video_count, dr.mk_total_ads,
+            {mk_product_id_select}, {mk_product_name_select},
+            {mk_total_spends_select}, {mk_video_count_select}, {mk_total_ads_select},
             dr.media_product_id,
             mp.name AS mp_name, mp.product_code AS mp_code
         FROM dianxiaomi_rankings dr
         LEFT JOIN media_products mp ON dr.media_product_id = mp.id
         WHERE {where}
-        ORDER BY dr.mk_total_spends DESC, dr.rank_position ASC
+        ORDER BY {order_by}
         LIMIT %s OFFSET %s
         """,
         params + [page_size, offset],
