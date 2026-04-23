@@ -2,146 +2,355 @@
 {% block title %}订单分析 — AutoVideoSrt{% endblock %}
 {% block page_title %}订单分析{% endblock %}
 {% block extra_style %}
+/* ── Tab 导航 ─────────────────────────────────── */
+.oa-tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+  margin-bottom: 24px;
+}
+.oa-tab {
+  padding: 10px 20px; font-size: 14px; font-weight: 500;
+  color: var(--fg-muted); cursor: pointer; border: none; background: none;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.oa-tab:hover { color: var(--fg); }
+.oa-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.oa-panel { display: none; }
+.oa-panel.active { display: block; }
+
+/* ── 上传区域 ─────────────────────────────────── */
 .oa-upload-zone {
   position: relative;
-  border: 2px dashed var(--border-main); border-radius: 16px;
+  border: 2px dashed var(--border-strong); border-radius: var(--radius-xl);
   padding: 60px 40px; text-align: center; cursor: pointer;
   background: var(--bg-card); transition: border-color .2s, background .2s;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 .oa-upload-zone:hover, .oa-upload-zone.dragover {
-  border-color: var(--primary-color); background: rgba(59,130,246,0.04);
+  border-color: var(--accent); background: var(--accent-subtle);
 }
 .oa-upload-icon { font-size: 48px; margin-bottom: 12px; }
-.oa-upload-text { font-size: 15px; color: #6b7280; }
-.oa-upload-hint { font-size: 13px; color: #9ca3af; margin-top: 8px; }
+.oa-upload-text { font-size: 15px; color: var(--fg-muted); }
+.oa-upload-hint { font-size: 13px; color: var(--fg-subtle); margin-top: 8px; }
 .oa-upload-zone input[type="file"] {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: pointer;
 }
 
-/* 统计卡片 */
+/* ── 统计卡片 ─────────────────────────────────── */
 .oa-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
 .oa-stat-card {
-  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
-  padding: 16px 24px; min-width: 160px;
+  background: var(--bg-card); border: 1.5px solid var(--border); border-radius: var(--radius-lg);
+  padding: 16px 24px; min-width: 150px; flex: 1;
 }
-.oa-stat-label { font-size: 12px; color: #9ca3af; font-weight: 500; }
-.oa-stat-value { font-size: 24px; font-weight: 700; color: var(--text-main); margin-top: 4px; }
+.oa-stat-label { font-size: 12px; color: var(--fg-subtle); font-weight: 500; }
+.oa-stat-value { font-size: 24px; font-weight: 700; color: var(--fg); margin-top: 4px; }
 
-/* 表格区域 */
+/* ── 导入结果 ─────────────────────────────────── */
+.oa-import-result {
+  background: var(--success-bg); border: 1px solid oklch(85% 0.06 165);
+  border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 24px;
+}
+.oa-import-result h4 { margin: 0 0 12px; color: var(--success-fg); font-size: 15px; }
+.oa-import-row { display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; color: var(--fg); }
+.oa-import-row span { display: flex; align-items: center; gap: 6px; }
+.oa-import-row strong { font-weight: 600; }
+
+/* ── 操作按钮区 ───────────────────────────────── */
+.oa-actions { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+
+/* ── 表格区域 ─────────────────────────────────── */
 .oa-table-wrap {
-  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
-  overflow: hidden;
+  background: var(--bg-card); border: 1.5px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; margin-bottom: 24px;
 }
 .oa-table-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid var(--border-main);
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
-.oa-table-title { font-size: 15px; font-weight: 600; color: var(--text-main); }
+.oa-table-title { font-size: 15px; font-weight: 600; color: var(--fg); }
 .oa-table-scroll { overflow-x: auto; }
 .oa-table {
   width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap;
 }
 .oa-table th, .oa-table td {
-  padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border-main);
+  padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border);
 }
 .oa-table th {
-  background: var(--bg-body); font-weight: 600; color: var(--text-main);
+  background: var(--bg-subtle); font-weight: 600; color: var(--fg);
   position: sticky; top: 0; z-index: 1;
 }
 .oa-table th.oa-col-product { min-width: 280px; }
-.oa-table th.oa-col-total { min-width: 80px; text-align: right; }
+.oa-table th.oa-col-num { min-width: 80px; text-align: right; }
 .oa-table th.oa-col-country { min-width: 70px; text-align: right; }
 .oa-table td.oa-col-product {
   font-weight: 500; max-width: 400px; white-space: normal; word-break: break-word;
 }
-.oa-table td.oa-col-total { text-align: right; font-weight: 600; color: var(--primary-color); }
-.oa-table td.oa-col-country { text-align: right; color: #6b7280; }
+.oa-table td.oa-col-num { text-align: right; font-weight: 600; color: var(--accent); }
+.oa-table td.oa-col-country { text-align: right; color: var(--fg-muted); }
 .oa-table tr:last-child td { border-bottom: none; }
-.oa-table tr:hover td { background: rgba(59,130,246,0.03); }
+.oa-table tr:hover td { background: oklch(97% 0.01 230); }
 .oa-table .oa-row-total td {
-  font-weight: 700; background: var(--bg-body); border-top: 2px solid var(--border-main);
+  font-weight: 700; background: var(--bg-subtle); border-top: 2px solid var(--border);
 }
 
-/* 空状态 */
-.oa-empty { text-align: center; padding: 80px 20px; color: #9ca3af; }
-.oa-empty-icon { font-size: 48px; margin-bottom: 16px; }
+/* ── 控件区 ───────────────────────────────────── */
+.oa-controls {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.oa-controls label { font-size: 13px; color: var(--fg-muted); font-weight: 500; }
+.oa-controls select, .oa-controls input[type="number"] {
+  height: 32px; padding: 0 10px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); font-size: 13px; background: var(--bg-card); color: var(--fg);
+}
+.oa-controls select:focus, .oa-controls input:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oa-search-box {
+  position: relative; flex: 1; min-width: 200px; max-width: 320px;
+}
+.oa-search-box input {
+  width: 100%; height: 32px; padding: 0 12px 0 32px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  font-size: 13px; background: var(--bg-card); color: var(--fg);
+}
+.oa-search-box input:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oa-search-box svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--fg-subtle); pointer-events: none;
+}
 
-/* 加载态 */
-.oa-loading { text-align: center; padding: 60px 20px; color: #6b7280; }
+/* ── 产品选择 ─────────────────────────────────── */
+.oa-product-picker {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+  padding: 12px 16px; background: var(--info-bg); border-radius: var(--radius-md);
+  font-size: 13px; color: var(--fg);
+}
+.oa-product-picker .oa-product-name { font-weight: 600; color: var(--accent); }
+.oa-product-picker .oa-clear-btn {
+  margin-left: auto; cursor: pointer; color: var(--fg-subtle);
+  border: none; background: none; font-size: 12px;
+}
+.oa-product-picker .oa-clear-btn:hover { color: var(--danger); }
+
+/* ── 每日明细行 ───────────────────────────────── */
+.oa-daily-row { cursor: pointer; }
+.oa-daily-row td:first-child::before {
+  content: '▶'; font-size: 10px; margin-right: 6px; color: var(--fg-subtle);
+  transition: transform .15s;
+}
+.oa-daily-row.expanded td:first-child::before { transform: rotate(90deg); }
+.oa-daily-detail { display: none; }
+.oa-daily-detail.show { display: table-row; }
+.oa-daily-detail td {
+  padding: 0 !important; border-bottom: 1px solid var(--border) !important;
+}
+.oa-daily-detail-inner {
+  padding: 8px 20px 12px 40px; background: var(--bg-subtle);
+}
+.oa-daily-detail-inner table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.oa-daily-detail-inner th, .oa-daily-detail-inner td {
+  padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border);
+}
+.oa-daily-detail-inner th { font-weight: 600; color: var(--fg-muted); }
+.oa-daily-detail-inner td.oa-col-num { text-align: right; color: var(--accent); font-weight: 500; }
+
+/* ── 空状态 / 加载态 / 错误 ──────────────────── */
+.oa-empty { text-align: center; padding: 80px 20px; color: var(--fg-subtle); }
+.oa-empty-icon { font-size: 48px; margin-bottom: 16px; }
+.oa-loading { text-align: center; padding: 60px 20px; color: var(--fg-muted); }
 .oa-spinner {
-  width: 36px; height: 36px; border: 3px solid var(--border-main);
-  border-top-color: var(--primary-color); border-radius: 50%;
+  width: 36px; height: 36px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
   animation: oa-spin .8s linear infinite; margin: 0 auto 16px;
 }
 @keyframes oa-spin { to { transform: rotate(360deg); } }
-
 .oa-error {
-  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
-  border-radius: 10px; padding: 16px 20px; color: #dc2626; font-size: 14px;
+  background: var(--danger-bg); border: 1px solid oklch(85% 0.08 25);
+  border-radius: var(--radius-md); padding: 16px 20px; color: var(--danger-fg); font-size: 14px;
   margin-bottom: 20px; display: none;
 }
 .oa-debug {
-  display: none; background: var(--bg-body); border: 1px solid var(--border-main);
-  border-radius: 10px; padding: 12px 16px; font-size: 12px; color: #6b7280;
+  display: none; background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 12px 16px; font-size: 12px; color: var(--fg-subtle);
   font-family: var(--font-mono, monospace); white-space: pre-wrap;
   margin-bottom: 16px; line-height: 1.6;
 }
+
+/* ── 产品搜索结果下拉 ─────────────────────────── */
+.oa-search-results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+  background: var(--bg-card); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow);
+  max-height: 240px; overflow-y: auto; display: none; margin-top: 4px;
+}
+.oa-search-results.show { display: block; }
+.oa-search-item {
+  padding: 8px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border);
+}
+.oa-search-item:last-child { border-bottom: none; }
+.oa-search-item:hover { background: var(--accent-subtle); }
+.oa-search-item .oa-si-code { font-size: 11px; color: var(--fg-subtle); margin-left: 8px; }
 {% endblock %}
 
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
 <div class="oa-debug" id="debugBox"></div>
 
-<div class="oa-upload-zone" id="uploadZone">
-  <div class="oa-upload-icon">📊</div>
-  <div class="oa-upload-text">拖拽或点击上传订单文件</div>
-  <div class="oa-upload-hint">支持 CSV / Excel (.xlsx)，Shopify 导出格式</div>
-  <input type="file" id="fileInput" accept=".csv,.xls,.xlsx">
+<!-- Tab 导航 -->
+<div class="oa-tabs">
+  <button class="oa-tab active" data-tab="import">导入文件</button>
+  <button class="oa-tab" data-tab="analytics">数据分析</button>
 </div>
 
-<div id="loadingBox" style="display:none;">
-  <div class="oa-loading">
-    <div class="oa-spinner"></div>
-    <div>正在解析文件…</div>
+<!-- ═══════ Tab 1: 导入文件 ═══════ -->
+<div class="oa-panel active" id="panelImport">
+  <div class="oa-upload-zone" id="uploadZone">
+    <div class="oa-upload-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </div>
+    <div class="oa-upload-text">拖拽或点击上传订单文件</div>
+    <div class="oa-upload-hint">支持 CSV / Excel (.xlsx)，Shopify 导出格式</div>
+    <input type="file" id="fileInput" accept=".csv,.xls,.xlsx">
+  </div>
+
+  <div id="loadingBox" style="display:none;">
+    <div class="oa-loading">
+      <div class="oa-spinner"></div>
+      <div>正在解析并导入…</div>
+    </div>
+  </div>
+
+  <div id="importResult" style="display:none;"></div>
+
+  <div id="dbStats" style="display:none;">
+    <div class="oa-stats" id="dbStatsCards"></div>
+    <div class="oa-actions">
+      <button class="btn btn-default btn-sm" onclick="refreshTitles()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 12a10 10 0 0 1 16.5-7.6L21.5 8M22 12a10 10 0 0 1-16.5 7.6L2.5 16"/></svg>
+        刷新产品标题
+      </button>
+      <button class="btn btn-default btn-sm" onclick="matchProducts()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        执行产品匹配
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="switchToAnalytics()">
+        查看数据分析 →
+      </button>
+    </div>
   </div>
 </div>
 
-<div id="resultBox" style="display:none;">
-  <div class="oa-stats">
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">商品种类</div>
-      <div class="oa-stat-value" id="statProducts">0</div>
+<!-- ═══════ Tab 2: 数据分析 ═══════ -->
+<div class="oa-panel" id="panelAnalytics">
+  <!-- 控件区 -->
+  <div class="oa-controls">
+    <label>视图：</label>
+    <select id="viewMode" onchange="onViewModeChange()">
+      <option value="month">月度</option>
+      <option value="week">周度</option>
+    </select>
+
+    <div id="monthControls">
+      <select id="monthSelect" onchange="loadAnalytics()"></select>
     </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">总单量</div>
-      <div class="oa-stat-value" id="statTotal">0</div>
+    <div id="weekControls" style="display:none;">
+      <input type="number" id="weekYear" min="2020" max="2030" style="width:80px;" placeholder="年">
+      <span style="color:var(--fg-subtle);">W</span>
+      <input type="number" id="weekNum" min="1" max="53" style="width:60px;" placeholder="周">
+      <button class="btn btn-default btn-sm" onclick="loadAnalytics()">查询</button>
     </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">国家/地区</div>
-      <div class="oa-stat-value" id="statCountries">0</div>
-    </div>
-    <div class="oa-stat-card">
-      <div class="oa-stat-label">数据行数</div>
-      <div class="oa-stat-value" id="statRows">0</div>
+
+    <div class="oa-search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="搜索产品 ID 或标题…" oninput="onSearchInput()" onfocus="onSearchFocus()">
+      <div class="oa-search-results" id="searchResults"></div>
     </div>
   </div>
 
-  <div style="margin-bottom: 16px;">
-    <button class="btn btn-ghost btn-sm" onclick="location.reload()">重新上传</button>
+  <!-- 选中产品提示 -->
+  <div class="oa-product-picker" id="productPicker" style="display:none;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    当前筛选产品：<span class="oa-product-name" id="pickerProductName"></span>
+    <button class="oa-clear-btn" onclick="clearProductFilter()">清除筛选</button>
   </div>
 
-  <div class="oa-table-wrap">
-    <div class="oa-table-header">
-      <div class="oa-table-title">商品 × 国家订单分布</div>
-      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">导出 CSV</button>
+  <!-- 月度视图 -->
+  <div id="monthView">
+    <div id="monthLoading" style="display:none;">
+      <div class="oa-loading"><div class="oa-spinner"></div><div>加载月度数据…</div></div>
     </div>
-    <div class="oa-table-scroll" id="tableScroll">
-      <table class="oa-table" id="resultTable">
-        <thead><tr id="tableHead"></tr></thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+    <div id="monthEmpty" class="oa-empty" style="display:none;">
+      <div class="oa-empty-icon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <div>暂无数据，请先在「导入文件」Tab 中上传订单</div>
+    </div>
+    <div id="monthContent" style="display:none;">
+      <!-- 月度统计卡片 -->
+      <div class="oa-stats" id="monthStatsCards"></div>
+
+      <!-- 月度汇总表：商品 × 国家 -->
+      <div class="oa-table-wrap">
+        <div class="oa-table-header">
+          <div class="oa-table-title" id="monthTableTitle">商品 × 国家订单分布</div>
+          <button class="btn btn-ghost btn-sm" onclick="exportMonthCSV()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            导出 CSV
+          </button>
+        </div>
+        <div class="oa-table-scroll">
+          <table class="oa-table" id="monthTable">
+            <thead><tr id="monthTableHead"></tr></thead>
+            <tbody id="monthTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 每日明细表 -->
+      <div class="oa-table-wrap" id="dailyWrap" style="display:none;">
+        <div class="oa-table-header">
+          <div class="oa-table-title" id="dailyTableTitle">每日销量明细</div>
+        </div>
+        <div class="oa-table-scroll">
+          <table class="oa-table" id="dailyTable">
+            <thead><tr id="dailyTableHead"></tr></thead>
+            <tbody id="dailyTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 周度视图 -->
+  <div id="weekView" style="display:none;">
+    <div id="weekLoading" style="display:none;">
+      <div class="oa-loading"><div class="oa-spinner"></div><div>加载周度数据…</div></div>
+    </div>
+    <div id="weekEmpty" class="oa-empty" style="display:none;">
+      <div class="oa-empty-icon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <div>暂无数据</div>
+    </div>
+    <div id="weekContent" style="display:none;">
+      <div class="oa-stats" id="weekStatsCards"></div>
+      <div class="oa-table-wrap">
+        <div class="oa-table-header">
+          <div class="oa-table-title">周度商品排行</div>
+        </div>
+        <div class="oa-table-scroll">
+          <table class="oa-table">
+            <thead><tr id="weekTableHead"></tr></thead>
+            <tbody id="weekTableBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -150,138 +359,286 @@
 {% block scripts %}
 <script>
 (function() {
-  var zone = document.getElementById('uploadZone');
-  var input = document.getElementById('fileInput');
-  var errorBox = document.getElementById('errorBox');
-  var loadingBox = document.getElementById('loadingBox');
-  var resultBox = document.getElementById('resultBox');
-  var lastData = null;
+  var currentProductId = null;
+  var currentProductName = null;
+  var lastMonthData = null;
+  var searchTimer = null;
 
-  // 调试提示区
+  // ── Tab 切换 ──────────────────────────────────────
+  var tabs = document.querySelectorAll('.oa-tab');
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
+      document.getElementById('panel' + capitalize(tab.dataset.tab)).classList.add('active');
+
+      if (tab.dataset.tab === 'analytics') {
+        initAnalytics();
+      }
+    });
+  });
+
+  function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  window.switchToAnalytics = function() {
+    tabs.forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('[data-tab="analytics"]').classList.add('active');
+    document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.getElementById('panelAnalytics').classList.add('active');
+    initAnalytics();
+  };
+
+  // ── 调试 ──────────────────────────────────────────
   var debugBox = document.getElementById('debugBox');
-
   function debug(msg) {
     debugBox.style.display = 'block';
     debugBox.textContent += '\n[' + new Date().toLocaleTimeString() + '] ' + msg;
     console.log('[订单分析]', msg);
   }
+  debug('JS 已加载');
 
-  debug('JS 已加载，等待文件选择…');
+  // ── 上传 ──────────────────────────────────────────
+  var zone = document.getElementById('uploadZone');
+  var input = document.getElementById('fileInput');
+  var errorBox = document.getElementById('errorBox');
 
-  // input 覆盖整个 zone，点击自然触发文件选择器
   input.addEventListener('change', function() {
-    debug('change 事件触发，files.length=' + input.files.length);
-    if (input.files[0]) {
-      var f = input.files[0];
-      debug('已接收到文件：' + f.name + '（' + (f.size / 1024).toFixed(1) + ' KB）');
-      doUpload(f);
-    }
+    if (input.files[0]) doUpload(input.files[0]);
   });
-
-  // 在 document 级别阻止浏览器默认下载行为
   document.addEventListener('dragover', function(e) { e.preventDefault(); });
   document.addEventListener('drop', function(e) { e.preventDefault(); });
-
   zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
   zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
   zone.addEventListener('drop', function(e) {
     e.preventDefault(); e.stopPropagation(); zone.classList.remove('dragover');
-    debug('drop 事件触发');
-    if (e.dataTransfer.files[0]) {
-      var f = e.dataTransfer.files[0];
-      debug('已接收到文件：' + f.name + '（' + (f.size / 1024).toFixed(1) + ' KB）');
-      doUpload(f);
-    }
+    if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]);
   });
 
   function showError(msg) {
     errorBox.textContent = msg;
     errorBox.style.display = 'block';
-    loadingBox.style.display = 'none';
-    resultBox.style.display = 'none';
-    debug('错误：' + msg);
+    document.getElementById('loadingBox').style.display = 'none';
+    zone.style.display = '';
   }
 
   function doUpload(file) {
-    debug('开始上传…');
+    debug('上传: ' + file.name);
     errorBox.style.display = 'none';
-    loadingBox.style.display = 'block';
-    resultBox.style.display = 'none';
+    document.getElementById('loadingBox').style.display = 'block';
     zone.style.display = 'none';
+    document.getElementById('importResult').style.display = 'none';
+    document.getElementById('dbStats').style.display = 'none';
 
     var fd = new FormData();
     fd.append('file', file);
 
-    debug('发送 POST /order-analytics/upload');
     fetch('/order-analytics/upload', { method: 'POST', body: fd })
       .then(function(r) {
-        debug('收到响应，status=' + r.status);
-        if (!r.ok) return r.text().then(function(t) { throw new Error('服务器返回 ' + r.status + ': ' + t.substring(0, 200)); });
+        if (!r.ok) return r.text().then(function(t) { throw new Error('服务器返回 ' + r.status); });
         return r.json();
       })
       .then(function(data) {
-        debug('解析 JSON 成功，products=' + (data.products ? data.products.length : 'N/A'));
-        loadingBox.style.display = 'none';
-        if (data.error) {
-          showError(data.error);
-          zone.style.display = '';
-          return;
-        }
-        lastData = data;
-        renderResult(data);
-        debug('渲染完成');
+        document.getElementById('loadingBox').style.display = 'none';
+        if (data.error) { showError(data.error); zone.style.display = ''; return; }
+        renderImportResult(data);
+        loadDbStats();
       })
       .catch(function(err) {
-        debug('fetch 失败：' + err.message);
-        loadingBox.style.display = 'none';
+        document.getElementById('loadingBox').style.display = 'none';
         showError('上传失败：' + err.message);
         zone.style.display = '';
       });
   }
 
-  function renderResult(data) {
-    document.getElementById('statProducts').textContent = data.products.length;
-    document.getElementById('statTotal').textContent = data.total_orders.toLocaleString();
-    document.getElementById('statCountries').textContent = data.countries.length;
-    document.getElementById('statRows').textContent = data.total_rows.toLocaleString();
+  function renderImportResult(data) {
+    var box = document.getElementById('importResult');
+    box.innerHTML = '<div class="oa-import-result">' +
+      '<h4>导入完成</h4>' +
+      '<div class="oa-import-row">' +
+      '<span>已导入 <strong>' + data.imported + '</strong> 条</span>' +
+      '<span>跳过 <strong>' + data.skipped + '</strong> 条（已存在）</span>' +
+      '<span>新匹配 <strong>' + data.matched + '</strong> 条</span>' +
+      '</div></div>';
+    box.style.display = '';
+  }
+
+  function loadDbStats() {
+    fetch('/order-analytics/stats')
+      .then(function(r) { return r.json(); })
+      .then(function(s) {
+        var box = document.getElementById('dbStats');
+        var cards = document.getElementById('dbStatsCards');
+        cards.innerHTML =
+          statCard('总记录数', s.total_rows || 0) +
+          statCard('商品种类', s.product_count || 0) +
+          statCard('国家/地区', s.country_count || 0) +
+          statCard('已匹配', s.matched_rows || 0) +
+          statCard('未匹配', (s.total_rows || 0) - (s.matched_rows || 0)) +
+          statCard('日期范围', (s.min_date ? s.min_date.slice(0,10) : '—') + ' ~ ' + (s.max_date ? s.max_date.slice(0,10) : '—'));
+        box.style.display = '';
+      });
+  }
+
+  function statCard(label, value) {
+    return '<div class="oa-stat-card"><div class="oa-stat-label">' + label +
+      '</div><div class="oa-stat-value">' + value + '</div></div>';
+  }
+
+  // ── 刷新标题 / 匹配 ──────────────────────────────
+  window.refreshTitles = function() {
+    debug('刷新产品标题…');
+    fetch('/order-analytics/refresh-titles', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        debug('标题刷新完成: fetched=' + d.fetched + ' errors=' + d.errors);
+        alert('标题刷新完成\n已获取: ' + d.fetched + '\n失败: ' + d.errors);
+        loadDbStats();
+      })
+      .catch(function(e) { debug('刷新失败: ' + e.message); alert('刷新失败: ' + e.message); });
+  };
+
+  window.matchProducts = function() {
+    debug('执行产品匹配…');
+    fetch('/order-analytics/match', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        debug('匹配完成: ' + d.matched + ' 条');
+        alert('匹配完成\n新匹配: ' + d.matched + ' 条');
+        loadDbStats();
+      })
+      .catch(function(e) { debug('匹配失败: ' + e.message); alert('匹配失败: ' + e.message); });
+  };
+
+  // ── 数据分析 ──────────────────────────────────────
+  var analyticsInited = false;
+  function initAnalytics() {
+    if (analyticsInited) return;
+    analyticsInited = true;
+    loadAvailableMonths();
+  }
+
+  function loadAvailableMonths() {
+    fetch('/order-analytics/available-months')
+      .then(function(r) { return r.json(); })
+      .then(function(months) {
+        var sel = document.getElementById('monthSelect');
+        sel.innerHTML = '';
+        if (!months.length) {
+          sel.innerHTML = '<option value="">暂无数据</option>';
+          return;
+        }
+        months.forEach(function(m) {
+          var opt = document.createElement('option');
+          opt.value = m.y + '-' + m.m;
+          opt.textContent = m.y + '年' + m.m + '月 (' + m.row_count + '条)';
+          sel.appendChild(opt);
+        });
+        loadAnalytics();
+      });
+  }
+
+  window.onViewModeChange = function() {
+    var mode = document.getElementById('viewMode').value;
+    document.getElementById('monthControls').style.display = mode === 'month' ? '' : 'none';
+    document.getElementById('weekControls').style.display = mode === 'week' ? '' : 'none';
+    document.getElementById('monthView').style.display = mode === 'month' ? '' : 'none';
+    document.getElementById('weekView').style.display = mode === 'week' ? '' : 'none';
+    loadAnalytics();
+  };
+
+  window.loadAnalytics = function() {
+    var mode = document.getElementById('viewMode').value;
+    if (mode === 'month') loadMonthView();
+    else loadWeekView();
+  };
+
+  // ── 月度视图 ──────────────────────────────────────
+  function loadMonthView() {
+    var sel = document.getElementById('monthSelect').value;
+    if (!sel) {
+      showEl('monthEmpty'); hideEl('monthContent');
+      return;
+    }
+    var parts = sel.split('-');
+    var year = parseInt(parts[0]), month = parseInt(parts[1]);
+
+    showEl('monthLoading'); hideEl('monthEmpty'); hideEl('monthContent');
+
+    var url = '/order-analytics/monthly?year=' + year + '&month=' + month;
+    if (currentProductId) url += '&product_id=' + currentProductId;
+
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        hideEl('monthLoading');
+        if (data.error) { showError(data.error); return; }
+        if (!data.products || !data.products.length) { showEl('monthEmpty'); return; }
+        lastMonthData = data;
+        renderMonthSummary(data, year, month);
+        showEl('monthContent');
+        loadDailyDetail(year, month);
+      })
+      .catch(function(e) { hideEl('monthLoading'); showError('加载失败: ' + e.message); });
+  }
+
+  function renderMonthSummary(data, year, month) {
+    // 统计卡片
+    var totalQty = 0, totalOrders = 0, totalRevenue = 0;
+    data.products.forEach(function(p) {
+      totalQty += p.total_qty;
+      totalOrders += p.order_count;
+      totalRevenue += (parseFloat(p.total_revenue) || 0);
+    });
+    document.getElementById('monthStatsCards').innerHTML =
+      statCard('活跃商品', data.products.length) +
+      statCard('总单量', totalQty.toLocaleString()) +
+      statCard('总订单数', totalOrders.toLocaleString()) +
+      statCard('总收入', '$' + totalRevenue.toFixed(2)) +
+      statCard('国家/地区', data.countries.length);
+
+    var title = year + '年' + month + '月 商品 × 国家订单分布';
+    if (currentProductName) title += ' — ' + currentProductName;
+    document.getElementById('monthTableTitle').textContent = title;
 
     // 表头
-    var headRow = document.getElementById('tableHead');
+    var headRow = document.getElementById('monthTableHead');
     headRow.innerHTML = '';
-    var th0 = document.createElement('th');
-    th0.className = 'oa-col-product';
-    th0.textContent = '商品名';
-    headRow.appendChild(th0);
-    var th1 = document.createElement('th');
-    th1.className = 'oa-col-total';
-    th1.textContent = '总单量';
-    headRow.appendChild(th1);
-    data.countries.forEach(function(c) {
-      var th = document.createElement('th');
-      th.className = 'oa-col-country';
-      th.textContent = c;
-      headRow.appendChild(th);
+    addTh(headRow, 'oa-col-product', '商品名');
+    addTh(headRow, 'oa-col-num', '总单量');
+    addTh(headRow, 'oa-col-num', '订单数');
+    if (!currentProductId) addTh(headRow, 'oa-col-num', '收入');
+    data.country_list.forEach(function(c) {
+      addTh(headRow, 'oa-col-country', c);
     });
 
     // 表体
-    var tbody = document.getElementById('tableBody');
+    var tbody = document.getElementById('monthTableBody');
     tbody.innerHTML = '';
-    var totals = new Array(data.countries.length).fill(0);
+    var totals = new Array(data.country_list.length).fill(0);
+    var totalsQty = 0, totalsOrders = 0;
 
-    data.products.forEach(function(p) {
+    data.product_order.forEach(function(dn, idx) {
+      var p = data.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
       var tr = document.createElement('tr');
-      var td0 = document.createElement('td');
-      td0.className = 'oa-col-product';
-      td0.textContent = p.name;
-      tr.appendChild(td0);
+      tr.style.cursor = 'pointer';
+      tr.title = '点击查看该产品详情';
+      tr.onclick = function() {
+        if (p.product_id) selectProduct(p.product_id, dn);
+      };
 
-      var td1 = document.createElement('td');
-      td1.className = 'oa-col-total';
-      td1.textContent = p.total.toLocaleString();
-      tr.appendChild(td1);
+      addTd(tr, 'oa-col-product', dn);
+      addTd(tr, 'oa-col-num', (p.total_qty || 0).toLocaleString());
+      addTd(tr, 'oa-col-num', (p.order_count || 0).toLocaleString());
+      if (!currentProductId) {
+        addTd(tr, 'oa-col-num', '$' + (parseFloat(p.total_revenue) || 0).toFixed(2));
+      }
 
-      data.countries.forEach(function(c, i) {
-        var v = (data.matrix[p.name] || {})[c] || 0;
+      totalsQty += (p.total_qty || 0);
+      totalsOrders += (p.order_count || 0);
+
+      data.country_list.forEach(function(c, i) {
+        var v = (data.matrix[dn] || {})[c] || 0;
         totals[i] += v;
         var td = document.createElement('td');
         td.className = 'oa-col-country';
@@ -294,14 +651,10 @@
     // 合计行
     var totalRow = document.createElement('tr');
     totalRow.className = 'oa-row-total';
-    var tc0 = document.createElement('td');
-    tc0.className = 'oa-col-product';
-    tc0.textContent = '合计';
-    totalRow.appendChild(tc0);
-    var tc1 = document.createElement('td');
-    tc1.className = 'oa-col-total';
-    tc1.textContent = data.total_orders.toLocaleString();
-    totalRow.appendChild(tc1);
+    addTd(totalRow, 'oa-col-product', '合计');
+    addTd(totalRow, 'oa-col-num', totalsQty.toLocaleString());
+    addTd(totalRow, 'oa-col-num', totalsOrders.toLocaleString());
+    if (!currentProductId) addTd(totalRow, 'oa-col-num', '');
     totals.forEach(function(v) {
       var td = document.createElement('td');
       td.className = 'oa-col-country';
@@ -309,27 +662,269 @@
       totalRow.appendChild(td);
     });
     tbody.appendChild(totalRow);
-
-    resultBox.style.display = '';
   }
 
-  window.exportCSV = function() {
-    if (!lastData) return;
+  // ── 每日明细 ──────────────────────────────────────
+  function loadDailyDetail(year, month) {
+    var url = '/order-analytics/daily?year=' + year + '&month=' + month;
+    if (currentProductId) url += '&product_id=' + currentProductId;
+
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(rows) {
+        if (!rows.length) { hideEl('dailyWrap'); return; }
+        renderDailyDetail(rows, year, month);
+        showEl('dailyWrap');
+      })
+      .catch(function() { hideEl('dailyWrap'); });
+  }
+
+  function renderDailyDetail(rows, year, month) {
+    var title = year + '年' + month + '月 每日销量明细';
+    if (currentProductName) title += ' — ' + currentProductName;
+    document.getElementById('dailyTableTitle').textContent = title;
+
+    // 按日期分组
+    var byDate = {};
+    var allProducts = {};
+    rows.forEach(function(r) {
+      var d = r.sale_date;
+      if (!byDate[d]) byDate[d] = {};
+      var key = (r.display_name || '未知');
+      if (!byDate[d][key]) byDate[d][key] = { qty: 0, countries: {} };
+      byDate[d][key].qty += r.total_qty;
+      byDate[d][key].countries[r.billing_country || '未知'] = r.total_qty;
+      allProducts[key] = true;
+    });
+
+    var dates = Object.keys(byDate).sort();
+    var productNames = Object.keys(allProducts);
+
+    // 表头
+    var headRow = document.getElementById('dailyTableHead');
+    headRow.innerHTML = '';
+    addTh(headRow, '', '日期');
+    addTh(headRow, 'oa-col-num', '总单量');
+
+    // 表体
+    var tbody = document.getElementById('dailyTableBody');
+    tbody.innerHTML = '';
+
+    dates.forEach(function(d) {
+      var dayData = byDate[d];
+      var dayTotal = 0;
+      var productEntries = [];
+      for (var name in dayData) {
+        dayTotal += dayData[name].qty;
+        productEntries.push({ name: name, data: dayData[name] });
+      }
+      productEntries.sort(function(a, b) { return b.data.qty - a.data.qty; });
+
+      // 主行
+      var tr = document.createElement('tr');
+      tr.className = 'oa-daily-row';
+      tr.onclick = function() {
+        tr.classList.toggle('expanded');
+        detailTr.classList.toggle('show');
+      };
+      addTd(tr, '', d);
+      addTd(tr, 'oa-col-num', dayTotal.toLocaleString());
+      tbody.appendChild(tr);
+
+      // 详情行
+      var detailTr = document.createElement('tr');
+      detailTr.className = 'oa-daily-detail';
+      var detailTd = document.createElement('td');
+      detailTd.colSpan = 2;
+      var inner = document.createElement('div');
+      inner.className = 'oa-daily-detail-inner';
+
+      var html = '<table><thead><tr><th>商品</th><th style="text-align:right">单量</th>';
+      // 收集当天所有国家
+      var dayCountries = {};
+      productEntries.forEach(function(pe) {
+        for (var c in pe.data.countries) { dayCountries[c] = true; }
+      });
+      var countryList = Object.keys(dayCountries).sort();
+      countryList.forEach(function(c) {
+        html += '<th style="text-align:right">' + c + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      productEntries.forEach(function(pe) {
+        html += '<tr><td>' + escHtml(pe.name) + '</td><td class="oa-col-num">' + pe.data.qty + '</td>';
+        countryList.forEach(function(c) {
+          var v = pe.data.countries[c] || 0;
+          html += '<td class="oa-col-num">' + (v || '') + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      inner.innerHTML = html;
+      detailTd.appendChild(inner);
+      detailTr.appendChild(detailTd);
+      tbody.appendChild(detailTr);
+    });
+  }
+
+  // ── 周度视图 ──────────────────────────────────────
+  function loadWeekView() {
+    var year = parseInt(document.getElementById('weekYear').value);
+    var week = parseInt(document.getElementById('weekNum').value);
+    if (!year || !week) {
+      // 默认当前周
+      var now = new Date();
+      year = now.getFullYear();
+      week = getISOWeek(now);
+      document.getElementById('weekYear').value = year;
+      document.getElementById('weekNum').value = week;
+    }
+
+    showEl('weekLoading'); hideEl('weekEmpty'); hideEl('weekContent');
+
+    fetch('/order-analytics/weekly?year=' + year + '&week=' + week)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        hideEl('weekLoading');
+        if (!data.products || !data.products.length) { showEl('weekEmpty'); return; }
+
+        var totalQty = 0;
+        data.products.forEach(function(p) { totalQty += p.total_qty; });
+        document.getElementById('weekStatsCards').innerHTML =
+          statCard('活跃商品', data.products.length) +
+          statCard('总单量', totalQty.toLocaleString()) +
+          statCard('国家/地区', data.countries.length);
+
+        var headRow = document.getElementById('weekTableHead');
+        headRow.innerHTML = '';
+        addTh(headRow, 'oa-col-product', '商品名');
+        addTh(headRow, 'oa-col-num', '总单量');
+        addTh(headRow, 'oa-col-num', '订单数');
+
+        var tbody = document.getElementById('weekTableBody');
+        tbody.innerHTML = '';
+        data.products.forEach(function(p) {
+          var tr = document.createElement('tr');
+          addTd(tr, 'oa-col-product', p.display_name || '未知');
+          addTd(tr, 'oa-col-num', p.total_qty.toLocaleString());
+          addTd(tr, 'oa-col-num', (p.order_count || 0).toLocaleString());
+          tbody.appendChild(tr);
+        });
+
+        showEl('weekContent');
+      })
+      .catch(function(e) { hideEl('weekLoading'); showError('加载失败: ' + e.message); });
+  }
+
+  function getISOWeek(d) {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  }
+
+  // ── 产品搜索 ──────────────────────────────────────
+  window.onSearchInput = function() {
+    clearTimeout(searchTimer);
+    var q = document.getElementById('searchInput').value.trim();
+    if (!q) { hideSearchResults(); return; }
+    searchTimer = setTimeout(function() {
+      fetch('/order-analytics/search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(items) { renderSearchResults(items); });
+    }, 300);
+  };
+
+  window.onSearchFocus = function() {
+    var q = document.getElementById('searchInput').value.trim();
+    if (q) onSearchInput();
+  };
+
+  function renderSearchResults(items) {
+    var box = document.getElementById('searchResults');
+    if (!items.length) { box.innerHTML = '<div class="oa-search-item" style="color:var(--fg-subtle)">无匹配结果</div>'; box.classList.add('show'); return; }
+    box.innerHTML = '';
+    items.forEach(function(item) {
+      var div = document.createElement('div');
+      div.className = 'oa-search-item';
+      div.innerHTML = escHtml(item.display_name || '未知') +
+        (item.product_code ? '<span class="oa-si-code">' + escHtml(item.product_code) + '</span>' : '');
+      div.onclick = function() {
+        selectProduct(item.product_id, item.display_name);
+        hideSearchResults();
+        document.getElementById('searchInput').value = '';
+      };
+      box.appendChild(div);
+    });
+    box.classList.add('show');
+  }
+
+  function hideSearchResults() {
+    document.getElementById('searchResults').classList.remove('show');
+  }
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.oa-search-box')) hideSearchResults();
+  });
+
+  function selectProduct(pid, name) {
+    currentProductId = pid;
+    currentProductName = name;
+    document.getElementById('pickerProductName').textContent = name;
+    document.getElementById('productPicker').style.display = '';
+    loadAnalytics();
+  }
+
+  window.clearProductFilter = function() {
+    currentProductId = null;
+    currentProductName = null;
+    document.getElementById('productPicker').style.display = 'none';
+    loadAnalytics();
+  };
+
+  // ── 导出 CSV ──────────────────────────────────────
+  window.exportMonthCSV = function() {
+    if (!lastMonthData) return;
+    var d = lastMonthData;
     var lines = [];
-    lines.push(['商品名', '总单量'].concat(lastData.countries).join(','));
-    lastData.products.forEach(function(p) {
-      var vals = [p.name, p.total];
-      lastData.countries.forEach(function(c) {
-        vals.push((lastData.matrix[p.name] || {})[c] || 0);
+    lines.push(['商品名', '总单量', '订单数'].concat(d.country_list).join(','));
+    d.product_order.forEach(function(dn) {
+      var p = d.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
+      var vals = [dn, p.total_qty || 0, p.order_count || 0];
+      d.country_list.forEach(function(c) {
+        vals.push((d.matrix[dn] || {})[c] || 0);
       });
       lines.push(vals.join(','));
     });
     var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = '订单分析_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = '订单月度分析_' + new Date().toISOString().slice(0, 10) + '.csv';
     a.click();
   };
+
+  // ── 工具函数 ──────────────────────────────────────
+  function showEl(id) { document.getElementById(id).style.display = ''; }
+  function hideEl(id) { document.getElementById(id).style.display = 'none'; }
+
+  function addTh(row, cls, text) {
+    var th = document.createElement('th');
+    if (cls) th.className = cls;
+    th.textContent = text;
+    row.appendChild(th);
+  }
+  function addTd(row, cls, text) {
+    var td = document.createElement('td');
+    if (cls) td.className = cls;
+    td.textContent = text;
+    row.appendChild(td);
+  }
+
+  function escHtml(s) {
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
 })();
 </script>
 {% endblock %}

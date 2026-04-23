@@ -1,23 +1,17 @@
-"""订单分析模块：导入 Shopify 订单 CSV/Excel，按商品 × 国家统计单量。"""
+"""订单分析模块：导入 Shopify 订单 CSV/Excel，持久化到数据库，按商品 × 国家统计单量。"""
 from __future__ import annotations
 
-import csv
-import io
 import logging
-from collections import defaultdict
 
 from flask import Blueprint, render_template, request, jsonify, make_response
 from flask_login import login_required
 from web.auth import admin_required
 
+from appcore import order_analytics as oa
+
 log = logging.getLogger(__name__)
 
 bp = Blueprint("order_analytics", __name__)
-
-# Shopify 导出文件中需要用到的列名
-COL_PRODUCT = "Lineitem name"
-COL_QUANTITY = "Lineitem quantity"
-COL_COUNTRY = "Billing Country"
 
 
 # ── 页面路由 ──────────────────────────────────────────
@@ -37,21 +31,13 @@ def page():
 @login_required
 @admin_required
 def upload():
-    """接收 CSV 或 Excel 文件，解析后返回按商品×国家聚合的数据。"""
-    log.info("order_analytics upload called, content_type=%s", request.content_type)
+    """接收 CSV 或 Excel 文件，解析后写入数据库并返回导入结果。"""
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="请选择文件"), 400
 
-    filename = f.filename.lower()
     try:
-        if filename.endswith(".csv"):
-            text = f.read().decode("utf-8-sig")
-            rows = list(csv.DictReader(io.StringIO(text)))
-        elif filename.endswith((".xls", ".xlsx")):
-            rows = _parse_excel(f.stream)
-        else:
-            return jsonify(error="仅支持 CSV / Excel (.xlsx) 文件"), 400
+        rows = oa.parse_shopify_file(f.stream, f.filename)
     except Exception as exc:
         log.warning("order_analytics upload parse error: %s", exc, exc_info=True)
         return jsonify(error=f"文件解析失败：{exc}"), 400
@@ -59,86 +45,121 @@ def upload():
     if not rows:
         return jsonify(error="文件为空或格式不正确"), 400
 
-    return jsonify(_aggregate(rows))
+    result = oa.import_orders(rows)
+
+    # 自动执行产品匹配
+    matched = oa.match_orders_to_products()
+
+    stats = oa.get_import_stats()
+    return jsonify({
+        "imported": result["imported"],
+        "skipped": result["skipped"],
+        "matched": matched,
+        "total_rows": stats.get("total_rows", 0),
+        "product_count": stats.get("product_count", 0),
+        "country_count": stats.get("country_count", 0),
+        "matched_rows": stats.get("matched_rows", 0),
+        "min_date": str(stats["min_date"]) if stats.get("min_date") else None,
+        "max_date": str(stats["max_date"]) if stats.get("max_date") else None,
+    })
 
 
-def _parse_excel(stream):
-    """用 openpyxl 解析 .xlsx，返回 list[dict]。"""
-    try:
-        import openpyxl
-    except ImportError:
-        raise RuntimeError("服务器未安装 openpyxl，无法解析 Excel 文件")
-
-    wb = openpyxl.load_workbook(stream, read_only=True, data_only=True)
-    ws = wb.active
-    rows_iter = ws.iter_rows(values_only=True)
-    headers = next(rows_iter)
-    if not headers:
-        return []
-    # 清理 None 和空白
-    headers = [str(h).strip() if h else "" for h in headers]
-    result = []
-    for row in rows_iter:
-        d = {}
-        for i, val in enumerate(row):
-            if i < len(headers) and headers[i]:
-                d[headers[i]] = str(val) if val is not None else ""
-        result.append(d)
-    wb.close()
-    return result
+@bp.route("/order-analytics/stats")
+@login_required
+@admin_required
+def stats():
+    """返回数据库统计概览。"""
+    return jsonify(oa.get_import_stats())
 
 
-def _aggregate(rows: list[dict]) -> dict:
-    """将原始行聚合为 {products, countries, matrix, totals} 结构。
+@bp.route("/order-analytics/available-months")
+@login_required
+@admin_required
+def available_months():
+    """返回有数据的年月列表。"""
+    return jsonify(oa.get_available_months())
 
-    返回:
-      products: [{"name": ..., "total": ...}, ...]  按 total 降序
-      countries: [country_code, ...]  按出现频次降序
-      matrix: {product_name: {country: quantity, ...}, ...}
-    """
-    # {product: {country: qty}}
-    prod_country: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    country_freq: dict[str, int] = defaultdict(int)
 
-    for row in rows:
-        product = (row.get(COL_PRODUCT) or "").strip()
-        country = (row.get(COL_COUNTRY) or "").strip()
-        qty_str = (row.get(COL_QUANTITY) or "0").strip()
+@bp.route("/order-analytics/monthly")
+@login_required
+@admin_required
+def monthly():
+    """月度汇总：按产品 × 国家。"""
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    product_id = request.args.get("product_id", type=int)
 
-        if not product:
-            continue
+    if not year or not month:
+        return jsonify(error="请提供 year 和 month 参数"), 400
 
-        try:
-            qty = int(float(qty_str))
-        except (ValueError, TypeError):
-            qty = 1
+    data = oa.get_monthly_summary(year, month, product_id)
 
-        if country:
-            prod_country[product][country] += qty
-            country_freq[country] += qty
-        else:
-            prod_country[product]["未知"] += qty
-            country_freq["未知"] += qty
+    # 将 Decimal / date 对象序列化为字符串
+    for p in data["products"]:
+        if p.get("total_revenue") is not None:
+            p["total_revenue"] = float(p["total_revenue"])
 
-    # 国家按总单量降序
-    countries = sorted(country_freq.keys(), key=lambda c: country_freq[c], reverse=True)
+    return jsonify(data)
 
-    # 商品按总单量降序
-    products = []
-    for name, country_map in prod_country.items():
-        total = sum(country_map.values())
-        products.append({"name": name, "total": total})
-    products.sort(key=lambda p: p["total"], reverse=True)
 
-    # 矩阵
-    matrix = {}
-    for p in products:
-        matrix[p["name"]] = {c: prod_country[p["name"]].get(c, 0) for c in countries}
+@bp.route("/order-analytics/daily")
+@login_required
+@admin_required
+def daily():
+    """每日明细：按日期 × 产品 × 国家。"""
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    product_id = request.args.get("product_id", type=int)
 
-    return {
-        "products": products,
-        "countries": countries,
-        "matrix": matrix,
-        "total_orders": sum(p["total"] for p in products),
-        "total_rows": len(rows),
-    }
+    if not year or not month:
+        return jsonify(error="请提供 year 和 month 参数"), 400
+
+    rows = oa.get_daily_detail(year, month, product_id)
+    for r in rows:
+        if r.get("sale_date"):
+            r["sale_date"] = str(r["sale_date"])
+    return jsonify(rows)
+
+
+@bp.route("/order-analytics/weekly")
+@login_required
+@admin_required
+def weekly():
+    """周汇总。"""
+    year = request.args.get("year", type=int)
+    week = request.args.get("week", type=int)
+
+    if not year or not week:
+        return jsonify(error="请提供 year 和 week 参数"), 400
+
+    return jsonify(oa.get_weekly_summary(year, week))
+
+
+@bp.route("/order-analytics/search")
+@login_required
+@admin_required
+def search():
+    """按产品 ID 或标题搜索。"""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify([])
+    return jsonify(oa.search_products(q))
+
+
+@bp.route("/order-analytics/refresh-titles", methods=["POST"])
+@login_required
+@admin_required
+def refresh_titles():
+    """批量抓取产品网页标题。"""
+    product_ids = request.json.get("product_ids") if request.is_json else None
+    result = oa.refresh_product_titles(product_ids)
+    return jsonify(result)
+
+
+@bp.route("/order-analytics/match", methods=["POST"])
+@login_required
+@admin_required
+def match():
+    """执行产品匹配。"""
+    affected = oa.match_orders_to_products()
+    return jsonify({"matched": affected})
