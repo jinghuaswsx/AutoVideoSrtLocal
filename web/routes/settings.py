@@ -63,6 +63,7 @@ IMAGE_TEXT_DETECT_PROVIDERS = (
     "gemini_aistudio", "gemini_vertex", "openrouter",
 )
 IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
+HIDDEN_BINDING_CODES = {"image_translate.generate"}
 PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
 IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
     **IMAGE_TRANSLATE_CHANNEL_LABELS,
@@ -110,6 +111,8 @@ def index():
     bindings_rows = llm_bindings.list_all()
     bindings_grouped: dict[str, list] = {}
     for row in bindings_rows:
+        if row["code"] in HIDDEN_BINDING_CODES:
+            continue
         if row["code"] == "image_translate.detect":
             row["provider_options"] = [
                 (p, BINDING_PROVIDER_LABELS.get(p, p))
@@ -208,11 +211,13 @@ def _handle_bindings_post() -> None:
     - binding_<code>_provider + binding_<code>_model：upsert 覆盖
     """
     restore = (request.form.get("restore_default") or "").strip()
-    if restore and restore in USE_CASES:
+    if restore and restore in USE_CASES and restore not in HIDDEN_BINDING_CODES:
         llm_bindings.delete(restore)
         return
 
     for code in USE_CASES:
+        if code in HIDDEN_BINDING_CODES:
+            continue
         provider = (request.form.get(f"binding_{code}_provider") or "").strip()
         model = (request.form.get(f"binding_{code}_model") or "").strip()
         allowed_providers = (

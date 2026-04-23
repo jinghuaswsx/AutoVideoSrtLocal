@@ -102,6 +102,52 @@ def test_settings_post_providers_saves_global_image_translate_channel_and_model(
     m_set_model.assert_called_once_with("openrouter", "gemini-3-pro-image-preview")
 
 
+def test_settings_bindings_hides_image_translate_generate(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all",
+               return_value=[
+                   {
+                       "code": "image_translate.detect", "module": "image",
+                       "label": "图片文字检测", "description": "...",
+                       "provider": "openrouter", "model": "gemini-3.1-flash-lite-preview",
+                       "extra": {}, "enabled": True, "is_custom": True,
+                       "updated_at": None, "updated_by": None,
+                   },
+                   {
+                       "code": "image_translate.generate", "module": "image",
+                       "label": "图片本地化重绘", "description": "...",
+                       "provider": "gemini_vertex", "model": "gemini-3.1-flash-image-preview",
+                       "extra": {}, "enabled": True, "is_custom": True,
+                       "updated_at": None, "updated_by": None,
+                   },
+               ]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=bindings")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "image_translate.detect" in body
+    assert "image_translate.generate" not in body
+    assert "图片本地化重绘" not in body
+
+
+def test_settings_post_bindings_ignores_image_translate_generate(admin_no_db_client):
+    with patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "bindings",
+            "binding_image_translate.generate_provider": "gemini_vertex",
+            "binding_image_translate.generate_model": "gemini-3.1-flash-image-preview",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert not any(
+        call.args and call.args[0] == "image_translate.generate"
+        for call in m_upsert.call_args_list
+    )
+
+
 def test_settings_post_bindings_tab_calls_upsert(admin_no_db_client):
     with patch("web.routes.settings.llm_bindings.upsert") as m_upsert, \
          patch("web.routes.settings.llm_bindings.delete"):
