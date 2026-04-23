@@ -14,7 +14,7 @@
   --oc-cyan: oklch(62% 0.13 215);
   --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
-  --mk-video-media-w: 135px; --mk-video-media-h: 240px; --mk-video-frame-w: 296px;
+  --mk-video-media-w: 135px; --mk-video-media-h: 240px;
   font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--oc-fg);
 }
@@ -53,17 +53,36 @@
 .text-sm { font-size:12px; }
 .mb-0 { margin-bottom:0; }
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--oc-sp-3); }
-.mk-video-card { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
-.mk-video-media-frame { width:min(100%, var(--mk-video-frame-w)); display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--oc-sp-2); padding:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); align-self:center; }
-.mk-video-cover-frame, .mk-video-source-frame { position:relative; height:var(--mk-video-media-h); border-radius:var(--oc-r); background:var(--oc-bg-muted); color:var(--oc-fg-subtle); display:flex; align-items:center; justify-content:center; overflow:hidden; }
-.mk-video-cover-frame img { width:100%; height:100%; object-fit:cover; display:block; background:var(--oc-bg-muted); }
-.mk-video-source { width:100%; height:100%; object-fit:contain; border:0; background:oklch(22% 0.02 235); display:block; }
-.mk-video-media-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-3); text-align:center; font-size:12px; color:var(--oc-fg-subtle); }
-.mk-video-card-body { min-width:0; display:flex; flex-direction:column; gap:var(--oc-sp-2); }
-.mk-video-card-title { font-weight:500; word-break:break-all; line-height:1.4; }
-.mk-video-card-meta, .mk-video-card-stats { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-2); }
-.mk-video-card-meta { color:var(--oc-fg-muted); }
+.mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:var(--oc-sp-3); }
+.mk-video-card { display:flex; flex-direction:column; gap:var(--oc-sp-3); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
+.mk-video-card-title { min-height:2.8em; font-size:14px; font-weight:600; word-break:break-word; line-height:1.4; color:var(--oc-fg); }
+.mk-video-preview-row { display:grid; grid-template-columns:var(--mk-video-media-w) minmax(0, 1fr); gap:var(--oc-sp-3); align-items:start; }
+.mk-video-preview-shell { width:var(--mk-video-media-w); }
+.mk-video-tabs { display:grid; grid-template-columns:1fr 1fr; margin-bottom:var(--oc-sp-2); border-bottom:1px solid var(--oc-border); }
+.mk-video-tab { height:28px; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--oc-fg-muted); font:inherit; font-size:13px; cursor:pointer; }
+.mk-video-tab:hover:not(:disabled) { color:var(--oc-fg); }
+.mk-video-tab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
+.mk-video-tab:disabled { opacity:.45; cursor:not-allowed; }
+.mk-video-frame { position:relative; width:100%; height:var(--mk-video-media-h); border:1px solid var(--oc-border); border-radius:var(--oc-r); background:oklch(22% 0.02 235); color:var(--oc-fg-subtle); overflow:hidden; }
+.mk-video-pane { position:absolute; inset:0; display:none; }
+.mk-video-pane.active { display:block; }
+.mk-video-cover-frame img, .mk-video-source { width:100%; height:100%; display:block; background:oklch(22% 0.02 235); }
+.mk-video-cover-frame img { object-fit:cover; }
+.mk-video-source { object-fit:contain; border:0; }
+.mk-video-media-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-3); text-align:center; font-size:12px; color:var(--oc-fg-subtle); background:var(--oc-bg-muted); }
+.mk-video-card-info { min-width:0; display:flex; flex-direction:column; gap:var(--oc-sp-2); padding-top:30px; }
+.mk-video-metric { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-2); color:var(--oc-fg); line-height:1.45; }
+.mk-video-metric .label { color:var(--oc-fg-muted); white-space:nowrap; }
+.mk-video-metric .value { font-weight:600; text-align:right; word-break:break-word; }
+.mk-heat-badge { display:inline-flex; min-width:28px; justify-content:center; padding:2px 8px; border-radius:var(--oc-r); font-weight:600; }
+.mk-heat-badge.high { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.mk-heat-badge.med { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
+.mk-heat-badge.low { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+@media (max-width: 720px) {
+  .mk-video-preview-row { grid-template-columns:1fr; }
+  .mk-video-preview-shell { margin:0 auto; }
+  .mk-video-card-info { padding-top:0; }
+}
 {% endblock %}
 
 {% block content %}
@@ -142,6 +161,24 @@ function normalizeMkMediaPath(path) {
   p = p.replace(/^\/+/, '');
   if (p.startsWith('medias/')) p = p.slice('medias/'.length);
   return p;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
+function fmtMkSpendText(raw, parsed) {
+  const text = String(raw || '').trim();
+  if (text && text !== '0') return text;
+  if (parsed >= 10000) return (parsed / 10000).toFixed(2).replace(/\.?0+$/, '') + '万';
+  if (parsed >= 1000) return (parsed / 1000).toFixed(1).replace(/\.?0+$/, '') + '千';
+  return String(Math.round(parsed || 0));
 }
 
 async function loadData(page) {
@@ -266,21 +303,32 @@ async function openDetail(mkId, mkName) {
       const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
       const videoPath = normalizeMkMediaPath(v.path);
       const videoUrl = videoPath ? '/medias/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
-      const posterAttr = coverUrl ? ` poster="${coverUrl}"` : '';
+      const videoName = escapeHtml(v.name || '未命名素材');
+      const safeCoverUrl = escapeHtml(coverUrl);
+      const safeVideoUrl = escapeHtml(videoUrl);
+      const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+      const uploadDate = escapeHtml(v.upload_time ? String(v.upload_time).split('T')[0] : '--');
+      const author = escapeHtml(v.author || '--');
+      const spendText = escapeHtml(fmtMkSpendText(v.spends, spends));
       html += `<div class="mk-video-card">
-        <div class="mk-video-media-frame">
-          <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
-          <div class="mk-video-source-frame">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline src="${videoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
-        </div>
-        <div class="mk-video-card-body">
-          <div class="mk-video-card-title">${v.name}</div>
-          <div class="mk-video-card-meta">
-            <span>${v.author || '--'}</span>
-            <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
+        <div class="mk-video-card-title" title="${videoName}">${videoName}</div>
+        <div class="mk-video-preview-row">
+          <div class="mk-video-preview-shell">
+            <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+              <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
+              <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+            </div>
+            <div class="mk-video-frame">
+              <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" onerror="this.remove()" alt="${videoName}">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+              <div class="mk-video-pane" data-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
+            </div>
           </div>
-          <div class="mk-video-card-stats">
-            <span>广告: <strong>${v.ads_count}</strong></span>
-            <span class="oc-badge oc-badge--${heat.cls}">${v.spends || '0'}</span>
+          <div class="mk-video-card-info">
+            <div class="mk-video-metric"><span class="label">投放热度</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></div>
+            <div class="mk-video-metric"><span class="label">90天消耗</span><span class="value">${spendText}</span></div>
+            <div class="mk-video-metric"><span class="label">广告数</span><span class="value">${Number(v.ads_count || 0)}</span></div>
+            <div class="mk-video-metric"><span class="label">上传者</span><span class="value">${author}</span></div>
+            <div class="mk-video-metric"><span class="label">上传时间</span><span class="value">${uploadDate}</span></div>
           </div>
         </div>
       </div>`;
@@ -290,6 +338,26 @@ async function openDetail(mkId, mkName) {
     document.getElementById('detailContent').innerHTML = html;
   } catch (e) {
     document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${e.message}</p>`;
+  }
+}
+
+function activateMkVideoTab(tab) {
+  if (!tab || tab.disabled) return;
+  const card = tab.closest('.mk-video-card');
+  if (!card) return;
+  const target = tab.dataset.tab || 'cover';
+  card.querySelectorAll('.mk-video-tab').forEach(btn => {
+    btn.classList.toggle('active', btn === tab);
+  });
+  card.querySelectorAll('.mk-video-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.dataset.pane === target);
+  });
+  if (target === 'video') {
+    const video = card.querySelector('.mk-video-source');
+    const src = video?.dataset?.mkVideoSrc || '';
+    if (video && src && !video.getAttribute('src')) {
+      video.setAttribute('src', src);
+    }
   }
 }
 
@@ -305,6 +373,11 @@ function closeDetail() {
   document.getElementById('detailPanel').style.display = 'none';
   document.getElementById('detailOverlay').style.display = 'none';
 }
+
+document.getElementById('detailContent').addEventListener('click', e => {
+  const tab = e.target.closest('.mk-video-tab');
+  if (tab) activateMkVideoTab(tab);
+});
 
 // Enter 搜索
 document.getElementById('searchInput').addEventListener('keydown', e => {

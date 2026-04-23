@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block title %}批量翻译任务管理 · AutoVideoSrt{% endblock %}
+{% block page_title %}批量翻译任务管理{% endblock %}
+
+{% block extra_style %}
+<link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="bt-admin-tasks" data-admin-bulk-tasks>
+  <section class="bt-admin-hero">
+    <div class="bt-admin-hero__copy">
+      <span>管理员总览</span>
+      <h1>批量翻译任务管理</h1>
+      <p>按“需要人工干预、正常进行中、已完成”的顺序查看所有用户创建的父任务。</p>
+    </div>
+    <div class="bt-admin-stats" data-admin-stats aria-live="polite">
+      <div class="bt-detail-loading">正在读取任务统计…</div>
+    </div>
+  </section>
+
+  <section class="bt-admin-list-card">
+    <div class="bt-section-heading">
+      <span>任务列表</span>
+      <h2>优先处理卡住的任务</h2>
+      <p>每个条目展示创建人、关联商品、任务类型、进度和完成后的实际消费。</p>
+    </div>
+    <div class="bt-admin-task-list" data-admin-task-list>
+      <div class="bt-detail-loading">正在加载任务…</div>
+    </div>
+    <div class="bt-empty-state hidden" data-admin-empty>
+      <strong>暂无批量翻译任务</strong>
+      <span>用户创建任务后会自动出现在这里。</span>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='admin_bulk_translate_tasks.js') }}"></script>
+{% endblock %}

@@ -12,6 +12,9 @@ log = logging.getLogger(__name__)
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _WAITING_ITEM_STATUSES = {"awaiting_voice"}
 _PARENT_RESUMABLE_STATUSES = {"paused", "interrupted"}
+_STUCK_PARENT_STATUSES = {"failed", "error", "interrupted", "paused", "waiting_manual"}
+_DONE_PARENT_STATUSES = {"done", "cancelled"}
+_ADMIN_GROUP_ORDER = {"stuck": 0, "running": 1, "done": 2}
 
 _KIND_LABELS = {
     "copy": "文案翻译",
@@ -83,6 +86,86 @@ def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> lis
     return tasks
 
 
+def list_admin_tasks(*, limit: int = 300) -> dict:
+    """Return an admin-facing overview for all bulk translation parent tasks."""
+    rows = query(
+        """
+        SELECT p.id, p.user_id, p.status, p.state_json, p.created_at,
+               u.username AS username
+        FROM projects p
+        LEFT JOIN users u ON u.id = p.user_id
+        WHERE p.type = 'bulk_translate'
+          AND p.deleted_at IS NULL
+        ORDER BY p.created_at DESC
+        LIMIT %s
+        """,
+        (max(1, min(int(limit or 300), 500)),),
+    )
+
+    tasks = [_serialize_admin_task(row, _parse_state(row.get("state_json"))) for row in rows or []]
+    tasks.sort(key=lambda item: _ADMIN_GROUP_ORDER.get(item["group"], 9))
+    stats = {
+        "running": sum(1 for item in tasks if item["group"] == "running"),
+        "stuck": sum(1 for item in tasks if item["group"] == "stuck"),
+        "done": sum(1 for item in tasks if item["group"] == "done"),
+        "total": len(tasks),
+    }
+    return {"stats": stats, "items": tasks}
+
+
+def _serialize_admin_task(row: dict, state: dict) -> dict:
+    detail_url = f"/tasks/{row['id']}?scope=admin"
+    raw_plan = list(state.get("plan") or [])
+    plan = [_serialize_item(item, parent_detail_url=detail_url) for item in raw_plan]
+    progress = _progress_summary(dict(state.get("progress") or compute_progress(raw_plan)))
+    waiting_voice_count = sum(1 for item in plan if item["status"] in _WAITING_ITEM_STATUSES)
+    failed_count = sum(1 for item in plan if item["status"] in _RETRYABLE_ITEM_STATUSES)
+    intervention_count = failed_count + waiting_voice_count
+    status = (row.get("status") or "").strip()
+    group = _admin_task_group(
+        status,
+        progress=progress,
+        intervention_count=intervention_count,
+    )
+    product_id = int(state.get("product_id") or 0)
+    product = _product_summary(product_id)
+    cost_tracking = dict(state.get("cost_tracking") or {})
+    cost_actual = dict(cost_tracking.get("actual") or {})
+    cost_estimate = dict(cost_tracking.get("estimate") or {})
+    initiator = dict(state.get("initiator") or {})
+    creator = (row.get("username") or initiator.get("user_name") or "").strip()
+
+    return {
+        "id": row["id"],
+        "status": status,
+        "status_label": _status_label(status, waiting_voice_count=waiting_voice_count),
+        "group": group,
+        "group_label": _admin_group_label(group),
+        "user_id": row.get("user_id"),
+        "creator": {
+            "id": row.get("user_id"),
+            "name": creator or f"用户 {row.get('user_id') or '—'}",
+        },
+        "product_id": product_id,
+        "product": product,
+        "target_langs": list(state.get("target_langs") or []),
+        "target_lang_labels": [medias.get_language_name(lang) for lang in (state.get("target_langs") or [])],
+        "content_types": list(state.get("content_types") or []),
+        "content_type_labels": [
+            _CONTENT_TYPE_LABELS.get(content_type, content_type)
+            for content_type in (state.get("content_types") or [])
+        ],
+        "progress": progress,
+        "waiting_voice_count": waiting_voice_count,
+        "failed_count": failed_count,
+        "intervention_count": intervention_count,
+        "cost_actual": _float_or_zero(cost_actual.get("actual_cost_cny")),
+        "cost_estimate": _float_or_zero(cost_estimate.get("estimated_cost_cny")),
+        "detail_url": detail_url,
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
+
+
 def _serialize_task(row: dict, state: dict) -> dict:
     detail_url = f"/tasks/{row['id']}"
     plan = [_serialize_item(item, parent_detail_url=detail_url) for item in (state.get("plan") or [])]
@@ -113,6 +196,68 @@ def _serialize_task(row: dict, state: dict) -> dict:
         "can_retry_failed": failed_count > 0,
         "items": plan,
     }
+
+
+def _progress_summary(progress: dict) -> dict:
+    total = int(progress.get("total") or 0)
+    done = int(progress.get("done") or 0)
+    skipped = int(progress.get("skipped") or 0)
+    failed = int(progress.get("failed") or 0)
+    interrupted = int(progress.get("interrupted") or 0)
+    awaiting_voice = int(progress.get("awaiting_voice") or 0)
+    completed = done + skipped
+    pct = min(100, round((completed / total) * 100)) if total else 0
+    return {
+        **progress,
+        "total": total,
+        "done": done,
+        "skipped": skipped,
+        "failed": failed,
+        "interrupted": interrupted,
+        "awaiting_voice": awaiting_voice,
+        "completed": completed,
+        "pct": pct,
+    }
+
+
+def _admin_task_group(status: str, *, progress: dict, intervention_count: int) -> str:
+    if status in _STUCK_PARENT_STATUSES or intervention_count > 0:
+        return "stuck"
+    total = int(progress.get("total") or 0)
+    completed = int(progress.get("completed") or 0)
+    if status in _DONE_PARENT_STATUSES or (total > 0 and completed >= total):
+        return "done"
+    return "running"
+
+
+def _admin_group_label(group: str) -> str:
+    return {
+        "stuck": "需要人工干预",
+        "running": "正常进行中",
+        "done": "已完成",
+    }.get(group, group or "未知")
+
+
+def _product_summary(product_id: int) -> dict:
+    if not product_id:
+        return {"id": 0, "name": "未关联商品", "product_code": ""}
+    try:
+        product = medias.get_product(product_id) or {}
+    except Exception:
+        log.warning("bulk_translate admin product lookup failed: %s", product_id, exc_info=True)
+        product = {}
+    return {
+        "id": product_id,
+        "name": (product.get("name") or f"商品 #{product_id}").strip(),
+        "product_code": (product.get("product_code") or "").strip(),
+    }
+
+
+def _float_or_zero(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _serialize_item(raw_item: dict, *, parent_detail_url: str) -> dict:
