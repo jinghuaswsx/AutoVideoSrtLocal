@@ -15,7 +15,7 @@ from flask import Blueprint, request, jsonify, send_file, render_template, abort
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
-from appcore.runtime import _build_av_localized_translation, _build_av_tts_segments
+from appcore.runtime import _VALID_TRANSLATE_PREFS, _build_av_localized_translation, _build_av_tts_segments
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
     AV_TARGET_LANGUAGE_OPTIONS,
@@ -594,7 +594,7 @@ def start_translate(task_id):
 
     # Save choices to task state so runtime can read them
     updates = {"_translate_pre_select": False}
-    if model_provider in ("openrouter", "doubao"):
+    if model_provider in _VALID_TRANSLATE_PREFS:
         from appcore.api_keys import set_key
         set_key(current_user.id, "translate_pref", model_provider)
     if prompt_text:
@@ -637,7 +637,7 @@ def retranslate(task_id):
         return jsonify({"error": "需要提供 prompt_text 或有效的 prompt_id"}), 400
 
     # Resolve provider: explicit param > user pref > default
-    if model_provider not in ("openrouter", "doubao"):
+    if model_provider not in _VALID_TRANSLATE_PREFS:
         from appcore.api_keys import get_key
         model_provider = get_key(current_user.id, "translate_pref") or "openrouter"
 

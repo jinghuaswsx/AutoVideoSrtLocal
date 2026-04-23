@@ -81,3 +81,8 @@ def test_resolves_doubao_binding_passthrough():
                              "extra": {}, "source": "db"}):
         p = _resolve_use_case_provider("video_translate.localize")
     assert p == "doubao"
+
+
+def test_get_model_display_name_supports_openrouter_gpt_5_mini():
+    with patch.object(translate, "OPENROUTER_API_KEY", "test-openrouter-key"):
+        assert translate.get_model_display_name("gpt_5_mini") == "openai/gpt-5-mini"

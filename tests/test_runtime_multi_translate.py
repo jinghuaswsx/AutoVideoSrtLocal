@@ -158,3 +158,11 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     )
     assert "Spanish" in messages[0]["content"]
     assert "localized English" not in messages[0]["content"]
+
+
+def test_resolve_translate_provider_accepts_gpt_5_mini(monkeypatch):
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_mini")
+
+    from appcore.runtime import _resolve_translate_provider
+
+    assert _resolve_translate_provider(1) == "gpt_5_mini"
