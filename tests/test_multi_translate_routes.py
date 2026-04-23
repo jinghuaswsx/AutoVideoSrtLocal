@@ -148,11 +148,14 @@ def test_multi_translate_subtitle_preview_route(authed_client_no_db, monkeypatch
 def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
+    preview_panel = (root / "web" / "templates" / "_subtitle_preview_panel.html").read_text(encoding="utf-8")
     scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
     workbench = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
 
     assert "_subtitle_preview_panel.html" in template
     assert "subtitle_preview.js" in template
+    assert "--subtitle-preview-w: 270px;" in preview_panel
+    assert "--subtitle-preview-h: 480px;" in preview_panel
     assert "sharedSubtitlePreviewMount" in workbench
     assert "openPhonePickerBtn" not in scripts
     assert "phoneFrame" not in scripts
