@@ -1937,16 +1937,17 @@ def test_medias_page_wraps_language_coverage_with_full_labels():
     assert "flex-wrap:nowrap;" in template
 
 
-def test_medias_page_marks_copy_as_required_in_add_modal(authed_client_no_db):
+def test_medias_page_marks_copy_as_optional_in_add_modal(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert '<span>文案<span class="req">*</span></span>' in body
-    assert '<span>文案<span class="optional">可选</span></span>' not in body
-    assert '没有可以留空' not in body
+    assert '<span>文案<span class="req">*</span></span>' not in body
+    assert '<span>文案<span class="optional">可选</span></span>' in body
+    assert '没有可以留空' in body
 
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    assert "if (!cw.length) { alert('请填写文案');" not in medias_js
     assert 'copywritings: { en: cw }' in medias_js
 
 

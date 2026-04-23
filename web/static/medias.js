@@ -1080,7 +1080,6 @@
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
     if (!SLUG_RE.test(code)) { alert('产品 ID 必填且需合法（小写字母/数字/连字符，3–128）'); $('mCode').focus(); return; }
     const cw = collectCopywritings();
-    if (!cw.length) { alert('请填写文案'); $('cwBody') && $('cwBody').focus(); return; }
     const pid = state.current.product.id;
     try {
       await fetchJSON('/medias/api/products/' + pid, {
