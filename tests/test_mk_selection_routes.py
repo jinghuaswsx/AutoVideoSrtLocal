@@ -1,6 +1,17 @@
 from __future__ import annotations
 
 
+def test_mk_selection_video_cover_uses_portrait_thumb_frame():
+    template = open(
+        "web/templates/mk_selection.html",
+        encoding="utf-8",
+    ).read()
+
+    assert "--mk-video-cover-w: 90px;" in template
+    assert "--mk-video-cover-h: 160px;" in template
+    assert "mk-video-cover-frame" in template
+
+
 def test_mk_media_proxy_fetches_wedev_media_with_server_credentials(
     authed_client_no_db,
     monkeypatch,

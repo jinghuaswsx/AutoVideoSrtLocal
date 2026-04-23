@@ -14,6 +14,7 @@
   --oc-cyan: oklch(62% 0.13 215);
   --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
+  --mk-video-cover-w: 90px; --mk-video-cover-h: 160px;
   font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--oc-fg);
 }
@@ -52,6 +53,14 @@
 .text-sm { font-size:12px; }
 .mb-0 { margin-bottom:0; }
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:var(--oc-sp-3); }
+.mk-video-card { display:grid; grid-template-columns:var(--mk-video-cover-w) minmax(0, 1fr); min-height:var(--mk-video-cover-h); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); font-size:13px; }
+.mk-video-cover-frame { width:var(--mk-video-cover-w); height:var(--mk-video-cover-h); background:var(--oc-bg-muted); color:var(--oc-fg-subtle); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.mk-video-cover-frame img { width:100%; height:100%; object-fit:cover; display:block; background:var(--oc-bg-muted); }
+.mk-video-card-body { min-width:0; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between; gap:var(--oc-sp-2); }
+.mk-video-card-title { font-weight:500; word-break:break-all; line-height:1.4; }
+.mk-video-card-meta, .mk-video-card-stats { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-2); }
+.mk-video-card-meta { color:var(--oc-fg-muted); }
 {% endblock %}
 
 {% block content %}
@@ -246,21 +255,21 @@ async function openDetail(mkId, mkName) {
       <strong style="font-size:15px;">视频素材（${videos.length} 条）</strong>
       <span style="font-size:14px; color:var(--oc-fg-muted);">总消耗: ${fmtMoney(totalSpends)} | 总广告: ${totalAds}</span>
     </div>`;
-    html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">`;
+    html += `<div class="mk-video-grid">`;
     videos.forEach(v => {
       const spends = parseSpends(v.spends);
       const heat = heatLevel(spends);
       const coverPath = normalizeMkMediaPath(v.image_path);
       const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
-      html += `<div style="border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; font-size:13px;">
-        ${coverUrl ? `<img src="${coverUrl}" style="width:100%; height:160px; object-fit:cover; background:var(--oc-bg-muted); display:block;" onerror="this.style.display='none'" alt="">` : `<div style="width:100%; height:160px; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle);">无封面</div>`}
-        <div style="padding:10px 12px;">
-          <div style="font-weight:500; margin-bottom:6px; word-break:break-all; line-height:1.4;">${v.name}</div>
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="color:var(--oc-fg-muted);">${v.author || '--'}</span>
-            <span style="color:var(--oc-fg-muted);">${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
+      html += `<div class="mk-video-card">
+        <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span>无封面</span>`}</div>
+        <div class="mk-video-card-body">
+          <div class="mk-video-card-title">${v.name}</div>
+          <div class="mk-video-card-meta">
+            <span>${v.author || '--'}</span>
+            <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
           </div>
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="mk-video-card-stats">
             <span>广告: <strong>${v.ads_count}</strong></span>
             <span class="oc-badge oc-badge--${heat.cls}">${v.spends || '0'}</span>
           </div>
