@@ -337,8 +337,8 @@
            + `${escapeHtml(langDisplayName(l.code))}`
            + `</span>`;
     });
-    const midpoint = Math.ceil(chips.length / 2);
-    const rows = [chips.slice(0, midpoint), chips.slice(midpoint)];
+    const rows = [];
+    for (let i = 0; i < chips.length; i += 3) rows.push(chips.slice(i, i + 3));
     return `<div class="oc-lang-bar">`
          + rows.filter((row) => row.length).map((row) => `<div class="oc-lang-row">${row.join('')}</div>`).join('')
          + `</div>`;
@@ -709,18 +709,19 @@
       <table class="oc-table" style="table-layout:fixed;">
         <colgroup>
         <col style="width:48px">
-        <col style="width:96px">
+        <col style="width:88px">
+        <col style="width:130px">
         <col style="width:120px">
+        <col style="width:80px">
+        <col style="width:68px">
         <col style="width:120px">
-        <col style="width:96px">
-        <col style="width:132px">
-        <col style="width:128px">
-        <col style="width:72px">
-        <col style="width:100px">
-        <col style="width:60px">
-        <col style="width:336px">
-        <col style="width:108px">
-        <col style="width:284px">
+        <col style="width:64px">
+        <col style="width:88px">
+        <col style="width:56px">
+        <col style="width:240px">
+        <col style="width:92px">
+        <col style="width:150px">
+        <col style="width:200px">
       </colgroup>
       <thead>
         <tr>
