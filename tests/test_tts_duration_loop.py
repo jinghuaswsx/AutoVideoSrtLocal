@@ -95,10 +95,10 @@ class TestDurationLoopRound1Only:
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
-            return {"full_audio_path": out, "segments": [{"index": 0, "tts_path": out, "tts_duration": 28.5}]}
+            return {"full_audio_path": out, "segments": [{"index": 0, "tts_path": out, "tts_duration": 31.5}]}
 
         def fake_get_audio_duration(path):
-            return 28.5  # Within [27, 33] for video=30
+            return 31.5  # Within [29, 32] for video=30
 
         def fake_gen_tts_script(loc, **kwargs):
             return {"full_text": "Short text.", "blocks": [{"index": 0, "text": "Short.",
@@ -146,7 +146,7 @@ class TestDurationLoopRound1Only:
         assert result["tts_audio_path"].endswith("tts_full.round_1.mp3")
         assert len(result["rounds"]) == 1
         assert result["rounds"][0]["round"] == 1
-        assert result["rounds"][0]["audio_duration"] == 28.5
+        assert result["rounds"][0]["audio_duration"] == 31.5
 
     def test_round1_language_mismatch_fails_tts_step(self, tmp_path, monkeypatch):
         from appcore import task_state
@@ -281,8 +281,8 @@ class TestDurationLoopMultiRound:
         return runner, loc_mod, initial
 
     def test_round2_shrink_converges(self, tmp_path, monkeypatch):
-        # video=30, lo=27, hi=33; round 1: 35 (>hi), round 2: 28.5 (in range)
-        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
+        # video=30, final range=[29, 32]; round 1: 35 (>hi), round 2: 29.5 (in range)
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 29.5])
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
             provider="openrouter", video_duration=30.0,
@@ -298,10 +298,47 @@ class TestDurationLoopMultiRound:
         # round 1 record has no direction (no rewrite)
         assert "direction" not in result["rounds"][0]
 
+    def test_round1_audio_up_to_video_plus_two_converges_immediately(self, tmp_path, monkeypatch):
+        # video=30, final range=[29, 32]; 31.5s should stop at round 1.
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [31.5])
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        assert result["final_round"] == 1
+        assert len(result["rounds"]) == 1
+        assert result["rounds"][0]["duration_lo"] == pytest.approx(29.0)
+        assert result["rounds"][0]["duration_hi"] == pytest.approx(32.0)
+        assert result["rounds"][0]["final_reason"] == "converged"
+
+    def test_round1_audio_below_video_minus_one_continues(self, tmp_path, monkeypatch):
+        # video=30, final range=[29, 32]; 28.5s is too short, 29.0s converges.
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [28.5, 29.0])
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        assert result["final_round"] == 2
+        assert len(result["rounds"]) == 2
+        assert result["rounds"][0]["audio_duration"] == pytest.approx(28.5)
+        assert result["rounds"][1]["audio_duration"] == pytest.approx(29.0)
+
     def test_round2_stage1_hit_but_not_final_range_continues(self, tmp_path, monkeypatch):
         # video=35
         # old stage1 range: [31.5, 38.5]
-        # final range: [32.0, 35.0]
+        # final range: [34.0, 37.0]
         # round 2 audio=38.2 should NOT stop the loop.
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [40.0, 38.2, 34.0])
         result = runner._run_tts_duration_loop(
@@ -320,7 +357,7 @@ class TestDurationLoopMultiRound:
         assert result["rounds"][2]["audio_duration"] == pytest.approx(34.0)
 
     def test_all_rounds_exhausted_picks_best(self, tmp_path, monkeypatch):
-        # 5 rounds all > hi=33 (video=30). Best = last (34.0, closest to 30).
+        # 5 rounds all > hi=32 (video=30). Best = last (34.0, closest to [29, 32]).
         runner, loc_mod, initial = self._setup(
             monkeypatch, tmp_path, [40.0, 38.0, 36.0, 35.0, 34.0],
         )
@@ -342,16 +379,15 @@ class TestDurationLoopMultiRound:
         assert task["tts_duration_status"] == "converged"
 
     def test_all_rounds_exhausted_picks_closest_to_final_range(self, tmp_path, monkeypatch):
-        # video=30, final range=[27, 30]
+        # video=30, final range=[29, 32]
         # Distances to final range are:
-        # round1 33.2 -> 3.2
-        # round2 26.6 -> 0.4  (should win)
-        # round3 35.0 -> 5.0
-        # round4 35.1 -> 5.1
-        # round5 35.2 -> 5.2
-        # Old behavior that compares only to video_duration=30 would pick round1.
+        # round1 33.2 -> 1.2
+        # round2 28.6 -> 0.4  (should win)
+        # round3 35.0 -> 3.0
+        # round4 35.1 -> 3.1
+        # round5 35.2 -> 3.2
         runner, loc_mod, initial = self._setup(
-            monkeypatch, tmp_path, [33.2, 26.6, 35.0, 35.1, 35.2],
+            monkeypatch, tmp_path, [33.2, 28.6, 35.0, 35.1, 35.2],
         )
         result = runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
@@ -368,7 +404,7 @@ class TestDurationLoopMultiRound:
         assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
 
     def test_intermediate_files_written(self, tmp_path, monkeypatch):
-        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 28.5])
+        runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 29.5])
         runner._run_tts_duration_loop(
             task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
             provider="openrouter", video_duration=30.0,
@@ -484,11 +520,11 @@ class TestTrimTailSegments:
         assert result["localized_translation"]["full_text"] == "S0 S1 S2"
         assert len(result["tts_script"]["subtitle_chunks"]) == 3
 
-    def test_trim_skipped_when_audio_within_video(self, tmp_path):
+    def test_trim_skipped_when_audio_within_final_range(self, tmp_path):
         from appcore.runtime import PipelineRunner
         from appcore.events import EventBus
         runner = PipelineRunner(bus=EventBus(), user_id=1)
-        segs = [{"index": 0, "tts_path": "/x", "tts_duration": 10.0}]
+        segs = [{"index": 0, "tts_path": "/x", "tts_duration": 21.5}]
         result = runner._trim_tail_segments(
             task_dir=str(tmp_path), round_variant="round_1",
             tts_segments=segs, tts_script={"blocks": [], "subtitle_chunks": []},
@@ -532,10 +568,10 @@ class TestStepTtsIntegration:
             with open(out, "wb") as f:
                 f.write(b"audio")
             return {"full_audio_path": out,
-                    "segments": [{"index": 0, "tts_path": out, "tts_duration": 28.0}]}
+                    "segments": [{"index": 0, "tts_path": out, "tts_duration": 30.0}]}
 
         monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
-        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 28.0)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: 30.0)
         monkeypatch.setattr("pipeline.translate.generate_tts_script",
                             lambda loc, **kw: {"full_text": "EN.", "blocks": [], "subtitle_chunks": []})
         monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
@@ -581,7 +617,7 @@ class TestStepTtsIntegration:
         assert billing_calls[1]["provider"] == "elevenlabs"
         assert billing_calls[1]["request_units"] == len("EN.")
 
-    def test_step_tts_truncates_overlong_final_audio(self, tmp_path, monkeypatch):
+    def test_step_tts_truncates_audio_beyond_video_plus_two(self, tmp_path, monkeypatch):
         from appcore import task_state
         from appcore.events import EventBus
         from appcore.runtime import PipelineRunner
@@ -699,8 +735,8 @@ class TestStepTtsIntegration:
         assert variant_state["tts_audio_path"].endswith("tts_full.normal.mp3")
         assert (tmp_path / "tts_full.normal.mp3").read_bytes() == b"truncated audio"
         assert len(variant_state["segments"]) == 3
-        assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(30.0)
-        assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(30.0)
+        assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(32.0)
+        assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(32.0)
         assert [call["use_case_code"] for call in billing_calls] == [
             "video_translate.rewrite",
             "video_translate.tts_script",
@@ -712,7 +748,7 @@ class TestStepTtsIntegration:
         assert billing_calls[2]["provider"] == "elevenlabs"
         assert billing_calls[2]["request_units"] == 5
 
-    def test_step_tts_keeps_short_final_audio_without_truncation(self, tmp_path, monkeypatch):
+    def test_step_tts_keeps_audio_within_video_plus_two_without_truncation(self, tmp_path, monkeypatch):
         from appcore import task_state
         from appcore.events import EventBus
         from appcore.runtime import PipelineRunner
@@ -742,17 +778,17 @@ class TestStepTtsIntegration:
         )
 
         round_audio = tmp_path / "tts_full.round_2.mp3"
-        round_audio.write_bytes(b"short audio")
+        round_audio.write_bytes(b"in-range audio")
 
         def fail_if_ffmpeg(*args, **kwargs):
-            raise AssertionError("ffmpeg truncation should not run for short final audio")
+            raise AssertionError("ffmpeg truncation should not run for audio within final range")
 
         monkeypatch.setattr("subprocess.run", fail_if_ffmpeg)
         monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
         monkeypatch.setattr("appcore.api_keys.get_key", lambda *args, **kwargs: None)
         monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda *args, **kwargs: {})
         monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 30.0)
-        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 28.0)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 31.5)
 
         runner = PipelineRunner(bus=EventBus(), user_id=1)
         monkeypatch.setattr(
@@ -774,9 +810,9 @@ class TestStepTtsIntegration:
                 },
                 "tts_audio_path": str(round_audio),
                 "tts_segments": [
-                    {"index": 0, "text": "A", "translated": "A", "tts_path": str(round_audio), "tts_duration": 28.0},
+                    {"index": 0, "text": "A", "translated": "A", "tts_path": str(round_audio), "tts_duration": 31.5},
                 ],
-                "rounds": [{"round": 2, "audio_duration": 28.0}],
+                "rounds": [{"round": 2, "audio_duration": 31.5}],
                 "final_round": 2,
             },
         )
@@ -785,9 +821,9 @@ class TestStepTtsIntegration:
 
         task = task_state.get(task_id)
         variant_state = task["variants"]["normal"]
-        assert (tmp_path / "tts_full.normal.mp3").read_bytes() == b"short audio"
-        assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(28.0)
-        assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(28.0)
+        assert (tmp_path / "tts_full.normal.mp3").read_bytes() == b"in-range audio"
+        assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(31.5)
+        assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(31.5)
 
 
 class TestLanguageSpecificRunners:
