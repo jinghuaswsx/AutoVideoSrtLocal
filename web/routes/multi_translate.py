@@ -183,6 +183,9 @@ def upload_and_start():
         delivery_mode="local_primary",
     )
 
+    # 注册源视频到 preview_files，让 artifact 端点能直接 serve 给前端预览
+    store.set_preview_file(task_id, "source_video", video_path)
+
     multi_pipeline_runner.start(task_id, user_id=user_id)
     return jsonify({"task_id": task_id}), 201
 

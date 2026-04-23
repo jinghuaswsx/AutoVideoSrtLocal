@@ -83,19 +83,37 @@
 
   <div class="vs-preview-card">
     <div class="vs-preview-head">
-      <strong>字幕预览</strong>
-      <span class="vs-preview-head__hint">拖动字幕或调整位置滑杆，直接看叠加后的真实效果</span>
+      <strong>视频对比</strong>
+      <span class="vs-preview-head__hint">左边调整字幕样式，右边生成后自动加载硬字幕视频，方便对比效果</span>
     </div>
     <div class="vs-preview-wrap">
-      <div class="vs-preview-frame" id="vsPreviewFrame">
-        <video id="vsPreviewVideo" class="vs-preview-video" muted playsinline loop controls preload="metadata"></video>
-        <div class="vs-preview-topbar">
-          <span>9:16</span>
-          <span>Preview</span>
+      <div class="vs-compare-row">
+        <div class="vs-compare-col">
+          <div class="vs-compare-label">预览</div>
+          <div class="vs-preview-frame" id="vsPreviewFrame" data-droppable="true">
+            <video id="vsPreviewVideo" class="vs-preview-video" muted playsinline loop controls preload="metadata"></video>
+            <div class="vs-preview-topbar">
+              <span>9:16</span>
+              <span>Preview</span>
+            </div>
+            <div class="vs-preview-subtitle" id="vsPreviewSubtitle">
+              <div class="vs-preview-subtitle__line">Tiktok and facebook shot videos!</div>
+              <div class="vs-preview-subtitle__line">Tiktok and facebook shot videos!</div>
+            </div>
+            <div class="vs-drop-overlay" id="vsDropOverlay">释放以加载视频</div>
+            <div class="vs-frame-hint" id="vsFrameHint">点击或拖入视频文件</div>
+          </div>
+          <input type="file" id="vsFileInput" accept="video/*" style="display:none;"/>
         </div>
-        <div class="vs-preview-subtitle" id="vsPreviewSubtitle">
-          <div class="vs-preview-subtitle__line">Tiktok and facebook shot videos!</div>
-          <div class="vs-preview-subtitle__line">Tiktok and facebook shot videos!</div>
+        <div class="vs-compare-col">
+          <div class="vs-compare-label">生成结果</div>
+          <div class="vs-preview-frame vs-preview-frame--result" id="vsResultFrame">
+            <video id="vsResultVideo" class="vs-preview-video" playsinline controls preload="metadata" style="display:none;"></video>
+            <div class="vs-result-placeholder" id="vsResultPlaceholder">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+              <span>视频生成后将在此处预览</span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="vs-preview-note" id="vsPreviewNote">默认会复用当前任务里的原始视频预览，让你在选声音前就能确认字幕样式和位置。</div>
@@ -283,6 +301,29 @@
   .vs-preview-wrap {
     display: flex; flex-direction: column; gap: 10px;
   }
+  .vs-compare-row {
+    display: flex; gap: 100px; justify-content: center; align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .vs-compare-col {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .vs-compare-label {
+    font-size: 18px; font-weight: 700; color: var(--text-main);
+    letter-spacing: 0.02em;
+  }
+  .vs-preview-frame--result {
+    background:
+      linear-gradient(180deg, rgba(8, 15, 32, 0.08), rgba(8, 15, 32, 0) 72px),
+      linear-gradient(180deg, oklch(20% 0.015 235), oklch(15% 0.01 235));
+  }
+  .vs-result-placeholder {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: rgba(255, 255, 255, 0.35); font-size: 13px; text-align: center;
+    padding: 20px; pointer-events: none;
+  }
+  .vs-result-placeholder svg { opacity: 0.4; }
   .vs-preview-frame {
     width: 270px; height: 480px; margin: 0 auto;
     position: relative; overflow: hidden; border-radius: 30px;
@@ -316,6 +357,23 @@
   }
   .vs-preview-subtitle:active { cursor: grabbing; }
   .vs-preview-subtitle__line { padding: 0 6px; font-weight: 900; }
+  .vs-drop-overlay {
+    position: absolute; inset: 0; z-index: 10;
+    display: none; align-items: center; justify-content: center;
+    background: oklch(56% 0.16 230 / 0.7); color: #fff;
+    font-size: 16px; font-weight: 700; border-radius: 30px;
+    pointer-events: none;
+  }
+  .vs-preview-frame.drag-over .vs-drop-overlay { display: flex; }
+  .vs-frame-hint {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 6;
+    padding: 6px 14px; border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.8);
+    font-size: 12px; pointer-events: none; white-space: nowrap;
+    opacity: 1; transition: opacity 0.3s;
+  }
+  .vs-preview-frame.video-loaded .vs-frame-hint { opacity: 0; }
+  .vs-preview-frame[data-droppable="true"] { cursor: pointer; }
 
   .vs-footer {
     margin-top: 16px; padding-top: 16px;

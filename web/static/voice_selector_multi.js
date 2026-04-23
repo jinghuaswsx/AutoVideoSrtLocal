@@ -37,6 +37,14 @@
   const previewSubtitle = document.getElementById("vsPreviewSubtitle");
   const previewNote = document.getElementById("vsPreviewNote");
 
+  // 结果视频（右侧对比框）
+  const resultVideo = document.getElementById("vsResultVideo");
+  const resultPlaceholder = document.getElementById("vsResultPlaceholder");
+
+  // 拖拽/点击加载
+  const fileInput = document.getElementById("vsFileInput");
+  const frameHint = document.getElementById("vsFrameHint");
+
   let subSize = 14;  // 字号状态（由按钮组驱动）
 
   // 字体预览：下拉变化 → 预览文字换字体
@@ -138,8 +146,13 @@
     previewVideo.src = src;
     previewVideo.load();
     previewVideo.play().catch(() => {});
+    markVideoLoaded();
     setPreviewNote("已复用当前任务的原始视频预览，字幕会直接叠加在真实画面上。", "success");
     return true;
+  }
+
+  function markVideoLoaded() {
+    if (previewFrame) previewFrame.classList.add("video-loaded");
   }
 
   function attachPreviewVideo(src, message) {
@@ -150,21 +163,40 @@
     previewVideo.src = src;
     previewVideo.load();
     previewVideo.play().catch(() => {});
+    markVideoLoaded();
     if (message) setPreviewNote(message, "success");
     return true;
+  }
+
+  // 尝试从 artifact 端点加载源视频（最可靠的方式）
+  function tryLoadSourceVideo() {
+    if (!previewVideo) return false;
+    if (previewVideo.getAttribute("src")) return true; // 已经有视频了
+    var artifactUrl = "/api/multi-translate/" + taskId + "/artifact/source_video";
+    return fetch(artifactUrl, { method: "HEAD" }).then(function (res) {
+      if (res.ok) {
+        attachPreviewVideo(artifactUrl, "已加载上传的源视频，可直接检查字幕位置和字号。");
+        return true;
+      }
+      return false;
+    }).catch(function () { return false; });
   }
 
   function schedulePreviewReuseFallback() {
     if (previewFallbackTimer) return;
     if (tryAttachPreviewVideo()) return;
-    let previewRetries = 0;
-    previewFallbackTimer = setInterval(() => {
-      previewRetries += 1;
-      if (tryAttachPreviewVideo() || previewRetries >= 20) {
-        clearInterval(previewFallbackTimer);
-        previewFallbackTimer = null;
-      }
-    }, 1000);
+    // 先尝试从 artifact 端点加载，失败后再轮询 DOM
+    tryLoadSourceVideo().then(function (ok) {
+      if (ok) return;
+      let previewRetries = 0;
+      previewFallbackTimer = setInterval(() => {
+        previewRetries += 1;
+        if (tryAttachPreviewVideo() || previewRetries >= 20) {
+          clearInterval(previewFallbackTimer);
+          previewFallbackTimer = null;
+        }
+      }, 1000);
+    });
   }
 
   function applySubtitlePreviewPayload(payload) {
@@ -244,6 +276,91 @@
 
   syncSubtitlePreview();
   loadSubtitlePreviewPayload();
+
+  // ── 结果视频加载（右侧对比框） ──
+  let resultVideoLoaded = false;
+
+  function loadResultVideo(src) {
+    if (!resultVideo || !src || resultVideoLoaded) return;
+    resultVideoLoaded = true;
+    resultVideo.src = src;
+    resultVideo.style.display = "block";
+    resultVideo.load();
+    resultVideo.play().catch(() => {});
+    if (resultPlaceholder) resultPlaceholder.style.display = "none";
+  }
+
+  function checkResultVideo() {
+    if (resultVideoLoaded) return;
+    // 直接尝试 artifact URL（如果 compose 已完成，文件已存在）
+    var testUrl = "/api/multi-translate/" + taskId + "/artifact/hard_video";
+    fetch(testUrl, { method: "HEAD" }).then(function (res) {
+      if (res.ok) loadResultVideo(testUrl);
+    }).catch(function () {});
+  }
+
+  // 页面加载后延迟检查一次（compose 可能早已完成）
+  setTimeout(checkResultVideo, 1500);
+
+  // 监听 workbench 的 socket 事件（socket 是全局变量，由 _task_workbench_scripts.html 初始化）
+  if (typeof socket !== "undefined" && socket) {
+    socket.on("step_update", function (data) {
+      if (data && data.step === "compose" && data.status === "done") {
+        // compose 刚完成，等一小段时间让 preview_files 写入后再拉
+        setTimeout(checkResultVideo, 800);
+      }
+    });
+    socket.on("pipeline_done", function () {
+      setTimeout(checkResultVideo, 500);
+    });
+  }
+
+  // ── 拖拽 / 点击加载视频到预览框 ──
+  if (previewFrame && previewVideo) {
+    // 点击预览框 → 打开文件选择
+    previewFrame.addEventListener("click", function (e) {
+      // 避免和字幕拖拽、视频控件冲突
+      if (e.target.closest(".vs-preview-subtitle") || e.target.closest("video") && e.target.controls) return;
+      if (fileInput) fileInput.click();
+    });
+
+    // 文件选择后加载
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        var file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        var url = URL.createObjectURL(file);
+        attachPreviewVideo(url, "已加载本地视频文件：" + file.name);
+        fileInput.value = "";
+      });
+    }
+
+    // 拖拽事件
+    previewFrame.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewFrame.classList.add("drag-over");
+    });
+    previewFrame.addEventListener("dragleave", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewFrame.classList.remove("drag-over");
+    });
+    previewFrame.addEventListener("drop", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewFrame.classList.remove("drag-over");
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      var file = files[0];
+      if (!file.type.startsWith("video/")) {
+        setPreviewNote("请拖入视频文件（mp4/mov/webm 等）。", "error");
+        return;
+      }
+      var url = URL.createObjectURL(file);
+      attachPreviewVideo(url, "已加载拖入的视频文件：" + file.name);
+    });
+  }
 
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");
