@@ -384,7 +384,7 @@ def load_media_rows(*, limit: int = 0) -> list[dict[str, Any]]:
         "FROM media_items WHERE deleted_at IS NULL"
     ))
     rows.extend(query(
-        "SELECT id, 'product_cover' AS source, object_key, '' AS cover_object_key, "
+        "SELECT product_id AS id, 'product_cover' AS source, object_key, '' AS cover_object_key, "
         "'' AS thumbnail_path, '' AS video_object_key "
         "FROM media_product_covers"
     ))
@@ -403,7 +403,7 @@ def load_media_rows(*, limit: int = 0) -> list[dict[str, Any]]:
         "'' AS thumbnail_path, video_object_key "
         "FROM media_raw_sources WHERE deleted_at IS NULL"
     ))
-    rows = sorted(rows, key=lambda row: (_clean_text(row.get("source")), int(row.get("id") or 0)))
+    rows = sorted(rows, key=lambda row: (_clean_text(row.get("source")), _clean_text(row.get("id"))))
     if limit > 0:
         return rows[:limit]
     return rows
