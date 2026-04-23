@@ -11,6 +11,8 @@
     apiBase: {{ (api_base|default('/api/tasks'))|tojson }},
     voiceLanguage: {{ (voice_language|default('en'))|tojson }},
     defaultSourceLanguage: {{ (default_source_language|default('zh'))|tojson }},
+    detailMode: {{ (detail_mode|default('task'))|tojson }},
+    userDefaultVoiceApi: {{ (user_default_voice_api|default('/api/multi-translate/user-default-voice'))|tojson }},
     avTargetLanguages: {{ (av_target_languages|default([]))|tojson }},
     avTargetMarkets: {{ (av_target_markets|default([]))|tojson }},
     avTranslateDefaults: {{ (av_translate_defaults|default({}))|tojson }},

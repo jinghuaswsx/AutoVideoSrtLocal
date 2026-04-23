@@ -1,8 +1,16 @@
 (function () {
   const root = document.getElementById("voice-selector-multi");
   if (!root) return;
-  const taskId = root.dataset.taskId;
-  const lang = root.dataset.lang;
+  const config = window.TASK_WORKBENCH_CONFIG || {};
+  const taskId = root.dataset.taskId || config.taskId;
+  const lang = root.dataset.lang || config.voiceLanguage || "en";
+  const apiBase = ((window.TASK_WORKBENCH_CONFIG || {}).apiBase || '/api/multi-translate').replace(/\/$/, '');
+  const detailMode = config.detailMode || root.dataset.detailMode || "multi";
+  const userDefaultVoiceApi = config.userDefaultVoiceApi || `${apiBase}/user-default-voice`;
+  const subtitlePreviewUrl = `${apiBase}/${taskId}/subtitle-preview`;
+  const sourceVideoArtifactUrl = `${apiBase}/${taskId}/artifact/source_video`;
+  const hardVideoArtifactUrl = `${apiBase}/${taskId}/artifact/hard_video`;
+  void detailMode;
 
   // 把音色选择器挪到 ASR 步骤卡之后，跟业务顺序（上传→提取→ASR→选音色→后续）一致
   function repositionAfterAsr() {
@@ -172,7 +180,7 @@
   function tryLoadSourceVideo() {
     if (!previewVideo) return false;
     if (previewVideo.getAttribute("src")) return true; // 已经有视频了
-    var artifactUrl = "/api/multi-translate/" + taskId + "/artifact/source_video";
+    var artifactUrl = sourceVideoArtifactUrl;
     return fetch(artifactUrl, { method: "HEAD" }).then(function (res) {
       if (res.ok) {
         attachPreviewVideo(artifactUrl, "已加载上传的源视频，可直接检查字幕位置和字号。");
@@ -220,7 +228,7 @@
   async function loadSubtitlePreviewPayload() {
     setPreviewNote("正在加载英文原版视频预览...", "note");
     try {
-      const resp = await fetch(`/api/multi-translate/${taskId}/subtitle-preview`, { cache: "no-store" });
+      const resp = await fetch(subtitlePreviewUrl, { cache: "no-store" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       applySubtitlePreviewPayload(await resp.json());
     } catch (err) {
@@ -294,7 +302,7 @@
   function checkResultVideo() {
     if (resultVideoLoaded) return;
     // 直接尝试 artifact URL（如果 compose 已完成，文件已存在）
-    var testUrl = "/api/multi-translate/" + taskId + "/artifact/hard_video";
+    var testUrl = hardVideoArtifactUrl;
     fetch(testUrl, { method: "HEAD" }).then(function (res) {
       if (res.ok) loadResultVideo(testUrl);
     }).catch(function () {});
@@ -397,7 +405,7 @@
 
   async function loadLibrary() {
     try {
-      const resp = await fetch(`/api/multi-translate/${taskId}/voice-library`);
+      const resp = await fetch(`${apiBase}/${taskId}/voice-library`);
       if (!resp.ok) {
         listEl.innerHTML = `<div class="vs-loading">加载失败：${await resp.text()}</div>`;
         return;
@@ -557,7 +565,7 @@
 
   async function setAsDefault(voiceId, voiceName) {
     try {
-      const resp = await fetch(`/api/multi-translate/user-default-voice`, {
+      const resp = await fetch(userDefaultVoiceApi, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ lang, voice_id: voiceId, voice_name: voiceName }),
@@ -610,7 +618,7 @@
         subtitle_size: subSize,
         subtitle_position_y: parseFloat(subPosYEl.value) || 0.68,
       };
-      const resp = await fetch(`/api/multi-translate/${taskId}/confirm-voice`, {
+      const resp = await fetch(`${apiBase}/${taskId}/confirm-voice`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify(body),
@@ -655,7 +663,7 @@
     genderFilter.querySelectorAll(".vs-pill").forEach(b => { b.disabled = true; });
     if (hint) hint.style.display = "inline-flex";
     try {
-      const resp = await fetch(`/api/multi-translate/${taskId}/rematch`, {
+      const resp = await fetch(`${apiBase}/${taskId}/rematch`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken() },
         body: JSON.stringify({ gender: activeGender }),
