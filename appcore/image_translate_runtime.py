@@ -190,6 +190,13 @@ class ImageTranslateRuntime:
                 response_schema=_TEXT_DETECT_SCHEMA,
                 temperature=0,
                 max_output_tokens=128,
+                billing_extra={
+                    "operation": "image_text_detect",
+                    "item_idx": item.get("idx"),
+                    "filename": item.get("filename") or "",
+                    "source_key": item.get("src_tos_key") or "",
+                    "source_bucket": item.get("source_bucket") or "",
+                },
             )
             has_text, reason = _parse_text_detection_result(result)
             status = "done"

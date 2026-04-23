@@ -195,7 +195,7 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex",
         "gemini-3.1-flash-lite-preview",
         "gemini",
-        "tokens",
+        "images",
     ),
     "image_translate.generate": _uc(
         "image_translate.generate",

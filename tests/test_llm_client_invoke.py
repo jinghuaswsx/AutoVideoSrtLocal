@@ -162,3 +162,25 @@ def test_log_usage_calls_ai_billing_with_error_extra():
     assert kwargs["response_cost_cny"] is None
     assert kwargs["extra"]["use_case"] == "copywriting.generate"
     assert kwargs["extra"]["error"] == "boom"
+
+
+def test_log_usage_records_image_detect_as_one_image_unit():
+    with patch("appcore.llm_client.ai_billing.log_request") as m_log_request:
+        llm_client._log_usage(
+            use_case_code="image_translate.detect",
+            user_id=7,
+            project_id="task-img",
+            provider="gemini_vertex",
+            model="gemini-3.1-flash-lite-preview",
+            success=True,
+            usage={"input_tokens": 120, "output_tokens": 20},
+            billing_extra={"item_idx": 3},
+        )
+
+    kwargs = m_log_request.call_args.kwargs
+    assert kwargs["use_case_code"] == "image_translate.detect"
+    assert kwargs["input_tokens"] == 120
+    assert kwargs["output_tokens"] == 20
+    assert kwargs["request_units"] == 1
+    assert kwargs["units_type"] == "images"
+    assert kwargs["extra"]["item_idx"] == 3

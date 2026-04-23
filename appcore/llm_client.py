@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from appcore import ai_billing, llm_bindings
+from appcore.llm_use_cases import get_use_case
 from appcore.llm_providers import get_adapter
 
 log = logging.getLogger(__name__)
@@ -14,14 +15,26 @@ log = logging.getLogger(__name__)
 def _log_usage(*, use_case_code: str, user_id: int | None,
                project_id: str | None, provider: str, model: str,
                success: bool, usage: dict | None,
-               error: Exception | None = None) -> None:
+               error: Exception | None = None,
+               billing_extra: dict | None = None) -> None:
     if user_id is None:
         return
 
     usage_data = usage or {}
     extra: dict[str, Any] = {"use_case": use_case_code}
+    if billing_extra:
+        extra.update(billing_extra)
     if error is not None:
         extra["error"] = str(error)[:500]
+
+    units_type = "tokens"
+    request_units = usage_data.get("request_units")
+    try:
+        units_type = get_use_case(use_case_code).get("units_type") or "tokens"
+    except Exception:
+        units_type = "tokens"
+    if units_type != "tokens" and request_units is None:
+        request_units = 1
 
     try:
         ai_billing.log_request(
@@ -32,6 +45,8 @@ def _log_usage(*, use_case_code: str, user_id: int | None,
             model=model,
             input_tokens=usage_data.get("input_tokens"),
             output_tokens=usage_data.get("output_tokens"),
+            request_units=request_units,
+            units_type=units_type,
             response_cost_cny=usage_data.get("cost_cny"),
             success=success,
             extra=extra,
@@ -53,6 +68,7 @@ def invoke_chat(
     extra_body: dict | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    billing_extra: dict | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
     provider = provider_override or binding["provider"]
@@ -67,11 +83,13 @@ def invoke_chat(
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
                    project_id=project_id, provider=provider, model=model,
-                   success=False, usage=None, error=e)
+                   success=False, usage=None, error=e,
+                   billing_extra=billing_extra)
         raise
     _log_usage(use_case_code=use_case_code, user_id=user_id,
                project_id=project_id, provider=provider, model=model,
-               success=True, usage=result.get("usage"))
+               success=True, usage=result.get("usage"),
+               billing_extra=billing_extra)
     return result
 
 
@@ -88,6 +106,7 @@ def invoke_generate(
     max_output_tokens: int | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    billing_extra: dict | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
     provider = provider_override or binding["provider"]
@@ -104,9 +123,11 @@ def invoke_generate(
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
                    project_id=project_id, provider=provider, model=model,
-                   success=False, usage=None, error=e)
+                   success=False, usage=None, error=e,
+                   billing_extra=billing_extra)
         raise
     _log_usage(use_case_code=use_case_code, user_id=user_id,
                project_id=project_id, provider=provider, model=model,
-               success=True, usage=result.get("usage"))
+               success=True, usage=result.get("usage"),
+               billing_extra=billing_extra)
     return result

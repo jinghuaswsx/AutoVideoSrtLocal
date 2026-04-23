@@ -43,6 +43,7 @@ def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
     assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite-preview"
     assert USE_CASES["image_translate.detect"]["usage_log_service"] == "gemini"
+    assert USE_CASES["image_translate.detect"]["units_type"] == "images"
     for code in ("image_translate.generate",
                  "link_check.analyze",
                  "link_check.same_image"):
