@@ -5,6 +5,8 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def _stub_material_filename_product(monkeypatch, *, name="窗帘挂钩"):
     from web.routes import medias as r
@@ -25,6 +27,138 @@ def _stub_material_filename_product(monkeypatch, *, name="窗帘挂钩"):
     )
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "fr"})
     return r
+
+
+def _stub_raw_source_upload_product(monkeypatch, *, name="可堆叠棒球帽收纳盒"):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": name,
+            "product_code": "baseball-cap-organizer",
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    return r
+
+
+def _raw_source_upload_files(video_name="bad.mp4"):
+    return {
+        "video": (io.BytesIO(b"video-bytes"), video_name, "video/mp4"),
+        "cover": (io.BytesIO(b"cover-bytes"), "cover.jpg", "image/jpeg"),
+    }
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    [
+        "bad.mp4",
+        "2026-03-25-可堆叠棒球帽收纳盒-原始视频.mp4",
+        "2026.02.30-可堆叠棒球帽收纳盒-原始视频.mp4",
+        "2026.03.25-其他产品-原始视频.mp4",
+        "2026.03.25-可堆叠棒球帽收纳盒-.mp4",
+        "2026.03.25-可堆叠棒球帽收纳盒-原始视频.mov",
+    ],
+)
+def test_create_raw_source_rejects_invalid_display_name_before_storage(
+    authed_client_no_db, monkeypatch, display_name
+):
+    r = _stub_raw_source_upload_product(monkeypatch)
+    writes = []
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_raw_source_key",
+        lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
+    )
+    monkeypatch.setattr(r.medias, "create_raw_source", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(
+        r.medias,
+        "get_raw_source",
+        lambda rid: {
+            "id": rid,
+            "product_id": 123,
+            "display_name": "bad.mp4",
+            "video_object_key": "1/raw/123/video/bad.mp4",
+            "cover_object_key": "1/raw/123/cover/cover.jpg",
+            "duration_seconds": None,
+            "file_size": 11,
+            "width": None,
+            "height": None,
+            "sort_order": 0,
+            "created_at": None,
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/raw-sources",
+        data={
+            "display_name": display_name,
+            **_raw_source_upload_files("2026.03.25-baseball.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "raw_source_title_invalid"
+    assert data["message"] == "原始去字幕视频素材名称不符合命名规范"
+    assert writes == []
+
+
+def test_create_raw_source_accepts_valid_display_name(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_raw_source_upload_product(monkeypatch)
+    writes = []
+    created = {}
+    valid_name = "2026.03.25-可堆叠棒球帽收纳盒-原始视频.mp4"
+    monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_raw_source_key",
+        lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "create_raw_source",
+        lambda *args, **kwargs: created.update({"args": args, "kwargs": kwargs}) or 123,
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_raw_source",
+        lambda rid: {
+            "id": rid,
+            "product_id": 123,
+            "display_name": valid_name,
+            "video_object_key": "1/raw/123/video/source.mp4",
+            "cover_object_key": "1/raw/123/cover/cover.jpg",
+            "duration_seconds": None,
+            "file_size": len(b"video-bytes"),
+            "width": None,
+            "height": None,
+            "sort_order": 0,
+            "created_at": None,
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/raw-sources",
+        data={
+            "display_name": valid_name,
+            **_raw_source_upload_files(valid_name),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 201
+    assert resp.get_json()["item"]["display_name"] == valid_name
+    assert created["kwargs"]["display_name"] == valid_name
+    assert len(writes) == 2
 
 
 def test_item_bootstrap_rejects_bad_localized_material_filename(

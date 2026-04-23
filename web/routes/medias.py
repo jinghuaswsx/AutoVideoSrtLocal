@@ -147,6 +147,74 @@ def _validate_material_filename_for_product(
     )
 
 
+_DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
+_RAW_SOURCE_TITLE_DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
+
+
+def _check_filename_prefix(filename: str, product: dict) -> str | None:
+    """轻量校验：只检查文件名以 YYYY.MM.DD-{产品名}- 开头，其余不限制。"""
+    product_name = (product or {}).get("name") or ""
+    if not product_name:
+        return None
+    if not _DATE_PREFIX_RE.match(filename):
+        return '文件名必须以 "YYYY.MM.DD-" 开头'
+    date_len = 10
+    rest = filename[date_len + 1:]  # skip date + "-"
+    if not rest.startswith(product_name + "-"):
+        return f'日期之后必须紧跟 "{product_name}-"'
+    return None
+
+
+def _suggest_raw_source_title(product: dict) -> str | None:
+    product_name = ((product or {}).get("name") or "").strip()
+    if not product_name:
+        return None
+    today = datetime.now().strftime("%Y.%m.%d")
+    return f"{today}-{product_name}-原始视频.mp4"
+
+
+def _validate_raw_source_display_name(title: str, product: dict) -> list[str]:
+    value = (title or "").strip()
+    product_name = ((product or {}).get("name") or "").strip()
+    errors: list[str] = []
+
+    if not product_name:
+        return ["当前产品尚未加载，请重试"]
+    if not value:
+        return ["名称不能为空，格式为 YYYY.MM.DD-产品名-xxxxxx.mp4"]
+
+    if not value.lower().endswith(".mp4"):
+        errors.append("名称必须以 .mp4 结尾")
+
+    if len(value) < 11 or value[10] != "-":
+        errors.append('名称必须以 "YYYY.MM.DD-" 开头')
+        return errors
+
+    date_str = value[:10]
+    match = _RAW_SOURCE_TITLE_DATE_RE.match(date_str)
+    if not match:
+        errors.append(f'日期段 "{date_str}" 格式必须是 YYYY.MM.DD')
+    else:
+        year, month, day = (int(part) for part in match.groups())
+        try:
+            parsed = datetime(year, month, day)
+        except ValueError:
+            parsed = None
+        if parsed is None or parsed.strftime("%Y.%m.%d") != date_str:
+            errors.append(f'日期 "{date_str}" 不是合法日期')
+
+    expected_prefix = f"{date_str}-{product_name}-"
+    if not value.startswith(expected_prefix):
+        errors.append(f'日期之后必须紧跟 "{product_name}-"')
+        return errors
+
+    tail = value[len(expected_prefix):]
+    if tail.lower().endswith(".mp4"):
+        tail = tail[:-4]
+    if not tail.strip():
+        errors.append("产品名之后的描述不能为空")
+    return errors
+
 bp = Blueprint("medias", __name__, url_prefix="/medias")
 
 THUMB_DIR = Path(OUTPUT_DIR) / "media_thumbs"
@@ -775,7 +843,15 @@ def api_create_raw_source(pid: int):
     if cover_ct not in _ALLOWED_IMAGE_TYPES:
         return jsonify({"error": f"cover mimetype not allowed: {cover_ct}"}), 400
 
-    display_name = (request.form.get("display_name") or "").strip() or None
+    display_name = (request.form.get("display_name") or "").strip()
+    title_errors = _validate_raw_source_display_name(display_name, p)
+    if title_errors:
+        return jsonify({
+            "error": "raw_source_title_invalid",
+            "message": "原始去字幕视频素材名称不符合命名规范",
+            "details": title_errors,
+            "suggested_title": _suggest_raw_source_title(p),
+        }), 400
 
     uid = _resolve_upload_user_id()
     if uid is None:
