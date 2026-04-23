@@ -19,6 +19,14 @@
       <div><label>目标语言</label><strong id="itMetaLang">{{ state.target_language_name }}</strong></div>
       <div><label>模型</label><strong id="itMetaModel">{{ state.model_id }}</strong></div>
       <div>
+        <label>处理模式</label>
+        <span id="itMetaConcurrencyMode"
+              class="it-pill it-mode-pill is-active is-{{ state.concurrency_mode or 'sequential' }}"
+              data-concurrency-mode="{{ state.concurrency_mode or 'sequential' }}">
+          {{ state.concurrency_mode_label or ('并行' if state.concurrency_mode == 'parallel' else '串行') }}
+        </span>
+      </div>
+      <div>
         <label>当前通道</label>
         <span class="chip chip--backend is-{{ gemini_backend.key }}">{{ gemini_backend.label }}</span>
       </div>

@@ -79,7 +79,7 @@
     {% else %}
       <table class="table" id="itHistoryTable">
         <thead>
-          <tr><th>时间</th><th>项目名</th><th>预设</th><th>目标语言</th><th>模型</th><th>进度</th><th>状态</th><th>操作</th></tr>
+          <tr><th>时间</th><th>项目名</th><th>预设</th><th>目标语言</th><th>模型</th><th>处理模式</th><th>进度</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody>
           {% for item in history %}
@@ -92,6 +92,12 @@
             <td>{{ item.preset_label }}</td>
             <td>{{ item.target_language_name }}</td>
             <td>{{ item.model_id }}</td>
+            <td>
+              <span class="it-pill it-mode-pill is-active is-{{ item.concurrency_mode }}"
+                    data-concurrency-mode="{{ item.concurrency_mode }}">
+                {{ item.concurrency_mode_label }}
+              </span>
+            </td>
             <td>{{ item.done }} / {{ item.total }}</td>
             <td><span class="chip chip--status is-{{ item.status or 'queued' }}">{{ item.status_label or item.status }}</span></td>
             <td>
