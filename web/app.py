@@ -20,7 +20,10 @@ from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
 from appcore import task_state
-from appcore.bulk_translate_recovery import mark_interrupted_bulk_translate_tasks
+from appcore.bulk_translate_recovery import (
+    mark_interrupted_bulk_translate_tasks,
+    prepare_bulk_translate_startup_recovery,
+)
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
@@ -30,6 +33,18 @@ from web.auth import login_manager
 SESSION_LIFETIME = timedelta(days=30)
 
 csrf = CSRFProtect()
+
+
+def _start_bulk_translate_recovery_schedulers(task_ids: list[str]) -> None:
+    if not task_ids:
+        return
+    from web.background import start_background_task
+    from web.routes.bulk_translate import _spawn_scheduler
+
+    for task_id in task_ids:
+        start_background_task(_spawn_scheduler, task_id)
+
+
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
 from web.routes.auth import bp as auth_bp
@@ -251,6 +266,7 @@ def create_app() -> Flask:
 
     recover_all_interrupted_tasks()
     mark_interrupted_bulk_translate_tasks()
+    _start_bulk_translate_recovery_schedulers(prepare_bulk_translate_startup_recovery())
 
     # WebSocket 事件
     @socketio.on("join_task")
