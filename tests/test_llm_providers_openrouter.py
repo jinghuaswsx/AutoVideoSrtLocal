@@ -3,7 +3,11 @@ from decimal import Decimal
 
 import pytest
 
-from appcore.llm_providers.openrouter_adapter import DoubaoAdapter, OpenRouterAdapter
+from appcore.llm_providers.openrouter_adapter import (
+    DoubaoAdapter,
+    OpenRouterAdapter,
+    _media_parts,
+)
 
 
 def _mock_openai(mock_cls, content="hi", prompt_tokens=10, completion_tokens=5, cost=0.5):
@@ -65,6 +69,21 @@ def test_openrouter_chat_respects_custom_response_format():
         )
     kwargs = client.chat.completions.create.call_args.kwargs
     assert kwargs["extra_body"]["response_format"] == rf
+
+
+def test_openrouter_media_parts_use_video_url_for_video_files(tmp_path):
+    image_path = tmp_path / "cover.jpg"
+    video_path = tmp_path / "promo.mp4"
+    image_path.write_bytes(b"fake image")
+    video_path.write_bytes(b"fake video")
+
+    parts = _media_parts("评估商品", [image_path, video_path])
+
+    assert parts[0] == {"type": "text", "text": "评估商品"}
+    assert parts[1]["type"] == "image_url"
+    assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert parts[2]["type"] == "video_url"
+    assert parts[2]["video_url"]["url"].startswith("data:video/mp4;base64,")
 
 
 def test_openrouter_chat_returns_none_cost_when_response_missing_cost():

@@ -196,6 +196,17 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_video_analysis",
         "tokens",
     ),
+    # 素材管理：商品主图 + 商品链接 + 第一条英语推广视频的欧洲小语种市场评估。
+    "material_evaluation.evaluate": _uc(
+        "material_evaluation.evaluate",
+        "material",
+        "商品素材推广评估",
+        "根据商品主图、商品链接和第一条英语推广视频，评估欧洲小语种市场推广适配度",
+        "openrouter",
+        "google/gemini-3.1-pro-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 图片 & 链接（usage_log 归到通用 gemini）
     "image_translate.detect": _uc(
         "image_translate.detect",
@@ -268,6 +279,7 @@ MODULE_LABELS: dict[str, str] = {
     "video_translate": "视频翻译",
     "copywriting": "文案创作",
     "video_analysis": "视频分析",
+    "material": "素材管理",
     "image": "图片 & 链接",
     "text_translate": "文本翻译",
 }
