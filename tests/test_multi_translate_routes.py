@@ -256,6 +256,41 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
     assert started["task_id"] == payload["task_id"]
 
 
+def test_multi_translate_start_keeps_ja_on_multi_translate(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.create_ja_translate_task_from_upload",
+        lambda *args, **kwargs: pytest.fail("ja uploads should stay on multi_translate"),
+        raising=False,
+    )
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "ja",
+            "video": (io.BytesIO(b"ja-multi-video"), "demo-ja.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+
+    task = store.get(payload["task_id"])
+    assert task["type"] == "multi_translate"
+    assert task["target_lang"] == "ja"
+    assert started["task_id"] == payload["task_id"]
+
+
 def test_multi_translate_start_generates_thumbnail_from_uploaded_video(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))

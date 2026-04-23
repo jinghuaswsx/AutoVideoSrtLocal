@@ -12,6 +12,7 @@ from appcore.db import query
 log = logging.getLogger(__name__)
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _WAITING_ITEM_STATUSES = {"awaiting_voice"}
+_VOICE_SELECTION_CHILD_TYPES = {"multi_translate", "ja_translate"}
 _PARENT_RESUMABLE_STATUSES = {"paused", "interrupted"}
 _STUCK_PARENT_STATUSES = {"failed", "error", "interrupted", "paused", "waiting_manual"}
 _DONE_PARENT_STATUSES = {"done", "cancelled"}
@@ -286,7 +287,11 @@ def _serialize_item(
     child_task_id = item.get("child_task_id") or item.get("sub_task_id")
     child_task_type = item.get("child_task_type") or ""
     ref = dict(item.get("ref") or {})
-    manual_step = "voice_selection" if status == "awaiting_voice" and child_task_type == "multi_translate" else None
+    manual_step = (
+        "voice_selection"
+        if status == "awaiting_voice" and child_task_type in _VOICE_SELECTION_CHILD_TYPES
+        else None
+    )
     return {
         "idx": int(item.get("idx") or 0),
         "kind": kind,
@@ -380,6 +385,8 @@ def _resolve_raw_source_display_name(raw_source_id: int) -> str:
 def _child_detail_url(task_type: str | None, child_task_id: str | None) -> str | None:
     if not task_type or not child_task_id:
         return None
+    if task_type == "ja_translate":
+        return f"/ja-translate/{child_task_id}"
     if task_type == "multi_translate":
         return f"/multi-translate/{child_task_id}"
     if task_type == "image_translate":
