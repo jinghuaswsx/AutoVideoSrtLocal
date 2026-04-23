@@ -61,15 +61,36 @@ _local_upload_guard = threading.Lock()
 _local_upload_reservations: dict[str, dict] = {}
 
 
-def _get_owned_task(task_id: str) -> dict:
+def _get_existing_image_translate_task(task_id: str) -> dict:
     task = store.get(task_id)
     if (
         not task
-        or task.get("_user_id") != current_user.id
         or task.get("type") != "image_translate"
         or (task.get("status") or "").strip() == "deleted"
         or task.get("deleted_at")
     ):
+        abort(404)
+    return task
+
+
+def _task_belongs_to_current_user(task: dict) -> bool:
+    return str(task.get("_user_id")) == str(getattr(current_user, "id", ""))
+
+
+def _is_admin_user() -> bool:
+    return getattr(current_user, "role", "") == "admin"
+
+
+def _get_owned_task(task_id: str) -> dict:
+    task = _get_existing_image_translate_task(task_id)
+    if not _task_belongs_to_current_user(task):
+        abort(404)
+    return task
+
+
+def _get_viewable_task(task_id: str) -> dict:
+    task = _get_existing_image_translate_task(task_id)
+    if not (_task_belongs_to_current_user(task) or _is_admin_user()):
         abort(404)
     return task
 
@@ -384,7 +405,7 @@ def api_upload_complete():
 @bp.route("/api/image-translate/<task_id>", methods=["GET"])
 @login_required
 def api_state(task_id: str):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     return jsonify(_state_payload(task))
 
 
@@ -398,7 +419,7 @@ def _get_item(task: dict, idx: int) -> dict | None:
 @bp.route("/api/image-translate/<task_id>/artifact/source/<int:idx>", methods=["GET"])
 @login_required
 def api_source_artifact(task_id: str, idx: int):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     item = _get_item(task, idx)
     if not item or not item.get("src_tos_key"):
         abort(404)
@@ -408,7 +429,7 @@ def api_source_artifact(task_id: str, idx: int):
 @bp.route("/api/image-translate/<task_id>/artifact/result/<int:idx>", methods=["GET"])
 @login_required
 def api_result_artifact(task_id: str, idx: int):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     item = _get_item(task, idx)
     if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
         abort(404)
@@ -418,7 +439,7 @@ def api_result_artifact(task_id: str, idx: int):
 @bp.route("/api/image-translate/<task_id>/download/result/<int:idx>", methods=["GET"])
 @login_required
 def api_download_result(task_id: str, idx: int):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     item = _get_item(task, idx)
     if not item or item.get("status") != "done" or not item.get("dst_tos_key"):
         abort(404)
@@ -520,7 +541,7 @@ def api_retry_unfinished(task_id: str):
 @bp.route("/api/image-translate/<task_id>/download/zip", methods=["GET"])
 @login_required
 def api_download_zip(task_id: str):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     done_items = [it for it in (task.get("items") or [])
                   if it.get("status") == "done" and it.get("dst_tos_key")]
     if not done_items:
@@ -616,7 +637,7 @@ def page_list():
 @bp.route("/image-translate/<task_id>", methods=["GET"])
 @login_required
 def page_detail(task_id: str):
-    task = _get_owned_task(task_id)
+    task = _get_viewable_task(task_id)
     return render_template(
         "image_translate_detail.html",
         task_id=task_id,
