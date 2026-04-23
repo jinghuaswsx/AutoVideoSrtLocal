@@ -549,6 +549,138 @@ def test_retry_failed_items_resets_failed_and_interrupted(runtime_env, monkeypat
     assert [item["status"] for item in state["plan"]] == ["done", "pending", "pending"]
 
 
+def test_retry_failed_items_reuses_image_child_and_retries_only_failed_images(
+    runtime_env,
+    monkeypatch,
+):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(
+                0,
+                kind="detail_images",
+                status="failed",
+                ref={"source_detail_ids": [11, 12, 13]},
+            )
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "img-child-1",
+            "sub_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "error": "image_translate child failed (1 items): timeout",
+            "result_synced": False,
+            "finished_at": "2026-04-23T10:00:00+00:00",
+        }
+    )
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows[task_id]["status"] = "failed"
+
+    retried = []
+    monkeypatch.setattr(
+        mod,
+        "_retry_failed_image_child_items",
+        lambda item, user_id: retried.append((item["child_task_id"], user_id)) or 1,
+        raising=False,
+    )
+
+    mod.retry_failed_items(task_id, user_id=9)
+
+    assert retried == [("img-child-1", 9)]
+    state = _load_state(fake_db, task_id)
+    item = state["plan"][0]
+    assert item["child_task_id"] == "img-child-1"
+    assert item["sub_task_id"] == "img-child-1"
+    assert item["child_task_type"] == "image_translate"
+    assert item["status"] == "running"
+    assert item["error"] is None
+    assert item["finished_at"] is None
+
+
+def test_refresh_task_from_children_syncs_recovered_image_child(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(
+                0,
+                kind="detail_images",
+                status="failed",
+                ref={"source_detail_ids": [11, 12]},
+            )
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "img-child-1",
+            "sub_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "error": "image_translate child failed (1 items): timeout",
+            "finished_at": "2026-04-23T10:00:00+00:00",
+        }
+    )
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows["img-child-1"] = {
+        "id": "img-child-1",
+        "user_id": 1,
+        "type": "image_translate",
+        "status": "done",
+        "state_json": json.dumps(
+            {
+                "items": [
+                    {"idx": 0, "status": "done", "dst_tos_key": "out/0.png"},
+                    {"idx": 1, "status": "done", "dst_tos_key": "out/1.png"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": None,
+    }
+
+    def fake_sync(parent_id, item, parent_state, child_state):
+        item["result_synced"] = True
+        parent_state["synced_child"] = child_state["_project_status"]
+
+    monkeypatch.setattr(mod, "_sync_child_result", fake_sync)
+
+    refreshed = mod.refresh_task_from_children(task_id, user_id=1)
+
+    assert refreshed["status"] == "done"
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    assert state["synced_child"] == "done"
+    assert state["plan"][0]["status"] == "done"
+    assert state["plan"][0]["result_synced"] is True
+    assert state["plan"][0]["error"] is None
+
+
 def test_retry_item_resets_requested_idx(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
@@ -578,6 +710,64 @@ def test_retry_item_resets_requested_idx(runtime_env, monkeypatch):
     assert fake_db.rows[task_id]["status"] == "running"
     state = _load_state(fake_db, task_id)
     assert [item["status"] for item in state["plan"]] == ["done", "pending", "done"]
+
+
+def test_retry_item_reuses_image_child_when_parent_item_failed(
+    runtime_env,
+    monkeypatch,
+):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(
+                0,
+                kind="detail_images",
+                status="failed",
+                ref={"source_detail_ids": [11, 12]},
+            )
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0].update(
+        {
+            "child_task_id": "img-child-1",
+            "sub_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "error": "image_translate child failed (1 items): timeout",
+            "finished_at": "2026-04-23T10:00:00+00:00",
+        }
+    )
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+    fake_db.rows[task_id]["status"] = "failed"
+
+    retried = []
+    monkeypatch.setattr(
+        mod,
+        "_retry_failed_image_child_items",
+        lambda item, user_id: retried.append((item["child_task_id"], user_id)) or 1,
+        raising=False,
+    )
+
+    mod.retry_item(task_id, idx=0, user_id=9)
+
+    assert retried == [("img-child-1", 9)]
+    state = _load_state(fake_db, task_id)
+    item = state["plan"][0]
+    assert item["child_task_id"] == "img-child-1"
+    assert item["status"] == "running"
+    assert item["error"] is None
 
 
 def test_materialize_multi_translate_cover_prefers_existing_translated_cover(

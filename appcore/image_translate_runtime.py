@@ -58,6 +58,64 @@ def _update_progress(task: dict) -> None:
     task["progress"] = {"total": total, "done": done, "failed": failed, "running": running}
 
 
+def _delete_artifact_object(object_key: str | None) -> None:
+    key = (object_key or "").strip()
+    if not key:
+        return
+    try:
+        local_media_storage.delete(key)
+    except Exception:
+        pass
+    try:
+        tos_clients.delete_object(key)
+    except Exception:
+        pass
+
+
+def _reset_item_processing_state(item: dict) -> None:
+    item["status"] = "pending"
+    item["attempts"] = 0
+    item["error"] = ""
+    item["dst_tos_key"] = ""
+    item["text_detect_status"] = "pending"
+    item["text_detect_has_text"] = None
+    item["text_detect_reason"] = ""
+    item["text_detect_error"] = ""
+    item["result_source"] = ""
+
+
+def reset_failed_items_for_retry(task_id: str, user_id: int | None = None) -> int:
+    """Reset only failed image items on an existing image_translate task."""
+    task = store.get(task_id)
+    if not task or task.get("type") != "image_translate":
+        raise ValueError(f"image_translate task not found: {task_id}")
+    if user_id is not None and str(task.get("_user_id")) != str(user_id):
+        raise PermissionError("image_translate task belongs to another user")
+
+    reset_count = 0
+    for item in task.get("items") or []:
+        if item.get("status") not in {"failed", "error", "interrupted"}:
+            continue
+        _delete_artifact_object(item.get("dst_tos_key"))
+        _reset_item_processing_state(item)
+        reset_count += 1
+
+    if reset_count:
+        task["status"] = "queued"
+        task.setdefault("steps", {})["process"] = "pending"
+        task["error"] = ""
+        _update_progress(task)
+        store.update(
+            task_id,
+            status=task["status"],
+            steps=task.get("steps", {}),
+            progress=task["progress"],
+            items=task.get("items") or [],
+            error=task.get("error") or "",
+        )
+    return reset_count
+
+
 class ImageTranslateRuntime:
     def __init__(self, *, bus: EventBus, user_id: int | None = None) -> None:
         self.bus = bus
