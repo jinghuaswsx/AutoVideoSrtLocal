@@ -13,6 +13,7 @@ def test_mark_interrupted_bulk_translate_tasks_marks_running_items(monkeypatch):
             "state_json": json.dumps(
                 {
                     "plan": [
+                        {"idx": 0, "status": "pending"},
                         {"idx": 0, "status": "running", "child_task_id": "img-1"},
                         {"idx": 1, "status": "awaiting_voice", "child_task_id": "multi-1"},
                     ]
@@ -33,7 +34,10 @@ def test_mark_interrupted_bulk_translate_tasks_marks_running_items(monkeypatch):
     state = json.loads(payload)
     assert status == "interrupted"
     assert state["plan"][0]["status"] == "interrupted"
-    assert state["plan"][1]["status"] == "awaiting_voice"
+    assert state["plan"][1]["status"] == "interrupted"
+    assert state["plan"][2]["status"] == "awaiting_voice"
+    assert state["progress"]["interrupted"] == 2
+    assert state["progress"]["awaiting_voice"] == 1
     assert task_id == "bt-1"
 
 
@@ -51,3 +55,15 @@ def test_mark_interrupted_bulk_translate_tasks_does_not_resume(monkeypatch):
 
     assert mod.mark_interrupted_bulk_translate_tasks() == 0
     assert called["resume"] == 0
+
+
+def test_mark_interrupted_bulk_translate_tasks_does_not_block_startup(monkeypatch):
+    from appcore import bulk_translate_recovery as mod
+
+    monkeypatch.setattr(
+        mod,
+        "query",
+        lambda sql, args=None: (_ for _ in ()).throw(RuntimeError("db unavailable")),
+    )
+
+    assert mod.mark_interrupted_bulk_translate_tasks() == 0

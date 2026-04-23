@@ -9,7 +9,7 @@ from appcore.db import query
 
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _WAITING_ITEM_STATUSES = {"awaiting_voice"}
-_PARENT_RESUMABLE_STATUSES = {"failed", "error", "paused", "interrupted"}
+_PARENT_RESUMABLE_STATUSES = {"paused", "interrupted"}
 
 _KIND_LABELS = {
     "copy": "文案翻译",
@@ -34,8 +34,8 @@ _CONTENT_TYPE_LABELS = {
 }
 
 
-def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> list[dict]:
-    rows = query(
+def _list_candidate_rows(user_id: int, *, limit: int = 50) -> list[dict]:
+    return query(
         """
         SELECT id, status, state_json, created_at
         FROM projects
@@ -47,6 +47,19 @@ def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> lis
         """,
         (user_id, limit),
     )
+
+
+def list_product_task_ids(user_id: int, product_id: int, *, limit: int = 50) -> list[str]:
+    task_ids: list[str] = []
+    for row in _list_candidate_rows(user_id, limit=limit) or []:
+        state = _parse_state(row.get("state_json"))
+        if int(state.get("product_id") or 0) == int(product_id):
+            task_ids.append(str(row["id"]))
+    return task_ids
+
+
+def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> list[dict]:
+    rows = _list_candidate_rows(user_id, limit=limit)
     tasks: list[dict] = []
     for row in rows or []:
         state = _parse_state(row.get("state_json"))

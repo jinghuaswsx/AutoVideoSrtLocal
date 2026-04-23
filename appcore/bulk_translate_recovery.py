@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 
+from appcore.bulk_translate_runtime import compute_progress
 from appcore.db import execute, query
 
-_INTERRUPTIBLE_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
+log = logging.getLogger(__name__)
+_INTERRUPTIBLE_ITEM_STATUSES = {"pending", "dispatching", "running", "syncing_result"}
 
 
 def mark_interrupted_bulk_translate_tasks() -> int:
-    rows = query(
-        "SELECT id, status, state_json FROM projects "
-        "WHERE type='bulk_translate' AND deleted_at IS NULL AND status='running'",
-        (),
-    ) or []
+    try:
+        rows = query(
+            "SELECT id, status, state_json FROM projects "
+            "WHERE type='bulk_translate' AND deleted_at IS NULL AND status='running'",
+            (),
+        ) or []
+    except Exception:
+        log.warning("bulk_translate startup recovery query failed", exc_info=True)
+        return 0
 
     updated = 0
     for row in rows:
@@ -20,7 +27,11 @@ def mark_interrupted_bulk_translate_tasks() -> int:
         if not task_id:
             continue
         raw_state = row.get("state_json")
-        state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
+        try:
+            state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            log.warning("bulk_translate startup recovery skipped invalid state task_id=%s", task_id)
+            continue
         changed = False
         for item in state.get("plan") or []:
             if (item.get("status") or "").strip() in _INTERRUPTIBLE_ITEM_STATUSES:
@@ -28,9 +39,14 @@ def mark_interrupted_bulk_translate_tasks() -> int:
                 changed = True
         if not changed:
             continue
-        execute(
-            "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
-            ("interrupted", json.dumps(state, ensure_ascii=False), task_id),
-        )
+        state["progress"] = compute_progress(state.get("plan") or [])
+        try:
+            execute(
+                "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
+                ("interrupted", json.dumps(state, ensure_ascii=False), task_id),
+            )
+        except Exception:
+            log.warning("bulk_translate startup recovery update failed task_id=%s", task_id, exc_info=True)
+            continue
         updated += 1
     return updated

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import hashlib
+import logging
 import mimetypes
 import os
 import tempfile
@@ -37,6 +38,8 @@ from web.services import image_translate_runner, link_check_runner
 import re
 
 import pymysql.err
+
+log = logging.getLogger(__name__)
 
 _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
@@ -1081,7 +1084,14 @@ def api_product_translation_tasks(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    from appcore.bulk_translate_projection import list_product_tasks
+    from appcore.bulk_translate_projection import list_product_task_ids, list_product_tasks
+    from appcore.bulk_translate_runtime import sync_task_with_children_once
+
+    for task_id in list_product_task_ids(current_user.id, pid):
+        try:
+            sync_task_with_children_once(task_id, user_id=current_user.id)
+        except Exception:
+            log.warning("bulk translation child sync failed task_id=%s", task_id, exc_info=True)
 
     return jsonify({"items": list_product_tasks(current_user.id, pid)})
 

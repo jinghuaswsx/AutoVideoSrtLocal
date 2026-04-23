@@ -331,6 +331,85 @@ def retry_item(task_id: str, idx: int, user_id: int) -> None:
     _save_state(task_id, state, status="running")
 
 
+def sync_task_with_children_once(
+    task_id: str,
+    user_id: int | None = None,
+) -> dict:
+    """Poll child tasks and sync terminal state without starting new work."""
+    task = get_task(task_id)
+    if not task:
+        return {"actions": [], "status": "missing"}
+    if user_id is not None and int(task.get("user_id") or 0) != int(user_id):
+        raise ValueError("Forbidden")
+    if _normalized_status(task.get("status")) in {"done", "cancelled"}:
+        return {"actions": [], "status": task.get("status")}
+
+    state = task["state"]
+    plan = [_normalize_item(item) for item in state.get("plan") or []]
+    state["plan"] = plan
+    actions: list[str] = []
+
+    for item in plan:
+        if _normalized_status(item.get("status")) == "interrupted":
+            continue
+        child_task_id = (item.get("child_task_id") or "").strip()
+        child_task_type = (item.get("child_task_type") or "").strip()
+        if not child_task_id or not child_task_type:
+            continue
+        child_state = _load_child_snapshot(child_task_type, child_task_id)
+        if not child_state:
+            continue
+
+        child_project_status = _normalized_status(child_state.get("_project_status"))
+
+        if (
+            child_task_type == "image_translate"
+            and child_project_status == "done"
+            and _image_child_failed_items(child_state)
+        ):
+            item["status"] = "failed"
+            item["error"] = _first_child_error(child_state) or "image_translate failed"
+            item["finished_at"] = item.get("finished_at") or _now_iso()
+            continue
+
+        if (
+            child_project_status in _FAILURE_CHILD_STATUSES
+            and _normalized_status(item.get("status")) != "interrupted"
+        ):
+            item["status"] = "failed"
+            item["error"] = _child_failure_error(child_state, child_project_status)
+            item["finished_at"] = item.get("finished_at") or _now_iso()
+            continue
+
+        if (
+            child_project_status == "done"
+            and _normalized_status(item.get("status")) != "done"
+        ):
+            parent_status = _poll_active_item(task_id, item, state, bus=None)
+            if _normalized_status(item.get("status")) == "done":
+                actions.append("sync_child_result")
+            if parent_status in {"failed", "error"}:
+                break
+
+    final_status = None
+    if plan and all(_normalized_status(item.get("status")) in {"done", "skipped"} for item in plan):
+        final_status = "done"
+        if "finish_parent" not in actions:
+            actions.append("finish_parent")
+    elif any(_normalized_status(item.get("status")) == "failed" for item in plan):
+        final_status = "failed"
+    elif any(_normalized_status(item.get("status")) == "awaiting_voice" for item in plan):
+        final_status = "waiting_manual"
+    elif actions:
+        final_status = "running"
+
+    if final_status is not None:
+        _save_state(task_id, state, status=final_status)
+    else:
+        _save_state(task_id, state)
+    return {"actions": actions, "status": actions[-1] if actions else "synced"}
+
+
 def _poll_active_item(
     parent_task_id: str,
     item: dict,
@@ -377,12 +456,7 @@ def _poll_active_item(
 
     if child_status in _FAILURE_CHILD_STATUSES:
         item["status"] = "failed"
-        item["error"] = (
-            child_state.get("last_error")
-            or child_state.get("error")
-            or child_state.get("message")
-            or f"child task failed: {child_status}"
-        )
+        item["error"] = _child_failure_error(child_state, child_status)
         item["finished_at"] = _now_iso()
         _save_state(parent_task_id, parent_state, status="failed")
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
@@ -461,6 +535,30 @@ def _load_child_snapshot(task_type: str | None, child_task_id: str | None) -> di
     state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
     state["_project_status"] = row.get("status")
     return state
+
+
+def _image_child_failed_items(child_state: dict) -> list[dict]:
+    return [
+        item for item in (child_state.get("items") or [])
+        if _normalized_status(item.get("status")) == "failed"
+    ]
+
+
+def _first_child_error(child_state: dict) -> str:
+    for item in _image_child_failed_items(child_state):
+        error = (item.get("error") or "").strip()
+        if error:
+            return error
+    return (child_state.get("last_error") or child_state.get("error") or "").strip()
+
+
+def _child_failure_error(child_state: dict, child_status: str) -> str:
+    return (
+        child_state.get("last_error")
+        or child_state.get("error")
+        or child_state.get("message")
+        or f"child task failed: {child_status}"
+    )
 
 
 def _sync_child_result(
