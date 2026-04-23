@@ -26,6 +26,20 @@ def test_medias_translate_modal_script_exposes_new_orchestration_ui():
     assert "subtitle_position_y" in script
 
 
+def test_medias_translate_modal_matches_shared_subtitle_size_options():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    script = (root / "web" / "static" / "medias_translate_modal.js").read_text(encoding="utf-8")
+
+    for size in ("8", "10", "12", "14", "16", "18", "20", "22", "24", "28"):
+        assert f'data-size="{size}"' in template
+
+    assert 'data-size="10" class="active"' in template
+    assert "videoSize: 10" in script
+    assert "state.videoSize = 10;" in script
+    assert "Number(button.dataset.size) || 10" in script
+
+
 def test_medias_list_keeps_two_row_lang_coverage_layout():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
