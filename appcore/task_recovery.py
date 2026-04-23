@@ -69,6 +69,11 @@ def _mark_inflight_steps_as_interrupted(state: dict) -> bool:
     return changed
 
 
+def _has_waiting_steps(state: dict) -> bool:
+    steps = state.get("steps", {}) or {}
+    return any(status == "waiting" for status in steps.values())
+
+
 def recover_project_state(project_type: str, task_id: str, state: dict | None, active: bool | None = None) -> tuple[bool, dict, str | None]:
     recovered = copy.deepcopy(state or {})
     active = is_task_active(project_type, task_id) if active is None else active
@@ -127,10 +132,11 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         recovered["error"] = RECOVERY_INTERRUPTED_MESSAGE
         return True, recovered, "interrupted"
     elif project_type in INTERRUPTED_PIPELINE_PROJECT_TYPES:
+        if _has_waiting_steps(recovered):
+            return False, recovered, None
         changed = _mark_inflight_steps_as_interrupted(recovered)
-        if recovered.get("current_review_step"):
+        if changed and recovered.get("current_review_step"):
             recovered["current_review_step"] = ""
-            changed = True
         if recovered.get("status") == "running":
             changed = True
         if not changed:
@@ -139,10 +145,11 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         recovered["error"] = RECOVERY_INTERRUPTED_MESSAGE
         return True, recovered, "interrupted"
     elif project_type in PIPELINE_PROJECT_TYPES:
+        if _has_waiting_steps(recovered):
+            return False, recovered, None
         changed = _mark_running_steps_as_error(recovered)
-        if recovered.get("current_review_step"):
+        if changed and recovered.get("current_review_step"):
             recovered["current_review_step"] = ""
-            changed = True
 
     if not changed:
         return False, recovered, None
