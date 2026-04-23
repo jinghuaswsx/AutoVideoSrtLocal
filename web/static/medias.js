@@ -2432,15 +2432,6 @@
 
     await edRefreshDetailImagesPanel(lang);
 
-    // EN 主图校验 + 保存按钮
-    const hasEn = !!(edState.productData && edState.productData.covers && edState.productData.covers['en']);
-    const warn = $('edEnCoverWarn');
-    if (warn) warn.hidden = hasEn;
-    const saveBtn = $('edSaveBtn');
-    if (saveBtn) {
-      saveBtn.disabled = !hasEn;
-      saveBtn.title = hasEn ? '' : '必须先上传英文主图';
-    }
     edSyncDetailImagesDownloadZipButton();
   }
 

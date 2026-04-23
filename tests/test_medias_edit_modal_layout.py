@@ -14,3 +14,15 @@ def test_edit_language_tabs_are_outside_scrollable_body():
     tabs_index = html.index('id="edLangTabs"')
 
     assert langbar_start < tabs_index < body_start
+
+
+def test_edit_modal_does_not_require_english_cover_to_save():
+    html = (ROOT / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(
+        encoding="utf-8"
+    )
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "edEnCoverWarn" not in html
+    assert "必须先上传英文" not in html
+    assert "saveBtn.disabled = !hasEn" not in script
+    assert "必须先上传英文" not in script
