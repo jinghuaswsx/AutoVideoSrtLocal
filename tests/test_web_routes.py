@@ -2135,6 +2135,8 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert "poster=\"${escapeHtml(it.cover_url)}\"" in medias_js
     assert 'class="oc-rst-choice-video"' in medias_js
     assert 'controls playsinline preload="metadata"' in medias_js
+    assert "function rawSourceLangDisplayName(lang)" in medias_js
+    assert "const name = escapeHtml(rawSourceLangDisplayName(lang));" in medias_js
     assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer')" in medias_js
     assert "window.location.href = `/tasks/${taskId}`" not in medias_js
 

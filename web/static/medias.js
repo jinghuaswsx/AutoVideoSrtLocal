@@ -3491,6 +3491,13 @@
     return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
   }
 
+  function rawSourceLangDisplayName(lang) {
+    const code = String((lang && lang.code) || '').trim();
+    const nameZh = String((lang && lang.name_zh) || '').trim();
+    if (nameZh && code) return `${nameZh} (${code})`;
+    return nameZh || code || '';
+  }
+
   function isRawSourceVideoFile(file) {
     if (!file) return false;
     const type = String(file.type || '').toLowerCase();
@@ -3926,7 +3933,7 @@
   }
 
   function renderTranslateLanguageChoice(lang) {
-    const name = escapeHtml(langDisplayName(lang.code));
+    const name = escapeHtml(rawSourceLangDisplayName(lang));
     return `
       <label class="oc-rst-lang">
         <input type="checkbox" value="${escapeHtml(lang.code)}">
