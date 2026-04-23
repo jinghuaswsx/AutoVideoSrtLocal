@@ -180,3 +180,21 @@ def test_medias_route_schedules_material_evaluation_in_background(monkeypatch):
     assert calls == [
         (route.material_evaluation.evaluate_product_if_ready, (7,), {"force": True})
     ]
+
+
+def test_find_ready_product_ids_uses_exists_without_distinct(monkeypatch):
+    from appcore import material_evaluation
+
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"id": 7}, {"id": 8}]
+
+    monkeypatch.setattr(material_evaluation, "query", fake_query)
+
+    assert material_evaluation.find_ready_product_ids(limit=2) == [7, 8]
+    assert "EXISTS (" in captured["sql"]
+    assert "SELECT DISTINCT" not in captured["sql"]
+    assert captured["args"] == (2,)
