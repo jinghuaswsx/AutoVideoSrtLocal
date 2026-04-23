@@ -97,15 +97,15 @@
   <div class="oc-pager" id="pager"></div>
 </div>
 
-<!-- 素材详情侧边面板 -->
-<div id="detailPanel" style="display:none; position:fixed; top:0; right:0; width:520px; height:100vh; background:#fff; border-left:2px solid var(--oc-border); box-shadow:-4px 0 24px rgba(0,0,0,0.1); z-index:1000; overflow-y:auto; padding:20px;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-    <h3 style="margin:0; font-size:16px;" id="detailTitle">素材详情</h3>
-    <button onclick="closeDetail()" style="border:none; background:none; font-size:20px; cursor:pointer; color:#666;">&times;</button>
+<!-- 素材详情居中弹窗 -->
+<div id="detailOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:999;" onclick="closeDetail()"></div>
+<div id="detailPanel" style="display:none; position:fixed; top:3vh; left:50%; transform:translateX(-50%); width:min(1100px,92vw); max-height:94vh; background:#fff; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.18); z-index:1000; overflow:hidden; display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 24px; border-bottom:1px solid var(--oc-border); background:var(--oc-bg-subtle);">
+    <h3 style="margin:0; font-size:20px; font-weight:600;" id="detailTitle">素材详情</h3>
+    <button onclick="closeDetail()" style="border:none; background:none; font-size:24px; cursor:pointer; color:var(--oc-fg-muted); line-height:1;">&times;</button>
   </div>
-  <div id="detailContent">加载中...</div>
+  <div id="detailContent" style="padding:20px 24px; overflow-y:auto; max-height:calc(94vh - 60px);">加载中...</div>
 </div>
-<div id="detailOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:999;" onclick="closeDetail()"></div>
 
 <script>
 const MK_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlmYSIsImV4cCI6MTc3OTUxOTA5MSwiaWF0IjoxNzc2OTI3MDkxLCJqdGkiOiIzNSJ9.Rq_jgNz-f3WHg586FGQIs4DmFhnMHoIDCggJhBWDacM";
@@ -195,51 +195,68 @@ async function openDetail(mkId, mkName) {
     const data = await resp.json();
     const item = data.data.item;
 
-    let html = `<div style="margin-bottom:16px;">
-      <div style="font-size:14px; font-weight:600;">${item.product_name}</div>
-      <div style="font-size:12px; color:#888; margin-top:4px;">ID: ${item.id} | 来源: ${item.source} | 等级: ${item.level}</div>
+    // 产品信息头部
+    let html = `<div style="display:flex; gap:16px; margin-bottom:20px; padding:14px 16px; background:var(--oc-bg-subtle); border-radius:var(--oc-r-md);">
+      <div style="flex:1;">
+        <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${item.product_name}</div>
+        <div style="font-size:14px; color:var(--oc-fg-muted);">ID: ${item.id} | 等级: ${item.level} | 来源: ${item.admin_name || '--'}</div>
+      </div>
+      <div style="text-align:right; font-size:14px; color:var(--oc-fg-muted);">
+        <div>平台: ${(item.platforms||[]).join(', ') || '--'}</div>
+        <div>ROAS: ${item.target_roas || '--'}</div>
+      </div>
     </div>`;
 
     // 产品链接
     if (item.product_links && item.product_links.length) {
-      html += `<div style="margin-bottom:12px;"><strong>产品链接：</strong><br>`;
+      html += `<div style="margin-bottom:16px; font-size:14px;"><strong>产品链接：</strong><div style="margin-top:4px;">`;
       item.product_links.forEach(l => {
-        html += `<a href="${l}" target="_blank" class="oc-link text-sm" style="display:block; margin:2px 0;">${l}</a>`;
+        html += `<a href="${l}" target="_blank" class="oc-link" style="display:block; font-size:13px; margin:2px 0; word-break:break-all;">${l}</a>`;
       });
-      html += `</div>`;
+      html += `</div></div>`;
     }
 
     // 文案
     if (item.texts && item.texts.length) {
-      html += `<div style="margin-bottom:12px;"><strong>文案（${item.texts.length} 条）：</strong>`;
+      html += `<div style="margin-bottom:16px;"><strong style="font-size:15px;">文案（${item.texts.length} 条）：</strong>`;
       item.texts.forEach((t, i) => {
-        html += `<div style="background:var(--oc-bg-subtle); padding:8px 10px; border-radius:var(--oc-r); margin:4px 0; font-size:12px;">
-          <div style="font-weight:600;">${t.lang || '未标注'} #${i+1}</div>
-          <div>标题: ${t.title}</div>
-          <div>文案: ${t.message}</div>
-          ${t.description ? `<div>描述: ${t.description}</div>` : ''}
+        html += `<div style="background:var(--oc-bg-subtle); padding:10px 14px; border-radius:var(--oc-r); margin:6px 0; font-size:14px; border-left:3px solid var(--oc-accent);">
+          <div style="font-weight:600; margin-bottom:4px;">${t.lang || '未标注'} #${i+1}</div>
+          <div><strong>标题:</strong> ${t.title}</div>
+          <div><strong>文案:</strong> ${t.message}</div>
+          ${t.description ? `<div><strong>描述:</strong> ${t.description}</div>` : ''}
         </div>`;
       });
       html += `</div>`;
     }
 
-    // 视频素材
+    // 视频素材 — 卡片网格
     const videos = (item.videos || []).filter(v => !v.hidden);
-    html += `<div><strong>视频素材（${videos.length} 条）：</strong>`;
-    videos.sort((a, b) => {
-      const sa = parseSpends(a.spends), sb = parseSpends(b.spends);
-      return sb - sa;
-    });
+    videos.sort((a, b) => parseSpends(b.spends) - parseSpends(a.spends));
+    const totalSpends = videos.reduce((s, v) => s + parseSpends(v.spends), 0);
+    const totalAds = videos.reduce((s, v) => s + (v.ads_count || 0), 0);
+
+    html += `<div style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+      <strong style="font-size:15px;">视频素材（${videos.length} 条）</strong>
+      <span style="font-size:14px; color:var(--oc-fg-muted);">总消耗: ${fmtMoney(totalSpends)} | 总广告: ${totalAds}</span>
+    </div>`;
+    html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;">`;
     videos.forEach(v => {
       const spends = parseSpends(v.spends);
       const heat = heatLevel(spends);
-      html += `<div style="border:1px solid var(--oc-border); border-radius:var(--oc-r); padding:10px; margin:6px 0; font-size:12px;">
-        <div style="font-weight:500; margin-bottom:4px;">${v.name}</div>
-        <div style="display:flex; gap:12px; flex-wrap:wrap;">
-          <span>作者: ${v.author}</span>
-          <span>广告: ${v.ads_count}</span>
-          <span>消耗: <span class="oc-badge oc-badge--${heat.cls}">${v.spends || '0'}</span></span>
-          <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
+      const coverUrl = v.image_path ? '/medias/media-objects/' + encodeURIComponent(v.image_path.replace('./medias/','')) : '';
+      html += `<div style="border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; font-size:13px;">
+        ${coverUrl ? `<img src="${coverUrl}" style="width:100%; height:160px; object-fit:cover; background:var(--oc-bg-muted); display:block;" onerror="this.style.display='none'" alt="">` : `<div style="width:100%; height:160px; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle);">无封面</div>`}
+        <div style="padding:10px 12px;">
+          <div style="font-weight:500; margin-bottom:6px; word-break:break-all; line-height:1.4;">${v.name}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="color:var(--oc-fg-muted);">${v.author || '--'}</span>
+            <span style="color:var(--oc-fg-muted);">${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span>广告: <strong>${v.ads_count}</strong></span>
+            <span class="oc-badge oc-badge--${heat.cls}">${v.spends || '0'}</span>
+          </div>
         </div>
       </div>`;
     });
@@ -247,7 +264,7 @@ async function openDetail(mkId, mkName) {
 
     document.getElementById('detailContent').innerHTML = html;
   } catch (e) {
-    document.getElementById('detailContent').innerHTML = `<p style="color:red;">加载失败: ${e.message}</p>`;
+    document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${e.message}</p>`;
   }
 }
 
