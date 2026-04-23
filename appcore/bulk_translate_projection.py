@@ -39,6 +39,9 @@ _CONTENT_TYPE_LABELS = {
     "video": "视频翻译",
 }
 
+_IMAGE_TERMINAL_ITEM_STATUSES = {"done", "failed", "error", "cancelled", "interrupted", "skipped"}
+_IMAGE_RUNNING_PROJECT_STATUSES = {"planning", "queued", "dispatching", "running", "syncing_result"}
+
 
 def _list_candidate_rows(user_id: int, *, limit: int = 50) -> list[dict]:
     return query(
@@ -287,6 +290,7 @@ def _serialize_item(
     child_task_type = item.get("child_task_type") or ""
     ref = dict(item.get("ref") or {})
     manual_step = "voice_selection" if status == "awaiting_voice" and child_task_type == "multi_translate" else None
+    force_backfillable = _is_force_backfillable(item, child_task_type, child_task_id)
     return {
         "idx": int(item.get("idx") or 0),
         "kind": kind,
@@ -305,10 +309,39 @@ def _serialize_item(
         "detail_url": _child_detail_url(child_task_type, child_task_id),
         "parent_detail_url": parent_detail_url,
         "retryable": status in _RETRYABLE_ITEM_STATUSES,
+        "force_backfillable": force_backfillable,
+        "force_backfill_summary": _force_backfill_summary(item),
         "manual_step": manual_step,
         "summary": _item_summary(kind, ref, raw_source_name_map=raw_source_name_map),
         "ref": ref,
     }
+
+
+def _is_force_backfillable(item: dict, child_task_type: str, child_task_id: str | None) -> bool:
+    if (item.get("kind") or "").strip() != "detail_images":
+        return False
+    if (item.get("status") or "").strip() not in _RETRYABLE_ITEM_STATUSES:
+        return False
+    if (child_task_type or "").strip() != "image_translate" or not child_task_id:
+        return False
+    if bool(item.get("forced_backfill")):
+        return False
+    projection = _load_image_translate_projection(child_task_id)
+    if not projection:
+        return False
+    if projection.get("is_running"):
+        return False
+    return int(projection.get("done_count") or 0) > 0
+
+
+def _force_backfill_summary(item: dict) -> str:
+    if not bool(item.get("forced_backfill")):
+        return ""
+    applied_count = int(item.get("forced_backfill_applied_count") or 0)
+    skipped_count = int(item.get("forced_backfill_skipped_failed_count") or 0)
+    if skipped_count > 0:
+        return f"强制回填：已回填 {applied_count} 张，忽略失败 {skipped_count} 张"
+    return f"强制回填：已回填 {applied_count} 张"
 
 
 def _item_summary(kind: str, ref: dict, *, raw_source_name_map: dict[int, str] | None = None) -> str:
@@ -387,6 +420,37 @@ def _child_detail_url(task_type: str | None, child_task_id: str | None) -> str |
     if task_type == "copywriting_translate":
         return None
     return None
+
+
+def _load_image_translate_projection(child_task_id: str) -> dict:
+    rows = query(
+        "SELECT status, state_json FROM projects WHERE id = %s LIMIT 1",
+        (child_task_id,),
+    )
+    row = (rows or [None])[0]
+    if not row:
+        return {}
+    state = _parse_state(row.get("state_json"))
+    items = state.get("items") or []
+    done_count = 0
+    failed_count = 0
+    active_count = 0
+    for child_item in items:
+        status = (child_item.get("status") or "").strip().lower()
+        if status == "done":
+            done_count += 1
+        elif status in {"failed", "error"}:
+            failed_count += 1
+        elif status not in _IMAGE_TERMINAL_ITEM_STATUSES:
+            active_count += 1
+    project_status = (row.get("status") or "").strip().lower()
+    return {
+        "project_status": project_status,
+        "done_count": done_count,
+        "failed_count": failed_count,
+        "active_count": active_count,
+        "is_running": project_status in _IMAGE_RUNNING_PROJECT_STATUSES or active_count > 0,
+    }
 
 
 def _parse_state(raw_state: dict | str | None) -> dict:
