@@ -498,6 +498,76 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     assert updated[child_task_id]["subtitle_position_y"] == 0.55
 
 
+def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatch, tmp_path):
+    mod, _fake_db = runtime_env
+    raw_key = "1/medias/77/raw_sources/raw-ja-demo.mp4"
+    created = {}
+    updated = {}
+    multi_started = []
+    ja_started = []
+
+    monkeypatch.setattr(mod, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(mod, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda rid: {
+            "id": rid,
+            "product_id": 77,
+            "user_id": 1,
+            "display_name": "raw-ja-demo",
+            "video_object_key": raw_key,
+            "file_size": 2345,
+        },
+    )
+    monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
+
+    import web.store as store
+    from web.services import ja_pipeline_runner, multi_pipeline_runner
+
+    def fake_create(task_id, video_path, task_dir, original_filename, user_id):
+        created.update({
+            "task_id": task_id,
+            "video_path": video_path,
+            "task_dir": task_dir,
+            "original_filename": original_filename,
+            "user_id": user_id,
+        })
+
+    def fake_update(task_id, **fields):
+        updated[task_id] = fields
+
+    def fake_download_to(object_key, destination):
+        created["download"] = (object_key, destination)
+        with open(destination, "wb") as fh:
+            fh.write(b"video")
+        return destination
+
+    monkeypatch.setattr(store, "create", fake_create)
+    monkeypatch.setattr(store, "update", fake_update)
+    monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
+    monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: multi_started.append((task_id, user_id)))
+    monkeypatch.setattr(ja_pipeline_runner, "start", lambda task_id, user_id: ja_started.append((task_id, user_id)))
+
+    child_task_id, child_type, status = mod._create_video_child(
+        "parent-ja-1",
+        _item(0, kind="videos", lang="ja", ref={"source_raw_id": 301}),
+        {
+            "product_id": 77,
+            "initiator": {"user_id": 1},
+            "video_params_snapshot": {"subtitle_size": 20, "subtitle_position_y": 0.6},
+        },
+    )
+
+    assert child_type == "multi_translate"
+    assert status == "running"
+    assert created["download"] == (raw_key, created["video_path"])
+    assert multi_started == [(child_task_id, 1)]
+    assert ja_started == []
+    assert updated[child_task_id]["type"] == "multi_translate"
+    assert updated[child_task_id]["target_lang"] == "ja"
+
+
 def test_run_scheduler_syncs_completed_child_and_finishes_parent(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(

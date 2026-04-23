@@ -246,6 +246,38 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
     assert "剩余 2 个" in rendered["statusHtml"]
 
 
+def test_bulk_translate_detail_renders_ja_translate_voice_entry():
+    rendered = _run_detail_harness(
+        {
+            "id": "task-ja-voice",
+            "status": "running",
+            "created_at": "2026-04-24T08:00:00+00:00",
+            "updated_at": "2026-04-24T08:05:00+00:00",
+            "state": {
+                "initiator": {"user_name": "admin", "ip": "127.0.0.1"},
+                "progress": {"total": 1, "done": 0, "awaiting_voice": 1, "pending": 0, "failed": 0},
+                "cost_tracking": {"actual": {"actual_cost_cny": 0}},
+                "plan": [
+                    {
+                        "idx": 0,
+                        "lang": "ja",
+                        "kind": "videos",
+                        "status": "awaiting_voice",
+                        "ref": {"source_raw_id": 21},
+                        "child_task_id": "sub-voice-ja",
+                        "child_task_type": "ja_translate",
+                    }
+                ],
+                "audit_events": [],
+            },
+        }
+    )
+
+    plan_html = rendered["planHtml"]
+    assert 'href="/ja-translate/sub-voice-ja"' in plan_html
+    assert "bt-task-card__no-action" not in plan_html
+
+
 def test_bulk_translate_detail_stats_hide_estimate_copy():
     rendered = _run_detail_harness(
         {

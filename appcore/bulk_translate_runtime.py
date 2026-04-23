@@ -940,15 +940,15 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
 
 def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from web import store
-    from web.services import ja_pipeline_runner, multi_pipeline_runner
+    from web.services import multi_pipeline_runner
 
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     lang = (item.get("lang") or "").strip()
     if lang not in _MULTI_TRANSLATE_SUPPORTED_LANGS:
         raise ValueError(f"unsupported multi_translate target lang: {lang}")
-    child_project_type = "ja_translate" if lang == "ja" else "multi_translate"
-    runner = ja_pipeline_runner if child_project_type == "ja_translate" else multi_pipeline_runner
+    child_project_type = "multi_translate"
+    runner = multi_pipeline_runner
 
     source_raw_id = int((item.get("ref") or {}).get("source_raw_id") or 0)
     raw_source = medias.get_raw_source(source_raw_id)
