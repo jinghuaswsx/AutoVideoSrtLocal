@@ -26,6 +26,12 @@ shopify_localizer_bp = Blueprint(
     url_prefix="/openapi/medias/shopify-image-localizer",
 )
 
+
+def _media_download_url(object_key: str | None) -> str | None:
+    if not object_key:
+        return None
+    return tos_clients.generate_signed_media_download_url(object_key)
+
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
 
