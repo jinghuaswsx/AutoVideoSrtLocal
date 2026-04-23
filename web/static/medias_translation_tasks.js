@@ -58,10 +58,10 @@
     const pct = percent(progress);
     const actions = [];
     if (task.can_resume) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--primary" data-task-action="resume" data-task-id="${task.id}">重新启动</button>`);
+      actions.push(`<button type="button" class="bt-btn bt-btn--primary" data-task-action="resume" data-task-id="${task.id}" title="重新启动整个批量任务：只恢复中断的子项，已完成项不会重复执行。">整个任务重新启动</button>`);
     }
     if (task.can_retry_failed) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-failed" data-task-id="${task.id}">重跑失败项</button>`);
+      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-failed" data-task-id="${task.id}" title="只重跑失败或中断的子项：已完成项不会重复执行。">重跑失败项</button>`);
     }
     actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(task.detail_url)}>父任务详情</a>`);
 
@@ -109,7 +109,7 @@
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
     }
     if (item.retryable) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="${task.id}" data-item-idx="${item.idx}">重新启动</button>`);
+      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="${task.id}" data-item-idx="${item.idx}" title="只重新启动这一项：其他子项保持当前状态。">单个重新启动</button>`);
     }
     return `
       <article class="mtt-item">
@@ -142,6 +142,9 @@
   function isTaskComplete(task) {
     const progress = task?.progress || {};
     const total = Number(progress.total || 0);
+    if (TERMINAL_TASK_STATUSES.has(task?.status)) {
+      return true;
+    }
     if (total > 0) {
       const completed = Number(progress.done || 0) + Number(progress.skipped || 0);
       return completed >= total;
@@ -355,9 +358,9 @@
 
     async function trigger(action, taskId, itemIdx) {
       const confirmMap = {
-        resume: '重新启动后会从中断点继续，确定继续吗？',
-        'retry-failed': '会把当前父任务中失败的子项重新拉起，确定继续吗？',
-        'retry-item': '会从该失败子项开始重新继续，确定继续吗？',
+        resume: '将重新启动整个批量任务，只恢复中断的子项，已完成项不会重复执行。确定继续吗？',
+        'retry-failed': '将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？',
+        'retry-item': '将只重新启动这一项，其他子项保持当前状态。确定继续吗？',
       };
       if (confirmMap[action] && !window.confirm(confirmMap[action])) {
         return;

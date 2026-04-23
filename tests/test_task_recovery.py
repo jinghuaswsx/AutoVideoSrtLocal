@@ -344,6 +344,59 @@ def test_recover_project_state_marks_queued_image_translate_as_interrupted():
     assert recovered["progress"]["total"] == 1
 
 
+def test_recover_project_state_marks_subtitle_removal_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="subtitle_removal",
+        task_id="sr-orphan",
+        state={
+            "type": "subtitle_removal",
+            "status": "running",
+            "steps": {
+                "prepare": "done",
+                "submit": "done",
+                "poll": "running",
+                "download_result": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["steps"]["poll"] == "interrupted"
+    assert "中断" in recovered["error"]
+
+
+def test_recover_project_state_marks_translate_lab_running_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="translate_lab",
+        task_id="lab-orphan",
+        state={
+            "type": "translate_lab",
+            "status": "running",
+            "current_review_step": "tts",
+            "steps": {
+                "extract": "done",
+                "tts": "running",
+                "subtitle": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["current_review_step"] == ""
+    assert recovered["steps"]["tts"] == "interrupted"
+    assert recovered["steps"]["subtitle"] == "pending"
+
+
 def test_recover_project_state_keeps_active_image_translate_running():
     from appcore import task_recovery
 
@@ -406,6 +459,27 @@ def test_recover_all_interrupted_tasks_picks_up_image_translate_rows(monkeypatch
     assert persisted[0][0] == "it-boot"
     assert persisted[0][2] == "interrupted"
     assert persisted[0][1]["items"][1]["status"] == "pending"
+
+
+def test_startup_recovery_does_not_resume_runners(monkeypatch):
+    import web.app as web_app
+
+    calls = []
+    monkeypatch.delenv("DISABLE_STARTUP_RECOVERY", raising=False)
+    monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: calls.append("generic"))
+    monkeypatch.setattr(web_app, "mark_interrupted_bulk_translate_tasks", lambda: calls.append("bulk"))
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.resume_inflight_tasks",
+        lambda: calls.append("subtitle_resume"),
+    )
+    monkeypatch.setattr(
+        "web.services.translate_lab_runner.resume",
+        lambda **_kwargs: calls.append("translate_lab_resume"),
+    )
+
+    web_app._run_startup_recovery()
+
+    assert calls == ["generic", "bulk"]
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):

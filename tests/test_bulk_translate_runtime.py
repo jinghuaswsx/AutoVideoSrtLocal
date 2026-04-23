@@ -695,6 +695,272 @@ def test_run_scheduler_fails_parent_when_result_sync_raises(runtime_env, monkeyp
     assert state["plan"][0]["error"] == "sync exploded"
 
 
+def test_sync_marks_failed_image_child_without_starting_runner(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    started = []
+    child_state = {
+        "_project_status": "done",
+        "items": [
+            {"idx": 0, "status": "done", "dst_tos_key": "ok.png"},
+            {"idx": 1, "status": "failed", "attempts": 3, "error": "upstream"},
+        ],
+        "progress": {"total": 2, "done": 1, "failed": 1, "running": 0},
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="detail_images", ref={"source_detail_ids": [1, 2]}),
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "img-1"
+    state["plan"][0]["child_task_type"] = "image_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: child_state)
+    monkeypatch.setattr(
+        mod,
+        "_start_image_runner",
+        lambda child_task_id, uid: started.append((child_task_id, uid)),
+        raising=False,
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == []
+    assert started == []
+    assert child_state["_project_status"] == "done"
+    assert child_state["items"][0]["status"] == "done"
+    assert child_state["items"][1]["status"] == "failed"
+    assert child_state["items"][1]["attempts"] == 3
+    assert child_state["items"][1]["error"] == "upstream"
+    state = _load_state(fake_db, task_id)
+    assert fake_db.rows[task_id]["status"] == "failed"
+    assert state["plan"][0]["status"] == "failed"
+    assert state["plan"][0]["error"] == "upstream"
+    assert "system_auto_retry_count" not in state["plan"][0]
+
+
+def test_sync_does_not_auto_retry_image_child_twice(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    started = []
+    child_state = {
+        "_project_status": "done",
+        "items": [{"idx": 0, "status": "failed", "attempts": 3, "error": "still bad"}],
+        "progress": {"total": 1, "done": 0, "failed": 1, "running": 0},
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="video_covers", ref={"source_raw_ids": [301]})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["video_covers"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "img-1"
+    state["plan"][0]["child_task_type"] = "image_translate"
+    state["plan"][0]["status"] = "running"
+    state["plan"][0]["system_auto_retry_count"] = 1
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: child_state)
+    monkeypatch.setattr(
+        mod,
+        "_start_image_runner",
+        lambda child_task_id, uid: started.append((child_task_id, uid)),
+        raising=False,
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == []
+    assert started == []
+    assert child_state["items"][0]["status"] == "failed"
+    assert fake_db.rows[task_id]["status"] == "failed"
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "failed"
+    assert state["plan"][0]["system_auto_retry_count"] == 1
+
+
+def test_sync_preserves_interrupted_item_until_manual_restart(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    child_state = {
+        "_project_status": "done",
+        "items": [{"idx": 0, "status": "failed", "attempts": 3, "error": "failed while server was down"}],
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="video_covers", ref={"source_raw_ids": [301]})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["video_covers"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "img-1"
+    state["plan"][0]["child_task_type"] = "image_translate"
+    state["plan"][0]["status"] = "interrupted"
+    fake_db.rows[task_id]["status"] = "interrupted"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: child_state)
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == []
+    assert fake_db.rows[task_id]["status"] == "interrupted"
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "interrupted"
+    assert state["plan"][0]["error"] is None
+
+
+def test_sync_marks_failed_video_child_without_starting_runner(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    resumed = []
+    child_state = {
+        "_project_status": "error",
+        "selected_voice_id": "voice-1",
+        "current_review_step": "",
+        "steps": {
+            "extract": "done",
+            "asr": "done",
+            "voice_match": "done",
+            "alignment": "done",
+            "translate": "done",
+            "tts": "error",
+            "subtitle": "pending",
+            "compose": "pending",
+            "export": "pending",
+        },
+        "step_messages": {"tts": "boom"},
+        "error": "boom",
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="videos", ref={"source_raw_id": 301})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "video-1"
+    state["plan"][0]["child_task_type"] = "multi_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: child_state)
+    monkeypatch.setattr(
+        mod,
+        "_resume_video_runner",
+        lambda child_task_id, start_step, uid: resumed.append((child_task_id, start_step, uid)),
+        raising=False,
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == []
+    assert resumed == []
+    assert child_state["_project_status"] == "error"
+    assert child_state["steps"]["tts"] == "error"
+    assert child_state["steps"]["subtitle"] == "pending"
+    assert child_state["error"] == "boom"
+    state = _load_state(fake_db, task_id)
+    assert fake_db.rows[task_id]["status"] == "failed"
+    assert state["plan"][0]["status"] == "failed"
+    assert state["plan"][0]["error"] == "boom"
+    assert "system_auto_retry_count" not in state["plan"][0]
+
+
+def test_sync_completed_child_backfills_and_finishes_parent(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    synced = []
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [_item(0, kind="detail_images", ref={"source_detail_ids": [1]})],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["child_task_id"] = "img-1"
+    state["plan"][0]["child_task_type"] = "image_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "running"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        mod,
+        "_load_child_snapshot",
+        lambda task_type, child_task_id: {
+            "_project_status": "done",
+            "items": [{"idx": 0, "status": "done", "dst_tos_key": "ok.png"}],
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "_sync_child_result",
+        lambda parent_id, item, parent_state, child_state: synced.append((parent_id, item["child_task_id"])),
+    )
+
+    result = mod.sync_task_with_children_once(task_id, user_id=1)
+
+    assert result["actions"] == ["sync_child_result", "finish_parent"]
+    assert synced == [(task_id, "img-1")]
+    assert fake_db.rows[task_id]["status"] == "done"
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "done"
+    assert state["plan"][0]["result_synced"] is True
+
+
 def test_resume_task_only_resets_interrupted_items(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
@@ -889,7 +1155,7 @@ def test_refresh_task_from_children_syncs_recovered_image_child(runtime_env, mon
     assert state["plan"][0]["error"] is None
 
 
-def test_sync_task_with_children_auto_retries_image_child_once(runtime_env, monkeypatch):
+def test_sync_task_with_children_does_not_auto_retry_image_child(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
         mod,
@@ -936,13 +1202,13 @@ def test_sync_task_with_children_auto_retries_image_child_once(runtime_env, monk
 
     mod.sync_task_with_children_once(task_id, user_id=1)
 
-    assert retried == [("img-child-1", 1)]
-    assert fake_db.rows[task_id]["status"] == "running"
+    assert retried == []
+    assert fake_db.rows[task_id]["status"] == "failed"
     item = _load_state(fake_db, task_id)["plan"][0]
-    assert item["status"] == "running"
-    assert item["system_auto_retry_count"] == 1
-    assert item["system_auto_retry_reason"] == "image_translate_failed_items"
-    assert item["system_auto_retry_exhausted"] is True
+    assert item["status"] == "failed"
+    assert "system_auto_retry_count" not in item
+    assert "system_auto_retry_reason" not in item
+    assert "system_auto_retry_exhausted" not in item
 
 
 def test_sync_task_with_children_does_not_auto_retry_image_twice(runtime_env, monkeypatch):
@@ -994,10 +1260,10 @@ def test_sync_task_with_children_does_not_auto_retry_image_twice(runtime_env, mo
     item = _load_state(fake_db, task_id)["plan"][0]
     assert item["status"] == "failed"
     assert item["system_auto_retry_count"] == 1
-    assert item["system_auto_retry_exhausted"] is True
+    assert "system_auto_retry_exhausted" not in item
 
 
-def test_sync_task_with_children_auto_resumes_video_after_voice_once(runtime_env, monkeypatch):
+def test_sync_task_with_children_does_not_auto_resume_video_after_voice(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
         mod,
@@ -1054,21 +1320,15 @@ def test_sync_task_with_children_auto_resumes_video_after_voice_once(runtime_env
         raising=False,
     )
 
-    mod.sync_task_with_children_once(
-        task_id,
-        user_id=1,
-        resume_video_runner=lambda child_task_id, start_step, user_id: resume_calls.append(
-            (child_task_id, start_step, user_id)
-        ),
-    )
+    mod.sync_task_with_children_once(task_id, user_id=1)
 
-    assert reset_calls == [("multi-child-1", "tts")]
-    assert resume_calls == [("multi-child-1", "tts", 1)]
-    assert fake_db.rows[task_id]["status"] == "running"
+    assert reset_calls == []
+    assert resume_calls == []
+    assert fake_db.rows[task_id]["status"] == "failed"
     item = _load_state(fake_db, task_id)["plan"][0]
-    assert item["status"] == "running"
-    assert item["system_auto_retry_count"] == 1
-    assert item["system_auto_retry_reason"] == "multi_translate_post_voice_failed"
+    assert item["status"] == "failed"
+    assert "system_auto_retry_count" not in item
+    assert "system_auto_retry_reason" not in item
 
 
 def test_retry_item_resets_requested_idx(runtime_env, monkeypatch):

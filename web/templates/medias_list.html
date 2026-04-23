@@ -72,7 +72,7 @@
 .oc [hidden], .oc-modal-mask[hidden], [hidden].oc-modal-mask { display: none !important; }
 
 /* ────────── Page header ────────── */
-.oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:0; padding-bottom:var(--oc-sp-5); flex-wrap:wrap; position:sticky; top:56px; z-index:22; background:var(--bg-body,#f2f4f8); }
 .oc-header .title { font-size:22px; font-weight:600; line-height:1.3; letter-spacing:-0.2px; margin:0 0 var(--oc-sp-1); }
 .oc-header .subtitle { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; align-items:center; padding:2px 10px; border-radius:var(--oc-r-full,9999px); background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; font-variant-numeric:tabular-nums; }
@@ -96,7 +96,7 @@
 .oc-banner strong { font-weight:600; }
 
 /* ────────── Toolbar ────────── */
-.oc-toolbar { display:flex; align-items:center; gap:var(--oc-sp-3); padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-toolbar { display:flex; align-items:center; gap:var(--oc-sp-3); padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:0; flex-wrap:wrap; position:sticky; top:var(--sticky-toolbar-top,130px); z-index:21; }
 .oc-search { position:relative; flex:1; min-width:240px; max-width:420px; }
 .oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
@@ -178,10 +178,11 @@
 }
 .oc-rs-modal-head h3 { margin:0; font-size:16px; font-weight:600; color:var(--oc-fg); }
 .oc-rs-summary { margin:6px 0 0; font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
-.oc-rs-modal-toolbar {
+.oc-rs-modal-head-actions {
   display:flex;
-  justify-content:flex-start;
-  padding:0 var(--oc-sp-5) var(--oc-sp-4);
+  align-items:center;
+  gap:var(--oc-sp-2);
+  flex-shrink:0;
 }
 .oc-rs-modal-body {
   flex:1;
@@ -595,12 +596,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 
 /* ────────── List wrapper ────────── */
-.oc-list { display:block; width:100%; }
+.oc-list { display:block; width:100%; overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 300px); margin-top:var(--oc-sp-4); }
 
 /* ────────── Table（列表） ────────── */
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
-.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:0; z-index:2; }
 .oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
 .oc-table tbody tr:last-child td { border-bottom:none; }
 .oc-table td.mono { font-family:var(--font-mono,ui-monospace,Consolas,monospace); font-size:12px; color:var(--oc-fg); font-variant-numeric:tabular-nums; }
@@ -1509,6 +1510,25 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   <div class="oc-list" id="grid"></div>
   <div class="oc-pager" id="pager"></div>
 </div>
+<script>
+(function() {
+  var TOPBAR = 56;
+  function updateStickyOffsets() {
+    var header = document.querySelector('.oc-header');
+    var toolbar = document.querySelector('.oc-toolbar');
+    var list = document.querySelector('.oc-list');
+    if (!header || !toolbar || !list) return;
+    var hh = header.getBoundingClientRect().height;
+    var th = toolbar.getBoundingClientRect().height;
+    var toolbarTop = TOPBAR + hh;
+    document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
+    var tableTop = toolbarTop + th + 16; /* 16px margin-top */
+    list.style.maxHeight = Math.max(window.innerHeight - tableTop - 80, 320) + 'px';
+  }
+  updateStickyOffsets();
+  window.addEventListener('resize', updateStickyOffsets);
+})();
+</script>
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
@@ -1519,15 +1539,15 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         <h3 id="rsModalTitle">原始去字幕素材</h3>
         <p id="rsSummary" class="oc-rs-summary">加载中</p>
       </div>
-      <button type="button" id="rsModalClose" class="oc-icon-btn" aria-label="关闭">
-        <svg width="16" height="16"><use href="#ic-close"/></svg>
-      </button>
-    </div>
-    <div class="oc-rs-modal-toolbar">
-      <button type="button" id="rsUploadBtn" class="oc-btn primary">
-        <svg width="14" height="14"><use href="#ic-upload"/></svg>
-        <span>上传素材</span>
-      </button>
+      <div class="oc-rs-modal-head-actions">
+        <button type="button" id="rsUploadBtn" class="oc-btn primary sm">
+          <svg width="14" height="14"><use href="#ic-upload"/></svg>
+          <span>上传素材</span>
+        </button>
+        <button type="button" id="rsModalClose" class="oc-icon-btn" aria-label="关闭">
+          <svg width="16" height="16"><use href="#ic-close"/></svg>
+        </button>
+      </div>
     </div>
     <div class="oc-rs-modal-body">
       <div id="rsList" class="oc-rs-list"></div>

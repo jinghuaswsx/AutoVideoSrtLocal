@@ -34,6 +34,10 @@ def test_bulk_translate_detail_script_renders_status_and_task_sections():
     assert "需要人工干预" in script
     assert "正常运行 / 等待执行 / 已完成" in script
     assert "bt-task-card" in script
+    assert "整个任务重新启动" in script
+    assert "重跑失败项" in script
+    assert "单个重新启动" in script
+    assert "中断项不会在服务启动时自动重跑" in script
 
 
 def test_bulk_translate_detail_css_adds_roomy_status_layout():

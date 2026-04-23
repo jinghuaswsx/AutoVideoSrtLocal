@@ -148,14 +148,21 @@
       return {
         title: '任务已暂停，不会继续派发新子任务',
         detail: `当前已处理 ${progress.completed}/${progress.total} 个子任务。`,
-        next: '确认可以继续后点击“继续执行”，或取消任务保留已完成结果。',
+        next: '确认可以继续后点击“整个任务重新启动”，只恢复中断项，已完成结果会保留。',
+      };
+    }
+    if (status === 'interrupted') {
+      return {
+        title: '任务因服务重启或后台中断已停止',
+        detail: `当前已处理 ${progress.completed}/${progress.total} 个子任务，中断项不会在服务启动时自动重跑。`,
+        next: '可点击“整个任务重新启动”恢复中断项，或用“重跑失败项”只处理失败/中断项。',
       };
     }
     if (status === 'failed' || status === 'error') {
       return {
         title: `有 ${progress.failed || '部分'} 个子任务失败`,
         detail: `失败项会停在“需要处理”分区，已完成结果会保留。`,
-        next: '先查看失败原因，再选择单项重跑或重跑所有失败项。',
+        next: '先查看失败原因，再选择“单个重新启动”或“重跑失败项”。',
       };
     }
     if (status === 'done') {
@@ -227,14 +234,14 @@
     if (normalized === 'planning') {
       btns.push(`<button class="bt-btn bt-btn--primary" data-act="start">开始执行</button>`);
     }
-    if (normalized === 'paused' || normalized === 'failed' || normalized === 'error' || normalized === 'interrupted') {
-      btns.push(`<button class="bt-btn bt-btn--primary" data-act="resume">继续执行</button>`);
+    if (normalized === 'paused' || normalized === 'interrupted') {
+      btns.push(`<button class="bt-btn bt-btn--primary" data-act="resume" title="重新启动整个批量任务：只恢复中断的子项，已完成项不会重复执行。">整个任务重新启动</button>`);
     }
     if (normalized === 'running') {
       btns.push(`<button class="bt-btn bt-btn--ghost" data-act="pause">暂停</button>`);
     }
     if (normalized === 'failed' || normalized === 'error' || normalized === 'interrupted') {
-      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="retry-failed">重跑所有失败项</button>`);
+      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="retry-failed" title="只重跑失败或中断的子项：已完成项不会重复执行。">重跑失败项</button>`);
     }
     if (normalized === 'running' || normalized === 'paused') {
       btns.push(`<button class="bt-btn bt-btn--danger" data-act="cancel">取消任务</button>`);
@@ -255,8 +262,9 @@
       url = `/api/bulk-translate/${taskId}/start`;
       label = '开始执行';
     } else if (action === 'resume') {
+      if (!confirm('将重新启动整个批量任务，只恢复中断的子项，已完成项不会重复执行。确定继续吗？')) return;
       url = `/api/bulk-translate/${taskId}/resume`;
-      label = '继续执行';
+      label = '整个任务重新启动';
     } else if (action === 'pause') {
       url = `/api/bulk-translate/${taskId}/pause`;
       label = '暂停';
@@ -265,9 +273,9 @@
       url = `/api/bulk-translate/${taskId}/cancel`;
       label = '取消';
     } else if (action === 'retry-failed') {
-      if (!confirm('把所有失败项重置为待执行并重跑?')) return;
+      if (!confirm('将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？')) return;
       url = `/api/bulk-translate/${taskId}/retry-failed`;
-      label = '重跑失败';
+      label = '重跑失败项';
     } else {
       return;
     }
@@ -340,7 +348,7 @@
     box.querySelectorAll('[data-retry-idx]').forEach(b => {
       b.addEventListener('click', async () => {
         const idx = parseInt(b.dataset.retryIdx, 10);
-        if (!confirm(`重跑 #${idx} 这一项?`)) return;
+        if (!confirm(`将只重新启动 #${idx} 这一项，其他子项保持当前状态。确定继续吗？`)) return;
         const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/retry-item`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -382,7 +390,7 @@
     const opts = options || {};
     const status = normalizeStatus(item.status);
     const retry = isRetryableItem(item)
-      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}">重跑</button>`
+      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}" title="只重新启动这一项：其他子项保持当前状态。">单个重新启动</button>`
       : '';
     const ref = refHintText(item);
     const childTaskId = item.child_task_id || item.sub_task_id;
@@ -653,9 +661,9 @@
       create: '创建任务',
       start: '开始执行',
       pause: '暂停任务',
-      resume: '继续执行',
+      resume: '整个任务重新启动',
       cancel: '取消任务',
-      retry_item: '重跑单项',
+      retry_item: '单个重新启动',
       retry_failed: '重跑失败项',
     }[action] || action || '系统记录';
   }

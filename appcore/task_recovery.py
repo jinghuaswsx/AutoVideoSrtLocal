@@ -11,13 +11,20 @@ import appcore.task_state as task_state
 log = logging.getLogger(__name__)
 
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
+RECOVERY_INTERRUPTED_MESSAGE = "任务因服务重启或后台执行中断，已标记为中断；请在页面手动重新启动。"
 IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
 
-PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
+PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_translate", "copywriting"}
+INTERRUPTED_PIPELINE_PROJECT_TYPES = {"multi_translate", "translate_lab"}
 LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
-RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check", "image_translate"} | PIPELINE_PROJECT_TYPES
+RECOVERABLE_PROJECT_TYPES = (
+    {"video_creation", "video_review", "link_check", "image_translate", "subtitle_removal"}
+    | PIPELINE_PROJECT_TYPES
+    | INTERRUPTED_PIPELINE_PROJECT_TYPES
+)
 LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")
 IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES = ("queued", "running")
+SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES = ("queued", "running", "submitted")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -46,6 +53,18 @@ def _mark_running_steps_as_error(state: dict) -> bool:
         if status == "running":
             steps[step] = "error"
             step_messages[step] = RECOVERY_ERROR_MESSAGE
+            changed = True
+    return changed
+
+
+def _mark_inflight_steps_as_interrupted(state: dict) -> bool:
+    steps = state.setdefault("steps", {})
+    step_messages = state.setdefault("step_messages", {})
+    changed = False
+    for step, status in list(steps.items()):
+        if status in {"queued", "running"}:
+            steps[step] = "interrupted"
+            step_messages[step] = RECOVERY_INTERRUPTED_MESSAGE
             changed = True
     return changed
 
@@ -99,6 +118,25 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             steps["process"] = "interrupted"
         recovered["status"] = "interrupted"
         recovered["error"] = IMAGE_TRANSLATE_INTERRUPTED_MESSAGE
+        return True, recovered, "interrupted"
+    elif project_type == "subtitle_removal" and recovered.get("status") in SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES:
+        changed = _mark_inflight_steps_as_interrupted(recovered)
+        if not changed:
+            changed = True
+        recovered["status"] = "interrupted"
+        recovered["error"] = RECOVERY_INTERRUPTED_MESSAGE
+        return True, recovered, "interrupted"
+    elif project_type in INTERRUPTED_PIPELINE_PROJECT_TYPES:
+        changed = _mark_inflight_steps_as_interrupted(recovered)
+        if recovered.get("current_review_step"):
+            recovered["current_review_step"] = ""
+            changed = True
+        if recovered.get("status") == "running":
+            changed = True
+        if not changed:
+            return False, recovered, None
+        recovered["status"] = "interrupted"
+        recovered["error"] = RECOVERY_INTERRUPTED_MESSAGE
         return True, recovered, "interrupted"
     elif project_type in PIPELINE_PROJECT_TYPES:
         changed = _mark_running_steps_as_error(recovered)
@@ -162,12 +200,14 @@ def recover_all_interrupted_tasks() -> int:
     placeholders = ", ".join(["%s"] * len(generic_types))
     link_check_statuses = ", ".join(f"'{status}'" for status in LINK_CHECK_STARTUP_RECOVERY_STATUSES)
     image_translate_statuses = ", ".join(f"'{status}'" for status in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES)
+    subtitle_removal_statuses = ", ".join(f"'{status}'" for status in SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES)
     try:
         rows = db_query(
             f"SELECT id, type, status, state_json FROM projects "
             f"WHERE deleted_at IS NULL AND ("
             f"(type = 'link_check' AND status IN ({link_check_statuses})) "
             f"OR (type = 'image_translate' AND status IN ({image_translate_statuses})) "
+            f"OR (type = 'subtitle_removal' AND status IN ({subtitle_removal_statuses})) "
             f"OR (status = 'running' AND type IN ({placeholders}))"
             f")",
             generic_types,

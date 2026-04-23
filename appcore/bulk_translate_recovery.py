@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 
+from appcore.bulk_translate_runtime import compute_progress
 from appcore.db import execute, query
 
-_INTERRUPTIBLE_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
-_STARTUP_PARENT_STATUSES = {"running", "interrupted", "waiting_manual"}
+log = logging.getLogger(__name__)
+_INTERRUPTIBLE_ITEM_STATUSES = {"pending", "dispatching", "running", "syncing_result"}
 
 
 def mark_interrupted_bulk_translate_tasks() -> int:
-    rows = query(
-        "SELECT id, status, state_json FROM projects "
-        "WHERE type='bulk_translate' AND deleted_at IS NULL AND status='running'",
-        (),
-    ) or []
+    try:
+        rows = query(
+            "SELECT id, status, state_json FROM projects "
+            "WHERE type='bulk_translate' AND deleted_at IS NULL AND status='running'",
+            (),
+        ) or []
+    except Exception:
+        log.warning("bulk_translate startup recovery query failed", exc_info=True)
+        return 0
 
     updated = 0
     for row in rows:
@@ -21,7 +27,11 @@ def mark_interrupted_bulk_translate_tasks() -> int:
         if not task_id:
             continue
         raw_state = row.get("state_json")
-        state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
+        try:
+            state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            log.warning("bulk_translate startup recovery skipped invalid state task_id=%s", task_id)
+            continue
         changed = False
         for item in state.get("plan") or []:
             if (item.get("status") or "").strip() in _INTERRUPTIBLE_ITEM_STATUSES:
@@ -31,63 +41,14 @@ def mark_interrupted_bulk_translate_tasks() -> int:
         # scheduler on restart. Mark it interrupted so the user can resume it
         # manually; never auto-run recovery from startup.
         state["scheduler_anchor_ts"] = None
-        execute(
-            "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
-            ("interrupted", json.dumps(state, ensure_ascii=False), task_id),
-        )
+        state["progress"] = compute_progress(state.get("plan") or [])
+        try:
+            execute(
+                "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
+                ("interrupted", json.dumps(state, ensure_ascii=False), task_id),
+            )
+        except Exception:
+            log.warning("bulk_translate startup recovery update failed task_id=%s", task_id, exc_info=True)
+            continue
         updated += 1
     return updated
-
-
-def prepare_bulk_translate_startup_recovery() -> list[str]:
-    """Prepare incomplete bulk parents and return ids whose schedulers should run."""
-    placeholders = ",".join(["%s"] * len(_STARTUP_PARENT_STATUSES))
-    rows = query(
-        "SELECT id, status, state_json FROM projects "
-        f"WHERE type='bulk_translate' AND deleted_at IS NULL AND status IN ({placeholders})",
-        tuple(sorted(_STARTUP_PARENT_STATUSES)),
-    ) or []
-
-    task_ids: list[str] = []
-    for row in rows:
-        task_id = row.get("id")
-        if not task_id:
-            continue
-        raw_state = row.get("state_json")
-        state = raw_state if isinstance(raw_state, dict) else json.loads(raw_state or "{}")
-        if state.get("cancel_requested"):
-            continue
-
-        _reset_uncreated_interrupted_items(state)
-        if not _needs_scheduler(state):
-            continue
-
-        execute(
-            "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
-            ("running", json.dumps(state, ensure_ascii=False), task_id),
-        )
-        task_ids.append(task_id)
-    return task_ids
-
-
-def _reset_uncreated_interrupted_items(state: dict) -> None:
-    for item in state.get("plan") or []:
-        status = (item.get("status") or "").strip()
-        child_task_id = item.get("child_task_id") or item.get("sub_task_id")
-        if status in {"interrupted", *_INTERRUPTIBLE_ITEM_STATUSES} and not child_task_id:
-            item["status"] = "pending"
-            item["error"] = None
-            item["child_task_id"] = None
-            item["sub_task_id"] = None
-            item["child_task_type"] = None
-            item["result_synced"] = False
-            item["started_at"] = None
-            item["finished_at"] = None
-
-
-def _needs_scheduler(state: dict) -> bool:
-    for item in state.get("plan") or []:
-        status = (item.get("status") or "pending").strip()
-        if status == "pending" or status in _INTERRUPTIBLE_ITEM_STATUSES:
-            return True
-    return False
