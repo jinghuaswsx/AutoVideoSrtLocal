@@ -55,23 +55,12 @@ def test_estimate_requires_content_types(client):
     assert resp.status_code == 400
 
 
-def test_estimate_happy_path(client, monkeypatch):
-    """调用 do_estimate 并把结果透传回去。"""
-    captured = {}
-
-    def fake_estimate(*, user_id, product_id, target_langs, content_types,
-                       force_retranslate):
-        captured.update(locals())
-        return {
-            "copy_tokens": 500,
-            "image_count": 10,
-            "video_minutes": 3.5,
-            "skipped": {"copy": 0, "cover": 0, "detail": 0, "video": 0},
-            "estimated_cost_cny": 12.30,
-            "breakdown": {"copy_cny": 0.3, "image_cny": 1.8, "video_cny": 10.2},
-        }
-
-    monkeypatch.setattr("web.routes.bulk_translate.do_estimate", fake_estimate)
+def test_estimate_returns_disabled_payload_without_running_estimator(client, monkeypatch):
+    """保留兼容入口，但不再执行预估逻辑。"""
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.do_estimate",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("estimator should not be called")),
+    )
 
     resp = client.post("/api/bulk-translate/estimate", json={
         "product_id": 77,
@@ -81,15 +70,10 @@ def test_estimate_happy_path(client, monkeypatch):
     })
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["estimated_cost_cny"] == 12.30
-    assert data["copy_tokens"] == 500
-
-    # 参数正确透传给 estimator
-    assert captured["user_id"] == 1
-    assert captured["product_id"] == 77
-    assert captured["target_langs"] == ["de", "fr"]
-    assert captured["content_types"] == ["copy", "detail"]
-    assert captured["force_retranslate"] is True
+    assert data == {
+        "estimate_enabled": False,
+        "message": "estimate disabled; actual cost is calculated after successful completion",
+    }
 
 
 def test_estimate_requires_auth():
@@ -422,7 +406,7 @@ def test_list_endpoint_filters_by_user(phase5_client, monkeypatch):
     assert len(data) == 1
     assert data[0]["id"] == "t1"
     assert data[0]["progress"]["total"] == 3
-    assert data[0]["cost_estimate"] == 5.5
+    assert data[0]["cost_estimate"] is None
     # SQL 里有 user_id 过滤
     assert "user_id" in captured_args["sql"]
     assert captured_args["args"][0] == 1

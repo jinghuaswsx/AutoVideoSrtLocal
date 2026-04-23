@@ -242,3 +242,33 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
     assert "2/4" in rendered["statsHtml"]
     assert "50%" in rendered["statusHtml"]
     assert "剩余 2 个" in rendered["statusHtml"]
+
+
+def test_bulk_translate_detail_stats_hide_estimate_copy():
+    rendered = _run_detail_harness(
+        {
+            "id": "task-cost-demo",
+            "status": "running",
+            "created_at": "2026-04-23T10:00:00+00:00",
+            "updated_at": "2026-04-23T10:10:00+00:00",
+            "state": {
+                "initiator": {"user_name": "admin", "ip": "127.0.0.1"},
+                "progress": {"total": 1, "done": 0, "running": 1, "failed": 0, "pending": 0},
+                "cost_tracking": {"estimate": {"estimated_cost_cny": 99.9}, "actual": {"actual_cost_cny": 1.2}},
+                "plan": [
+                    {
+                        "idx": 0,
+                        "lang": "de",
+                        "kind": "videos",
+                        "status": "running",
+                        "ref": {"source_raw_id": 9},
+                        "child_task_id": "sub-run-1",
+                        "child_task_type": "multi_translate",
+                    },
+                ],
+                "audit_events": [],
+            },
+        }
+    )
+
+    assert "预估" not in rendered["statsHtml"]

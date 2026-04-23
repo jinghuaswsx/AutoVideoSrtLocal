@@ -38,7 +38,7 @@
     <thead>
       <tr>
         <th>任务</th><th>产品</th><th>语言</th><th>发起人</th><th>时间</th>
-        <th>状态</th><th>进度</th><th>预估 / 实际</th><th></th>
+        <th>状态</th><th>进度</th><th>实际费用</th><th></th>
       </tr>
     </thead>
     <tbody data-rows></tbody>
@@ -73,7 +73,7 @@
         <td>${esc(r.created_at || '—')}</td>
         <td>${statusBadge(r.status)}</td>
         <td style="font-family:monospace">${d}/${p.total || 0}</td>
-        <td>¥${r.cost_estimate || 0} / ¥${r.cost_actual || 0}</td>
+        <td>${r.status === 'done' ? `¥${r.cost_actual || 0}` : '完成后生成'}</td>
         <td><a href="/tasks/${r.id}" class="bt-btn bt-btn--ghost" style="height:26px;padding:0 12px;font-size:12px">详情</a></td>
       </tr>`;
     }).join('');

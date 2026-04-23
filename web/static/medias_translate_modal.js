@@ -266,7 +266,7 @@
       return;
     }
     const suffix = state.selectedContentTypes.has('videos') ? `，其中 ${missingPairs} 个视频组合待翻译` : '';
-    summary.textContent = `将为 ${rawCount} 条原始视频发起 ${langCount} 个语种的 ${types.join(' / ')} 任务${suffix}`;
+    summary.textContent = `将为 ${rawCount} 条原始视频发起 ${langCount} 个语种的 ${types.join(' / ')} 任务${suffix}，实际费用将在任务成功后生成`;
   }
 
   function updateSubmitState() {
@@ -392,7 +392,7 @@
       renderSummary();
       updateSubmitState();
     } else {
-      renderSummary('这里会持续汇总文案、详情图、视频封面、视频翻译任务状态，失败后可继续重跑。');
+      renderSummary('这里会持续汇总文案、详情图、视频封面、视频翻译任务状态；实际费用会在任务成功后生成。');
       ensureTasksController();
       if (state.tasksController && typeof state.tasksController.refresh === 'function') {
         state.tasksController.refresh();
@@ -502,7 +502,7 @@
       state.busy = false;
       updateSubmitState();
       switchTab('tasks');
-      renderSummary(`任务已创建：${result.task_id}，现在可以在右侧任务管理里持续跟进状态。`);
+      renderSummary(`任务已创建：${result.task_id}，现在可以在右侧任务管理里持续跟进状态；实际费用会在任务成功后生成。`);
       if (state.tasksController && typeof state.tasksController.refresh === 'function') {
         state.tasksController.refresh();
       }

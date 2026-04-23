@@ -58,8 +58,8 @@
     const typeText = (task.content_type_labels || task.content_types || []).join(' / ') || '未记录类型';
     const langText = (task.target_lang_labels || task.target_langs || []).join('、') || '未记录语言';
     const costText = task.group === 'done'
-      ? `实际消费 ¥${formatMoney(task.cost_actual)}`
-      : `预估 ¥${formatMoney(task.cost_estimate)} / 已花费 ¥${formatMoney(task.cost_actual)}`;
+      ? `实际费用 ¥${formatMoney(task.cost_actual)}`
+      : '实际费用将在任务成功后生成';
     const intervention = task.intervention_count > 0
       ? `<span class="bt-admin-task-item__alert">${task.intervention_count} 项需要介入</span>`
       : '';

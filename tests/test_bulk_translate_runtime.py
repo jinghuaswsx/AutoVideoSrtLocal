@@ -109,6 +109,11 @@ def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
         mod,
+        "do_estimate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("estimate should not run during task creation")),
+    )
+    monkeypatch.setattr(
+        mod,
         "generate_plan",
         lambda *args, **kwargs: [
             _item(0, kind="copywriting", ref={"source_copy_id": 11}),
@@ -137,6 +142,15 @@ def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     assert state["progress"]["dispatching"] == 0
     assert state["progress"]["awaiting_voice"] == 0
     assert state["progress"]["interrupted"] == 0
+    assert state["cost_tracking"] == {
+        "actual": {
+            "copy_tokens_used": 0,
+            "image_processed": 0,
+            "video_minutes_processed": 0.0,
+            "actual_cost_cny": 0.0,
+        }
+    }
+    assert "estimated_cost_cny" not in state["audit_events"][0]["detail"]
 
 
 def test_compute_progress_counts_new_statuses(runtime_env):

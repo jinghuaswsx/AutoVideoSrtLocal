@@ -132,7 +132,6 @@ def _serialize_admin_task(row: dict, state: dict) -> dict:
     product = _product_summary(product_id)
     cost_tracking = dict(state.get("cost_tracking") or {})
     cost_actual = dict(cost_tracking.get("actual") or {})
-    cost_estimate = dict(cost_tracking.get("estimate") or {})
     initiator = dict(state.get("initiator") or {})
     creator = (row.get("username") or initiator.get("user_name") or "").strip()
 
@@ -161,7 +160,7 @@ def _serialize_admin_task(row: dict, state: dict) -> dict:
         "failed_count": failed_count,
         "intervention_count": intervention_count,
         "cost_actual": _float_or_zero(cost_actual.get("actual_cost_cny")),
-        "cost_estimate": _float_or_zero(cost_estimate.get("estimated_cost_cny")),
+        "cost_estimate": None,
         "detail_url": detail_url,
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
     }
