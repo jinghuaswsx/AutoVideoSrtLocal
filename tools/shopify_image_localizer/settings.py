@@ -5,10 +5,20 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_BASE_URL = "http://172.30.254.14:8080"
+TEST_BASE_URL = "http://172.30.254.14:8080"
+PRODUCTION_BASE_URL = "http://172.30.254.14"
 DEFAULT_API_KEY = "autovideosrt-materials-openapi"
 DEFAULT_BROWSER_USER_DATA_DIR = r"C:\chrome-shopify-image"
 CONFIG_FILENAME = "shopify_image_localizer_config.json"
+
+
+def default_base_url(*, packaged: bool | None = None) -> str:
+    if packaged is None:
+        packaged = bool(getattr(sys, "frozen", False))
+    return PRODUCTION_BASE_URL if packaged else TEST_BASE_URL
+
+
+DEFAULT_BASE_URL = default_base_url()
 
 
 def _runtime_root() -> Path:

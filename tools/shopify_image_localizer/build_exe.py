@@ -28,7 +28,7 @@ def _write_runtime_config(repo_root: Path, dist_root: Path) -> None:
         return
 
     settings.save_runtime_config(
-        base_url=settings.DEFAULT_BASE_URL,
+        base_url=settings.default_base_url(packaged=True),
         api_key=settings.DEFAULT_API_KEY,
         browser_user_data_dir=settings.DEFAULT_BROWSER_USER_DATA_DIR,
         root=dist_root,
