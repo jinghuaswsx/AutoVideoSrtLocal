@@ -324,21 +324,7 @@ def resolve_shopify_product_id(product_id: int) -> str | None:
         product = {}
 
     direct_value = str(product.get("shopifyid") or "").strip()
-    if direct_value:
-        return direct_value
-
-    try:
-        row = query_one(
-            "SELECT product_id FROM dianxiaomi_rankings "
-            "WHERE media_product_id=%s AND product_id IS NOT NULL AND product_id<>'' "
-            "ORDER BY snapshot_date DESC, id DESC LIMIT 1",
-            (product_id,),
-        ) or {}
-    except Exception:
-        return None
-
-    value = str(row.get("product_id") or "").strip()
-    return value or None
+    return direct_value or None
 
 
 def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:

@@ -8,7 +8,11 @@ import requests
 
 class ApiError(RuntimeError):
     def __init__(self, status_code: int, payload: dict[str, Any]) -> None:
-        super().__init__(payload.get("error") or f"api failed: {status_code}")
+        super().__init__(
+            payload.get("message")
+            or payload.get("error")
+            or f"api failed: {status_code}"
+        )
         self.status_code = status_code
         self.payload = payload
 
