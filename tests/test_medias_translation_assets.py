@@ -11,7 +11,9 @@ def test_translation_task_page_assets_include_task_entrypoints():
     assert "翻译任务管理" in template
     assert "translationTasksApp" in template
     assert "medias_translation_tasks.js" in template
+    assert 'href="/medias" target="_blank" rel="noopener noreferrer"' in template
     assert "重新启动" in script
     assert "从中断点继续" in script
     assert "去选声音" in script
     assert "/medias/api/products/${productId}/translation-tasks" in script
+    assert 'target="_blank" rel="noopener noreferrer"' in script
