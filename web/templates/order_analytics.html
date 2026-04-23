@@ -181,7 +181,10 @@
     fd.append('file', file);
 
     fetch('/order-analytics/upload', { method: 'POST', body: fd })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) return r.text().then(function(t) { throw new Error('服务器返回 ' + r.status + ': ' + t.substring(0, 200)); });
+        return r.json();
+      })
       .then(function(data) {
         loadingBox.style.display = 'none';
         if (data.error) {
@@ -193,6 +196,7 @@
         renderResult(data);
       })
       .catch(function(err) {
+        loadingBox.style.display = 'none';
         showError('上传失败：' + err.message);
         zone.style.display = '';
       });
