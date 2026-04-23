@@ -72,23 +72,23 @@
 .oa-table-title { font-size: 15px; font-weight: 600; color: var(--fg); }
 .oa-table-scroll { overflow-x: auto; }
 .oa-table {
-  width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap;
+  width: 100%; border-collapse: collapse; font-size: 13px;
 }
 .oa-table th, .oa-table td {
-  padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border);
+  padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
 }
 .oa-table th {
   background: var(--bg-subtle); font-weight: 600; color: var(--fg);
   position: sticky; top: 0; z-index: 1;
 }
-.oa-table th.oa-col-product { min-width: 280px; }
-.oa-table th.oa-col-num { min-width: 80px; text-align: right; }
-.oa-table th.oa-col-country { min-width: 70px; text-align: right; }
+.oa-table th.oa-col-product { min-width: 200px; white-space: nowrap; }
+.oa-table th.oa-col-num { width: 70px; min-width: 60px; text-align: right; white-space: nowrap; }
+.oa-table th.oa-col-country { width: 56px; min-width: 48px; max-width: 70px; text-align: right; white-space: nowrap; font-size: 12px; }
 .oa-table td.oa-col-product {
-  font-weight: 500; max-width: 400px; white-space: normal; word-break: break-word;
+  font-weight: 500; max-width: 360px; white-space: normal; word-break: break-word;
 }
-.oa-table td.oa-col-num { text-align: right; font-weight: 600; color: var(--accent); }
-.oa-table td.oa-col-country { text-align: right; color: var(--fg-muted); }
+.oa-table td.oa-col-num { text-align: right; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.oa-table td.oa-col-country { text-align: right; color: var(--fg-muted); white-space: nowrap; font-size: 12px; padding: 8px 10px; }
 .oa-table tr:last-child td { border-bottom: none; }
 .oa-table tr:hover td { background: oklch(97% 0.01 230); }
 .oa-table .oa-row-total td {
@@ -149,15 +149,16 @@
   padding: 0 !important; border-bottom: 1px solid var(--border) !important;
 }
 .oa-daily-detail-inner {
-  padding: 8px 20px 12px 40px; background: var(--bg-subtle);
+  padding: 8px 12px 12px 32px; background: var(--bg-subtle);
 }
 .oa-daily-detail-inner table {
   width: 100%; border-collapse: collapse; font-size: 12px;
 }
 .oa-daily-detail-inner th, .oa-daily-detail-inner td {
-  padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border);
+  padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--border);
 }
-.oa-daily-detail-inner th { font-weight: 600; color: var(--fg-muted); }
+.oa-daily-detail-inner th { font-weight: 600; color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
+.oa-daily-detail-inner td { white-space: nowrap; }
 .oa-daily-detail-inner td.oa-col-num { text-align: right; color: var(--accent); font-weight: 500; }
 
 /* ── 空状态 / 加载态 / 错误 ──────────────────── */
