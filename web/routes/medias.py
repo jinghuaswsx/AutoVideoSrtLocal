@@ -17,7 +17,7 @@ import requests
 from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import local_media_storage, medias, object_keys, pushes, task_state
+from appcore import local_media_storage, material_evaluation, medias, object_keys, pushes, task_state
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -44,6 +44,14 @@ _ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
 _MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 _MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 _MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
+
+
+def _schedule_material_evaluation(pid: int, *, force: bool = False) -> None:
+    start_background_task(
+        material_evaluation.evaluate_product_if_ready,
+        int(pid),
+        force=force,
+    )
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
@@ -820,6 +828,9 @@ def api_update_product(pid: int):
             }), 409
         raise
 
+    if {"name", "product_code", "localized_links_json"} & set(update_fields):
+        _schedule_material_evaluation(pid, force=True)
+
     if isinstance(body.get("copywritings"), dict):
         for lang_code, lang_items in body["copywritings"].items():
             if not medias.is_valid_language(lang_code):
@@ -1291,6 +1302,9 @@ def api_item_complete(pid: int):
     except Exception:
         pass
 
+    if lang == "en":
+        _schedule_material_evaluation(pid)
+
     return jsonify({"id": item_id}), 201
 
 
@@ -1322,6 +1336,8 @@ def api_cover_from_url(pid: int):
         (product_dir / f"cover_{lang}{err_or_ext}").write_bytes(data)
     except Exception:
         pass
+    if lang == "en":
+        _schedule_material_evaluation(pid, force=True)
     return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}", "object_key": object_key})
 
 
@@ -1537,6 +1553,9 @@ def api_cover_complete(pid: int):
         _download_media_object(object_key, str(local))
     except Exception:
         pass
+
+    if lang == "en":
+        _schedule_material_evaluation(pid, force=True)
 
     return jsonify({"ok": True, "cover_url": f"/medias/cover/{pid}?lang={lang}"})
 

@@ -56,9 +56,19 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 20
+    assert len(USE_CASES) == 21
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
+
+
+def test_material_evaluation_defaults_to_openrouter_gemini_pro():
+    uc = USE_CASES["material_evaluation.evaluate"]
+    assert uc["module"] == "material"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-pro-preview"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+    assert MODULE_LABELS["material"] == "素材管理"
 
 
 def test_same_image_use_case_defaults():
