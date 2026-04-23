@@ -749,6 +749,92 @@ def test_detail_images_download_zip_kind_all_includes_gif(authed_client_no_db, m
     assert any(n.endswith(".gif") for n in names)
 
 
+def test_detail_images_download_localized_zip_groups_static_images_by_language(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "毛球修剪器", "product_code": "digital-lint-shaver"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_languages",
+        lambda: [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "de", "name_zh": "德语", "enabled": 1},
+            {"code": "fr", "name_zh": "法语", "enabled": 1},
+            {"code": "ja", "name_zh": "日语", "enabled": 1},
+        ],
+    )
+
+    rows_by_lang = {
+        "en": [{"id": 10, "object_key": "1/medias/1/en.jpg", "sort_order": 0}],
+        "de": [
+            {"id": 21, "object_key": "1/medias/1/de-a.jpg", "sort_order": 0},
+            {"id": 22, "object_key": "1/medias/1/de-b.gif", "sort_order": 1},
+            {"id": 23, "object_key": "1/medias/1/de-c.webp", "sort_order": 2},
+        ],
+        "fr": [{"id": 31, "object_key": "1/medias/1/fr-a.png", "sort_order": 0}],
+        "ja": [],
+    }
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: rows_by_lang.get(lang, []))
+
+    def fake_download(object_key, local_path):
+        with open(local_path, "wb") as fh:
+            fh.write(b"BYTES-" + object_key.encode())
+
+    monkeypatch.setattr(r, "_download_media_object", fake_download)
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-localized-zip")
+
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(resp.data))
+    assert archive.namelist() == [
+        "德语-digital-lint-shaver/01.jpg",
+        "德语-digital-lint-shaver/02.webp",
+        "法语-digital-lint-shaver/01.png",
+    ]
+    assert archive.read("德语-digital-lint-shaver/01.jpg") == b"BYTES-1/medias/1/de-a.jpg"
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "%E5%B0%8F%E8%AF%AD%E7%A7%8D-digital-lint-shaver.zip" in cd
+
+
+def test_detail_images_download_localized_zip_404_when_no_static_images(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "毛球修剪器", "product_code": "digital-lint-shaver"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.medias,
+        "list_languages",
+        lambda: [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "de", "name_zh": "德语", "enabled": 1},
+        ],
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [{"id": 22, "object_key": "1/medias/1/de-b.gif", "sort_order": 1}]
+        if lang == "de" else [],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-localized-zip")
+
+    assert resp.status_code == 404
+
+
 def test_detail_images_translate_from_en_skips_gif_sources(authed_client_no_db, monkeypatch):
     """有 GIF 时不再整单拒绝：跳过 GIF，只翻译静态图。"""
     from web.routes import medias as r

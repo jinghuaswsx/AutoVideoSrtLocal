@@ -2228,6 +2228,17 @@ def test_medias_edit_modal_contains_detail_image_zip_download_button():
     assert "detail-images/download-zip" in scripts
 
 
+def test_medias_edit_modal_contains_download_product_images_button():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'id="edDownloadProductImagesBtn"' in template
+    assert "下载商品图" in template
+    assert template.index('id="edDownloadProductImagesBtn"') < template.index('id="edClose"')
+    assert "detail-images/download-localized-zip" in scripts
+
+
 def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 

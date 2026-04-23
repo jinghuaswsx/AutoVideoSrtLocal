@@ -1584,9 +1584,24 @@ def probe_media_info_safe(path: str) -> dict:
         return {}
 
 
-def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
+def _detail_images_archive_product_code(product: dict, pid: int) -> str:
     raw_code = str((product or {}).get("product_code") or "").strip()
-    base_code = re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
+
+
+def _detail_images_is_gif(row: dict) -> bool:
+    content_type = str(row.get("content_type") or "").split(";")[0].strip().lower()
+    object_key = str(row.get("object_key") or "").lower()
+    return content_type == "image/gif" or object_key.endswith(".gif")
+
+
+def _detail_images_archive_part(value: str, fallback: str) -> str:
+    text = str(value or "").strip() or fallback
+    return re.sub(r'[\\/:*?"<>|]+', "-", text).strip("-") or fallback
+
+
+def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
+    base_code = _detail_images_archive_product_code(product, pid)
     archive_name = f"{base_code}_{lang}_detail-images"
     country_prefix = _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES.get((lang or "").strip().lower())
     return f"{country_prefix}-{archive_name}" if country_prefix else archive_name
@@ -1623,13 +1638,10 @@ def api_detail_images_download_zip(pid: int):
     if not rows:
         abort(404)
 
-    def _is_gif(row: dict) -> bool:
-        return str(row.get("object_key") or "").lower().endswith(".gif")
-
     if kind == "gif":
-        rows = [r for r in rows if _is_gif(r)]
+        rows = [r for r in rows if _detail_images_is_gif(r)]
     elif kind == "image":
-        rows = [r for r in rows if not _is_gif(r)]
+        rows = [r for r in rows if not _detail_images_is_gif(r)]
     if not rows:
         abort(404)
 
@@ -1646,6 +1658,52 @@ def api_detail_images_download_zip(pid: int):
                 local_path = Path(tmp_dir) / f"detail_{idx:02d}{suffix}"
                 _download_media_object(object_key, str(local_path))
                 zf.write(local_path, arcname=f"{archive_base}/{idx:02d}{suffix}")
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{archive_base}.zip",
+    )
+
+
+@bp.route("/api/products/<int:pid>/detail-images/download-localized-zip", methods=["GET"])
+@login_required
+def api_detail_images_download_localized_zip(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+
+    product_code = _detail_images_archive_product_code(p or {}, pid)
+    archive_base = f"小语种-{product_code}"
+    groups: list[tuple[str, list[dict]]] = []
+    for lang_row in medias.list_languages():
+        lang = str(lang_row.get("code") or "").strip().lower()
+        if not lang or lang == "en":
+            continue
+        rows = [
+            row for row in medias.list_detail_images(pid, lang)
+            if str(row.get("object_key") or "").strip() and not _detail_images_is_gif(row)
+        ]
+        if not rows:
+            continue
+        lang_name = _detail_images_archive_part(lang_row.get("name_zh"), lang)
+        folder = f"{lang_name}-{product_code}"
+        groups.append((folder, rows))
+
+    if not groups:
+        abort(404)
+
+    buf = io.BytesIO()
+    with tempfile.TemporaryDirectory(prefix="localized_detail_images_zip_") as tmp_dir:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for folder, rows in groups:
+                for idx, row in enumerate(rows, start=1):
+                    object_key = str(row.get("object_key") or "").strip()
+                    suffix = Path(object_key).suffix or ".jpg"
+                    local_path = Path(tmp_dir) / f"{uuid.uuid4().hex}{suffix}"
+                    _download_media_object(object_key, str(local_path))
+                    zf.write(local_path, arcname=f"{folder}/{idx:02d}{suffix}")
     buf.seek(0)
     return send_file(
         buf,
