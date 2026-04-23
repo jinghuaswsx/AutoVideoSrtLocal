@@ -101,12 +101,12 @@ def build_suggested_material_filename(
 
 def _validate_english_filename(filename: str, product_name: str) -> list[str]:
     if not product_name:
-        return [“当前产品尚未加载，请重试”]
-    if len(filename) < 11 or filename[10] != “-”:
-        return ['开头必须是 “YYYY.MM.DD-” 格式']
+        return ["当前产品尚未加载，请重试"]
+    if len(filename) < 11 or filename[10] != "-":
+        return ['开头必须是 "YYYY.MM.DD-" 格式']
     rest = filename[11:]
-    if not rest.startswith(product_name + “-”):
-        return [f'日期之后必须紧跟 “{product_name}-”']
+    if not rest.startswith(product_name + "-"):
+        return [f'日期之后必须紧跟 "{product_name}-"']
     return []
 
 
