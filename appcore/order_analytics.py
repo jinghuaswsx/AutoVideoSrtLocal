@@ -211,9 +211,19 @@ def fetch_product_page_title(product_code: str) -> str | None:
         m = _TITLE_RE.search(resp.text)
         if m:
             title = m.group(1).strip()
-            # 去掉 " | Store Name" 后缀
-            if " | " in title:
-                title = title.rsplit(" | ", 1)[0].strip()
+            # 去掉 " | Store Name" / " – Store Name" / " - Store Name" 后缀
+            for sep in (" | ", " – ", " — ", " - "):
+                if sep in title:
+                    title = title.rsplit(sep, 1)[0].strip()
+                    break
+            # 解码 HTML 实体
+            title = (title
+                     .replace("&ndash;", "–")
+                     .replace("&mdash;", "—")
+                     .replace("&amp;", "&")
+                     .replace("&lt;", "<")
+                     .replace("&gt;", ">")
+                     .replace("&quot;", '"'))
             return title[:500] if title else None
     except requests.RequestException as exc:
         log.debug("fetch title failed for %s: %s", product_code, exc)
