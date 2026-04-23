@@ -13,10 +13,10 @@ def _stub_product(monkeypatch):
     return r
 
 
-def test_product_translation_tasks_page_renders(authed_client_no_db, monkeypatch):
+def test_product_translation_tasks_page_renders(authed_user_client_no_db, monkeypatch):
     _stub_product(monkeypatch)
 
-    resp = authed_client_no_db.get("/medias/products/123/translation-tasks")
+    resp = authed_user_client_no_db.get("/medias/products/123/translation-tasks")
 
     assert resp.status_code == 200
     assert "翻译任务管理".encode("utf-8") in resp.data
@@ -24,7 +24,7 @@ def test_product_translation_tasks_page_renders(authed_client_no_db, monkeypatch
     assert b"medias_translation_tasks.js" in resp.data
 
 
-def test_product_translation_tasks_api_returns_projection(authed_client_no_db, monkeypatch):
+def test_product_translation_tasks_api_returns_projection(authed_user_client_no_db, monkeypatch):
     _stub_product(monkeypatch)
     monkeypatch.setattr(
         "web.routes.medias.build_product_task_payload",
@@ -50,7 +50,7 @@ def test_product_translation_tasks_api_returns_projection(authed_client_no_db, m
         },
     )
 
-    resp = authed_client_no_db.get("/medias/api/products/123/translation-tasks")
+    resp = authed_user_client_no_db.get("/medias/api/products/123/translation-tasks")
 
     assert resp.status_code == 200
     payload = resp.get_json()
