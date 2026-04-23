@@ -70,15 +70,34 @@
         </section>
 
         <section class="oc-section oc-section-card" id="edItemsSection">
-          <div class="oc-section-title">
-            <span>视频素材</span>
-            <span class="optional" id="edItemsLangLabel"></span>
-            <span class="count" id="edItemsBadge">0</span>
+          <div class="oc-section-head oc-items-section-head">
+            <div class="oc-section-head-main">
+              <div class="oc-section-title">
+                <span>视频素材</span>
+                <span class="optional" id="edItemsLangLabel"></span>
+                <span class="count" id="edItemsBadge">0</span>
+              </div>
+            </div>
+            <button class="oc-btn primary oc-new-item-open-btn" type="button" id="edNewItemOpenBtn">
+              <svg width="24" height="24"><use href="#ic-plus"/></svg>
+              <span>新增视频素材</span>
+            </button>
           </div>
 
           <div id="edItemsGrid" class="oc-items-grid"></div>
+        </section>
+      </div>
 
-          <div class="oc-new-item oc-edit-new-item" id="edNewItemBox">
+      <div class="oc-modal-mask oc" id="edNewItemMask" hidden>
+        <div class="oc-modal oc-new-item-modal" role="dialog" aria-modal="true" aria-labelledby="edNewItemTitle">
+          <div class="oc-modal-head">
+            <h3 id="edNewItemTitle">新增视频素材</h3>
+            <button class="oc-icon-btn" id="edNewItemClose" title="关闭" aria-label="关闭">
+              <svg width="16" height="16"><use href="#ic-close"/></svg>
+            </button>
+          </div>
+          <div class="oc-modal-body oc-new-item-modal-body">
+            <div class="oc-new-item oc-edit-new-item" id="edNewItemBox">
             <div class="oc-new-item-title">新增素材</div>
             <div class="oc-new-item-body oc-edit-video-grid">
               <div class="oc-new-item-col">
@@ -132,8 +151,9 @@
                 <span>提交新素材</span>
               </button>
             </div>
+            </div>
           </div>
-        </section>
+        </div>
       </div>
 
       <div class="oc-edit-main-grid oc-edit-secondary-grid">

@@ -1204,6 +1204,7 @@
     pendingItemCover: null,
     // 新增素材提交大框 - 待提交的视频 File 对象
     pendingVideoFile: null,
+    isSubmittingNewItem: false,
     // 小语种详情图翻译任务历史（按语种缓存）
     detailTranslateTasks: {},
     linkCheckPollTimer: null,
@@ -1214,10 +1215,15 @@
 
   function edShow() { $('edMask').hidden = false; }
   function edHide() {
+    if (edState.isSubmittingNewItem) {
+      alert('素材上传中，请等待完成后再关闭');
+      return;
+    }
     edCloseLinkCheckModal();
     edStopLinkCheckPoll();
     $('edMask').hidden = true;
     if ($('edFromUrlMask')) $('edFromUrlMask').hidden = true;
+    if ($('edNewItemMask')) $('edNewItemMask').hidden = true;
     if ($('edDetailTranslateTaskMask')) $('edDetailTranslateTaskMask').hidden = true;
     edState.current = null;
     edState.activeLang = 'en';
@@ -2757,6 +2763,33 @@
     const url = $('edItemCoverUrl'); if (url) url.value = '';
   }
 
+  function edClearNewItemProgress() {
+    const box = $('edUploadProgress');
+    if (box) box.innerHTML = '';
+  }
+
+  function edOpenNewItemModal() {
+    const mask = $('edNewItemMask');
+    if (!mask) return;
+    edResetNewItemForm();
+    edClearNewItemProgress();
+    mask.hidden = false;
+    const target = $('edItemCoverDropzone') || $('edItemCoverUrl') || $('edItemSubmitBtn');
+    if (target) setTimeout(() => target.focus(), 0);
+  }
+
+  function edCloseNewItemModal() {
+    if (edState.isSubmittingNewItem) {
+      alert('素材上传中，请等待完成后再关闭');
+      return;
+    }
+    const mask = $('edNewItemMask');
+    if (!mask) return;
+    mask.hidden = true;
+    edResetNewItemForm();
+    edClearNewItemProgress();
+  }
+
   async function edUploadPendingItemCover(file) {
     if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
     if (!file.type.startsWith('image/')) { alert('请上传图片文件'); return; }
@@ -2820,6 +2853,7 @@
     box.appendChild(row);
     const submitBtn = $('edItemSubmitBtn');
     if (submitBtn) submitBtn.disabled = true;
+    edState.isSubmittingNewItem = true;
     try {
       const boot = await fetchJSON(`/medias/api/products/${pid}/items/bootstrap`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2844,6 +2878,7 @@
       row.className = 'oc-upload-row err';
       row.innerHTML = `<span class="fname">${escapeHtml(file.name)}</span><span>失败：${escapeHtml(e.message || '')}</span>`;
     } finally {
+      edState.isSubmittingNewItem = false;
       if (submitBtn) submitBtn.disabled = false;
     }
     try {
@@ -3154,9 +3189,18 @@
     $('edClose').addEventListener('click', edHide);
     $('edCancelBtn').addEventListener('click', edHide);
     $('edSaveBtn').addEventListener('click', edSave);
+    $('edNewItemOpenBtn') && $('edNewItemOpenBtn').addEventListener('click', edOpenNewItemModal);
+    $('edNewItemClose') && $('edNewItemClose').addEventListener('click', edCloseNewItemModal);
     $('edMask').addEventListener('click', (e) => { if (e.target.id === 'edMask') edHide(); });
+    $('edNewItemMask') && $('edNewItemMask').addEventListener('click', (e) => {
+      if (e.target.id === 'edNewItemMask') edCloseNewItemModal();
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      if ($('edNewItemMask') && !$('edNewItemMask').hidden) {
+        edCloseNewItemModal();
+        return;
+      }
       if (!$('edLinkCheckMask').hidden) {
         edCloseLinkCheckModal();
         return;
