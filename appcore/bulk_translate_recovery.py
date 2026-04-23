@@ -26,8 +26,10 @@ def mark_interrupted_bulk_translate_tasks() -> int:
             if (item.get("status") or "").strip() in _INTERRUPTIBLE_ITEM_STATUSES:
                 item["status"] = "interrupted"
                 changed = True
-        if not changed:
-            continue
+        # A running parent without an active item has still lost its in-process
+        # scheduler on restart. Mark it interrupted so the user can resume it
+        # manually; never auto-run recovery from startup.
+        state["scheduler_anchor_ts"] = None
         execute(
             "UPDATE projects SET status = %s, state_json = %s WHERE id = %s",
             ("interrupted", json.dumps(state, ensure_ascii=False), task_id),

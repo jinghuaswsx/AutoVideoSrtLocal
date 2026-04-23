@@ -43,6 +43,7 @@ _FAILURE_CHILD_STATUSES = {"error", "failed", "cancelled", "interrupted"}
 _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_voice"}
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
+_RUNNING_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 
 
@@ -220,19 +221,13 @@ def run_scheduler(
             state["scheduler_anchor_ts"] = now_provider()
             _save_state(task_id, state, status="running")
 
-        active_item = _find_active_item(plan)
-        if active_item:
-            parent_status = _poll_active_item(
+        for active_item in _find_active_items(plan):
+            _poll_active_item(
                 task_id,
                 active_item,
                 state,
                 bus=bus,
             )
-            if parent_status is not None:
-                return
-            if active_item["status"] in {"running", "dispatching", "syncing_result"}:
-                sleep_fn(1)
-                continue
 
         due_item = _next_due_pending_item(state, now_provider())
         if due_item:
@@ -254,6 +249,15 @@ def run_scheduler(
         if any(_normalized_status(item.get("status")) == "pending" for item in plan):
             sleep_fn(1)
             continue
+
+        if any(_normalized_status(item.get("status")) in _RUNNING_ITEM_STATUSES for item in plan):
+            sleep_fn(1)
+            continue
+
+        if any(_normalized_status(item.get("status")) in {"failed", "error", "interrupted"} for item in plan):
+            _save_state(task_id, state, status="failed")
+            _emit(bus, EVT_BT_PROGRESS, task_id, state, "failed")
+            return
 
         if any(_normalized_status(item.get("status")) in {"awaiting_voice"} for item in plan):
             _save_state(task_id, state, status="waiting_manual")
@@ -375,7 +379,7 @@ def _poll_active_item(
     parent_state: dict,
     *,
     bus: EventBus | None,
-) -> str | None:
+) -> None:
     child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
     return _apply_child_snapshot(parent_task_id, item, parent_state, child_state, bus=bus)
 
@@ -392,9 +396,9 @@ def _apply_child_snapshot(
 
     if _child_needs_voice(child_state):
         item["status"] = "awaiting_voice"
-        _save_state(parent_task_id, parent_state, status="waiting_manual")
-        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "waiting_manual")
-        return "waiting_manual"
+        _save_state(parent_task_id, parent_state, status="running")
+        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+        return
 
     if child_status == "done":
         completed_child_error = _get_completed_child_error(item, child_state)
@@ -402,9 +406,9 @@ def _apply_child_snapshot(
             item["status"] = "failed"
             item["error"] = completed_child_error
             item["finished_at"] = _now_iso()
-            _save_state(parent_task_id, parent_state, status="failed")
-            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-            return "failed"
+            _save_state(parent_task_id, parent_state, status="running")
+            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+            return
         item["status"] = "syncing_result"
         _save_state(parent_task_id, parent_state, status="running")
         try:
@@ -413,9 +417,9 @@ def _apply_child_snapshot(
             item["status"] = "failed"
             item["error"] = str(exc)
             item["finished_at"] = _now_iso()
-            _save_state(parent_task_id, parent_state, status="failed")
-            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-            return "failed"
+            _save_state(parent_task_id, parent_state, status="running")
+            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+            return
         item["result_synced"] = True
         item["status"] = "done"
         item["error"] = None
@@ -423,7 +427,7 @@ def _apply_child_snapshot(
         _roll_up_cost(parent_state, item, child_state)
         _save_state(parent_task_id, parent_state, status="running")
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
-        return None
+        return
 
     if child_status in _FAILURE_CHILD_STATUSES:
         item["status"] = "failed"
@@ -434,14 +438,14 @@ def _apply_child_snapshot(
             or f"child task failed: {child_status}"
         )
         item["finished_at"] = _now_iso()
-        _save_state(parent_task_id, parent_state, status="failed")
-        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-        return "failed"
+        _save_state(parent_task_id, parent_state, status="running")
+        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+        return
 
     item["status"] = "running"
     _save_state(parent_task_id, parent_state, status="running")
     _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
-    return None
+    return
 
 
 def _get_completed_child_error(item: dict, child_state: dict) -> str:
@@ -540,7 +544,8 @@ def _derive_parent_status(plan: list[dict], fallback_status: str) -> str:
 
 
 def _next_due_pending_item(state: dict, now_ts: float) -> dict | None:
-    anchor = float(state.get("scheduler_anchor_ts") or now_ts)
+    raw_anchor = state.get("scheduler_anchor_ts")
+    anchor = float(now_ts if raw_anchor is None else raw_anchor)
     for item in state.get("plan") or []:
         if _normalized_status(item.get("status")) != "pending":
             continue
@@ -549,11 +554,12 @@ def _next_due_pending_item(state: dict, now_ts: float) -> dict | None:
     return None
 
 
-def _find_active_item(plan: list[dict]) -> dict | None:
-    for item in plan:
-        if _normalized_status(item.get("status")) in _ACTIVE_ITEM_STATUSES and item.get("child_task_id"):
-            return item
-    return None
+def _find_active_items(plan: list[dict]) -> list[dict]:
+    return [
+        item
+        for item in plan
+        if _normalized_status(item.get("status")) in _ACTIVE_ITEM_STATUSES and item.get("child_task_id")
+    ]
 
 
 def _create_child_task(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:

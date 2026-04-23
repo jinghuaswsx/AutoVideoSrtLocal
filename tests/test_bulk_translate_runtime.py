@@ -100,6 +100,10 @@ def _load_state(fake_db: _FakeProjectsDB, task_id: str) -> dict:
     return json.loads(fake_db.rows[task_id]["state_json"])
 
 
+def _store_state(fake_db: _FakeProjectsDB, task_id: str, state: dict) -> None:
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+
 def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
@@ -209,6 +213,172 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
     assert state["plan"][0]["child_task_id"] == "multi-1"
     assert state["plan"][0]["child_task_type"] == "multi_translate"
     assert state["plan"][0]["status"] == "awaiting_voice"
+
+
+def test_run_scheduler_dispatches_due_items_without_waiting_for_active_children(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="copywriting", ref={"source_copy_id": 11}, dispatch_after_seconds=0),
+            _item(1, kind="video_covers", ref={"source_raw_ids": [301]}, dispatch_after_seconds=0),
+            _item(2, kind="videos", ref={"source_raw_id": 301}, dispatch_after_seconds=5),
+            _item(3, kind="detail_images", ref={"source_detail_ids": [1, 2]}, dispatch_after_seconds=10),
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["copywriting", "video_covers", "videos", "detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    mod.start_task(task_id, user_id=1)
+    state = _load_state(fake_db, task_id)
+    state["scheduler_anchor_ts"] = 0
+    _store_state(fake_db, task_id, state)
+
+    created = []
+
+    def fake_create_child(parent_id, item, parent_state):
+        child_id = f"child-{item['idx']}"
+        created.append((item["idx"], item["kind"], item["dispatch_after_seconds"]))
+        return child_id, "fake_child", "running"
+
+    monkeypatch.setattr(mod, "_create_child_task", fake_create_child)
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: {"_project_status": "running"})
+    monkeypatch.setattr(mod, "_sync_child_result", lambda *args, **kwargs: None)
+
+    mod.run_scheduler(
+        task_id,
+        now_provider=lambda: 0,
+        sleep_fn=lambda *_args, **_kwargs: None,
+        max_loops=4,
+    )
+
+    assert created == [
+        (0, "copywriting", 0),
+        (1, "video_covers", 0),
+    ]
+    state = _load_state(fake_db, task_id)
+    assert [item["status"] for item in state["plan"]] == ["running", "running", "pending", "pending"]
+
+
+def test_run_scheduler_dispatches_spaced_items_while_previous_children_still_run(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", ref={"source_raw_id": 301}, dispatch_after_seconds=0),
+            _item(1, kind="videos", ref={"source_raw_id": 302}, dispatch_after_seconds=5),
+            _item(2, kind="detail_images", ref={"source_detail_ids": [1]}, dispatch_after_seconds=10),
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos", "detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301, 302],
+    )
+    mod.start_task(task_id, user_id=1)
+    state = _load_state(fake_db, task_id)
+    state["scheduler_anchor_ts"] = 0
+    _store_state(fake_db, task_id, state)
+
+    created = []
+    monkeypatch.setattr(
+        mod,
+        "_create_child_task",
+        lambda parent_id, item, parent_state: (
+            created.append(item["idx"]) or f"child-{item['idx']}",
+            "fake_child",
+            "running",
+        ),
+    )
+    monkeypatch.setattr(mod, "_load_child_snapshot", lambda task_type, child_task_id: {"_project_status": "running"})
+    monkeypatch.setattr(mod, "_sync_child_result", lambda *args, **kwargs: None)
+
+    mod.run_scheduler(
+        task_id,
+        now_provider=lambda: 10,
+        sleep_fn=lambda *_args, **_kwargs: None,
+        max_loops=6,
+    )
+
+    assert created == [0, 1, 2]
+    state = _load_state(fake_db, task_id)
+    assert [item["status"] for item in state["plan"]] == ["running", "running", "running"]
+
+
+def test_run_scheduler_waiting_voice_does_not_block_other_due_items(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", ref={"source_raw_id": 301}, dispatch_after_seconds=0),
+            _item(1, kind="video_covers", ref={"source_raw_ids": [301]}, dispatch_after_seconds=0),
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de"],
+        content_types=["videos", "video_covers"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[301],
+    )
+    mod.start_task(task_id, user_id=1)
+    state = _load_state(fake_db, task_id)
+    state["scheduler_anchor_ts"] = 0
+    _store_state(fake_db, task_id, state)
+
+    created = []
+
+    def fake_create_child(parent_id, item, parent_state):
+        created.append(item["kind"])
+        if item["kind"] == "videos":
+            return "multi-1", "multi_translate", "running"
+        return "cover-1", "image_translate", "running"
+
+    def fake_child_snapshot(task_type, child_task_id):
+        if child_task_id == "multi-1":
+            return {
+                "_project_status": "uploaded",
+                "current_review_step": "voice_match",
+                "steps": {"voice_match": "waiting"},
+            }
+        return {"_project_status": "running"}
+
+    monkeypatch.setattr(mod, "_create_child_task", fake_create_child)
+    monkeypatch.setattr(mod, "_load_child_snapshot", fake_child_snapshot)
+    monkeypatch.setattr(mod, "_sync_child_result", lambda *args, **kwargs: None)
+
+    mod.run_scheduler(
+        task_id,
+        now_provider=lambda: 0,
+        sleep_fn=lambda *_args, **_kwargs: None,
+        max_loops=5,
+    )
+
+    assert created == ["videos", "video_covers"]
+    assert fake_db.rows[task_id]["status"] == "running"
+    state = _load_state(fake_db, task_id)
+    assert [item["status"] for item in state["plan"]] == ["awaiting_voice", "running"]
 
 
 def test_create_video_child_materializes_media_raw_source_locally(runtime_env, monkeypatch, tmp_path):
@@ -331,14 +501,14 @@ def test_run_scheduler_syncs_completed_child_and_finishes_parent(runtime_env, mo
     assert state["plan"][0]["result_synced"] is True
 
 
-def test_run_scheduler_failed_child_stops_parent(runtime_env, monkeypatch):
+def test_run_scheduler_failed_child_does_not_block_due_dispatch(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
         mod,
         "generate_plan",
         lambda *args, **kwargs: [
             _item(0, kind="copywriting", ref={"source_copy_id": 11}),
-            _item(1, kind="videos", dispatch_after_seconds=120),
+            _item(1, kind="videos", dispatch_after_seconds=0),
         ],
     )
 
@@ -354,16 +524,21 @@ def test_run_scheduler_failed_child_stops_parent(runtime_env, monkeypatch):
     )
     mod.start_task(task_id, user_id=1)
 
-    monkeypatch.setattr(
-        mod,
-        "_create_child_task",
-        lambda parent_id, item, parent_state: ("copy-1", "copywriting_translate", "running"),
-    )
-    monkeypatch.setattr(
-        mod,
-        "_load_child_snapshot",
-        lambda task_type, child_task_id: {"_project_status": "error", "last_error": "boom"},
-    )
+    created = []
+
+    def fake_create_child(parent_id, item, parent_state):
+        created.append(item["kind"])
+        if item["kind"] == "copywriting":
+            return "copy-1", "copywriting_translate", "running"
+        return "multi-1", "multi_translate", "running"
+
+    def fake_child_snapshot(task_type, child_task_id):
+        if child_task_id == "copy-1":
+            return {"_project_status": "error", "last_error": "boom"}
+        return {"_project_status": "running"}
+
+    monkeypatch.setattr(mod, "_create_child_task", fake_create_child)
+    monkeypatch.setattr(mod, "_load_child_snapshot", fake_child_snapshot)
     monkeypatch.setattr(mod, "_sync_child_result", lambda *args, **kwargs: None)
 
     mod.run_scheduler(
@@ -373,11 +548,12 @@ def test_run_scheduler_failed_child_stops_parent(runtime_env, monkeypatch):
         max_loops=3,
     )
 
-    assert fake_db.rows[task_id]["status"] == "failed"
+    assert created == ["copywriting", "videos"]
+    assert fake_db.rows[task_id]["status"] == "running"
     state = _load_state(fake_db, task_id)
     assert state["plan"][0]["status"] == "failed"
     assert state["plan"][0]["error"] == "boom"
-    assert state["plan"][1]["status"] == "pending"
+    assert state["plan"][1]["status"] == "running"
 
 
 def test_run_scheduler_fails_parent_when_completed_image_translate_has_failed_items(

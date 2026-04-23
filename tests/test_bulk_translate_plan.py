@@ -61,6 +61,26 @@ def test_copy_only_cross_product(monkeypatch):
     assert all(p["status"] == "pending" for p in plan)
 
 
+def test_copywriting_items_are_spaced_by_target_language(monkeypatch):
+    """素材管理文案翻译按语言每 3 秒启动一批,同语言内多条文案同一时间派发。"""
+    _patch(monkeypatch, _FakeDB(copies=[{"id": 10}, {"id": 11}]))
+
+    from appcore.bulk_translate_plan import generate_plan
+    plan = generate_plan(1, 77, ["de", "fr", "es"], ["copywriting"], False)
+
+    assert [
+        (item["ref"]["source_copy_id"], item["lang"], item["dispatch_after_seconds"])
+        for item in plan
+    ] == [
+        (10, "de", 0),
+        (10, "fr", 3),
+        (10, "es", 6),
+        (11, "de", 0),
+        (11, "fr", 3),
+        (11, "es", 6),
+    ]
+
+
 def test_detail_batch_one_per_lang(monkeypatch):
     """3 英文详情图 × 2 语言 → 2 个 batch plan 项,每个含 3 源 id。"""
     _patch(monkeypatch, _FakeDB(details=[100, 101, 102]))
@@ -192,7 +212,7 @@ def test_video_cover_batch_one_per_lang(monkeypatch):
     assert plan[1]["dispatch_after_seconds"] == 0
 
 
-def test_detail_images_have_thirty_second_spacing(monkeypatch):
+def test_detail_images_have_ten_second_spacing(monkeypatch):
     _patch(monkeypatch, _FakeDB(details=[101]))
 
     from appcore.bulk_translate_plan import generate_plan
@@ -205,10 +225,10 @@ def test_detail_images_have_thirty_second_spacing(monkeypatch):
         False,
     )
 
-    assert [item["dispatch_after_seconds"] for item in plan] == [0, 30, 60]
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 10, 20]
 
 
-def test_videos_have_two_minute_dispatch_spacing(monkeypatch):
+def test_videos_have_five_second_dispatch_spacing(monkeypatch):
     _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 1}, {"id": 2}]))
 
     from appcore.bulk_translate_plan import generate_plan
@@ -222,7 +242,7 @@ def test_videos_have_two_minute_dispatch_spacing(monkeypatch):
         raw_source_ids=[1, 2],
     )
 
-    assert [item["dispatch_after_seconds"] for item in plan] == [0, 120, 240, 360]
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 5, 10, 15]
 
 
 def test_videos_skip_existing_raw_source_language_pairs(monkeypatch):
@@ -247,7 +267,7 @@ def test_videos_skip_existing_raw_source_language_pairs(monkeypatch):
         (2, "de"),
         (2, "fr"),
     ]
-    assert [item["dispatch_after_seconds"] for item in plan] == [0, 120, 240]
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 5, 10]
 
 
 def test_videos_force_retranslate_keeps_existing_pairs(monkeypatch):
