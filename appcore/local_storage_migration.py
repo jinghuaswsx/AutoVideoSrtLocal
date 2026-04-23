@@ -204,6 +204,10 @@ def _download_logical_key(logical_key: str, destination: Path) -> str:
     return tos_clients.download_file(logical_key, str(destination))
 
 
+def _format_error(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
 def _materialize_logical_key_targets(
     logical_key: str,
     targets: list[str],
@@ -236,6 +240,29 @@ def _materialize_logical_key_targets(
         "downloaded": downloaded,
         "targets": [str(path) for path in resolved_targets],
     }
+
+
+def _materialize_logical_key_targets_best_effort(
+    logical_key: str,
+    targets: list[str],
+    *,
+    resolver,
+) -> dict[str, Any]:
+    try:
+        return _materialize_logical_key_targets(logical_key, targets, resolver=resolver)
+    except Exception as exc:
+        resolved_targets: list[str] = []
+        for target in _dedupe_sorted(targets):
+            try:
+                resolved_targets.append(str(resolver(target)))
+            except Exception as resolver_exc:
+                resolved_targets.append(f"{target} ({_format_error(resolver_exc)})")
+        return {
+            "logical_key": logical_key,
+            "downloaded": False,
+            "targets": resolved_targets,
+            "error": _format_error(exc),
+        }
 
 
 def verify_project_row(task_id: str, state: Mapping[str, Any]) -> dict[str, Any]:
@@ -284,7 +311,7 @@ def verify_media_row(row: Mapping[str, Any], output_dir: str | Path | None = Non
 def materialize_project_row(task_id: str, state: Mapping[str, Any]) -> dict[str, Any]:
     refs = collect_project_refs(task_id, state)
     materialized = [
-        _materialize_logical_key_targets(
+        _materialize_logical_key_targets_best_effort(
             logical_key,
             targets,
             resolver=_resolve_existing_path,
@@ -297,7 +324,13 @@ def materialize_project_row(task_id: str, state: Mapping[str, Any]) -> dict[str,
         for item in materialized
         if item["downloaded"]
     ]
+    report["materialization_errors"] = [
+        item
+        for item in materialized
+        if item.get("error")
+    ]
     report["materialized"] = materialized
+    report["ok"] = bool(report.get("ok")) and not report["materialization_errors"]
     return report
 
 
@@ -308,7 +341,7 @@ def materialize_media_row(
 ) -> dict[str, Any]:
     refs = collect_media_refs(row)
     materialized = [
-        _materialize_logical_key_targets(
+        _materialize_logical_key_targets_best_effort(
             logical_key,
             targets,
             resolver=lambda target: _resolve_media_path(target, output_dir=output_dir),
@@ -321,7 +354,13 @@ def materialize_media_row(
         for item in materialized
         if item["downloaded"]
     ]
+    report["materialization_errors"] = [
+        item
+        for item in materialized
+        if item.get("error")
+    ]
     report["materialized"] = materialized
+    report["ok"] = bool(report.get("ok")) and not report["materialization_errors"]
     return report
 
 

@@ -392,6 +392,42 @@ def test_materialize_project_row_downloads_missing_targets_from_tos(tmp_path, mo
     ]
 
 
+def test_materialize_project_row_continues_after_missing_logical_key(tmp_path, monkeypatch):
+    migration = importlib.import_module("appcore.local_storage_migration")
+    downloaded = []
+
+    def _fake_download_file(object_key, destination):
+        if object_key.endswith("missing.mp4"):
+            raise FileNotFoundError(object_key)
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(f"payload:{object_key}".encode("utf-8"))
+        downloaded.append((object_key, str(destination)))
+        return str(destination)
+
+    monkeypatch.setattr(migration.tos_clients, "download_file", _fake_download_file)
+
+    source_path = tmp_path / "uploads" / "task-1.mp4"
+    missing_path = tmp_path / "output" / "task-1" / "missing.mp4"
+    state = {
+        "video_path": str(source_path),
+        "result": {"result_video": str(missing_path)},
+        "source_tos_key": "uploads/1/task-1/source.mp4",
+        "tos_uploads": {
+            "normal:result_video": {"tos_key": "artifacts/1/task-1/normal/missing.mp4"},
+        },
+    }
+
+    report = migration.materialize_project_row("task-1", state)
+
+    assert report["ok"] is False
+    assert report["missing_logical_keys"] == ["artifacts/1/task-1/normal/missing.mp4"]
+    assert report["downloaded_keys"] == ["uploads/1/task-1/source.mp4"]
+    assert report["materialization_errors"][0]["logical_key"] == "artifacts/1/task-1/normal/missing.mp4"
+    assert downloaded == [("uploads/1/task-1/source.mp4", str(source_path))]
+    assert source_path.read_bytes() == b"payload:uploads/1/task-1/source.mp4"
+
+
 def test_materialize_media_row_downloads_missing_media_store_targets(tmp_path, monkeypatch):
     migration = importlib.import_module("appcore.local_storage_migration")
     downloaded = []
