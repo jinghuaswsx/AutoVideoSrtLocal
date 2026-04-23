@@ -58,7 +58,17 @@ def test_language_support_checks_normalize_code(monkeypatch):
     assert info["name_zh"] == "荷兰语"
 
 
-def test_get_prompt_generates_generic_prompt_for_dynamic_lang(monkeypatch):
+@pytest.mark.parametrize(
+    ("code", "name_zh", "cover_language", "market_hint", "file_suffix"),
+    [
+        ("nl", "荷兰语", "Dutch", "荷兰及比利时弗拉芒区市场", "Dutch"),
+        ("sv", "瑞典语", "Swedish", "瑞典市场", "Swedish"),
+        ("fi", "芬兰语", "Finnish", "芬兰市场", "Finnish"),
+    ],
+)
+def test_get_prompt_bootstraps_new_builtin_language_prompts_from_german_template(
+    monkeypatch, code, name_zh, cover_language, market_hint, file_suffix
+):
     from appcore import image_translate_settings as its
 
     _mock_languages(
@@ -66,7 +76,7 @@ def test_get_prompt_generates_generic_prompt_for_dynamic_lang(monkeypatch):
         [
             {"code": "en", "name_zh": "英语", "enabled": 1},
             {"code": "de", "name_zh": "德语", "enabled": 1},
-            {"code": "nl", "name_zh": "荷兰语", "enabled": 1},
+            {"code": code, "name_zh": name_zh, "enabled": 1},
         ],
     )
 
@@ -82,21 +92,38 @@ def test_get_prompt_generates_generic_prompt_for_dynamic_lang(monkeypatch):
     monkeypatch.setattr(its, "query_one", fake_query_one)
     monkeypatch.setattr(its, "execute", fake_execute)
 
-    value = its.get_prompt("cover", "nl")
-    assert "荷兰语" in value
-    assert "只替换文字" in value
-    assert "保留布局" in value
-    assert store["image_translate.prompt_cover_nl"] == value
+    cover = its.get_prompt("cover", code)
+    detail = its.get_prompt("detail", code)
+
+    assert f"Task: Localize this English video cover image into {cover_language}." in cover
+    assert "【Core Rules】" in cover
+    assert f"【{cover_language} Translation Requirements】" in cover
+    assert "Output size must be strictly 1080×1920 pixels (vertical 9:16)" in cover
+    assert f"only replace the English text with {cover_language}" in cover
+    assert f"If the {cover_language} text is longer than the English" in cover
+    assert "只替换文字，保留布局" not in cover
+
+    assert f"英语到{name_zh}翻译" in detail
+    assert f"从英语翻译成{name_zh}" in detail
+    assert "### 需要翻译的内容" in detail
+    assert "### 不得翻译的内容" in detail
+    assert "### 文件命名" in detail
+    assert market_hint in detail
+    assert f"[原始文件名]-{file_suffix}.[原始扩展名]" in detail
+    assert "只替换文字，保留布局" not in detail
+
+    assert store[f"image_translate.prompt_cover_{code}"] == cover
+    assert store[f"image_translate.prompt_detail_{code}"] == detail
 
 
-def test_get_prompt_generates_generic_detail_prompt_for_dynamic_lang(monkeypatch):
+def test_get_prompt_generates_generic_prompt_for_unlisted_dynamic_lang(monkeypatch):
     from appcore import image_translate_settings as its
 
     _mock_languages(
         monkeypatch,
         [
             {"code": "en", "name_zh": "英语", "enabled": 1},
-            {"code": "nl", "name_zh": "荷兰语", "enabled": 1},
+            {"code": "pl", "name_zh": "波兰语", "enabled": 1},
         ],
     )
 
@@ -112,11 +139,101 @@ def test_get_prompt_generates_generic_detail_prompt_for_dynamic_lang(monkeypatch
     monkeypatch.setattr(its, "query_one", fake_query_one)
     monkeypatch.setattr(its, "execute", fake_execute)
 
-    value = its.get_prompt("detail", "nl")
-    assert "荷兰语" in value
+    value = its.get_prompt("cover", "pl")
+    assert "波兰语" in value
     assert "只替换文字" in value
     assert "保留布局" in value
-    assert store["image_translate.prompt_detail_nl"] == value
+    assert store["image_translate.prompt_cover_pl"] == value
+
+
+def test_get_prompt_generates_generic_detail_prompt_for_unlisted_dynamic_lang(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _mock_languages(
+        monkeypatch,
+        [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            {"code": "pl", "name_zh": "波兰语", "enabled": 1},
+        ],
+    )
+
+    store = {}
+
+    def fake_query_one(sql, params):
+        key = params[0]
+        return {"value": store[key]} if key in store else None
+
+    def fake_execute(sql, params):
+        store[params[0]] = params[1]
+
+    monkeypatch.setattr(its, "query_one", fake_query_one)
+    monkeypatch.setattr(its, "execute", fake_execute)
+
+    value = its.get_prompt("detail", "pl")
+    assert "波兰语" in value
+    assert "只替换文字" in value
+    assert "保留布局" in value
+    assert store["image_translate.prompt_detail_pl"] == value
+
+
+def test_get_prompt_replaces_stale_generic_prompt_for_new_builtin_language(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    lang_info = {"code": "nl", "name_zh": "荷兰语", "enabled": 1}
+    _mock_languages(
+        monkeypatch,
+        [
+            {"code": "en", "name_zh": "英语", "enabled": 1},
+            lang_info,
+        ],
+    )
+
+    store = {
+        "image_translate.prompt_cover_nl": its._build_generic_prompt("cover", lang_info),
+        "image_translate.prompt_detail_nl": its._build_generic_prompt("detail", lang_info),
+    }
+
+    def fake_query_one(sql, params):
+        key = params[0]
+        return {"value": store[key]} if key in store else None
+
+    def fake_execute(sql, params):
+        store[params[0]] = params[1]
+
+    monkeypatch.setattr(its, "query_one", fake_query_one)
+    monkeypatch.setattr(its, "execute", fake_execute)
+
+    cover = its.get_prompt("cover", "nl")
+    detail = its.get_prompt("detail", "nl")
+
+    assert "【Dutch Translation Requirements】" in cover
+    assert "### 文件命名" in detail
+    assert store["image_translate.prompt_cover_nl"] == cover
+    assert store["image_translate.prompt_detail_nl"] == detail
+
+
+def test_get_prompt_keeps_custom_prompt_for_new_builtin_language(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _mock_languages(
+        monkeypatch,
+        [{"code": "nl", "name_zh": "荷兰语", "enabled": 1}],
+    )
+
+    store = {"image_translate.prompt_cover_nl": "自定义荷兰语封面 prompt"}
+
+    def fake_query_one(sql, params):
+        key = params[0]
+        return {"value": store[key]} if key in store else None
+
+    def fake_execute(sql, params):
+        store[params[0]] = params[1]
+
+    monkeypatch.setattr(its, "query_one", fake_query_one)
+    monkeypatch.setattr(its, "execute", fake_execute)
+
+    assert its.get_prompt("cover", "nl") == "自定义荷兰语封面 prompt"
+    assert store["image_translate.prompt_cover_nl"] == "自定义荷兰语封面 prompt"
 
 
 def test_get_prompt_bootstraps_when_missing(monkeypatch):

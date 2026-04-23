@@ -91,7 +91,6 @@ def _build_prompt(
     intro: str,
     locale: str | None = None,
     extra: str | None = None,
-    include_length_limits: bool = False,
 ) -> str:
     lines = [
         intro,
@@ -117,14 +116,13 @@ def _build_prompt(
         lines.append(f"- 优先采用符合 {locale} 的自然表达。")
     if extra:
         lines.append(f"- {extra}")
-    if include_length_limits:
-        lines.extend(
-            [
-                "- 标题最多 100 个字符。",
-                "- 文案最多 200 个字符。",
-                "- 描述最多 50 个字符。",
-            ]
-        )
+    lines.extend(
+        [
+            "- 标题最多 100 个字符。",
+            "- 文案最多 200 个字符。",
+            "- 描述最多 50 个字符。",
+        ]
+    )
 
     lines.extend(
         [
@@ -142,7 +140,6 @@ def _build_special_prompt(lang_name: str, expert: str, audience: str, locale: st
         intro=intro,
         locale=locale,
         extra=extra,
-        include_length_limits=True,
     )
 
 
