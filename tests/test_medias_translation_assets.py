@@ -64,3 +64,13 @@ def test_medias_js_material_filename_validation_detects_localized_language():
     assert "return fn.includes(item.name_zh);" in script
     assert "await ensureLanguages();" in script
     assert "body: JSON.stringify({ filename: file.name, lang })" in script
+
+
+def test_medias_search_input_runs_live_search():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function scheduleLiveSearch()" in script
+    assert "window.setTimeout(runLiveSearch, 250);" in script
+    assert "kwInput.addEventListener('input', scheduleLiveSearch);" in script
+    assert "searchBtn.addEventListener('click', runSearchNow);" in script
