@@ -285,8 +285,9 @@
     resultVideoLoaded = true;
     resultVideo.src = src;
     resultVideo.style.display = "block";
+    resultVideo.pause();
+    resultVideo.currentTime = 0;
     resultVideo.load();
-    resultVideo.play().catch(() => {});
     if (resultPlaceholder) resultPlaceholder.style.display = "none";
   }
 

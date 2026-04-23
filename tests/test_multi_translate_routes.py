@@ -321,6 +321,15 @@ def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     assert "vsPreviewSubtitle" in script
     assert "pointerdown" in script
 
+
+def test_voice_selector_multi_does_not_autoplay_result_video_after_compose():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
+
+    assert "function loadResultVideo(src)" in script
+    assert "resultVideo.play().catch(() => {});" not in script
+
+
 def test_multi_translate_subtitle_preview_route(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
         "web.routes.multi_translate.build_multi_translate_preview_payload",
