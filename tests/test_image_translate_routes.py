@@ -76,7 +76,6 @@ def test_medias_default_image_model_is_flash_when_no_user_preference(authed_clie
 
     created = {}
 
-    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "灯"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(
@@ -108,7 +107,6 @@ def test_medias_default_image_model_uses_global_default_model(authed_client_no_d
 
     created = {}
 
-    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "灯"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(
@@ -166,7 +164,6 @@ def test_medias_default_image_model_uses_seedream_for_doubao_channel(authed_clie
 
     created = {}
 
-    monkeypatch.setattr(r.tos_clients, "is_media_bucket_configured", lambda: True)
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "demo"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(
