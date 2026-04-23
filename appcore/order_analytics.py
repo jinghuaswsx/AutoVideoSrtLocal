@@ -271,10 +271,10 @@ def refresh_product_titles(product_ids: list[int] | None = None) -> dict:
 
 def match_orders_to_products() -> int:
     """将 lineitem_name 匹配到 product_id。返回新匹配行数。"""
-    # 精确匹配
+    # 前缀匹配：订单商品名以产品标题开头（后面可能有变体信息如 "- 1 Pack"）
     affected = execute(
         "UPDATE shopify_orders so "
-        "JOIN product_title_cache ptc ON ptc.page_title = so.lineitem_name "
+        "JOIN product_title_cache ptc ON so.lineitem_name LIKE CONCAT(ptc.page_title, '%') "
         "SET so.product_id = ptc.product_id "
         "WHERE so.product_id IS NULL"
     )
