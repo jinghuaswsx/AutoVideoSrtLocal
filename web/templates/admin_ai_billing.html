@@ -1309,7 +1309,7 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
       selectDay(target.getAttribute("data-billing-calendar-day"));
     });
 
-    document.addEventListener("click", function (event) {
+    document.addEventListener("mousedown", function (event) {
       if (panel.hidden || root.contains(event.target)) return;
       closePanel();
     });
