@@ -5,9 +5,10 @@ import logging
 from appcore import material_evaluation
 
 logger = logging.getLogger(__name__)
+MATERIAL_EVALUATION_BATCH_LIMIT = 10
 
 
-def tick_once(limit: int = 5) -> None:
+def tick_once(limit: int = MATERIAL_EVALUATION_BATCH_LIMIT) -> None:
     product_ids = material_evaluation.find_ready_product_ids(limit=limit)
     for product_id in product_ids:
         try:
