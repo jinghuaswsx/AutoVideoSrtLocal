@@ -5,6 +5,7 @@ Japanese on a character-budget path from localization through subtitles.
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import shutil
@@ -13,15 +14,19 @@ import appcore.task_state as task_state
 from appcore import ai_billing
 from appcore.api_keys import resolve_key
 from appcore.events import EVT_SUBTITLE_READY, EVT_TRANSLATE_RESULT, EVT_TTS_SCRIPT_READY
+from appcore.llm_bindings import resolve
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
     _compute_next_target,
+    _distance_to_duration_range,
     _save_json,
     _tts_final_target_range,
 )
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline import ja_translate, speech_rate_model
+from pipeline.voice_embedding import embed_audio_file, serialize_embedding
+from pipeline.voice_match import extract_sample_from_utterances, match_candidates
 from pipeline.extract import get_video_duration
 from pipeline.languages import ja as ja_rules
 from pipeline.subtitle import build_srt_from_chunks, save_srt
@@ -64,10 +69,6 @@ class JapaneseTranslateRunner(PipelineRunner):
                 "name": task.get("selected_voice_name") or selected_voice_id,
             }
 
-        voice = super()._resolve_voice(task, loc_mod)
-        if _voice_public_id(voice):
-            return voice
-
         fallback = resolve_default_voice("ja", user_id=self.user_id)
         if fallback:
             return {"id": None, "elevenlabs_voice_id": fallback, "name": "Default Japanese"}
@@ -77,6 +78,69 @@ class JapaneseTranslateRunner(PipelineRunner):
             "elevenlabs_voice_id": _EMERGENCY_MULTILINGUAL_VOICE_ID,
             "name": "Multilingual fallback",
         }
+
+    def _step_voice_match(self, task_id: str) -> None:
+        from appcore.events import EVT_VOICE_MATCH_READY
+
+        task = task_state.get(task_id)
+        utterances = task.get("utterances") or []
+        video_path = task.get("video_path")
+        default_voice_id = resolve_default_voice("ja", user_id=self.user_id)
+
+        self._set_step(task_id, "voice_match", "running", "正在匹配日语音色候选...")
+
+        candidates: list[dict] = []
+        query_embedding_b64 = None
+        if utterances and video_path:
+            try:
+                clip = extract_sample_from_utterances(
+                    video_path,
+                    utterances,
+                    out_dir=task["task_dir"],
+                    min_duration=8.0,
+                )
+                vec = embed_audio_file(clip)
+                candidates = match_candidates(
+                    vec,
+                    language="ja",
+                    top_k=10,
+                    exclude_voice_ids={default_voice_id} if default_voice_id else None,
+                ) or []
+                for candidate in candidates:
+                    candidate["similarity"] = float(candidate.get("similarity", 0.0))
+                query_embedding_b64 = base64.b64encode(serialize_embedding(vec)).decode("ascii")
+            except Exception as exc:
+                log.exception("ja voice match failed for %s: %s", task_id, exc)
+                candidates = []
+                query_embedding_b64 = None
+
+        fallback = None if candidates else default_voice_id
+        task_state.update(
+            task_id,
+            voice_match_candidates=candidates,
+            voice_match_fallback_voice_id=fallback,
+            voice_match_query_embedding=query_embedding_b64,
+        )
+        task_state.set_current_review_step(task_id, "voice_match")
+        self._set_step(task_id, "voice_match", "waiting", "日语音色候选已就绪，请先确认音色")
+        self._emit(
+            task_id,
+            EVT_VOICE_MATCH_READY,
+            {
+                "candidates": candidates,
+                "fallback_voice_id": fallback,
+                "target_lang": "ja",
+            },
+        )
+
+    def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
+        steps = super()._get_pipeline_steps(task_id, video_path, task_dir)
+        out = []
+        for name, fn in steps:
+            out.append((name, fn))
+            if name == "asr":
+                out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        return out
 
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
@@ -172,8 +236,22 @@ class JapaneseTranslateRunner(PipelineRunner):
         if not voice_id:
             raise ValueError("No ElevenLabs voice_id available for Japanese TTS")
 
-        self._set_step(task_id, "tts", "running", "正在生成日语配音（字符预算路径）...", model_tag="ElevenLabs · ja")
+        self._set_step(task_id, "tts", "running", "正在生成日语配音并执行时长收敛...", model_tag="ElevenLabs · ja")
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
+
+        try:
+            binding = resolve("ja_translate.localize")
+            translate_provider = binding.get("provider") or "ja_translate.localize"
+            translate_model = binding.get("model") or "ja_translate.localize"
+        except Exception:
+            translate_provider = "ja_translate.localize"
+            translate_model = "ja_translate.localize"
+        translate_channel = {
+            "openrouter": "OpenRouter",
+            "doubao": "豆包（火山）",
+            "gemini_vertex": "Vertex AI",
+            "gemini_aistudio": "Google AI Studio",
+        }.get(translate_provider, translate_provider)
 
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get("normal", {}))
@@ -181,11 +259,28 @@ class JapaneseTranslateRunner(PipelineRunner):
         duration_lo, duration_hi = _tts_final_target_range(video_duration)
         current_localized = variant_state.get("localized_translation") or task.get("localized_translation") or {}
         rounds: list[dict] = []
+        round_products: list[dict] = []
         selected: dict | None = None
+        translation_message_paths: dict[int, str] = {}
+        if os.path.exists(os.path.join(task_dir, "ja_localized_translate_messages.json")):
+            translation_message_paths[1] = "ja_localized_translate_messages.json"
 
-        task_state.update(task_id, tts_duration_rounds=[], tts_duration_status="running")
+        task_state.update(
+            task_id,
+            tts_duration_rounds=[],
+            tts_duration_status="running",
+            tts_translate_provider=translate_provider,
+            tts_translate_model=translate_model,
+            tts_translate_channel=translate_channel,
+        )
 
         for round_index in range(1, 6):
+            artifact_paths: dict[str, str] = {}
+            if round_index == 1 and translation_message_paths.get(1):
+                artifact_paths["initial_translate_messages"] = translation_message_paths[1]
+            elif round_index > 1 and translation_message_paths.get(round_index):
+                artifact_paths["localized_rewrite_messages"] = translation_message_paths[round_index]
+
             tts_script = ja_translate.build_ja_tts_script(current_localized)
             tts_segments = ja_translate.build_ja_tts_segments(tts_script, task.get("script_segments", []))
             round_variant = f"ja_round_{round_index}"
@@ -204,6 +299,16 @@ class JapaneseTranslateRunner(PipelineRunner):
             ja_char_count = ja_translate.count_visible_japanese_chars(tts_script.get("full_text", ""))
             in_range = duration_lo <= audio_duration <= duration_hi
 
+            localized_translation_filename = f"localized_translation.round_{round_index}.json"
+            tts_script_filename = f"tts_script.round_{round_index}.json"
+            round_audio_filename = f"tts_full.ja_round_{round_index}.mp3"
+            _save_json(task_dir, tts_script_filename, tts_script)
+            _save_json(task_dir, f"tts_result.round_{round_index}.json", round_segments)
+            _save_json(task_dir, localized_translation_filename, current_localized)
+            artifact_paths["localized_translation"] = localized_translation_filename
+            artifact_paths["tts_script"] = tts_script_filename
+            artifact_paths["tts_full_audio"] = round_audio_filename
+
             record = {
                 "round": round_index,
                 "target_language": "ja",
@@ -214,22 +319,17 @@ class JapaneseTranslateRunner(PipelineRunner):
                 "duration_lo": duration_lo,
                 "duration_hi": duration_hi,
                 "direction": "initial" if round_index == 1 else "rewrite",
+                "artifact_paths": artifact_paths,
                 "message": (
                     f"第 {round_index} 轮：日语 {ja_char_count} 字，音频 {audio_duration:.1f}s，"
                     f"目标区间 {duration_lo:.1f}-{duration_hi:.1f}s。"
                 ),
             }
 
-            _save_json(task_dir, f"tts_script.round_{round_index}.json", tts_script)
-            _save_json(task_dir, f"tts_result.round_{round_index}.json", round_segments)
-            _save_json(task_dir, f"localized_translation.round_{round_index}.json", current_localized)
-
-            if in_range or round_index == 5:
-                record["selected"] = True
-                record["final_reason"] = "in_range" if in_range else "max_rounds"
-                rounds.append(record)
-                self._emit_duration_round(task_id, round_index, "measure", record)
-                selected = {
+            rounds.append(record)
+            round_products.append(
+                {
+                    "round": round_index,
                     "tts_script": tts_script,
                     "segments": round_segments,
                     "audio_path": round_audio_path,
@@ -237,7 +337,25 @@ class JapaneseTranslateRunner(PipelineRunner):
                     "audio_duration": audio_duration,
                     "ja_char_count": ja_char_count,
                 }
-                task_state.update(task_id, tts_duration_rounds=rounds)
+            )
+            task_state.update(task_id, tts_duration_rounds=rounds)
+            self._emit_duration_round(task_id, round_index, "measure", record)
+
+            if in_range:
+                record["is_final"] = True
+                record["final_reason"] = "converged"
+                record["final_distance"] = 0.0
+                rounds[-1] = record
+                selected = round_products[-1]
+                task_state.update(
+                    task_id,
+                    tts_duration_rounds=rounds,
+                    tts_duration_status="converged",
+                    tts_final_round=round_index,
+                    tts_final_reason="converged",
+                    tts_final_distance=0.0,
+                )
+                self._emit_duration_round(task_id, round_index, "converged", record)
                 break
 
             observed_cps = ja_char_count / audio_duration if audio_duration > 0 else None
@@ -261,9 +379,11 @@ class JapaneseTranslateRunner(PipelineRunner):
                     ),
                 }
             )
-            rounds.append(record)
-            self._emit_duration_round(task_id, round_index, "measure", record)
+            rounds[-1] = record
             task_state.update(task_id, tts_duration_rounds=rounds)
+
+            if round_index == 5:
+                continue
 
             next_localized = ja_translate.rewrite_ja_localized_translation(
                 localized_translation=current_localized,
@@ -277,9 +397,10 @@ class JapaneseTranslateRunner(PipelineRunner):
             )
             rewrite_messages = next_localized.pop("_messages", None)
             if rewrite_messages:
+                rewrite_filename = f"ja_localized_rewrite_messages.round_{round_index + 1}.json"
                 _save_json(
                     task_dir,
-                    f"ja_localized_rewrite_messages.round_{round_index + 1}.json",
+                    rewrite_filename,
                     {
                         "phase": "ja_duration_rewrite",
                         "round": round_index + 1,
@@ -288,10 +409,30 @@ class JapaneseTranslateRunner(PipelineRunner):
                         "messages": rewrite_messages,
                     },
                 )
+                translation_message_paths[round_index + 1] = rewrite_filename
             current_localized = next_localized
 
         if selected is None:
-            raise RuntimeError("Japanese TTS duration loop did not produce a selected round")
+            best_i = min(
+                range(len(rounds)),
+                key=lambda index: _distance_to_duration_range(rounds[index]["audio_duration"], duration_lo, duration_hi),
+            )
+            best_record = rounds[best_i]
+            best_distance = round(_distance_to_duration_range(best_record["audio_duration"], duration_lo, duration_hi), 3)
+            best_record["is_final"] = True
+            best_record["final_reason"] = "best_pick"
+            best_record["final_distance"] = best_distance
+            rounds[best_i] = best_record
+            selected = round_products[best_i]
+            task_state.update(
+                task_id,
+                tts_duration_rounds=rounds,
+                tts_duration_status="converged",
+                tts_final_round=best_i + 1,
+                tts_final_reason="best_pick",
+                tts_final_distance=best_distance,
+            )
+            self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
 
         tts_script = selected["tts_script"]
         final_segments = selected["segments"]
@@ -313,6 +454,10 @@ class JapaneseTranslateRunner(PipelineRunner):
         timeline_manifest = build_timeline_manifest(final_segments, video_duration=video_duration)
         duration_rounds = rounds
         localized_translation = selected["localized_translation"]
+        final_reason = rounds[selected["round"] - 1].get("final_reason") or "best_pick"
+        final_distance = rounds[selected["round"] - 1].get("final_distance")
+        if final_distance is None:
+            final_distance = round(_distance_to_duration_range(selected["audio_duration"], duration_lo, duration_hi), 3)
 
         variant_state.update(
             {
@@ -351,7 +496,10 @@ class JapaneseTranslateRunner(PipelineRunner):
             timeline_manifest=timeline_manifest,
             localized_translation=localized_translation,
             tts_duration_rounds=duration_rounds,
-            tts_duration_status="done",
+            tts_duration_status="converged",
+            tts_final_round=selected["round"],
+            tts_final_reason=final_reason,
+            tts_final_distance=final_distance,
         )
         task_state.set_artifact(
             task_id,
@@ -369,7 +517,7 @@ class JapaneseTranslateRunner(PipelineRunner):
             success=True,
         )
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": tts_script})
-        self._set_step(task_id, "tts", "done", "日语配音生成完成（字符预算路径）")
+        self._set_step(task_id, "tts", "done", "日语配音生成完成并完成时长收敛")
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)

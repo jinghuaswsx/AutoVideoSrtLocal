@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import io
 from pathlib import Path
 from unittest.mock import patch
@@ -114,3 +116,92 @@ def test_ja_translate_detail_falls_back_to_in_memory_task_when_db_type_is_stale(
 
     assert response.status_code == 200
     assert "Demo JA".encode("utf-8") in response.data
+
+
+def test_ja_voice_library_route_returns_shared_payload(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.ja_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(
+                {"target_lang": "ja", "steps": {"extract": "done", "asr": "done", "voice_match": "waiting"}},
+                ensure_ascii=False,
+            ),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr("appcore.voice_library_browse.list_voices", lambda **kwargs: {"items": [{"voice_id": "ja-1"}], "total": 1})
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.get("/api/ja-translate/task-ja/voice-library")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"][0]["voice_id"] == "ja-1"
+    assert resp.get_json()["voice_match_ready"] is True
+
+
+def test_ja_confirm_voice_route_persists_selection_and_resumes_alignment(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.ja_translate.db_query_one",
+        lambda *args, **kwargs: {"state_json": json.dumps({"target_lang": "ja"}, ensure_ascii=False)},
+    )
+    monkeypatch.setattr("web.routes.ja_translate.db_execute", lambda *args, **kwargs: None)
+    resumed = {}
+    monkeypatch.setattr("appcore.task_state.update", lambda task_id, **kwargs: resumed.update({"task_id": task_id, "kwargs": kwargs}))
+    monkeypatch.setattr("appcore.task_state.set_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.task_state.set_current_review_step", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "web.routes.ja_translate.ja_pipeline_runner.resume",
+        lambda task_id, start_step, user_id=None: resumed.update({"resume_step": start_step, "user_id": user_id}),
+    )
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: "ja-default")
+
+    resp = authed_client_no_db.post("/api/ja-translate/task-ja/confirm-voice", json={})
+
+    assert resp.status_code == 200
+    assert resumed["kwargs"]["selected_voice_id"] == "ja-default"
+    assert resumed["resume_step"] == "alignment"
+
+
+def test_ja_round_file_route_maps_shared_kind_names(tmp_path, authed_client_no_db, monkeypatch):
+    from web.routes import ja_translate as r
+
+    task_dir = tmp_path / "task-ja"
+    task_dir.mkdir()
+    target = task_dir / "ja_localized_rewrite_messages.round_2.json"
+    target.write_text('{"ok": true}', encoding="utf-8")
+    monkeypatch.setattr(r, "_get_viewable_task", lambda task_id: {"task_dir": str(task_dir)})
+
+    resp = authed_client_no_db.get("/api/ja-translate/task-ja/round-file/2/localized_rewrite_messages")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/json"
+
+
+def test_ja_rematch_route_reuses_saved_embedding(authed_client_no_db):
+    state = {
+        "target_lang": "ja",
+        "voice_match_query_embedding": base64.b64encode(b"fake-embedding").decode("ascii"),
+    }
+    with patch(
+        "web.routes.ja_translate.db_query_one",
+        return_value={"state_json": json.dumps(state, ensure_ascii=False)},
+    ), patch(
+        "web.routes.ja_translate.db_execute",
+    ), patch(
+        "appcore.video_translate_defaults.resolve_default_voice",
+        return_value="ja-default",
+    ), patch(
+        "pipeline.voice_embedding.deserialize_embedding",
+        return_value="decoded-embedding",
+    ), patch(
+        "pipeline.voice_match.match_candidates",
+        return_value=[{"voice_id": "ja-voice-b", "similarity": 0.91}],
+    ) as m_match:
+        resp = authed_client_no_db.post(
+            "/api/ja-translate/task-ja/rematch",
+            json={"gender": "female"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["candidates"][0]["voice_id"] == "ja-voice-b"
+    assert m_match.call_args.kwargs["exclude_voice_ids"] == {"ja-default"}

@@ -39,6 +39,8 @@
   #pipelineCard .steps > #step-asr { order: -2; }
   #pipelineCard .steps > #step-extract { order: -1; }
   {% elif detail_mode == 'ja' %}
+  #voicePanel { display: none !important; }
+  #configPanel { display: none !important; }
   #sourceLangPanel { display: none !important; }
   #avConfigSection { display: none !important; }
   #pipelineCard .steps > #step-asr { order: -2; }
@@ -82,7 +84,7 @@
   {% endif %}
 </p>
 {% endif %}
-{% if detail_mode == 'multi' %}
+{% if detail_mode in ('multi', 'ja') %}
 {% include "_voice_selector_multi.html" %}
 {% endif %}
 {% include "_task_workbench.html" %}
@@ -91,7 +93,7 @@
 {% block scripts %}
 {% if not project.deleted_at %}
 {% include "_task_workbench_scripts.html" %}
-{% if detail_mode == 'multi' %}
+{% if detail_mode in ('multi', 'ja') %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
 {% endif %}

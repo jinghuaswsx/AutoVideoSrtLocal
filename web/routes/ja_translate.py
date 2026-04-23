@@ -10,6 +10,7 @@ from datetime import datetime
 from flask import Blueprint, abort, jsonify, render_template, request, send_file
 from flask_login import current_user, login_required
 
+from appcore import task_state
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
@@ -18,10 +19,24 @@ from pipeline.alignment import build_script_segments
 from web import store
 from web.services import ja_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
+from web.services.translate_detail_protocol import (
+    build_voice_library_payload,
+    lookup_default_voice_row,
+    normalize_confirm_voice_payload,
+    resolve_round_file_entry,
+)
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("ja_translate", __name__)
+
+_ALLOWED_ROUND_KINDS = {
+    "localized_translation": ("localized_translation.round_{r}.json", "application/json"),
+    "localized_rewrite_messages": ("ja_localized_rewrite_messages.round_{r}.json", "application/json"),
+    "initial_translate_messages": ("ja_localized_translate_messages.json", "application/json"),
+    "tts_script": ("tts_script.round_{r}.json", "application/json"),
+    "tts_full_audio": ("tts_full.ja_round_{r}.mp3", "audio/mpeg"),
+}
 
 
 def _default_display_name(original_filename: str) -> str:
@@ -255,6 +270,39 @@ def subtitle_preview(task_id: str):
     return jsonify(build_multi_translate_preview_payload(task_id, row.get("user_id") or current_user.id))
 
 
+@bp.route("/api/ja-translate/<task_id>/voice-library", methods=["GET"])
+@login_required
+def voice_library_for_task(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    state = json.loads(row["state_json"] or "{}")
+
+    from appcore.voice_library_browse import list_voices
+
+    try:
+        data = list_voices(
+            language="ja",
+            gender=request.args.get("gender") or None,
+            q=request.args.get("q") or None,
+            page=1,
+            page_size=500,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    owner_user_id = row.get("user_id") or current_user.id
+    default_voice = lookup_default_voice_row("ja", owner_user_id)
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=owner_user_id,
+        items=data.get("items", []),
+        total=data.get("total", 0),
+        default_voice=default_voice,
+    )
+    return jsonify(payload)
+
+
 @bp.route("/api/ja-translate/<task_id>", methods=["GET"])
 @login_required
 def get_task(task_id: str):
@@ -263,6 +311,119 @@ def get_task(task_id: str):
     if not task:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(task)
+
+
+@bp.route("/api/ja-translate/<task_id>/rematch", methods=["POST"])
+@login_required
+def rematch_voice(task_id: str):
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row:
+        abort(404)
+
+    state = json.loads(row["state_json"] or "{}")
+    body = request.get_json(silent=True) or {}
+    gender = (body.get("gender") or "").strip().lower() or None
+    if gender and gender not in {"male", "female"}:
+        return jsonify({"error": "gender must be male|female|null"}), 400
+
+    embedding_b64 = state.get("voice_match_query_embedding")
+    if not embedding_b64:
+        return jsonify({"error": "voice_match 尚未完成，暂时不能重算候选音色"}), 409
+
+    import base64
+    from appcore.video_translate_defaults import resolve_default_voice
+    from pipeline.voice_embedding import deserialize_embedding
+    from pipeline.voice_match import match_candidates
+
+    try:
+        vec = deserialize_embedding(base64.b64decode(embedding_b64))
+    except Exception:
+        return jsonify({"error": "query embedding 解码失败"}), 500
+
+    default_voice_id = resolve_default_voice("ja", user_id=current_user.id)
+    candidates = match_candidates(
+        vec,
+        language="ja",
+        gender=gender,
+        top_k=10,
+        exclude_voice_ids={default_voice_id} if default_voice_id else None,
+    ) or []
+    for candidate in candidates:
+        candidate["similarity"] = float(candidate.get("similarity", 0.0))
+
+    state["voice_match_candidates"] = candidates
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+    task_state.update(task_id, voice_match_candidates=candidates)
+    return jsonify({"ok": True, "gender": gender, "candidates": candidates})
+
+
+@bp.route("/api/ja-translate/<task_id>/confirm-voice", methods=["POST"])
+@login_required
+def confirm_voice(task_id: str):
+    row = db_query_one(
+        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
+        (task_id, current_user.id),
+    )
+    if not row:
+        abort(404)
+
+    state = json.loads(row["state_json"] or "{}")
+
+    from appcore.video_translate_defaults import resolve_default_voice
+
+    try:
+        normalized = normalize_confirm_voice_payload(
+            body=request.get_json() or {},
+            lang="ja",
+            default_voice_id=resolve_default_voice("ja", user_id=current_user.id),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    state["selected_voice_id"] = normalized["voice_id"]
+    if normalized["voice_name"]:
+        state["selected_voice_name"] = normalized["voice_name"]
+    state["subtitle_font"] = normalized["subtitle_font"]
+    state["subtitle_size"] = normalized["subtitle_size"]
+    state["subtitle_position_y"] = normalized["subtitle_position_y"]
+    state["subtitle_position"] = normalized["subtitle_position"]
+    db_execute(
+        "UPDATE projects SET state_json = %s WHERE id = %s",
+        (json.dumps(state, ensure_ascii=False), task_id),
+    )
+
+    task_state.update(
+        task_id,
+        selected_voice_id=normalized["voice_id"],
+        selected_voice_name=normalized["voice_name"],
+        voice_id=normalized["voice_id"],
+        subtitle_font=normalized["subtitle_font"],
+        subtitle_size=normalized["subtitle_size"],
+        subtitle_position_y=normalized["subtitle_position_y"],
+        subtitle_position=normalized["subtitle_position"],
+    )
+    task_state.set_step(task_id, "voice_match", "done")
+    task_state.set_current_review_step(task_id, "")
+    ja_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
+
+    medias_context = state.get("medias_context") or {}
+    parent_task_id = (medias_context.get("parent_task_id") or "").strip()
+    if parent_task_id:
+        try:
+            from web.background import start_background_task
+            from web.routes.bulk_translate import _spawn_scheduler
+
+            start_background_task(_spawn_scheduler, parent_task_id)
+        except Exception:
+            log.exception("failed to resume parent bulk_translate task after voice confirm")
+
+    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
 
 
 @bp.route("/api/ja-translate/<task_id>/start", methods=["POST"])
@@ -501,6 +662,31 @@ def get_artifact(task_id: str, name: str):
     if path and os.path.exists(path):
         return send_file(os.path.abspath(path))
     return jsonify({"error": "Artifact not found"}), 404
+
+
+@bp.route("/api/ja-translate/<task_id>/round-file/<int:round_index>/<kind>")
+@login_required
+def get_round_file(task_id: str, round_index: int, kind: str):
+    try:
+        filename, mime = resolve_round_file_entry(_ALLOWED_ROUND_KINDS, round_index, kind)
+    except KeyError:
+        abort(404)
+
+    task = _get_viewable_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    path = os.path.join(task.get("task_dir", ""), filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "File not ready"}), 404
+
+    return send_file(
+        os.path.abspath(path),
+        mimetype=mime,
+        as_attachment=False,
+        download_name=filename,
+        conditional=False,
+    )
 
 
 @bp.route("/api/ja-translate/<task_id>/analysis/run", methods=["POST"])

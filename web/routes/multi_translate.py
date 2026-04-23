@@ -19,6 +19,12 @@ from pipeline.alignment import build_script_segments
 from web import store
 from web.services import multi_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
+from web.services.translate_detail_protocol import (
+    build_voice_library_payload,
+    lookup_default_voice_row,
+    normalize_confirm_voice_payload,
+    resolve_round_file_entry,
+)
 
 log = logging.getLogger(__name__)
 
@@ -572,17 +578,15 @@ def get_round_attempt_file(task_id: str, round_index: int, attempt: int):
 @login_required
 def get_round_file(task_id: str, round_index: int, kind: str):
     """Serve per-round intermediate artifacts."""
-    if round_index not in (1, 2, 3, 4, 5):
-        abort(404)
-    if kind not in _ALLOWED_ROUND_KINDS:
+    try:
+        filename, mime = resolve_round_file_entry(_ALLOWED_ROUND_KINDS, round_index, kind)
+    except KeyError:
         abort(404)
 
     task = _get_viewable_task(task_id)
     if not task:
         return jsonify({"error": "Task not found"}), 404
 
-    filename_pattern, mime = _ALLOWED_ROUND_KINDS[kind]
-    filename = filename_pattern.format(r=round_index)
     path = os.path.join(task.get("task_dir", ""), filename)
     if not os.path.exists(path):
         return jsonify({"error": "File not ready"}), 404
@@ -659,7 +663,7 @@ def update_voice(task_id: str):
 @bp.route("/api/multi-translate/<task_id>/voice-library", methods=["GET"])
 @login_required
 def voice_library_for_task(task_id: str):
-    """返回任务目标语言下的所有音色（给前端滚动列表铺全库用）。"""
+    """Return the full voice-library payload for the shared detail shell."""
     row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
         abort(404)
@@ -669,54 +673,28 @@ def voice_library_for_task(task_id: str):
         return jsonify({"error": "task has no target_lang"}), 400
 
     from appcore.voice_library_browse import list_voices
+
     gender = request.args.get("gender") or None
     q = request.args.get("q") or None
     try:
-        data = list_voices(language=lang, gender=gender, q=q,
-                             page=1, page_size=500)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        data = list_voices(language=lang, gender=gender, q=q, page=1, page_size=500)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-    # 管道状态 —— 前端据此决定是否显示"等 ASR 中"
-    steps = state.get("steps", {}) or {}
-    pipeline = {
-        "extract": steps.get("extract", "pending"),
-        "asr": steps.get("asr", "pending"),
-        "voice_match": steps.get("voice_match", "pending"),
-    }
-    # voice_match 处于 waiting 或 done 才表示候选已就绪
-    vm_status = pipeline["voice_match"]
-    voice_match_ready = vm_status in ("waiting", "done")
-
-    # 默认音色：让前端把它置顶可预览 + 可选中
-    # 优先用 user_voice_defaults 里用户自己设的，没有就走 resolve_default_voice 兜底
-    from appcore.video_translate_defaults import resolve_default_voice
-    default_voice = None
     owner_user_id = row.get("user_id") or current_user.id
-    default_voice_id = resolve_default_voice(lang, user_id=owner_user_id) if lang else None
-    if default_voice_id:
-        row2 = db_query_one(
-            "SELECT voice_id, name, gender, accent, age, descriptive, preview_url "
-            "FROM elevenlabs_voices WHERE voice_id = %s LIMIT 1",
-            (default_voice_id,),
-        )
-        if row2:
-            default_voice = dict(row2)
-            default_voice["description"] = row2.get("descriptive") or ""
-
-    return jsonify({
-        "items": data.get("items", []),
-        "total": data.get("total", 0),
-        "candidates": state.get("voice_match_candidates", []),
-        "fallback_voice_id": state.get("voice_match_fallback_voice_id"),
-        "selected_voice_id": state.get("selected_voice_id"),
-        "pipeline": pipeline,
-        "voice_match_ready": voice_match_ready,
-        "default_voice": default_voice,
-    })
+    default_voice = lookup_default_voice_row(lang, owner_user_id)
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=owner_user_id,
+        items=data.get("items", []),
+        total=data.get("total", 0),
+        default_voice=default_voice,
+    )
+    return jsonify(payload)
 
 
 @bp.route("/api/multi-translate/<task_id>/rematch", methods=["POST"])
+
 @login_required
 def rematch_voice(task_id: str):
     """基于前端当前筛选条件（目前：gender）重新对该子集做向量匹配，返回新 top-10。
@@ -785,7 +763,7 @@ def rematch_voice(task_id: str):
 @bp.route("/api/multi-translate/<task_id>/confirm-voice", methods=["POST"])
 @login_required
 def confirm_voice(task_id: str):
-    """用户在 UI 上选定 TTS 音色 → 写入 state + 内存 → 恢复 pipeline 跑 alignment。"""
+    """Persist the shared-shell voice selection and resume from alignment."""
     row = db_query_one(
         "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
@@ -794,60 +772,45 @@ def confirm_voice(task_id: str):
         abort(404)
 
     body = request.get_json() or {}
-    voice_id = (body.get("voice_id") or "").strip()
-    voice_name = (body.get("voice_name") or "").strip() or None
-
     state = json.loads(row["state_json"] or "{}")
     lang = state.get("target_lang")
 
-    # voice_id 为 "default" / 空 时：走 resolve_default_voice（含用户自定义默认）
-    if not voice_id or voice_id == "default":
-        from appcore.video_translate_defaults import resolve_default_voice
-        voice_id = resolve_default_voice(lang, user_id=current_user.id) if lang else None
-        if not voice_id:
-            return jsonify({"error": "no default voice available for this language"}), 400
-        voice_name = voice_name or "默认音色"
+    from appcore.video_translate_defaults import resolve_default_voice
 
-    # 收可选字幕参数（都有默认值）
-    subtitle_font = (body.get("subtitle_font") or "Impact").strip()
     try:
-        subtitle_size = int(body.get("subtitle_size") or 14)
-    except (TypeError, ValueError):
-        subtitle_size = 14
-    try:
-        subtitle_position_y = float(body.get("subtitle_position_y") or 0.68)
-    except (TypeError, ValueError):
-        subtitle_position_y = 0.68
-    subtitle_position = (body.get("subtitle_position") or "bottom").strip()
+        normalized = normalize_confirm_voice_payload(
+            body=body,
+            lang=lang or "",
+            default_voice_id=resolve_default_voice(lang, user_id=current_user.id) if lang else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-    # 写 DB state_json
-    state["selected_voice_id"] = voice_id
-    if voice_name:
-        state["selected_voice_name"] = voice_name
-    state["subtitle_font"] = subtitle_font
-    state["subtitle_size"] = subtitle_size
-    state["subtitle_position_y"] = subtitle_position_y
-    state["subtitle_position"] = subtitle_position
+    state["selected_voice_id"] = normalized["voice_id"]
+    if normalized["voice_name"]:
+        state["selected_voice_name"] = normalized["voice_name"]
+    state["subtitle_font"] = normalized["subtitle_font"]
+    state["subtitle_size"] = normalized["subtitle_size"]
+    state["subtitle_position_y"] = normalized["subtitle_position_y"]
+    state["subtitle_position"] = normalized["subtitle_position"]
     db_execute(
         "UPDATE projects SET state_json = %s WHERE id = %s",
         (json.dumps(state, ensure_ascii=False), task_id),
     )
 
-    # 写内存 task_state
     task_state.update(
         task_id,
-        selected_voice_id=voice_id,
-        selected_voice_name=voice_name,
-        voice_id=voice_id,  # 基类 _resolve_voice 也能兜底用
-        subtitle_font=subtitle_font,
-        subtitle_size=subtitle_size,
-        subtitle_position_y=subtitle_position_y,
-        subtitle_position=subtitle_position,
+        selected_voice_id=normalized["voice_id"],
+        selected_voice_name=normalized["voice_name"],
+        voice_id=normalized["voice_id"],
+        subtitle_font=normalized["subtitle_font"],
+        subtitle_size=normalized["subtitle_size"],
+        subtitle_position_y=normalized["subtitle_position_y"],
+        subtitle_position=normalized["subtitle_position"],
     )
     task_state.set_step(task_id, "voice_match", "done")
     task_state.set_current_review_step(task_id, "")
 
-    # 从 alignment 恢复 pipeline
     multi_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
 
     medias_context = state.get("medias_context") or {}
@@ -861,4 +824,4 @@ def confirm_voice(task_id: str):
         except Exception:
             log.exception("failed to resume parent bulk_translate task after voice confirm")
 
-    return jsonify({"ok": True, "voice_id": voice_id, "voice_name": voice_name})
+    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
