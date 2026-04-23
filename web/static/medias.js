@@ -1310,6 +1310,10 @@
   function edSyncDetailImagesDownloadZipButton() {
     const p = edState.productData && edState.productData.product;
     const ctrl = edDetailImagesCtrl;
+    const productBtn = $('edDownloadProductImagesBtn');
+    if (productBtn) {
+      productBtn.disabled = !(p && p.id);
+    }
     const staticBtn = $('edDetailImagesDownloadZipBtn');
     if (staticBtn) {
       const list = (ctrl && ctrl.staticItems) ? ctrl.staticItems() : [];
@@ -3425,6 +3429,15 @@
         const lang = (edState.activeLang || 'en').trim().toLowerCase();
         if (!pid || edDownloadZipBtn.disabled) return;
         window.location.href = `/medias/api/products/${pid}/detail-images/download-zip?lang=${encodeURIComponent(lang)}&kind=image`;
+      });
+    }
+
+    const edDownloadProductImagesBtn = $('edDownloadProductImagesBtn');
+    if (edDownloadProductImagesBtn) {
+      edDownloadProductImagesBtn.addEventListener('click', () => {
+        const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+        if (!pid || edDownloadProductImagesBtn.disabled) return;
+        window.location.href = `/medias/api/products/${pid}/detail-images/download-localized-zip`;
       });
     }
 
