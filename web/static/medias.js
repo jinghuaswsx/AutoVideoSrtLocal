@@ -1197,6 +1197,60 @@
     return text ? [{ body: text }] : [];
   }
 
+  async function fillCopywritingFromMkSystem() {
+    const nameInput = $('mName');
+    const codeInput = $('mCode');
+    const textarea = $('cwBody');
+    const btn = $('mkCopyFetchBtn');
+    const label = btn ? btn.querySelector('span') : null;
+    const originalLabel = label ? label.textContent : '';
+    const name = nameInput ? nameInput.value.trim() : '';
+    const rawCode = codeInput ? codeInput.value.trim() : '';
+    const normalizedCode = rawCode.toLowerCase();
+
+    if (!name) {
+      alert('请先填写产品名称');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!SLUG_RE.test(normalizedCode)) {
+      alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–128）');
+      if (codeInput) codeInput.focus();
+      return;
+    }
+    if (!textarea) return;
+
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = '获取中...';
+    try {
+      const params = new URLSearchParams({ product_code: rawCode });
+      const data = await fetchJSON(`/medias/api/mk-copywriting?${params.toString()}`);
+      const copywriting = (data.copywriting || '').trim();
+      if (!copywriting) throw new Error('明空系统没有返回可用文案');
+      if (textarea.value.trim() && !confirm('当前文案不为空，是否用明空文案覆盖？')) {
+        return;
+      }
+      textarea.value = copywriting;
+      textarea.focus();
+    } catch (e) {
+      const msg = (e.message || '').toString();
+      if (msg.includes('mk_credentials_expired')) {
+        alert('明空登录已失效，请重新同步 wedev 凭据');
+      } else if (msg.includes('mk_credentials_missing')) {
+        alert('明空凭据未配置，请先在设置页同步 wedev 凭据');
+      } else if (msg.includes('mk_copywriting_not_found')) {
+        alert('明空系统未找到与当前产品 ID 精准匹配的文案');
+      } else if (msg.includes('mk_copywriting_empty')) {
+        alert('明空系统找到了该产品，但没有可用文案');
+      } else {
+        alert('从明空系统获取文案失败：' + msg);
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = originalLabel || '一键从明空系统获取';
+    }
+  }
+
   // ========== Edit Detail Modal ==========
   const edState = {
     current: null, activeLang: 'en', productData: null,
@@ -3071,6 +3125,7 @@
     $('modalClose').addEventListener('click', hideModal);
     $('cancelBtn').addEventListener('click', hideModal);
     $('saveBtn').addEventListener('click', save);
+    $('mkCopyFetchBtn').addEventListener('click', fillCopywritingFromMkSystem);
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
 
