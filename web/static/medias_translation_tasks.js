@@ -107,6 +107,9 @@
 
   function renderTaskItem(task, item) {
     const actions = [];
+    if (item.force_backfillable) {
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="force-backfill-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。">强制回填</button>');
+    }
     if (item.detail_url) {
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
     }
@@ -124,6 +127,7 @@
           <div class="mtt-item__meta">
             <span>${esc(item.summary || '')}</span>
             ${item.child_task_id ? `<span>子任务 <code>${esc(String(item.child_task_id).slice(0, 8))}</code></span>` : ''}
+            ${item.force_backfill_summary ? `<span>${esc(item.force_backfill_summary)}</span>` : ''}
             ${item.manual_step === 'voice_selection' ? '<span class="mtt-item__manual">卡在选择声音</span>' : ''}
           </div>
           ${item.error ? `<div class="mtt-item__error">${esc(item.error)}</div>` : ''}
@@ -363,6 +367,7 @@
         resume: '将重新启动整个批量任务，只恢复中断的子项，已完成项不会重复执行。确定继续吗？',
         'retry-failed': '将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？',
         'retry-item': '将只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？',
+        'force-backfill-item': '将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。确定继续吗？',
       };
       if (confirmMap[action] && !window.confirm(confirmMap[action])) {
         return;
@@ -375,6 +380,9 @@
         url = `/api/bulk-translate/${taskId}/retry-failed`;
       } else if (action === 'retry-item') {
         url = `/api/bulk-translate/${taskId}/retry-item`;
+        payload = { idx: Number(itemIdx) };
+      } else if (action === 'force-backfill-item') {
+        url = `/api/bulk-translate/${taskId}/force-backfill-item`;
         payload = { idx: Number(itemIdx) };
       } else {
         return;

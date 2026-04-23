@@ -367,6 +367,24 @@
         await loadTask();
       });
     });
+
+    box.querySelectorAll('[data-force-backfill-idx]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const idx = parseInt(b.dataset.forceBackfillIdx, 10);
+        if (!confirm('将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。确定继续吗？')) return;
+        const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/force-backfill-item`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idx }),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          alert('失败: ' + (e.error || r.status));
+          return;
+        }
+        await loadTask();
+      });
+    });
   }
 
   function splitTaskCards(plan) {
@@ -394,6 +412,9 @@
   function renderTaskCard(item, options) {
     const opts = options || {};
     const status = normalizeStatus(item.status);
+    const forceBackfill = item.force_backfillable
+      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-force-backfill-idx="${item.idx}" title="将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。">强制回填</button>`
+      : '';
     const retry = isRetryableItem(item)
       ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}" title="只重跑这一项：其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>`
       : '';
@@ -407,7 +428,7 @@
     const error = item.error
       ? `<div class="mtt-item__error">失败原因：${esc(item.error)}</div>`
       : '';
-    const actions = [openChild, retry].filter(Boolean).join('');
+    const actions = [forceBackfill, openChild, retry].filter(Boolean).join('');
     const child = childTaskId
       ? `<span>子任务 <code>${esc(String(childTaskId).slice(0, 8))}</code>${esc(childTaskType)}</span>`
       : '';
@@ -427,6 +448,7 @@
             <span>任务 #${esc(item.idx == null ? '-' : item.idx)}</span>
             <span>${esc(ref || '无素材引用')}</span>
             ${child}
+            ${item.force_backfill_summary ? `<span>${esc(item.force_backfill_summary)}</span>` : ''}
             ${intervention}
           </div>
           ${error}
@@ -660,6 +682,7 @@
   }
 
   function actionLabel(action) {
+    if (action === 'force_backfill_item') return '强制回填';
     return {
       create: '创建任务',
       start: '开始执行',
