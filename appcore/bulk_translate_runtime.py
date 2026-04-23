@@ -44,6 +44,8 @@ _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_v
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
+_SYSTEM_AUTO_RETRY_LIMIT = 1
+_POST_VOICE_VIDEO_STEPS = ["alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"]
 
 
 def _download_media_source_to(object_key: str, destination: str) -> str:
@@ -369,6 +371,61 @@ def refresh_task_from_children(task_id: str, user_id: int | None = None) -> dict
     return task
 
 
+def sync_task_with_children_once(
+    task_id: str,
+    user_id: int | None = None,
+    *,
+    resume_video_runner=None,
+) -> dict | None:
+    """Refresh child state and perform one bounded system auto-retry when safe."""
+    task = refresh_task_from_children(task_id, user_id=user_id)
+    if not task:
+        return None
+    if _normalized_status(task.get("status")) in {"done", "cancelled"}:
+        return task
+
+    state = task["state"]
+    plan = [_normalize_item(item) for item in state.get("plan") or []]
+    state["plan"] = plan
+    resolved_user_id = int(user_id if user_id is not None else (task.get("user_id") or 0))
+    actions: list[dict] = []
+    changed = False
+
+    for item in plan:
+        if _normalized_status(item.get("status")) not in _RETRYABLE_ITEM_STATUSES:
+            continue
+        if not _can_system_auto_retry(item):
+            if not item.get("system_auto_retry_exhausted"):
+                item["system_auto_retry_exhausted"] = True
+                changed = True
+            continue
+
+        if _try_system_auto_retry_image_child(item, resolved_user_id):
+            _mark_system_auto_retry(item, "image_translate_failed_items")
+            actions.append({"idx": item.get("idx"), "action": "auto_retry_image"})
+            changed = True
+            continue
+
+        if _try_system_auto_resume_video_child(
+            item,
+            resolved_user_id,
+            resume_video_runner=resume_video_runner,
+        ):
+            _mark_system_auto_retry(item, "multi_translate_post_voice_failed")
+            actions.append({"idx": item.get("idx"), "action": "auto_resume_video"})
+            changed = True
+
+    if not changed:
+        return task
+
+    state["cancel_requested"] = False
+    state["scheduler_anchor_ts"] = None
+    if actions:
+        _append_audit(state, resolved_user_id, "system_auto_retry", {"actions": actions})
+    _save_state(task_id, state, status=_derive_parent_status(plan, task.get("status") or "running"))
+    return get_task(task_id)
+
+
 def _poll_active_item(
     parent_task_id: str,
     item: dict,
@@ -487,15 +544,7 @@ def _retry_existing_image_child_if_possible(
             _apply_child_snapshot(parent_task_id, item, parent_state, child_state, bus=None)
         return _normalized_status(item.get("status")) != "failed"
 
-    child_task_id = item.get("child_task_id") or item.get("sub_task_id")
-    item["child_task_id"] = child_task_id
-    item["sub_task_id"] = child_task_id
-    item["child_task_type"] = "image_translate"
-    item["status"] = "running"
-    item["error"] = None
-    item["result_synced"] = False
-    item["started_at"] = item.get("started_at") or _now_iso()
-    item["finished_at"] = None
+    _mark_image_child_retry_running(item)
     return True
 
 
@@ -511,6 +560,127 @@ def _retry_failed_image_child_items(item: dict, user_id: int) -> int:
     if reset_count > 0:
         image_translate_runner.start(child_task_id, user_id=user_id)
     return reset_count
+
+
+def _mark_image_child_retry_running(item: dict) -> None:
+    child_task_id = item.get("child_task_id") or item.get("sub_task_id")
+    item["child_task_id"] = child_task_id
+    item["sub_task_id"] = child_task_id
+    item["child_task_type"] = "image_translate"
+    item["status"] = "running"
+    item["error"] = None
+    item["result_synced"] = False
+    item["started_at"] = item.get("started_at") or _now_iso()
+    item["finished_at"] = None
+
+
+def _try_system_auto_retry_image_child(
+    item: dict,
+    user_id: int,
+) -> bool:
+    if (item.get("child_task_type") or "").strip() != "image_translate":
+        return False
+    if not (item.get("child_task_id") or item.get("sub_task_id")):
+        return False
+    try:
+        reset_count = _retry_failed_image_child_items(item, user_id)
+    except (PermissionError, ValueError):
+        return False
+    if reset_count <= 0:
+        return False
+    _mark_image_child_retry_running(item)
+    return True
+
+
+def _try_system_auto_resume_video_child(
+    item: dict,
+    user_id: int,
+    *,
+    resume_video_runner=None,
+) -> bool:
+    if (item.get("child_task_type") or "").strip() != "multi_translate":
+        return False
+    child_task_id = (item.get("child_task_id") or item.get("sub_task_id") or "").strip()
+    if not child_task_id:
+        return False
+    child_state = _load_child_snapshot("multi_translate", child_task_id)
+    if _normalized_status(child_state.get("_project_status")) not in {"failed", "interrupted"}:
+        return False
+    if not _video_child_selected_voice(child_state):
+        return False
+    start_step = _failed_post_voice_step(child_state)
+    if not start_step:
+        return False
+
+    _reset_multi_translate_child_for_resume(child_task_id, start_step)
+    item["status"] = "running"
+    item["error"] = None
+    item["result_synced"] = False
+    item["started_at"] = item.get("started_at") or _now_iso()
+    item["finished_at"] = None
+    runner = resume_video_runner or _resume_video_runner
+    runner(child_task_id, start_step, user_id)
+    return True
+
+
+def _system_auto_retry_count(item: dict) -> int:
+    try:
+        return max(0, int(item.get("system_auto_retry_count") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _can_system_auto_retry(item: dict) -> bool:
+    return _system_auto_retry_count(item) < _SYSTEM_AUTO_RETRY_LIMIT
+
+
+def _mark_system_auto_retry(item: dict, reason: str) -> None:
+    item["system_auto_retry_count"] = _system_auto_retry_count(item) + 1
+    item["system_auto_retry_reason"] = reason
+    item["system_auto_retry_at"] = _now_iso()
+    item["system_auto_retry_exhausted"] = item["system_auto_retry_count"] >= _SYSTEM_AUTO_RETRY_LIMIT
+
+
+def _video_child_selected_voice(child_state: dict) -> bool:
+    steps = child_state.get("steps") or {}
+    return bool(
+        child_state.get("selected_voice_id")
+        or child_state.get("voice_id")
+        or steps.get("voice_match") == "done"
+    )
+
+
+def _failed_post_voice_step(child_state: dict) -> str | None:
+    steps = child_state.get("steps") or {}
+    current_review_step = (child_state.get("current_review_step") or "").strip()
+    if current_review_step in _POST_VOICE_VIDEO_STEPS:
+        return current_review_step
+    for step in _POST_VOICE_VIDEO_STEPS:
+        if _normalized_status(steps.get(step)) in {"failed", "interrupted"}:
+            return step
+    for step in _POST_VOICE_VIDEO_STEPS:
+        if steps.get(step) not in {None, "done", "skipped"}:
+            return step
+    return None
+
+
+def _reset_multi_translate_child_for_resume(child_task_id: str, start_step: str) -> None:
+    from appcore import task_state
+
+    should_reset = False
+    for step in _POST_VOICE_VIDEO_STEPS:
+        if step == start_step:
+            should_reset = True
+        if should_reset:
+            task_state.set_step(child_task_id, step, "pending")
+            task_state.set_step_message(child_task_id, step, "等待系统自动重试")
+    task_state.update(child_task_id, status="running", current_review_step="", error="")
+
+
+def _resume_video_runner(child_task_id: str, start_step: str, user_id: int) -> None:
+    from web.services import multi_pipeline_runner
+
+    multi_pipeline_runner.resume(child_task_id, start_step, user_id=user_id)
 
 
 def _should_refresh_from_child(item: dict) -> bool:

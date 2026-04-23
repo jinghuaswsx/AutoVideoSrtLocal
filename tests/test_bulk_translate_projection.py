@@ -106,7 +106,7 @@ def test_list_product_tasks_refreshes_child_status_before_serializing(monkeypatc
     refreshed = []
     monkeypatch.setattr(
         mod,
-        "refresh_task_from_children",
+        "sync_task_with_children_once",
         lambda task_id, user_id=None: refreshed.append((task_id, user_id)) or {
             "id": task_id,
             "status": "done",
