@@ -59,6 +59,7 @@ def test_upload_bad_video_mime(authed_client_no_db, monkeypatch):
 def test_upload_ok(authed_client_no_db, monkeypatch):
     r = _stub_product(monkeypatch)
     fake_write = MagicMock()
+    display_name = "2026.04.23-t-rs-demo.mp4"
     monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
     monkeypatch.setattr(
         r.tos_clients,
@@ -74,7 +75,7 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
         lambda rid: {
             "id": rid,
             "product_id": 123,
-            "display_name": "demo",
+            "display_name": display_name,
             "video_object_key": "1/medias/123/raw_sources/video_v.mp4",
             "cover_object_key": "1/medias/123/raw_sources/cover_c.cover.png",
             "duration_seconds": 12.3,
@@ -91,14 +92,14 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
         data={
             "video": (io.BytesIO(b"FAKE_MP4_BYTES"), "v.mp4", "video/mp4"),
             "cover": (io.BytesIO(b"\x89PNG"), "c.png", "image/png"),
-            "display_name": "demo",
+            "display_name": display_name,
         },
         content_type="multipart/form-data",
     )
 
     assert resp.status_code == 201
     item = resp.get_json()["item"]
-    assert item["display_name"] == "demo"
+    assert item["display_name"] == display_name
     assert item["video_url"].endswith("/video")
     assert fake_write.call_count == 2
 
@@ -128,6 +129,7 @@ def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
         data={
             "video": (io.BytesIO(b"FAKE"), "v.mp4", "video/mp4"),
             "cover": (io.BytesIO(b"\x89PNG"), "c.png", "image/png"),
+            "display_name": "2026.04.23-t-rs-demo.mp4",
         },
         content_type="multipart/form-data",
     )
