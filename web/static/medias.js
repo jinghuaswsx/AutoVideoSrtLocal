@@ -353,6 +353,25 @@
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  function compactCellText(value) {
+    const text = String(value || '').trim();
+    return text ? escapeHtml(text) : '<span class="muted">—</span>';
+  }
+
+  function listingStatus(product) {
+    return product && product.listing_status === '下架' ? '下架' : '上架';
+  }
+
+  function isListed(product) {
+    return listingStatus(product) === '上架';
+  }
+
+  function listingStatusPill(status) {
+    const normalized = status === '下架' ? '下架' : '上架';
+    const cls = normalized === '下架' ? 'off' : 'on';
+    return `<span class="oc-listing-pill ${cls}">${escapeHtml(normalized)}</span>`;
+  }
+
   // ---------- 商品详情图（通用控制器） ----------
   // 在"添加产品"与"编辑产品"两个弹窗里都复用。
   function createDetailImagesController(opts) {
@@ -648,6 +667,9 @@
         <col style="width:120px">
         <col style="width:120px">
         <col style="width:96px">
+        <col style="width:132px">
+        <col style="width:128px">
+        <col style="width:72px">
         <col style="width:100px">
         <col style="width:60px">
         <col style="width:336px">
@@ -661,6 +683,9 @@
           <th>产品名称</th>
           <th>产品 ID</th>
           <th>明空 ID</th>
+          <th>备注说明</th>
+          <th>AI评估结果</th>
+          <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
           <th>语种覆盖</th>
@@ -691,6 +716,8 @@
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
+    const listed = isListed(p);
+    const listingTitle = listed ? '基于原始视频发起多语言翻译' : '产品已下架，不能执行翻译等生产操作';
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
@@ -701,6 +728,9 @@
         <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
         <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
+        <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
+        <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">${compactCellText(p.ai_evaluation_result)}</td>
+        <td>${listingStatusPill(listingStatus(p))}</td>
         <td class="wrap" title="${escapeHtml(ownerName)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
@@ -709,7 +739,7 @@
           <div class="oc-row-actions">
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
             <button class="oc-btn sm ghost js-raw-sources" data-pid="${p.id}" data-name="${escapeHtml(p.name)}">原始视频 (${rawCount})</button>
-            <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="基于原始视频发起多语言翻译">🌐 翻译</button>
+            <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="${escapeHtml(listingTitle)}" ${listed ? '' : 'disabled aria-disabled="true"'}>🌐 翻译</button>
           </div>
         </td>
       </tr>`;
@@ -4075,6 +4105,7 @@
     const translateBtn = event.target.closest('.js-translate');
     if (translateBtn) {
       event.preventDefault();
+      if (translateBtn.disabled || translateBtn.getAttribute('aria-disabled') === 'true') return;
       await openTranslateDialog(translateBtn.dataset.pid, translateBtn.dataset.name || '');
       return;
     }

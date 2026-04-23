@@ -39,11 +39,25 @@ def _iso_or_none(value: Any) -> Any:
     return value
 
 
+def _number_or_none(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _serialize_product(product: dict) -> dict:
     return {
         "id": product.get("id"),
         "product_code": product.get("product_code"),
         "name": product.get("name"),
+        "remark": product.get("remark") or "",
+        "ai_score": _number_or_none(product.get("ai_score")),
+        "ai_evaluation_result": product.get("ai_evaluation_result") or "",
+        "ai_evaluation_detail": product.get("ai_evaluation_detail") or "",
+        "listing_status": medias.normalize_listing_status(product.get("listing_status")),
         "archived": bool(product.get("archived")),
         "created_at": _iso_or_none(product.get("created_at")),
         "updated_at": _iso_or_none(product.get("updated_at")),
@@ -148,6 +162,8 @@ def build_push_payload(product_code: str):
     product = medias.get_product_by_code(code)
     if not product:
         return jsonify({"error": "product not found"}), 404
+    if not medias.is_product_listed(product):
+        return jsonify({"error": "product_not_listed"}), 409
 
     product_id = product["id"]
     items = medias.list_items(product_id, lang)
@@ -430,6 +446,7 @@ def _serialize_push_item(item: dict, product: dict) -> dict:
         "product_id": item.get("product_id"),
         "product_code": product.get("product_code"),
         "product_name": product.get("name"),
+        "listing_status": medias.normalize_listing_status(product.get("listing_status")),
         "lang": item.get("lang") or "en",
         "filename": item.get("filename"),
         "display_name": item.get("display_name") or item.get("filename"),
@@ -496,6 +513,7 @@ def list_push_items():
             "ad_supported_langs": row.get("ad_supported_langs"),
             "selling_points": row.get("selling_points"),
             "importance": row.get("importance"),
+            "listing_status": row.get("listing_status"),
         }
         all_items.append(_serialize_push_item(item_shape, product_shape))
 
@@ -560,6 +578,11 @@ def get_push_item_payload_by_keys():
 
     try:
         payload = pushes.build_item_payload(item, product)
+    except pushes.ProductNotListedError as exc:
+        return jsonify({
+            "error": str(exc),
+            "code": "product_not_listed",
+        }), 409
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
         return jsonify({
             "error": str(exc),

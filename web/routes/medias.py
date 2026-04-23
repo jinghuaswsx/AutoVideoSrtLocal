@@ -244,6 +244,28 @@ def _can_access_product(product: dict | None) -> bool:
     return product is not None
 
 
+def _product_not_listed_response():
+    return jsonify({
+        "error": "product_not_listed",
+        "message": "产品已下架，不能执行该操作",
+    }), 409
+
+
+def _ensure_product_listed(product: dict | None):
+    if not medias.is_product_listed(product):
+        return _product_not_listed_response()
+    return None
+
+
+def _json_number_or_none(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
     return image_translate_routes.start_image_translate_runner(task_id, user_id)
 
@@ -299,6 +321,11 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
         "source": p.get("source"),
+        "remark": p.get("remark") or "",
+        "ai_score": _json_number_or_none(p.get("ai_score")),
+        "ai_evaluation_result": p.get("ai_evaluation_result") or "",
+        "ai_evaluation_detail": p.get("ai_evaluation_detail") or "",
+        "listing_status": medias.normalize_listing_status(p.get("listing_status")),
         "ad_supported_langs": p.get("ad_supported_langs") or "",
         "archived": bool(p.get("archived")),
         "created_at": p["created_at"].isoformat() if p.get("created_at") else None,
@@ -542,6 +569,16 @@ def api_update_product(pid: int):
     if "mk_id" in body:
         update_fields["mk_id"] = body.get("mk_id")
 
+    for key in (
+        "remark",
+        "ai_score",
+        "ai_evaluation_result",
+        "ai_evaluation_detail",
+        "listing_status",
+    ):
+        if key in body:
+            update_fields[key] = body.get(key)
+
     # 鍙€夛細localized_links 鈥?姣忚瑷€瑕嗙洊鍟嗗搧閾炬帴锛坉ict {lang: url}锛?
     if isinstance(body.get("localized_links"), dict):
         cleaned = {}
@@ -571,7 +608,7 @@ def api_update_product(pid: int):
     try:
         medias.update_product(pid, **update_fields)
     except ValueError as e:
-        return jsonify({"error": "mk_id_invalid", "message": str(e)}), 400
+        return jsonify({"error": "invalid_product_field", "message": str(e)}), 400
     except pymysql.err.IntegrityError as e:
         code = e.args[0] if e.args else None
         if code == 1062 and "uk_media_products_mk_id" in str(e):
@@ -860,6 +897,9 @@ def api_product_translate(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
+    blocked = _ensure_product_listed(p)
+    if blocked:
+        return blocked
 
     body = request.get_json(silent=True) or {}
     raw_ids = body.get("raw_ids") or []
@@ -936,6 +976,9 @@ def api_item_bootstrap(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
+    blocked = _ensure_product_listed(p)
+    if blocked:
+        return blocked
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
     if err:
@@ -969,6 +1012,9 @@ def api_item_complete(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
+    blocked = _ensure_product_listed(p)
+    if blocked:
+        return blocked
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body)
     if err:
@@ -1802,6 +1848,9 @@ def api_detail_images_translate_from_en(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
+    blocked = _ensure_product_listed(p)
+    if blocked:
+        return blocked
 
     body = request.get_json(silent=True) or {}
     lang, err = _parse_lang(body, default="")

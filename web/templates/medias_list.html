@@ -89,6 +89,7 @@
 .oc-btn.sm { height:28px; font-size:12px; padding:0 10px; }
 .oc-btn.danger { background:var(--oc-danger); color:#fff; }
 .oc-btn.danger:hover { filter:brightness(0.92); }
+.oc-btn:disabled { opacity:.48; cursor:not-allowed; }
 
 /* ────────── Banner ────────── */
 .oc-banner { display:flex; align-items:center; gap:var(--oc-sp-3); padding:var(--oc-sp-3) var(--oc-sp-4); border-radius:var(--oc-r-md); background:var(--oc-warning-bg); color:var(--oc-warning-fg); font-size:13px; line-height:1.5; margin-bottom:var(--oc-sp-5); }
@@ -597,6 +598,10 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-row-actions .bt-row-btn { margin:0; flex:0 0 auto; }
 
 .oc-pill { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 8px; border-radius:9999px; background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
+.oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; }
+.oc-listing-pill.on { background:var(--oc-accent-subtle); color:var(--oc-accent); }
+.oc-listing-pill.off { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+.bt-row-btn:disabled { opacity:.48; cursor:not-allowed; }
 
 .oc-thumb-sm { width:96px; height:96px; border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle); }
 .oc-table td.ellipsis { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

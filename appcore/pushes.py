@@ -156,6 +156,10 @@ class CopywritingParseError(Exception):
     """英文 idx=1 文案 body 无法解析出三段合规字段。"""
 
 
+class ProductNotListedError(Exception):
+    """产品已下架，不能推送。"""
+
+
 _COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
 _COPY_LABEL_TO_FIELD = {
     "标题": "title",
@@ -223,11 +227,12 @@ def _has_valid_en_push_texts(product_id: int) -> bool:
 # ---------- 就绪判定 ----------
 
 def compute_readiness(item: dict, product: dict) -> dict:
-    """返回 5 项就绪布尔。调用方再据此判定 pushable。
+    """返回素材推送就绪布尔项。调用方再据此判定 pushable。
 
     - has_copywriting：按 item.lang 检查本语种是否有任一 copywriting 记录
     - has_push_texts：英文 idx=1 文案能否解析成合规三段（推送下游 texts 字段要求）
     """
+    is_listed = medias.is_product_listed(product)
     has_object = bool((item or {}).get("object_key"))
     has_cover = bool((item or {}).get("cover_object_key"))
 
@@ -248,6 +253,7 @@ def compute_readiness(item: dict, product: dict) -> dict:
     has_push_texts = _has_valid_en_push_texts(pid) if pid else False
 
     return {
+        "is_listed": is_listed,
         "has_object": has_object,
         "has_cover": has_cover,
         "has_copywriting": has_copywriting,
@@ -486,8 +492,12 @@ def build_item_payload(item: dict, product: dict) -> dict:
     """按设计文档组装单条 item 的推送 JSON。
 
     Raises:
+        ProductNotListedError: 产品已下架。
         CopywritingMissingError / CopywritingParseError: 英文 idx=1 文案缺失或格式不合规。
     """
+    if not medias.is_product_listed(product):
+        raise ProductNotListedError("product_not_listed")
+
     object_key = item.get("object_key")
     cover_object_key = item.get("cover_object_key")
     product_code = (product.get("product_code") or "").strip().lower()

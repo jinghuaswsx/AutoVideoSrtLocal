@@ -40,6 +40,7 @@ def test_compute_readiness_all_satisfied(product_with_item):
     product = medias.get_product(pid)
     r = pushes.compute_readiness(item, product)
     assert r == {
+        "is_listed": True,
         "has_object": True,
         "has_cover": True,
         "has_copywriting": True,
