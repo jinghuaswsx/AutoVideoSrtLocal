@@ -29,6 +29,8 @@ def test_tts_language_guard_uses_gemini_flash_lite_use_case(monkeypatch):
     assert kwargs["project_id"] == "task-es"
     assert kwargs["temperature"] == 0
     assert kwargs["max_tokens"] <= 8
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.1-flash-lite-preview"
     assert kwargs["billing_extra"] == {"variant": "normal", "round": 1}
     assert "Spanish" in kwargs["messages"][0]["content"]
     assert "只返回一个字" in kwargs["messages"][0]["content"]

@@ -121,6 +121,8 @@ def validate_tts_script_language_or_raise(
             project_id=project_id,
             temperature=0,
             max_tokens=8,
+            provider_override="openrouter",
+            model_override="google/gemini-3.1-flash-lite-preview",
             billing_extra={"variant": variant, "round": round_index},
         )
         result = _normalize_result(str(response.get("text") or ""), target_language)

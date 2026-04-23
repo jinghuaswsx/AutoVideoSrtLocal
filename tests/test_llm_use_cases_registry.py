@@ -30,8 +30,8 @@ def test_video_translate_asr_and_tts_defaults():
     assert USE_CASES["video_translate.tts"]["units_type"] == "chars"
     assert USE_CASES["video_translate.asr"]["default_provider"] == "doubao_asr"
     assert USE_CASES["video_translate.asr"]["units_type"] == "seconds"
-    assert USE_CASES["video_translate.tts_language_check"]["default_provider"] == "gemini_aistudio"
-    assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert USE_CASES["video_translate.tts_language_check"]["default_provider"] == "openrouter"
+    assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "google/gemini-3.1-flash-lite-preview"
     assert USE_CASES["video_translate.tts_language_check"]["units_type"] == "tokens"
 
 
