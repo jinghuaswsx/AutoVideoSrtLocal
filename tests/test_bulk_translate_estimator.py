@@ -180,6 +180,33 @@ def test_cost_breakdown_structure(monkeypatch):
                - (b["copy_cny"] + b["image_cny"] + b["video_cny"])) < 0.01
 
 
+def test_new_material_content_types_are_estimated(monkeypatch):
+    """素材管理新版 content_types 也应进入同一套费用预估。"""
+    fake = _FakeDB(
+        copies_en=[{"id": 1, "len_title": 10, "len_body": 40,
+                    "len_description": 0, "len_ad_carrier": 0,
+                    "len_ad_copy": 0, "len_ad_keywords": 0}],
+        details_en=[10],
+        covers_en=[20],
+        videos_en=[{"id": 1, "duration_seconds": 60}],
+    )
+    _patch_db(monkeypatch, fake)
+
+    from appcore.bulk_translate_estimator import estimate
+    r = estimate(
+        1,
+        77,
+        ["de"],
+        ["copywriting", "detail_images", "video_covers", "videos"],
+        False,
+    )
+
+    assert r["copy_tokens"] == int(50 * CHARS_TO_TOKENS * TRANSLATION_EXPANSION)
+    assert r["image_count"] == 2
+    assert r["video_minutes"] == pytest.approx(1.0)
+    assert r["estimated_cost_cny"] > 0
+
+
 def test_content_types_filtering(monkeypatch):
     """只勾 copy 时,即使 DB 里有图/视频也不计。"""
     fake = _FakeDB(

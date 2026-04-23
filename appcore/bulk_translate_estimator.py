@@ -33,24 +33,24 @@ def estimate(
     skipped = {"copy": 0, "cover": 0, "detail": 0, "video": 0}
 
     copy_tokens = 0
-    if "copy" in content_types:
+    if _has_kind(content_types, "copy", "copywriting"):
         copy_tokens = _estimate_copy(product_id, target_langs,
                                        force_retranslate, skipped)
 
     image_count = 0
-    if "detail" in content_types:
+    if _has_kind(content_types, "detail", "detail_images"):
         image_count += _estimate_images(
             "media_product_detail_images", product_id,
             target_langs, force_retranslate, skipped, key="detail",
         )
-    if "cover" in content_types:
+    if _has_kind(content_types, "cover", "video_covers"):
         image_count += _estimate_images(
             "media_product_covers", product_id,
             target_langs, force_retranslate, skipped, key="cover",
         )
 
     video_minutes = 0.0
-    if "video" in content_types:
+    if _has_kind(content_types, "video", "videos"):
         video_minutes = _estimate_video(product_id, target_langs,
                                           force_retranslate, skipped)
 
@@ -76,6 +76,10 @@ def estimate(
 # ============================================================
 # 内部估算分块
 # ============================================================
+def _has_kind(content_types: list[str], *candidates: str) -> bool:
+    return any(candidate in content_types for candidate in candidates)
+
+
 _COPY_TEXT_FIELDS = (
     "title", "body", "description",
     "ad_carrier", "ad_copy", "ad_keywords",

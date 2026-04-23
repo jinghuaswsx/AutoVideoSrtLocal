@@ -10,6 +10,8 @@ def client(monkeypatch):
     """禁用 startup recovery + 伪造登录用户。"""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
 
     fake_user = {"id": 1, "username": "t", "role": "admin", "is_active": 1}
     monkeypatch.setattr(
@@ -94,11 +96,20 @@ def test_estimate_requires_auth():
     """没登录应被 login_required 拦。"""
     import web.app as webapp
     orig = webapp._run_startup_recovery
+    orig_task_recovery = webapp.recover_all_interrupted_tasks
+    orig_bulk_recovery = webapp.mark_interrupted_bulk_translate_tasks
+    orig_seed_prompts = webapp._seed_default_prompts
     webapp._run_startup_recovery = lambda: None
+    webapp.recover_all_interrupted_tasks = lambda: None
+    webapp.mark_interrupted_bulk_translate_tasks = lambda: None
+    webapp._seed_default_prompts = lambda: None
     try:
         app = webapp.create_app()
     finally:
         webapp._run_startup_recovery = orig
+        webapp.recover_all_interrupted_tasks = orig_task_recovery
+        webapp.mark_interrupted_bulk_translate_tasks = orig_bulk_recovery
+        webapp._seed_default_prompts = orig_seed_prompts
 
     c = app.test_client()
     resp = c.post("/api/bulk-translate/estimate", json={})

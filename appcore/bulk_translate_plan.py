@@ -12,6 +12,11 @@ from appcore.db import query
 from appcore.video_translate_defaults import VIDEO_SUPPORTED_LANGS
 
 
+COPYWRITING_LANG_DISPATCH_SECONDS = 3
+DETAIL_IMAGES_LANG_DISPATCH_SECONDS = 10
+VIDEOS_DISPATCH_SECONDS = 5
+
+
 def generate_plan(
     user_id: int,
     product_id: int,
@@ -26,6 +31,10 @@ def generate_plan(
 
     copy_kind = _pick_kind(content_types, "copywriting", "copy")
     if copy_kind:
+        copy_dispatch_offsets = _lang_dispatch_offsets(
+            target_langs,
+            COPYWRITING_LANG_DISPATCH_SECONDS,
+        )
         copy_rows = query(
             "SELECT id FROM media_copywritings "
             "WHERE product_id = %s AND lang = 'en' "
@@ -40,6 +49,7 @@ def generate_plan(
                         copy_kind,
                         lang,
                         {"source_copy_id": row["id"]},
+                        dispatch_after_seconds=copy_dispatch_offsets.get(lang, 0),
                     )
                 )
 
@@ -48,7 +58,11 @@ def generate_plan(
         detail_ids = _list_en_ids(product_id, "media_product_detail_images")
         if detail_ids:
             for offset, lang in enumerate(target_langs):
-                dispatch_after_seconds = 30 * offset if detail_kind == "detail_images" else 0
+                dispatch_after_seconds = (
+                    DETAIL_IMAGES_LANG_DISPATCH_SECONDS * offset
+                    if detail_kind == "detail_images"
+                    else 0
+                )
                 plan.append(
                     _new_item(
                         idx_counter.next(),
@@ -133,7 +147,7 @@ def generate_plan(
                         video_kind,
                         lang,
                         {"source_raw_id": raw_id},
-                        dispatch_after_seconds=120 * dispatch_index if video_kind == "videos" else 0,
+                        dispatch_after_seconds=VIDEOS_DISPATCH_SECONDS * dispatch_index if video_kind == "videos" else 0,
                     )
                 )
                 if video_kind == "videos":
@@ -157,6 +171,13 @@ def _pick_kind(content_types: list[str], *candidates: str) -> str | None:
         if candidate in content_types:
             return candidate
     return None
+
+
+def _lang_dispatch_offsets(target_langs: list[str], spacing_seconds: int) -> dict[str, int]:
+    return {
+        lang: spacing_seconds * idx
+        for idx, lang in enumerate(target_langs)
+    }
 
 
 def _new_item(

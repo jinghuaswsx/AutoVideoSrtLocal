@@ -51,3 +51,39 @@ def test_mark_interrupted_bulk_translate_tasks_does_not_resume(monkeypatch):
 
     assert mod.mark_interrupted_bulk_translate_tasks() == 0
     assert called["resume"] == 0
+
+
+def test_mark_interrupted_bulk_translate_tasks_marks_running_parent_even_without_active_items(monkeypatch):
+    from appcore import bulk_translate_recovery as mod
+
+    rows = [
+        {
+            "id": "bt-pending",
+            "status": "running",
+            "state_json": json.dumps(
+                {
+                    "scheduler_anchor_ts": 123.0,
+                    "plan": [
+                        {"idx": 0, "status": "pending"},
+                        {"idx": 1, "status": "awaiting_voice", "child_task_id": "multi-1"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        }
+    ]
+    updates = []
+
+    monkeypatch.setattr(mod, "query", lambda sql, args=None: rows)
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: updates.append(args) or 1)
+
+    count = mod.mark_interrupted_bulk_translate_tasks()
+
+    assert count == 1
+    status, payload, task_id = updates[0]
+    state = json.loads(payload)
+    assert status == "interrupted"
+    assert task_id == "bt-pending"
+    assert state["plan"][0]["status"] == "pending"
+    assert state["plan"][1]["status"] == "awaiting_voice"
+    assert state["scheduler_anchor_ts"] is None
