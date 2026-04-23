@@ -66,6 +66,12 @@ testuser.md
 google_api_key
 link_check_desktop_config.json
 
+# Local data exports and ad-hoc debugging artifacts
+*.csv
+/*.patch
+/test_*.js
+/README.MIMO.MD
+
 # Server SSH keys / drop-zone — never commit private keys or server configs
 .server/
 
