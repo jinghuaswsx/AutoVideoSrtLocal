@@ -33,6 +33,12 @@
 - 聚焦测试：`pytest tests/test_appcore_medias_link_check_bootstrap.py tests/test_link_check_bootstrap_routes.py tests/test_link_check_gemini.py tests/test_link_check_same_image.py tests/test_link_check_desktop_storage.py tests/test_link_check_desktop_bootstrap_api.py tests/test_link_check_desktop_controller.py tests/test_link_check_desktop_gui.py -q`
 - 打包：`pyinstaller link_check_desktop/packaging/link_check_desktop.spec`
 
+## Shopify Image Localizer Commands
+
+- 开发运行：`python -m tools.shopify_image_localizer.main`
+- 语法自检：`@'import py_compile; [py_compile.compile(path, doraise=True) for path in [r"tools/shopify_image_localizer/main.py", r"tools/shopify_image_localizer/gui.py", r"tools/shopify_image_localizer/controller.py", r"tools/shopify_image_localizer/browser/orchestrator.py"]] ; print("ok")'@ | python -`
+- 打包：`python -m tools.shopify_image_localizer.build_exe`
+
 ---
 
 # Frontend Design System — Ocean Blue Admin

@@ -68,6 +68,23 @@ def list_enabled_languages_kv() -> list[tuple[str, str]]:
     return [(r["code"], r["name_zh"]) for r in rows]
 
 
+def list_shopify_localizer_languages() -> list[dict]:
+    items: list[dict] = []
+    for row in list_languages():
+        code = str(row.get("code") or "").strip().lower()
+        if not code:
+            continue
+        name_zh = str(row.get("name_zh") or code).strip() or code
+        items.append({
+            "code": code,
+            "name_zh": name_zh,
+            "shop_locale": code,
+            "folder_code": code,
+            "label": f"{name_zh}（{code.upper()}/{code}）",
+        })
+    return items
+
+
 def get_language_name(code: str) -> str:
     row = get_language((code or "").strip().lower())
     return (row or {}).get("name_zh") or (code or "").strip().lower()
@@ -298,6 +315,25 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
             "object_key": object_key,
         })
     return images
+
+
+def resolve_shopify_product_id(product_id: int) -> str | None:
+    try:
+        row = query_one(
+            "SELECT product_id FROM dianxiaomi_rankings "
+            "WHERE media_product_id=%s AND product_id IS NOT NULL AND product_id<>'' "
+            "ORDER BY snapshot_date DESC, id DESC LIMIT 1",
+            (product_id,),
+        ) or {}
+    except Exception:
+        return None
+
+    value = str(row.get("product_id") or "").strip()
+    return value or None
+
+
+def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:
+    return list_reference_images_for_lang(product_id, (lang or "").strip().lower())
 
 
 def _media_product_owner_name_expr() -> str:
