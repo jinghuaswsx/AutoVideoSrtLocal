@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +29,24 @@ def test_product_translation_tasks_page_renders(authed_client_no_db, monkeypatch
     assert "翻译任务管理" in body
     assert "mediasTranslationTasksMount" in body
     assert "medias_translation_tasks.js" in body
+
+
+def test_product_translation_tasks_page_links_open_new_tabs(authed_client_no_db, monkeypatch):
+    _stub_product(monkeypatch)
+
+    resp = authed_client_no_db.get("/medias/products/123/translation-tasks")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert body.count('href="/medias/" target="_blank" rel="noopener noreferrer"') == 2
+
+
+def test_product_translation_tasks_dynamic_links_open_new_tabs():
+    script = Path("web/static/medias_translation_tasks.js").read_text(encoding="utf-8")
+
+    assert 'target="_blank" rel="noopener noreferrer"' in script
+    assert "newTabAttrs(task.detail_url)" in script
+    assert "newTabAttrs(item.detail_url)" in script
 
 
 def test_product_translation_tasks_api_returns_projection(authed_client_no_db, monkeypatch):
