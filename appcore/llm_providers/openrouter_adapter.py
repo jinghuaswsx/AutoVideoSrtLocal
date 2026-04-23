@@ -1,7 +1,11 @@
 """OpenRouter / 豆包 ARK 适配器（OpenAI-compatible 协议）。"""
 from __future__ import annotations
 
+import base64
+import json
+import mimetypes
 from decimal import Decimal
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -12,6 +16,56 @@ from config import (
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
     USD_TO_CNY,
 )
+
+
+def _normalize_media(media):
+    if not media:
+        return None
+    if isinstance(media, (str, Path)):
+        return [media]
+    return list(media)
+
+
+def _coerce_openrouter_model(model: str) -> str:
+    if model and "/" not in model and model.startswith("gemini-"):
+        return f"google/{model}"
+    return model
+
+
+def _guess_mime(path: Path) -> str:
+    mt, _ = mimetypes.guess_type(str(path))
+    if mt:
+        return mt
+    return {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _media_parts(prompt: str, media) -> list[dict]:
+    parts = [{"type": "text", "text": prompt}]
+    for item in media or []:
+        path = Path(item)
+        if not path.is_file():
+            raise RuntimeError(f"media file does not exist: {path}")
+        mime = _guess_mime(path)
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{data}"},
+        })
+    return parts
+
+
+def _parse_json_content(raw: str):
+    content = (raw or "").strip()
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+    return json.loads(content.strip())
 
 
 class OpenRouterAdapter(LLMAdapter):
@@ -66,6 +120,36 @@ class OpenRouterAdapter(LLMAdapter):
                 "cost_cny": cost_cny,
             },
         }
+
+    def generate(self, *, model, prompt, user_id=None, system=None,
+                 media=None, response_schema=None, temperature=None,
+                 max_output_tokens=None):
+        media_list = _normalize_media(media)
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        user_content = _media_parts(prompt, media_list) if media_list else prompt
+        messages.append({"role": "user", "content": user_content})
+        response_format = None
+        if response_schema is not None:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {"name": "openrouter_generate", "schema": response_schema},
+            }
+        result = self.chat(
+            model=_coerce_openrouter_model(model),
+            messages=messages,
+            user_id=user_id,
+            temperature=temperature,
+            max_tokens=max_output_tokens,
+            response_format=response_format,
+        )
+        if response_schema is not None:
+            result["json"] = _parse_json_content(result.get("text") or "")
+            result["text"] = None
+        else:
+            result["json"] = None
+        return result
 
 
 class DoubaoAdapter(LLMAdapter):

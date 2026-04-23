@@ -192,7 +192,7 @@ USE_CASES: dict[str, UseCase] = {
         "image",
         "图片文字检测",
         "判定商品图中是否存在需要翻译的可读文字",
-        "gemini_aistudio",
+        "gemini_vertex",
         "gemini-3.1-flash-lite-preview",
         "gemini",
         "tokens",

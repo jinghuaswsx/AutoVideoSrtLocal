@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
 _BATCH_SIZE = 10  # 并行模式单批最大并发数
-_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
 _TEXT_DETECT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -191,8 +190,6 @@ class ImageTranslateRuntime:
                 response_schema=_TEXT_DETECT_SCHEMA,
                 temperature=0,
                 max_output_tokens=128,
-                provider_override="gemini_aistudio",
-                model_override=_TEXT_DETECT_MODEL,
             )
             has_text, reason = _parse_text_detection_result(result)
             status = "done"

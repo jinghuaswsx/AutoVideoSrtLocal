@@ -315,7 +315,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <div class="bindings-module">
       <h3>{{ module_label }}</h3>
       {% for row in bindings_grouped[module_code] %}
-      <div class="binding-row">
+      <div class="binding-row" data-code="{{ row.code }}">
         <div>
           <div class="binding-label">
             {{ row.label }}
@@ -327,8 +327,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         <div>
           <label>Provider</label>
           <select name="binding_{{ row.code }}_provider">
-            {% for p in binding_allowed_providers %}
-            <option value="{{ p }}" {{ 'selected' if row.provider == p }}>{{ p }}</option>
+            {% for p, p_label in row.provider_options %}
+            <option value="{{ p }}" {{ 'selected' if row.provider == p }}>{{ p_label }}</option>
             {% endfor %}
           </select>
         </div>
@@ -372,6 +372,9 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     const DOUBAO_MODELS = [
       "doubao-seed-2-0-pro-260215",
     ];
+    const IMAGE_TEXT_DETECT_MODELS = [
+      "gemini-3.1-flash-lite-preview",
+    ];
 
     const PROVIDER_MODELS = {
       "openrouter": [
@@ -391,19 +394,28 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         var dlId = modelInput.getAttribute('list');
         var datalist = document.getElementById(dlId);
         if (!datalist) return;
+        function getModels() {
+          var code = row.getAttribute('data-code') || '';
+          return code === 'image_translate.detect'
+            ? IMAGE_TEXT_DETECT_MODELS
+            : (PROVIDER_MODELS[providerSel.value] || []);
+        }
 
         function refreshOptions() {
-          var models = PROVIDER_MODELS[providerSel.value] || [];
+          var models = getModels();
           datalist.innerHTML = models
             .map(function (m) { return '<option value="' + m + '"></option>'; })
             .join('');
+          if ((row.getAttribute('data-code') || '') === 'image_translate.detect' && !modelInput.value && models.length) {
+            modelInput.value = models[0];
+          }
         }
         providerSel.addEventListener('change', function () {
           refreshOptions();
           // 切换 provider 后：如果当前 model 在新 provider 的候选里就保留；否则清空等用户选
-          var models = PROVIDER_MODELS[providerSel.value] || [];
+          var models = getModels();
           if (modelInput.value && models.indexOf(modelInput.value) === -1) {
-            modelInput.value = '';
+            modelInput.value = (row.getAttribute('data-code') || '') === 'image_translate.detect' && models.length ? models[0] : '';
           }
         });
         refreshOptions();

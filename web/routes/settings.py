@@ -50,6 +50,16 @@ DEFAULT_TRANSLATE_PROVIDER = "vertex_gemini_31_flash_lite"
 BINDING_ALLOWED_PROVIDERS = (
     "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
 )
+BINDING_PROVIDER_LABELS = {
+    "openrouter": "OpenRouter",
+    "doubao": "Doubao ARK",
+    "gemini_aistudio": "Google AI Studio",
+    "gemini_vertex": "Google Cloud (Vertex AI)",
+}
+IMAGE_TEXT_DETECT_PROVIDERS = (
+    "gemini_aistudio", "gemini_vertex", "openrouter",
+)
+IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
 PRICING_UNITS_TYPES = ("tokens", "chars", "seconds", "images")
 IMAGE_TRANSLATE_CHANNEL_DISPLAY_LABELS = {
     **IMAGE_TRANSLATE_CHANNEL_LABELS,
@@ -82,6 +92,18 @@ def index():
     bindings_rows = llm_bindings.list_all()
     bindings_grouped: dict[str, list] = {}
     for row in bindings_rows:
+        if row["code"] == "image_translate.detect":
+            row["provider_options"] = [
+                (p, BINDING_PROVIDER_LABELS.get(p, p))
+                for p in IMAGE_TEXT_DETECT_PROVIDERS
+            ]
+            row["model_suggestions"] = [IMAGE_TEXT_DETECT_MODEL]
+        else:
+            row["provider_options"] = [
+                (p, BINDING_PROVIDER_LABELS.get(p, p))
+                for p in BINDING_ALLOWED_PROVIDERS
+            ]
+            row["model_suggestions"] = []
         bindings_grouped.setdefault(row["module"], []).append(row)
 
     is_admin = getattr(current_user, "role", None) == "admin"
@@ -167,9 +189,15 @@ def _handle_bindings_post() -> None:
     for code in USE_CASES:
         provider = (request.form.get(f"binding_{code}_provider") or "").strip()
         model = (request.form.get(f"binding_{code}_model") or "").strip()
+        allowed_providers = (
+            IMAGE_TEXT_DETECT_PROVIDERS
+            if code == "image_translate.detect" else BINDING_ALLOWED_PROVIDERS
+        )
+        if code == "image_translate.detect" and not model:
+            model = IMAGE_TEXT_DETECT_MODEL
         if not provider or not model:
             continue
-        if provider not in BINDING_ALLOWED_PROVIDERS:
+        if provider not in allowed_providers:
             continue
         llm_bindings.upsert(
             code, provider=provider, model=model, updated_by=current_user.id,

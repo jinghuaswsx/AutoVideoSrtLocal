@@ -40,8 +40,10 @@ def test_gemini_video_analysis_family_defaults():
 
 
 def test_image_and_link_check_defaults():
-    for code in ("image_translate.detect",
-                 "image_translate.generate",
+    assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
+    assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite-preview"
+    assert USE_CASES["image_translate.detect"]["usage_log_service"] == "gemini"
+    for code in ("image_translate.generate",
                  "link_check.analyze",
                  "link_check.same_image"):
         uc = USE_CASES[code]
