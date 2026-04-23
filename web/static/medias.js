@@ -3904,20 +3904,25 @@
   }
 
   function renderTranslateRawSourceChoice(it) {
-    const thumb = it.cover_url
-      ? `<img src="${escapeHtml(it.cover_url)}" alt="${escapeHtml(it.display_name || '原始素材封面')}" loading="lazy">`
-      : `<div class="ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></div>`;
     const title = escapeHtml(it.display_name || `原始视频 #${it.id}`);
+    const inputId = `rst-rs-${it.id}`;
+    const videoUrl = escapeHtml(it.video_url || '');
+    const poster = it.cover_url ? ` poster="${escapeHtml(it.cover_url)}"` : '';
+    const preview = videoUrl
+      ? `<span class="oc-rst-choice-preview"><video class="oc-rst-choice-video" src="${videoUrl}"${poster} controls playsinline preload="metadata" aria-label="${title}"></video></span>`
+      : `<span class="oc-rst-choice-preview"><span class="ph"><svg width="20" height="20" aria-hidden="true"><use href="#ic-film"/></svg></span></span>`;
     return `
       <li class="oc-rst-choice">
-        <label>
-          <input type="checkbox" value="${it.id}" checked>
-          ${thumb}
-          <span class="oc-rst-choice-meta">
+        <div class="oc-rst-choice-row">
+          <label class="oc-rst-choice-check" for="${inputId}">
+            <input id="${inputId}" type="checkbox" value="${it.id}" aria-label="选择 ${title}" checked>
+          </label>
+          ${preview}
+          <label class="oc-rst-choice-meta" for="${inputId}">
             <span class="oc-rst-choice-title" title="${title}">${title}</span>
             <span class="oc-rst-choice-subtitle">${fmtRawDuration(it.duration_seconds)} · ${fmtRawSize(it.file_size)}</span>
-          </span>
-        </label>
+          </label>
+        </div>
       </li>`;
   }
 
@@ -4013,7 +4018,7 @@
       });
       const taskId = data.task_id;
       closeTranslateDialog();
-      window.location.href = `/tasks/${taskId}`;
+      window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer');
     } catch (err) {
       alert(`提交失败：${err.message || err}`);
       translateSubmit.textContent = '提交翻译';

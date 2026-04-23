@@ -41,7 +41,7 @@
     if (!action || Object.keys(action).length === 0) return '';
     if (action.href) {
       const label = action.label || actionLabels.chooseVoice;
-      return `<a class="mt-btn mt-action mt-action--primary" href="${escapeHtml(action.href)}">${escapeHtml(label)}</a>`;
+      return `<a class="mt-btn mt-action mt-action--primary" href="${escapeHtml(action.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
     }
     const label = action.label || (String(action.endpoint || '').includes('/retry-item') ? actionLabels.retryItem : actionLabels.resume);
     const payload = JSON.stringify(action.payload || {});

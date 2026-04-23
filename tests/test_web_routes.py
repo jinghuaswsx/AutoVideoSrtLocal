@@ -2044,6 +2044,10 @@ def test_medias_page_contains_raw_source_translate_dialog(authed_client_no_db):
     assert 'id="rstPreview"' in body
     assert 'id="rstSubmit"' in body
     assert 'id="rstCancel"' in body
+    assert ".oc-rst-choice-row {" in body
+    assert "--rst-preview-w:90px;" in body
+    assert "--rst-preview-h:160px;" in body
+    assert ".oc-rst-choice-video {" in body
 
 
 def test_voice_library_page_ok_and_menu_rendered(authed_client_no_db):
@@ -2126,7 +2130,12 @@ def test_medias_scripts_wire_raw_source_translate_dialog():
     assert "rstPreview" in medias_js
     assert '/medias/api/languages' in medias_js
     assert '/medias/api/products/${pid}/translate' in medias_js
-    assert "window.location.href = `/tasks/${taskId}`" in medias_js
+    assert "const videoUrl = escapeHtml(it.video_url || '')" in medias_js
+    assert "poster=\"${escapeHtml(it.cover_url)}\"" in medias_js
+    assert 'class="oc-rst-choice-video"' in medias_js
+    assert 'controls playsinline preload="metadata"' in medias_js
+    assert "window.open(`/tasks/${taskId}`, '_blank', 'noopener,noreferrer')" in medias_js
+    assert "window.location.href = `/tasks/${taskId}`" not in medias_js
 
 
 def test_medias_scripts_include_owner_column():
