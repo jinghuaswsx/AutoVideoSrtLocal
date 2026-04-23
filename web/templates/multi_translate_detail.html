@@ -49,19 +49,13 @@
   🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
 </p>
 {% endif %}
-<div class="card" style="margin-bottom:16px;">
-  <h2>字幕预览</h2>
-  <div id="sharedSubtitlePreviewMount"></div>
-</div>
 {# 新音色选择器放到工作台前面，用户一进来就能看到 #}
-{% include "_subtitle_preview_panel.html" %}
 {% include "_voice_selector_multi.html" %}
 {% include "_task_workbench.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}
 {% if not project.deleted_at %}
-<script src="{{ url_for('static', filename='subtitle_preview.js') }}"></script>
 {% include "_task_workbench_scripts.html" %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
