@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def test_mk_selection_video_cover_uses_portrait_thumb_frame():
-    template = open(
-        "web/templates/mk_selection.html",
-        encoding="utf-8",
-    ).read()
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert "--mk-video-cover-w: 90px;" in template
     assert "--mk-video-cover-h: 160px;" in template
