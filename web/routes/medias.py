@@ -1325,6 +1325,16 @@ def api_list_languages():
 
 _DETAIL_IMAGES_MAX_BATCH = 20
 
+_DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
+    "de": "德国",
+    "fr": "法国",
+    "es": "西班牙",
+    "it": "意大利",
+    "ja": "日本",
+    "pt": "葡萄牙",
+    "nl": "荷兰",
+}
+
 
 def _serialize_detail_image(row: dict) -> dict:
     return {
@@ -1357,7 +1367,9 @@ def probe_media_info_safe(path: str) -> dict:
 def _detail_images_archive_basename(product: dict, pid: int, lang: str) -> str:
     raw_code = str((product or {}).get("product_code") or "").strip()
     base_code = re.sub(r"[^A-Za-z0-9_-]+", "-", raw_code).strip("-") or f"product-{pid}"
-    return f"{base_code}_{lang}_detail-images"
+    archive_name = f"{base_code}_{lang}_detail-images"
+    country_prefix = _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES.get((lang or "").strip().lower())
+    return f"{country_prefix}-{archive_name}" if country_prefix else archive_name
 
 
 @bp.route("/api/products/<int:pid>/detail-images", methods=["GET"])
