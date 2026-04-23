@@ -76,13 +76,6 @@ def create_bulk_translate_task(
         force_retranslate,
         raw_source_ids=raw_source_ids,
     )
-    cost = do_estimate(
-        user_id=user_id,
-        product_id=product_id,
-        target_langs=target_langs,
-        content_types=content_types,
-        force_retranslate=force_retranslate,
-    )
     state = {
         "product_id": product_id,
         "source_lang": "en",
@@ -105,17 +98,10 @@ def create_bulk_translate_task(
                     "target_langs": list(target_langs),
                     "content_types": list(content_types),
                     "force": bool(force_retranslate),
-                    "estimated_cost_cny": cost["estimated_cost_cny"],
                 },
             )
         ],
         "cost_tracking": {
-            "estimate": {
-                "copy_tokens": cost["copy_tokens"],
-                "image_count": cost["image_count"],
-                "video_minutes": cost["video_minutes"],
-                "estimated_cost_cny": cost["estimated_cost_cny"],
-            },
             "actual": {
                 "copy_tokens_used": 0,
                 "image_processed": 0,

@@ -74,7 +74,7 @@ def admin_tasks_page():
 @bp.post("/estimate")
 @login_required
 def estimate_endpoint():
-    """费用/资源预估(弹窗打开 + 勾选变化时调用)。
+    """兼容旧入口：不再执行预估，统一改为完成后计算实际价格。
 
     Body:
       {
@@ -97,14 +97,10 @@ def estimate_endpoint():
     if not content_types or not isinstance(content_types, list):
         return jsonify({"error": "content_types 必填且为非空数组"}), 400
 
-    result = do_estimate(
-        user_id=current_user.id,
-        product_id=product_id,
-        target_langs=target_langs,
-        content_types=content_types,
-        force_retranslate=force,
-    )
-    return jsonify(result), 200
+    return jsonify({
+        "estimate_enabled": False,
+        "message": "estimate disabled; actual cost is calculated after successful completion",
+    }), 200
 
 
 # ============================================================
@@ -314,7 +310,7 @@ def list_endpoint():
             "target_langs": state.get("target_langs"),
             "content_types": state.get("content_types"),
             "progress": state.get("progress"),
-            "cost_estimate": state.get("cost_tracking", {}).get("estimate", {}).get("estimated_cost_cny"),
+            "cost_estimate": None,
             "cost_actual": state.get("cost_tracking", {}).get("actual", {}).get("actual_cost_cny"),
             "initiator": state.get("initiator"),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,

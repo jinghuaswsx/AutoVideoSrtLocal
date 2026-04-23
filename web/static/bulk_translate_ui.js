@@ -20,7 +20,6 @@
   let bubble;
   let currentCtx = null;
   const activeTasks = new Map();  // task_id -> { productName, status, progress, cost_actual }
-  let estimateTimer = null;
 
   // =========================
   // 弹窗
@@ -107,12 +106,58 @@
     };
   }
 
+  function renderPricingNotice() {
+    const box = dialog.querySelector('[data-bt-estimate] .bt-estimate__body');
+    const form = collectForm();
+
+    if (!form.target_langs.length) {
+      box.innerHTML = '<span class="bt-warn">鈿狅笍 璇疯嚦灏戦€夋嫨涓€涓洰鏍囪瑷€</span>';
+      return;
+    }
+    if (!form.content_types.length) {
+      box.innerHTML = '<span class="bt-warn">鈿狅笍 璇疯嚦灏戦€夋嫨涓€绉嶅唴瀹圭被鍨?/span>';
+      return;
+    }
+
+    let warn = '';
+    const nonDeFr = form.target_langs.filter(l => l !== 'de' && l !== 'fr');
+    if (form.content_types.includes('video') && nonDeFr.length) {
+      warn = `<div class="bt-warn">鈿狅笍 瑙嗛缈昏瘧浠呮敮鎸佸痉/娉?${nonDeFr.join(',')} 浼氳嚜鍔ㄨ烦杩?/div>`;
+    }
+
+    box.innerHTML = warn + `
+      <strong>涓嶅啀棰勪及璐圭敤</strong><br>
+      浠诲姟鎴愬姛鍚庢寜瀹為檯娑堣€楃粨绠楀苟灞曠ず瀹為檯浠锋牸銆?
+    `;
+  }
+
   function scheduleEstimate() {
-    if (estimateTimer) clearTimeout(estimateTimer);
-    estimateTimer = setTimeout(doEstimate, 300);
+    const box = dialog.querySelector('[data-bt-estimate] .bt-estimate__body');
+    const form = collectForm();
+
+    if (!form.target_langs.length) {
+      box.innerHTML = '<span class="bt-warn">⚠️ 请至少选择一个目标语言</span>';
+      return;
+    }
+    if (!form.content_types.length) {
+      box.innerHTML = '<span class="bt-warn">⚠️ 请至少选择一种内容类型</span>';
+      return;
+    }
+
+    let warn = '';
+    const nonDeFr = form.target_langs.filter(l => l !== 'de' && l !== 'fr');
+    if (form.content_types.includes('video') && nonDeFr.length) {
+      warn = `<div class="bt-warn">⚠️ 视频翻译仅支持德/法：${nonDeFr.join(',')} 会自动跳过</div>`;
+    }
+
+    box.innerHTML = warn + `
+      <strong>不再预估费用</strong><br>
+      任务成功后按实际消耗结算并展示实际价格。
+    `;
   }
 
   async function doEstimate() {
+    return scheduleEstimate();
     const box = dialog.querySelector('[data-bt-estimate] .bt-estimate__body');
     const form = collectForm();
 
@@ -168,20 +213,6 @@
       alert('请先选择目标语言和内容类型');
       return;
     }
-
-    // 预估+二次确认
-    let est;
-    try {
-      const r = await fetch('/api/bulk-translate/estimate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      est = await r.json();
-    } catch (e) {
-      if (!confirm('预估失败,仍要启动任务吗?')) return;
-    }
-    const cost = est ? est.estimated_cost_cny : '未知';
-    if (!confirm(`将创建翻译任务,预估费用 ¥${cost}。确认开始?`)) return;
 
     btn.disabled = true;
     btn.querySelector('.bt-btn__spinner').classList.remove('hidden');

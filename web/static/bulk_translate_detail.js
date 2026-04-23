@@ -44,7 +44,7 @@
 
     renderStatusPanel(t, progress);
     renderMeta(t, s);
-    renderSummary(s, progress);
+    renderSummary(t, s, progress);
     renderActions(t.status);
     renderPlan(plan);
     renderAudit(s.audit_events || []);
@@ -203,19 +203,24 @@
     `).join('');
   }
 
-  function renderSummary(state, progress) {
+  function renderSummary(task, state, progress) {
     root.querySelector('.bt-detail__progress-fill').style.width = `${progress.pct}%`;
     root.querySelector('[data-bt-progress-label]').textContent = `${progress.pct}%`;
 
-    const cost = state.cost_tracking || { estimate: {}, actual: {} };
-    const estimate = cost.estimate || {};
+    const status = normalizeStatus(task && task.status);
+    const cost = state.cost_tracking || { actual: {} };
     const actual = cost.actual || {};
+    const costReady = status === 'done';
+    const costValue = costReady ? `¥${formatMoney(actual.actual_cost_cny || 0)}` : '完成后生成';
+    const costHint = costReady
+      ? '按成功执行的实际消耗结算'
+      : '仅在任务成功完成后生成实际费用';
     const stats = [
       ['已处理', `${progress.completed}/${progress.total}`, `${progress.done} 完成 · ${progress.skipped} 跳过`],
       ['正在处理', progress.active, activeBreakdown(progress)],
       ['待执行', progress.pending, '等待系统派发'],
       ['失败', progress.failed, progress.failed ? '需要处理' : '暂无失败'],
-      ['费用', `¥${formatMoney(actual.actual_cost_cny || 0)}`, `预估 ¥${formatMoney(estimate.estimated_cost_cny || 0)}`],
+      ['费用', costValue, costHint],
     ];
 
     root.querySelector('[data-bt-stats]').innerHTML = stats.map(([label, value, hint]) => `
