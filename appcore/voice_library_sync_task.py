@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 _CURRENT: dict[str, Any] = {"task": None, "summary": {}}
 _LOCK = threading.Lock()
 
-MAX_VOICES_PER_LANGUAGE = 300
+MAX_VOICES_PER_LANGUAGE = 500
 
 
 def _get_api_key() -> str:
@@ -78,15 +78,26 @@ def summarize() -> list[dict]:
         "  MAX(synced_at) AS last_synced_at "
         "FROM elevenlabs_voices GROUP BY language"
     )
+    try:
+        variant_rows = query(
+            "SELECT language, "
+            "  COUNT(*) AS total_rows, "
+            "  SUM(CASE WHEN audio_embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded_rows, "
+            "  MAX(synced_at) AS last_synced_at "
+            "FROM elevenlabs_voice_variants GROUP BY language"
+        )
+    except Exception:
+        variant_rows = []
     stats_rows = query(
         "SELECT language, total_available, last_counted_at "
         "FROM elevenlabs_voice_library_stats"
     )
     voice_stats = {r["language"]: r for r in voice_rows}
+    variant_stats = {r["language"]: r for r in variant_rows}
     avail_stats = {r["language"]: r for r in stats_rows}
     out: list[dict] = []
     for code, name in medias.list_enabled_languages_kv():
-        s = voice_stats.get(code, {}) or {}
+        s = variant_stats.get(code) or voice_stats.get(code, {}) or {}
         a = avail_stats.get(code, {}) or {}
         last_synced = s.get("last_synced_at")
         out.append({

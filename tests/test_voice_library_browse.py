@@ -59,8 +59,8 @@ def test_filter_by_language_and_gender():
     assert result["total"] == 0
     assert result["items"] == []
     # COUNT 与 SELECT 都应该有 language = %s AND gender = %s
-    count_sql = cap.query_one_calls[0][0]
-    count_args = cap.query_one_calls[0][1]
+    count_sql = cap.query_one_calls[-1][0]
+    count_args = cap.query_one_calls[-1][1]
     assert "language = %s" in count_sql
     assert "gender = %s" in count_sql
     # language 参数在前，gender 紧随其后
@@ -75,6 +75,46 @@ def test_filter_by_language_and_gender():
     assert select_args[:2] == ("en", "female")
 
 
+def test_list_voices_prefers_language_variants_when_present(monkeypatch):
+    from appcore import voice_library_browse as vlb
+    captured = {}
+    rows = [{
+        "voice_id": "v1",
+        "name": "Dutch",
+        "gender": "female",
+        "language": "nl",
+        "age": None,
+        "accent": "standard",
+        "category": "professional",
+        "descriptive": None,
+        "use_case": "narration",
+        "preview_url": "nl.mp3",
+        "labels_json": "{}",
+    }]
+    calls = {"query_one": 0}
+
+    def fake_query_one(sql, params=()):
+        calls["query_one"] += 1
+        if calls["query_one"] == 1:
+            return {"c": 1}
+        captured["count_sql"] = sql
+        return {"c": 1}
+
+    def fake_query(sql, params=()):
+        captured["list_sql"] = sql
+        return rows
+
+    monkeypatch.setattr(vlb, "query_one", fake_query_one)
+    monkeypatch.setattr(vlb, "query", fake_query)
+
+    result = vlb.list_voices(language="nl")
+
+    assert result["total"] == 1
+    assert result["items"][0]["preview_url"] == "nl.mp3"
+    assert "FROM elevenlabs_voice_variants" in captured["count_sql"]
+    assert "FROM elevenlabs_voice_variants" in captured["list_sql"]
+
+
 def test_multi_select_use_case():
     from appcore import voice_library_browse
     cap = _DBCapture(rows=[], total=0)
@@ -85,8 +125,8 @@ def test_multi_select_use_case():
             use_cases=["narration", "characters"],
         )
 
-    count_sql = cap.query_one_calls[0][0]
-    count_args = cap.query_one_calls[0][1]
+    count_sql = cap.query_one_calls[-1][0]
+    count_args = cap.query_one_calls[-1][1]
     # use_case 已迁到独立列，不再走 JSON_EXTRACT
     assert "use_case IN (%s,%s)" in count_sql
     assert "JSON_EXTRACT(labels_json, '$.use_case')" not in count_sql
@@ -106,8 +146,8 @@ def test_multi_select_accent_age_descriptive():
             descriptives=["warm"],
         )
 
-    count_sql = cap.query_one_calls[0][0]
-    count_args = cap.query_one_calls[0][1]
+    count_sql = cap.query_one_calls[-1][0]
+    count_args = cap.query_one_calls[-1][1]
     assert "JSON_UNQUOTE(JSON_EXTRACT(labels_json, '$.accent')) IN (%s)" in count_sql
     assert "JSON_UNQUOTE(JSON_EXTRACT(labels_json, '$.age')) IN (%s)" in count_sql
     assert (
@@ -124,8 +164,8 @@ def test_search_q_matches_name():
          patch("appcore.voice_library_browse.query_one", side_effect=cap.query_one):
         voice_library_browse.list_voices(language="en", q="rachel")
 
-    count_sql = cap.query_one_calls[0][0]
-    count_args = cap.query_one_calls[0][1]
+    count_sql = cap.query_one_calls[-1][0]
+    count_args = cap.query_one_calls[-1][1]
     assert "name LIKE %s" in count_sql
     assert "descriptive LIKE %s" in count_sql
     assert count_args == ("en", "%rachel%", "%rachel%")

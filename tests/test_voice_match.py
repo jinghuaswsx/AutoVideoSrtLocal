@@ -82,6 +82,34 @@ def test_match_candidates_skips_empty_embedding():
     assert [c["voice_id"] for c in top] == ["good"]
 
 
+def test_query_voices_by_language_prefers_variants_when_present(monkeypatch):
+    from pipeline import voice_match
+
+    captured = {"sqls": []}
+
+    def fake_query(sql, params=()):
+        captured["sqls"].append(sql)
+        if "COUNT(*) AS c" in sql:
+            return [{"c": 1}]
+        return [{
+            "voice_id": "v1",
+            "name": "Dutch",
+            "gender": "female",
+            "language": "nl",
+            "accent": "standard",
+            "category": "professional",
+            "preview_url": "nl.mp3",
+            "audio_embedding": np.array([1.0, 0.0], dtype=np.float32).tobytes(),
+        }]
+
+    monkeypatch.setattr(voice_match, "query", fake_query)
+
+    rows = voice_match._query_voices_by_language("nl")
+
+    assert rows[0]["preview_url"] == "nl.mp3"
+    assert any("FROM elevenlabs_voice_variants" in sql for sql in captured["sqls"])
+
+
 def test_extract_sample_clip_picks_middle_voiced_segment(tmp_path):
     video_path = tmp_path / "v.mp4"
     video_path.write_bytes(b"fake")

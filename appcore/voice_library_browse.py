@@ -25,6 +25,21 @@ _SELECT_FIELDS = (
 )
 
 _LABEL_FIELDS = frozenset({"accent", "age", "descriptive"})
+_BASE_TABLE = "elevenlabs_voices"
+_VARIANTS_TABLE = "elevenlabs_voice_variants"
+
+
+def _table_for_language(language: str) -> str:
+    try:
+        row = query_one(
+            f"SELECT COUNT(*) AS c FROM {_VARIANTS_TABLE} WHERE language = %s",
+            (language,),
+        )
+        if row and int(row.get("c") or 0) > 0:
+            return _VARIANTS_TABLE
+    except Exception:
+        pass
+    return _BASE_TABLE
 
 
 def _escape_like(value: str) -> str:
@@ -104,16 +119,17 @@ def list_voices(
         params.extend([like, like])
 
     where_sql = " AND ".join(where)
+    table = _table_for_language(language)
 
     total_row = query_one(
-        f"SELECT COUNT(*) AS c FROM elevenlabs_voices WHERE {where_sql}",
+        f"SELECT COUNT(*) AS c FROM {table} WHERE {where_sql}",
         tuple(params),
     )
     total = int(total_row["c"]) if total_row else 0
 
     offset = (page - 1) * page_size
     rows = query(
-        f"SELECT {_SELECT_FIELDS} FROM elevenlabs_voices "
+        f"SELECT {_SELECT_FIELDS} FROM {table} "
         f"WHERE {where_sql} "
         f"ORDER BY (category='professional') DESC, synced_at DESC, voice_id ASC "
         f"LIMIT %s OFFSET %s",
@@ -132,10 +148,11 @@ def list_filter_options(*, language: str) -> dict:
     """返回某语种下所有声音的 label 枚举（去重 + 升序）。"""
     if not language:
         raise ValueError("language is required")
+    table = _table_for_language(language)
 
     # use_case 走独立列
     uc_rows = query(
-        "SELECT DISTINCT use_case FROM elevenlabs_voices "
+        f"SELECT DISTINCT use_case FROM {table} "
         "WHERE language = %s AND use_case IS NOT NULL AND use_case <> ''",
         (language,),
     )
@@ -143,7 +160,7 @@ def list_filter_options(*, language: str) -> dict:
 
     # 其他三个字段仍从 labels_json 读（保留现有兼容逻辑）
     rows = query(
-        "SELECT labels_json FROM elevenlabs_voices WHERE language = %s",
+        f"SELECT labels_json FROM {table} WHERE language = %s",
         (language,),
     )
     accents: set[str] = set()

@@ -16,6 +16,8 @@ from pipeline.voice_embedding import (
 from pipeline.ffutil import get_media_duration
 
 SAMPLE_CLIP_SECONDS = 10.0
+_BASE_TABLE = "elevenlabs_voices"
+_VARIANTS_TABLE = "elevenlabs_voice_variants"
 
 
 def _extract_audio_track(video_path: str, out_dir: str) -> str:
@@ -49,6 +51,21 @@ def _get_duration(path: str) -> float:
     return get_media_duration(path)
 
 
+def _table_for_language(language: str) -> str:
+    try:
+        rows = query(
+            f"SELECT COUNT(*) AS c FROM {_VARIANTS_TABLE} "
+            "WHERE language = %s AND audio_embedding IS NOT NULL",
+            (language,),
+        )
+        row = rows[0] if rows else {}
+        if int(row.get("c") or 0) > 0:
+            return _VARIANTS_TABLE
+    except Exception:
+        pass
+    return _BASE_TABLE
+
+
 def extract_sample_clip(video_path: str, *, out_dir: str) -> str:
     """提取视频中间 10 秒人声片段作为音色采样。
 
@@ -68,10 +85,11 @@ def extract_sample_clip(video_path: str, *, out_dir: str) -> str:
 
 def _query_voices_by_language(language: str, gender: Optional[str] = None,
                                limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    table = _table_for_language(language)
     sql = (
         "SELECT voice_id, name, gender, language, accent, category, "
         "preview_url, audio_embedding "
-        "FROM elevenlabs_voices "
+        f"FROM {table} "
         "WHERE language = %s AND audio_embedding IS NOT NULL"
     )
     params: List[Any] = [language]

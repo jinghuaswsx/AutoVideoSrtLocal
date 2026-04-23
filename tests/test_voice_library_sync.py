@@ -1,4 +1,5 @@
 from unittest.mock import patch, MagicMock
+import requests
 from pipeline.voice_library_sync import fetch_shared_voices_page, sync_all_shared_voices
 
 
@@ -145,6 +146,25 @@ def test_embed_missing_voices_continues_on_single_failure(tmp_path):
     assert "bad" not in saved
 
 
+def test_download_preview_retries_transient_request_failure(tmp_path):
+    from pipeline.voice_library_sync import _download_preview
+
+    ok_response = MagicMock()
+    ok_response.content = b"mp3"
+    ok_response.raise_for_status = MagicMock()
+
+    with patch(
+        "pipeline.voice_library_sync.requests.get",
+        side_effect=[requests.exceptions.SSLError("eof"), ok_response],
+    ) as getter, patch("pipeline.voice_library_sync.time.sleep", create=True):
+        dest = tmp_path / "preview.mp3"
+        result = _download_preview("http://a.mp3", dest)
+
+    assert result == str(dest)
+    assert dest.read_bytes() == b"mp3"
+    assert getter.call_count == 2
+
+
 def test_sync_all_invokes_on_page(monkeypatch):
     pages = [
         ([{"voice_id": "v1", "name": "A", "labels": {}}], True, 2),
@@ -261,6 +281,77 @@ def test_upsert_voice_fallback_use_case_from_labels():
     with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
         upsert_voice(voice)
     assert captured["params"][8] == "narration"
+
+
+def test_upsert_voice_variant_uses_requested_language_preview():
+    from pipeline.voice_library_sync import upsert_voice_variant
+    captured = {}
+
+    def fake_execute(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+
+    voice = {
+        "voice_id": "v1",
+        "name": "Multilingual",
+        "language": "en",
+        "gender": "female",
+        "verified_languages": [
+            {
+                "language": "nl",
+                "accent": "flemish",
+                "locale": "nl-BE",
+                "preview_url": "https://example.com/nl.mp3",
+            },
+        ],
+        "preview_url": "https://example.com/en.mp3",
+    }
+    with patch("pipeline.voice_library_sync.execute", side_effect=fake_execute):
+        ok = upsert_voice_variant(voice, "nl")
+
+    assert ok is True
+    assert "elevenlabs_voice_variants" in captured["sql"]
+    params = captured["params"]
+    assert params[0] == "v1"
+    assert params[4] == "nl"
+    assert params[5] == "flemish"
+    assert params[9] == "https://example.com/nl.mp3"
+
+
+def test_sync_shared_voice_variants_counts_target_language_variants():
+    from pipeline.voice_library_sync import sync_shared_voice_variants
+
+    pages = [
+        ([
+            {"voice_id": "v1", "name": "A", "language": "en",
+             "verified_languages": [{"language": "nl", "preview_url": "nl1.mp3"}]},
+            {"voice_id": "v2", "name": "B", "language": "es",
+             "verified_languages": [{"language": "nl", "preview_url": "nl2.mp3"}]},
+        ], True, 521),
+        ([
+            {"voice_id": "v3", "name": "C", "language": "de",
+             "verified_languages": [{"language": "sv", "preview_url": "sv.mp3"}]},
+        ], False, 521),
+    ]
+    calls = {"i": 0}
+    upserted: list[str] = []
+
+    def fake_fetch(**kwargs):
+        i = calls["i"]
+        calls["i"] += 1
+        return pages[i]
+
+    def fake_upsert_variant(voice, language):
+        upserted.append(voice["voice_id"])
+        return True
+
+    with patch("pipeline.voice_library_sync.fetch_shared_voices_page", side_effect=fake_fetch), \
+         patch("pipeline.voice_library_sync.upsert_voice"), \
+         patch("pipeline.voice_library_sync.upsert_voice_variant", side_effect=fake_upsert_variant):
+        total = sync_shared_voice_variants(api_key="k", language="nl", max_voices=2)
+
+    assert total == 2
+    assert upserted == ["v1", "v2"]
 
 
 def test_sync_all_respects_max_voices():

@@ -132,6 +132,29 @@ CREATE TABLE IF NOT EXISTS `elevenlabs_voices` (
   KEY `idx_gender_language` (`gender`, `language`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ElevenLabs target-language variants (same voice_id can support many languages)
+CREATE TABLE IF NOT EXISTS `elevenlabs_voice_variants` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `voice_id` VARCHAR(64) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `gender` VARCHAR(32) DEFAULT NULL,
+  `age` VARCHAR(32) DEFAULT NULL,
+  `language` VARCHAR(32) NOT NULL,
+  `accent` VARCHAR(64) DEFAULT NULL,
+  `category` VARCHAR(64) DEFAULT NULL,
+  `descriptive` VARCHAR(255) DEFAULT NULL,
+  `use_case` VARCHAR(128) DEFAULT NULL,
+  `preview_url` TEXT DEFAULT NULL,
+  `audio_embedding` MEDIUMBLOB DEFAULT NULL,
+  `labels_json` JSON DEFAULT NULL,
+  `public_owner_id` VARCHAR(128) DEFAULT NULL,
+  `synced_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  UNIQUE KEY `uq_voice_language` (`voice_id`, `language`),
+  KEY `idx_language` (`language`),
+  KEY `idx_gender_language` (`gender`, `language`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 语速模型
 CREATE TABLE IF NOT EXISTS `voice_speech_rate` (
   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
