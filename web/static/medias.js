@@ -1784,6 +1784,11 @@
     return tasks[lang];
   }
 
+  function edReadVisibleProductUrl() {
+    const input = $('edProductUrl');
+    return input ? (input.value || '').trim() : '';
+  }
+
   function edCurrentLinkUrl(lang) {
     const code = ($('edCode') && $('edCode').value || '').trim();
     const links = (edState.productData && edState.productData.product && edState.productData.product.localized_links) || {};
@@ -1849,8 +1854,7 @@
   }
 
   function edCopyLocalizedProductUrl(btn) {
-    edFlushProductUrl();
-    const url = edCurrentLinkUrl(edState.activeLang);
+    const url = edReadVisibleProductUrl();
     if (!url || !/^https?:\/\//i.test(url)) {
       alert('请先填写有效的商品链接');
       $('edProductUrl') && $('edProductUrl').focus();
@@ -1862,9 +1866,7 @@
   }
 
   function edOpenLocalizedProductUrl() {
-    edFlushProductUrl();
-    const lang = edState.activeLang;
-    const url = edCurrentLinkUrl(lang);
+    const url = edReadVisibleProductUrl();
     if (!url || !/^https?:\/\//i.test(url)) {
       alert('请先填写有效的商品链接');
       $('edProductUrl') && $('edProductUrl').focus();

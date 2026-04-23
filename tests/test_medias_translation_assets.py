@@ -45,3 +45,16 @@ def test_medias_js_copy_translate_uses_validation_message():
 
     assert "function edValidateCopyTranslateSource(rawText)" in script
     assert "alert(sourceValidation.message);" in script
+
+
+def test_medias_js_open_product_url_reads_visible_input_value():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function edReadVisibleProductUrl()" in script
+    open_start = script.index("function edOpenLocalizedProductUrl()")
+    open_end = script.index("function edLinkCheckNeedsPolling", open_start)
+    open_body = script[open_start:open_end]
+
+    assert "const url = edReadVisibleProductUrl();" in open_body
+    assert "edCurrentLinkUrl" not in open_body
