@@ -40,3 +40,31 @@ def test_backfill_generates_and_persists_missing_multi_translate_thumbnail(tmp_p
     ]
     output = capsys.readouterr().out
     assert '"updated": 1' in output
+
+
+def test_backfill_dry_run_counts_would_update_separately(tmp_path, monkeypatch, capsys):
+    from scripts import backfill_multi_translate_thumbnails as backfill
+
+    task_dir = tmp_path / "output" / "dry-run-task"
+    video_path = tmp_path / "uploads" / "dry-run-task.mp4"
+    task_dir.mkdir(parents=True)
+    video_path.parent.mkdir(parents=True)
+    video_path.write_bytes(b"fake video")
+
+    monkeypatch.setattr(
+        backfill,
+        "query",
+        lambda sql, args=(): [
+            {
+                "id": "dry-run-task",
+                "thumbnail_path": "",
+                "state_json": json.dumps({"video_path": str(video_path), "task_dir": str(task_dir)}),
+            }
+        ],
+    )
+
+    assert backfill.main(["--dry-run"]) == 0
+
+    output = capsys.readouterr().out
+    assert '"would_update": 1' in output
+    assert '"skipped": 0' in output

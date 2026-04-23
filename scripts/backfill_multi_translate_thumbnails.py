@@ -85,12 +85,21 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     rows = _load_rows(task_id=args.task_id.strip(), limit=max(int(args.limit or 0), 0))
-    summary = {"checked": len(rows), "updated": 0, "skipped": 0, "failed": 0, "dry_run": bool(args.dry_run)}
+    summary = {
+        "checked": len(rows),
+        "updated": 0,
+        "would_update": 0,
+        "skipped": 0,
+        "failed": 0,
+        "dry_run": bool(args.dry_run),
+    }
     for row in rows:
         result = _backfill_row(row, dry_run=bool(args.dry_run))
         status = result.get("status")
         if status == "updated":
             summary["updated"] += 1
+        elif status == "would_update":
+            summary["would_update"] += 1
         elif status == "failed":
             summary["failed"] += 1
         else:
