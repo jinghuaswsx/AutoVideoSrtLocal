@@ -1200,6 +1200,29 @@
     return text ? [{ body: text }] : [];
   }
 
+  async function requestMkCopywriting(rawCode) {
+    const params = new URLSearchParams({ product_code: rawCode });
+    const data = await fetchJSON(`/medias/api/mk-copywriting?${params.toString()}`);
+    const copywriting = (data.copywriting || '').trim();
+    if (!copywriting) throw new Error('明空系统没有返回可用文案');
+    return copywriting;
+  }
+
+  function alertMkCopywritingFetchError(error) {
+    const msg = (error && error.message ? error.message : error || '').toString();
+    if (msg.includes('mk_credentials_expired')) {
+      alert('明空登录已失效，请重新同步 wedev 凭据');
+    } else if (msg.includes('mk_credentials_missing')) {
+      alert('明空凭据未配置，请先在设置页同步 wedev 凭据');
+    } else if (msg.includes('mk_copywriting_not_found')) {
+      alert('明空系统未找到与当前产品 ID 精准匹配的文案');
+    } else if (msg.includes('mk_copywriting_empty')) {
+      alert('明空系统找到了该产品，但没有可用文案');
+    } else {
+      alert('从明空系统获取文案失败：' + msg);
+    }
+  }
+
   async function fillCopywritingFromMkSystem() {
     const nameInput = $('mName');
     const codeInput = $('mCode');
@@ -1226,28 +1249,14 @@
     if (btn) btn.disabled = true;
     if (label) label.textContent = '获取中...';
     try {
-      const params = new URLSearchParams({ product_code: rawCode });
-      const data = await fetchJSON(`/medias/api/mk-copywriting?${params.toString()}`);
-      const copywriting = (data.copywriting || '').trim();
-      if (!copywriting) throw new Error('明空系统没有返回可用文案');
+      const copywriting = await requestMkCopywriting(rawCode);
       if (textarea.value.trim() && !confirm('当前文案不为空，是否用明空文案覆盖？')) {
         return;
       }
       textarea.value = copywriting;
       textarea.focus();
     } catch (e) {
-      const msg = (e.message || '').toString();
-      if (msg.includes('mk_credentials_expired')) {
-        alert('明空登录已失效，请重新同步 wedev 凭据');
-      } else if (msg.includes('mk_credentials_missing')) {
-        alert('明空凭据未配置，请先在设置页同步 wedev 凭据');
-      } else if (msg.includes('mk_copywriting_not_found')) {
-        alert('明空系统未找到与当前产品 ID 精准匹配的文案');
-      } else if (msg.includes('mk_copywriting_empty')) {
-        alert('明空系统找到了该产品，但没有可用文案');
-      } else {
-        alert('从明空系统获取文案失败：' + msg);
-      }
+      alertMkCopywritingFetchError(e);
     } finally {
       if (btn) btn.disabled = false;
       if (label) label.textContent = originalLabel || '一键从明空系统获取';
@@ -1595,7 +1604,20 @@
     if (!slot) return;
     const lang = (edState.activeLang || '').trim().toLowerCase();
     if (lang === 'en') {
-      slot.innerHTML = '';
+      let btn = slot.querySelector('#edMkCopyFetchBtn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.className = 'oc-btn ghost sm';
+        btn.type = 'button';
+        btn.id = 'edMkCopyFetchBtn';
+        btn.innerHTML = `${icon('search', 14)}<span>一键从名控系统获取文案</span>`;
+        btn.addEventListener('click', () => {
+          edFillCopywritingFromMkSystem().catch((err) => {
+            console.error('[copywriting] fetch from mk system failed:', err);
+          });
+        });
+        slot.replaceChildren(btn);
+      }
       return;
     }
     let btn = slot.querySelector('#edCwTranslateBtn');
@@ -1615,6 +1637,57 @@
     const source = edGetEnglishSourceCopy();
     btn.disabled = !source;
     btn.title = source ? '读取英文文案并生成当前语种文案' : '当前没有可用的英文文案';
+  }
+
+  async function edFillCopywritingFromMkSystem() {
+    const lang = (edState.activeLang || '').trim().toLowerCase();
+    if (lang !== 'en') return;
+
+    const nameInput = $('edName');
+    const codeInput = $('edCode');
+    const btn = $('edMkCopyFetchBtn');
+    const label = btn ? btn.querySelector('span') : null;
+    const originalLabel = label ? label.textContent : '';
+    const name = nameInput ? nameInput.value.trim() : '';
+    const rawCode = codeInput ? codeInput.value.trim() : '';
+    const normalizedCode = rawCode.toLowerCase();
+
+    if (!name) {
+      alert('请先填写产品名称');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!SLUG_RE.test(normalizedCode)) {
+      alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–128）');
+      if (codeInput) codeInput.focus();
+      return;
+    }
+    if (!edState.productData) return;
+
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = '获取中...';
+    try {
+      edFlushCopywritings();
+      const copywriting = edNormalizeCopywritingBody(await requestMkCopywriting(rawCode));
+      const hasExisting = edGetCopywritingsByLang('en').some((item) => edHasMeaningfulCopywritingBody(item && item.body));
+      if (hasExisting && !confirm('当前文案不为空，是否用明空文案覆盖？')) {
+        return;
+      }
+      const nextCopywritings = edEnsureCopywritingsArray().filter(
+        (item) => (item.lang || '').trim().toLowerCase() !== 'en'
+      );
+      nextCopywritings.push({ lang: 'en', body: copywriting });
+      edState.productData.copywritings = nextCopywritings;
+      edRenderLangTabs();
+      edRenderCopyBlock('en');
+      const textarea = $('edCwList') && $('edCwList').querySelector('[data-field="body"]');
+      if (textarea) textarea.focus();
+    } catch (e) {
+      alertMkCopywritingFetchError(e);
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = originalLabel || '一键从名控系统获取文案';
+    }
   }
 
   async function edTranslateEnglishCopywriting() {
