@@ -12,92 +12,223 @@
       const r = await fetch(`/api/bulk-translate/${taskId}`);
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        root.querySelector('[data-bt-meta]').innerHTML =
-          `<span class="bt-warn">加载失败: ${err.error || r.status}</span>`;
+        renderLoadError(err.error || r.status);
         return;
       }
       currentTask = await r.json();
       render();
     } catch (e) {
       console.error(e);
+      renderLoadError(e.message || '网络错误');
     }
   }
 
+  function renderLoadError(message) {
+    const safeMessage = esc(message || '未知错误');
+    root.querySelector('[data-bt-status-panel]').innerHTML = `
+      <div class="bt-empty-state bt-empty-state--error">
+        <strong>任务状态加载失败</strong>
+        <span>${safeMessage}</span>
+      </div>
+    `;
+    root.querySelector('[data-bt-meta]').innerHTML =
+      `<span class="bt-warn">加载失败: ${safeMessage}</span>`;
+  }
+
   function render() {
-    const t = currentTask;
-    const s = t.state;
-    const ini = s.initiator || {};
+    const t = currentTask || {};
+    const s = t.state || {};
+    const plan = s.plan || [];
+    const progress = normalizeProgress(s.progress || {}, plan);
 
-    // Meta
-    root.querySelector('[data-bt-meta]').innerHTML = `
-      <span>📅 <strong>${t.created_at || '—'}</strong></span>
-      <span>🧑 <strong>${esc(ini.user_name || ini.user_id || '—')}</strong></span>
-      <span>🌐 IP: <strong>${esc(ini.ip || '—')}</strong></span>
-      <span>🆔 <code>${esc(t.id.slice(0, 8))}</code></span>
-      <span>🏷️ 状态: <strong style="color:${statusColor(t.status)}">${statusLabel(t.status)}</strong></span>
-    `;
-
-    // Summary
-    const p = s.progress || {};
-    const total = p.total || 1;
-    const done = (p.done || 0) + (p.skipped || 0);
-    const pct = Math.round(100 * done / total);
-    root.querySelector('.bt-detail__progress-fill').style.width = pct + '%';
-    const cost = s.cost_tracking || { estimate: {}, actual: {} };
-    root.querySelector('[data-bt-stats]').innerHTML = `
-      <span><strong>${pct}%</strong> (${done}/${total})</span>
-      <span>✅ <strong>${p.done || 0}</strong> 完成</span>
-      <span>🔄 <strong>${p.running || 0}</strong> 运行</span>
-      <span>❌ <strong>${p.failed || 0}</strong> 失败</span>
-      <span>⏩ <strong>${p.skipped || 0}</strong> 跳过</span>
-      <span>⏳ <strong>${p.pending || 0}</strong> 待跑</span>
-      <span>💰 预估 <strong>¥${cost.estimate.estimated_cost_cny || 0}</strong> / 实际 <strong>¥${cost.actual.actual_cost_cny || 0}</strong></span>
-    `;
-
-    // Actions
+    renderStatusPanel(t, progress);
+    renderMeta(t, s);
+    renderSummary(s, progress);
     renderActions(t.status);
-
-    // Plan grouped by lang
-    renderPlan(s.plan || []);
-
-    // Audit events
+    renderPlan(plan);
     renderAudit(s.audit_events || []);
+  }
+
+  function renderStatusPanel(task, progress) {
+    const status = normalizeStatus(task.status);
+    const insight = buildStatusInsight(status, progress);
+    const panel = root.querySelector('[data-bt-status-panel]');
+    panel.dataset.status = status;
+    panel.innerHTML = `
+      <div class="bt-status-hero__body">
+        <span class="bt-status-kicker">任务当前状态</span>
+        <div class="bt-status-hero__title">
+          <span class="bt-status-pill bt-status-pill--${statusTone(status)}">${statusLabel(status)}</span>
+          <strong>${esc(insight.title)}</strong>
+        </div>
+        <p>${esc(insight.detail)}</p>
+        <div class="bt-status-next">
+          <span>下一步</span>
+          <strong>${esc(insight.next)}</strong>
+        </div>
+      </div>
+      <div class="bt-status-hero__meter" aria-label="整体进度 ${progress.pct}%">
+        <strong>${progress.pct}%</strong>
+        <span>整体进度</span>
+        <small>${progress.completed}/${progress.total} 已处理</small>
+      </div>
+    `;
+  }
+
+  function buildStatusInsight(status, progress) {
+    if (status === 'planning') {
+      return {
+        title: '任务已创建，还没有开始派发子任务',
+        detail: `系统已经生成 ${progress.total} 个子任务，当前全部等待启动。`,
+        next: '确认配置无误后，点击“开始执行”。',
+      };
+    }
+    if (status === 'running') {
+      const activeText = progress.active > 0
+        ? `正在处理 ${progress.active} 个子任务`
+        : '任务正在排队推进';
+      return {
+        title: activeText,
+        detail: `已完成 ${progress.done} 个，跳过 ${progress.skipped} 个，失败 ${progress.failed} 个，待执行 ${progress.pending} 个。`,
+        next: progress.failed > 0
+          ? '先等当前轮次结束，再在“需要处理”里重跑失败项。'
+          : '等待系统继续派发后续子任务，页面会自动刷新进度。',
+      };
+    }
+    if (status === 'waiting_manual') {
+      return {
+        title: '任务暂停在人工确认步骤',
+        detail: `还有 ${progress.pending + progress.active} 个子任务未完成，通常需要先处理子任务里的人工选择。`,
+        next: '打开正在等待的子任务，完成必要选择后再回到这里观察进度。',
+      };
+    }
+    if (status === 'paused') {
+      return {
+        title: '任务已暂停，不会继续派发新子任务',
+        detail: `当前已处理 ${progress.completed}/${progress.total} 个子任务。`,
+        next: '确认可以继续后点击“继续执行”，或取消任务保留已完成结果。',
+      };
+    }
+    if (status === 'failed' || status === 'error') {
+      return {
+        title: `有 ${progress.failed || '部分'} 个子任务失败`,
+        detail: `失败项会停在“需要处理”分区，已完成结果会保留。`,
+        next: '先查看失败原因，再选择单项重跑或重跑所有失败项。',
+      };
+    }
+    if (status === 'done') {
+      return {
+        title: '全部子任务已经处理完成',
+        detail: `本次任务处理了 ${progress.total} 个子任务，其中 ${progress.skipped} 个因已有译本被跳过。`,
+        next: '检查目标语种素材是否已回填，必要时可对单项重新翻译。',
+      };
+    }
+    if (status === 'cancelled') {
+      return {
+        title: '任务已取消',
+        detail: `取消前已处理 ${progress.completed}/${progress.total} 个子任务，已完成结果会保留。`,
+        next: '如需继续，请重新创建任务或重跑指定子任务。',
+      };
+    }
+    return {
+      title: '任务状态需要进一步确认',
+      detail: `当前状态为 ${status || '未知'}，已处理 ${progress.completed}/${progress.total} 个子任务。`,
+      next: '查看子任务分区和操作记录，确认是否需要重跑。',
+    };
+  }
+
+  function renderMeta(task, state) {
+    const initiator = state.initiator || {};
+    const meta = [
+      ['创建时间', formatDate(task.created_at)],
+      ['更新时间', formatDate(task.updated_at)],
+      ['创建人', initiator.user_name || initiator.user_id || '—'],
+      ['来源 IP', initiator.ip || '—'],
+      ['任务 ID', task.id ? task.id.slice(0, 8) : '—'],
+    ];
+    root.querySelector('[data-bt-meta]').innerHTML = meta.map(([label, value]) => `
+      <div class="bt-meta-item">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+      </div>
+    `).join('');
+  }
+
+  function renderSummary(state, progress) {
+    root.querySelector('.bt-detail__progress-fill').style.width = `${progress.pct}%`;
+    root.querySelector('[data-bt-progress-label]').textContent = `${progress.pct}%`;
+
+    const cost = state.cost_tracking || { estimate: {}, actual: {} };
+    const estimate = cost.estimate || {};
+    const actual = cost.actual || {};
+    const stats = [
+      ['已处理', `${progress.completed}/${progress.total}`, `${progress.done} 完成 · ${progress.skipped} 跳过`],
+      ['正在处理', progress.active, activeBreakdown(progress)],
+      ['待执行', progress.pending, '等待系统派发'],
+      ['失败', progress.failed, progress.failed ? '需要处理' : '暂无失败'],
+      ['费用', `¥${formatMoney(actual.actual_cost_cny || 0)}`, `预估 ¥${formatMoney(estimate.estimated_cost_cny || 0)}`],
+    ];
+
+    root.querySelector('[data-bt-stats]').innerHTML = stats.map(([label, value, hint]) => `
+      <div class="bt-stat-card">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+        <small>${esc(hint)}</small>
+      </div>
+    `).join('');
   }
 
   function renderActions(status) {
     const box = root.querySelector('[data-bt-actions]');
+    const normalized = normalizeStatus(status);
     const btns = [];
-    if (status === 'error' || status === 'paused') {
-      btns.push(`<button class="bt-btn bt-btn--primary" data-act="resume">▶ 继续执行</button>`);
+    if (normalized === 'planning') {
+      btns.push(`<button class="bt-btn bt-btn--primary" data-act="start">开始执行</button>`);
     }
-    if (status === 'running') {
-      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="pause">⏸ 暂停</button>`);
+    if (normalized === 'paused' || normalized === 'failed' || normalized === 'error' || normalized === 'interrupted') {
+      btns.push(`<button class="bt-btn bt-btn--primary" data-act="resume">继续执行</button>`);
     }
-    if (status === 'error') {
-      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="retry-failed">🔁 重跑所有失败项</button>`);
+    if (normalized === 'running') {
+      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="pause">暂停</button>`);
     }
-    if (status === 'running' || status === 'paused') {
-      btns.push(`<button class="bt-btn bt-btn--danger" data-act="cancel">🚫 取消</button>`);
+    if (normalized === 'failed' || normalized === 'error' || normalized === 'interrupted') {
+      btns.push(`<button class="bt-btn bt-btn--ghost" data-act="retry-failed">重跑所有失败项</button>`);
     }
-    box.innerHTML = btns.join('');
+    if (normalized === 'running' || normalized === 'paused') {
+      btns.push(`<button class="bt-btn bt-btn--danger" data-act="cancel">取消任务</button>`);
+    }
+
+    box.innerHTML = btns.length
+      ? btns.join('')
+      : '<span class="bt-actions-note">当前状态无需人工操作。</span>';
     box.querySelectorAll('[data-act]').forEach(b => {
       b.addEventListener('click', () => doAction(b.dataset.act));
     });
   }
 
   async function doAction(action) {
-    let url, label;
-    if (action === 'resume') { url = `/api/bulk-translate/${taskId}/resume`; label = '继续执行'; }
-    else if (action === 'pause') { url = `/api/bulk-translate/${taskId}/pause`; label = '暂停'; }
-    else if (action === 'cancel') {
-      if (!confirm('确认取消任务?已完成的子任务结果会保留。')) return;
-      url = `/api/bulk-translate/${taskId}/cancel`; label = '取消';
+    let url;
+    let label;
+    if (action === 'start') {
+      url = `/api/bulk-translate/${taskId}/start`;
+      label = '开始执行';
+    } else if (action === 'resume') {
+      url = `/api/bulk-translate/${taskId}/resume`;
+      label = '继续执行';
+    } else if (action === 'pause') {
+      url = `/api/bulk-translate/${taskId}/pause`;
+      label = '暂停';
+    } else if (action === 'cancel') {
+      if (!confirm('确认取消任务? 已完成的子任务结果会保留。')) return;
+      url = `/api/bulk-translate/${taskId}/cancel`;
+      label = '取消';
+    } else if (action === 'retry-failed') {
+      if (!confirm('把所有失败项重置为待执行并重跑?')) return;
+      url = `/api/bulk-translate/${taskId}/retry-failed`;
+      label = '重跑失败';
+    } else {
+      return;
     }
-    else if (action === 'retry-failed') {
-      if (!confirm('把所有失败项重置为 pending 并重跑?')) return;
-      url = `/api/bulk-translate/${taskId}/retry-failed`; label = '重跑失败';
-    }
-    else return;
 
     try {
       const r = await fetch(url, { method: 'POST' });
@@ -107,113 +238,342 @@
         return;
       }
       await loadTask();
-    } catch (e) { alert('网络错误: ' + e.message); }
+    } catch (e) {
+      alert('网络错误: ' + e.message);
+    }
   }
 
   function renderPlan(plan) {
     const groups = {};
     plan.forEach(item => {
-      groups[item.lang] = groups[item.lang] || [];
-      groups[item.lang].push(item);
+      const lang = item.lang || 'unknown';
+      groups[lang] = groups[lang] || [];
+      groups[lang].push(item);
     });
     const langs = Object.keys(groups).sort();
     const box = root.querySelector('[data-bt-plan]');
-    if (!langs.length) { box.innerHTML = '<p style="color:var(--fg-muted,#64748b)">本任务没有任何 plan 项。</p>'; return; }
-
-    box.innerHTML = langs.map(lang => {
-      const items = groups[lang];
-      const doneCnt = items.filter(i => ['done', 'skipped'].includes(i.status)).length;
-      const total = items.length;
-      return `
-        <div class="bt-lang-group">
-          <div class="bt-lang-group__header">
-            <span>${flagOf(lang)}</span>
-            <span style="font-family:monospace;color:var(--fg-muted,#64748b)">${doneCnt}/${total}</span>
-          </div>
-          ${items.map(it => renderItem(it)).join('')}
+    if (!langs.length) {
+      box.innerHTML = `
+        <div class="bt-empty-state">
+          <strong>暂无子任务</strong>
+          <span>这个任务还没有生成可执行的翻译计划。</span>
         </div>
       `;
-    }).join('');
+      return;
+    }
 
-    // Bind retry-item buttons
+    box.innerHTML = langs.map(lang => renderLanguageGroup(lang, groups[lang])).join('');
+
     box.querySelectorAll('[data-retry-idx]').forEach(b => {
       b.addEventListener('click', async () => {
         const idx = parseInt(b.dataset.retryIdx, 10);
         if (!confirm(`重跑 #${idx} 这一项?`)) return;
         const r = await fetch(`/api/bulk-translate/${taskId}/retry-item`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idx }),
         });
-        if (!r.ok) { const e = await r.json().catch(() => ({})); alert('失败: ' + (e.error || r.status)); return; }
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          alert('失败: ' + (e.error || r.status));
+          return;
+        }
         await loadTask();
       });
     });
   }
 
-  function renderItem(it) {
-    const sub = it.sub_task_id ? `<small>sub=${it.sub_task_id.slice(0, 8)}</small>` : '';
-    const err = it.error ? `<span class="bt-plan-item__error">· ${esc(it.error)}</span>` : '';
-    const retry = (it.status === 'error' || it.status === 'done')
-      ? `<button class="bt-btn bt-btn--ghost" style="height:24px;padding:0 10px;font-size:12px" data-retry-idx="${it.idx}">🔁 重跑</button>`
-      : '';
+  function renderLanguageGroup(lang, items) {
+    const progress = normalizeProgress({}, items);
+    const sections = [
+      ['当前正在处理', items.filter(isActiveItem)],
+      ['需要处理', items.filter(isFailedItem)],
+      ['待执行', items.filter(item => normalizeStatus(item.status) === 'pending')],
+      ['已完成 / 已跳过', items.filter(item => ['done', 'skipped'].includes(normalizeStatus(item.status)))],
+    ].filter(([, sectionItems]) => sectionItems.length > 0);
+
     return `
-      <div class="bt-plan-item">
-        <span class="bt-plan-item__status bt-plan-item__status--${it.status}">${statusLabel(it.status)}</span>
-        <span class="bt-plan-item__kind">
-          <strong>${kindLabel(it.kind)}</strong> ${refHint(it)} ${sub} ${err}
-        </span>
-        ${retry}
-      </div>
+      <section class="bt-lang-group">
+        <header class="bt-lang-group__header">
+          <div>
+            <strong>${esc(languageLabel(lang))}</strong>
+            <span>${items.length} 个子任务</span>
+          </div>
+          <div class="bt-lang-group__summary">
+            <span>${progress.completed}/${progress.total} 已处理</span>
+            <span>${progress.pct}%</span>
+          </div>
+        </header>
+        <div class="bt-lang-group__body">
+          ${sections.map(([title, sectionItems]) => renderTaskSection(title, sectionItems)).join('')}
+        </div>
+      </section>
     `;
   }
 
-  function refHint(it) {
-    const r = it.ref || {};
-    if (r.source_copy_id) return `<small>#${r.source_copy_id}</small>`;
-    if (r.source_item_id) return `<small>#${r.source_item_id}</small>`;
-    if (r.source_detail_ids) return `<small>${r.source_detail_ids.length} 张详情图</small>`;
-    if (r.source_cover_ids) return `<small>${r.source_cover_ids.length} 张主图</small>`;
+  function renderTaskSection(title, items) {
+    return `
+      <section class="bt-plan-section">
+        <div class="bt-plan-section__header">
+          <strong>${esc(title)}</strong>
+          <span>${items.length} 项</span>
+        </div>
+        <div class="bt-plan-section__items">
+          ${items.map(renderItem).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderItem(item) {
+    const status = normalizeStatus(item.status);
+    const retry = isRetryableItem(item)
+      ? `<button class="bt-btn bt-btn--ghost bt-plan-item__retry" data-retry-idx="${item.idx}">重跑</button>`
+      : '';
+    const ref = refHintText(item);
+    const childTaskId = item.child_task_id || item.sub_task_id;
+    const childTaskType = item.child_task_type ? ` · ${childTypeLabel(item.child_task_type)}` : '';
+    const child = childTaskId
+      ? `子任务 ${String(childTaskId).slice(0, 8)}${childTaskType}`
+      : '尚未创建子任务';
+    const error = item.error
+      ? `<div class="bt-plan-item__error">失败原因: ${esc(item.error)}</div>`
+      : '';
+
+    return `
+      <article class="bt-plan-item bt-plan-item--${statusTone(status)}">
+        <div class="bt-plan-item__status">
+          <span class="bt-status-dot bt-status-dot--${statusTone(status)}"></span>
+          ${esc(statusLabel(status))}
+        </div>
+        <div class="bt-plan-item__body">
+          <div class="bt-plan-item__title">
+            <strong>${esc(kindLabel(item.kind))}</strong>
+            <span>#${esc(item.idx == null ? '-' : item.idx)}</span>
+          </div>
+          <div class="bt-plan-item__meta">
+            <span>${esc(ref || '无素材引用')}</span>
+            <span>${esc(child)}</span>
+          </div>
+          ${error}
+        </div>
+        ${retry}
+      </article>
+    `;
+  }
+
+  function refHintText(item) {
+    const r = item.ref || {};
+    if (r.source_copy_id) return `文案 #${r.source_copy_id}`;
+    if (r.source_item_id) return `素材 #${r.source_item_id}`;
+    if (r.source_raw_id) return `原始素材 #${r.source_raw_id}`;
+    if (r.source_raw_ids) return `${r.source_raw_ids.length} 个原始素材`;
+    if (r.source_detail_ids) return `${r.source_detail_ids.length} 张详情图`;
+    if (r.source_cover_ids) return `${r.source_cover_ids.length} 张主图`;
     return '';
   }
 
   function renderAudit(events) {
     const box = root.querySelector('[data-bt-audit]');
-    if (!events.length) { box.innerHTML = '无'; return; }
-    box.innerHTML = events.slice().reverse().map(e => `
-      <div class="bt-audit-event">
-        [${e.ts}] 用户 ${e.user_id} · <strong>${e.action}</strong>
-        ${e.detail && Object.keys(e.detail).length ? '· ' + esc(JSON.stringify(e.detail)) : ''}
-      </div>
-    `).join('');
+    if (!events.length) {
+      box.innerHTML = `
+        <div class="bt-empty-state">
+          <strong>暂无操作记录</strong>
+          <span>任务启动、暂停、重跑等动作会显示在这里。</span>
+        </div>
+      `;
+      return;
+    }
+    const shown = events.slice().reverse().slice(0, 10);
+    const hiddenCount = Math.max(0, events.length - shown.length);
+    box.innerHTML = `
+      ${hiddenCount ? `<div class="bt-audit-note">仅显示最近 10 条，另有 ${hiddenCount} 条历史记录。</div>` : ''}
+      ${shown.map(e => {
+        const detail = e.detail && Object.keys(e.detail).length
+          ? `<code>${esc(JSON.stringify(e.detail))}</code>`
+          : '';
+        return `
+          <div class="bt-audit-event">
+            <time>${esc(formatDate(e.ts))}</time>
+            <div>
+              <strong>${esc(actionLabel(e.action))}</strong>
+              <span>用户 ${esc(e.user_id || '—')}</span>
+              ${detail}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    `;
   }
 
-  function statusLabel(s) {
+  function normalizeProgress(rawProgress, plan) {
+    const p = rawProgress || {};
+    const total = Math.max(toNumber(p.total, plan.length), plan.length);
+    const done = toNumber(p.done, countByStatus(plan, ['done']));
+    const skipped = toNumber(p.skipped, countByStatus(plan, ['skipped']));
+    const dispatching = toNumber(p.dispatching, countByStatus(plan, ['dispatching']));
+    const running = toNumber(p.running, countByStatus(plan, ['running']));
+    const syncingResult = toNumber(p.syncing_result, countByStatus(plan, ['syncing_result']));
+    const awaitingVoice = toNumber(p.awaiting_voice, countByStatus(plan, ['awaiting_voice']));
+    const failed = toNumber(p.failed, countByStatus(plan, ['failed', 'error']));
+    const interrupted = toNumber(p.interrupted, countByStatus(plan, ['interrupted']));
+    const active = dispatching + running + syncingResult + awaitingVoice;
+    const pending = toNumber(
+      p.pending,
+      Math.max(0, total - done - skipped - active - failed - interrupted)
+    );
+    const completed = done + skipped;
+    const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
     return {
-      planning: '待启动', running: '运行中', paused: '已暂停',
-      done: '✅ 完成', error: '❌ 失败', cancelled: '已取消',
-      skipped: '⏩ 跳过', pending: '待执行',
-    }[s] || s;
+      total,
+      done,
+      skipped,
+      dispatching,
+      running,
+      syncingResult,
+      awaitingVoice,
+      active,
+      failed: failed + interrupted,
+      pending,
+      completed,
+      pct,
+    };
   }
-  function statusColor(s) {
+
+  function activeBreakdown(progress) {
+    const parts = [];
+    if (progress.dispatching) parts.push(`${progress.dispatching} 派发中`);
+    if (progress.running) parts.push(`${progress.running} 运行中`);
+    if (progress.syncingResult) parts.push(`${progress.syncingResult} 同步结果`);
+    if (progress.awaitingVoice) parts.push(`${progress.awaitingVoice} 等待选音`);
+    return parts.length ? parts.join(' · ') : '暂无运行项';
+  }
+
+  function countByStatus(plan, statuses) {
+    const wanted = new Set(statuses);
+    return (plan || []).filter(item => wanted.has(normalizeStatus(item.status))).length;
+  }
+
+  function isActiveItem(item) {
+    return ['dispatching', 'running', 'syncing_result', 'awaiting_voice']
+      .includes(normalizeStatus(item.status));
+  }
+
+  function isFailedItem(item) {
+    return ['failed', 'error', 'interrupted'].includes(normalizeStatus(item.status));
+  }
+
+  function isRetryableItem(item) {
+    return ['failed', 'error', 'interrupted', 'done'].includes(normalizeStatus(item.status));
+  }
+
+  function normalizeStatus(status) {
+    const raw = String(status || '').trim();
+    if (raw === 'error') return 'failed';
+    return raw || 'pending';
+  }
+
+  function statusLabel(status) {
     return {
-      running: 'oklch(56% 0.16 230)', done: 'oklch(38% 0.09 165)',
-      error: 'oklch(58% 0.18 25)', paused: 'oklch(48% 0.018 230)',
-      cancelled: 'oklch(48% 0.018 230)',
-    }[s] || '';
+      planning: '待启动',
+      running: '运行中',
+      paused: '已暂停',
+      waiting_manual: '等待人工确认',
+      done: '已完成',
+      failed: '失败',
+      cancelled: '已取消',
+      skipped: '已跳过',
+      pending: '待执行',
+      dispatching: '派发中',
+      syncing_result: '同步结果',
+      awaiting_voice: '等待选音',
+      interrupted: '已中断',
+    }[status] || status;
   }
-  function kindLabel(k) {
-    return { copy: '文案', cover: '商品主图', detail: '详情图(批量)', video: '视频' }[k] || k;
+
+  function statusTone(status) {
+    if (['done', 'skipped'].includes(status)) return 'success';
+    if (['failed', 'error', 'interrupted'].includes(status)) return 'danger';
+    if (['paused', 'waiting_manual'].includes(status)) return 'warning';
+    if (['running', 'dispatching', 'syncing_result', 'awaiting_voice'].includes(status)) return 'accent';
+    return 'muted';
   }
-  function flagOf(code) {
-    return { de: '🇩🇪 德语', fr: '🇫🇷 法语', es: '🇪🇸 西班牙语',
-             it: '🇮🇹 意大利语', ja: '🇯🇵 日语', pt: '🇵🇹 葡萄牙语' }[code] || code;
+
+  function kindLabel(kind) {
+    return {
+      copy: '商品文案',
+      copywriting: '商品文案',
+      cover: '商品主图',
+      video_covers: '视频封面',
+      detail: '商品详情图',
+      detail_images: '商品详情图',
+      video: '视频素材',
+      videos: '视频素材',
+    }[kind] || kind || '未知类型';
   }
+
+  function childTypeLabel(type) {
+    return {
+      copywriting_translate: '文案翻译',
+      image_translate: '图片翻译',
+      translate_lab: '视频翻译',
+      multi_translate: '多语种视频翻译',
+    }[type] || type;
+  }
+
+  function languageLabel(code) {
+    return {
+      de: '德语',
+      fr: '法语',
+      es: '西班牙语',
+      it: '意大利语',
+      ja: '日语',
+      pt: '葡萄牙语',
+      nl: '荷兰语',
+      sv: '瑞典语',
+      fi: '芬兰语',
+    }[code] || String(code || '未知语种').toUpperCase();
+  }
+
+  function actionLabel(action) {
+    return {
+      create: '创建任务',
+      start: '开始执行',
+      pause: '暂停任务',
+      resume: '继续执行',
+      cancel: '取消任务',
+      retry_item: '重跑单项',
+      retry_failed: '重跑失败项',
+    }[action] || action || '系统记录';
+  }
+
+  function formatDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString('zh-CN', { hour12: false });
+    }
+    return String(value).replace('T', ' ');
+  }
+
+  function formatMoney(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0';
+    return n.toFixed(2).replace(/\.00$/, '');
+  }
+
+  function toNumber(value, fallback) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+    const f = Number(fallback);
+    return Number.isFinite(f) ? f : 0;
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g,
       m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
-  // SocketIO 推送时同步刷新
   window.addEventListener('bt-progress', e => { if (e.detail.task_id === taskId) loadTask(); });
   window.addEventListener('bt-done', e => { if (e.detail.task_id === taskId) loadTask(); });
 

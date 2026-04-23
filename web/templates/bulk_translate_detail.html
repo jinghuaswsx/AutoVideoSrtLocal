@@ -8,22 +8,51 @@
 
 {% block content %}
 <div class="bt-detail" data-task-id="{{ task_id }}">
-  <p><a href="/tasks">← 返回任务中心</a></p>
+  <a class="bt-back-link" href="/tasks">← 返回任务中心</a>
 
-  <div class="bt-detail__meta" data-bt-meta>加载中…</div>
+  <section class="bt-status-hero" data-bt-status-panel aria-live="polite">
+    <div class="bt-detail-loading">正在读取任务状态…</div>
+  </section>
 
-  <div class="bt-detail__summary" data-bt-summary>
-    <div class="bt-detail__progress"><div class="bt-detail__progress-fill" style="width:0%"></div></div>
-    <div class="bt-detail__stats" data-bt-stats></div>
-  </div>
+  <section class="bt-detail-card">
+    <div class="bt-section-heading">
+      <span>任务总览</span>
+      <h2>先判断任务是否需要你介入</h2>
+      <p>这里汇总创建信息、整体进度、费用和当前可执行动作。</p>
+    </div>
 
-  <div class="bt-detail__actions" data-bt-actions></div>
+    <div class="bt-detail__meta" data-bt-meta>加载中…</div>
 
-  <h3 style="margin-top:24px;font-size:14px;color:var(--fg-muted,#64748b)">按语言分组</h3>
-  <div data-bt-plan></div>
+    <div class="bt-detail__summary" data-bt-summary>
+      <div class="bt-progress-row">
+        <div class="bt-detail__progress" aria-label="整体进度">
+          <div class="bt-detail__progress-fill" style="width:0%"></div>
+        </div>
+        <span class="bt-detail__progress-label" data-bt-progress-label>0%</span>
+      </div>
+      <div class="bt-detail__stats" data-bt-stats></div>
+    </div>
 
-  <h3 style="margin-top:24px;font-size:14px;color:var(--fg-muted,#64748b)">操作记录</h3>
-  <div class="bt-audit" data-bt-audit></div>
+    <div class="bt-detail__actions" data-bt-actions></div>
+  </section>
+
+  <section class="bt-detail-card bt-detail-card--spacious">
+    <div class="bt-section-heading">
+      <span>子任务进度</span>
+      <h2>按当前处理状态查看每一项</h2>
+      <p>优先看“当前正在处理”和“需要处理”，再看待执行与已完成内容。</p>
+    </div>
+    <div data-bt-plan></div>
+  </section>
+
+  <section class="bt-detail-card">
+    <div class="bt-section-heading">
+      <span>操作记录</span>
+      <h2>系统动作与人工操作</h2>
+      <p>用于排查问题，平时只需要关注上方状态和子任务分区。</p>
+    </div>
+    <div class="bt-audit" data-bt-audit></div>
+  </section>
 </div>
 
 {% include '_bulk_translate_dialog.html' %}
