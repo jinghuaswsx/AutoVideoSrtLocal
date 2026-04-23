@@ -2101,6 +2101,7 @@
     const section = $('edDetailImagesSection');
     const status = $('edDetailTranslateStatus');
     const translateBtn = $('edDetailImagesTranslateBtn');
+    const fromUrlBtn = $('edDetailImagesFromUrlBtn');
     const title = section && section.querySelector('.oc-section-title > span');
     const subtitle = section && section.querySelector('.oc-section-title .optional');
     const langName = langDisplayName(lang);
@@ -2109,9 +2110,10 @@
     if (subtitle) {
       subtitle.textContent = lang === 'en'
         ? '英文原始版，用于后续图片翻译'
-        : `${langName} 版本，可自行上传、从商品链接下载，或从英语版一键翻译`;
+        : `${langName} 版本，可自行上传，或从英语版一键翻译`;
     }
     if (translateBtn) translateBtn.hidden = lang === 'en';
+    if (fromUrlBtn) fromUrlBtn.hidden = lang !== 'en';
     if (!status) return;
     if (lang === 'en') {
       status.hidden = true;
