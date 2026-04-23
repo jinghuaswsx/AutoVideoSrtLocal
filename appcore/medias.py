@@ -940,6 +940,56 @@ def list_raw_sources(product_id: int) -> list[dict]:
     )
 
 
+def upsert_raw_source_translation(
+    product_id: int,
+    source_ref_id: int,
+    lang: str,
+    cover_object_key: str,
+) -> int:
+    execute(
+        """
+        INSERT INTO media_raw_source_translations
+        (product_id, source_ref_id, lang, cover_object_key)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          product_id = VALUES(product_id),
+          cover_object_key = VALUES(cover_object_key),
+          deleted_at = NULL
+        """,
+        (product_id, source_ref_id, lang, cover_object_key),
+    )
+    row = query_one(
+        "SELECT id FROM media_raw_source_translations "
+        "WHERE source_ref_id=%s AND lang=%s AND deleted_at IS NULL",
+        (source_ref_id, lang),
+    ) or {}
+    return int(row.get("id") or 0)
+
+
+def get_raw_source_translation(source_ref_id: int, lang: str) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_raw_source_translations "
+        "WHERE source_ref_id=%s AND lang=%s AND deleted_at IS NULL",
+        (source_ref_id, lang),
+    )
+
+
+def list_raw_source_translations(product_id: int, lang: str | None = None) -> list[dict]:
+    if lang:
+        return query(
+            "SELECT * FROM media_raw_source_translations "
+            "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+            "ORDER BY id ASC",
+            (product_id, lang),
+        )
+    return query(
+        "SELECT * FROM media_raw_source_translations "
+        "WHERE product_id=%s AND deleted_at IS NULL "
+        "ORDER BY lang ASC, id ASC",
+        (product_id,),
+    )
+
+
 def update_raw_source(rid: int, **fields) -> int:
     allowed = {"display_name", "sort_order"}
     keys = [k for k in fields if k in allowed]

@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+
+def test_sync_video_cover_result_marks_auto_translated(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    captured = {}
+    monkeypatch.setattr(
+        mod.medias,
+        "upsert_raw_source_translation",
+        lambda product_id, source_ref_id, lang, cover_object_key: captured.update(
+            {
+                "product_id": product_id,
+                "source_ref_id": source_ref_id,
+                "lang": lang,
+                "cover_object_key": cover_object_key,
+            }
+        )
+        or 901,
+    )
+    monkeypatch.setattr(
+        mod,
+        "mark_auto_translated",
+        lambda table, target_id, source_ref_id, bulk_task_id: captured.update(
+            {
+                "table": table,
+                "target_id": target_id,
+                "bulk_task_id": bulk_task_id,
+            }
+        )
+        or 1,
+    )
+
+    mod.sync_video_cover_result(
+        parent_task_id="bt-1",
+        product_id=77,
+        lang="de",
+        source_raw_id=301,
+        cover_object_key="1/medias/77/cover_de_raw301.png",
+    )
+
+    assert captured["table"] == "media_raw_source_translations"
+    assert captured["target_id"] == 901
+    assert captured["bulk_task_id"] == "bt-1"
+
+
+def test_sync_detail_images_result_marks_applied_rows(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    monkeypatch.setattr(
+        mod.task_state,
+        "get",
+        lambda task_id: {
+            "_user_id": 1,
+            "medias_context": {"product_id": 77, "target_lang": "de"},
+        },
+    )
+    monkeypatch.setattr(
+        mod,
+        "apply_translated_detail_images_from_task",
+        lambda task, allow_partial, user_id: {"applied_ids": [501, 502]},
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "list_detail_images",
+        lambda product_id, lang: [
+            {"id": 501, "source_detail_image_id": 101},
+            {"id": 502, "source_detail_image_id": 102},
+        ],
+    )
+
+    marked = []
+    monkeypatch.setattr(
+        mod,
+        "mark_auto_translated",
+        lambda table, target_id, source_ref_id, bulk_task_id: marked.append(
+            (table, target_id, source_ref_id, bulk_task_id)
+        )
+        or 1,
+    )
+
+    applied = mod.sync_detail_images_result(
+        parent_task_id="bt-1",
+        child_task_id="img-1",
+    )
+
+    assert applied == [501, 502]
+    assert marked == [
+        ("media_product_detail_images", 501, 101, "bt-1"),
+        ("media_product_detail_images", 502, 102, "bt-1"),
+    ]
+
+
+def test_sync_video_result_creates_item_and_marks_auto_translated(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 1,
+            "display_name": "EN Raw",
+            "duration_seconds": 90.0,
+            "cover_object_key": "1/medias/77/raw_cover.png",
+        },
+    )
+    created = {}
+    monkeypatch.setattr(
+        mod.medias,
+        "create_item",
+        lambda **kwargs: created.update(kwargs) or 701,
+    )
+    executed = []
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: executed.append(args) or 1)
+    marked = []
+    monkeypatch.setattr(
+        mod,
+        "mark_auto_translated",
+        lambda table, target_id, source_ref_id, bulk_task_id: marked.append(
+            (table, target_id, source_ref_id, bulk_task_id)
+        )
+        or 1,
+    )
+
+    target_id = mod.sync_video_result(
+        parent_task_id="bt-1",
+        product_id=77,
+        lang="de",
+        source_raw_id=301,
+        video_object_key="1/medias/77/de_result.mp4",
+        cover_object_key="1/medias/77/de_cover.png",
+    )
+
+    assert target_id == 701
+    assert created["object_key"] == "1/medias/77/de_result.mp4"
+    assert created["cover_object_key"] == "1/medias/77/de_cover.png"
+    assert executed == [(301, 701)]
+    assert marked == [("media_items", 701, 301, "bt-1")]

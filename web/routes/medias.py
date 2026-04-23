@@ -25,6 +25,7 @@ from appcore.gemini_image import coerce_image_model
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
+from web.background import start_background_task
 from web.routes import image_translate as image_translate_routes
 from web.services import image_translate_runner, link_check_runner
 
@@ -378,6 +379,15 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 @login_required
 def index():
     return render_template("medias_list.html")
+
+
+@bp.route("/products/<int:pid>/translation-tasks", methods=["GET"])
+@login_required
+def translation_tasks_page(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    return render_template("medias_translation_tasks.html", product=p)
 
 
 # ---------- 浜у搧 API ----------
@@ -801,12 +811,16 @@ def api_product_translate(pid: int):
     body = request.get_json(silent=True) or {}
     raw_ids = body.get("raw_ids") or []
     target_langs = body.get("target_langs") or []
-    content_types = body.get("content_types") or ["video"]
+    content_types = body.get("content_types") or ["copywriting", "detail_images", "video_covers", "videos"]
+    allowed_content_types = {"copywriting", "detail_images", "video_covers", "videos"}
 
     if not raw_ids:
         return jsonify({"error": "raw_ids 涓嶈兘涓虹┖"}), 400
     if not target_langs:
         return jsonify({"error": "target_langs 涓嶈兘涓虹┖"}), 400
+
+    if not isinstance(content_types, list) or not content_types:
+        return jsonify({"error": "content_types 娑撳秷鍏樻稉铏光敄"}), 400
 
     try:
         raw_ids_int = [int(x) for x in raw_ids]
@@ -823,7 +837,12 @@ def api_product_translate(pid: int):
         if lang == "en" or not medias.is_valid_language(lang):
             return jsonify({"error": f"target_langs 闈炴硶: {lang}"}), 400
 
+    for content_type in content_types:
+        if content_type not in allowed_content_types:
+            return jsonify({"error": f"content_types 闂堢偞纭? {content_type}"}), 400
+
     from appcore.bulk_translate_runtime import create_bulk_translate_task, start_task
+    from web.routes.bulk_translate import _spawn_scheduler
 
     initiator = {
         "user_id": current_user.id,
@@ -843,7 +862,19 @@ def api_product_translate(pid: int):
         raw_source_ids=raw_ids_int,
     )
     start_task(task_id, current_user.id)
+    start_background_task(_spawn_scheduler, task_id)
     return jsonify({"task_id": task_id}), 202
+
+
+@bp.route("/api/products/<int:pid>/translation-tasks", methods=["GET"])
+@login_required
+def api_product_translation_tasks(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    from appcore.bulk_translate_projection import list_product_tasks
+
+    return jsonify({"items": list_product_tasks(current_user.id, pid)})
 
 
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])

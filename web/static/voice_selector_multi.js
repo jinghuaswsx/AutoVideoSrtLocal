@@ -32,15 +32,31 @@
   const subSizeGroup = document.getElementById("vs-size-group");
   const subPosYEl = document.getElementById("vs-sub-position-y");
   const subPosHint = document.getElementById("vs-sub-pos-hint");
+  const previewFrame = document.getElementById("vsPreviewFrame");
+  const previewVideo = document.getElementById("vsPreviewVideo");
+  const previewSubtitle = document.getElementById("vsPreviewSubtitle");
+  const previewNote = document.getElementById("vsPreviewNote");
 
   let subSize = 14;  // 字号状态（由按钮组驱动）
 
   // 字体预览：下拉变化 → 预览文字换字体
+  let previewDragging = false;
+
+  const FONT_FAMILIES = {
+    "Impact": 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
+    "Oswald Bold": '"Oswald", Impact, "Arial Narrow Bold", sans-serif',
+    "Bebas Neue": '"Bebas Neue", Impact, "Arial Narrow Bold", sans-serif',
+    "Montserrat ExtraBold": '"Montserrat", "Arial Black", sans-serif',
+    "Poppins Bold": '"Poppins", "Arial Black", sans-serif',
+    "Anton": '"Anton", Impact, sans-serif',
+  };
+
   function updateFontPreview() {
     const val = subFontEl.value || "Impact";
     const weight = subFontEl.selectedOptions[0]?.dataset?.weight || "700";
     subFontPreview.style.fontFamily = `"${val}", sans-serif`;
     subFontPreview.style.fontWeight = weight;
+    syncSubtitlePreview();
   }
   subFontEl.addEventListener("change", updateFontPreview);
   updateFontPreview();
@@ -52,15 +68,91 @@
     subSize = parseInt(btn.dataset.size, 10) || 14;
     subSizeGroup.querySelectorAll("button").forEach(b =>
       b.classList.toggle("active", b === btn));
+    syncSubtitlePreview();
   });
 
   // 位置滑块：实时回显百分比
   function updatePosHint() {
     const v = parseFloat(subPosYEl.value) || 0;
     subPosHint.textContent = `${Math.round(v * 100)}%`;
+    syncSubtitlePreview();
   }
   subPosYEl.addEventListener("input", updatePosHint);
   updatePosHint();
+
+  function syncSubtitlePreview() {
+    if (!previewSubtitle) return;
+    const value = subFontEl.value || "Impact";
+    previewSubtitle.style.fontFamily = FONT_FAMILIES[value] || FONT_FAMILIES.Impact;
+    previewSubtitle.style.fontSize = `${subSize}px`;
+    previewSubtitle.style.top = `${(parseFloat(subPosYEl.value) || 0.68) * 100}%`;
+  }
+
+  function setPreviewNote(message, mode) {
+    if (!previewNote) return;
+    previewNote.textContent = message;
+    previewNote.dataset.mode = mode || "note";
+  }
+
+  function tryAttachPreviewVideo() {
+    if (!previewVideo) return false;
+    const sourceVideo = document.querySelector("#preview-extract video.media-player, #preview-asr video.media-player, video.media-player");
+    const src = sourceVideo && sourceVideo.getAttribute("src");
+    if (!src) {
+      setPreviewNote("当前还没有可复用的视频预览，等原视频预览加载后这里会自动同步。", "note");
+      return false;
+    }
+    if (previewVideo.getAttribute("src") === src) {
+      return true;
+    }
+    previewVideo.src = src;
+    previewVideo.load();
+    previewVideo.play().catch(() => {});
+    setPreviewNote("已复用当前任务的原始视频预览，字幕会直接叠加在真实画面上。", "success");
+    return true;
+  }
+
+  function updatePreviewPosition(clientY) {
+    if (!previewFrame) return;
+    const rect = previewFrame.getBoundingClientRect();
+    if (!rect.height) return;
+    const ratio = Math.max(0.12, Math.min(0.92, (clientY - rect.top) / rect.height));
+    subPosYEl.value = String(ratio);
+    updatePosHint();
+  }
+
+  if (previewFrame && previewSubtitle) {
+    previewSubtitle.addEventListener("pointerdown", (event) => {
+      previewDragging = true;
+      previewSubtitle.setPointerCapture(event.pointerId);
+      updatePreviewPosition(event.clientY);
+    });
+    previewSubtitle.addEventListener("pointermove", (event) => {
+      if (!previewDragging) return;
+      updatePreviewPosition(event.clientY);
+    });
+    const endPreviewDrag = (event) => {
+      previewDragging = false;
+      try {
+        previewSubtitle.releasePointerCapture(event.pointerId);
+      } catch (_error) {
+        // ignore
+      }
+    };
+    previewSubtitle.addEventListener("pointerup", endPreviewDrag);
+    previewSubtitle.addEventListener("pointercancel", endPreviewDrag);
+  }
+
+  syncSubtitlePreview();
+  if (!tryAttachPreviewVideo()) {
+    let previewRetries = 0;
+    const previewTimer = setInterval(() => {
+      previewRetries += 1;
+      if (tryAttachPreviewVideo() || previewRetries >= 20) {
+        clearInterval(previewTimer);
+      }
+    }, 1000);
+  }
 
   const csrfToken = () => {
     const el = document.querySelector("meta[name=csrf-token]");

@@ -4,6 +4,7 @@ import importlib
 import sys
 import threading
 import types
+from pathlib import Path
 
 
 def _reload_tos_clients(monkeypatch, *, use_private: bool):
@@ -264,3 +265,52 @@ def test_upload_media_object_succeeds_when_head_confirms(monkeypatch):
 
     op_names = [c[0] for c in calls]
     assert op_names == ["put", "head"]
+
+
+def test_download_file_removes_existing_destination_before_sdk_write(monkeypatch, tmp_path):
+    observed = {}
+
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def get_object_to_file(self, bucket, object_key, local_path):
+            observed["exists_before_sdk_write"] = Path(local_path).exists()
+            Path(local_path).write_bytes(b"downloaded")
+
+    monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    destination = tmp_path / "existing.bin"
+    destination.write_bytes(b"stale")
+
+    tos_clients.download_file("artifacts/demo.bin", str(destination))
+
+    assert observed["exists_before_sdk_write"] is False
+    assert destination.read_bytes() == b"downloaded"
+
+
+def test_download_media_file_removes_existing_destination_before_sdk_write(monkeypatch, tmp_path):
+    observed = {}
+
+    class FakeClient:
+        def __init__(self, *, endpoint, **kwargs):
+            self.endpoint = endpoint
+
+        def get_object_to_file(self, bucket, object_key, local_path):
+            observed["bucket"] = bucket
+            observed["exists_before_sdk_write"] = Path(local_path).exists()
+            Path(local_path).write_bytes(b"media-download")
+
+    monkeypatch.setitem(sys.modules, "tos", types.SimpleNamespace(TosClientV2=FakeClient))
+    monkeypatch.setenv("TOS_MEDIA_BUCKET", "auto-video-srt-media")
+    tos_clients = _reload_tos_clients(monkeypatch, use_private=False)
+
+    destination = tmp_path / "existing-media.bin"
+    destination.write_bytes(b"stale")
+
+    tos_clients.download_media_file("1/medias/1/source.jpg", destination)
+
+    assert observed["bucket"] == "auto-video-srt-media"
+    assert observed["exists_before_sdk_write"] is False
+    assert destination.read_bytes() == b"media-download"

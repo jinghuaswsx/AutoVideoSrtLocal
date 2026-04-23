@@ -1,0 +1,71 @@
+{% extends "layout.html" %}
+{% block title %}翻译任务管理 - AutoVideoSrt{% endblock %}
+{% block page_title %}翻译任务管理{% endblock %}
+
+{% block extra_style %}
+<link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
+<style>
+  .mtm-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .mtm-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .mtm-title {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.3;
+  }
+  .mtm-subtitle {
+    margin: 8px 0 0;
+    color: var(--fg-muted, #64748b);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .mtm-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .mtm-note {
+    padding: 14px 16px;
+    border: 1px solid oklch(91% 0.012 230);
+    border-radius: 12px;
+    background: oklch(97% 0.006 230);
+    color: oklch(22% 0.02 235);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="mediasTranslationTasksPage" class="mtm-page" data-product-id="{{ product.id }}">
+  <div class="mtm-head">
+    <div>
+      <h2 class="mtm-title">翻译任务管理</h2>
+      <p class="mtm-subtitle">{{ product.name }}{% if product.product_code %} · {{ product.product_code }}{% endif %}</p>
+    </div>
+    <div class="mtm-actions">
+      <a class="bt-btn bt-btn--ghost" href="/medias/">返回素材管理</a>
+      <a class="bt-btn bt-btn--primary" href="/medias/">发起新翻译</a>
+    </div>
+  </div>
+
+  <div class="mtm-note">
+    视频翻译任务会默认自动执行到“选择声音”步骤再暂停。这里会清楚标出“等待选声音”，操作人只需要点进对应视频任务去确认音色，后续流程继续自动跑完。
+  </div>
+
+  <div id="mediasTranslationTasksMount"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
+{% endblock %}

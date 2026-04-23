@@ -14,6 +14,7 @@ _ALLOWED_TABLES = {
     "media_product_detail_images",
     "media_items",
     "media_product_covers",
+    "media_raw_source_translations",
 }
 
 

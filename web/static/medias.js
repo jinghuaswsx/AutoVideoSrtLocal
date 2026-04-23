@@ -294,7 +294,7 @@
 
   function renderLangBar(coverage) {
     if (!LANGUAGES.length) return '';
-    return `<div class="oc-lang-bar">` + LANGUAGES.map(l => {
+    const chips = LANGUAGES.map(l => {
       const c = (coverage || {})[l.code] || { items: 0, copy: 0, cover: false };
       const filled = c.items > 0;
       const cls = filled ? 'filled' : 'empty';
@@ -302,7 +302,12 @@
       return `<span class="oc-lang-chip ${cls}" title="${escapeHtml(title)}">`
            + `${l.code.toUpperCase()}${filled ? `<span class="count">${c.items}</span>` : ''}`
            + `</span>`;
-    }).join('') + `</div>`;
+    });
+    const midpoint = Math.ceil(chips.length / 2);
+    const rows = [chips.slice(0, midpoint), chips.slice(midpoint)];
+    return `<div class="oc-lang-bar">`
+         + rows.filter((row) => row.length).map((row) => `<div class="oc-lang-row">${row.join('')}</div>`).join('')
+         + `</div>`;
   }
 
   function icon(name, size = 14) {
@@ -1284,6 +1289,14 @@
     ].join('\n');
   }
 
+  function edValidateCopyTranslateSource(rawText) {
+    const text = String(rawText || '').replace(/\r\n?/g, '\n').trim();
+    if (!text) {
+      return { ok: false, message: '英文文案为空，无法翻译' };
+    }
+    return { ok: true, value: text };
+  }
+
   function edNormalizeCopywritingsData(raw) {
     if (Array.isArray(raw)) {
       return raw.map((item) => ({
@@ -1453,8 +1466,14 @@
     if (!targetLang || targetLang === 'en') return;
 
     const source = edGetEnglishSourceCopy();
-    if (!source || !edHasMeaningfulCopywritingBody(source.body)) {
+    if (!source) {
       alert('当前没有可用的英文文案');
+      return;
+    }
+
+    const sourceValidation = edValidateCopyTranslateSource(source.body);
+    if (!sourceValidation.ok) {
+      alert(sourceValidation.message);
       return;
     }
 
@@ -1462,11 +1481,6 @@
     const tasks = Object.entries(sourceFields)
       .filter(([, value]) => String(value || '').trim())
       .map(([key, value]) => edTranslateCopyField(value, targetLang).then((translated) => [key, translated]));
-
-    if (!tasks.length) {
-      alert('英文文案为空，无法翻译');
-      return;
-    }
 
     const originalLabel = btn ? btn.textContent.trim() : '';
     if (btn) {

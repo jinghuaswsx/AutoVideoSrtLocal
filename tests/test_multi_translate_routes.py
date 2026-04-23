@@ -1,7 +1,15 @@
 import base64
 import io
 import json
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _patch_bulk_translate_startup_recovery(monkeypatch):
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
 
 
 def test_list_page_renders(authed_client_no_db):
@@ -100,8 +108,6 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
 
 
 def test_multi_translate_list_page_uses_local_multipart_upload():
-    from pathlib import Path
-
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
 
@@ -112,6 +118,20 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     assert "/api/multi-translate/compat-bootstrap" not in template
     assert "/api/multi-translate/compat-complete" not in template
     assert "xhr.open('PUT'" not in template
+
+
+def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_voice_selector_multi.html").read_text(encoding="utf-8")
+    script = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
+
+    assert 'id="vsPreviewFrame"' in template
+    assert 'id="vsPreviewVideo"' in template
+    assert 'id="vsPreviewSubtitle"' in template
+    assert 'id="vsPreviewNote"' in template
+    assert "tryAttachPreviewVideo" in script
+    assert "vsPreviewSubtitle" in script
+    assert "pointerdown" in script
 
 
 def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no_db):
@@ -127,3 +147,41 @@ def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no
 
     assert resp.status_code == 410
     assert "本地" in resp.get_json()["error"]
+def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_db):
+    state = {
+        "target_lang": "de",
+        "medias_context": {
+            "parent_task_id": "bulk-parent-1",
+        },
+    }
+    resume_calls = []
+    bg_calls = []
+
+    with patch(
+        "web.routes.multi_translate.db_query_one",
+        return_value={"state_json": json.dumps(state, ensure_ascii=False)},
+    ), patch(
+        "web.routes.multi_translate.db_execute",
+    ), patch(
+        "web.routes.multi_translate.task_state.update",
+    ), patch(
+        "web.routes.multi_translate.task_state.set_step",
+    ), patch(
+        "web.routes.multi_translate.task_state.set_current_review_step",
+    ), patch(
+        "web.routes.multi_translate.multi_pipeline_runner.resume",
+        side_effect=lambda task_id, start_step, user_id=None: resume_calls.append((task_id, start_step, user_id)),
+    ), patch(
+        "web.background.start_background_task",
+        side_effect=lambda fn, task_id: bg_calls.append((fn, task_id)),
+    ):
+        resp = authed_client_no_db.post(
+            "/api/multi-translate/task-voice-1/confirm-voice",
+            json={"voice_id": "voice-1", "voice_name": "Voice 1"},
+        )
+
+    assert resp.status_code == 200
+    assert resume_calls == [("task-voice-1", "alignment", 1)]
+    assert len(bg_calls) == 1
+    assert callable(bg_calls[0][0])
+    assert bg_calls[0][1] == "bulk-parent-1"

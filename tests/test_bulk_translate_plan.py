@@ -155,3 +155,78 @@ def test_plan_item_schema(monkeypatch):
     assert item["error"] is None
     assert item["started_at"] is None
     assert item["finished_at"] is None
+
+
+def test_video_cover_batch_one_per_lang(monkeypatch):
+    _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 11}, {"id": 12}]))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de", "fr"],
+        ["video_covers"],
+        False,
+        raw_source_ids=[11, 12],
+    )
+
+    assert len(plan) == 2
+    assert {item["kind"] for item in plan} == {"video_covers"}
+    assert plan[0]["ref"]["source_raw_ids"] == [11, 12]
+    assert plan[0]["dispatch_after_seconds"] == 0
+    assert plan[1]["dispatch_after_seconds"] == 0
+
+
+def test_detail_images_have_thirty_second_spacing(monkeypatch):
+    _patch(monkeypatch, _FakeDB(details=[101]))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de", "fr", "es"],
+        ["detail_images"],
+        False,
+    )
+
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 30, 60]
+
+
+def test_videos_have_two_minute_dispatch_spacing(monkeypatch):
+    _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 1}, {"id": 2}]))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de", "fr"],
+        ["videos"],
+        False,
+        raw_source_ids=[1, 2],
+    )
+
+    assert [item["dispatch_after_seconds"] for item in plan] == [0, 120, 240, 360]
+
+
+def test_new_schema_tracks_child_task_and_result_sync(monkeypatch):
+    _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 1}]))
+
+    from appcore.bulk_translate_plan import generate_plan
+
+    plan = generate_plan(
+        1,
+        77,
+        ["de"],
+        ["videos"],
+        False,
+        raw_source_ids=[1],
+    )
+
+    item = plan[0]
+    assert item["child_task_id"] is None
+    assert item["child_task_type"] is None
+    assert item["dispatch_after_seconds"] == 0
+    assert item["result_synced"] is False

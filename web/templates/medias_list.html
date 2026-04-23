@@ -594,7 +594,18 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-fn-list li.empty { color:var(--oc-fg-subtle); }
 
 /* ────────── Lang coverage chip bar ────────── */
-.oc-lang-bar { display:flex; gap:4px; flex-wrap:nowrap; align-items:center; white-space:nowrap; }
+.oc-lang-bar {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  align-items:flex-start;
+}
+.oc-lang-row {
+  display:flex;
+  gap:4px;
+  flex-wrap:nowrap;
+  align-items:center;
+}
 .oc-lang-chip {
   display:inline-flex; align-items:center; justify-content:center;
   min-width:30px; height:22px; padding:0 6px;
@@ -1535,10 +1546,128 @@ tr.oc-row-warn { box-shadow: inset 3px 0 0 0 var(--oc-danger); }
   </div>
 </div>
 
+<div id="mtTranslateMask" class="oc-modal-mask oc" hidden>
+  <div id="mtTranslateDialog" class="oc-modal" role="dialog" aria-modal="true" aria-labelledby="mtTranslateTitle">
+    <div class="oc-modal-head">
+      <h3 id="mtTranslateTitle">翻译素材<span id="mtTitleMeta" class="muted"></span></h3>
+      <button type="button" id="mtClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-tabs">
+      <button type="button" id="mtTabCreate" class="oc-tab active">创建任务</button>
+      <button type="button" id="mtTabTasks" class="oc-tab">任务管理</button>
+    </div>
+    <div class="oc-modal-body">
+      <section id="mtPanelCreate" class="oc-panel active">
+        <div class="mt-grid">
+          <div class="mt-main">
+            <div class="mt-card">
+              <div class="mt-card__head">
+                <h4>翻译范围</h4>
+                <span class="mt-hint">默认全部勾选</span>
+              </div>
+              <div id="mtContentTypes" class="mt-type-grid"></div>
+            </div>
+
+            <div class="mt-card">
+              <div class="mt-card__head">
+                <h4>选择原始视频</h4>
+                <span class="mt-hint">默认全选</span>
+              </div>
+              <div id="mtRawList" class="mt-raw-list"></div>
+            </div>
+
+            <div class="mt-card">
+              <div class="mt-card__head">
+                <h4>目标语言</h4>
+                <span class="mt-hint">默认勾选当前还没有视频的语种</span>
+              </div>
+              <div id="mtLangList" class="mt-lang-list"></div>
+            </div>
+          </div>
+
+          <aside class="mt-side">
+            <div class="mt-card">
+              <div class="mt-card__head">
+                <h4>视频翻译参数</h4>
+                <span class="mt-hint">仅视频翻译会使用</span>
+              </div>
+              <div class="mt-form">
+                <label class="oc-field">
+                  <span class="oc-label">字体</span>
+                  <select id="mtVideoFont" class="oc-input">
+                    <option value="Impact">Impact</option>
+                    <option value="Oswald Bold">Oswald Bold</option>
+                    <option value="Bebas Neue">Bebas Neue</option>
+                    <option value="Montserrat ExtraBold">Montserrat ExtraBold</option>
+                    <option value="Poppins Bold">Poppins Bold</option>
+                    <option value="Anton">Anton</option>
+                  </select>
+                </label>
+                <div class="oc-field">
+                  <span class="oc-label">字号</span>
+                  <div id="mtVideoSizeGroup" class="mt-size-group">
+                    <button type="button" data-size="12">12</button>
+                    <button type="button" data-size="14" class="active">14</button>
+                    <button type="button" data-size="16">16</button>
+                    <button type="button" data-size="18">18</button>
+                    <button type="button" data-size="20">20</button>
+                    <button type="button" data-size="24">24</button>
+                  </div>
+                </div>
+                <label class="oc-field">
+                  <span class="oc-label">字幕位置</span>
+                  <input id="mtSubtitlePosition" class="oc-input" type="range" min="0.12" max="0.92" step="0.01" value="0.68">
+                </label>
+                <div id="mtSubtitleHint" class="mt-hint">68%</div>
+              </div>
+            </div>
+
+            <div class="mt-card">
+              <div class="mt-card__head">
+                <h4>字幕预览</h4>
+                <span class="mt-hint">拖动字幕即可调整位置</span>
+              </div>
+              <div class="mt-preview-shell">
+                <div id="mtPreviewFrame" class="mt-preview-frame">
+                  <video id="mtPreviewVideo" class="mt-preview-video" muted playsinline loop controls></video>
+                  <div class="mt-preview-topbar">
+                    <span>9:16</span>
+                    <span>Preview</span>
+                  </div>
+                  <div id="mtSubtitleOverlay" class="mt-subtitle-overlay">
+                    <div class="mt-subtitle-line">Tiktok and facebook shot videos!</div>
+                    <div class="mt-subtitle-line">Tiktok and facebook shot videos!</div>
+                  </div>
+                </div>
+                <div id="mtPreviewEmpty" class="mt-preview-empty">默认会加载当前产品第一条英文视频，方便直接预览字幕效果。</div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="mtPanelTasks" class="oc-panel">
+        <div id="mtTasksMount"></div>
+      </section>
+    </div>
+    <div class="oc-modal-foot">
+      <span id="mtSummary" class="oc-rst-preview">请选择翻译范围、原始视频和目标语言</span>
+      <div class="oc-rst-actions">
+        <button type="button" id="mtCancel" class="oc-btn ghost">取消</button>
+        <button type="button" id="mtSubmit" class="oc-btn primary" disabled>创建翻译任务</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
 
 <script>
   window.MEDIAS_UPLOAD_READY = true;
 </script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
+<script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
+<script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>
 {% endblock %}

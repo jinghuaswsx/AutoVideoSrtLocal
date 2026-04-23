@@ -141,6 +141,8 @@ def upload_file(local_path: str, object_key: str) -> None:
 def download_file(object_key: str, local_path: str) -> str:
     destination = Path(local_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        destination.unlink()
     get_server_client().get_object_to_file(config.TOS_BUCKET, object_key, str(destination))
     return str(destination)
 
@@ -323,6 +325,8 @@ def download_media_file(
 ) -> str:
     destination = Path(local_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        destination.unlink()
     get_server_client().get_object_to_file(get_media_bucket(bucket), object_key, str(destination))
     return str(destination)
 

@@ -411,10 +411,16 @@ def test_recover_all_interrupted_tasks_picks_up_image_translate_rows(monkeypatch
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 
-    called = []
-    monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: called.append(True))
+    called = {"generic": 0, "bulk": 0}
+    monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: called.update({"generic": called["generic"] + 1}))
+    monkeypatch.setattr(
+        web_app,
+        "mark_interrupted_bulk_translate_tasks",
+        lambda: called.update({"bulk": called["bulk"] + 1}),
+        raising=False,
+    )
 
     app = create_app()
 
     assert app
-    assert called == [True]
+    assert called == {"generic": 1, "bulk": 1}

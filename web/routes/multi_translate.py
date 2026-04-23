@@ -848,4 +848,15 @@ def confirm_voice(task_id: str):
     # 从 alignment 恢复 pipeline
     multi_pipeline_runner.resume(task_id, "alignment", user_id=current_user.id)
 
+    medias_context = state.get("medias_context") or {}
+    parent_task_id = (medias_context.get("parent_task_id") or "").strip()
+    if parent_task_id:
+        try:
+            from web.background import start_background_task
+            from web.routes.bulk_translate import _spawn_scheduler
+
+            start_background_task(_spawn_scheduler, parent_task_id)
+        except Exception:
+            log.exception("failed to resume parent bulk_translate task after voice confirm")
+
     return jsonify({"ok": True, "voice_id": voice_id, "voice_name": voice_name})
