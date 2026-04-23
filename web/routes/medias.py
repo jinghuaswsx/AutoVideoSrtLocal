@@ -2098,3 +2098,38 @@ def api_mk_selection_refresh():
     """触发重新抓取明空消耗数据（后台任务）。"""
     # TODO: 后台任务重新抓取
     return jsonify({"ok": True, "message": "刷新任务已提交（暂未实现）"})
+
+
+@bp.route("/api/mk-detail/<int:mk_id>")
+@login_required
+def api_mk_detail_proxy(mk_id: int):
+    """代理请求明空 API 获取产品详情，避免浏览器 CORS 问题。"""
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可访问"}), 403
+    import requests as _req
+    mk_token = _get_mk_token()
+    if not mk_token:
+        return jsonify({"error": "明空 token 未配置"}), 500
+    try:
+        resp = _req.get(
+            f"https://os.wedev.vip/api/marketing/medias/{mk_id}",
+            headers={"Authorization": f"Bearer {mk_token}", "Accept": "application/json"},
+            timeout=15,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+
+def _get_mk_token() -> str:
+    """从浏览器持久化数据或配置获取明空 token。"""
+    # 优先从环境变量读取
+    token = os.environ.get("MK_API_TOKEN", "").strip()
+    if token:
+        return token
+    # 从文件读取
+    token_file = Path("C:/店小秘/mk_token.txt")
+    if token_file.is_file():
+        return token_file.read_text(encoding="utf-8").strip()
+    # 硬编码 fallback（应尽快迁移到配置）
+    return "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlmYSIsImV4cCI6MTc3OTUxOTA5MSwiaWF0IjoxNzc2OTI3MDkxLCJqdGkiOiIzNSJ9.Rq_jgNz-f3WHg586FGQIs4DmFhnMHoIDCggJhBWDacM"
