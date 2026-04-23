@@ -133,6 +133,12 @@ def _map_shared_voice_to_local(shared: dict, overrides: dict | None = None) -> d
     overrides = overrides or {}
     name = overrides.get("name") or shared.get("name") or "Imported Voice"
     labels = shared.get("labels") or {}
+    language = (
+        overrides.get("language")
+        or shared.get("language")
+        or labels.get("language")
+        or "en"
+    )
 
     # Determine gender: override > labels > default male
     gender = overrides.get("gender") or ""
@@ -155,6 +161,7 @@ def _map_shared_voice_to_local(shared: dict, overrides: dict | None = None) -> d
     return {
         "name": name,
         "gender": gender,
+        "language": language,
         "elevenlabs_voice_id": shared.get("voice_id") or "",
         "description": overrides.get("description") or shared.get("description") or "Imported from ElevenLabs Voice Library",
         "style_tags": style_tags,

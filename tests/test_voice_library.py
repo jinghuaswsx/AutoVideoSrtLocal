@@ -45,4 +45,4 @@ def test_list_voices_filters_by_user_id():
         result = lib.list_voices(user_id=5)
     assert len(result) == 1
     assert "user_id" in captured[0][0]
-    assert captured[0][1] == (5,)
+    assert captured[0][1] == (5, "en")
