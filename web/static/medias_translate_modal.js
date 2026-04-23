@@ -62,7 +62,7 @@
     selectedRawIds: new Set(),
     selectedLangs: new Set(),
     videoFont: 'Impact',
-    videoSize: 14,
+    videoSize: 10,
     subtitlePositionY: 0.68,
     activeTab: 'create',
     busy: false,
@@ -272,7 +272,7 @@
     state.selectedLangs = new Set((missing.length ? missing : langs.map((lang) => lang.code)));
 
     state.videoFont = 'Impact';
-    state.videoSize = 14;
+    state.videoSize = 10;
     state.subtitlePositionY = 0.68;
     videoFont.value = state.videoFont;
     renderSizeButtons();
@@ -338,7 +338,7 @@
     state.selectedRawIds = new Set();
     state.selectedLangs = new Set();
     state.videoFont = 'Impact';
-    state.videoSize = 14;
+    state.videoSize = 10;
     state.subtitlePositionY = 0.68;
     state.activeTab = 'create';
     state.busy = false;
@@ -760,7 +760,7 @@
   videoSizeGroup.addEventListener('click', (event) => {
     const button = event.target.closest('[data-size]');
     if (!button) return;
-    state.videoSize = Number(button.dataset.size) || 14;
+    state.videoSize = Number(button.dataset.size) || 10;
     renderSizeButtons();
     applyPreviewStyles();
   });

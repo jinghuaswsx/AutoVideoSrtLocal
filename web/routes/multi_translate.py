@@ -47,6 +47,31 @@ def _resolve_name_conflict(user_id: int, desired_name: str) -> str:
         n += 1
 
 
+def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: str) -> str:
+    if not video_path or not os.path.exists(video_path):
+        return ""
+
+    try:
+        from pipeline.ffutil import extract_thumbnail
+
+        if task_dir:
+            os.makedirs(task_dir, exist_ok=True)
+        thumb_path = os.path.join(task_dir, "thumbnail.jpg")
+        thumb = thumb_path if os.path.exists(thumb_path) else extract_thumbnail(video_path, task_dir)
+    except Exception:
+        log.warning("[multi_translate] thumbnail generation failed for task %s", task_id, exc_info=True)
+        return ""
+
+    if not thumb or not os.path.exists(thumb):
+        return ""
+
+    db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+    task = store.get(task_id)
+    if task is not None:
+        task["thumbnail_path"] = thumb
+    return thumb
+
+
 def _is_admin_user() -> bool:
     return getattr(current_user, "role", "") == "admin"
 
@@ -224,6 +249,7 @@ def upload_and_start():
 
     # 注册源视频到 preview_files，让 artifact 端点能直接 serve 给前端预览
     store.set_preview_file(task_id, "source_video", video_path)
+    _ensure_uploaded_video_thumbnail(task_id, video_path, task_dir)
 
     multi_pipeline_runner.start(task_id, user_id=user_id)
     return jsonify({"task_id": task_id}), 201

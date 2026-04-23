@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, query_one
@@ -22,6 +23,113 @@ log = logging.getLogger(__name__)
 # 文案需要翻译的字段。title / body / description / ad_* 都是文本。
 _TRANSLATABLE_FIELDS = ("title", "body", "description",
                          "ad_carrier", "ad_copy", "ad_keywords")
+
+
+_COPY_FIELD_LABELS = {
+    "title": (
+        "标题", "title", "headline", "subject",
+        "titolo", "titel", "titre", "título", "titulo", "タイトル", "otsikko",
+    ),
+    "body": (
+        "文案", "copy", "body", "text", "content", "message",
+        "testo", "messaggio", "corpo", "contenuto", "texte", "texto",
+        "本文", "コピー", "tekst", "teksti", "inhalt",
+    ),
+    "description": (
+        "描述", "description", "desc", "detail",
+        "descrizione", "beschreibung", "descripción", "descripcion",
+        "descrição", "descricao", "説明", "説明文", "beschrijving",
+        "omschrijving", "beskrivning", "kuvaus",
+    ),
+}
+_COPY_LABEL_TO_FIELD = {
+    label.casefold(): field
+    for field, labels in _COPY_FIELD_LABELS.items()
+    for label in labels
+}
+_COPY_LABEL_RE = re.compile(
+    r"^\s*(?P<label>"
+    + "|".join(
+        re.escape(label)
+        for label in sorted(_COPY_LABEL_TO_FIELD, key=len, reverse=True)
+    )
+    + r")\s*(?:[:：]|[-—]\s*)(?P<value>.*)$",
+    re.IGNORECASE,
+)
+
+
+def _canonical_copy_field(label: str | None) -> str:
+    return _COPY_LABEL_TO_FIELD.get((label or "").strip().casefold(), "")
+
+
+def _strip_leading_copy_field_label(raw_value: str, expected_key: str) -> str:
+    value = str(raw_value or "").strip()
+    for _ in range(3):
+        match = _COPY_LABEL_RE.match(value)
+        nested_key = _canonical_copy_field(match.group("label")) if match else ""
+        if not nested_key or nested_key != expected_key:
+            break
+        next_value = (match.group("value") or "").strip()
+        if not next_value or next_value == value:
+            break
+        value = next_value
+    return value
+
+
+def _append_copy_field_value(fields: dict[str, str], key: str, raw_value: str) -> None:
+    value = str(raw_value or "").replace("\r\n", "\n").replace("\r", "\n")
+    value = re.sub(r"\s+", " ", value).strip()
+    value = _strip_leading_copy_field_label(value, key)
+    if not value:
+        return
+    fields[key] = f"{fields[key]} {value}".strip() if fields[key] else value
+
+
+def _parse_copywriting_fields(raw: str) -> dict[str, str] | None:
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return None
+
+    fields = {"title": "", "body": "", "description": ""}
+    seen: set[str] = set()
+    active_key = ""
+    has_labeled_field = False
+
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _COPY_LABEL_RE.match(line)
+        key = _canonical_copy_field(match.group("label")) if match else ""
+        if key:
+            has_labeled_field = True
+            active_key = key
+            seen.add(key)
+            _append_copy_field_value(fields, key, match.group("value") or "")
+            continue
+        if active_key:
+            _append_copy_field_value(fields, active_key, line)
+
+    if not has_labeled_field:
+        return None
+    if any(key not in seen for key in fields):
+        return None
+    return fields
+
+
+def _normalize_copywriting_translation(source_text: str, translated_text: str) -> str:
+    if not _parse_copywriting_fields(source_text):
+        return translated_text
+    translated_fields = _parse_copywriting_fields(translated_text)
+    if not translated_fields:
+        return translated_text
+    return "\n".join(
+        [
+            f"标题: {translated_fields['title']}",
+            f"文案: {translated_fields['body']}",
+            f"描述: {translated_fields['description']}",
+        ]
+    )
 
 
 def _llm_translate(source_text: str, source_lang: str, target_lang: str) -> tuple[str, int]:
@@ -39,7 +147,8 @@ def translate_copy_text(source_text: str, source_lang: str, target_lang: str) ->
     """翻译单条文本。空输入短路。返回 (译文, 消耗 token)。"""
     if not source_text or not source_text.strip():
         return "", 0
-    return _llm_translate(source_text, source_lang, target_lang)
+    text, tokens = _llm_translate(source_text, source_lang, target_lang)
+    return _normalize_copywriting_translation(source_text, text), tokens
 
 
 # ============================================================

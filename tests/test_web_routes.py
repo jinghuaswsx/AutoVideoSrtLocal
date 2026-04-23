@@ -1313,6 +1313,38 @@ def test_start_route_materializes_source_video_from_tos_before_processing(tmp_pa
     assert started == [("task-start-tos", 1)]
 
 
+def test_admin_can_fetch_other_users_task_thumbnail(tmp_path, authed_client_no_db, monkeypatch):
+    thumb = tmp_path / "foreign-thumbnail.jpg"
+    thumb.write_bytes(b"jpeg-thumbnail")
+
+    def fake_query_one(sql, args):
+        if "user_id" in sql.lower():
+            return None
+        return {"thumbnail_path": str(thumb)}
+
+    monkeypatch.setattr("web.routes.task.db_query_one", fake_query_one)
+
+    response = authed_client_no_db.get("/api/tasks/foreign-task/thumbnail")
+
+    assert response.status_code == 200
+    assert response.data == b"jpeg-thumbnail"
+
+
+def test_normal_user_cannot_fetch_other_users_task_thumbnail(tmp_path, authed_user_client_no_db, monkeypatch):
+    thumb = tmp_path / "foreign-thumbnail.jpg"
+    thumb.write_bytes(b"jpeg-thumbnail")
+
+    def fake_query_one(sql, args):
+        assert "user_id" in sql.lower()
+        return None
+
+    monkeypatch.setattr("web.routes.task.db_query_one", fake_query_one)
+
+    response = authed_user_client_no_db.get("/api/tasks/foreign-task/thumbnail")
+
+    assert response.status_code == 404
+
+
 def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path, authed_client_no_db, monkeypatch):
     task_id = "task-start-av-inputs"
     task_dir = tmp_path / task_id
@@ -2223,6 +2255,19 @@ def test_medias_scripts_wire_material_link_check_flow():
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}' in medias_js
     assert '/medias/api/products/${pid}/link-check/${encodeURIComponent(lang)}/detail' in medias_js
     assert "edState.productData.product.link_check_tasks" in medias_js
+
+
+def test_mk_selection_template_proxies_wedev_media_assets():
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "web"
+        / "templates"
+        / "mk_selection.html"
+    ).read_text(encoding="utf-8")
+
+    assert "function normalizeMkMediaPath" in template
+    assert "/medias/api/mk-media?path=" in template
+    assert "/medias/media-objects/" not in template
 
 
 def test_pushes_scripts_format_language_as_chinese_plus_code():
