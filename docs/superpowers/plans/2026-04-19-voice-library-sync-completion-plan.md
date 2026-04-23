@@ -1023,7 +1023,7 @@ git commit -m "fix(tests): 同步测试适配新签名与 stats 联表"
 
 ## Task 10: 部署测试环境 + QA 英语同步
 
-（按 CLAUDE.md 的"测试发布流程"：commit+push+SSH 部署测试环境，端口 9999，数据库 auto_video_test）
+（按 CLAUDE.md 的"测试发布流程"：commit+push+SSH 部署测试环境，端口 8080，数据库 auto_video_test）
 
 - [ ] **Step 1: 推送到远端**
 
@@ -1046,7 +1046,7 @@ systemctl restart autovideosrt-test
 
 - [ ] **Step 3: QA 英语同步**
 
-通过浏览器登录测试环境管理后台（:9999），进入"系统设置 → 声音库同步"模块，点英语行的"同步"按钮。
+通过浏览器登录测试环境管理后台（:8080），进入"系统设置 → 声音库同步"模块，点英语行的"同步"按钮。
 
 - [ ] **Step 4: 等到完成后验证**
 

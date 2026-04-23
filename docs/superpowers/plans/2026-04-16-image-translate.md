@@ -2354,7 +2354,7 @@ Expected: 全部通过（允许 warnings）。如有红的，回滚到上一个 
 
 说 "测试发布" 触发 `bash deploy/publish-test.sh`。若数据库迁移未自动跑，手动在服务器执行：
 ```bash
-ssh openclaw-noobird \
+ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 \
   "cd /opt/autovideosrt-test && source venv/bin/activate && \
    mysql -u \$(grep '^DB_USER=' /opt/autovideosrt/.env | cut -d= -f2) \
          -p\$(grep '^DB_PASSWORD=' /opt/autovideosrt/.env | cut -d= -f2) \
@@ -2363,7 +2363,7 @@ ssh openclaw-noobird \
 
 - [ ] **Step 5: 测试环境验证**
 
-浏览器打开 `http://14.103.220.208:9999/image-translate`，重复 Step 2 的冒烟流程。
+浏览器打开 `http://172.30.254.14:8080/image-translate`，重复 Step 2 的冒烟流程。
 
 - [ ] **Step 6: 合并到 master**
 

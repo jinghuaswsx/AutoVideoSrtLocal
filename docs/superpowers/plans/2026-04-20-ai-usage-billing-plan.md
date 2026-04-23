@@ -490,7 +490,7 @@ pytest tests/test_ai_billing_routes.py -v
    - [ ] 导出 CSV 打开可读
    - [ ] 在 `/settings?tab=pricing` 改一条单价,触发对应功能,新行按新价
 
-3. 按 [CLAUDE.md](CLAUDE.md) "测试发布"流程发到测试环境(/opt/autovideosrt-test, 端口 9999):
+3. 按 [CLAUDE.md](CLAUDE.md) "测试发布"流程发到测试环境(/opt/autovideosrt-test, 端口 8080):
    - 先 commit 当前所有改动
    - 推到 `feature/ai-usage-billing` 远程
    - SSH 到测试服务器 `git fetch && git checkout feature/ai-usage-billing && mysql auto_video_test < db/migrations/2026_04_20_ai_billing.sql && systemctl restart autovideosrt-test`
@@ -583,7 +583,7 @@ git branch -d feature/ai-usage-billing
 **日期:** 2026-04-21
 
 **测试环境发布**
-- 服务器: `14.103.220.208`
+- 服务器: `172.30.254.14`
 - 实际目录: `/data/autovideosrt-test`
 - 分支 / 提交: `feature/ai-usage-billing` @ `813c3ac`
 - 服务: `autovideosrt-test` 已重启并为 `active`

@@ -7,7 +7,7 @@ Status: Approved
 
 Transform AutoVideoSrt from a single-user local tool into a multi-user web platform with authentication, persistent project records, TOS file storage, per-user API key configuration, scheduled cleanup, and LLM usage tracking.
 
-Deployment target: existing server at 14.103.220.208, port 8888, MySQL database `auto_video`.
+Deployment target: existing server at 172.30.254.14, port 80, MySQL database `auto_video`.
 
 ---
 
@@ -205,10 +205,10 @@ Admin usage dashboard shows:
 
 ## Deployment
 
-- Server: 14.103.220.208, port 8888
-- Run as: `gunicorn -w 1 -k eventlet main:app --bind 0.0.0.0:8888`
+- Server: 172.30.254.14, port 80
+- Run as: `gunicorn -w 1 -k eventlet main:app --bind 0.0.0.0:80`
   (single worker required for SocketIO in-process state; can move to Redis later)
-- MySQL: `auto_video` database, user `root`, password `wylf1109`
+- MySQL: `auto_video` database, user `root`, password managed on the server
 - `.env` on server holds system API keys + DB credentials
 - Systemd service for auto-restart
 

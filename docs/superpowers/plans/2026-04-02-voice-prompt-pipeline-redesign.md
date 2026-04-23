@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS user_prompts (
 - [ ] **Step 3: 在服务器执行建表**
 
 ```bash
-ssh root@14.103.220.208 "cd /opt/autovideosrt && mysql -u root -pwylf1109 auto_video < db/migrations/002_user_voices_and_prompts.sql"
+ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 "cd /opt/autovideosrt && mysql -u root -p'***' auto_video < db/migrations/002_user_voices_and_prompts.sql"
 ```
 
 - [ ] **Step 4: Commit**
@@ -1445,7 +1445,7 @@ gh pr merge <PR_NUMBER> --merge --admin
 - [ ] **Step 4: 部署到服务器**
 
 ```bash
-ssh root@14.103.220.208 "cd /opt/autovideosrt && git pull origin master && mysql -u root -pwylf1109 auto_video < db/migrations/002_user_voices_and_prompts.sql && systemctl restart autovideosrt"
+ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 "cd /opt/autovideosrt && git pull origin master && mysql -u root -p'***' auto_video < db/migrations/002_user_voices_and_prompts.sql && systemctl restart autovideosrt"
 ```
 
 - [ ] **Step 5: Playwright 验证**

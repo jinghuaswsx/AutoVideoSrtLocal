@@ -10,7 +10,7 @@
 ## 1. 背景
 
 - `push-module/` 是从另一个项目拆出来的包（见 `push-module/README.md`）。包含两个 React + JSX 组件：
-  - `PushCreate.jsx`：按 `product_code` 从外部 AutoVideo OpenAPI（`http://14.103.220.208:8888`）拉素材，展示并让用户编辑推送 JSON；当前版本没有"推送"按钮。
+  - `PushCreate.jsx`：按 `product_code` 从外部 AutoVideo OpenAPI（`http://172.30.254.14`）拉素材，展示并让用户编辑推送 JSON；当前版本没有"推送"按钮。
   - `PushPayload.jsx`：按 `product_code` + `lang` 从同一 OpenAPI 拿已组装好的推送载荷，预览视频/封面，校验通过后由浏览器直接 POST 到 `http://172.17.254.77:22400/dify/shopify/medias`。
 - 本项目已有推送管理 [web/routes/pushes.py](../../../web/routes/pushes.py)、[pushes_list.html](../../../web/templates/pushes_list.html)、[pushes.js](../../../web/static/pushes.js)，但数据源是本项目自己的 `media_items` 表，和 push-module 的外部 OpenAPI 是两套独立数据。
 - MVP 目的：让用户在一个页面里验证"浏览器 → 外部 OpenAPI → 浏览器 → 下游推送服务"这条纯前端路径在当前部署环境下是否可用。
@@ -85,7 +85,7 @@ initTabs();
 `config.py` 新增：
 ```python
 # 推送管理 - 纯前端直连模式（push-module 方案）
-AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://14.103.220.208:8888")
+AUTOVIDEO_BASE_URL = _env("AUTOVIDEO_BASE_URL", "http://172.30.254.14")
 AUTOVIDEO_API_KEY = _env("AUTOVIDEO_API_KEY", "autovideosrt-materials-openapi")
 PUSH_MEDIAS_TARGET = _env("PUSH_MEDIAS_TARGET", "http://172.17.254.77:22400/dify/shopify/medias")
 ```
@@ -149,7 +149,7 @@ MVP 算通过，当且仅当：
 
 ## 6. 开放问题与风险
 
-- **风险 A — CORS**：验证路径通不通的核心拦路虎。按 push-module README 第 2.1 节，浏览器直连 `14.103.220.208:8888` 和 `172.17.254.77:22400` 需要两个服务端都加 `Access-Control-Allow-*` 头。本 MVP 不解决 CORS，跑不通时由用户决定是否让对方服务端加头，或回退走后端代理。
+- **风险 A — CORS**：验证路径通不通的核心拦路虎。按 push-module README 第 2.1 节，浏览器直连 `172.30.254.14` 和 `172.17.254.77:22400` 需要两个服务端都加 `Access-Control-Allow-*` 头。本 MVP 不解决 CORS，跑不通时由用户决定是否让对方服务端加头，或回退走后端代理。
 - **风险 B — Mixed Content**：如果 `/pushes/` 是通过 HTTPS 访问的，浏览器会拒绝调 HTTP 地址。MVP 不处理，用户部署时按需选 HTTP 访问。
 - **风险 C — API Key 暴露**：已在 3.4 注明，MVP 接受风险。
 

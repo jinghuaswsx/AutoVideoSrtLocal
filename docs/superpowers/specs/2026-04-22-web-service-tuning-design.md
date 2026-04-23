@@ -8,7 +8,7 @@
 
 当前线上部署配置是：
 
-- `gunicorn -w 1 -k eventlet --bind 0.0.0.0:8888 --timeout 300 main:app`
+- `gunicorn -w 1 -k eventlet --bind 0.0.0.0:80 --timeout 300 main:app`
 - `web/extensions.py` 中 `SocketIO(async_mode="threading")`
 - 应用内部同时使用：
   - Flask-SocketIO room / 内存态任务状态
