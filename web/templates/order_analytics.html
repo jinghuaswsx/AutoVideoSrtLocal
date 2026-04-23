@@ -82,10 +82,17 @@
   border-radius: 10px; padding: 16px 20px; color: #dc2626; font-size: 14px;
   margin-bottom: 20px; display: none;
 }
+.oa-debug {
+  display: none; background: var(--bg-body); border: 1px solid var(--border-main);
+  border-radius: 10px; padding: 12px 16px; font-size: 12px; color: #6b7280;
+  font-family: var(--font-mono, monospace); white-space: pre-wrap;
+  margin-bottom: 16px; line-height: 1.6;
+}
 {% endblock %}
 
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
+<div class="oa-debug" id="debugBox"></div>
 
 <div class="oa-upload-zone" id="uploadZone">
   <div class="oa-upload-icon">📊</div>
@@ -150,8 +157,26 @@
   var resultBox = document.getElementById('resultBox');
   var lastData = null;
 
-  // input 覆盖整个 zone，点击自然触发文件选择器，无需手动绑定 click
-  input.addEventListener('change', function() { if (input.files[0]) doUpload(input.files[0]); });
+  // 调试提示区
+  var debugBox = document.getElementById('debugBox');
+
+  function debug(msg) {
+    debugBox.style.display = 'block';
+    debugBox.textContent += '\n[' + new Date().toLocaleTimeString() + '] ' + msg;
+    console.log('[订单分析]', msg);
+  }
+
+  debug('JS 已加载，等待文件选择…');
+
+  // input 覆盖整个 zone，点击自然触发文件选择器
+  input.addEventListener('change', function() {
+    debug('change 事件触发，files.length=' + input.files.length);
+    if (input.files[0]) {
+      var f = input.files[0];
+      debug('已接收到文件：' + f.name + '（' + (f.size / 1024).toFixed(1) + ' KB）');
+      doUpload(f);
+    }
+  });
 
   // 在 document 级别阻止浏览器默认下载行为
   document.addEventListener('dragover', function(e) { e.preventDefault(); });
@@ -161,7 +186,12 @@
   zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
   zone.addEventListener('drop', function(e) {
     e.preventDefault(); e.stopPropagation(); zone.classList.remove('dragover');
-    if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]);
+    debug('drop 事件触发');
+    if (e.dataTransfer.files[0]) {
+      var f = e.dataTransfer.files[0];
+      debug('已接收到文件：' + f.name + '（' + (f.size / 1024).toFixed(1) + ' KB）');
+      doUpload(f);
+    }
   });
 
   function showError(msg) {
@@ -169,9 +199,11 @@
     errorBox.style.display = 'block';
     loadingBox.style.display = 'none';
     resultBox.style.display = 'none';
+    debug('错误：' + msg);
   }
 
   function doUpload(file) {
+    debug('开始上传…');
     errorBox.style.display = 'none';
     loadingBox.style.display = 'block';
     resultBox.style.display = 'none';
@@ -180,12 +212,15 @@
     var fd = new FormData();
     fd.append('file', file);
 
+    debug('发送 POST /order-analytics/upload');
     fetch('/order-analytics/upload', { method: 'POST', body: fd })
       .then(function(r) {
+        debug('收到响应，status=' + r.status);
         if (!r.ok) return r.text().then(function(t) { throw new Error('服务器返回 ' + r.status + ': ' + t.substring(0, 200)); });
         return r.json();
       })
       .then(function(data) {
+        debug('解析 JSON 成功，products=' + (data.products ? data.products.length : 'N/A'));
         loadingBox.style.display = 'none';
         if (data.error) {
           showError(data.error);
@@ -194,8 +229,10 @@
         }
         lastData = data;
         renderResult(data);
+        debug('渲染完成');
       })
       .catch(function(err) {
+        debug('fetch 失败：' + err.message);
         loadingBox.style.display = 'none';
         showError('上传失败：' + err.message);
         zone.style.display = '';

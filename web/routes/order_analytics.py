@@ -6,7 +6,7 @@ import io
 import logging
 from collections import defaultdict
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, make_response
 from flask_login import login_required
 from web.auth import admin_required
 
@@ -26,7 +26,9 @@ COL_COUNTRY = "Billing Country"
 @login_required
 @admin_required
 def page():
-    return render_template("order_analytics.html")
+    resp = make_response(render_template("order_analytics.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
 
 
 # ── API ───────────────────────────────────────────────
@@ -36,6 +38,7 @@ def page():
 @admin_required
 def upload():
     """接收 CSV 或 Excel 文件，解析后返回按商品×国家聚合的数据。"""
+    log.info("order_analytics upload called, content_type=%s", request.content_type)
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify(error="请选择文件"), 400
