@@ -169,7 +169,7 @@ async function loadData(page) {
       <td class="text-right text-mono">${r.mk_total_ads}</td>
       <td>${linked}</td>
       <td>
-        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick="openDetail(${r.mk_product_id},'${(r.mk_product_name||'').replace(/'/g,"\\'")}')">查看素材</button>` : '--'}
+        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick='openDetail(${r.mk_product_id},${JSON.stringify(r.mk_product_name||"")})'>查看素材</button>` : '--'}
       </td>
     </tr>`;
   }).join('');
@@ -185,7 +185,7 @@ async function loadData(page) {
 async function openDetail(mkId, mkName) {
   document.getElementById('detailPanel').style.display = 'block';
   document.getElementById('detailOverlay').style.display = 'block';
-  document.getElementById('detailTitle').textContent = mkName || `产品 #${mkId}`;
+  document.getElementById('detailTitle').textContent = mkName || '产品 #' + mkId;
   document.getElementById('detailContent').innerHTML = '<p style="color:#888;">加载中...</p>';
 
   try {

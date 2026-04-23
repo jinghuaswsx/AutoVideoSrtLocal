@@ -22,7 +22,7 @@ from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
 from appcore.gemini_image import coerce_image_model
-from appcore.material_filename_rules import validate_material_filename
+from appcore.material_filename_rules import validate_material_filename, resolve_material_filename_lang
 from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
@@ -132,6 +132,23 @@ def _validate_material_filename_for_product(filename: str, product: dict, lang: 
         }),
         400,
     )
+
+
+_DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
+
+
+def _check_filename_prefix(filename: str, product: dict) -> str | None:
+    """轻量校验：只检查文件名以 YYYY.MM.DD-{产品名}- 开头，其余不限制。"""
+    product_name = (product or {}).get("name") or ""
+    if not product_name:
+        return None
+    if not _DATE_PREFIX_RE.match(filename):
+        return '文件名必须以 "YYYY.MM.DD-" 开头'
+    date_len = 10
+    rest = filename[date_len + 1:]  # skip date + "-"
+    if not rest.startswith(product_name + "-"):
+        return f'日期之后必须紧跟 "{product_name}-"'
+    return None
 
 
 bp = Blueprint("medias", __name__, url_prefix="/medias")
@@ -926,13 +943,11 @@ def api_item_bootstrap(pid: int):
     filename = os.path.basename((body.get("filename") or "").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
-    validation, error_response = _validate_material_filename_for_product(filename, p, lang)
-    if error_response:
-        return error_response
     object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    effective_lang = resolve_material_filename_lang(filename, lang, _language_name_map())
     return jsonify({
         "object_key": object_key,
-        "effective_lang": validation.effective_lang,
+        "effective_lang": effective_lang,
         "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         "bucket": TOS_MEDIA_BUCKET,
         "region": TOS_REGION,
@@ -956,10 +971,10 @@ def api_item_complete(pid: int):
     file_size = int(body.get("file_size") or 0)
     if not object_key or not filename:
         return jsonify({"error": "object_key and filename required"}), 400
-    validation, error_response = _validate_material_filename_for_product(filename, p, lang)
-    if error_response:
-        return error_response
-    lang = validation.effective_lang
+    prefix_err = _check_filename_prefix(filename, p)
+    if prefix_err:
+        return jsonify({"error": "filename_invalid", "message": prefix_err}), 400
+    lang = resolve_material_filename_lang(filename, lang, _language_name_map())
     if not _is_media_available(object_key):
         return jsonify({"error": "object not found"}), 400
 
