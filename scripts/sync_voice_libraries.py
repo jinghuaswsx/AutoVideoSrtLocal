@@ -26,17 +26,34 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from pipeline.voice_library_sync import (  # noqa: E402
-    embed_missing_voices,
-    sync_all_shared_voices,
+    embed_missing_voice_variants,
+    ensure_voice_variants_table,
+    sync_shared_voice_variants,
+    upsert_library_stats,
 )
+from appcore import medias  # noqa: E402
 from appcore.db import query  # noqa: E402
 
-LANGUAGES: list[str] = ["de", "fr", "es", "it", "ja", "pt"]
+FALLBACK_LANGUAGES: list[str] = ["en", "de", "fr", "es", "it", "ja", "nl", "pt", "sv", "fi"]
+MAX_VOICES_PER_LANGUAGE = 1000
 CACHE_DIR = str(ROOT / "uploads" / "voice_preview_cache")
 STATE_PATH = ROOT / "logs" / "voice_sync.state.json"
 LOG_PATH = ROOT / "logs" / "voice_sync.log"
 
 log = logging.getLogger("voice_sync_driver")
+
+
+def _max_voices_per_language() -> int:
+    raw = (os.getenv("VOICE_SYNC_MAX_PER_LANGUAGE") or "").strip()
+    if not raw:
+        return MAX_VOICES_PER_LANGUAGE
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("invalid VOICE_SYNC_MAX_PER_LANGUAGE=%r, fallback to %d",
+                    raw, MAX_VOICES_PER_LANGUAGE)
+        return MAX_VOICES_PER_LANGUAGE
+    return value if value > 0 else MAX_VOICES_PER_LANGUAGE
 
 
 def _setup_logging() -> None:
@@ -61,7 +78,36 @@ def _save_state(state: dict) -> None:
     )
 
 
+def _target_languages() -> list[str]:
+    raw = os.getenv("VOICE_SYNC_LANGUAGES", "").strip()
+    if raw:
+        return [part.strip() for part in raw.split(",") if part.strip()]
+    try:
+        enabled = medias.list_enabled_language_codes()
+        return enabled or list(FALLBACK_LANGUAGES)
+    except Exception as exc:
+        log.warning("failed to load enabled media languages, fallback: %s", exc)
+        return list(FALLBACK_LANGUAGES)
+
+
 def _summary_row(lang: str) -> dict:
+    try:
+        variant_rows = query(
+            "SELECT COUNT(*) AS total, "
+            "SUM(CASE WHEN audio_embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded "
+            "FROM elevenlabs_voice_variants WHERE language=%s",
+            (lang,),
+        )
+        vr = variant_rows[0] if variant_rows else {}
+        variant_total = int(vr.get("total") or 0)
+        if variant_total:
+            return {
+                "total": variant_total,
+                "embedded": int(vr.get("embedded") or 0),
+            }
+    except Exception:
+        pass
+
     rows = query(
         "SELECT COUNT(*) AS total, "
         "SUM(CASE WHEN audio_embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded "
@@ -82,6 +128,24 @@ def _on_page(lang: str, state: dict):
     return _cb
 
 
+def _on_total_count(lang: str, state: dict):
+    def _cb(total_available: int) -> None:
+        total_available = int(total_available or 0)
+        max_voices = _max_voices_per_language()
+        target_total = (
+            min(max_voices, total_available)
+            if total_available
+            else max_voices
+        )
+        upsert_library_stats(lang, total_available)
+        entry = state["languages"].setdefault(lang, {})
+        entry["remote_total"] = total_available
+        entry["target_total"] = target_total
+        _save_state(state)
+        log.info("[%s] remote total=%d target=%d", lang, total_available, target_total)
+    return _cb
+
+
 def _on_progress(lang: str, state: dict, throttle: dict):
     def _cb(done: int, total: int, voice_id: str, ok: bool) -> None:
         now = time.time()
@@ -97,9 +161,26 @@ def _on_progress(lang: str, state: dict, throttle: dict):
     return _cb
 
 
+def _target_from_entry(entry: dict) -> int:
+    max_voices = _max_voices_per_language()
+    remote_total = int(entry.get("remote_total") or 0)
+    if remote_total:
+        return min(max_voices, remote_total)
+    target_total = int(entry.get("target_total") or 0)
+    return target_total or max_voices
+
+
+def _is_complete(lang: str, entry: dict) -> bool:
+    if entry.get("status") != "done":
+        return False
+    target_total = _target_from_entry(entry)
+    summary = _summary_row(lang)
+    return summary["total"] >= target_total and summary["embedded"] >= summary["total"]
+
+
 def _sync_language(lang: str, api_key: str, state: dict) -> None:
     entry = state["languages"].setdefault(lang, {})
-    if entry.get("status") == "done":
+    if _is_complete(lang, entry):
         log.info("[%s] already done, skip", lang)
         return
 
@@ -108,16 +189,21 @@ def _sync_language(lang: str, api_key: str, state: dict) -> None:
     _save_state(state)
 
     log.info("[%s] === phase 1: pull metadata ===", lang)
-    pulled = sync_all_shared_voices(
+    ensure_voice_variants_table()
+    pulled = sync_shared_voice_variants(
         api_key=api_key,
         language=lang,
+        max_voices=_max_voices_per_language(),
         on_page=_on_page(lang, state),
+        on_total_count=_on_total_count(lang, state),
     )
     log.info("[%s] metadata pulled: %d voices", lang, pulled)
+    entry["metadata_pulled"] = pulled
+    _save_state(state)
 
     log.info("[%s] === phase 2: embed ===", lang)
     throttle: dict = {}
-    embedded = embed_missing_voices(
+    embedded = embed_missing_voice_variants(
         CACHE_DIR,
         on_progress=_on_progress(lang, state, throttle),
         language=lang,
@@ -128,7 +214,11 @@ def _sync_language(lang: str, api_key: str, state: dict) -> None:
         lang, embedded, summary["total"], summary["embedded"],
     )
 
-    entry["status"] = "done"
+    target_total = _target_from_entry(entry)
+    entry["target_total"] = target_total
+    entry["status"] = "done" if (
+        summary["total"] >= target_total and summary["embedded"] >= summary["total"]
+    ) else "partial"
     entry["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     entry["final_summary"] = summary
     _save_state(state)
@@ -150,9 +240,12 @@ def main() -> int:
         return 2
 
     state = _load_state()
-    log.info("driver start, languages=%s state=%s", LANGUAGES, state)
+    languages = _target_languages()
+    max_voices = _max_voices_per_language()
+    log.info("driver start, languages=%s max=%d state=%s",
+             languages, max_voices, state)
 
-    for lang in LANGUAGES:
+    for lang in languages:
         try:
             _sync_language(lang, api_key, state)
         except Exception as exc:

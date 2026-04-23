@@ -41,11 +41,18 @@ def test_sync_status_returns_current_and_summary(authed_client_no_db):
     with patch("web.routes.admin.vlst.get_current",
                return_value={"sync_id": "x", "language": "de", "status": "running"}), \
          patch("web.routes.admin.vlst.summarize",
-               return_value=[{"language": "de", "total_rows": 1, "embedded_rows": 1}]):
+               return_value=[{
+                   "language": "de",
+                   "total_rows": 1,
+                   "embedded_rows": 1,
+                   "total_available": 927,
+                   "target_total": 927,
+               }]):
         resp = authed_client_no_db.get("/admin/voice-library/sync-status")
     data = resp.get_json()
     assert data["current"]["language"] == "de"
     assert data["summary"][0]["language"] == "de"
+    assert data["summary"][0]["target_total"] == 927
 
 
 def test_sync_non_admin_forbidden(authed_user_client_no_db):

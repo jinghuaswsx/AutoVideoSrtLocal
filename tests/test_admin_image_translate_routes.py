@@ -66,6 +66,15 @@ def test_admin_settings_empty_state_container(authed_client_no_db, monkeypatch):
     assert 'id="imgTransPromptEmpty"' in resp.get_data(as_text=True)
 
 
+def test_admin_settings_script_moves_voice_library_sync_to_top():
+    from pathlib import Path
+
+    script = Path("web/static/admin_settings.js").read_text(encoding="utf-8")
+
+    assert "placeVoiceLibraryCardFirst" in script
+    assert "stack.prepend(section)" in script
+
+
 def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
     authed_client_no_db, monkeypatch
 ):

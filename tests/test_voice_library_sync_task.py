@@ -123,9 +123,40 @@ def test_summarize_includes_total_available(monkeypatch):
     out = vlst.summarize()
     assert out[0]["language"] == "en"
     assert out[0]["total_available"] == 6308
+    assert out[0]["target_total"] == 1000
     assert out[0]["total_rows"] == 100
+
+
+def test_summarize_prefers_voice_variants_when_available(monkeypatch):
+    from appcore import voice_library_sync_task as vlst
+
+    def fake_query(sql, *args):
+        if "elevenlabs_voice_variants" in sql:
+            return [
+                {"language": "nl", "total_rows": 521, "embedded_rows": 521,
+                 "last_synced_at": None}
+            ]
+        if "elevenlabs_voice_library_stats" in sql:
+            return [{"language": "nl", "total_available": 521, "last_counted_at": None}]
+        return [
+            {"language": "nl", "total_rows": 1, "embedded_rows": 0,
+             "last_synced_at": None}
+        ]
+
+    monkeypatch.setattr(vlst, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_languages_kv",
+        lambda: [("nl", "荷兰语")],
+    )
+
+    out = vlst.summarize()
+
+    assert out[0]["total_rows"] == 521
+    assert out[0]["embedded_rows"] == 521
+    assert out[0]["total_available"] == 521
+    assert out[0]["target_total"] == 521
 
 
 def test_max_voices_per_language_constant():
     from appcore.voice_library_sync_task import MAX_VOICES_PER_LANGUAGE
-    assert MAX_VOICES_PER_LANGUAGE == 300
+    assert MAX_VOICES_PER_LANGUAGE == 1000
