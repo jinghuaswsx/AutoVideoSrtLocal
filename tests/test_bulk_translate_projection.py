@@ -222,3 +222,30 @@ def test_list_product_tasks_exposes_raw_source_filenames(monkeypatch):
         "fallback-source-18.mov",
     ]
     assert items[0]["items"][0]["summary"] == "原始视频 2026.04.24-smart-ball-source.mp4"
+
+
+def test_serialize_item_marks_failed_detail_image_as_force_backfillable(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    monkeypatch.setattr(
+        mod,
+        "_load_image_translate_projection",
+        lambda child_task_id: {"is_running": False, "done_count": 2, "failed_count": 1},
+        raising=False,
+    )
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"de": "德语"}.get(code, code))
+
+    item = mod._serialize_item(
+        {
+            "idx": 0,
+            "kind": "detail_images",
+            "lang": "de",
+            "status": "failed",
+            "child_task_id": "img-child-1",
+            "child_task_type": "image_translate",
+            "ref": {"source_detail_ids": [11, 12, 13]},
+        },
+        parent_detail_url="/tasks/bt-1",
+    )
+
+    assert item["force_backfillable"] is True
