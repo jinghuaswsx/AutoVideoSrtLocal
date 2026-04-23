@@ -23,26 +23,26 @@
 .oc-header .subtitle { font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; padding:2px 10px; border-radius:9999px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; }
 .oc-search { display:flex; gap:var(--oc-sp-2); }
-.oc-input { height:32px; padding:0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:13px; outline:none; }
+.oc-input { height:38px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:18px; outline:none; }
 .oc-input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
-.oc-btn { height:32px; padding:0 14px; border:none; border-radius:var(--oc-r); font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms; }
+.oc-btn { height:38px; padding:0 18px; border:none; border-radius:var(--oc-r); font-size:18px; font-weight:500; cursor:pointer; transition:background 120ms; }
 .oc-btn--primary { background:var(--oc-accent); color:#fff; }
 .oc-btn--primary:hover { background:var(--oc-accent-hover); }
 .oc-btn--ghost { background:var(--oc-bg); border:1px solid var(--oc-border-strong); color:var(--oc-fg); }
 .oc-btn--ghost:hover { background:var(--oc-bg-muted); }
-.oc-table { width:100%; border-collapse:collapse; font-size:13px; }
-.oc-table th { text-align:left; padding:10px 12px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:12px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
-.oc-table td { padding:10px 12px; border-bottom:1px solid var(--oc-border); vertical-align:middle; }
+.oc-table { width:100%; border-collapse:collapse; font-size:19px; }
+.oc-table th { text-align:left; padding:12px 14px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:18px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
+.oc-table td { padding:12px 14px; border-bottom:1px solid var(--oc-border); vertical-align:middle; }
 .oc-table tr:hover td { background:var(--oc-bg-subtle); }
-.oc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
+.oc-badge { display:inline-flex; padding:3px 10px; border-radius:9999px; font-size:16px; font-weight:500; }
 .oc-badge--high { background:oklch(95% 0.06 25); color:oklch(45% 0.15 25); }
 .oc-badge--med  { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
 .oc-badge--low  { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
 .oc-badge--linked { background:var(--oc-success-bg); color:var(--oc-success-fg); }
 .oc-link { color:var(--oc-accent); text-decoration:none; }
 .oc-link:hover { text-decoration:underline; }
-.oc-pager { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-3); padding:var(--oc-sp-4) 0; font-size:13px; color:var(--oc-fg-muted); }
-.oc-pager button { height:28px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); cursor:pointer; font-size:12px; }
+.oc-pager { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-3); padding:var(--oc-sp-4) 0; font-size:18px; color:var(--oc-fg-muted); }
+.oc-pager button { height:34px; padding:0 16px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); cursor:pointer; font-size:16px; }
 .oc-pager button:disabled { opacity:0.4; cursor:default; }
 .oc-pager button:not(:disabled):hover { background:var(--oc-bg-muted); }
 .oc-empty { text-align:center; padding:60px 20px; color:var(--oc-fg-muted); }
@@ -76,19 +76,20 @@
       <thead>
         <tr>
           <th style="width:50px">#</th>
-          <th>产品名称</th>
+          <th style="width:220px">产品名称</th>
+          <th style="width:180px">中文产品名</th>
           <th style="width:100px">店铺</th>
           <th style="width:90px" class="text-right">付款销量</th>
-          <th style="width:100px" class="text-right">销售额</th>
-          <th style="width:100px" class="text-right">明空消耗</th>
-          <th style="width:70px" class="text-right">视频数</th>
-          <th style="width:70px" class="text-right">广告数</th>
-          <th style="width:120px">素材库</th>
+          <th style="width:110px" class="text-right">销售额</th>
+          <th style="width:110px" class="text-right">明空消耗</th>
+          <th style="width:80px" class="text-right">视频数</th>
+          <th style="width:80px" class="text-right">广告数</th>
+          <th style="width:100px">素材库</th>
           <th style="width:100px">操作</th>
         </tr>
       </thead>
       <tbody id="tableBody">
-        <tr><td colspan="10" class="oc-empty">加载中...</td></tr>
+        <tr><td colspan="11" class="oc-empty">加载中...</td></tr>
       </tbody>
     </table>
   </div>
@@ -136,26 +137,29 @@ async function loadData(page) {
 
   const tbody = document.getElementById('tableBody');
   if (!data.items.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="oc-empty">无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="oc-empty">无数据</td></tr>';
     document.getElementById('pager').innerHTML = '';
     return;
   }
 
   tbody.innerHTML = data.items.map((r, i) => {
     const heat = heatLevel(r.mk_total_spends);
-    const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted text-sm">未关联</span>`;
-    const productName = r.product_name.length > 40 ? r.product_name.substring(0,40)+'...' : r.product_name;
+    const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted">未关联</span>`;
+    const productName = r.product_name.length > 28 ? r.product_name.substring(0,28)+'...' : r.product_name;
+    const cnName = r.mk_product_name || r.mp_name || '--';
+    const cnNameShort = cnName.length > 16 ? cnName.substring(0,16)+'...' : cnName;
     const handle = r.product_url ? r.product_url.split('/products/')[1] || '' : '';
 
     return `<tr>
       <td class="text-mono text-muted">${r.rank}</td>
       <td>
-        <div style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.product_name}">
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.product_name}">
           ${r.product_url ? `<a href="${r.product_url}" target="_blank" class="oc-link">${productName}</a>` : productName}
         </div>
-        <div class="text-sm text-muted text-mono">${handle}</div>
+        <div class="text-muted" style="font-size:14px; font-family:monospace;">${handle}</div>
       </td>
-      <td class="text-sm">${r.store}</td>
+      <td title="${cnName}">${cnNameShort}</td>
+      <td>${r.store}</td>
       <td class="text-right text-mono">${r.sales_count.toLocaleString()}</td>
       <td class="text-right text-mono">${r.revenue_main || '--'}</td>
       <td class="text-right">
@@ -165,7 +169,7 @@ async function loadData(page) {
       <td class="text-right text-mono">${r.mk_total_ads}</td>
       <td>${linked}</td>
       <td>
-        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:26px; font-size:12px; padding:0 8px;" onclick="openDetail(${r.mk_product_id},'${r.mk_product_name||''}')">查看素材</button>` : '--'}
+        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:30px; font-size:16px; padding:0 10px;" onclick="openDetail(${r.mk_product_id},'${(r.mk_product_name||'').replace(/'/g,"\\'")}')">查看素材</button>` : '--'}
       </td>
     </tr>`;
   }).join('');
