@@ -339,15 +339,10 @@ def _default_image_translate_model_id() -> str:
         channel = its.get_channel()
     except Exception:
         pass
-    preferred = ""
     try:
-        from appcore.api_keys import resolve_extra
-
-        extra = resolve_extra(current_user.id, "image_translate") or {}
-        preferred = (extra.get("default_model_id") or "").strip()
+        return its.get_default_model(channel)
     except Exception:
-        pass
-    return coerce_image_model(preferred, channel=channel)
+        return coerce_image_model("", channel=channel)
 
 
 def _serialize_product(p: dict, items_count: int | None = None,

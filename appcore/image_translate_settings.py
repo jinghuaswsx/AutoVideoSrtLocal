@@ -23,14 +23,24 @@ CHANNEL_LABELS: dict[str, str] = {
 }
 _CHANNEL_KEY = "image_translate.channel"
 _DEFAULT_CHANNEL = "aistudio"
+_DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
 
 
 def _key(preset: str, lang: str) -> str:
     return f"image_translate.prompt_{preset}_{lang}"
 
 
+def _default_model_key(channel: str) -> str:
+    return f"{_DEFAULT_MODEL_KEY_PREFIX}{channel}"
+
+
 def _normalize_language_code(code: str) -> str:
     return (code or "").strip().lower()
+
+
+def _normalize_channel(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    return normalized if normalized in CHANNELS else _DEFAULT_CHANNEL
 
 
 def list_image_translate_languages() -> list[dict]:
@@ -640,8 +650,7 @@ def update_prompt(preset: str, lang: str, value: str) -> None:
 
 def get_channel() -> str:
     """返回当前图片翻译通道。未配置或不合法时回退到默认 aistudio。"""
-    value = (_read(_CHANNEL_KEY) or "").strip().lower()
-    return value if value in CHANNELS else _DEFAULT_CHANNEL
+    return _normalize_channel(_read(_CHANNEL_KEY))
 
 
 def set_channel(value: str) -> None:
@@ -649,6 +658,27 @@ def set_channel(value: str) -> None:
     if normalized not in CHANNELS:
         raise ValueError(f"unsupported channel: {value}")
     _write(_CHANNEL_KEY, normalized)
+
+
+def get_default_model(channel: str | None = None) -> str:
+    """返回指定通道的全局默认图片翻译模型；未配置时回到该通道内置默认。"""
+    normalized_channel = _normalize_channel(channel or get_channel())
+    value = (_read(_default_model_key(normalized_channel)) or "").strip()
+    from appcore.gemini_image import coerce_image_model
+
+    return coerce_image_model(value, channel=normalized_channel)
+
+
+def set_default_model(channel: str, model_id: str) -> None:
+    normalized_channel = (channel or "").strip().lower()
+    if normalized_channel not in CHANNELS:
+        raise ValueError(f"unsupported channel: {channel}")
+    normalized_model = (model_id or "").strip()
+    from appcore.gemini_image import is_valid_image_model
+
+    if not is_valid_image_model(normalized_model, channel=normalized_channel):
+        raise ValueError(f"unsupported image model for {normalized_channel}: {model_id}")
+    _write(_default_model_key(normalized_channel), normalized_model)
 
 
 def list_all_prompts() -> dict[str, dict[str, str]]:

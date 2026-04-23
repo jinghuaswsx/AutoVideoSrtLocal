@@ -1156,23 +1156,19 @@ def _pick_existing_path(candidates: list[str]) -> str:
     return ""
 
 
-def _default_image_translate_model_id(user_id: int | None) -> str:
+def _default_image_translate_model_id(_user_id: int | None) -> str:
     from appcore import image_translate_settings as its
-    from appcore.api_keys import resolve_extra
     from appcore.gemini_image import coerce_image_model
 
     channel = "aistudio"
-    preferred = ""
     try:
         channel = its.get_channel()
     except Exception:
         pass
     try:
-        extra = resolve_extra(user_id, "image_translate") or {}
-        preferred = (extra.get("default_model_id") or "").strip()
+        return its.get_default_model(channel)
     except Exception:
-        pass
-    return coerce_image_model(preferred, channel=channel)
+        return coerce_image_model("", channel=channel)
 
 
 def _spawn_daemon(fn) -> None:
