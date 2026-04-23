@@ -622,14 +622,17 @@ def list_items_for_push(
     )
     total = int((total_row or {}).get("c") or 0)
 
+    owner_name_expr = medias._media_product_owner_name_expr()
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
         f"       p.localized_links_json, p.ad_supported_langs, "
         f"       p.selling_points, p.importance, "
         f"       p.remark, p.ai_score, p.ai_evaluation_result, "
-        f"       p.ai_evaluation_detail, p.listing_status "
+        f"       p.ai_evaluation_detail, p.listing_status, "
+        f"       {owner_name_expr} AS owner_name "
         f"FROM media_items i "
         f"JOIN media_products p ON p.id = i.product_id "
+        f"LEFT JOIN users u ON u.id = p.user_id "
         f"WHERE {where_sql} "
         f"ORDER BY i.created_at DESC, i.id DESC"
     )

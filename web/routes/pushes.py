@@ -75,6 +75,7 @@ def _serialize_row(row: dict) -> dict:
         "product_id": row["product_id"],
         "product_name": row.get("product_name"),
         "product_code": row.get("product_code"),
+        "product_owner_name": row.get("owner_name") or "",
         "mk_id": row.get("mk_id"),
         "product_page_url": pushes.resolve_product_page_url(
             row.get("lang") or "en",

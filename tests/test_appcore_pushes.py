@@ -478,6 +478,10 @@ def test_list_items_for_push_selects_product_ai_review_fields(monkeypatch):
     captured = {}
 
     monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
 
     def fake_query(sql, args):
         captured["sql"] = sql
@@ -496,6 +500,31 @@ def test_list_items_for_push_selects_product_ai_review_fields(monkeypatch):
     assert "p.ai_evaluation_result" in sql
     assert "p.ai_evaluation_detail" in sql
     assert "p.listing_status" in sql
+
+
+def test_list_items_for_push_selects_product_owner_name(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    sql = captured["sql"]
+    assert "u.username AS owner_name" in sql
+    assert "LEFT JOIN users u ON u.id = p.user_id" in sql
 
 
 # ---------- resolve_push_texts ----------

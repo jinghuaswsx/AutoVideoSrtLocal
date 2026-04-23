@@ -249,9 +249,12 @@
     return `<tr data-id="${it.id}">
       <td>${thumb}</td>
       <td>
-        <div class="product-name">${it.product_name || ''}</div>
-        <div class="product-code">${it.product_code || ''}</div>
+        <div class="product-name product-name-line">${it.product_name || ''}</div>
+        <div class="product-code-row">
+          <span class="product-code">${it.product_code || ''}</span>
+        </div>
       </td>
+      <td><span class="product-owner-name">${escapeHtml(it.product_owner_name || '-')}</span></td>
       <td>
         <div class="item-name">${it.display_name || it.filename || ''}</div>
         <div class="item-meta">${durStr} · ${sizeStr}</div>
@@ -271,8 +274,8 @@
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const productNameHtml = it.product_page_url
-      ? `<a class="product-name product-link" href="${escapeAttr(it.product_page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
-      : `<div class="product-name">${escapeHtml(it.product_name || '')}</div>`;
+      ? `<a class="product-name product-link product-name-line" href="${escapeAttr(it.product_page_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.product_name || '')}</a>`
+      : `<div class="product-name product-name-line">${escapeHtml(it.product_name || '')}</div>`;
     const productCode = it.product_code || '';
     const productCodeHtml = productCode
       ? `<div class="product-code-row">
@@ -280,6 +283,7 @@
            <button type="button" class="product-copy-btn" data-copy-product-code="${escapeAttr(productCode)}">复制</button>
          </div>`
       : `<div class="product-code-row"><span class="product-code"></span></div>`;
+    const productOwnerName = String(it.product_owner_name || '').trim();
     const mkId = (it.mk_id === null || it.mk_id === undefined || it.mk_id === '') ? '—' : String(it.mk_id);
     return `<tr data-id="${it.id}">
       <td>${thumb}</td>
@@ -287,6 +291,7 @@
         ${productNameHtml}
         ${productCodeHtml}
       </td>
+      <td><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span></td>
       <td class="mk-id-cell">${escapeHtml(mkId)}</td>
       <td>
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
@@ -303,7 +308,7 @@
 
   async function load() {
     const tbody = document.getElementById('push-tbody');
-    const colspan = window.PUSH_IS_ADMIN ? 10 : 9;
+    const colspan = window.PUSH_IS_ADMIN ? 11 : 10;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());

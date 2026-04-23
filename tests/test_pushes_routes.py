@@ -167,6 +167,55 @@ def test_pushes_api_items_includes_product_ai_review_fields(
     assert item["listing_status"] == "下架"
 
 
+def test_pushes_api_items_includes_product_owner_name(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 103,
+        "product_id": 14,
+        "product_name": "负责人测试产品",
+        "product_code": "owner-test-rjc",
+        "owner_name": "张三",
+        "mk_id": 998879,
+        "localized_links_json": {},
+        "lang": "de",
+        "filename": "owner-demo.mp4",
+        "display_name": "owner-demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/owner-demo.jpg",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?page=1")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"][0]["product_owner_name"] == "张三"
+
+
 import pytest
 
 
