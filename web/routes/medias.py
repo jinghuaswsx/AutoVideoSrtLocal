@@ -2165,15 +2165,7 @@ def api_detail_images_translate_from_en(pid: int):
     if not source_rows:
         return jsonify({"error": "english detail images are required first"}), 409
 
-    # Skip GIF files in translate-from-en. Static images can still be translated
-    # even when the source set contains GIFs.
-    def _is_gif_row(row: dict) -> bool:
-        return (
-            (row.get("object_key") or "").lower().endswith(".gif")
-            or (row.get("content_type") or "").lower() == "image/gif"
-        )
-
-    translatable_rows = [row for row in source_rows if not _is_gif_row(row)]
+    translatable_rows = [row for row in source_rows if not _detail_images_is_gif(row)]
     if not translatable_rows:
         return jsonify({"error": "鑻辫鐗堣鎯呭浘鍏ㄩ儴涓?GIF 鍔ㄥ浘锛屾棤鍙炕璇戠殑闈欐€佸浘"}), 409
 

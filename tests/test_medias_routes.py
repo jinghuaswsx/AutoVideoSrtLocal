@@ -851,6 +851,7 @@ def test_detail_images_translate_from_en_skips_gif_sources(authed_client_no_db, 
             {"id": 12, "object_key": "1/medias/1/en_2.gif"},
             {"id": 13, "object_key": "1/medias/1/en_3.jpg", "content_type": "image/jpeg"},
             {"id": 14, "object_key": "1/medias/1/en_4.png", "content_type": "image/gif"},
+            {"id": 15, "object_key": "1/medias/1/en_5.png", "content_type": "image/gif; charset=binary"},
         ],
     )
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
@@ -875,7 +876,7 @@ def test_detail_images_translate_from_en_skips_gif_sources(authed_client_no_db, 
     created = create_calls[0]
     source_ids = [it["source_detail_image_id"] for it in created["items"]]
     assert source_ids == [11, 13], (
-        f"只应把静态图（id=11,13）加入翻译项，.gif 结尾和 image/gif MIME 都要过滤：实际 {source_ids}"
+        f"只应把静态图（id=11,13）加入翻译项，.gif 结尾和 image/gif MIME（含参数）都要过滤：实际 {source_ids}"
     )
     assert created["medias_context"]["source_detail_image_ids"] == [11, 13]
 
