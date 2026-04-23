@@ -1,7 +1,6 @@
 import re
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 
 def test_workspace_shell_renders_required_dom(authed_client_no_db):
@@ -133,10 +132,10 @@ def test_translate_rejects_empty_source_text(authed_client_no_db, monkeypatch):
 def test_translate_rejects_invalid_language(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
 
-    def _raise(_code):
+    def fake_raise(_code):
         raise ValueError("unsupported language")
 
-    monkeypatch.setattr(r.title_translate_settings, "get_title_translate_language", _raise)
+    monkeypatch.setattr(r.title_translate_settings, "get_title_translate_language", fake_raise)
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
@@ -155,25 +154,13 @@ def test_translate_success_sends_prompt_and_returns_raw_output(authed_client_no_
 
     captured = {}
 
-    def fake_create(**kwargs):
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
         captured.update(kwargs)
-        return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        content="标题: Hello World\n文案: Fresh copy\n描述: Short description"
-                    )
-                )
-            ]
-        )
-
-    fake_client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(
-                create=fake_create,
-            )
-        )
-    )
+        return {
+            "text": "标题: Hello World\n文案: Fresh copy\n描述: Short description",
+            "usage": {"input_tokens": 12, "output_tokens": 8},
+        }
 
     monkeypatch.setattr(
         r.title_translate_settings,
@@ -185,7 +172,12 @@ def test_translate_success_sends_prompt_and_returns_raw_output(authed_client_no_
         "get_prompt",
         lambda code: "PROMPT\n{{SOURCE_TEXT}}\nEND",
     )
-    monkeypatch.setattr(r, "_resolve_sonnet_client", lambda user_id: fake_client)
+    monkeypatch.setattr(r.llm_client, "invoke_chat", fake_invoke_chat)
+    monkeypatch.setattr(
+        r.llm_bindings,
+        "resolve",
+        lambda code: {"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6", "extra": {}, "source": "default"},
+    )
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
@@ -196,34 +188,19 @@ def test_translate_success_sends_prompt_and_returns_raw_output(authed_client_no_
     )
 
     assert resp.status_code == 200
-    assert captured["model"] == r.config.CLAUDE_MODEL
-    assert captured["extra_body"] == {"plugins": [{"id": "response-healing"}]}
+    assert captured["use_case_code"] == "title_translate.generate"
     assert captured["messages"] == [
         {"role": "user", "content": "PROMPT\n任意原文\n多行内容\nEND"}
     ]
     assert resp.get_json() == {
         "result": "标题: Hello World\n文案: Fresh copy\n描述: Short description",
         "language": {"code": "de", "name_zh": "德语"},
-        "model": r.config.CLAUDE_MODEL,
+        "model": "anthropic/claude-sonnet-4.6",
     }
 
 
 def test_translate_rejects_empty_model_output(authed_client_no_db, monkeypatch):
     from web.routes import title_translate as r
-
-    fake_client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(
-                create=lambda **kwargs: SimpleNamespace(
-                    choices=[
-                        SimpleNamespace(
-                            message=SimpleNamespace(content="   ")
-                        )
-                    ]
-                )
-            )
-        )
-    )
 
     monkeypatch.setattr(
         r.title_translate_settings,
@@ -235,7 +212,11 @@ def test_translate_rejects_empty_model_output(authed_client_no_db, monkeypatch):
         "get_prompt",
         lambda code: "PROMPT\n{{SOURCE_TEXT}}",
     )
-    monkeypatch.setattr(r, "_resolve_sonnet_client", lambda user_id: fake_client)
+    monkeypatch.setattr(
+        r.llm_client,
+        "invoke_chat",
+        lambda use_case_code, **kwargs: {"text": "   ", "usage": None},
+    )
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
@@ -259,7 +240,11 @@ def test_translate_returns_json_error_when_model_call_fails(authed_client_no_db,
         "get_prompt",
         lambda code: "PROMPT\n{{SOURCE_TEXT}}",
     )
-    monkeypatch.setattr(r, "_resolve_sonnet_client", lambda user_id: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        r.llm_client,
+        "invoke_chat",
+        lambda use_case_code, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     resp = authed_client_no_db.post(
         "/api/title-translate/translate",
@@ -271,26 +256,3 @@ def test_translate_returns_json_error_when_model_call_fails(authed_client_no_db,
 
     assert resp.status_code == 502
     assert "翻译失败" in resp.get_json()["error"]
-
-
-def test_translate_resolve_sonnet_client_uses_openrouter_env_defaults(monkeypatch):
-    from web.routes import title_translate as r
-
-    captured = {}
-
-    class DummyOpenAI:
-        def __init__(self, api_key, base_url):
-            captured["api_key"] = api_key
-            captured["base_url"] = base_url
-
-    monkeypatch.setattr(r, "OpenAI", DummyOpenAI)
-    monkeypatch.setattr(r, "resolve_key", lambda user_id, service, env_var: None)
-    monkeypatch.setattr(r, "resolve_extra", lambda user_id, service: {})
-
-    client = r._resolve_sonnet_client(1)
-
-    assert isinstance(client, DummyOpenAI)
-    assert captured == {
-        "api_key": r.config.OPENROUTER_API_KEY,
-        "base_url": r.config.OPENROUTER_BASE_URL,
-    }

@@ -51,7 +51,7 @@ def _refine_text(previous_text: str, over_ratio: float,
         prompt,
         user_id=user_id,
         response_schema=REFINE_SCHEMA,
-        service="gemini_tts_refine",
+        service="translate_lab.tts_refine",
     )
     return (resp or {}).get("translated_text", "").strip()
 

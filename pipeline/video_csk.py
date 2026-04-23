@@ -116,7 +116,7 @@ def analyze_video(video_path: str | Path, *, user_id: int | None = None,
         max_output_tokens=4096,
         user_id=user_id,
         project_id=project_id,
-        service="gemini_video_analysis",
+        service="video_csk.analyze",
         default_model=CSK_MODEL,
     )
     data = raw if isinstance(raw, dict) else parse_json_response(raw)

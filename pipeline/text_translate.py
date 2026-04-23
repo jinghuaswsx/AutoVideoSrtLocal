@@ -1,26 +1,18 @@
-"""纯文本翻译层。
+"""纯文本翻译层。"""
 
-用于 copywriting_translate 子任务:把 media_copywritings.lang='en' 的文案
-翻译到目标语言。不做 JSON 分段/rewrite 等视频字幕专用处理——那些在
-pipeline.translate.generate_localized_translation / generate_localized_rewrite 里。
-
-provider 参数支持两种格式（2026-04-19 LLM 统一重构）：
-  - 老风格: 'openrouter' | 'doubao' | 'vertex_*' 等（直达 resolve_provider_config）
-  - 新风格: UseCase code 如 'text_translate.generate'（走 llm_use_case_bindings 表）
-    新风格需要先经过 pipeline.translate._resolve_use_case_provider 再调 resolve_provider_config
-
-设计文档: docs/superpowers/specs/2026-04-18-bulk-translate-design.md 第 1.2 节
-         docs/superpowers/plans/2026-04-19-llm-call-unification.md (Task 13)
-"""
 from __future__ import annotations
 
 import logging
 
-from pipeline.translate import _resolve_use_case_provider, resolve_provider_config
+from appcore import ai_billing, llm_bindings, llm_client
+from pipeline.translate import (
+    _resolve_use_case_provider,
+    get_model_display_name,
+    resolve_provider_config,
+)
 
 log = logging.getLogger(__name__)
 
-# 语言代码 → LLM prompt 里的英文全称。未知 code 原样透传。
 _LANG_NAME = {
     "en": "English",
     "de": "German",
@@ -37,6 +29,86 @@ def _lang_name(code: str) -> str:
     return _LANG_NAME.get(code, code)
 
 
+def _resolve_provider_and_model(
+    *,
+    provider: str,
+    user_id: int | None,
+    openrouter_api_key: str | None,
+) -> tuple[str, str]:
+    if isinstance(provider, str) and "." in provider:
+        binding = llm_bindings.resolve(provider)
+        return binding["provider"], binding["model"]
+
+    normalized = _resolve_use_case_provider(provider)
+    if normalized.startswith("vertex_"):
+        return "gemini_vertex", get_model_display_name(normalized, user_id)
+
+    _, model = resolve_provider_config(
+        normalized,
+        user_id,
+        api_key_override=openrouter_api_key,
+    )
+    return ("doubao" if normalized == "doubao" else "openrouter"), model
+
+
+def _invoke_translation_chat(
+    *,
+    provider: str,
+    user_id: int | None,
+    openrouter_api_key: str | None,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+) -> dict:
+    provider_code, model = _resolve_provider_and_model(
+        provider=provider,
+        user_id=user_id,
+        openrouter_api_key=openrouter_api_key,
+    )
+
+    # 保留极少数显式覆盖 OpenRouter key 的兼容路径。
+    if openrouter_api_key and provider_code == "openrouter":
+        client, model = resolve_provider_config(
+            "openrouter",
+            user_id,
+            api_key_override=openrouter_api_key,
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        usage = getattr(response, "usage", None)
+        usage_dict = {
+            "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0,
+            "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0,
+        }
+        ai_billing.log_request(
+            use_case_code="text_translate.generate",
+            user_id=user_id,
+            project_id=None,
+            provider=provider_code,
+            model=model,
+            input_tokens=usage_dict["input_tokens"],
+            output_tokens=usage_dict["output_tokens"],
+            units_type="tokens",
+            success=True,
+        )
+        return {"text": text, "usage": usage_dict}
+
+    return llm_client.invoke_chat(
+        "text_translate.generate",
+        messages=messages,
+        user_id=user_id,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        provider_override=provider_code,
+        model_override=model,
+    )
+
+
 def translate_text(
     text: str,
     source_lang: str,
@@ -46,43 +118,28 @@ def translate_text(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
 ) -> dict:
-    """翻译一段纯文本。
-
-    返回: {"text": 译文, "input_tokens": int, "output_tokens": int}
-    空输入直接返回空结果,不调 LLM。
-    """
+    """翻译一段纯文本。"""
     if not text or not text.strip():
         return {"text": "", "input_tokens": 0, "output_tokens": 0}
-
-    provider = _resolve_use_case_provider(provider)
-    client, model = resolve_provider_config(
-        provider, user_id, api_key_override=openrouter_api_key,
-    )
 
     src_name = _lang_name(source_lang)
     tgt_name = _lang_name(target_lang)
     system_prompt = (
-        f"You are a translation engine. Translate the user message into "
-        f"{tgt_name}.\n\n"
+        f"You are a translation engine. Translate the user message into {tgt_name}.\n\n"
         f"Source language: {src_name}. Target language: {tgt_name}.\n\n"
         f"STRICT RULES (violation = task failure):\n"
-        f"1. Output ONLY the translation. No preamble, no disclaimer, "
-        f"   no meta commentary, no markdown code fences.\n"
-        f"2. Do NOT say 'I notice', 'The text', 'Note that', 'Here is', "
-        f"   'Translation:', or any similar preface. Just emit the "
-        f"   translated text directly.\n"
-        f"3. Preserve the original structure: line breaks, blank lines, "
-        f"   labels (e.g. 'Title:', '标题:', '文案:', '描述:'), lists, numbers.\n"
-        f"4. Do NOT translate structural labels. Translate only the content "
-        f"   after each label; for example keep '标题:', '文案:', and '描述:' "
-        f"   exactly as written instead of turning them into {tgt_name} labels.\n"
+        f"1. Output ONLY the translation. No preamble, no disclaimer, no meta commentary, no markdown code fences.\n"
+        f"2. Do NOT say 'I notice', 'The text', 'Note that', 'Here is', 'Translation:', or any similar preface.\n"
+        f"3. Preserve the original structure: line breaks, blank lines, labels, lists, and numbers.\n"
+        f"4. Do NOT translate structural labels. Translate only the content after each label.\n"
         f"5. If the input is already in {tgt_name}, return it unchanged.\n"
-        f"6. Never add explanations even if the input seems ambiguous — "
-        f"   produce your best translation silently."
+        f"6. Never add explanations even if the input seems ambiguous; produce your best translation silently."
     )
 
-    response = client.chat.completions.create(
-        model=model,
+    result = _invoke_translation_chat(
+        provider=provider,
+        user_id=user_id,
+        openrouter_api_key=openrouter_api_key,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
@@ -91,14 +148,18 @@ def translate_text(
         max_tokens=4096,
     )
 
-    out = (response.choices[0].message.content or "").strip()
-    usage = getattr(response, "usage", None)
-    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
-    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+    out = (result.get("text") or "").strip()
+    usage = result.get("usage") or {}
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
 
     log.info(
         "text_translate provider=%s src=%s tgt=%s in_tokens=%d out_tokens=%d",
-        provider, source_lang, target_lang, input_tokens, output_tokens,
+        provider,
+        source_lang,
+        target_lang,
+        input_tokens,
+        output_tokens,
     )
 
     return {

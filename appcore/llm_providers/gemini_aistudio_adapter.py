@@ -24,14 +24,9 @@ class GeminiAIStudioAdapter(LLMAdapter):
             prompt, system=system, model=model, media=media_list,
             response_schema=response_schema, temperature=temperature,
             max_output_tokens=max_output_tokens, user_id=user_id,
-            service="gemini", default_model=model,
+            service="gemini", default_model=model, return_payload=True,
         )
-        return {
-            "text": result if isinstance(result, str) else None,
-            "json": result if not isinstance(result, str) else None,
-            "raw": None,
-            "usage": {"input_tokens": None, "output_tokens": None},
-        }
+        return result
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None):

@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-from openai import OpenAI
-import config
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from appcore.api_keys import resolve_extra, resolve_key
-from appcore import title_translate_settings
+from appcore import llm_bindings, llm_client, title_translate_settings
 
 bp = Blueprint("title_translate", __name__)
 
 
-def _resolve_sonnet_client(user_id: int) -> OpenAI:
-    key = resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") or config.OPENROUTER_API_KEY
-    extra = resolve_extra(user_id, "openrouter") or {}
-    base_url = (extra.get("base_url") or config.OPENROUTER_BASE_URL).strip()
-    return OpenAI(api_key=key, base_url=base_url)
+def _current_model() -> str:
+    return str(llm_bindings.resolve("title_translate.generate")["model"])
 
 
 @bp.route("/title-translate", methods=["GET"])
@@ -62,28 +56,20 @@ def api_translate():
     if not source_text:
         return jsonify({"error": "source_text 不能为空"}), 400
 
-    prompt = title_translate_settings.get_prompt(language).replace(
-        "{{SOURCE_TEXT}}",
-        source_text,
-    )
+    prompt = title_translate_settings.get_prompt(language).replace("{{SOURCE_TEXT}}", source_text)
 
-    model = config.CLAUDE_MODEL
     try:
-        client = _resolve_sonnet_client(current_user.id)
-        response = client.chat.completions.create(
-            model=model,
+        response = llm_client.invoke_chat(
+            "title_translate.generate",
             messages=[{"role": "user", "content": prompt}],
+            user_id=current_user.id,
             temperature=0.0,
             max_tokens=2048,
         )
     except Exception as exc:
         return jsonify({"error": f"翻译失败: {exc}"}), 502
 
-    try:
-        raw_content = response.choices[0].message.content
-    except (AttributeError, IndexError, TypeError):
-        return jsonify({"error": "模型输出格式不合法，请重试"}), 502
-
+    raw_content = response.get("text")
     if not isinstance(raw_content, str) or not raw_content.strip():
         return jsonify({"error": "模型输出为空，请重试"}), 502
 
@@ -94,6 +80,6 @@ def api_translate():
                 "code": (language_row.get("code") or "").strip(),
                 "name_zh": (language_row.get("name_zh") or "").strip(),
             },
-            "model": model,
+            "model": _current_model(),
         }
     )

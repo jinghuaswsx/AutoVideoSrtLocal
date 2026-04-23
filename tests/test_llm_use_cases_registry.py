@@ -56,7 +56,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 21
+    assert len(USE_CASES) == 30
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
 
@@ -76,6 +76,32 @@ def test_same_image_use_case_defaults():
     assert uc["default_provider"] == "gemini_aistudio"
     assert uc["default_model"] == "gemini-3.1-flash-lite-preview"
     assert uc["usage_log_service"] == "gemini"
+
+
+def test_new_billing_backfill_use_cases_defaults():
+    assert USE_CASES["video_csk.analyze"]["module"] == "video_analysis"
+    assert USE_CASES["video_csk.analyze"]["default_provider"] == "gemini_aistudio"
+    assert USE_CASES["video_csk.analyze"]["usage_log_service"] == "gemini_video_analysis"
+
+    assert USE_CASES["translate_lab.shot_translate"]["module"] == "translate_lab"
+    assert USE_CASES["translate_lab.shot_translate"]["default_provider"] == "gemini_aistudio"
+    assert USE_CASES["translate_lab.tts_refine"]["module"] == "translate_lab"
+    assert USE_CASES["translate_lab.tts_refine"]["default_provider"] == "gemini_aistudio"
+
+    assert USE_CASES["prompt_library.generate"]["module"] == "prompt_library"
+    assert USE_CASES["prompt_library.translate"]["module"] == "prompt_library"
+    assert USE_CASES["title_translate.generate"]["module"] == "text_translate"
+
+    vc = USE_CASES["video_creation.generate"]
+    assert vc["module"] == "video_creation"
+    assert vc["default_provider"] == "doubao"
+    assert vc["default_model"] == "doubao-seedance-2-0-260128"
+    assert vc["usage_log_service"] == "doubao"
+    assert vc["units_type"] == "seconds"
+
+    assert MODULE_LABELS["translate_lab"] == "翻译实验室"
+    assert MODULE_LABELS["prompt_library"] == "提示词库"
+    assert MODULE_LABELS["video_creation"] == "视频创作"
 
 
 def test_video_translate_av_sync_defaults():

@@ -14,6 +14,7 @@ import mimetypes
 from flask import Blueprint, request, jsonify, send_file, render_template, abort, redirect, Response, make_response
 from flask_login import login_required, current_user
 
+from appcore import ai_billing
 from appcore.runtime import _build_av_localized_translation, _build_av_tts_segments
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
@@ -640,11 +641,18 @@ def retranslate(task_id):
         from appcore.api_keys import get_key
         model_provider = get_key(current_user.id, "translate_pref") or "openrouter"
 
-    from pipeline.translate import generate_localized_translation
+    from pipeline.translate import generate_localized_translation, get_model_display_name
     from pipeline.localization import build_source_full_text_zh
 
     script_segments = task.get("script_segments") or []
     source_full_text_zh = build_source_full_text_zh(script_segments)
+    if model_provider == "doubao":
+        billing_provider = "doubao"
+    elif model_provider.startswith("vertex_"):
+        billing_provider = "gemini_vertex"
+    else:
+        billing_provider = "openrouter"
+    resolved_model = get_model_display_name(model_provider, current_user.id)
 
     try:
         result = generate_localized_translation(
@@ -652,7 +660,31 @@ def retranslate(task_id):
             custom_system_prompt=prompt_text,
             provider=model_provider, user_id=current_user.id,
         )
+        usage = result.get("_usage") or {}
+        ai_billing.log_request(
+            use_case_code="video_translate.localize",
+            user_id=current_user.id,
+            project_id=task_id,
+            provider=billing_provider,
+            model=resolved_model,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            units_type="tokens",
+            response_cost_cny=usage.get("cost_cny"),
+            success=True,
+            extra={"source": "task.retranslate"},
+        )
     except Exception as exc:
+        ai_billing.log_request(
+            use_case_code="video_translate.localize",
+            user_id=current_user.id,
+            project_id=task_id,
+            provider=billing_provider,
+            model=resolved_model,
+            units_type="tokens",
+            success=False,
+            extra={"source": "task.retranslate", "error": str(exc)[:500]},
+        )
         return jsonify({"error": f"翻译失败: {exc}"}), 500
 
     # Store as additional translation attempt

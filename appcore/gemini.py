@@ -325,6 +325,7 @@ def generate(
     project_id: str | None = None,
     service: str = "gemini",
     default_model: str | None = None,
+    return_payload: bool = False,
 ) -> str | Any:
     """一次性生成。传 response_schema 时返回解析后的 JSON（dict/list）。
 
@@ -362,13 +363,38 @@ def generate(
                 user_id=user_id, project_id=project_id, service=service,
                 model_id=model_id, success=True, resp=resp,
             )
+            input_tokens, output_tokens = _extract_gemini_tokens(resp)
+            usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
             if response_schema is not None:
                 parsed = getattr(resp, "parsed", None)
                 if parsed is not None:
+                    if return_payload:
+                        return {
+                            "text": None,
+                            "json": parsed,
+                            "raw": resp,
+                            "usage": usage,
+                        }
                     return parsed
                 import json
-                return json.loads(resp.text)
-            return resp.text or ""
+                payload = json.loads(resp.text)
+                if return_payload:
+                    return {
+                        "text": None,
+                        "json": payload,
+                        "raw": resp,
+                        "usage": usage,
+                    }
+                return payload
+            text = resp.text or ""
+            if return_payload:
+                return {
+                    "text": text,
+                    "json": None,
+                    "raw": resp,
+                    "usage": usage,
+                }
+            return text
         except Exception as e:
             last_err = e
             if attempt < max_retries - 1 and _is_retryable(e):
