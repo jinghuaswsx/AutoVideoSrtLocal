@@ -1,5 +1,19 @@
 import csv
 import io
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_ai_billing_template_shows_input_and_output_token_columns():
+    template = (ROOT / "web" / "templates" / "admin_ai_billing.html").read_text(encoding="utf-8")
+
+    assert "<th>输入 Token</th>" in template
+    assert "<th>输出 Token</th>" in template
+    assert "{{ row.input_tokens if row.input_tokens is not none else '' }}" in template
+    assert "{{ row.output_tokens if row.output_tokens is not none else '' }}" in template
+    assert 'colspan="{% if admin_mode %}11{% else %}10{% endif %}"' in template
 
 
 def _install_template_stub(monkeypatch):

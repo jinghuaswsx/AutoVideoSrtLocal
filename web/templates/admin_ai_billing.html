@@ -595,6 +595,8 @@
             <th>功能</th>
             <th>供应商 / 模型</th>
             <th>Units</th>
+            <th>输入 Token</th>
+            <th>输出 Token</th>
             <th>费用</th>
             <th>状态</th>
             <th>项目 ID</th>
@@ -629,6 +631,8 @@
                 <span class="billing-pill">{{ row.units_type or 'unknown' }}</span>
               </div>
             </td>
+            <td class="billing-mono">{{ row.input_tokens if row.input_tokens is not none else '' }}</td>
+            <td class="billing-mono">{{ row.output_tokens if row.output_tokens is not none else '' }}</td>
             <td class="billing-mono cost-{{ row.cost_source or 'unknown' }}">
               {% if row.cost_cny is not none %}
               ¥ {{ '%.6f'|format(row.cost_cny|float) }}
@@ -644,7 +648,7 @@
             <td class="billing-mono">{{ row.project_id or '—' }}</td>
           </tr>
           <tr id="{{ detail_id }}" class="billing-detail-row" hidden>
-            <td colspan="{% if admin_mode %}9{% else %}8{% endif %}">
+            <td colspan="{% if admin_mode %}11{% else %}10{% endif %}">
               <div class="billing-detail">
                 <div class="billing-detail-grid">
                   <div class="billing-detail-card">
@@ -654,8 +658,8 @@
                   <div class="billing-detail-card">
                     <div class="billing-detail-label">原始计量</div>
                     <pre class="billing-detail-pre">service: {{ row.service or '—' }}
-input_tokens: {{ row.input_tokens if row.input_tokens is not none else '—' }}
-output_tokens: {{ row.output_tokens if row.output_tokens is not none else '—' }}
+input_tokens: {{ row.input_tokens if row.input_tokens is not none else '' }}
+output_tokens: {{ row.output_tokens if row.output_tokens is not none else '' }}
 audio_duration_seconds: {{ row.audio_duration_seconds if row.audio_duration_seconds is not none else '—' }}
 request_units: {{ row.request_units if row.request_units is not none else '—' }}
 cost_source: {{ row.cost_source or 'unknown' }}</pre>
@@ -667,7 +671,7 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
           {% endfor %}
           {% if not rows %}
           <tr>
-            <td colspan="{% if admin_mode %}9{% else %}8{% endif %}" class="billing-empty">
+            <td colspan="{% if admin_mode %}11{% else %}10{% endif %}" class="billing-empty">
               当前筛选条件下没有账单记录。
             </td>
           </tr>
