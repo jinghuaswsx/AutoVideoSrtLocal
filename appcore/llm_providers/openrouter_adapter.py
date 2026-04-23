@@ -52,10 +52,19 @@ def _media_parts(prompt: str, media) -> list[dict]:
             raise RuntimeError(f"media file does not exist: {path}")
         mime = _guess_mime(path)
         data = base64.b64encode(path.read_bytes()).decode("ascii")
-        parts.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{data}"},
-        })
+        data_url = f"data:{mime};base64,{data}"
+        if mime.startswith("image/"):
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": data_url},
+            })
+        elif mime.startswith("video/"):
+            parts.append({
+                "type": "video_url",
+                "video_url": {"url": data_url},
+            })
+        else:
+            raise RuntimeError(f"unsupported media mime for OpenRouter: {mime}")
     return parts
 
 
