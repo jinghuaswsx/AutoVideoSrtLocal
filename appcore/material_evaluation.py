@@ -214,15 +214,17 @@ def _decision_from_score(score: float, is_suitable: bool) -> str:
 def find_ready_product_ids(limit: int = 5) -> list[int]:
     try:
         rows = query(
-            "SELECT DISTINCT p.id FROM media_products p "
-            "JOIN media_items i ON i.product_id=p.id "
-            " AND i.lang='en' AND i.deleted_at IS NULL "
+            "SELECT p.id FROM media_products p "
             "LEFT JOIN media_product_covers c ON c.product_id=p.id AND c.lang='en' "
             "WHERE p.deleted_at IS NULL "
             " AND COALESCE(p.archived, 0)=0 "
             " AND (p.ai_evaluation_result IS NULL OR p.ai_evaluation_result='') "
             " AND (COALESCE(p.product_code, '')<>'' OR COALESCE(p.localized_links_json, '')<>'') "
             " AND (c.object_key IS NOT NULL OR COALESCE(p.cover_object_key, '')<>'') "
+            " AND EXISTS ("
+            "   SELECT 1 FROM media_items i "
+            "   WHERE i.product_id=p.id AND i.lang='en' AND i.deleted_at IS NULL"
+            " ) "
             "ORDER BY p.updated_at ASC, p.id ASC LIMIT %s",
             (int(limit),),
         )
