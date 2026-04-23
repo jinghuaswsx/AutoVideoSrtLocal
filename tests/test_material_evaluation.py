@@ -198,3 +198,34 @@ def test_find_ready_product_ids_uses_exists_without_distinct(monkeypatch):
     assert "EXISTS (" in captured["sql"]
     assert "SELECT DISTINCT" not in captured["sql"]
     assert captured["args"] == (2,)
+
+
+def test_normalize_result_fills_missing_language_for_manual_review():
+    from appcore import material_evaluation
+
+    languages = [
+        {"code": "de", "name": "德语"},
+        {"code": "fi", "name": "芬兰语"},
+    ]
+    raw = {
+        "countries": [
+            {
+                "lang": "de",
+                "country": "德国",
+                "is_suitable": True,
+                "score": 80,
+                "risk_level": "low",
+                "decision": "适合推广",
+                "reason": "德国通勤和户外场景需求明确。",
+                "suggestions": [],
+            }
+        ]
+    }
+
+    normalized = material_evaluation.normalize_result(raw, languages)
+
+    assert [row["lang"] for row in normalized["countries"]] == ["de", "fi"]
+    assert normalized["countries"][1]["decision"] == "谨慎推广"
+    assert normalized["countries"][1]["reason"] == "模型未返回该语种结果，需人工复核。"
+    assert normalized["ai_evaluation_result"] == "需人工复核"
+    assert normalized["listing_status"] == "上架"

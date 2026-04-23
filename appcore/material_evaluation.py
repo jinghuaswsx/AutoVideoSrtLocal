@@ -148,7 +148,18 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
 
     missing = [code for code in expected_codes if code not in by_lang]
     if missing:
-        raise ValueError(f"material evaluation missing languages: {', '.join(missing)}")
+        name_by_code = {item["code"]: item["name"] for item in langs}
+        for code in missing:
+            by_lang[code] = {
+                "lang": code,
+                "country": name_by_code.get(code) or code,
+                "is_suitable": False,
+                "score": 50,
+                "risk_level": "high",
+                "decision": "谨慎推广",
+                "reason": "模型未返回该语种结果，需人工复核。",
+                "suggestions": ["补充人工判断"],
+            }
 
     countries: list[dict[str, Any]] = []
     for lang in langs:
@@ -180,7 +191,9 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
     scores = [row["score"] for row in countries]
     avg_score = round(sum(scores) / len(scores), 1) if scores else None
     suitable_count = sum(1 for row in countries if row["is_suitable"])
-    if suitable_count == len(countries) and countries:
+    if missing:
+        evaluation_result = "需人工复核"
+    elif suitable_count == len(countries) and countries:
         evaluation_result = "适合推广"
     elif suitable_count > 0:
         evaluation_result = "部分适合推广"
