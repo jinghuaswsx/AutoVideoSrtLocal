@@ -52,6 +52,7 @@ def _serialize_row(row: dict) -> dict:
         "ad_supported_langs": row.get("ad_supported_langs"),
         "selling_points": row.get("selling_points"),
         "importance": row.get("importance"),
+        "listing_status": row.get("listing_status"),
     }
     readiness = pushes.compute_readiness(item_shape, product_shape)
     status = pushes.compute_status(item_shape, product_shape)
@@ -198,6 +199,8 @@ def api_push(item_id: int):
 
     try:
         payload = pushes.build_item_payload(item, product)
+    except pushes.ProductNotListedError as exc:
+        return jsonify({"error": "product_not_listed", "detail": str(exc)}), 409
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
         return jsonify({"error": "copywriting_invalid", "detail": str(exc)}), 400
 
@@ -344,6 +347,8 @@ def api_push_localized_texts(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return jsonify({"error": "product_not_found"}), 404
+    if not medias.is_product_listed(product):
+        return jsonify({"error": "product_not_listed"}), 409
     mk_id = product.get("mk_id")
     if not mk_id:
         return jsonify({"error": "mk_id_missing", "detail": "产品缺少 mk_id"}), 400

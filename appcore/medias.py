@@ -6,6 +6,24 @@ from typing import Any
 from appcore.db import query, query_one, execute
 
 
+LISTING_STATUS_ON = "上架"
+LISTING_STATUS_OFF = "下架"
+LISTING_STATUSES = {LISTING_STATUS_ON, LISTING_STATUS_OFF}
+
+
+def normalize_listing_status(value: str | None) -> str:
+    status = str(value or LISTING_STATUS_ON).strip()
+    if status not in LISTING_STATUSES:
+        raise ValueError("listing_status must be 上架 or 下架")
+    return status
+
+
+def is_product_listed(product: dict | None) -> bool:
+    if not isinstance(product, dict):
+        return False
+    return normalize_listing_status(product.get("listing_status")) == LISTING_STATUS_ON
+
+
 # ---------- 语种 ----------
 
 _LANG_CODE_RE = re.compile(r"^[a-z0-9-]{2,8}$")
@@ -332,7 +350,9 @@ def update_product(product_id: int, **fields) -> int:
                "product_code", "cover_object_key",
                "localized_links_json", "ad_supported_langs",
                "link_check_tasks_json",
-               "mk_id"}
+               "mk_id",
+               "remark", "ai_score", "ai_evaluation_result",
+               "ai_evaluation_detail", "listing_status"}
     # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
     if "mk_id" in fields:
         v = fields["mk_id"]
@@ -343,6 +363,20 @@ def update_product(product_id: int, **fields) -> int:
             if not s.isdigit() or not (1 <= len(s) <= 8):
                 raise ValueError("mk_id 必须是 1-8 位数字")
             fields["mk_id"] = int(s)
+    if "listing_status" in fields:
+        fields["listing_status"] = normalize_listing_status(fields.get("listing_status"))
+    if "ai_score" in fields:
+        v = fields["ai_score"]
+        if v is None or (isinstance(v, str) and not v.strip()):
+            fields["ai_score"] = None
+        else:
+            try:
+                fields["ai_score"] = float(v)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("ai_score must be numeric") from exc
+    for text_key in ("remark", "ai_evaluation_result", "ai_evaluation_detail"):
+        if text_key in fields and fields[text_key] is not None:
+            fields[text_key] = str(fields[text_key]).strip() or None
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
