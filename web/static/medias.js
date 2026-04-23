@@ -729,13 +729,14 @@
           <th>产品名称</th>
           <th>产品 ID</th>
           <th>明空 ID</th>
-          <th>备注说明</th>
+          <th>AI评分</th>
           <th>AI评估结果</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
           <th>语种覆盖</th>
           <th>修改时间</th>
+          <th>备注说明</th>
           <th>操作</th>
         </tr>
         </thead>
@@ -774,13 +775,14 @@
         <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
         <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
-        <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
+        <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
         <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">${compactCellText(p.ai_evaluation_result)}</td>
         <td>${listingStatusPill(listingStatus(p))}</td>
         <td class="wrap" title="${escapeHtml(ownerName)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
+        <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
         <td class="actions">
           <div class="oc-row-actions">
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>

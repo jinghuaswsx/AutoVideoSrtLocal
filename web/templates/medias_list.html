@@ -178,10 +178,11 @@
 }
 .oc-rs-modal-head h3 { margin:0; font-size:16px; font-weight:600; color:var(--oc-fg); }
 .oc-rs-summary { margin:6px 0 0; font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
-.oc-rs-modal-toolbar {
+.oc-rs-modal-head-actions {
   display:flex;
-  justify-content:flex-start;
-  padding:0 var(--oc-sp-5) var(--oc-sp-4);
+  align-items:center;
+  gap:var(--oc-sp-2);
+  flex-shrink:0;
 }
 .oc-rs-modal-body {
   flex:1;
@@ -1519,15 +1520,15 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         <h3 id="rsModalTitle">原始去字幕素材</h3>
         <p id="rsSummary" class="oc-rs-summary">加载中</p>
       </div>
-      <button type="button" id="rsModalClose" class="oc-icon-btn" aria-label="关闭">
-        <svg width="16" height="16"><use href="#ic-close"/></svg>
-      </button>
-    </div>
-    <div class="oc-rs-modal-toolbar">
-      <button type="button" id="rsUploadBtn" class="oc-btn primary">
-        <svg width="14" height="14"><use href="#ic-upload"/></svg>
-        <span>上传素材</span>
-      </button>
+      <div class="oc-rs-modal-head-actions">
+        <button type="button" id="rsUploadBtn" class="oc-btn primary sm">
+          <svg width="14" height="14"><use href="#ic-upload"/></svg>
+          <span>上传素材</span>
+        </button>
+        <button type="button" id="rsModalClose" class="oc-icon-btn" aria-label="关闭">
+          <svg width="16" height="16"><use href="#ic-close"/></svg>
+        </button>
+      </div>
     </div>
     <div class="oc-rs-modal-body">
       <div id="rsList" class="oc-rs-list"></div>
