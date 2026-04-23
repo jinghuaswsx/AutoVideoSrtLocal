@@ -14,7 +14,7 @@
   --oc-cyan: oklch(62% 0.13 215);
   --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
-  --mk-video-cover-w: 90px; --mk-video-cover-h: 160px;
+  --mk-video-media-w: 135px; --mk-video-media-h: 240px; --mk-video-frame-w: 296px;
   font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--oc-fg);
 }
@@ -53,15 +53,17 @@
 .text-sm { font-size:12px; }
 .mb-0 { margin-bottom:0; }
 .truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:var(--oc-sp-3); }
-.mk-video-card { display:grid; grid-template-columns:var(--mk-video-cover-w) minmax(0, 1fr); min-height:var(--mk-video-cover-h); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); font-size:13px; }
-.mk-video-cover-frame { width:var(--mk-video-cover-w); height:var(--mk-video-cover-h); background:var(--oc-bg-muted); color:var(--oc-fg-subtle); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--oc-sp-3); }
+.mk-video-card { display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
+.mk-video-media-frame { width:min(100%, var(--mk-video-frame-w)); display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--oc-sp-2); padding:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); background:var(--oc-bg-subtle); align-self:center; }
+.mk-video-cover-frame, .mk-video-source-frame { position:relative; height:var(--mk-video-media-h); border-radius:var(--oc-r); background:var(--oc-bg-muted); color:var(--oc-fg-subtle); display:flex; align-items:center; justify-content:center; overflow:hidden; }
 .mk-video-cover-frame img { width:100%; height:100%; object-fit:cover; display:block; background:var(--oc-bg-muted); }
-.mk-video-card-body { min-width:0; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between; gap:var(--oc-sp-2); }
+.mk-video-source { width:100%; height:100%; object-fit:contain; border:0; background:oklch(22% 0.02 235); display:block; }
+.mk-video-media-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-3); text-align:center; font-size:12px; color:var(--oc-fg-subtle); }
+.mk-video-card-body { min-width:0; display:flex; flex-direction:column; gap:var(--oc-sp-2); }
 .mk-video-card-title { font-weight:500; word-break:break-all; line-height:1.4; }
 .mk-video-card-meta, .mk-video-card-stats { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-2); }
 .mk-video-card-meta { color:var(--oc-fg-muted); }
-.mk-video-player { width:100%; max-height:180px; border-radius:var(--oc-r); background:oklch(22% 0.02 235); display:block; }
 {% endblock %}
 
 {% block content %}
@@ -264,11 +266,14 @@ async function openDetail(mkId, mkName) {
       const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
       const videoPath = normalizeMkMediaPath(v.path);
       const videoUrl = videoPath ? '/medias/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
+      const posterAttr = coverUrl ? ` poster="${coverUrl}"` : '';
       html += `<div class="mk-video-card">
-        <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span>无封面</span>`}</div>
+        <div class="mk-video-media-frame">
+          <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span class="mk-video-media-empty">无封面</span>`}</div>
+          <div class="mk-video-source-frame">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline src="${videoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}</div>
+        </div>
         <div class="mk-video-card-body">
           <div class="mk-video-card-title">${v.name}</div>
-          ${videoUrl ? `<video class="mk-video-player" controls preload="none" playsinline src="${videoUrl}"></video>` : ''}
           <div class="mk-video-card-meta">
             <span>${v.author || '--'}</span>
             <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
