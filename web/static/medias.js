@@ -1,9 +1,10 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
-  const state = { page: 1, current: null, pendingItemCover: null };
+  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0 };
   const $ = (id) => document.getElementById(id);
 
   let LANGUAGES = [];
+  let liveSearchTimer = null;
 
   async function ensureLanguages() {
     if (LANGUAGES.length) return LANGUAGES;
@@ -640,6 +641,7 @@
 
   // ---------- List ----------
   async function loadList() {
+    const requestSeq = ++state.listRequestSeq;
     const kw = $('kw').value.trim();
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
@@ -647,19 +649,40 @@
     try {
       await ensureLanguages();
       const data = await fetchJSON('/medias/api/products?' + params);
+      if (requestSeq !== state.listRequestSeq) return;
       renderGrid(data.items);
       renderPager(data.total, data.page, data.page_size);
       const pill = $('totalPill');
       if (pill) pill.textContent = `共 ${data.total} 个产品`;
     } catch (e) {
+      if (requestSeq !== state.listRequestSeq) return;
       $('grid').innerHTML = `
         <div class="oc-state">
           <div class="icon">${icon('alert', 28)}</div>
           <p class="title">加载失败</p>
           <p class="desc">${escapeHtml(e.message || '请稍后重试')}</p>
           <button class="oc-btn ghost" onclick="location.reload()">刷新页面</button>
-        </div>`;
+      </div>`;
     }
+  }
+
+  function runSearchNow() {
+    if (liveSearchTimer) {
+      window.clearTimeout(liveSearchTimer);
+      liveSearchTimer = null;
+    }
+    state.page = 1;
+    loadList();
+  }
+
+  function runLiveSearch() {
+    liveSearchTimer = null;
+    runSearchNow();
+  }
+
+  function scheduleLiveSearch() {
+    if (liveSearchTimer) window.clearTimeout(liveSearchTimer);
+    liveSearchTimer = window.setTimeout(runLiveSearch, 250);
   }
 
   function renderSkeleton() {
@@ -3017,8 +3040,11 @@
 
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
-    $('searchBtn').addEventListener('click', () => { state.page = 1; loadList(); });
-    $('kw').addEventListener('keydown', (e) => { if (e.key === 'Enter') { state.page = 1; loadList(); } });
+    const searchBtn = $('searchBtn');
+    const kwInput = $('kw');
+    searchBtn.addEventListener('click', runSearchNow);
+    kwInput.addEventListener('input', scheduleLiveSearch);
+    kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow(); } });
 
     const syncChip = (chipId, inputId) => {
       const chip = $(chipId), inp = $(inputId);
