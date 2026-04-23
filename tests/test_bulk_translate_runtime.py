@@ -578,3 +578,44 @@ def test_retry_item_resets_requested_idx(runtime_env, monkeypatch):
     assert fake_db.rows[task_id]["status"] == "running"
     state = _load_state(fake_db, task_id)
     assert [item["status"] for item in state["plan"]] == ["done", "pending", "done"]
+
+
+def test_materialize_multi_translate_cover_prefers_existing_translated_cover(
+    runtime_env,
+    monkeypatch,
+    tmp_path,
+):
+    mod, _fake_db = runtime_env
+    thumbnail = tmp_path / "thumbnail.jpg"
+    thumbnail.write_bytes(b"video-thumbnail")
+    translated_cover_key = "artifacts/image_translate/33/cover-task/out_0.jpg"
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 33,
+            "cover_object_key": "33/medias/6/raw_sources/source.cover.jpg",
+        },
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source_translation",
+        lambda raw_id, lang: {"cover_object_key": translated_cover_key},
+    )
+    monkeypatch.setattr(
+        mod.local_media_storage,
+        "write_bytes",
+        lambda *_args, **_kwargs: pytest.fail("should not overwrite translated cover with video thumbnail"),
+    )
+
+    result = mod._materialize_multi_translate_cover(
+        product_id=6,
+        lang="it",
+        source_raw_id=19,
+        child_task_id="video-task",
+        child_state={"thumbnail_path": str(thumbnail)},
+    )
+
+    assert result == translated_cover_key

@@ -772,6 +772,10 @@ def _materialize_multi_translate_cover(
     child_state: dict,
 ) -> str:
     raw_source = medias.get_raw_source(source_raw_id) or {}
+    existing_cover = medias.get_raw_source_translation(source_raw_id, lang) or {}
+    if (existing_cover.get("cover_object_key") or "").strip():
+        return existing_cover["cover_object_key"]
+
     thumbnail_path = _pick_existing_path(
         [
             (child_state.get("thumbnail_path") or ""),
@@ -780,9 +784,6 @@ def _materialize_multi_translate_cover(
         ]
     )
     if not thumbnail_path:
-        row = medias.get_raw_source_translation(source_raw_id, lang)
-        if row and row.get("cover_object_key"):
-            return row["cover_object_key"]
         return raw_source.get("cover_object_key") or ""
     ext = Path(thumbnail_path).suffix or ".jpg"
     base_name = Path(raw_source.get("cover_object_key") or "").stem or f"raw_{source_raw_id}_cover"
