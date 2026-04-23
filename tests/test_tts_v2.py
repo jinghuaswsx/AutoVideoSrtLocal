@@ -1,5 +1,6 @@
 from unittest.mock import patch
-from pipeline.tts_v2 import generate_and_verify_shot, TOLERANCE
+
+from pipeline.tts_v2 import TOLERANCE, generate_and_verify_shot
 
 
 def test_tolerance_is_1_10():
@@ -7,11 +8,12 @@ def test_tolerance_is_1_10():
 
 
 def test_generate_passes_on_first_try_within_tolerance(tmp_path):
-    with patch("pipeline.tts_v2._tts_generate",
-               return_value=str(tmp_path / "shot_1.mp3")), \
-         patch("pipeline.tts_v2._get_duration", return_value=4.8), \
-         patch("pipeline.tts_v2._refine_text") as refine, \
-         patch("pipeline.tts_v2.update_rate") as upd:
+    with (
+        patch("pipeline.tts_v2._tts_generate", return_value=str(tmp_path / "shot_1.mp3")),
+        patch("pipeline.tts_v2._get_duration", return_value=4.8),
+        patch("pipeline.tts_v2._refine_text") as refine,
+        patch("pipeline.tts_v2.update_rate") as update_rate,
+    ):
         result = generate_and_verify_shot(
             shot={"index": 1, "duration": 5.0},
             translated_text="Some translation.",
@@ -26,15 +28,13 @@ def test_generate_passes_on_first_try_within_tolerance(tmp_path):
     assert result["over_tolerance"] is False
     assert result["final_text"] == "Some translation."
     refine.assert_not_called()
-    # 语速模型应被更新一次
-    upd.assert_called_once()
+    update_rate.assert_called_once()
 
 
 def test_generate_refines_when_over_tolerance(tmp_path):
-    # 5s 分镜，tolerance=1.10 → 上限 5.5s
-    durations = iter([6.2, 4.9])  # 第1次 6.2s 超限，第2次 4.9s 通过
+    durations = iter([6.2, 4.9])
 
-    def fake_gen(text, voice_id, output_path, api_key):
+    def fake_generate(text, voice_id, output_path, api_key):
         return output_path
 
     def fake_duration(path):
@@ -43,11 +43,13 @@ def test_generate_refines_when_over_tolerance(tmp_path):
     def fake_refine(prev_text, over_ratio, target_chars, user_id):
         return "Short version."
 
-    with patch("pipeline.tts_v2._tts_generate", side_effect=fake_gen), \
-         patch("pipeline.tts_v2._get_duration", side_effect=fake_duration), \
-         patch("pipeline.tts_v2._refine_text", side_effect=fake_refine), \
-         patch("pipeline.tts_v2.get_rate", return_value=15.0), \
-         patch("pipeline.tts_v2.update_rate"):
+    with (
+        patch("pipeline.tts_v2._tts_generate", side_effect=fake_generate),
+        patch("pipeline.tts_v2._get_duration", side_effect=fake_duration),
+        patch("pipeline.tts_v2._refine_text", side_effect=fake_refine),
+        patch("pipeline.tts_v2.get_rate", return_value=15.0),
+        patch("pipeline.tts_v2.update_rate"),
+    ):
         result = generate_and_verify_shot(
             shot={"index": 1, "duration": 5.0},
             translated_text="Initial long version.",
@@ -64,13 +66,13 @@ def test_generate_refines_when_over_tolerance(tmp_path):
 
 
 def test_generate_gives_up_after_max_retries(tmp_path):
-    with patch("pipeline.tts_v2._tts_generate",
-               return_value=str(tmp_path / "shot_1.mp3")), \
-         patch("pipeline.tts_v2._get_duration", return_value=10.0), \
-         patch("pipeline.tts_v2._refine_text",
-               return_value="still long"), \
-         patch("pipeline.tts_v2.get_rate", return_value=15.0), \
-         patch("pipeline.tts_v2.update_rate"):
+    with (
+        patch("pipeline.tts_v2._tts_generate", return_value=str(tmp_path / "shot_1.mp3")),
+        patch("pipeline.tts_v2._get_duration", return_value=10.0),
+        patch("pipeline.tts_v2._refine_text", return_value="still long"),
+        patch("pipeline.tts_v2.get_rate", return_value=15.0),
+        patch("pipeline.tts_v2.update_rate"),
+    ):
         result = generate_and_verify_shot(
             shot={"index": 1, "duration": 5.0},
             translated_text="original too long",
@@ -86,20 +88,29 @@ def test_generate_gives_up_after_max_retries(tmp_path):
 
 
 def test_generate_updates_speech_rate_model_each_iteration(tmp_path):
-    # 2 次迭代，update_rate 应被调 2 次
     durations = iter([6.2, 4.9])
-    def fake_gen(text, voice_id, output_path, api_key):
-        return output_path
     update_calls = []
+
+    def fake_generate(text, voice_id, output_path, api_key):
+        return output_path
+
     def fake_update(voice_id, language, *, chars, duration_seconds):
-        update_calls.append({"voice_id": voice_id, "language": language,
-                             "chars": chars, "duration": duration_seconds})
-    with patch("pipeline.tts_v2._tts_generate", side_effect=fake_gen), \
-         patch("pipeline.tts_v2._get_duration",
-               side_effect=lambda p: next(durations)), \
-         patch("pipeline.tts_v2._refine_text", return_value="Short."), \
-         patch("pipeline.tts_v2.get_rate", return_value=15.0), \
-         patch("pipeline.tts_v2.update_rate", side_effect=fake_update):
+        update_calls.append(
+            {
+                "voice_id": voice_id,
+                "language": language,
+                "chars": chars,
+                "duration": duration_seconds,
+            }
+        )
+
+    with (
+        patch("pipeline.tts_v2._tts_generate", side_effect=fake_generate),
+        patch("pipeline.tts_v2._get_duration", side_effect=lambda path: next(durations)),
+        patch("pipeline.tts_v2._refine_text", return_value="Short."),
+        patch("pipeline.tts_v2.get_rate", return_value=15.0),
+        patch("pipeline.tts_v2.update_rate", side_effect=fake_update),
+    ):
         generate_and_verify_shot(
             shot={"index": 1, "duration": 5.0},
             translated_text="Initial long version.",
@@ -112,3 +123,22 @@ def test_generate_updates_speech_rate_model_each_iteration(tmp_path):
     assert len(update_calls) == 2
     assert update_calls[0]["chars"] == len("Initial long version.")
     assert update_calls[1]["chars"] == len("Short.")
+
+
+def test_refine_text_uses_translate_lab_use_case():
+    from pipeline import tts_v2 as mod
+
+    captured = {}
+
+    def fake_generate(prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return {"translated_text": "Short."}
+
+    with patch("pipeline.tts_v2.gemini_generate", side_effect=fake_generate):
+        out = mod._refine_text("Long text", 0.36, 18, 9)
+
+    assert out == "Short."
+    assert "Long text" in captured["prompt"]
+    assert captured["kwargs"]["service"] == "translate_lab.tts_refine"
+    assert captured["kwargs"]["user_id"] == 9

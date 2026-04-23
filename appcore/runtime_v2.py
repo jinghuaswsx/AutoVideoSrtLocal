@@ -284,7 +284,7 @@ class PipelineRunnerV2(PipelineRunner):
         from pipeline.translate_v2 import compute_char_limit, translate_shot
 
         from appcore.gemini import resolve_config as _resolve_gemini
-        _, _tr_model = _resolve_gemini(self.user_id, service="gemini_translate_v2")
+        _, _tr_model = _resolve_gemini(self.user_id, service="translate_lab.shot_translate")
         self._set_step(task_id, "translate", "running", "正在翻译分镜...",
                        model_tag=f"gemini · {_tr_model}")
         task = task_state.get(task_id) or {}

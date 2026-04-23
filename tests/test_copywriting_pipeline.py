@@ -55,3 +55,37 @@ def test_generate_copy_openrouter_requests_usage_cost(monkeypatch, tmp_path):
         "output_tokens": 22,
         "cost_cny": Decimal("3.400000"),
     }
+
+
+def test_rewrite_segment_uses_llm_client(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "pipeline.translate.resolve_provider_config",
+        lambda provider, user_id=None: (object(), "anthropic/claude-sonnet-4.6"),
+    )
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "text": '{"label":"Hook","text":"New rewrite","duration_hint":3.0}',
+            "usage": {"input_tokens": 9, "output_tokens": 6},
+        }
+
+    monkeypatch.setattr(copywriting.llm_client, "invoke_chat", fake_invoke_chat)
+
+    result = copywriting.rewrite_segment(
+        full_text="Original full text",
+        segment={"label": "Hook", "text": "Old text", "duration_hint": 3.0},
+        user_instruction="Make it stronger",
+        provider="openrouter",
+        user_id=5,
+        language="en",
+    )
+
+    assert captured["use_case_code"] == "copywriting.rewrite"
+    assert captured["kwargs"]["provider_override"] == "openrouter"
+    assert captured["kwargs"]["model_override"] == "anthropic/claude-sonnet-4.6"
+    assert result["text"] == "New rewrite"
+    assert result["_usage"] == {"input_tokens": 9, "output_tokens": 6}

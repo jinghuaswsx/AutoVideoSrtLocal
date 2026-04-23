@@ -9,6 +9,7 @@ import uuid
 from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
+from appcore import ai_billing
 from appcore.api_keys import resolve_key
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
@@ -26,6 +27,9 @@ from web.extensions import socketio
 log = logging.getLogger(__name__)
 
 bp = Blueprint("video_creation", __name__)
+
+# Backward-compatible alias used by older tests/patch points.
+tos_upload = public_exchange_upload
 
 # ── SocketIO 事件 ──
 EVT_VC_STEP = "vc_step_update"
@@ -84,6 +88,32 @@ def _shrink_image_if_oversize(path: str) -> str:
     except Exception as e:
         log.warning("[VC] 图像缩放失败，保持原图: %s (%s)", path, e)
     return path
+
+
+def _log_video_creation_billing(
+    task_id: str,
+    state: dict,
+    *,
+    success: bool,
+    seedance_task_id: str | None = None,
+    error: Exception | None = None,
+) -> None:
+    extra = {}
+    if seedance_task_id:
+        extra["seedance_task_id"] = seedance_task_id
+    if error is not None:
+        extra["error"] = str(error)[:500]
+    ai_billing.log_request(
+        use_case_code="video_creation.generate",
+        user_id=state.get("user_id"),
+        project_id=task_id,
+        provider="doubao",
+        model="doubao-seedance-2-0-260128",
+        request_units=int(state.get("duration") or 0) or 1,
+        units_type="seconds",
+        success=success,
+        extra=extra or None,
+    )
 
 
 # ── 页面路由 ──
@@ -246,6 +276,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
     from pipeline.seedance import generate_video_v2
 
     task_dir = state.get("task_dir", "")
+    billing_logged = False
 
     try:
         _update_state(task_id, {"steps.generate": "running"})
@@ -255,7 +286,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         # 上传本地文件到 TOS 获取公网 URL
         video_url = None
         if state.get("video_path") and os.path.exists(state["video_path"]):
-            video_url = public_exchange_upload(
+            video_url = tos_upload(
                 state["video_path"],
                 _build_public_exchange_key(task_id, state, "video", os.path.basename(state["video_path"])),
                 expires=86400,
@@ -266,7 +297,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
             if os.path.exists(img_path):
                 _shrink_image_if_oversize(img_path)
                 image_urls.append(
-                    public_exchange_upload(
+                    tos_upload(
                         img_path,
                         _build_public_exchange_key(task_id, state, "image", os.path.basename(img_path), index=index),
                         expires=86400,
@@ -275,7 +306,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
 
         audio_url = None
         if state.get("audio_path") and os.path.exists(state["audio_path"]):
-            audio_url = public_exchange_upload(
+            audio_url = tos_upload(
                 state["audio_path"],
                 _build_public_exchange_key(task_id, state, "audio", os.path.basename(state["audio_path"])),
                 expires=86400,
@@ -301,6 +332,13 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
 
         video_result_url = result.get("video_url", "")
         seedance_task_id = result.get("task_id", "")
+        _log_video_creation_billing(
+            task_id,
+            state,
+            success=True,
+            seedance_task_id=seedance_task_id,
+        )
+        billing_logged = True
 
         # 下载生成的视频到本地
         local_video_path = None
@@ -326,6 +364,8 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         })
 
     except Exception as e:
+        if not billing_logged:
+            _log_video_creation_billing(task_id, state, success=False, error=e)
         log.exception("[VC] 视频生成失败: %s", task_id)
         _update_state(task_id, {"steps.generate": "error"})
         db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))

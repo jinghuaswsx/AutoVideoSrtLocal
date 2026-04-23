@@ -12,6 +12,8 @@ import re
 from decimal import Decimal
 from typing import Any
 
+from appcore import llm_client
+
 log = logging.getLogger(__name__)
 
 # ── 默认系统提示词 ──────────────────────────────────
@@ -755,4 +757,56 @@ def rewrite_segment(
         }
         log.info("rewrite_segment token usage: input=%s, output=%s",
                  result["_usage"]["input_tokens"], result["_usage"]["output_tokens"])
+    return result
+
+
+def rewrite_segment(
+    full_text: str,
+    segment: dict,
+    user_instruction: str = "",
+    provider: str = "openrouter",
+    user_id: int | None = None,
+    language: str = "en",
+) -> dict:
+    """重写文案中的某一段。"""
+    from pipeline.translate import resolve_provider_config
+
+    _, model = resolve_provider_config(provider, user_id=user_id)
+    provider_code = "doubao" if provider == "doubao" else "openrouter"
+
+    template = REWRITE_SEGMENT_PROMPT_ZH if language == "zh" else REWRITE_SEGMENT_PROMPT_EN
+    if not user_instruction:
+        user_instruction = "请重写这一段，使其更有吸引力。" if language == "zh" else "Rewrite to be more engaging."
+
+    prompt = template.format(
+        full_text=full_text,
+        label=segment["label"],
+        original_text=segment["text"],
+        duration_hint=segment.get("duration_hint", 3.0),
+        user_instruction=f"User request: {user_instruction}",
+    )
+
+    response = llm_client.invoke_chat(
+        "copywriting.rewrite",
+        messages=[{"role": "user", "content": prompt}],
+        user_id=user_id,
+        temperature=0.7,
+        max_tokens=1024,
+        provider_override=provider_code,
+        model_override=model,
+    )
+
+    raw = response.get("text") or ""
+    result = _parse_json_content(raw)
+    usage = response.get("usage") or {}
+    if usage:
+        result["_usage"] = {
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+        }
+        log.info(
+            "rewrite_segment token usage: input=%s, output=%s",
+            result["_usage"]["input_tokens"],
+            result["_usage"]["output_tokens"],
+        )
     return result

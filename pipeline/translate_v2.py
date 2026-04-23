@@ -48,7 +48,7 @@ def _call_llm(prompt: str, user_id: int) -> str:
         prompt,
         user_id=user_id,
         response_schema=TRANSLATE_SCHEMA,
-        service="gemini_translate_v2",
+        service="translate_lab.shot_translate",
     )
     text = (resp or {}).get("translated_text", "") or ""
     return text.strip()

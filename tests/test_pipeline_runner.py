@@ -611,6 +611,48 @@ def test_video_creation_generate_uploads_local_assets_with_task_scoped_keys(tmp_
     ]
 
 
+def test_video_creation_generate_logs_ai_billing(tmp_path, monkeypatch):
+    from web.routes.video_creation import _do_generate_v2
+
+    state = {
+        "task_dir": str(tmp_path),
+        "prompt": "demo prompt",
+        "video_path": None,
+        "image_paths": [],
+        "audio_path": None,
+        "ratio": "9:16",
+        "duration": 8,
+        "generate_audio": True,
+        "watermark": False,
+        "user_id": 11,
+    }
+
+    logged = []
+
+    monkeypatch.setattr("web.routes.video_creation._update_state", lambda task_id, updates: None)
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.video_creation._emit_to_task", lambda task_id, event, payload: None)
+    monkeypatch.setattr(
+        "pipeline.seedance.generate_video_v2",
+        lambda **kwargs: {"task_id": "seed-task-8", "video_url": ""},
+    )
+    monkeypatch.setattr(
+        "web.routes.video_creation.ai_billing.log_request",
+        lambda **kwargs: logged.append(kwargs),
+    )
+
+    _do_generate_v2("vc-billing-1", "seedance-key", state)
+
+    assert len(logged) == 1
+    assert logged[0]["use_case_code"] == "video_creation.generate"
+    assert logged[0]["provider"] == "doubao"
+    assert logged[0]["model"] == "doubao-seedance-2-0-260128"
+    assert logged[0]["project_id"] == "vc-billing-1"
+    assert logged[0]["request_units"] == 8
+    assert logged[0]["units_type"] == "seconds"
+    assert logged[0]["success"] is True
+
+
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):
     store.create("task-start-auto", "video.mp4", "output/task-start-auto", user_id=1)
     captured = {}

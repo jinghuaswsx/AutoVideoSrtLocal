@@ -189,3 +189,35 @@ def test_generate_logs_failure_via_ai_billing(monkeypatch):
     assert billing_calls[0]["model"] == "gemini-3.1-pro-preview"
     assert billing_calls[0]["success"] is False
     assert billing_calls[0]["extra"]["error"] == "boom"
+
+
+def test_generate_return_payload_includes_usage(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+
+    resp = SimpleNamespace(
+        text="ok",
+        parsed=None,
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=13,
+            candidates_token_count=5,
+        ),
+    )
+    client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=lambda **_: resp)
+    )
+
+    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_log_gemini_usage", lambda **kwargs: None)
+
+    payload = gemini.generate(
+        "hello",
+        model="gemini-3.1-pro-preview",
+        user_id=9,
+        max_retries=1,
+        return_payload=True,
+    )
+
+    assert payload["text"] == "ok"
+    assert payload["json"] is None
+    assert payload["usage"] == {"input_tokens": 13, "output_tokens": 5}
