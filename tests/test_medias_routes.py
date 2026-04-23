@@ -49,6 +49,33 @@ def test_item_bootstrap_rejects_bad_localized_material_filename(
     )
 
 
+def test_item_bootstrap_skip_validation_accepts_initial_loose_material_filename(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    monkeypatch.setattr(
+        r.tos_clients,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4",
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["effective_lang"] == "fr"
+    assert data["object_key"].endswith(
+        "/2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4"
+    )
+
+
 def test_item_bootstrap_accepts_valid_english_material_filename(
     authed_client_no_db, monkeypatch
 ):
@@ -73,6 +100,26 @@ def test_item_bootstrap_accepts_valid_english_material_filename(
     assert data["object_key"].endswith("/2026.04.17-窗帘挂钩-原素材.mp4")
 
 
+def test_item_bootstrap_skip_validation_still_enforces_single_filename_rule(
+    authed_client_no_db, monkeypatch
+):
+    _stub_material_filename_product(monkeypatch, name="逝后指南")
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2024.01.06-逝后指南-混剪-李文龙.mov",
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "filename_invalid"
+    assert data["details"] == ['文件扩展名必须是 ".mp4"']
+
+
 def test_item_complete_rejects_bad_localized_material_filename_before_insert(
     authed_client_no_db, monkeypatch
 ):
@@ -94,6 +141,49 @@ def test_item_complete_rejects_bad_localized_material_filename_before_insert(
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "filename_invalid"
     assert created == []
+
+
+def test_item_complete_skip_validation_accepts_initial_loose_material_filename(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    created = []
+    monkeypatch.setattr(r, "_is_media_available", lambda object_key: True)
+    monkeypatch.setattr(r.medias, "create_item", lambda *args, **kwargs: created.append((args, kwargs)) or 99)
+    monkeypatch.setattr(
+        r.medias,
+        "get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 123,
+            "lang": "fr",
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4",
+            "display_name": "",
+            "object_key": "1/medias/123/bad.mp4",
+            "file_url": "",
+            "thumbnail_path": "",
+            "cover_object_key": None,
+            "duration_seconds": None,
+            "file_size": 123,
+            "sort_order": 0,
+            "created_at": None,
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "1/medias/123/bad.mp4",
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材（法语）-C-指派-蔡靖华.mp4",
+            "file_size": 123,
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert resp.status_code == 201
+    assert created
+    assert created[0][1]["lang"] == "fr"
 
 
 def test_item_complete_uses_detected_language_for_valid_localized_filename(

@@ -33,30 +33,54 @@
     return detected ? detected.code : lang;
   }
 
-  // 素材文件名命名规范校验
+  // 新增产品首屏/编辑页英语素材：只要求 YYYY.MM.DD-产品名-xxxxx.mp4。
+  function validateSimpleMaterialFilename(filename, productName) {
+    const fn = String(filename || '');
+    const errors = [];
+    if (!productName) {
+      errors.push('当前产品尚未加载，请重试');
+      return errors;
+    }
+    if (fn.length < 12 || fn[10] !== '-') {
+      errors.push('文件名必须是 "YYYY.MM.DD-产品名-xxxxx.mp4" 格式');
+      return errors;
+    }
+    const dateSegment = fn.slice(0, 10);
+    const match = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateSegment);
+    if (!match) {
+      errors.push(`日期段 "${dateSegment}" 必须是合法的 YYYY.MM.DD`);
+      return errors;
+    }
+    const year = +match[1], month = +match[2], day = +match[3];
+    const parsed = new Date(year, month - 1, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) {
+      errors.push(`日期 "${dateSegment}" 不是合法日期`);
+      return errors;
+    }
+    const restSegment = fn.slice(11);
+    const productPrefix = `${productName}-`;
+    if (!restSegment.startsWith(productPrefix)) {
+      errors.push(`日期之后必须紧跟 "${productName}-"`);
+      return errors;
+    }
+    const tailSegment = restSegment.slice(productPrefix.length);
+    if (!tailSegment || tailSegment.toLowerCase() === '.mp4') {
+      errors.push('产品名之后必须保留一段文件说明，例如 "混剪-李文龙"');
+      return errors;
+    }
+    if (!fn.toLowerCase().endsWith('.mp4')) {
+      errors.push('文件扩展名必须是 ".mp4"');
+    }
+    return errors;
+  }
+
+  // 编辑页小语种素材沿用严格命名规范。
   // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
   // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
   function validateMaterialFilename(filename, productName, langCode) {
+    if (langCode === 'en') return validateSimpleMaterialFilename(filename, productName);
+
     const fn = String(filename || '');
-
-    // 英语素材只校验 YYYY.MM.DD-{产品名}- 前缀，其余不限制
-    if (langCode === 'en') {
-      const errs = [];
-      if (!productName) {
-        errs.push('当前产品尚未加载，请重试');
-        return errs;
-      }
-      if (fn.length < 11 || fn[10] !== '-') {
-        errs.push('开头必须是 "YYYY.MM.DD-" 格式');
-        return errs;
-      }
-      const rest = fn.slice(11);
-      if (!rest.startsWith(productName + '-')) {
-        errs.push(`日期之后必须紧跟 "${productName}-"`);
-      }
-      return errs;
-    }
-
     const TAIL = '-指派-蔡靖华.mp4';
     const MID_PREFIX = '-原素材-补充素材(';
     const errs = [];
@@ -134,70 +158,69 @@
     return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
   }
 
-  // 从原文件名抽取 YYYY.MM.DD（合法才用，否则用今天），再按语种拼合规文件名
+  // 从原文件名抽取 YYYY.MM.DD（合法才用，否则用今天），再按当前入口规则生成建议文件名。
   function buildSuggestedFilename(filename, productName, langCode) {
     const fn = String(filename || '');
-    const lang = (LANGUAGES || []).find(l => l.code === langCode);
-    const langZh = (lang && lang.name_zh) || langCode;
-    const datePart = fn.slice(0, 10);
-    let date = todayYMD();
-    const m = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(datePart);
-    if (m) {
-      const y = +m[1], mo = +m[2], d = +m[3];
-      const obj = new Date(y, mo - 1, d);
-      if (obj.getFullYear() === y && obj.getMonth() === mo - 1 && obj.getDate() === d) {
-        date = datePart;
+    const sourceDate = fn.slice(0, 10);
+    const sourceMatch = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(sourceDate);
+    let suggestedDate = todayYMD();
+    if (sourceMatch) {
+      const sourceYear = +sourceMatch[1], sourceMonth = +sourceMatch[2], sourceDay = +sourceMatch[3];
+      const sourceParsed = new Date(sourceYear, sourceMonth - 1, sourceDay);
+      if (sourceParsed.getFullYear() === sourceYear && sourceParsed.getMonth() === sourceMonth - 1 && sourceParsed.getDate() === sourceDay) {
+        suggestedDate = sourceDate;
       }
     }
     const pn = productName || '{产品名}';
-    if (langCode === 'en') {
-      return `${date}-${pn}-原素材.mp4`;
-    }
-    return `${date}-${pn}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+    if (langCode === 'en') return `${suggestedDate}-${pn}-素材.mp4`;
+    const lang = (LANGUAGES || []).find(l => l.code === langCode);
+    const langZh = (lang && lang.name_zh) || langCode;
+    return `${suggestedDate}-${pn}-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
   }
 
   // 将原文件名拆成段，合规的正常显示、不合规的红底粗体
   function renderHighlightedFilename(filename, productName, langCode) {
     const fn = String(filename || '');
-    const lang = (LANGUAGES || []).find(l => l.code === langCode);
-    const langZh = (lang && lang.name_zh) || '';
-    const ERR_STYLE = 'color:#d64045;font-weight:700;background:#fde8ea;padding:0 2px;border-radius:3px;';
-    const OK_STYLE  = 'color:#1b5e20;';
-    const wrap = (text, ok) => {
+    const errorStyle = 'color:#d64045;font-weight:700;background:#fde8ea;padding:0 2px;border-radius:3px;';
+    const okStyle = 'color:#1b5e20;';
+    const paint = (text, ok) => {
       if (!text) return '';
-      const esc = escapeHtml(text);
-      return `<span style="${ok ? OK_STYLE : ERR_STYLE}">${esc}</span>`;
+      return `<span style="${ok ? okStyle : errorStyle}">${escapeHtml(text)}</span>`;
     };
-    const datePart = fn.slice(0, 10);
-    const sepPart = fn.slice(10, 11);
-    const rest = fn.slice(11);
-    const dm = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(datePart);
-    let dateOk = false;
-    if (dm) {
-      const y = +dm[1], mo = +dm[2], d = +dm[3];
-      const obj = new Date(y, mo - 1, d);
-      dateOk = obj.getFullYear() === y && obj.getMonth() === mo - 1 && obj.getDate() === d;
+    const dateSegment = fn.slice(0, 10);
+    const separatorSegment = fn.slice(10, 11);
+    const restSegment = fn.slice(11);
+    const dateMatchOnly = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateSegment);
+    let validDate = false;
+    if (dateMatchOnly) {
+      const ymdYear = +dateMatchOnly[1], ymdMonth = +dateMatchOnly[2], ymdDay = +dateMatchOnly[3];
+      const ymdParsed = new Date(ymdYear, ymdMonth - 1, ymdDay);
+      validDate = ymdParsed.getFullYear() === ymdYear
+        && ymdParsed.getMonth() === ymdMonth - 1
+        && ymdParsed.getDate() === ymdDay;
     }
-    const sepOk = sepPart === '-';
-    const prodOk = !!productName && rest.startsWith(productName);
-    const out = [];
-    out.push(wrap(datePart || '(缺)', dateOk));
-    out.push(wrap(sepPart || '(缺-)', sepOk));
-    if (prodOk) {
-      out.push(wrap(productName, true));
-      const after = rest.slice(productName.length);
-      if (langCode === 'en') {
-        // 英语：产品名之后任何内容都算 OK
-        if (after) out.push(wrap(after, true));
-      } else {
-        const expectedTail = `-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
-        const tailOk = after === expectedTail;
-        if (after) out.push(wrap(after, tailOk));
-      }
-    } else {
-      out.push(wrap(rest || '(缺产品名)', false));
+    const expectedPrefix = `${productName || ''}-`;
+    const prefixOk = !!productName && restSegment.startsWith(expectedPrefix);
+    const tail = prefixOk ? restSegment.slice(expectedPrefix.length) : '';
+    if (langCode !== 'en') {
+      const lang = (LANGUAGES || []).find(l => l.code === langCode);
+      const langZh = (lang && lang.name_zh) || '';
+      const strictTail = `-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+      return [
+        paint(dateSegment || '(缺日期)', validDate),
+        paint(separatorSegment || '(缺-)', separatorSegment === '-'),
+        prefixOk
+          ? paint(productName, true) + paint(tail || '(缺后缀)', tail === strictTail)
+          : paint(restSegment || '(缺产品名)', false),
+      ].join('');
     }
-    return out.join('');
+    return [
+      paint(dateSegment || '(缺日期)', validDate),
+      paint(separatorSegment || '(缺-)', separatorSegment === '-'),
+      prefixOk
+        ? paint(expectedPrefix, true) + paint(tail || '(缺说明)', !!tail && tail.toLowerCase() !== '.mp4' && fn.toLowerCase().endsWith('.mp4'))
+        : paint(restSegment || '(缺产品名)', false),
+    ].join('');
   }
 
   function showFilenameErrorModal(filename, errs, productName, langCode) {
