@@ -11,7 +11,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import task_state
+from appcore import task_state, medias
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed, recover_task_if_needed
@@ -111,8 +111,16 @@ def _query_viewable_project(
 
 def _multi_translate_list_scope() -> tuple[str, tuple]:
     if _is_admin_user():
-        return "type = 'multi_translate' AND deleted_at IS NULL", ()
-    return "user_id = %s AND type = 'multi_translate' AND deleted_at IS NULL", (current_user.id,)
+        return "p.type = 'multi_translate' AND p.deleted_at IS NULL", ()
+    return "p.user_id = %s AND p.type = 'multi_translate' AND p.deleted_at IS NULL", (current_user.id,)
+
+
+def _multi_translate_creator_name_expr() -> str:
+    try:
+        return medias._media_product_owner_name_expr()
+    except Exception:
+        log.warning("[multi_translate] resolve creator name expr failed; fallback to username", exc_info=True)
+        return "u.username"
 
 
 # ── 页面路由 ──────────────────────────────────────────
@@ -126,25 +134,31 @@ def index():
     if lang and lang not in SUPPORTED_LANGS:
         lang = ""
 
+    owner_name_expr = _multi_translate_creator_name_expr()
+
     if lang:
         scope_sql, scope_args = _multi_translate_list_scope()
         rows = db_query(
-            "SELECT id, original_filename, display_name, thumbnail_path, status, "
-            "       state_json, created_at, expires_at, deleted_at "
-            "FROM projects "
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            f"       {owner_name_expr} AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
             f"WHERE {scope_sql} "
-            "  AND JSON_EXTRACT(state_json, '$.target_lang') = %s "
-            "ORDER BY created_at DESC",
+            "  AND JSON_EXTRACT(p.state_json, '$.target_lang') = %s "
+            "ORDER BY p.created_at DESC",
             (*scope_args, lang),
         )
     else:
         scope_sql, scope_args = _multi_translate_list_scope()
         rows = db_query(
-            "SELECT id, original_filename, display_name, thumbnail_path, status, "
-            "       state_json, created_at, expires_at, deleted_at "
-            "FROM projects "
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            f"       {owner_name_expr} AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
             f"WHERE {scope_sql} "
-            "ORDER BY created_at DESC",
+            "ORDER BY p.created_at DESC",
             scope_args,
         )
 

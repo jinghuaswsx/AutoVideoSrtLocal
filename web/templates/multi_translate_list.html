@@ -48,6 +48,24 @@
 .project-card .filename { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; min-height: 2.8em; }
 .project-card .meta { font-size: 12px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
 .project-card .expire-row { margin-top: 6px; }
+.project-card .creator-row {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #9ca3af;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+}
+.project-card .creator-row strong {
+  color: var(--text-main);
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── List view ── */
 .list-view { display: none; flex-direction: column; gap: 8px; }
@@ -71,6 +89,12 @@
 .list-item .list-info { flex: 1; min-width: 0; }
 .list-item .list-filename { font-size: 14px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item .list-meta { font-size: 12px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 10px; }
+.list-item .list-creator {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .list-item .list-menu-btn {
   width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-main);
   background: transparent; color: #9ca3af; cursor: pointer; font-size: 14px;
@@ -205,6 +229,10 @@
           {% endif %}
         </div>
         {% endif %}
+        <div class="creator-row">
+          <span>创建人：</span>
+          <strong title="{{ p.creator_name or '—' }}">{{ p.creator_name or '—' }}</strong>
+        </div>
       </div>
     </a>
     <button class="card-menu-btn" onclick="toggleMenu(event,'menu-{{ p.id }}')">⋯</button>
@@ -231,6 +259,7 @@
         <div class="list-meta">
           <span class="badge badge-{{ p.status }}">{{ p.status }}</span>
           <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+          <span class="list-creator" title="创建人：{{ p.creator_name or '—' }}">创建人：{{ p.creator_name or '—' }}</span>
           {% if p.expires_at %}
           {% set hours_left = ((p.expires_at - now).total_seconds() / 3600)|round(0)|int %}
           {% if hours_left <= 0 %}

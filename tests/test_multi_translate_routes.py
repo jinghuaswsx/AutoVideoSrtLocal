@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +32,43 @@ def test_list_filters_by_lang(authed_client_no_db):
     assert "type = 'multi_translate'" in sql
     args = m_q.call_args.args[1]
     assert "de" in args
+
+
+def test_list_query_selects_creator_name(authed_client_no_db):
+    with patch("web.routes.multi_translate.db_query", return_value=[]) as m_q, \
+         patch("web.routes.multi_translate.medias._media_product_owner_name_expr", return_value="u.username"), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    sql = m_q.call_args.args[0]
+    assert "FROM projects p" in sql
+    assert "LEFT JOIN users u ON u.id = p.user_id" in sql
+    assert "u.username AS creator_name" in sql
+
+
+def test_list_page_renders_creator_name(authed_client_no_db):
+    project = {
+        "id": "task-1",
+        "original_filename": "demo.mp4",
+        "display_name": "示例项目",
+        "thumbnail_path": "",
+        "status": "done",
+        "state_json": "{}",
+        "created_at": datetime(2026, 4, 23, 22, 1),
+        "expires_at": None,
+        "deleted_at": None,
+        "creator_name": "张三",
+    }
+
+    with patch("web.routes.multi_translate.db_query", return_value=[project]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("appcore.task_recovery.recover_all_interrupted_tasks"):
+        resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    assert "创建人：张三".encode("utf-8") in resp.data
 
 
 def test_detail_404_for_other_user(authed_client_no_db):
