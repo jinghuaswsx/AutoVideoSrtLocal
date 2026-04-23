@@ -26,6 +26,9 @@
   #configPanel { display: none !important; }
   /* 源语言 zh/en 由 ASR 后自动判别，不给用户看无意义的选择器 */
   #sourceLangPanel { display: none !important; }
+  /* 仅调整多语种详情页的前端展示位置；实际流程仍按 STEP_ORDER: extract -> asr 执行 */
+  #pipelineCard .steps > #step-asr { order: -2; }
+  #pipelineCard .steps > #step-extract { order: -1; }
 </style>
 {% endblock %}
 {% block content %}

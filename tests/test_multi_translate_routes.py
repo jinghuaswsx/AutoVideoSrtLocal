@@ -163,6 +163,16 @@ def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
     assert "createSubtitlePreviewController" in scripts
 
 
+def test_multi_translate_detail_displays_asr_result_before_extracted_audio():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_detail.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "#pipelineCard .steps > #step-asr" in template
+    assert "#pipelineCard .steps > #step-extract" in template
+    assert 'const STEP_ORDER = ["extract", "asr"' in scripts
+
+
 def test_multi_translate_complete_rejects_new_pure_tos_creation(authed_client_no_db):
     resp = authed_client_no_db.post(
         "/api/multi-translate/complete",
