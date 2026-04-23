@@ -2,7 +2,7 @@
 {% block title %}明空选品 - AutoVideoSrt{% endblock %}
 {% block page_title %}明空选品{% endblock %}
 {% block extra_style %}
-.oc {
+:root {
   --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
   --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
   --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
@@ -15,6 +15,8 @@
   --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
   --mk-video-card-w: 248px; --mk-video-media-w: 216px; --mk-video-media-h: 384px;
+}
+.oc, #detailPanel {
   font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--oc-fg);
 }

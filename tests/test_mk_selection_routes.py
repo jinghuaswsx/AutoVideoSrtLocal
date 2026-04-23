@@ -20,6 +20,15 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "90天消耗" in template
 
 
+def test_mk_selection_modal_preview_tokens_available_globally():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert ":root {" in template
+    assert "--mk-video-card-w:" in template
+    assert "--mk-video-media-h:" in template
+    assert 'id="detailPanel"' in template
+
+
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
