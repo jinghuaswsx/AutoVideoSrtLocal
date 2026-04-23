@@ -270,7 +270,7 @@
 3. 推送到远程
 4. SSH 部署:
    ```bash
-   ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208 \
+   ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 \
      "cd /opt/autovideosrt && git pull && systemctl restart autovideosrt"
    ```
 5. 验证服务状态: `systemctl status autovideosrt`

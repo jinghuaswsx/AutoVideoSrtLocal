@@ -437,7 +437,7 @@ def invalidate_cache():
 ### 7.2 上线顺序
 
 1. Codex 在 `.worktrees/ai-usage-billing` 改完 → 本地跑全量 pytest
-2. 合回 master 前先到测试环境（/opt/autovideosrt-test，端口 9999）：
+2. 合回 master 前先到测试环境（/opt/autovideosrt-test，端口 8080）：
     a. 跑 migration
     b. 部署代码
     c. 手工跑几次视频翻译 / 文案生成 / 图片翻译，确认 `/admin/ai-usage` 有数据

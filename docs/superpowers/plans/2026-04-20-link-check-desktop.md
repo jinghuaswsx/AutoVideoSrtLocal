@@ -1065,7 +1065,7 @@ class LinkCheckApp:
     def _run(self, target_url: str) -> None:
         try:
             result = controller.run_link_check(
-                base_url="http://14.103.220.208:8888",
+                base_url="http://172.30.254.14",
                 api_key="autovideosrt-materials-openapi",
                 target_url=target_url,
                 status_cb=lambda message: self.root.after(0, self.status_var.set, message),

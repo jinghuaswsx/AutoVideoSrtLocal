@@ -28,7 +28,7 @@ ELEVENLABS_API_KEY=<ElevenLabs key>
 
 命令：
 ```bash
-ssh -i ~/.ssh/openclaw-noobird.pem root@14.103.220.208
+ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14
 nano /opt/autovideosrt/.env
 systemctl restart autovideosrt
 ```
@@ -635,7 +635,7 @@ E1/E2/E3 直接影响用户体验，优先做。B1 依赖 TOS 配置，B2/B3 可
 服务器上跑的两个任务卡在 ASR 是因为 `.env` 缺 API Key，需要手动填写后重启：
 
 ```bash
-ssh -i ~/.ssh/openclaw-noobird.pem root@14.103.220.208
+ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14
 nano /opt/autovideosrt/.env
 # 填入 VOLC_API_KEY, TOS_ACCESS_KEY, TOS_SECRET_KEY, OPENROUTER_API_KEY, ELEVENLABS_API_KEY
 systemctl restart autovideosrt

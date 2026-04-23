@@ -295,7 +295,7 @@
 
 - [ ] Run final regression commands:
   - `pytest tests/test_tos_clients.py tests/test_tos_upload_routes.py tests/test_pipeline_runner.py tests/test_web_routes.py -q`
-  - `ssh openclaw-noobird "cd /opt/autovideosrt && systemctl is-active autovideosrt"`
+  - `ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 "cd /opt/autovideosrt && systemctl is-active autovideosrt"`
 
 ## Resume Notes
 

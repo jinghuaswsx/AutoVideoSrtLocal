@@ -33,7 +33,9 @@ def test_bulk_translate_detail_script_renders_status_and_task_sections():
     assert "function splitTaskCards" in script
     assert "需要人工干预" in script
     assert "正常运行 / 等待执行 / 已完成" in script
-    assert "bt-task-card" in script
+    assert "mtt-item" in script
+    assert "mtt-item__lang" in script
+    assert "查看详情" in script
     assert "整个任务重新启动" in script
     assert "重跑失败项" in script
     assert "单个重新启动" in script
@@ -49,8 +51,9 @@ def test_bulk_translate_detail_css_adds_roomy_status_layout():
     assert ".bt-status-meter-bar" in css
     assert ".bt-stat-card" in css
     assert ".bt-intervention-zone" in css
-    assert ".bt-task-card" in css
-    assert ".bt-task-card__body" in css
+    assert ".mtt-item" in css
+    assert ".mtt-item__lang" in css
+    assert ".mtt-item__manual" in css
     assert "line-height: 1.55" in css
 
 
@@ -213,10 +216,11 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
     assert "需要人工干预" in plan_html
     assert "正常运行 / 等待执行 / 已完成" in plan_html
     assert plan_html.index("需要人工干预") < plan_html.index("正常运行 / 等待执行 / 已完成")
-    assert plan_html.count("bt-task-card") >= 4
+    assert plan_html.count("mtt-item") >= 4
     assert "图片翻译失败" in plan_html
     assert "等待人工选声音" in plan_html
-    assert "重跑" in plan_html
+    assert "单个重新启动" in plan_html
+    assert "去选声音" in plan_html
     assert "2/4" in rendered["statsHtml"]
     assert "50%" in rendered["statusHtml"]
     assert "剩余 2 个" in rendered["statusHtml"]

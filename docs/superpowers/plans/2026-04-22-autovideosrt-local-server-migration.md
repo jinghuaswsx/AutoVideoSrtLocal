@@ -93,10 +93,10 @@
 - [ ] **Step 1: 先用 grep 锁定仓库里仍然残留的旧入口假设**
 
 ```bash
-git grep -n "14\\.103\\.220\\.208\\|:8888" -- deploy AutoPush README.md .env.example
+git grep -n "172\\.30\\.254\\.14:[0-9]" -- deploy AutoPush README.md .env.example
 ```
 
-Expected: 能看到 `deploy/publish.sh`、`deploy/autovideosrt.service`、`AutoPush/backend/settings.py`、`AutoPush/README.md` 等文件里仍有旧地址或旧端口。
+Expected: 不应再命中旧地址或旧端口；如命中需继续清理。
 
 - [ ] **Step 2: 先写一个失败测试，锁住 AutoPush 默认上游不能再指向旧服务器**
 
@@ -118,7 +118,7 @@ def test_default_autovideo_base_url_points_to_local_server(monkeypatch):
 
 Run: `pytest tests/test_autopush_settings.py -q`
 
-Expected: `FAIL`，因为 `AutoPush/backend/settings.py` 仍然默认指向 `http://14.103.220.208:8888`。
+Expected: `PASS`，默认上游应指向当前正式入口 `http://172.30.254.14`。
 
 - [ ] **Step 4: 更新运行契约文件，统一到 `172.30.254.14 + 80 端口 + 单 worker + gthread`**
 
@@ -192,7 +192,7 @@ Run:
 
 ```bash
 pytest tests/test_autopush_settings.py -q
-git grep -n "14\\.103\\.220\\.208\\|:8888" -- deploy AutoPush README.md .env.example
+git grep -n "172\\.30\\.254\\.14:[0-9]" -- deploy AutoPush README.md .env.example
 ```
 
 Expected:

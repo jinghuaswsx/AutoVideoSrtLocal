@@ -219,6 +219,59 @@ def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, 
     assert len(rows) - 1 == 2
 
 
+def test_admin_ai_usage_includes_material_evaluation_rows(authed_client_no_db, monkeypatch):
+    route_mod = _install_template_stub(monkeypatch)
+
+    def fake_query(sql, args=()):
+        if "COUNT(*) AS total_calls" in sql:
+            return [{
+                "total_cost_cny": 0.88,
+                "total_calls": 1,
+                "billed_calls": 1,
+                "unbilled_calls": 0,
+            }]
+        if "GROUP BY" in sql and "group_value" in sql:
+            return [{
+                "group_value": "material",
+                "calls": 1,
+                "request_units": 7242,
+                "cost_cny": 0.88,
+            }]
+        if "ORDER BY ul.called_at DESC" in sql:
+            return [{
+                "id": 501,
+                "called_at": "2026-04-23 22:34:58",
+                "user_id": 1,
+                "username": "admin",
+                "project_id": "media-product-335",
+                "service": "openrouter",
+                "use_case_code": "material_evaluation.evaluate",
+                "module": "material",
+                "provider": "openrouter",
+                "model_name": "google/gemini-3.1-pro-preview",
+                "success": 1,
+                "input_tokens": 3702,
+                "output_tokens": 3792,
+                "audio_duration_seconds": None,
+                "request_units": 7494,
+                "units_type": "tokens",
+                "cost_cny": 0.88,
+                "cost_source": "response",
+                "extra_data": {"use_case": "material_evaluation.evaluate"},
+            }]
+        return []
+
+    monkeypatch.setattr(route_mod, "query", fake_query)
+
+    resp = authed_client_no_db.get("/admin/ai-usage?module=material&use_case=material_evaluation.evaluate")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["rows"][0]["use_case_code"] == "material_evaluation.evaluate"
+    assert payload["rows"][0]["module"] == "material"
+    assert payload["rows"][0]["provider"] == "openrouter"
+    assert payload["rows"][0]["model_name"] == "google/gemini-3.1-pro-preview"
+
+
 def _install_pricing_store(monkeypatch):
     from web.routes import settings as route_mod
 

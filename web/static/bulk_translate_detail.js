@@ -322,7 +322,7 @@
             </div>
             <strong>${split.intervention.length}</strong>
           </div>
-          <div class="bt-task-zone__cards">
+          <div class="bt-task-zone__cards mtt-items">
             ${split.intervention.length
               ? split.intervention.map(item => renderTaskCard(item, { intervention: true })).join('')
               : renderNoInterventionState()}
@@ -338,7 +338,7 @@
             </div>
             <strong>${split.normal.length}</strong>
           </div>
-          <div class="bt-task-zone__cards">
+          <div class="bt-task-zone__cards mtt-items">
             ${split.normal.map(item => renderTaskCard(item, { intervention: false })).join('')}
           </div>
         </section>
@@ -395,54 +395,43 @@
     const ref = refHintText(item);
     const childTaskId = item.child_task_id || item.sub_task_id;
     const childTaskType = item.child_task_type ? ` · ${childTypeLabel(item.child_task_type)}` : '';
-    const child = childTaskId
-      ? `子任务 ${String(childTaskId).slice(0, 8)}${childTaskType}`
-      : '尚未创建子任务';
     const childUrl = childDetailUrl(item.child_task_type, childTaskId);
     const openChild = childUrl
-      ? `<a class="bt-btn bt-btn--ghost bt-task-card__button" href="${esc(childUrl)}" target="_blank" rel="noopener noreferrer">${status === 'awaiting_voice' ? '去选声音' : '打开子任务'}</a>`
-      : '';
-    const statusHelp = taskStatusHelp(item);
-    const intervention = opts.intervention
-      ? `<div class="bt-task-card__notice">${esc(interventionReason(item))}</div>`
+      ? `<a class="bt-btn bt-btn--ghost bt-task-card__button" href="${esc(childUrl)}" target="_blank" rel="noopener noreferrer">${status === 'awaiting_voice' ? '去选声音' : '查看详情'}</a>`
       : '';
     const error = item.error
-      ? `<div class="bt-task-card__error">失败原因: ${esc(item.error)}</div>`
+      ? `<div class="mtt-item__error">失败原因：${esc(item.error)}</div>`
       : '';
     const actions = [openChild, retry].filter(Boolean).join('');
+    const child = childTaskId
+      ? `<span>子任务 <code>${esc(String(childTaskId).slice(0, 8))}</code>${esc(childTaskType)}</span>`
+      : '';
+    const intervention = opts.intervention
+      ? `<span class="mtt-item__manual${status === 'failed' || status === 'interrupted' ? ' mtt-item__manual--danger' : ''}">${esc(interventionReason(item))}</span>`
+      : '';
 
     return `
-      <article class="bt-task-card bt-task-card--${statusTone(status)}">
-        <div class="bt-task-card__head">
-          <div>
-            <span class="bt-task-card__eyebrow">任务 #${esc(item.idx == null ? '-' : item.idx)}</span>
-            <h4>${esc(taskCardTitle(item))}</h4>
+      <article class="mtt-item${opts.intervention ? ' mtt-item--intervention' : ''}">
+        <div class="mtt-item__main">
+          <div class="mtt-item__title-row">
+            <span class="bt-plan-item__status ${taskBadgeClass(status)}">${esc(statusLabel(status))}</span>
+            <strong>${esc(kindLabel(item.kind))}</strong>
+            <span class="mtt-item__lang">${esc(languageLabel(item.lang))}</span>
           </div>
-          <span class="bt-status-pill bt-status-pill--${statusTone(status)}">${esc(statusLabel(status))}</span>
-        </div>
-
-        <div class="bt-task-card__body">
-          <div class="bt-task-card__state">
-            <span>当前状态</span>
-            <strong>${esc(statusHelp)}</strong>
-          </div>
-          <div class="bt-task-card__meta">
+          <div class="mtt-item__meta">
+            <span>任务 #${esc(item.idx == null ? '-' : item.idx)}</span>
             <span>${esc(ref || '无素材引用')}</span>
-            <span>${esc(child)}</span>
+            ${child}
+            ${intervention}
           </div>
-          ${intervention}
           ${error}
         </div>
 
-        <div class="bt-task-card__actions">
+        <div class="mtt-item__actions">
           ${actions || '<span class="bt-task-card__no-action">暂无可操作按钮</span>'}
         </div>
       </article>
     `;
-  }
-
-  function taskCardTitle(item) {
-    return `${languageLabel(item.lang)} · ${kindLabel(item.kind)}`;
   }
 
   function refHintText(item) {
@@ -459,6 +448,15 @@
   function needsHumanIntervention(item) {
     const status = normalizeStatus(item.status);
     return ['failed', 'error', 'interrupted', 'awaiting_voice', 'waiting_manual'].includes(status);
+  }
+
+  function taskBadgeClass(status) {
+    if (status === 'done') return 'bt-plan-item__status--done';
+    if (status === 'failed' || status === 'error') return 'bt-plan-item__status--error';
+    if (status === 'awaiting_voice' || status === 'waiting_manual') return 'bt-plan-item__status--running';
+    if (status === 'interrupted') return 'bt-plan-item__status--paused';
+    if (status === 'running' || status === 'dispatching' || status === 'syncing_result') return 'bt-plan-item__status--running';
+    return 'bt-plan-item__status--pending';
   }
 
   function taskStatusHelp(item) {

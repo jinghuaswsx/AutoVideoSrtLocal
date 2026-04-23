@@ -25,7 +25,7 @@ http://127.0.0.1:5000
 如果你跑的是现有部署方式，也可以使用文档里已有的 gunicorn 命令：
 
 ```bash
-gunicorn -w 1 -k eventlet --bind 0.0.0.0:8888 --timeout 300 main:app
+gunicorn -w 1 -k eventlet --bind 0.0.0.0:80 --timeout 300 main:app
 ```
 
 ## 2. `.env` 必填项
@@ -187,7 +187,7 @@ python main.py
 如果你用的是：
 
 ```bash
-gunicorn -w 1 -k eventlet --bind 0.0.0.0:8888 --timeout 300 main:app
+gunicorn -w 1 -k eventlet --bind 0.0.0.0:80 --timeout 300 main:app
 ```
 
 优先看 gunicorn 进程的标准输出和标准错误；如果外面还包了 systemd、supervisor 或容器，再去对应进程日志里查。

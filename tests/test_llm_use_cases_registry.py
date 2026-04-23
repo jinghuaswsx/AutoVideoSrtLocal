@@ -56,7 +56,9 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 21
+    assert len(USE_CASES) >= 23
+    assert "ja_translate.localize" in USE_CASES
+    assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
 
@@ -69,6 +71,10 @@ def test_material_evaluation_defaults_to_openrouter_gemini_pro():
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"
+
+
+def test_ja_translate_module_label_exists():
+    assert MODULE_LABELS["ja_translate"] == "日语翻译"
 
 
 def test_same_image_use_case_defaults():

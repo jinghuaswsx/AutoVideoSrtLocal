@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 SSH 到服务器手动加列：
 ```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208 \
+ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 \
   "mysql auto_video -e \"ALTER TABLE projects ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) AFTER original_filename;\""
 ```
 
@@ -690,13 +690,13 @@ git push origin master
 - [ ] **Step 2: SSH 部署**
 
 ```bash
-ssh -i "C:\Users\admin\.ssh\openclaw-noobird.pem" root@14.103.220.208 \
+ssh -i "C:\Users\admin\.ssh\CC.pem" root@172.30.254.14 \
   "cd /opt/autovideosrt && git pull && mysql auto_video -e \"ALTER TABLE projects ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) AFTER original_filename;\" && systemctl restart autovideosrt && sleep 2 && systemctl status autovideosrt --no-pager"
 ```
 
 - [ ] **Step 3: 验证**
 
-浏览器访问 `http://14.103.220.208:8888`：
+浏览器访问 `http://172.30.254.14`：
 1. 项目列表卡片显示 display_name（前10字）
 2. 卡片右上角 ⋯ 按钮 → 重命名弹窗 → 改名后刷新确认
 3. ⋯ → 删除 → 确认后卡片消失

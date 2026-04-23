@@ -4,7 +4,7 @@
 
 **Goal:** Add multi-user authentication, MySQL-backed project persistence, per-user API key configuration, admin user management, and project list/detail pages to the existing AutoVideoSrt web app.
 
-**Architecture:** Add `appcore/db.py` (MySQL pool), `appcore/users.py`, `appcore/api_keys.py`; upgrade `appcore/task_state.py` to persist to DB; add Flask-Login auth; add new blueprints for auth/settings/admin; replace single-page `index.html` with multi-page Jinja2 templates. Deploy to server port 8888.
+**Architecture:** Add `appcore/db.py` (MySQL pool), `appcore/users.py`, `appcore/api_keys.py`; upgrade `appcore/task_state.py` to persist to DB; add Flask-Login auth; add new blueprints for auth/settings/admin; replace single-page `index.html` with multi-page Jinja2 templates. Deploy to server port 80.
 
 **Tech Stack:** Flask-Login, bcrypt, pymysql, DBUtils, existing Flask+SocketIO stack.
 
@@ -36,7 +36,7 @@
 - `web/app.py` — register new blueprints, init Flask-Login
 - `web/services/pipeline_runner.py` — accept `user_id` param, pass through to `task_state.create()`
 - `web/routes/task.py` — pass `current_user.id` to `pipeline_runner.start()`
-- `main.py` — keep as-is (port stays 5000 locally; server uses 8888 via gunicorn)
+- `main.py` — keep as-is (port stays 5000 locally; server uses 80 via gunicorn)
 - `requirements.txt` — add Flask-Login, bcrypt, pymysql, DBUtils
 
 ---
@@ -54,11 +54,11 @@
 Add to end of `config.py`:
 ```python
 # MySQL
-DB_HOST = _env("DB_HOST", "14.103.220.208")
+DB_HOST = _env("DB_HOST", "172.30.254.14")
 DB_PORT = int(_env("DB_PORT", "3306"))
 DB_NAME = _env("DB_NAME", "auto_video")
 DB_USER = _env("DB_USER", "root")
-DB_PASSWORD = _env("DB_PASSWORD", "wylf1109")
+DB_PASSWORD = _env("DB_PASSWORD", "<server-managed-password>")
 ```
 
 - [ ] **Step 2: Write schema.sql**
@@ -1517,7 +1517,7 @@ git commit -m "feat: wire user_id through pipeline, add thumbnail generation"
 
 ---
 
-## Task 10: Deploy to server port 8888
+## Task 10: Deploy to server port 80
 
 **Files:**
 - Create: `deploy/setup.sh`
@@ -1536,7 +1536,7 @@ After=network.target
 User=root
 WorkingDirectory=/opt/autovideosrt
 Environment="PATH=/opt/autovideosrt/venv/bin"
-ExecStart=/opt/autovideosrt/venv/bin/gunicorn -w 1 -k eventlet --bind 0.0.0.0:8888 --timeout 300 main:app
+ExecStart=/opt/autovideosrt/venv/bin/gunicorn -w 1 -k eventlet --bind 0.0.0.0:80 --timeout 300 main:app
 Restart=always
 RestartSec=5
 
@@ -1569,14 +1569,14 @@ python db/create_admin.py
 # Restart service
 systemctl restart autovideosrt
 systemctl status autovideosrt --no-pager
-echo "Deploy complete. Running on port 8888."
+echo "Deploy complete. Running on port 80."
 ```
 
 - [ ] **Step 3: First-time server setup**
 
 SSH to server and run:
 ```bash
-ssh -i C:\Users\admin\.ssh\openclaw-noobird.pem root@14.103.220.208
+ssh -i C:\Users\admin\.ssh\CC.pem root@172.30.254.14
 
 # On server:
 mkdir -p /opt/autovideosrt
@@ -1593,7 +1593,7 @@ DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_NAME=auto_video
 DB_USER=root
-DB_PASSWORD=wylf1109
+DB_PASSWORD=<server-managed-password>
 OUTPUT_DIR=/opt/autovideosrt/output
 UPLOAD_DIR=/opt/autovideosrt/uploads
 # System fallback API keys:
@@ -1619,14 +1619,14 @@ systemctl start autovideosrt
 ```bash
 # From server:
 systemctl status autovideosrt
-curl http://localhost:8888/login
+curl http://localhost/login
 ```
 
 Expected: HTML response with login page.
 
 - [ ] **Step 5: Test from browser**
 
-Open `http://14.103.220.208:8888` in browser.
+Open `http://172.30.254.14` in browser.
 Login as `admin` / `admin123`.
 Verify project list page loads.
 
@@ -1634,7 +1634,7 @@ Verify project list page loads.
 
 ```bash
 git add deploy/
-git commit -m "chore: add deploy scripts and systemd service for port 8888"
+git commit -m "chore: add deploy scripts and systemd service for port 80"
 git push
 ```
 
@@ -1651,7 +1651,7 @@ git push
 - ✅ Project list with thumbnails (Tasks 6, 9)
 - ✅ Project detail read-only view (Task 6)
 - ✅ user_id wired through pipeline (Task 9)
-- ✅ Deploy to port 8888 (Task 10)
+- ✅ Deploy to port 80 (Task 10)
 - ⏭ TOS upload/download → Plan B
 - ⏭ 24h expiry cleanup → Plan B
 - ⏭ Usage logging → Plan B

@@ -29,7 +29,7 @@ X-API-Key: <your-api-key>
 
 ```bash
 curl -H "X-API-Key: autovideosrt-materials-openapi" \
-  "http://your-host:8888/openapi/materials/sonic-lens-refresher"
+  "http://your-host/openapi/materials/sonic-lens-refresher"
 ```
 
 ## 成功响应（HTTP 200）
