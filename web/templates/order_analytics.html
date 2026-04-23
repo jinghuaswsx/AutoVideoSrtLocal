@@ -1,0 +1,281 @@
+{% extends "layout.html" %}
+{% block title %}订单分析 — AutoVideoSrt{% endblock %}
+{% block page_title %}订单分析{% endblock %}
+{% block extra_style %}
+.oa-upload-zone {
+  border: 2px dashed var(--border-main); border-radius: 16px;
+  padding: 60px 40px; text-align: center; cursor: pointer;
+  background: var(--bg-card); transition: border-color .2s, background .2s;
+  margin-bottom: 32px;
+}
+.oa-upload-zone:hover, .oa-upload-zone.dragover {
+  border-color: var(--primary-color); background: rgba(59,130,246,0.04);
+}
+.oa-upload-icon { font-size: 48px; margin-bottom: 12px; }
+.oa-upload-text { font-size: 15px; color: #6b7280; }
+.oa-upload-hint { font-size: 13px; color: #9ca3af; margin-top: 8px; }
+.oa-upload-zone input[type="file"] { display: none; }
+
+/* 统计卡片 */
+.oa-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.oa-stat-card {
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
+  padding: 16px 24px; min-width: 160px;
+}
+.oa-stat-label { font-size: 12px; color: #9ca3af; font-weight: 500; }
+.oa-stat-value { font-size: 24px; font-weight: 700; color: var(--text-main); margin-top: 4px; }
+
+/* 表格区域 */
+.oa-table-wrap {
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 12px;
+  overflow: hidden;
+}
+.oa-table-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-main);
+}
+.oa-table-title { font-size: 15px; font-weight: 600; color: var(--text-main); }
+.oa-table-scroll { overflow-x: auto; }
+.oa-table {
+  width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap;
+}
+.oa-table th, .oa-table td {
+  padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border-main);
+}
+.oa-table th {
+  background: var(--bg-body); font-weight: 600; color: var(--text-main);
+  position: sticky; top: 0; z-index: 1;
+}
+.oa-table th.oa-col-product { min-width: 280px; }
+.oa-table th.oa-col-total { min-width: 80px; text-align: right; }
+.oa-table th.oa-col-country { min-width: 70px; text-align: right; }
+.oa-table td.oa-col-product {
+  font-weight: 500; max-width: 400px; white-space: normal; word-break: break-word;
+}
+.oa-table td.oa-col-total { text-align: right; font-weight: 600; color: var(--primary-color); }
+.oa-table td.oa-col-country { text-align: right; color: #6b7280; }
+.oa-table tr:last-child td { border-bottom: none; }
+.oa-table tr:hover td { background: rgba(59,130,246,0.03); }
+.oa-table .oa-row-total td {
+  font-weight: 700; background: var(--bg-body); border-top: 2px solid var(--border-main);
+}
+
+/* 空状态 */
+.oa-empty { text-align: center; padding: 80px 20px; color: #9ca3af; }
+.oa-empty-icon { font-size: 48px; margin-bottom: 16px; }
+
+/* 加载态 */
+.oa-loading { text-align: center; padding: 60px 20px; color: #6b7280; }
+.oa-spinner {
+  width: 36px; height: 36px; border: 3px solid var(--border-main);
+  border-top-color: var(--primary-color); border-radius: 50%;
+  animation: oa-spin .8s linear infinite; margin: 0 auto 16px;
+}
+@keyframes oa-spin { to { transform: rotate(360deg); } }
+
+.oa-error {
+  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 10px; padding: 16px 20px; color: #dc2626; font-size: 14px;
+  margin-bottom: 20px; display: none;
+}
+{% endblock %}
+
+{% block content %}
+<div class="oa-error" id="errorBox"></div>
+
+<div class="oa-upload-zone" id="uploadZone">
+  <div class="oa-upload-icon">📊</div>
+  <div class="oa-upload-text">拖拽或点击上传订单文件</div>
+  <div class="oa-upload-hint">支持 CSV / Excel (.xlsx)，Shopify 导出格式</div>
+  <input type="file" id="fileInput" accept=".csv,.xls,.xlsx">
+</div>
+
+<div id="loadingBox" style="display:none;">
+  <div class="oa-loading">
+    <div class="oa-spinner"></div>
+    <div>正在解析文件…</div>
+  </div>
+</div>
+
+<div id="resultBox" style="display:none;">
+  <div class="oa-stats">
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">商品种类</div>
+      <div class="oa-stat-value" id="statProducts">0</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">总单量</div>
+      <div class="oa-stat-value" id="statTotal">0</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">国家/地区</div>
+      <div class="oa-stat-value" id="statCountries">0</div>
+    </div>
+    <div class="oa-stat-card">
+      <div class="oa-stat-label">数据行数</div>
+      <div class="oa-stat-value" id="statRows">0</div>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">商品 × 国家订单分布</div>
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">导出 CSV</button>
+    </div>
+    <div class="oa-table-scroll" id="tableScroll">
+      <table class="oa-table" id="resultTable">
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var zone = document.getElementById('uploadZone');
+  var input = document.getElementById('fileInput');
+  var errorBox = document.getElementById('errorBox');
+  var loadingBox = document.getElementById('loadingBox');
+  var resultBox = document.getElementById('resultBox');
+  var lastData = null;
+
+  zone.addEventListener('click', function() { input.click(); });
+  input.addEventListener('change', function() { if (input.files[0]) doUpload(input.files[0]); });
+
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault(); zone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]);
+  });
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+    loadingBox.style.display = 'none';
+    resultBox.style.display = 'none';
+  }
+
+  function doUpload(file) {
+    errorBox.style.display = 'none';
+    loadingBox.style.display = 'block';
+    resultBox.style.display = 'none';
+    zone.style.display = 'none';
+
+    var fd = new FormData();
+    fd.append('file', file);
+
+    fetch('/order-analytics/upload', { method: 'POST', body: fd })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        loadingBox.style.display = 'none';
+        if (data.error) {
+          showError(data.error);
+          zone.style.display = '';
+          return;
+        }
+        lastData = data;
+        renderResult(data);
+      })
+      .catch(function(err) {
+        showError('上传失败：' + err.message);
+        zone.style.display = '';
+      });
+  }
+
+  function renderResult(data) {
+    document.getElementById('statProducts').textContent = data.products.length;
+    document.getElementById('statTotal').textContent = data.total_orders.toLocaleString();
+    document.getElementById('statCountries').textContent = data.countries.length;
+    document.getElementById('statRows').textContent = data.total_rows.toLocaleString();
+
+    // 表头
+    var headRow = document.getElementById('tableHead');
+    headRow.innerHTML = '';
+    var th0 = document.createElement('th');
+    th0.className = 'oa-col-product';
+    th0.textContent = '商品名';
+    headRow.appendChild(th0);
+    var th1 = document.createElement('th');
+    th1.className = 'oa-col-total';
+    th1.textContent = '总单量';
+    headRow.appendChild(th1);
+    data.countries.forEach(function(c) {
+      var th = document.createElement('th');
+      th.className = 'oa-col-country';
+      th.textContent = c;
+      headRow.appendChild(th);
+    });
+
+    // 表体
+    var tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    var totals = new Array(data.countries.length).fill(0);
+
+    data.products.forEach(function(p) {
+      var tr = document.createElement('tr');
+      var td0 = document.createElement('td');
+      td0.className = 'oa-col-product';
+      td0.textContent = p.name;
+      tr.appendChild(td0);
+
+      var td1 = document.createElement('td');
+      td1.className = 'oa-col-total';
+      td1.textContent = p.total.toLocaleString();
+      tr.appendChild(td1);
+
+      data.countries.forEach(function(c, i) {
+        var v = (data.matrix[p.name] || {})[c] || 0;
+        totals[i] += v;
+        var td = document.createElement('td');
+        td.className = 'oa-col-country';
+        td.textContent = v || '';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    // 合计行
+    var totalRow = document.createElement('tr');
+    totalRow.className = 'oa-row-total';
+    var tc0 = document.createElement('td');
+    tc0.className = 'oa-col-product';
+    tc0.textContent = '合计';
+    totalRow.appendChild(tc0);
+    var tc1 = document.createElement('td');
+    tc1.className = 'oa-col-total';
+    tc1.textContent = data.total_orders.toLocaleString();
+    totalRow.appendChild(tc1);
+    totals.forEach(function(v) {
+      var td = document.createElement('td');
+      td.className = 'oa-col-country';
+      td.textContent = v.toLocaleString();
+      totalRow.appendChild(td);
+    });
+    tbody.appendChild(totalRow);
+
+    resultBox.style.display = '';
+  }
+
+  window.exportCSV = function() {
+    if (!lastData) return;
+    var lines = [];
+    lines.push(['商品名', '总单量'].concat(lastData.countries).join(','));
+    lastData.products.forEach(function(p) {
+      var vals = [p.name, p.total];
+      lastData.countries.forEach(function(c) {
+        vals.push((lastData.matrix[p.name] || {})[c] || 0);
+      });
+      lines.push(vals.join(','));
+    });
+    var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '订单分析_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+  };
+})();
+{% endblock %}

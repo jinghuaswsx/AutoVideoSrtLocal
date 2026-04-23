@@ -69,6 +69,7 @@ from web.routes.pushes import bp as pushes_bp
 from web.routes.image_translate import bp as image_translate_bp
 from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
+from web.routes.order_analytics import bp as order_analytics_bp
 
 log = logging.getLogger(__name__)
 
@@ -240,6 +241,7 @@ def create_app() -> Flask:
     csrf.exempt(image_translate_bp)
     app.register_blueprint(link_check_bp)
     csrf.exempt(link_check_bp)
+    app.register_blueprint(order_analytics_bp)
     # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
     # 三类任务并发拉起时把 CPU 打满到 100%，导致机器反复宕机。保留
     # recover_all_interrupted_tasks() 仅将 running 状态回落为 error（不会启动任务），
