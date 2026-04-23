@@ -268,7 +268,7 @@ async function openDetail(mkId, mkName) {
         <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span>无封面</span>`}</div>
         <div class="mk-video-card-body">
           <div class="mk-video-card-title">${v.name}</div>
-          ${videoUrl ? `<video class="mk-video-player" controls preload="metadata" playsinline src="${videoUrl}"></video>` : ''}
+          ${videoUrl ? `<video class="mk-video-player" controls preload="none" playsinline src="${videoUrl}"></video>` : ''}
           <div class="mk-video-card-meta">
             <span>${v.author || '--'}</span>
             <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
