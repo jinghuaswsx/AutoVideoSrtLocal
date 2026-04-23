@@ -1,0 +1,271 @@
+{% extends "layout.html" %}
+{% block title %}明空选品 - AutoVideoSrt{% endblock %}
+{% block page_title %}明空选品{% endblock %}
+{% block extra_style %}
+.oc {
+  --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+  --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+  --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+  --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+  --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+  --oc-accent-subtle: oklch(94% 0.04 225); --oc-danger: oklch(58% 0.18 25);
+  --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+  --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+  --oc-cyan: oklch(62% 0.13 215);
+  --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
+  --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
+  font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--oc-fg);
+}
+.oc * { box-sizing: border-box; }
+.oc-header { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-header .title { font-size:22px; font-weight:600; margin:0; }
+.oc-header .subtitle { font-size:13px; color:var(--oc-fg-muted); }
+.oc-header .count { display:inline-flex; padding:2px 10px; border-radius:9999px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; }
+.oc-search { display:flex; gap:var(--oc-sp-2); }
+.oc-input { height:32px; padding:0 10px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:13px; outline:none; }
+.oc-input:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-subtle); }
+.oc-btn { height:32px; padding:0 14px; border:none; border-radius:var(--oc-r); font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms; }
+.oc-btn--primary { background:var(--oc-accent); color:#fff; }
+.oc-btn--primary:hover { background:var(--oc-accent-hover); }
+.oc-btn--ghost { background:var(--oc-bg); border:1px solid var(--oc-border-strong); color:var(--oc-fg); }
+.oc-btn--ghost:hover { background:var(--oc-bg-muted); }
+.oc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.oc-table th { text-align:left; padding:10px 12px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:12px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
+.oc-table td { padding:10px 12px; border-bottom:1px solid var(--oc-border); vertical-align:middle; }
+.oc-table tr:hover td { background:var(--oc-bg-subtle); }
+.oc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
+.oc-badge--high { background:oklch(95% 0.06 25); color:oklch(45% 0.15 25); }
+.oc-badge--med  { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
+.oc-badge--low  { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }
+.oc-badge--linked { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.oc-link { color:var(--oc-accent); text-decoration:none; }
+.oc-link:hover { text-decoration:underline; }
+.oc-pager { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-3); padding:var(--oc-sp-4) 0; font-size:13px; color:var(--oc-fg-muted); }
+.oc-pager button { height:28px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); cursor:pointer; font-size:12px; }
+.oc-pager button:disabled { opacity:0.4; cursor:default; }
+.oc-pager button:not(:disabled):hover { background:var(--oc-bg-muted); }
+.oc-empty { text-align:center; padding:60px 20px; color:var(--oc-fg-muted); }
+.text-mono { font-family:"JetBrains Mono",monospace; font-size:12px; }
+.text-right { text-align:right; }
+.text-muted { color:var(--oc-fg-muted); }
+.text-sm { font-size:12px; }
+.mb-0 { margin-bottom:0; }
+.truncate { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+{% endblock %}
+
+{% block content %}
+<div class="oc">
+  <div class="oc-header">
+    <div>
+      <h1 class="title">明空选品</h1>
+      <div class="subtitle">
+        店小秘近7天销量 Top300 &times; 明空素材消耗数据
+        <span class="count" id="totalCount">--</span>
+      </div>
+    </div>
+    <div class="oc-search">
+      <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
+      <button class="oc-btn oc-btn--primary" onclick="loadData(1)">搜索</button>
+      <button class="oc-btn oc-btn--ghost" onclick="document.getElementById('searchInput').value='';loadData(1)">重置</button>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff;">
+    <table class="oc-table" id="mainTable">
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th>产品名称</th>
+          <th style="width:100px">店铺</th>
+          <th style="width:90px" class="text-right">付款销量</th>
+          <th style="width:100px" class="text-right">销售额</th>
+          <th style="width:100px" class="text-right">明空消耗</th>
+          <th style="width:70px" class="text-right">视频数</th>
+          <th style="width:70px" class="text-right">广告数</th>
+          <th style="width:120px">素材库</th>
+          <th style="width:100px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr><td colspan="10" class="oc-empty">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="oc-pager" id="pager"></div>
+</div>
+
+<!-- 素材详情侧边面板 -->
+<div id="detailPanel" style="display:none; position:fixed; top:0; right:0; width:520px; height:100vh; background:#fff; border-left:2px solid var(--oc-border); box-shadow:-4px 0 24px rgba(0,0,0,0.1); z-index:1000; overflow-y:auto; padding:20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <h3 style="margin:0; font-size:16px;" id="detailTitle">素材详情</h3>
+    <button onclick="closeDetail()" style="border:none; background:none; font-size:20px; cursor:pointer; color:#666;">&times;</button>
+  </div>
+  <div id="detailContent">加载中...</div>
+</div>
+<div id="detailOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:999;" onclick="closeDetail()"></div>
+
+<script>
+const MK_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ6aGlmYSIsImV4cCI6MTc3OTUxOTA5MSwiaWF0IjoxNzc2OTI3MDkxLCJqdGkiOiIzNSJ9.Rq_jgNz-f3WHg586FGQIs4DmFhnMHoIDCggJhBWDacM";
+const MK_BASE = "https://os.wedev.vip/api/marketing/medias";
+let currentPage = 1;
+const PAGE_SIZE = 50;
+
+function fmtMoney(v) {
+  if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
+  if (v >= 1000) return '$' + (v/1000).toFixed(1) + '千';
+  return '$' + v.toFixed(0);
+}
+
+function heatLevel(spends) {
+  if (spends >= 50000) return {label:'高', cls:'high'};
+  if (spends >= 10000) return {label:'中', cls:'med'};
+  return {label:'低', cls:'low'};
+}
+
+async function loadData(page) {
+  currentPage = page;
+  const kw = document.getElementById('searchInput').value.trim();
+  const url = `/medias/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}&keyword=${encodeURIComponent(kw)}`;
+
+  const resp = await fetch(url);
+  const data = await resp.json();
+
+  document.getElementById('totalCount').textContent = data.total + ' 条';
+
+  const tbody = document.getElementById('tableBody');
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="oc-empty">无数据</td></tr>';
+    document.getElementById('pager').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = data.items.map((r, i) => {
+    const heat = heatLevel(r.mk_total_spends);
+    const linked = r.media_product_id ? `<span class="oc-badge oc-badge--linked">已关联</span>` : `<span class="text-muted text-sm">未关联</span>`;
+    const productName = r.product_name.length > 40 ? r.product_name.substring(0,40)+'...' : r.product_name;
+    const handle = r.product_url ? r.product_url.split('/products/')[1] || '' : '';
+
+    return `<tr>
+      <td class="text-mono text-muted">${r.rank}</td>
+      <td>
+        <div style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.product_name}">
+          ${r.product_url ? `<a href="${r.product_url}" target="_blank" class="oc-link">${productName}</a>` : productName}
+        </div>
+        <div class="text-sm text-muted text-mono">${handle}</div>
+      </td>
+      <td class="text-sm">${r.store}</td>
+      <td class="text-right text-mono">${r.sales_count.toLocaleString()}</td>
+      <td class="text-right text-mono">${r.revenue_main || '--'}</td>
+      <td class="text-right">
+        <span class="oc-badge oc-badge--${heat.cls}">${fmtMoney(r.mk_total_spends)}</span>
+      </td>
+      <td class="text-right text-mono">${r.mk_video_count}</td>
+      <td class="text-right text-mono">${r.mk_total_ads}</td>
+      <td>${linked}</td>
+      <td>
+        ${r.mk_product_id ? `<button class="oc-btn oc-btn--ghost" style="height:26px; font-size:12px; padding:0 8px;" onclick="openDetail(${r.mk_product_id},'${r.mk_product_name||''}')">查看素材</button>` : '--'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  // 分页
+  const totalPages = Math.ceil(data.total / PAGE_SIZE);
+  let pagerHtml = `<button onclick="loadData(${page-1})" ${page<=1?'disabled':''}>上一页</button>`;
+  pagerHtml += ` <span>${page} / ${totalPages}</span> `;
+  pagerHtml += `<button onclick="loadData(${page+1})" ${page>=totalPages?'disabled':''}>下一页</button>`;
+  document.getElementById('pager').innerHTML = pagerHtml;
+}
+
+async function openDetail(mkId, mkName) {
+  document.getElementById('detailPanel').style.display = 'block';
+  document.getElementById('detailOverlay').style.display = 'block';
+  document.getElementById('detailTitle').textContent = mkName || `产品 #${mkId}`;
+  document.getElementById('detailContent').innerHTML = '<p style="color:#888;">加载中...</p>';
+
+  try {
+    const resp = await fetch(`${MK_BASE}/${mkId}`, {
+      headers: { 'Authorization': MK_TOKEN, 'Accept': 'application/json' }
+    });
+    const data = await resp.json();
+    const item = data.data.item;
+
+    let html = `<div style="margin-bottom:16px;">
+      <div style="font-size:14px; font-weight:600;">${item.product_name}</div>
+      <div style="font-size:12px; color:#888; margin-top:4px;">ID: ${item.id} | 来源: ${item.source} | 等级: ${item.level}</div>
+    </div>`;
+
+    // 产品链接
+    if (item.product_links && item.product_links.length) {
+      html += `<div style="margin-bottom:12px;"><strong>产品链接：</strong><br>`;
+      item.product_links.forEach(l => {
+        html += `<a href="${l}" target="_blank" class="oc-link text-sm" style="display:block; margin:2px 0;">${l}</a>`;
+      });
+      html += `</div>`;
+    }
+
+    // 文案
+    if (item.texts && item.texts.length) {
+      html += `<div style="margin-bottom:12px;"><strong>文案（${item.texts.length} 条）：</strong>`;
+      item.texts.forEach((t, i) => {
+        html += `<div style="background:var(--oc-bg-subtle); padding:8px 10px; border-radius:var(--oc-r); margin:4px 0; font-size:12px;">
+          <div style="font-weight:600;">${t.lang || '未标注'} #${i+1}</div>
+          <div>标题: ${t.title}</div>
+          <div>文案: ${t.message}</div>
+          ${t.description ? `<div>描述: ${t.description}</div>` : ''}
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // 视频素材
+    const videos = (item.videos || []).filter(v => !v.hidden);
+    html += `<div><strong>视频素材（${videos.length} 条）：</strong>`;
+    videos.sort((a, b) => {
+      const sa = parseSpends(a.spends), sb = parseSpends(b.spends);
+      return sb - sa;
+    });
+    videos.forEach(v => {
+      const spends = parseSpends(v.spends);
+      const heat = heatLevel(spends);
+      html += `<div style="border:1px solid var(--oc-border); border-radius:var(--oc-r); padding:10px; margin:6px 0; font-size:12px;">
+        <div style="font-weight:500; margin-bottom:4px;">${v.name}</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <span>作者: ${v.author}</span>
+          <span>广告: ${v.ads_count}</span>
+          <span>消耗: <span class="oc-badge oc-badge--${heat.cls}">${v.spends || '0'}</span></span>
+          <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+
+    document.getElementById('detailContent').innerHTML = html;
+  } catch (e) {
+    document.getElementById('detailContent').innerHTML = `<p style="color:red;">加载失败: ${e.message}</p>`;
+  }
+}
+
+function parseSpends(s) {
+  if (!s || s === '0') return 0;
+  s = String(s).trim();
+  if (s.includes('万')) return parseFloat(s.replace('万','')) * 10000;
+  if (s.includes('千')) return parseFloat(s.replace('千','')) * 1000;
+  return parseFloat(s) || 0;
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').style.display = 'none';
+  document.getElementById('detailOverlay').style.display = 'none';
+}
+
+// Enter 搜索
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadData(1);
+});
+
+// 初始加载
+loadData(1);
+</script>
+{% endblock %}

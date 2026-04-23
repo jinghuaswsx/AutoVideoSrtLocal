@@ -1977,3 +1977,87 @@ def public_media_object(object_key: str):
     if len(parts) < 3 or parts[1] != "medias":
         abort(404)
     return _send_media_object(key)
+
+
+# ---------- 明空选品 ----------
+
+@bp.route("/mk-selection")
+@login_required
+def mk_selection_page():
+    return render_template("mk_selection.html")
+
+
+@bp.route("/api/mk-selection", methods=["GET"])
+@login_required
+def api_mk_selection():
+    """返回店小秘 Top300 + 明空消耗数据，按 90 天消耗降序。"""
+    snapshot = (request.args.get("snapshot") or "2026-04-23").strip()
+    keyword = (request.args.get("keyword") or "").strip()
+    page_num = max(1, int(request.args.get("page", 1)))
+    page_size = min(100, max(10, int(request.args.get("page_size", 50))))
+    offset = (page_num - 1) * page_size
+
+    where = "dr.snapshot_date = %s"
+    params: list = [snapshot]
+
+    if keyword:
+        where += " AND (dr.product_name LIKE %s OR dr.mk_product_name LIKE %s)"
+        params.extend([f"%{keyword}%", f"%{keyword}%"])
+
+    count_row = db_query(
+        f"SELECT COUNT(*) AS cnt FROM dianxiaomi_rankings dr WHERE {where}",
+        params,
+    )
+    total = count_row[0]["cnt"] if count_row else 0
+
+    rows = db_query(
+        f"""
+        SELECT
+            dr.rank_position, dr.product_id AS shopify_id,
+            dr.product_name, dr.product_url,
+            dr.store, dr.sales_count, dr.order_count,
+            dr.revenue_main, dr.revenue_split,
+            dr.mk_product_id, dr.mk_product_name,
+            dr.mk_total_spends, dr.mk_video_count, dr.mk_total_ads,
+            dr.media_product_id,
+            mp.name AS mp_name, mp.product_code AS mp_code
+        FROM dianxiaomi_rankings dr
+        LEFT JOIN media_products mp ON dr.media_product_id = mp.id
+        WHERE {where}
+        ORDER BY dr.mk_total_spends DESC, dr.rank_position ASC
+        LIMIT %s OFFSET %s
+        """,
+        params + [page_size, offset],
+    )
+
+    items = []
+    for r in rows:
+        items.append({
+            "rank": r["rank_position"],
+            "shopify_id": r["shopify_id"],
+            "product_name": r["product_name"],
+            "product_url": r["product_url"],
+            "store": r["store"],
+            "sales_count": r["sales_count"],
+            "order_count": r["order_count"],
+            "revenue_main": r["revenue_main"],
+            "revenue_split": r["revenue_split"],
+            "mk_product_id": r["mk_product_id"],
+            "mk_product_name": r["mk_product_name"],
+            "mk_total_spends": float(r["mk_total_spends"] or 0),
+            "mk_video_count": r["mk_video_count"] or 0,
+            "mk_total_ads": r["mk_total_ads"] or 0,
+            "media_product_id": r["media_product_id"],
+            "mp_name": r["mp_name"],
+            "mp_code": r["mp_code"],
+        })
+
+    return jsonify({"items": items, "total": total, "page": page_num, "page_size": page_size})
+
+
+@bp.route("/api/mk-selection/refresh", methods=["POST"])
+@login_required
+def api_mk_selection_refresh():
+    """触发重新抓取明空消耗数据（后台任务）。"""
+    # TODO: 后台任务重新抓取
+    return jsonify({"ok": True, "message": "刷新任务已提交（暂未实现）"})
