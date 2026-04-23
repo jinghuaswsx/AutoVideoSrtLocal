@@ -3514,6 +3514,9 @@
     return;
   }
 
+  uploadNameInput.maxLength = 128;
+  uploadNameInput.placeholder = 'YYYY.MM.DD-产品名-xxxxxx.mp4';
+
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
       '&': '&amp;',
@@ -3583,6 +3586,71 @@
 
   function normalizeRawSourceTitle(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function getRawSourceTitleExample(productName) {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const datePart = `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+    const pn = normalizeRawSourceTitle(productName) || '产品名';
+    return `${datePart}-${pn}-原始视频.mp4`;
+  }
+
+  function validateRawSourceDisplayName(title, productName) {
+    const value = normalizeRawSourceTitle(title);
+    const pn = normalizeRawSourceTitle(productName);
+    const errors = [];
+    if (!pn) return ['当前产品尚未加载，请重试'];
+    if (!value) return ['名称不能为空，格式为 YYYY.MM.DD-产品名-xxxxxx.mp4'];
+
+    if (!value.toLowerCase().endsWith('.mp4')) {
+      errors.push('名称必须以 .mp4 结尾');
+    }
+
+    if (value.length < 11 || value[10] !== '-') {
+      errors.push('名称必须以 "YYYY.MM.DD-" 开头');
+      return errors;
+    }
+
+    const dateStr = value.slice(0, 10);
+    const m = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateStr);
+    if (!m) {
+      errors.push(`日期段 "${dateStr}" 格式必须是 YYYY.MM.DD`);
+    } else {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const day = Number(m[3]);
+      const parsed = new Date(y, mo - 1, day);
+      if (parsed.getFullYear() !== y || parsed.getMonth() !== mo - 1 || parsed.getDate() !== day) {
+        errors.push(`日期 "${dateStr}" 不是合法日期`);
+      }
+    }
+
+    const expectedPrefix = `${dateStr}-${pn}-`;
+    if (!value.startsWith(expectedPrefix)) {
+      errors.push(`日期之后必须紧跟 "${pn}-"`);
+      return errors;
+    }
+
+    let tail = value.slice(expectedPrefix.length);
+    if (tail.toLowerCase().endsWith('.mp4')) {
+      tail = tail.slice(0, -4);
+    }
+    if (!tail.trim()) {
+      errors.push('产品名之后的描述不能为空');
+    }
+    return errors;
+  }
+
+  function alertRawSourceTitleErrors(errors) {
+    const example = getRawSourceTitleExample(uiState.currentName);
+    alert([
+      '名称不符合原始去字幕视频素材命名规范：',
+      ...errors.map((err) => `- ${err}`),
+      '',
+      '格式：YYYY.MM.DD-产品名-xxxxxx.mp4',
+      `示例：${example}`,
+    ].join('\n'));
   }
 
   function getRawSourceDefaultTitle(rid) {
@@ -3937,6 +4005,13 @@
   async function submitRawSourceUpload(event) {
     event.preventDefault();
     if (!uiState.currentPid) return;
+    const titleErrors = validateRawSourceDisplayName(uploadNameInput.value, uiState.currentName);
+    if (titleErrors.length) {
+      alertRawSourceTitleErrors(titleErrors);
+      uploadNameInput.focus();
+      uploadNameInput.select();
+      return;
+    }
     const fd = new FormData(uploadForm);
     uploadSubmit.disabled = true;
     try {
