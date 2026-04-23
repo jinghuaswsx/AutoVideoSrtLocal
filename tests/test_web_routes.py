@@ -378,6 +378,31 @@ def test_project_detail_page_defaults_source_language_to_zh(authed_client_no_db,
     assert 'data-lang="zh" class="sl-btn sl-active"' in body
 
 
+def test_project_detail_page_renders_gpt_5_mini_translate_option(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-gpt-option", "video.mp4", "output/task-project-gpt-option")
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(task, ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_mini")
+
+    response = authed_client_no_db.get("/projects/task-project-gpt-option")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'value="gpt_5_mini"' in body
+    assert "GPT 5-mini (OpenRouter)" in body
+
+
 def test_de_translate_detail_page_defaults_source_language_to_en(authed_client_no_db, monkeypatch):
     task = store.create("task-de-default-lang", "video.mp4", "output/task-de-default-lang", user_id=1)
     store.update("task-de-default-lang", type="de_translate")

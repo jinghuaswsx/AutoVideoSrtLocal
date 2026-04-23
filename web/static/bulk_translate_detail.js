@@ -490,6 +490,7 @@
 
   function childDetailUrl(taskType, childTaskId) {
     if (!taskType || !childTaskId) return '';
+    if (taskType === 'ja_translate') return `/ja-translate/${childTaskId}`;
     if (taskType === 'multi_translate') return `/multi-translate/${childTaskId}`;
     if (taskType === 'image_translate') return `/image-translate/${childTaskId}`;
     if (taskType === 'translate_lab') return `/translate-lab/${childTaskId}`;
@@ -640,6 +641,7 @@
     return {
       copywriting_translate: '文案翻译',
       image_translate: '图片翻译',
+      ja_translate: '日语视频翻译',
       translate_lab: '视频翻译',
       multi_translate: '多语种视频翻译',
     }[type] || type;
