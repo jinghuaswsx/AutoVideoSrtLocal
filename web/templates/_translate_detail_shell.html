@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block title %}
+{% if detail_mode == 'multi' %}
+{{ project.display_name or project.original_filename or project.id }} - {{ target_lang | upper }} 翻译
+{% elif detail_mode == 'ja' %}
+{{ project.display_name or project.original_filename or project.id }} - 日语翻译
+{% endif %}
+{% endblock %}
+{% block page_title %}
+{% if detail_mode == 'multi' %}
+{{ project.display_name or project.original_filename or project.id }}（{{ target_lang | upper }}）
+{% elif detail_mode == 'ja' %}
+{{ project.display_name or project.original_filename or project.id }}（日语）
+{% endif %}
+{% endblock %}
+{% block extra_style %}
+{% include "_task_workbench_styles.html" %}
+<style>
+  .target-lang-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    background: oklch(94% 0.04 225);
+    color: oklch(22% 0.02 235);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  {% if detail_mode == 'multi' %}
+  /* 多语种视频翻译：隐藏 _task_workbench.html 里老的 voicePanel（仅 2 个默认音色），
+     由新的 _voice_selector_multi.html 全库选择器取代 */
+  #voicePanel { display: none !important; }
+  /* 老的"生成配置 + 开始处理"面板也由新音色选择器的字幕参数 + 开始处理按钮取代 */
+  #configPanel { display: none !important; }
+  /* 源语言 zh/en 由 ASR 后自动判别，不给用户看无意义的选择器 */
+  #sourceLangPanel { display: none !important; }
+  /* 仅调整多语种详情页的前端展示位置；实际流程仍按 STEP_ORDER: extract -> asr 执行 */
+  #pipelineCard .steps > #step-asr { order: -2; }
+  #pipelineCard .steps > #step-extract { order: -1; }
+  {% elif detail_mode == 'ja' %}
+  #voicePanel { display: none !important; }
+  #configPanel { display: none !important; }
+  #sourceLangPanel { display: none !important; }
+  #avConfigSection { display: none !important; }
+  #pipelineCard .steps > #step-asr { order: -2; }
+  #pipelineCard .steps > #step-extract { order: -1; }
+  {% endif %}
+</style>
+{% endblock %}
+{% block content %}
+{% if detail_mode == 'multi' %}
+{% set detail_back_href = '/multi-translate' %}
+{% set detail_back_label = '← 返回多语种视频翻译列表' %}
+{% elif detail_mode == 'ja' %}
+{% set detail_back_href = '/ja-translate' %}
+{% set detail_back_label = '← 返回视频翻译（日语）列表' %}
+{% endif %}
+
+{% if project.deleted_at %}
+<a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
+<div class="expired-notice">
+  <p style="font-size: 32px; margin-bottom: 12px;">任务已过期</p>
+  <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
+</div>
+{% else %}
+<a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
+<p class="page-subtitle">
+  {% if detail_mode == 'multi' %}
+  中文/英文 → {{ target_lang | upper }} 本土化翻译
+  <span class="target-lang-badge">目标语言：{{ target_lang | upper }}</span>
+  {% elif detail_mode == 'ja' %}
+  英文/中文 → 日语本土化配音
+  <span class="target-lang-badge">目标语言：JA</span>
+  <span class="target-lang-badge">日语字符预算流程</span>
+  {% endif %}
+</p>
+{% if state and state.parent_task_id %}
+<p style="margin:-4px 0 12px; font-size:13px;">
+  {% if detail_mode == 'multi' %}
+  🔗 本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
+  {% elif detail_mode == 'ja' %}
+  本任务由批次翻译创建 · <a href="/tasks/{{ state.parent_task_id }}" style="color:oklch(56% 0.16 230)">查看父批次任务 →</a>
+  {% endif %}
+</p>
+{% endif %}
+{% if detail_mode in ('multi', 'ja') %}
+{% include "_voice_selector_multi.html" %}
+{% endif %}
+{% include "_task_workbench.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if not project.deleted_at %}
+{% include "_task_workbench_scripts.html" %}
+{% if detail_mode in ('multi', 'ja') %}
+<script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
+{% endif %}
+{% endif %}
+{% endblock %}

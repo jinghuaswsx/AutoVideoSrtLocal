@@ -1,5 +1,7 @@
 <div id="voice-selector-multi" class="voice-selector"
-     data-task-id="{{ task_id }}" data-lang="{{ voice_language }}">
+     data-task-id="{{ task_id }}" data-lang="{{ voice_language }}"
+     data-api-base="{{ (api_base|default('/api/multi-translate')) }}"
+     data-detail-mode="{{ (detail_mode|default('multi')) }}">
   <div class="vs-heading">
     <strong>🎤 选择 TTS 音色</strong>
     <span class="vs-hint" id="vs-summary">正在加载音色库...</span>

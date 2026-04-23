@@ -93,6 +93,35 @@ def test_recover_project_state_marks_only_running_steps_for_pipeline_tasks():
     assert "服务重启" in recovered["step_messages"]["translate"]
 
 
+def test_recover_project_state_keeps_waiting_ja_translate_review_state():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="ja_translate",
+        task_id="ja-waiting",
+        state={
+            "status": "uploaded",
+            "current_review_step": "voice_match",
+            "steps": {
+                "extract": "done",
+                "asr": "done",
+                "voice_match": "waiting",
+                "alignment": "pending",
+            },
+            "step_messages": {
+                "voice_match": "pick voice",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "uploaded"
+    assert recovered["current_review_step"] == "voice_match"
+    assert recovered["steps"]["voice_match"] == "waiting"
+
+
 def test_recover_project_state_keeps_active_task_running():
     from appcore import task_recovery
 
@@ -395,6 +424,32 @@ def test_recover_project_state_marks_translate_lab_running_as_interrupted():
     assert recovered["current_review_step"] == ""
     assert recovered["steps"]["tts"] == "interrupted"
     assert recovered["steps"]["subtitle"] == "pending"
+
+
+def test_recover_project_state_keeps_waiting_multi_translate_review_state():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="multi_translate",
+        task_id="multi-waiting",
+        state={
+            "status": "uploaded",
+            "current_review_step": "voice_match",
+            "steps": {
+                "extract": "done",
+                "asr": "done",
+                "voice_match": "waiting",
+                "alignment": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is False
+    assert status is None
+    assert recovered["status"] == "uploaded"
+    assert recovered["current_review_step"] == "voice_match"
+    assert recovered["steps"]["voice_match"] == "waiting"
 
 
 def test_recover_project_state_keeps_active_image_translate_running():
