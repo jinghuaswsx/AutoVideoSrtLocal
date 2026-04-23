@@ -10,6 +10,20 @@
     return Number.isFinite(num) ? num : fallback;
   }
 
+  function isVideoFile(file) {
+    if (!file) return false;
+    if (String(file.type || "").startsWith("video/")) return true;
+    return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name || "");
+  }
+
+  function pickVideoFile(fileList) {
+    return Array.from(fileList || []).find(isVideoFile) || null;
+  }
+
+  function hasFileDrag(event) {
+    return Array.from(event.dataTransfer?.types || []).includes("Files");
+  }
+
   function createSubtitlePreviewController(root, initialPayload) {
     if (!root) {
       throw new Error("subtitle preview root is required");
@@ -21,9 +35,13 @@
       subtitle_size: 14,
       subtitle_position_y: 0.68,
       sample_lines: [SAMPLE_TEXT, SAMPLE_TEXT],
+      video_error: "",
+      video_file_name: "",
     };
 
     let dragging = false;
+    let dragDepth = 0;
+    let localVideoObjectUrl = "";
 
     const refs = {
       video: root.querySelector('[data-role="video"]'),
@@ -36,6 +54,11 @@
       position: root.querySelector('[data-role="position"]'),
       positionLabel: root.querySelector('[data-role="position-label"]'),
       media: root.querySelector('[data-role="media"]'),
+      file: root.querySelector('[data-role="file"]'),
+      uploadCta: root.querySelector('[data-role="upload-cta"]'),
+      uploadTitle: root.querySelector('[data-role="upload-title"]'),
+      uploadError: root.querySelector('[data-role="upload-error"]'),
+      changeVideo: root.querySelector('[data-role="change-video"]'),
     };
 
     function applySampleLines(lines) {
@@ -46,10 +69,62 @@
       if (refs.lineB) refs.lineB.textContent = nextLines[1];
     }
 
-    function updateVideo() {
+    function setUploadError(message) {
+      if (refs.uploadError) refs.uploadError.textContent = message || "";
+    }
+
+    function updateMediaState(hasVideo) {
+      const canShowVideo = Boolean(hasVideo) && !state.video_error;
+      if (refs.media) {
+        refs.media.classList.toggle("has-video", canShowVideo);
+        refs.media.classList.toggle("is-empty", !canShowVideo);
+      }
+      if (refs.uploadTitle) {
+        refs.uploadTitle.textContent = state.video_error || "拖拽视频到这里";
+      }
+    }
+
+    function clearLocalVideoObjectUrl() {
+      if (!localVideoObjectUrl) return;
+      URL.revokeObjectURL(localVideoObjectUrl);
+      localVideoObjectUrl = "";
+    }
+
+    function updateVideo(options = {}) {
       if (!refs.video) return;
-      refs.video.src = state.video_url || "";
+      const nextUrl = state.video_url || "";
+      state.video_error = "";
+      setUploadError("");
+      if (!nextUrl) {
+        refs.video.removeAttribute("src");
+        refs.video.load?.();
+        updateMediaState(false);
+        return;
+      }
+
+      if (refs.video.getAttribute("src") !== nextUrl) {
+        refs.video.src = nextUrl;
+      }
+      updateMediaState(true);
       refs.video.load?.();
+      if (options.play) {
+        refs.video.play?.().catch(() => {});
+      }
+    }
+
+    function setLocalVideoFile(file) {
+      if (!isVideoFile(file)) {
+        state.video_error = "请选择视频文件";
+        setUploadError(state.video_error);
+        updateMediaState(false);
+        return;
+      }
+
+      clearLocalVideoObjectUrl();
+      localVideoObjectUrl = URL.createObjectURL(file);
+      state.video_url = localVideoObjectUrl;
+      state.video_file_name = file.name || "本地视频";
+      updateVideo({ play: true });
     }
 
     function updateFont() {
@@ -152,6 +227,67 @@
       window.addEventListener("pointercancel", endDrag);
     }
 
+    if (refs.video) {
+      refs.video.addEventListener("loadeddata", () => {
+        state.video_error = "";
+        setUploadError("");
+        updateMediaState(Boolean(state.video_url));
+      });
+      refs.video.addEventListener("error", () => {
+        if (!state.video_url) return;
+        state.video_error = "视频加载失败，拖拽本地视频重新预览";
+        setUploadError(state.video_error);
+        updateMediaState(false);
+      });
+    }
+
+    if (refs.file) {
+      refs.file.addEventListener("change", () => {
+        if (refs.file.files?.length) {
+          setLocalVideoFile(pickVideoFile(refs.file.files));
+        }
+        refs.file.value = "";
+      });
+    }
+
+    if (refs.uploadCta) {
+      refs.uploadCta.addEventListener("click", () => refs.file?.click());
+    }
+
+    if (refs.changeVideo) {
+      refs.changeVideo.addEventListener("click", () => refs.file?.click());
+    }
+
+    if (refs.media) {
+      refs.media.addEventListener("dragenter", (event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        dragDepth += 1;
+        refs.media.classList.add("is-dragover");
+      });
+      refs.media.addEventListener("dragover", (event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      });
+      refs.media.addEventListener("dragleave", (event) => {
+        if (!hasFileDrag(event)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) {
+          refs.media.classList.remove("is-dragover");
+        }
+      });
+      refs.media.addEventListener("drop", (event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        dragDepth = 0;
+        refs.media.classList.remove("is-dragover");
+        setLocalVideoFile(pickVideoFile(event.dataTransfer.files));
+      });
+    }
+
+    window.addEventListener("beforeunload", clearLocalVideoObjectUrl);
+
     applyState(initialPayload);
 
     return {
@@ -164,6 +300,9 @@
           subtitle_size: state.subtitle_size,
           subtitle_position_y: state.subtitle_position_y,
         };
+      },
+      destroy() {
+        clearLocalVideoObjectUrl();
       },
     };
   }

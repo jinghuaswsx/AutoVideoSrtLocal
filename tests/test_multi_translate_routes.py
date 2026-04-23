@@ -175,10 +175,26 @@ def test_multi_translate_detail_includes_shared_subtitle_preview_assets():
     assert "--subtitle-preview-w: 270px;" in preview_panel
     assert "--subtitle-preview-h: 480px;" in preview_panel
     assert "sharedSubtitlePreviewMount" in workbench
+    assert 'data-role="upload-cta"' in preview_panel
+    assert 'data-role="file"' in preview_panel
+    assert "拖拽视频到这里" in preview_panel
     assert "openPhonePickerBtn" not in scripts
     assert "phoneFrame" not in scripts
     assert "pfSubtitleBar" not in scripts
     assert "createSubtitlePreviewController" in scripts
+
+
+def test_shared_subtitle_preview_supports_local_video_upload():
+    root = Path(__file__).resolve().parents[1]
+    preview_panel = (root / "web" / "templates" / "_subtitle_preview_panel.html").read_text(encoding="utf-8")
+    script = (root / "web" / "static" / "subtitle_preview.js").read_text(encoding="utf-8")
+
+    assert 'accept="video/*,.mp4,.mov,.m4v,.webm,.avi,.mkv"' in preview_panel
+    assert "仅用于当前浏览器预览，不会替换任务源视频" in preview_panel
+    assert "URL.createObjectURL(file)" in script
+    assert "URL.revokeObjectURL" in script
+    assert 'addEventListener("drop"' in script
+    assert "视频加载失败，拖拽本地视频重新预览" in script
 
 
 def test_multi_translate_detail_displays_asr_result_before_extracted_audio():
