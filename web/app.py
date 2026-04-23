@@ -73,6 +73,7 @@ from web.routes.bulk_translate import (
 from web.routes.de_translate import bp as de_translate_bp
 from web.routes.fr_translate import bp as fr_translate_bp
 from web.routes.multi_translate import bp as multi_translate_bp
+from web.routes.ja_translate import bp as ja_translate_bp
 from web.routes.admin_prompts import bp as admin_prompts_bp
 from web.routes.translate_lab import bp as translate_lab_bp
 from web.routes.medias import bp as medias_bp
@@ -226,6 +227,7 @@ def create_app() -> Flask:
     csrf.exempt(de_translate_bp)
     csrf.exempt(fr_translate_bp)
     csrf.exempt(multi_translate_bp)
+    csrf.exempt(ja_translate_bp)
     app.register_blueprint(text_translate_bp)
     app.register_blueprint(title_translate_bp)
     app.register_blueprint(video_creation_bp)
@@ -234,6 +236,7 @@ def create_app() -> Flask:
     app.register_blueprint(de_translate_bp)
     app.register_blueprint(fr_translate_bp)
     app.register_blueprint(multi_translate_bp)
+    app.register_blueprint(ja_translate_bp)
     app.register_blueprint(admin_prompts_bp)
     app.register_blueprint(translate_lab_bp)
     app.register_blueprint(medias_bp)

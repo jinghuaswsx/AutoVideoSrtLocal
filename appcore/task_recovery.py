@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
 
-PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
+PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_translate", "copywriting"}
 LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
 RECOVERABLE_PROJECT_TYPES = {"video_creation", "video_review", "link_check", "image_translate"} | PIPELINE_PROJECT_TYPES
 LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")

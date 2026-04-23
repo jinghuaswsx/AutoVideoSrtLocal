@@ -134,6 +134,27 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    # 日语视频翻译专用流程
+    "ja_translate.localize": _uc(
+        "ja_translate.localize",
+        "ja_translate",
+        "日语逐句本土化",
+        "视频翻译（日语）按 ASR 段和字符预算生成自然日语配音文案",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
+    "ja_translate.rewrite": _uc(
+        "ja_translate.rewrite",
+        "ja_translate",
+        "日语尺长收敛重写",
+        "视频翻译（日语）在 TTS 实测后按字符预算做多轮长短收敛",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
     # 文案创作
     "copywriting.generate": _uc(
         "copywriting.generate",

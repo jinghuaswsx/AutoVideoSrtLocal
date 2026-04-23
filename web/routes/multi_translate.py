@@ -214,6 +214,14 @@ def upload_and_start():
     target_lang = (request.form.get("target_lang") or "").strip()
     if target_lang not in SUPPORTED_LANGS:
         return jsonify({"error": f"target_lang must be one of {list(SUPPORTED_LANGS)}"}), 400
+    if target_lang == "ja":
+        from web.routes.ja_translate import create_ja_translate_task_from_upload
+
+        try:
+            result = create_ja_translate_task_from_upload(file, user_id=current_user.id, auto_start=True)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"task_id": result["task_id"], "redirect_url": result["redirect_url"]}), 201
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
