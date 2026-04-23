@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import hashlib
 import mimetypes
 import os
 import tempfile
@@ -41,6 +42,8 @@ _ALLOWED_IMAGE_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
 _MAX_IMAGE_BYTES = 15 * 1024 * 1024  # 15MB
 _ALLOWED_RAW_VIDEO_TYPES = ("video/mp4", "video/quicktime")
 _MAX_RAW_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+_MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+_MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
@@ -2171,6 +2174,37 @@ def api_mk_media_proxy():
     return proxied
 
 
+@bp.route("/api/mk-video", methods=["GET"])
+@login_required
+def api_mk_video_proxy():
+    """Cache a wedev video source locally, then serve it for in-page preview."""
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可访问"}), 403
+    media_path = _normalize_mk_media_path(request.args.get("path") or "")
+    if not media_path:
+        abort(404)
+    guessed_type = (mimetypes.guess_type(media_path)[0] or "").split(";")[0].strip()
+    if guessed_type and not guessed_type.startswith("video/"):
+        abort(404)
+
+    try:
+        object_key = _cache_mk_video(media_path)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", None) or 502
+        return ("", status)
+    except requests.RequestException as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    mimetype = mimetypes.guess_type(object_key)[0] or guessed_type or "video/mp4"
+    return send_file(
+        str(local_media_storage.local_path_for(object_key)),
+        mimetype=mimetype,
+        conditional=True,
+    )
+
+
 @bp.route("/api/mk-detail/<int:mk_id>")
 @login_required
 def api_mk_detail_proxy(mk_id: int):
@@ -2211,6 +2245,63 @@ def _normalize_mk_media_path(raw_path: str) -> str:
     if not path or ".." in path.split("/"):
         return ""
     return path
+
+
+def _mk_video_cache_object_key(media_path: str) -> str:
+    digest = hashlib.sha256(media_path.encode("utf-8")).hexdigest()
+    ext = Path(media_path).suffix.lower()
+    if ext not in {".mp4", ".mov", ".m4v", ".webm"}:
+        ext = ".mp4"
+    return f"{_MK_VIDEO_CACHE_PREFIX}/{digest}{ext}"
+
+
+def _cache_mk_video(media_path: str) -> str:
+    object_key = _mk_video_cache_object_key(media_path)
+    if local_media_storage.exists(object_key):
+        return object_key
+
+    headers = _build_mk_request_headers()
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "video/*,*/*;q=0.8"
+    url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
+    resp = requests.get(url, headers=headers, timeout=60, stream=True)
+    try:
+        if resp.status_code >= 400:
+            http_error = requests.HTTPError(f"mk video HTTP {resp.status_code}")
+            http_error.response = resp
+            raise http_error
+        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if content_type and not content_type.startswith("video/"):
+            raise ValueError(f"明空返回的不是视频文件: {content_type}")
+        declared_size = int(resp.headers.get("content-length") or 0)
+        if declared_size > _MAX_MK_VIDEO_BYTES:
+            raise ValueError("明空视频过大，超过 2GB")
+
+        destination = local_media_storage.local_path_for(object_key)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix="mk_video_", dir=str(destination.parent))
+        total = 0
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > _MAX_MK_VIDEO_BYTES:
+                        raise ValueError("明空视频过大，超过 2GB")
+                    handle.write(chunk)
+            os.replace(temp_name, destination)
+        finally:
+            if os.path.exists(temp_name):
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+    finally:
+        close = getattr(resp, "close", None)
+        if callable(close):
+            close()
+    return object_key
 
 
 def _build_mk_request_headers() -> dict[str, str]:

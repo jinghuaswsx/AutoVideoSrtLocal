@@ -61,6 +61,7 @@
 .mk-video-card-title { font-weight:500; word-break:break-all; line-height:1.4; }
 .mk-video-card-meta, .mk-video-card-stats { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-2); }
 .mk-video-card-meta { color:var(--oc-fg-muted); }
+.mk-video-player { width:100%; max-height:180px; border-radius:var(--oc-r); background:oklch(22% 0.02 235); display:block; }
 {% endblock %}
 
 {% block content %}
@@ -261,10 +262,13 @@ async function openDetail(mkId, mkName) {
       const heat = heatLevel(spends);
       const coverPath = normalizeMkMediaPath(v.image_path);
       const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
+      const videoPath = normalizeMkMediaPath(v.path);
+      const videoUrl = videoPath ? '/medias/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
       html += `<div class="mk-video-card">
         <div class="mk-video-cover-frame">${coverUrl ? `<img src="${coverUrl}" loading="lazy" onerror="this.remove()" alt="">` : `<span>无封面</span>`}</div>
         <div class="mk-video-card-body">
           <div class="mk-video-card-title">${v.name}</div>
+          ${videoUrl ? `<video class="mk-video-player" controls preload="none" playsinline src="${videoUrl}"></video>` : ''}
           <div class="mk-video-card-meta">
             <span>${v.author || '--'}</span>
             <span>${v.upload_time ? v.upload_time.split('T')[0] : ''}</span>
