@@ -161,3 +161,25 @@ def test_list_raw_sources_attaches_video_translation_status(monkeypatch):
     assert rows[0]["translations"]["de"]["status"] == "translated"
     assert rows[0]["translations"]["de"]["item_id"] == 701
     assert rows[0]["translations"]["de"]["display_name"] == "German final"
+
+
+def test_get_earliest_english_item_orders_by_created_at_then_id(monkeypatch):
+    seen = {}
+
+    def fake_query_one(sql, args=None):
+        seen["sql"] = sql
+        seen["args"] = args
+        return {
+            "id": 9,
+            "product_id": 123,
+            "lang": "en",
+            "filename": "2026.04.24-english.mp4",
+        }
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+
+    row = medias.get_earliest_english_item(123)
+
+    assert row["filename"] == "2026.04.24-english.mp4"
+    assert "ORDER BY created_at ASC, id ASC" in seen["sql"]
+    assert seen["args"] == (123, "en")

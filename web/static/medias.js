@@ -3677,6 +3677,9 @@
   const uploadVideoFilled = $('rsUploadVideoFilled');
   const uploadVideoName = $('rsUploadVideoName');
   const uploadVideoSize = $('rsUploadVideoSize');
+  const nameHelpMask = $('rsNameHelpMask');
+  const nameHelpMessage = $('rsNameHelpMessage');
+  const nameHelpList = $('rsNameHelpList');
   const translateMask = $('rsTranslateMask');
   const translateTitleMeta = $('rstTitleMeta');
   const translateRsList = $('rstRsList');
@@ -3691,12 +3694,12 @@
   };
   let rawSourceCoverObjectUrl = '';
 
-  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !uploadSubmit || !uploadVideoInput || !uploadCoverInput || !uploadNameInput || !uploadCoverBox || !uploadCoverPreview || !uploadVideoBox || !uploadVideoEmpty || !uploadVideoFilled || !uploadVideoName || !uploadVideoSize || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
+  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !uploadSubmit || !uploadVideoInput || !uploadCoverInput || !uploadNameInput || !uploadCoverBox || !uploadCoverPreview || !uploadVideoBox || !uploadVideoEmpty || !uploadVideoFilled || !uploadVideoName || !uploadVideoSize || !nameHelpMask || !nameHelpMessage || !nameHelpList || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
     return;
   }
 
   uploadNameInput.maxLength = 128;
-  uploadNameInput.placeholder = 'YYYY.MM.DD-产品名-xxxxxx.mp4';
+  uploadNameInput.placeholder = '默认读取所选视频文件名，可按需修改';
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -3756,7 +3759,10 @@
     const resp = await fetch(url, options);
     if (resp.ok) return resp.json();
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || `${resp.status}`);
+    const error = new Error(err.message || err.error || `${resp.status}`);
+    Object.assign(error, err || {});
+    error.status = resp.status;
+    throw error;
   }
 
   function syncRawSourceCount(pid, count) {
@@ -3864,7 +3870,7 @@
           <textarea
             class="oc-rs-title-input js-rs-title-input"
             rows="2"
-            maxlength="64"
+            maxlength="128"
             aria-label="编辑原始素材名称"
             hidden
           >${title}</textarea>
@@ -4163,6 +4169,45 @@
     uploadSubmit.disabled = false;
     setRawSourceUploadCover(null);
     setRawSourceUploadVideo(null);
+    closeRawSourceFilenameHelp();
+  }
+
+  function closeRawSourceFilenameHelp() {
+    nameHelpMask.hidden = true;
+    nameHelpMessage.textContent = '';
+    nameHelpList.innerHTML = '';
+  }
+
+  function openRawSourceFilenameHelp(payload) {
+    const uploadedFilename = String(payload?.uploaded_filename || '').trim();
+    const englishFilenames = Array.isArray(payload?.english_filenames) ? payload.english_filenames : [];
+    if (!englishFilenames.length) {
+      nameHelpMessage.textContent = uploadedFilename
+        ? `当前上传文件「${uploadedFilename}」无法提交，因为该产品还没有英语视频。请先补英语视频。`
+        : '当前产品还没有英语视频。请先补英语视频后再上传原始视频。';
+      nameHelpList.innerHTML = '';
+      nameHelpMask.hidden = false;
+      return;
+    }
+    nameHelpMessage.textContent = uploadedFilename
+      ? `当前上传文件名「${uploadedFilename}」没有命中现有英语视频。请把本地视频重命名为下面任一英语文件名后重新提交。`
+      : '请把本地视频重命名为下面任一英语文件名后重新提交。';
+    nameHelpList.innerHTML = englishFilenames.map((filename) => `
+      <li class="oc-rst-choice">
+        <div class="oc-rst-choice-row">
+          <div class="oc-rst-choice-meta">
+            <strong title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong>
+          </div>
+          <button
+            type="button"
+            class="oc-btn ghost sm js-rs-name-copy"
+            data-filename="${escapeHtml(filename)}"
+            data-copy-label="复制"
+          >复制</button>
+        </div>
+      </li>
+    `).join('');
+    nameHelpMask.hidden = false;
   }
 
   async function refreshRawSourceList(pid) {
@@ -4186,13 +4231,6 @@
   async function submitRawSourceUpload(event) {
     event.preventDefault();
     if (!uiState.currentPid) return;
-    const titleErrors = validateRawSourceDisplayName(uploadNameInput.value, uiState.currentName);
-    if (titleErrors.length) {
-      alertRawSourceTitleErrors(titleErrors);
-      uploadNameInput.focus();
-      uploadNameInput.select();
-      return;
-    }
     const fd = new FormData(uploadForm);
     uploadSubmit.disabled = true;
     try {
@@ -4203,7 +4241,11 @@
       closeRawSourceUpload();
       await refreshRawSourceList(uiState.currentPid);
     } catch (err) {
-      alert(`上传失败：${err.message || err}`);
+      if (err?.error === 'raw_source_filename_mismatch' || err?.error === 'english_video_required') {
+        openRawSourceFilenameHelp(err);
+      } else {
+        alert(`上传失败：${err.message || err}`);
+      }
       uploadSubmit.disabled = false;
     }
   }
@@ -4402,6 +4444,11 @@
       return;
     }
 
+    if (event.target === nameHelpMask || event.target.closest('#rsNameHelpClose') || event.target.closest('#rsNameHelpCancel')) {
+      closeRawSourceFilenameHelp();
+      return;
+    }
+
     if (event.target === translateMask || event.target.closest('#rstClose') || event.target.closest('#rstCancel')) {
       closeTranslateDialog();
       return;
@@ -4411,6 +4458,15 @@
     if (del) {
       event.preventDefault();
       await deleteRawSource(del);
+      return;
+    }
+
+    const copyBtn = event.target.closest('.js-rs-name-copy');
+    if (copyBtn) {
+      event.preventDefault();
+      copyText(copyBtn.dataset.filename || '')
+        .then(() => flashCopiedButton(copyBtn))
+        .catch(() => alert('复制失败，请手动复制'));
       return;
     }
 
