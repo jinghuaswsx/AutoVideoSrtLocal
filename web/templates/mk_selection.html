@@ -31,8 +31,8 @@
 .oc-btn--ghost { background:var(--oc-bg); border:1px solid var(--oc-border-strong); color:var(--oc-fg); }
 .oc-btn--ghost:hover { background:var(--oc-bg-muted); }
 .oc-table { width:100%; border-collapse:collapse; font-size:19px; }
-.oc-table th { text-align:left; padding:12px 14px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:18px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
-.oc-table td { padding:12px 14px; border-bottom:1px solid var(--oc-border); vertical-align:middle; }
+.oc-table th { text-align:center; padding:12px 14px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:18px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; }
+.oc-table td { padding:12px 14px; border-bottom:1px solid var(--oc-border); vertical-align:middle; text-align:center; }
 .oc-table tr:hover td { background:var(--oc-bg-subtle); }
 .oc-badge { display:inline-flex; padding:3px 10px; border-radius:9999px; font-size:16px; font-weight:500; }
 .oc-badge--high { background:oklch(95% 0.06 25); color:oklch(45% 0.15 25); }
@@ -76,8 +76,8 @@
       <thead>
         <tr>
           <th style="width:50px">#</th>
-          <th style="width:220px">产品名称</th>
-          <th style="width:180px">中文产品名</th>
+          <th style="width:220px; text-align:left;">产品名称</th>
+          <th style="width:180px; text-align:left;">中文产品名</th>
           <th style="width:100px">店铺</th>
           <th style="width:90px" class="text-right">付款销量</th>
           <th style="width:110px" class="text-right">销售额</th>
@@ -152,13 +152,13 @@ async function loadData(page) {
 
     return `<tr>
       <td class="text-mono text-muted">${r.rank}</td>
-      <td>
+      <td style="text-align:left;">
         <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.product_name}">
           ${r.product_url ? `<a href="${r.product_url}" target="_blank" class="oc-link">${productName}</a>` : productName}
         </div>
         <div class="text-muted" style="font-size:14px; font-family:monospace;">${handle}</div>
       </td>
-      <td title="${cnName}">${cnNameShort}</td>
+      <td title="${cnName}" style="text-align:left;">${cnNameShort}</td>
       <td>${r.store}</td>
       <td class="text-right text-mono">${r.sales_count.toLocaleString()}</td>
       <td class="text-right text-mono">${r.revenue_main || '--'}</td>
