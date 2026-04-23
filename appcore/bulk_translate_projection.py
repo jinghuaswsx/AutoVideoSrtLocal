@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from appcore import medias
-from appcore.bulk_translate_runtime import compute_progress
+from appcore.bulk_translate_runtime import compute_progress, refresh_task_from_children
 from appcore.db import query
 
 
+log = logging.getLogger(__name__)
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _WAITING_ITEM_STATUSES = {"awaiting_voice"}
 _PARENT_RESUMABLE_STATUSES = {"failed", "error", "paused", "interrupted"}
@@ -52,6 +54,18 @@ def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> lis
         state = _parse_state(row.get("state_json"))
         if int(state.get("product_id") or 0) != int(product_id):
             continue
+        try:
+            refreshed = refresh_task_from_children(row["id"], user_id=user_id)
+        except Exception:
+            log.warning("bulk_translate projection refresh failed: %s", row.get("id"), exc_info=True)
+            refreshed = None
+        if refreshed:
+            state = dict(refreshed.get("state") or state)
+            row = {
+                **row,
+                "status": refreshed.get("status") or row.get("status"),
+                "created_at": refreshed.get("created_at") or row.get("created_at"),
+            }
         tasks.append(_serialize_task(row, state))
     return tasks
 

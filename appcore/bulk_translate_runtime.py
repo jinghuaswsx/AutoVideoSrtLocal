@@ -42,6 +42,7 @@ _RUNNING_PARENT_STATUSES = {"running", "waiting_manual"}
 _FAILURE_CHILD_STATUSES = {"error", "failed", "cancelled", "interrupted"}
 _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_voice"}
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
+_REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 
 
@@ -308,12 +309,15 @@ def retry_failed_items(task_id: str, user_id: int) -> None:
     reset_count = 0
     for item in state.get("plan") or []:
         if _normalized_status(item.get("status")) in {"failed", "interrupted"}:
+            if _retry_existing_image_child_if_possible(task_id, item, state, user_id):
+                reset_count += 1
+                continue
             _reset_item_for_retry(item)
             reset_count += 1
     state["cancel_requested"] = False
     state["scheduler_anchor_ts"] = None
     _append_audit(state, user_id, "retry_failed", {"reset_count": reset_count})
-    _save_state(task_id, state, status="running")
+    _save_state(task_id, state, status=_derive_parent_status(state.get("plan") or [], "running"))
 
 
 def retry_item(task_id: str, idx: int, user_id: int) -> None:
@@ -324,11 +328,48 @@ def retry_item(task_id: str, idx: int, user_id: int) -> None:
     plan = state.get("plan") or []
     if idx < 0 or idx >= len(plan):
         raise ValueError(f"Invalid idx={idx}, plan has {len(plan)} items")
-    _reset_item_for_retry(plan[idx])
+    item_status = _normalized_status(plan[idx].get("status"))
+    reused_image_child = (
+        item_status in {"failed", "interrupted"}
+        and _retry_existing_image_child_if_possible(task_id, plan[idx], state, user_id)
+    )
+    if not reused_image_child:
+        _reset_item_for_retry(plan[idx])
     state["cancel_requested"] = False
     state["scheduler_anchor_ts"] = None
     _append_audit(state, user_id, "retry_item", {"idx": idx})
-    _save_state(task_id, state, status="running")
+    _save_state(task_id, state, status=_derive_parent_status(state.get("plan") or [], "running"))
+
+
+def refresh_task_from_children(task_id: str, user_id: int | None = None) -> dict | None:
+    """Poll existing child tasks and sync recovered results without creating new children."""
+    task = get_task(task_id)
+    if not task:
+        return None
+    if user_id is not None and int(task.get("user_id") or 0) != int(user_id):
+        raise ValueError(f"Task {task_id} not found")
+
+    state = task["state"]
+    plan = [_normalize_item(item) for item in state.get("plan") or []]
+    state["plan"] = plan
+    changed = False
+
+    for item in plan:
+        if not _should_refresh_from_child(item):
+            continue
+        child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
+        if not child_state:
+            continue
+        before = json.dumps(item, ensure_ascii=False, default=str, sort_keys=True)
+        _apply_child_snapshot(task_id, item, state, child_state, bus=None)
+        after = json.dumps(item, ensure_ascii=False, default=str, sort_keys=True)
+        changed = changed or before != after
+
+    if changed:
+        final_status = _derive_parent_status(plan, task.get("status") or "")
+        _save_state(task_id, state, status=final_status)
+        return get_task(task_id)
+    return task
 
 
 def _poll_active_item(
@@ -339,6 +380,17 @@ def _poll_active_item(
     bus: EventBus | None,
 ) -> str | None:
     child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
+    return _apply_child_snapshot(parent_task_id, item, parent_state, child_state, bus=bus)
+
+
+def _apply_child_snapshot(
+    parent_task_id: str,
+    item: dict,
+    parent_state: dict,
+    child_state: dict,
+    *,
+    bus: EventBus | None,
+) -> str | None:
     child_status = _normalized_status(child_state.get("_project_status"))
 
     if _child_needs_voice(child_state):
@@ -369,6 +421,7 @@ def _poll_active_item(
             return "failed"
         item["result_synced"] = True
         item["status"] = "done"
+        item["error"] = None
         item["finished_at"] = _now_iso()
         _roll_up_cost(parent_state, item, child_state)
         _save_state(parent_task_id, parent_state, status="running")
@@ -413,6 +466,80 @@ def _get_completed_child_error(item: dict, child_state: dict) -> str:
     )
     failed_count = len(failed_items)
     return f"image_translate child failed ({failed_count} items): {first_error}"
+
+
+def _retry_existing_image_child_if_possible(
+    parent_task_id: str,
+    item: dict,
+    parent_state: dict,
+    user_id: int,
+) -> bool:
+    if (item.get("child_task_type") or "").strip() != "image_translate":
+        return False
+    if not (item.get("child_task_id") or item.get("sub_task_id")):
+        return False
+
+    try:
+        reset_count = _retry_failed_image_child_items(item, user_id)
+    except (PermissionError, ValueError):
+        return False
+
+    if reset_count <= 0:
+        child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
+        if child_state:
+            _apply_child_snapshot(parent_task_id, item, parent_state, child_state, bus=None)
+        return _normalized_status(item.get("status")) != "failed"
+
+    child_task_id = item.get("child_task_id") or item.get("sub_task_id")
+    item["child_task_id"] = child_task_id
+    item["sub_task_id"] = child_task_id
+    item["child_task_type"] = "image_translate"
+    item["status"] = "running"
+    item["error"] = None
+    item["result_synced"] = False
+    item["started_at"] = item.get("started_at") or _now_iso()
+    item["finished_at"] = None
+    return True
+
+
+def _retry_failed_image_child_items(item: dict, user_id: int) -> int:
+    child_task_id = (item.get("child_task_id") or item.get("sub_task_id") or "").strip()
+    if not child_task_id:
+        return 0
+
+    from appcore.image_translate_runtime import reset_failed_items_for_retry
+    from web.services import image_translate_runner
+
+    reset_count = reset_failed_items_for_retry(child_task_id, user_id=user_id)
+    if reset_count > 0:
+        image_translate_runner.start(child_task_id, user_id=user_id)
+    return reset_count
+
+
+def _should_refresh_from_child(item: dict) -> bool:
+    if not (item.get("child_task_id") or item.get("sub_task_id")):
+        return False
+    status = _normalized_status(item.get("status"))
+    if status in _REFRESHABLE_ITEM_STATUSES:
+        return True
+    return status == "done" and not bool(item.get("result_synced"))
+
+
+def _derive_parent_status(plan: list[dict], fallback_status: str) -> str:
+    statuses = [_normalized_status(item.get("status")) for item in plan]
+    if not statuses:
+        return fallback_status or "done"
+    if any(status in _RETRYABLE_ITEM_STATUSES for status in statuses):
+        return "failed"
+    if any(status == "awaiting_voice" for status in statuses):
+        return "waiting_manual"
+    if any(status in _ACTIVE_ITEM_STATUSES for status in statuses):
+        return "running"
+    if all(status in {"done", "skipped"} for status in statuses):
+        return "done"
+    if any(status == "pending" for status in statuses):
+        return "running"
+    return fallback_status or "running"
 
 
 def _next_due_pending_item(state: dict, now_ts: float) -> dict | None:
