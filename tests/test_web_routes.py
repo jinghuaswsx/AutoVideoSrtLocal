@@ -2257,6 +2257,19 @@ def test_medias_scripts_wire_material_link_check_flow():
     assert "edState.productData.product.link_check_tasks" in medias_js
 
 
+def test_mk_selection_template_proxies_wedev_media_assets():
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "web"
+        / "templates"
+        / "mk_selection.html"
+    ).read_text(encoding="utf-8")
+
+    assert "function normalizeMkMediaPath" in template
+    assert "/medias/api/mk-media?path=" in template
+    assert "/medias/media-objects/" not in template
+
+
 def test_pushes_scripts_format_language_as_chinese_plus_code():
     pushes_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "pushes.js").read_text(encoding="utf-8")
 

@@ -124,6 +124,14 @@ function heatLevel(spends) {
   return {label:'低', cls:'low'};
 }
 
+function normalizeMkMediaPath(path) {
+  let p = String(path || '').trim().replace(/\\/g, '/');
+  while (p.startsWith('./')) p = p.slice(2);
+  p = p.replace(/^\/+/, '');
+  if (p.startsWith('medias/')) p = p.slice('medias/'.length);
+  return p;
+}
+
 async function loadData(page) {
   currentPage = page;
   const kw = document.getElementById('searchInput').value.trim();
@@ -242,7 +250,8 @@ async function openDetail(mkId, mkName) {
     videos.forEach(v => {
       const spends = parseSpends(v.spends);
       const heat = heatLevel(spends);
-      const coverUrl = v.image_path ? '/medias/media-objects/' + encodeURIComponent(v.image_path.replace('./medias/','')) : '';
+      const coverPath = normalizeMkMediaPath(v.image_path);
+      const coverUrl = coverPath ? '/medias/api/mk-media?path=' + encodeURIComponent(coverPath) : '';
       html += `<div style="border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; font-size:13px;">
         ${coverUrl ? `<img src="${coverUrl}" style="width:100%; height:160px; object-fit:cover; background:var(--oc-bg-muted); display:block;" onerror="this.style.display='none'" alt="">` : `<div style="width:100%; height:160px; background:var(--oc-bg-muted); display:flex; align-items:center; justify-content:center; color:var(--oc-fg-subtle);">无封面</div>`}
         <div style="padding:10px 12px;">

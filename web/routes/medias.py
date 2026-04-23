@@ -10,10 +10,10 @@ import uuid
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 import uuid
 import requests
-from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file, url_for
+from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import local_media_storage, medias, pushes, task_state, tos_clients
@@ -2141,6 +2141,36 @@ def api_mk_selection_refresh():
     return jsonify({"ok": True, "message": "刷新任务已提交（暂未实现）"})
 
 
+@bp.route("/api/mk-media", methods=["GET"])
+@login_required
+def api_mk_media_proxy():
+    """Proxy wedev media files so the selection detail modal does not hit local object routes."""
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可访问"}), 403
+    media_path = _normalize_mk_media_path(request.args.get("path") or "")
+    if not media_path:
+        abort(404)
+
+    headers = _build_mk_request_headers()
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "image/*,*/*;q=0.8"
+    url = f"{_get_mk_api_base_url()}/medias/{quote(media_path, safe='/')}"
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    if resp.status_code >= 400:
+        return ("", resp.status_code)
+    content_type = (
+        (resp.headers.get("content-type") or "").split(";")[0].strip()
+        or mimetypes.guess_type(media_path)[0]
+        or "application/octet-stream"
+    )
+    proxied = Response(resp.content, status=resp.status_code, content_type=content_type)
+    proxied.headers["Cache-Control"] = "private, max-age=3600"
+    return proxied
+
+
 @bp.route("/api/mk-detail/<int:mk_id>")
 @login_required
 def api_mk_detail_proxy(mk_id: int):
@@ -2167,6 +2197,20 @@ def api_mk_detail_proxy(mk_id: int):
 
 def _get_mk_api_base_url() -> str:
     return (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+
+
+def _normalize_mk_media_path(raw_path: str) -> str:
+    path = (raw_path or "").strip().replace("\\", "/")
+    if path.startswith(("http://", "https://")):
+        return ""
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.lstrip("/")
+    if path.startswith("medias/"):
+        path = path[len("medias/"):]
+    if not path or ".." in path.split("/"):
+        return ""
+    return path
 
 
 def _build_mk_request_headers() -> dict[str, str]:
