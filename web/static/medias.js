@@ -941,6 +941,15 @@
 
   // ---------- Cover ----------
   const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$/;
+  const PRODUCT_CODE_SUFFIX = '-rjc';
+  const PRODUCT_CODE_SUFFIX_ERROR = 'Product ID 必须以 -RJC 结尾';
+
+  function validateProductCodeForSubmit(code) {
+    if (!code) return '产品 ID 必填';
+    if (!code.endsWith(PRODUCT_CODE_SUFFIX)) return PRODUCT_CODE_SUFFIX_ERROR;
+    if (!SLUG_RE.test(code)) return '产品 ID 必填且需合法（小写字母/数字/连字符，3–128）';
+    return '';
+  }
 
   function setCover(url) {
     const dz = $('coverDropzone');
@@ -1085,7 +1094,7 @@
     $('itemsBadge').textContent = document.querySelectorAll('.oc-item').length;
   }
 
-  async function ensureProductIdForUpload() {
+  async function ensureProductIdForUploadBase() {
     if (state.current && state.current.product && state.current.product.id) return state.current.product.id;
     const name = $('mName').value.trim();
     const code = $('mCode').value.trim().toLowerCase();
@@ -1106,6 +1115,18 @@
       else alert('创建失败：' + msg);
       return null;
     }
+  }
+
+  async function ensureProductIdForUpload() {
+    if (state.current && state.current.product && state.current.product.id) {
+      return state.current.product.id;
+    }
+    const name = $('mName').value.trim();
+    const code = $('mCode').value.trim().toLowerCase();
+    if (!name) return ensureProductIdForUploadBase();
+    const codeError = validateProductCodeForSubmit(code);
+    if (codeError) { alert(codeError); $('mCode').focus(); return null; }
+    return ensureProductIdForUploadBase();
   }
 
   async function uploadVideo(file) {
@@ -1157,7 +1178,7 @@
     loadList();
   }
 
-  async function save() {
+  async function saveBase() {
     const name = $('mName').value.trim();
     const code = $('mCode').value.trim().toLowerCase();
     if (!name) { alert('产品名称必填'); $('mName').focus(); return; }
@@ -1180,6 +1201,15 @@
       if (msg.includes('已被占用')) { alert('产品 ID 已被占用'); $('mCode').focus(); }
       else alert('保存失败：' + msg);
     }
+  }
+
+  async function save() {
+    const name = $('mName').value.trim();
+    const code = $('mCode').value.trim().toLowerCase();
+    if (!name) return saveBase();
+    const codeError = validateProductCodeForSubmit(code);
+    if (codeError) { alert(codeError); $('mCode').focus(); return; }
+    return saveBase();
   }
 
   // ---------- Copywritings ----------
@@ -1538,7 +1568,7 @@
     return cwDict;
   }
 
-  function edCollectProductPayload(options = {}) {
+  function edCollectProductPayloadBase(options = {}) {
     const {
       flushCopywritings = true,
       flushProductUrl = true,
@@ -1583,6 +1613,18 @@
         ad_supported_langs: adSupportedLangs,
       },
     };
+  }
+
+  function edCollectProductPayload(options = {}) {
+    const name = $('edName').value.trim();
+    const code = $('edCode').value.trim().toLowerCase();
+    if (!name) return edCollectProductPayloadBase(options);
+    const codeError = validateProductCodeForSubmit(code);
+    if (codeError) {
+      $('edCode').focus();
+      throw new Error(codeError);
+    }
+    return edCollectProductPayloadBase(options);
   }
 
   function edGetEnglishSourceCopy() {

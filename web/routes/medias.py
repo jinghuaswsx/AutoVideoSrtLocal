@@ -113,11 +113,15 @@ def _download_image_to_local_media(
     return object_key, data, ext
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$")
+_PRODUCT_CODE_SUFFIX = "-rjc"
+_PRODUCT_CODE_SUFFIX_ERROR = "Product ID 必须以 -RJC 结尾"
 
 
 def _validate_product_code(code: str) -> tuple[bool, str | None]:
     if not code:
         return False, "浜у搧 ID 蹇呭～"
+    if not code.endswith(_PRODUCT_CODE_SUFFIX):
+        return False, _PRODUCT_CODE_SUFFIX_ERROR
     if not _SLUG_RE.match(code):
         return False, "浜у搧 ID 鍙兘浣跨敤灏忓啓瀛楁瘝銆佹暟瀛楀拰杩炲瓧绗︼紝闀垮害 3-128锛屼笖棣栧熬涓嶈兘鏄繛瀛楃"
     return True, None
