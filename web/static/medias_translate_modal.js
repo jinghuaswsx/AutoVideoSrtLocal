@@ -336,12 +336,7 @@
   function collectExistingDefaults() {
     state.selectedContentTypes = new Set(CONTENT_TYPES.map((item) => item.code));
     state.selectedRawIds = new Set((state.rawSources || []).map((item) => Number(item.id)));
-
-    const langs = enabledLanguages();
-    const missing = langs
-      .map((lang) => lang.code)
-      .filter((code) => (state.rawSources || []).some((raw) => !rawHasTranslation(raw, code)));
-    state.selectedLangs = new Set(missing);
+    state.selectedLangs = new Set();
 
     state.videoFont = 'Impact';
     state.videoSize = 10;
