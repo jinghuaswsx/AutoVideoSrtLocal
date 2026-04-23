@@ -10,7 +10,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from appcore import gemini_image, llm_client, local_media_storage, medias, tos_clients
+from appcore import gemini_image, llm_client, local_media_storage, medias, object_keys
 from appcore.events import Event, EventBus
 from web import store
 
@@ -391,12 +391,9 @@ class ImageTranslateRuntime:
             or (task.get("medias_context") or {}).get("source_bucket")
             or "upload"
         ).strip().lower()
-        if source_bucket == "media":
-            try:
-                return local_media_storage.download_to(object_key, local_path)
-            except FileNotFoundError:
-                return tos_clients.download_media_file(object_key, local_path)
-        return tos_clients.download_file(object_key, local_path)
+        raise FileNotFoundError(
+            f"local source image not found: {object_key} (source_bucket={source_bucket})"
+        )
 
     def _finalize_auto_apply(self, task: dict) -> None:
         ctx = task.get("medias_context") or {}
@@ -549,10 +546,9 @@ def apply_translated_detail_images_from_task(
         download_fd, download_path = tempfile.mkstemp(suffix=ext, prefix="it_apply_")
         os.close(download_fd)
         try:
-            if local_media_storage.exists(dst_key):
-                local_media_storage.download_to(dst_key, download_path)
-            else:
-                tos_clients.download_file(dst_key, download_path)
+            if not local_media_storage.exists(dst_key):
+                raise FileNotFoundError(f"local translated image not found: {dst_key}")
+            local_media_storage.download_to(dst_key, download_path)
             with open(download_path, "rb") as f:
                 data = f.read()
         finally:
@@ -566,7 +562,7 @@ def apply_translated_detail_images_from_task(
             os.path.basename(item.get("filename") or f"detail_{item.get('idx') or 0}")
         )[0]
         filename = f"{base_name or 'detail'}{ext}"
-        object_key = tos_clients.build_media_object_key(resolved_uid, product_id, filename)
+        object_key = object_keys.build_media_object_key(resolved_uid, product_id, filename)
         content_type = ImageTranslateRuntime._guess_mime(dst_key)
         local_media_storage.write_bytes(object_key, data)
         created_images.append({

@@ -114,6 +114,17 @@ def _build_project_logical_key_targets(state: Mapping[str, Any]) -> dict[str, li
             artifact_kind = str(slot).split(":", 1)[-1].strip()
             targets[tos_key] = _resolve_result_targets(state, artifact_kind)
 
+    items = state.get("items") or []
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            for field in ("src_tos_key", "dst_tos_key"):
+                logical_key = _clean_text(item.get(field))
+                if not logical_key:
+                    continue
+                targets.setdefault(logical_key, [f"{_MEDIA_STORE_PREFIX}/{logical_key.lstrip('/')}"])
+
     return {key: value for key, value in sorted(targets.items())}
 
 

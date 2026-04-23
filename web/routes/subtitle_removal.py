@@ -12,7 +12,7 @@ import config
 from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import task_state
+from appcore import object_keys, task_state
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from appcore.vod_erase_provider import VodEraseError, get_play_info
@@ -165,14 +165,6 @@ def _cleanup_result_artifacts(task: dict) -> None:
         except Exception:
             pass
 
-    result_tos_key = (task.get("result_tos_key") or "").strip()
-    if result_tos_key:
-        try:
-            tos_clients.delete_object(result_tos_key)
-        except Exception:
-            pass
-
-
 def _ensure_public_source_url(task_id: str, task: dict) -> str:
     source_tos_key = (task.get("source_tos_key") or "").strip()
     if not source_tos_key:
@@ -181,7 +173,7 @@ def _ensure_public_source_url(task_id: str, task: dict) -> str:
             raise RuntimeError("source video is missing; cannot stage public source")
         user_id = task.get("_user_id")
         original_filename = (task.get("original_filename") or os.path.basename(video_path) or "source.mp4").strip()
-        source_tos_key = tos_clients.build_source_object_key(user_id, task_id, original_filename)
+        source_tos_key = object_keys.build_source_object_key(user_id, task_id, original_filename)
         tos_clients.upload_file(video_path, source_tos_key)
         store.update(task_id, source_tos_key=source_tos_key)
     return tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
@@ -489,7 +481,7 @@ def bootstrap_upload():
         return jsonify({"error": "invalid video file type"}), 400
 
     task_id = str(uuid.uuid4())
-    object_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    object_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
     ext = os.path.splitext(original_filename)[1].lower()
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
     content_type = (body.get("content_type") or "").strip() or "application/octet-stream"
@@ -557,7 +549,7 @@ def complete_upload():
     if reservation.get("original_filename") != original_filename or reservation.get("object_key") != object_key:
         return jsonify({"error": "bootstrap reservation mismatch"}), 403
 
-    expected_key = tos_clients.build_source_object_key(current_user.id, task_id, original_filename)
+    expected_key = object_keys.build_source_object_key(current_user.id, task_id, original_filename)
     if object_key != expected_key:
         return jsonify({"error": "object_key mismatch"}), 400
 
@@ -656,10 +648,6 @@ def get_source_video_artifact(task_id: str):
     if video_path and os.path.exists(video_path):
         return send_file(video_path, mimetype="video/mp4")
 
-    source_tos_key = (task.get("source_tos_key") or "").strip()
-    if source_tos_key:
-        return redirect(tos_clients.generate_signed_download_url(source_tos_key))
-
     abort(404)
 
 
@@ -692,10 +680,6 @@ def _result_response(task: dict, *, as_attachment: bool = False):
             download_name = f"{(task.get('display_name') or task.get('original_filename') or task.get('id') or 'subtitle-removal').strip()}.cleaned.mp4"
             return send_file(result_video_path, as_attachment=True, download_name=download_name)
         return send_file(result_video_path, mimetype="video/mp4")
-
-    result_tos_key = (task.get("result_tos_key") or "").strip()
-    if result_tos_key:
-        return redirect(tos_clients.generate_signed_download_url(result_tos_key))
 
     # VOD provider: 产物托管在 VOD，MainPlayUrl 带过期时间，每次都实时重取
     task_id = (task.get("id") or "").strip()

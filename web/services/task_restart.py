@@ -12,7 +12,6 @@ import os
 import shutil
 from typing import Any
 
-from appcore import tos_clients
 from appcore.source_video import ensure_local_source_video
 from appcore.task_state import _empty_variant_state
 from web import store
@@ -50,6 +49,8 @@ _RESET_FIELDS: dict[str, Any] = {
     "artifacts": {},
     "preview_files": {},
     "tos_uploads": {},
+    "source_tos_key": "",
+    "delivery_mode": "local_primary",
     "tts_duration_rounds": [],
     "tts_duration_status": None,
     "translation_history": [],
@@ -60,19 +61,6 @@ _RESET_FIELDS: dict[str, Any] = {
 }
 
 _TASK_DIR_KEEP_PREFIXES: tuple[str, ...] = ("thumbnail",)
-
-
-def _clear_tos_uploads(tos_uploads: dict | None) -> None:
-    for payload in (tos_uploads or {}).values():
-        if not isinstance(payload, dict):
-            continue
-        key = payload.get("tos_key")
-        if not key:
-            continue
-        try:
-            tos_clients.delete_object(key)
-        except Exception:
-            log.warning("[restart] delete tos artifact failed: %s", key, exc_info=True)
 
 
 def _purge_task_dir(task_dir: str) -> None:
@@ -112,7 +100,6 @@ def restart_task(
     # Do not purge outputs or start the runner unless the source can be used.
     ensure_local_source_video(task_id)
 
-    _clear_tos_uploads(task.get("tos_uploads"))
     _purge_task_dir(task.get("task_dir") or "")
 
     payload = dict(_RESET_FIELDS)

@@ -12,6 +12,11 @@ from web.app import create_app
 def client(monkeypatch):
     """保证每个用例以一致的 apikey 启动应用。"""
     monkeypatch.setenv("OPENAPI_MEDIA_API_KEY", "demo-key")
+    monkeypatch.setenv("LOCAL_SERVER_BASE_URL", "http://local.test")
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     import config as _config
     importlib.reload(_config)
     # create_app 内会读取 config 常量，reload 后下一次 create_app 生效
@@ -198,18 +203,6 @@ def test_returns_product_assets(client, monkeypatch):
         ],
     )
 
-    signed_calls: list[str] = []
-
-    def fake_signed_url(object_key, expires=None):
-        signed_calls.append(object_key)
-        return f"https://signed.example.com/{object_key}"
-
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients."
-        "generate_signed_media_download_url",
-        fake_signed_url,
-    )
-
     response = client.get(
         "/openapi/materials/sonic-lens-refresher",
         headers={"X-API-Key": "demo-key"},
@@ -224,31 +217,24 @@ def test_returns_product_assets(client, monkeypatch):
 
     assert payload["covers"]["en"]["object_key"] == "1/medias/123/cover_en.jpg"
     assert payload["covers"]["en"]["download_url"] == (
-        "https://signed.example.com/1/medias/123/cover_en.jpg"
+        "http://local.test/medias/obj/1/medias/123/cover_en.jpg"
     )
     assert payload["covers"]["de"]["download_url"] == (
-        "https://signed.example.com/1/medias/123/cover_de.jpg"
+        "http://local.test/medias/obj/1/medias/123/cover_de.jpg"
     )
 
     assert payload["copywritings"]["en"][0]["title"] == "Title"
     assert payload["copywritings"]["de"][0]["title"] == "Titel"
 
     assert payload["items"][0]["video_download_url"] == (
-        "https://signed.example.com/1/medias/123/demo.mp4"
+        "http://local.test/medias/obj/1/medias/123/demo.mp4"
     )
     assert payload["items"][0]["video_cover_download_url"] == (
-        "https://signed.example.com/1/medias/123/item_cover.jpg"
+        "http://local.test/medias/obj/1/medias/123/item_cover.jpg"
     )
     assert payload["items"][1]["video_cover_download_url"] is None
 
-    assert signed_calls == [
-        "1/medias/123/cover_en.jpg",
-        "1/medias/123/cover_de.jpg",
-        "1/medias/123/demo.mp4",
-        "1/medias/123/item_cover.jpg",
-        "1/medias/123/demo-2.mp4",
-    ]
-    assert payload["expires_in"] == 3600
+    assert payload["storage_backend"] == "local"
 
 
 # ================================================================
@@ -294,10 +280,6 @@ def test_push_items_list_returns_items_with_status(client, monkeypatch):
     monkeypatch.setattr(
         "web.routes.openapi_materials.query_one",
         lambda sql, args: None,
-    )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda key: f"https://signed/{key}",
     )
 
     response = client.get(
@@ -357,10 +339,6 @@ def test_push_items_list_filters_by_status(client, monkeypatch):
     monkeypatch.setattr(
         "web.routes.openapi_materials.query_one",
         lambda sql, args: None,
-    )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda key: None,
     )
 
     response = client.get(
@@ -481,10 +459,6 @@ def test_get_push_item_returns_single(client, monkeypatch):
         "web.routes.openapi_materials.query_one",
         lambda sql, args: None,
     )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda key: None,
-    )
 
     response = client.get(
         "/openapi/push-items/77",
@@ -578,10 +552,6 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
     monkeypatch.setattr(
         "web.routes.openapi_materials.query_one",
         lambda sql, args: None,
-    )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda key: f"https://signed/{key}",
     )
 
     response = client.get(

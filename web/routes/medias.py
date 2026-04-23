@@ -17,7 +17,7 @@ import requests
 from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import local_media_storage, medias, pushes, task_state, tos_clients
+from appcore import local_media_storage, medias, object_keys, pushes, task_state
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -27,7 +27,7 @@ from appcore.material_filename_rules import (
     validate_initial_material_filename,
     validate_material_filename,
 )
-from config import OUTPUT_DIR, TOS_MEDIA_BUCKET, TOS_REGION, TOS_PUBLIC_ENDPOINT, TOS_SIGNED_URL_EXPIRES
+from config import OUTPUT_DIR
 from pipeline.ffutil import extract_thumbnail, get_media_duration
 from web import store
 from web.background import start_background_task
@@ -64,7 +64,7 @@ def _resolve_upload_user_id(user_id: int | None = None) -> int | None:
     return int(resolved) if resolved is not None else None
 
 
-def _download_image_to_tos(
+def _download_image_to_local_media(
     url: str, pid: int, prefix: str, *, user_id: int | None = None
 ) -> tuple[str, bytes, str] | tuple[None, None, str]:
     """Download an image from URL and store it in local media storage."""
@@ -96,7 +96,7 @@ def _download_image_to_tos(
     filename = f"{prefix}_{name_from_url}"
     if not filename.endswith(ext):
         filename += ext
-    object_key = tos_clients.build_media_object_key(upload_user_id, pid, filename)
+    object_key = object_keys.build_media_object_key(upload_user_id, pid, filename)
     local_media_storage.write_bytes(object_key, data)
     return object_key, data, ext
 
@@ -238,27 +238,13 @@ def _reserve_local_media_upload(object_key: str) -> dict[str, str]:
 def _is_media_available(object_key: str) -> bool:
     if not object_key:
         return False
-    if local_media_storage.exists(object_key):
-        return True
-    try:
-        local_path = local_media_storage.local_path_for(object_key)
-        local_path.parent.mkdir(parents=True, exist_ok=True)
-        tos_clients.download_media_file(object_key, str(local_path))
-        return local_path.exists()
-    except Exception:
-        return False
+    return local_media_storage.exists(object_key)
 
 
 def _download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
     if local_media_storage.exists(object_key):
         return local_media_storage.download_to(object_key, destination)
-    try:
-        local_path = local_media_storage.local_path_for(object_key)
-        local_path.parent.mkdir(parents=True, exist_ok=True)
-        tos_clients.download_media_file(object_key, str(local_path))
-        return local_media_storage.download_to(object_key, destination)
-    except Exception:
-        return tos_clients.download_media_file(object_key, destination)
+    raise FileNotFoundError(f"local media object not found: {object_key}")
 
 
 def _delete_media_object(object_key: str | None) -> None:
@@ -267,10 +253,6 @@ def _delete_media_object(object_key: str | None) -> None:
         return
     try:
         local_media_storage.delete(key)
-    except Exception:
-        pass
-    try:
-        tos_clients.delete_media_object(key)
     except Exception:
         pass
 
@@ -901,10 +883,10 @@ def api_create_raw_source(pid: int):
     if uid is None:
         return jsonify({"error": "missing upload user"}), 400
 
-    video_key = tos_clients.build_media_raw_source_key(
+    video_key = object_keys.build_media_raw_source_key(
         uid, pid, kind="video", filename=video.filename or "video.mp4",
     )
-    cover_key = tos_clients.build_media_raw_source_key(
+    cover_key = object_keys.build_media_raw_source_key(
         uid, pid, kind="cover", filename=cover.filename or "cover.jpg",
     )
 
@@ -1111,15 +1093,12 @@ def api_item_bootstrap(pid: int):
     if error_response:
         return error_response
     effective_lang = validation.effective_lang
-    object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
+    object_key = object_keys.build_media_object_key(current_user.id, pid, filename)
     return jsonify({
         "object_key": object_key,
         "effective_lang": effective_lang,
         "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "bucket": TOS_MEDIA_BUCKET,
-        "region": TOS_REGION,
-        "endpoint": TOS_PUBLIC_ENDPOINT,
-        "expires_in": TOS_SIGNED_URL_EXPIRES,
+        "storage_backend": "local",
     })
 
 
@@ -1213,7 +1192,7 @@ def api_cover_from_url(pid: int):
     lang, err = _parse_lang(body)
     if err:
         return jsonify({"error": err}), 400
-    object_key, data, err_or_ext = _download_image_to_tos(
+    object_key, data, err_or_ext = _download_image_to_local_media(
         (body.get("url") or "").strip(), pid, f"cover_{lang}", user_id=current_user.id,
     )
     if object_key is None:
@@ -1242,7 +1221,7 @@ def api_item_cover_from_url(pid: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    object_key, _data, err_or_ext = _download_image_to_tos(
+    object_key, _data, err_or_ext = _download_image_to_local_media(
         (body.get("url") or "").strip(), pid, "item_cover", user_id=current_user.id,
     )
     if object_key is None:
@@ -1260,7 +1239,7 @@ def api_item_cover_set_from_url(item_id: int):
     if not _can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    object_key, data, err_or_ext = _download_image_to_tos(
+    object_key, data, err_or_ext = _download_image_to_local_media(
         (body.get("url") or "").strip(), it["product_id"], "item_cover", user_id=current_user.id,
     )
     if object_key is None:
@@ -1292,13 +1271,13 @@ def api_item_cover_bootstrap(pid: int):
     filename = os.path.basename((body.get("filename") or "item_cover.jpg").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
-    object_key = tos_clients.build_media_object_key(
+    object_key = object_keys.build_media_object_key(
         current_user.id, pid, f"item_cover_{filename}",
     )
     return jsonify({
         "object_key": object_key,
         "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "expires_in": TOS_SIGNED_URL_EXPIRES,
+        "storage_backend": "local",
     })
 
 
@@ -1403,13 +1382,13 @@ def api_cover_bootstrap(pid: int):
     filename = os.path.basename((body.get("filename") or "cover.jpg").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
-    object_key = tos_clients.build_media_object_key(
+    object_key = object_keys.build_media_object_key(
         current_user.id, pid, f"cover_{lang}_{filename}",
     )
     return jsonify({
         "object_key": object_key,
         "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
-        "expires_in": TOS_SIGNED_URL_EXPIRES,
+        "storage_backend": "local",
     })
 
 
@@ -1775,7 +1754,7 @@ def api_detail_images_from_url(pid: int):
                    message=f"downloading image {idx + 1}/{len(images)}")
             filename = f"from_url_{lang}_{idx:02d}"
             try:
-                obj_key, data, err = _download_image_to_tos(
+                obj_key, data, err = _download_image_to_local_media(
                     src, pid, filename, user_id=uid,
                 )
                 if err and not obj_key:
@@ -1854,7 +1833,7 @@ def api_detail_images_bootstrap(pid: int):
         if size and size > _MAX_IMAGE_BYTES:
             return jsonify({"error": f"files[{idx}] exceeds 15MB"}), 400
 
-        object_key = tos_clients.build_media_object_key(
+        object_key = object_keys.build_media_object_key(
             current_user.id, pid, f"detail_{lang}_{idx:02d}_{filename}",
         )
         uploads.append({
@@ -1865,7 +1844,7 @@ def api_detail_images_bootstrap(pid: int):
 
     return jsonify({
         "uploads": uploads,
-        "expires_in": TOS_SIGNED_URL_EXPIRES,
+        "storage_backend": "local",
     })
 
 
@@ -2155,7 +2134,7 @@ def detail_image_proxy(image_id: int):
 
 # ----------------------------------------------------------------
 # 无鉴权素材下载（仅用于推送给外部下游系统作为 video.url / image_url）。
-# 安全模型：和 TOS 签名 URL 一致 —— 知 object_key 者即可访问。
+# 安全模型：知 object_key 者即可访问。
 # 下游 Dify / Shopify 工作流在内网，主项目也在内网，不暴露到公网。
 # ----------------------------------------------------------------
 @bp.route("/obj/<path:object_key>")

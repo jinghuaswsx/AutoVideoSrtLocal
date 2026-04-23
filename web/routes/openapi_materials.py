@@ -2,7 +2,7 @@
 
 - 使用 ``X-API-Key`` 校验请求，密钥从 ``config.OPENAPI_MEDIA_API_KEY`` 读取
 - 按 ``product_code`` 聚合返回产品基础信息、主图、文案和视频素材
-- 主图 / 视频 / 视频封面的下载地址均为 TOS 临时签名地址
+- 主图 / 视频 / 视频封面的下载地址均为本地素材服务地址
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from flask import Blueprint, jsonify, request
 
 import config
-from appcore import medias, pushes, tos_clients
+from appcore import medias, pushes
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 
@@ -23,6 +23,10 @@ link_check_bp = Blueprint("openapi_link_check", __name__, url_prefix="/openapi/l
 
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
+
+
+def _media_download_url(object_key: str | None) -> str | None:
+    return pushes.build_media_public_url(object_key)
 
 
 def _api_key_valid() -> bool:
@@ -71,8 +75,8 @@ def _serialize_cover_map(covers: dict) -> dict:
             continue
         payload[lang] = {
             "object_key": object_key,
-            "download_url": tos_clients.generate_signed_media_download_url(object_key),
-            "expires_in": config.TOS_SIGNED_URL_EXPIRES,
+            "download_url": _media_download_url(object_key),
+            "storage_backend": "local",
         }
     return payload
 
@@ -103,15 +107,9 @@ def _serialize_items(rows: list[dict]) -> list[dict]:
             "filename": row.get("filename"),
             "display_name": row.get("display_name") or row.get("filename"),
             "object_key": object_key,
-            "video_download_url": (
-                tos_clients.generate_signed_media_download_url(object_key)
-                if object_key else None
-            ),
+            "video_download_url": _media_download_url(object_key),
             "cover_object_key": cover_object_key,
-            "video_cover_download_url": (
-                tos_clients.generate_signed_media_download_url(cover_object_key)
-                if cover_object_key else None
-            ),
+            "video_cover_download_url": _media_download_url(cover_object_key),
             "duration_seconds": row.get("duration_seconds"),
             "file_size": row.get("file_size"),
             "created_at": _iso_or_none(row.get("created_at")),
@@ -145,7 +143,7 @@ def get_material(product_code: str):
         "covers": _serialize_cover_map(covers),
         "copywritings": _group_copywritings(copywritings),
         "items": _serialize_items(items),
-        "expires_in": config.TOS_SIGNED_URL_EXPIRES,
+        "storage_backend": "local",
     })
 
 
@@ -191,12 +189,10 @@ def build_push_payload(product_code: str):
             "width": 1080,
             "height": 1920,
             "url": (
-                tos_clients.generate_signed_media_download_url(object_key)
-                if object_key else None
+                _media_download_url(object_key)
             ),
             "image_url": (
-                tos_clients.generate_signed_media_download_url(cover_object_key)
-                if cover_object_key else None
+                _media_download_url(cover_object_key)
             ),
         })
 
@@ -255,8 +251,8 @@ def bootstrap_link_check():
             "id": item.get("id"),
             "kind": item.get("kind"),
             "filename": item.get("filename"),
-            "download_url": tos_clients.generate_signed_media_download_url(object_key),
-            "expires_in": config.TOS_SIGNED_URL_EXPIRES,
+            "download_url": _media_download_url(object_key),
+            "storage_backend": "local",
         })
     if not reference_images:
         return jsonify({"error": "references not ready"}), 409
@@ -453,7 +449,7 @@ def _serialize_push_item(item: dict, product: dict) -> dict:
         "file_size": item.get("file_size"),
         "duration_seconds": item.get("duration_seconds"),
         "cover_url": (
-            tos_clients.generate_signed_media_download_url(cover_key) if cover_key else None
+            _media_download_url(cover_key)
         ),
         "status": status,
         "readiness": readiness,

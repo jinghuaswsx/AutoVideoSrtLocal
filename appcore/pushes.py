@@ -10,7 +10,7 @@ from typing import Any
 import requests
 
 import config
-from appcore import medias, settings as system_settings, tos_clients
+from appcore import medias, settings as system_settings
 from appcore.db import query, query_one, execute
 
 log = logging.getLogger(__name__)

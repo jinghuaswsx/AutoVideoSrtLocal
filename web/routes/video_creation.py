@@ -19,7 +19,7 @@ from appcore.task_recovery import (
 from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
 from config import UPLOAD_DIR, OUTPUT_DIR
-from pipeline.storage import upload_file as tos_upload
+from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
 from web.extensions import socketio
 
@@ -255,7 +255,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
         # 上传本地文件到 TOS 获取公网 URL
         video_url = None
         if state.get("video_path") and os.path.exists(state["video_path"]):
-            video_url = tos_upload(
+            video_url = public_exchange_upload(
                 state["video_path"],
                 _build_public_exchange_key(task_id, state, "video", os.path.basename(state["video_path"])),
                 expires=86400,
@@ -266,7 +266,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
             if os.path.exists(img_path):
                 _shrink_image_if_oversize(img_path)
                 image_urls.append(
-                    tos_upload(
+                    public_exchange_upload(
                         img_path,
                         _build_public_exchange_key(task_id, state, "image", os.path.basename(img_path), index=index),
                         expires=86400,
@@ -275,7 +275,7 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
 
         audio_url = None
         if state.get("audio_path") and os.path.exists(state["audio_path"]):
-            audio_url = tos_upload(
+            audio_url = public_exchange_upload(
                 state["audio_path"],
                 _build_public_exchange_key(task_id, state, "audio", os.path.basename(state["audio_path"])),
                 expires=86400,

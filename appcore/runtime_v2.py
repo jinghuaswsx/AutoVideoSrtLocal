@@ -84,7 +84,7 @@ class PipelineRunnerV2(PipelineRunner):
         task_init = task_state.get(task_id) or {}
         self.target_language_label = task_init.get("target_language", "en")
 
-        # Guard: restore source video from TOS if the local file was cleaned up.
+        # Guard: fail early if the local source video has not been materialized.
         try:
             from appcore.source_video import ensure_local_source_video
             ensure_local_source_video(task_id)

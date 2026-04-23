@@ -11,7 +11,7 @@ from datetime import datetime
 from flask import Blueprint, Response, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, medias, task_state, tos_clients
+from appcore import local_media_storage, medias, task_state
 from appcore.db import execute as db_execute
 from appcore.db import query_one as db_query_one
 from appcore.gemini_image import coerce_image_model, is_valid_image_model, list_image_models
@@ -146,7 +146,7 @@ def _signed_source_url(task: dict, item: dict) -> str:
         return url_for("medias.media_object_proxy", object_key=object_key)
     if _resolve_source_bucket(task, item) == "media":
         return url_for("medias.media_object_proxy", object_key=object_key)
-    return tos_clients.generate_signed_download_url(object_key)
+    abort(404)
 
 
 def _result_artifact_url(object_key: str) -> str:
@@ -155,14 +155,14 @@ def _result_artifact_url(object_key: str) -> str:
         abort(404)
     if local_media_storage.exists(key):
         return url_for("medias.media_object_proxy", object_key=key)
-    return tos_clients.generate_signed_download_url(key)
+    abort(404)
 
 
 def _download_artifact_object(object_key: str, destination: str) -> str:
     key = (object_key or "").strip()
     if local_media_storage.exists(key):
         return local_media_storage.download_to(key, destination)
-    return tos_clients.download_file(key, destination)
+    raise FileNotFoundError(f"local image artifact not found: {key}")
 
 
 def _delete_artifact_object(object_key: str | None) -> None:
@@ -171,10 +171,6 @@ def _delete_artifact_object(object_key: str | None) -> None:
         return
     try:
         local_media_storage.delete(key)
-    except Exception:
-        pass
-    try:
-        tos_clients.delete_object(key)
     except Exception:
         pass
 

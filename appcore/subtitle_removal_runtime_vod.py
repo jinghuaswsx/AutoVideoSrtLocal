@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import config
-from appcore import task_state, tos_clients
+from appcore import object_keys, task_state, tos_clients
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
 from appcore.subtitle_removal_runtime import SubtitleRemovalTaskDeleted, _task_is_deleted
 from appcore.vod_erase_provider import (
@@ -28,7 +28,7 @@ def _ensure_public_source_url(task_id: str, task: dict, user_id: int | None = No
         if not video_path:
             raise RuntimeError("source_tos_key is missing")
         original_filename = (task.get("original_filename") or "source.mp4").strip() or "source.mp4"
-        source_tos_key = tos_clients.build_source_object_key(
+        source_tos_key = object_keys.build_source_object_key(
             user_id if user_id is not None else task.get("_user_id"),
             task_id,
             original_filename,

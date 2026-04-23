@@ -37,7 +37,7 @@ def index():
     )
 
 
-from appcore import medias, pushes, tos_clients
+from appcore import medias, pushes
 
 _PAGE_SIZE_DEFAULT = 20
 
@@ -95,8 +95,7 @@ def _serialize_row(row: dict) -> dict:
         "ai_evaluation_result": row.get("ai_evaluation_result") or "",
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "listing_status": row.get("listing_status") or "上架",
-        # 走本地代理 /medias/obj/<key>（local-first：先查本地，缺了再从 TOS 懒加载），
-        # 适配 local-first 存储下 TOS 尚无对象的素材
+    # 走本地代理 /medias/obj/<key>，素材必须已经回填到本地 media_store。
         "cover_url": (
             f"/medias/obj/{urllib.parse.quote(cover_key, safe='/')}" if cover_key else None
         ),

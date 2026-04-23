@@ -13,12 +13,16 @@ from web.app import create_app
 def client():
     os.environ["FLASK_SECRET_KEY"] = "demo-secret"
     os.environ["OPENAPI_MEDIA_API_KEY"] = "demo-key"
+    os.environ["LOCAL_SERVER_BASE_URL"] = "http://local.test"
     import config as _config
 
     importlib.reload(_config)
     import web.app as web_app
 
+    web_app._run_startup_recovery = lambda: None
     web_app.recover_all_interrupted_tasks = lambda: None
+    web_app.mark_interrupted_bulk_translate_tasks = lambda: None
+    web_app._seed_default_prompts = lambda: None
     app = create_app()
     return app.test_client()
 
@@ -112,10 +116,6 @@ def test_bootstrap_returns_product_reference_payload(client, monkeypatch):
             {"id": "detail-11", "kind": "detail", "filename": "detail_11.jpg", "object_key": "details/de_11.jpg"},
         ],
     )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda object_key: f"https://signed.example.com/{object_key}",
-    )
     monkeypatch.setattr("web.routes.openapi_materials.medias.get_language_name", lambda code: "DE")
 
     response = client.post(
@@ -132,8 +132,8 @@ def test_bootstrap_returns_product_reference_payload(client, monkeypatch):
     assert payload["matched_by"] == "localized_links_exact"
     assert payload["normalized_url"] == "https://example.com/de/products/demo?variant=1"
     assert [item["kind"] for item in payload["reference_images"]] == ["cover", "detail"]
-    assert payload["reference_images"][0]["download_url"] == "https://signed.example.com/covers/de.jpg"
-    assert payload["reference_images"][0]["expires_in"] == 3600
+    assert payload["reference_images"][0]["download_url"] == "http://local.test/medias/obj/covers/de.jpg"
+    assert payload["reference_images"][0]["storage_backend"] == "local"
 
 
 def test_bootstrap_treats_plain_products_path_as_english(client, monkeypatch):
@@ -147,10 +147,6 @@ def test_bootstrap_treats_plain_products_path_as_english(client, monkeypatch):
         lambda pid, lang: [
             {"id": "cover-en", "kind": "cover", "filename": "cover_en.jpg", "object_key": "covers/en.jpg"},
         ],
-    )
-    monkeypatch.setattr(
-        "web.routes.openapi_materials.tos_clients.generate_signed_media_download_url",
-        lambda object_key: f"https://signed.example.com/{object_key}",
     )
     monkeypatch.setattr("web.routes.openapi_materials.medias.get_language_name", lambda code: "EN")
 

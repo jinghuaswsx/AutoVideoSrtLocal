@@ -24,7 +24,7 @@ from appcore.av_translate_inputs import (
     normalize_av_translate_inputs,
 )
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import cleanup, tos_clients
+from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
@@ -300,21 +300,17 @@ def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, va
 
 
 def _ensure_local_source_video(task_id: str, task: dict) -> None:
-    source_tos_key = (task.get("source_tos_key") or "").strip()
     video_path = (task.get("video_path") or "").strip()
-    if not source_tos_key or not video_path or os.path.exists(video_path):
+    if not video_path or os.path.exists(video_path):
         return
-
-    tos_clients.download_file(source_tos_key, video_path)
-    thumb = _extract_thumbnail(video_path, task.get("task_dir") or os.path.dirname(video_path))
-    if thumb:
-        db_execute("UPDATE projects SET thumbnail_path = %s WHERE id = %s", (thumb, task_id))
+    raise FileNotFoundError(
+        f"本地源视频缺失: {video_path}。请先运行本地存储迁移回填，或重新上传源视频。"
+    )
 
 
 def _task_requires_source_sync(task: dict) -> bool:
-    source_tos_key = (task.get("source_tos_key") or "").strip()
     video_path = (task.get("video_path") or "").strip()
-    return bool(source_tos_key and video_path and not os.path.exists(video_path))
+    return bool(video_path and not os.path.exists(video_path))
 
 
 @bp.route("", methods=["POST"])
@@ -557,7 +553,10 @@ def start(task_id):
     task = store.get(task_id) or task
 
     if _task_requires_source_sync(task):
-        _ensure_local_source_video(task_id, task)
+        try:
+            _ensure_local_source_video(task_id, task)
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 409
         updated_task = store.get(task_id) or task
         return jsonify({"status": "source_ready", "task": updated_task})
 
@@ -1067,7 +1066,10 @@ def resume_from_step(task_id):
 
     store.update(task_id, status="running", current_review_step="")
     task = store.get(task_id) or task
-    _ensure_local_source_video(task_id, task)
+    try:
+        _ensure_local_source_video(task_id, task)
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 409
 
     user_id = current_user.id if current_user.is_authenticated else None
     pipeline_runner.resume(task_id, start_step, user_id=user_id)
