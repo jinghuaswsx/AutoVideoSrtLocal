@@ -28,6 +28,10 @@ def test_bulk_translate_detail_script_renders_status_and_task_sections():
     assert "需要处理" in script
     assert "待执行" in script
     assert "已完成" in script
+    assert ">整个任务重新启动</button>" in script
+    assert ">重跑失败项</button>" in script
+    assert ">单个重新启动</button>" in script
+    assert "中断项不会在服务启动时自动重跑" in script
 
 
 def test_bulk_translate_detail_css_adds_roomy_status_layout():

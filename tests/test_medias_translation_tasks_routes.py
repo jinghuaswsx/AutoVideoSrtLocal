@@ -52,6 +52,11 @@ def test_product_translation_tasks_dynamic_links_open_new_tabs():
 def test_product_translation_tasks_api_returns_projection(authed_client_no_db, monkeypatch):
     _stub_product(monkeypatch)
     monkeypatch.setattr(
+        "appcore.bulk_translate_projection.list_product_task_ids",
+        lambda user_id, product_id: [],
+        raising=False,
+    )
+    monkeypatch.setattr(
         "appcore.bulk_translate_projection.list_product_tasks",
         lambda user_id, product_id: [
             {
@@ -79,3 +84,28 @@ def test_product_translation_tasks_api_returns_projection(authed_client_no_db, m
     assert payload["items"][0]["id"] == "bt-1"
     assert payload["items"][0]["items"][0]["status"] == "awaiting_voice"
     assert payload["items"][0]["items"][0]["detail_url"] == "/multi-translate/child-1"
+
+
+def test_product_translation_tasks_api_syncs_before_projection(authed_client_no_db, monkeypatch):
+    _stub_product(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        "appcore.bulk_translate_projection.list_product_task_ids",
+        lambda user_id, product_id: ["bt-1"],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.bulk_translate_runtime.sync_task_with_children_once",
+        lambda task_id, user_id=None: calls.append(("sync", task_id, user_id)) or {"actions": []},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.bulk_translate_projection.list_product_tasks",
+        lambda user_id, product_id: calls.append(("project", user_id, product_id)) or [],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/123/translation-tasks")
+
+    assert resp.status_code == 200
+    assert calls == [("sync", "bt-1", 1), ("project", 1, 123)]

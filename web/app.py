@@ -20,10 +20,7 @@ from flask_socketio import join_room
 from flask_wtf.csrf import CSRFProtect
 
 from appcore import task_state
-from appcore.bulk_translate_recovery import (
-    mark_interrupted_bulk_translate_tasks,
-    prepare_bulk_translate_startup_recovery,
-)
+from appcore.bulk_translate_recovery import mark_interrupted_bulk_translate_tasks
 from appcore.task_recovery import recover_all_interrupted_tasks
 from web.extensions import socketio
 from web.auth import login_manager
@@ -33,17 +30,6 @@ from web.auth import login_manager
 SESSION_LIFETIME = timedelta(days=30)
 
 csrf = CSRFProtect()
-
-
-def _start_bulk_translate_recovery_schedulers(task_ids: list[str]) -> None:
-    if not task_ids:
-        return
-    from web.background import start_background_task
-    from web.routes.bulk_translate import _spawn_scheduler
-
-    for task_id in task_ids:
-        start_background_task(_spawn_scheduler, task_id)
-
 
 from web.routes.task import bp as task_bp
 from web.routes.voice import bp as voice_bp
@@ -90,83 +76,23 @@ log = logging.getLogger(__name__)
 
 
 def _run_startup_recovery() -> None:
+    """Startup recovery is intentionally state-only.
+
+    Do not start, resume, or retry any runner here. Historical startup auto-resume
+    could create a restart storm: service boots, many failed tasks immediately
+    restart, load spikes, service dies, then repeats.
+    """
     disable = os.getenv("DISABLE_STARTUP_RECOVERY", "").strip().lower()
     if disable in {"1", "true", "yes"}:
         return
     try:
-        from web.routes.subtitle_removal import resume_inflight_tasks
-
-        resume_inflight_tasks()
+        recover_all_interrupted_tasks()
     except Exception:
-        log.warning("subtitle removal startup recovery failed", exc_info=True)
-    _recover_translate_lab_tasks_on_startup()
-    # image_translate 不再自动续跑：重启后由 recover_all_interrupted_tasks()
-    # 把 queued/running 的行标成 interrupted，用户在前端手动「重新生成」再入队。
-
-
-def _recover_translate_lab_tasks_on_startup() -> list[str]:
-    """启动时把 running / awaiting_voice 的 translate_lab 任务重新拉起。
-
-    与 subtitle_removal 的 resume_inflight_tasks 设计一致：失败只打日志，
-    绝不阻断服务器启动。返回已恢复的 task_id 列表，主要供测试断言用。
-    """
-    restored: list[str] = []
+        log.warning("generic startup recovery failed", exc_info=True)
     try:
-        from appcore.db import query as db_query
-        from web.services import translate_lab_runner
-
-        rows = db_query(
-            "SELECT id, user_id, state_json FROM projects "
-            "WHERE type='translate_lab' AND deleted_at IS NULL "
-            "AND status IN ('running','awaiting_voice')",
-            (),
-        )
+        mark_interrupted_bulk_translate_tasks()
     except Exception:
-        log.warning("translate_lab startup recovery query failed",
-                    exc_info=True)
-        return restored
-
-    import json as _json
-
-    for row in rows or []:
-        task_id = (row.get("id") or "").strip()
-        if not task_id:
-            continue
-        try:
-            state = {}
-            state_json = row.get("state_json") or ""
-            if state_json:
-                try:
-                    state = _json.loads(state_json)
-                except Exception:
-                    state = {}
-            task = task_state.get(task_id) or {}
-            if not task:
-                # 把 DB 里的 state 先灌回内存，便于 runner 从 task_state 读。
-                if state:
-                    task_state.update(task_id, **state)
-                    task_state.update(task_id, _user_id=row.get("user_id"))
-                    task = task_state.get(task_id) or {}
-            # 从首个非 done 的步骤恢复（缺字段时回退到 extract）
-            steps = (task.get("steps") or state.get("steps") or {})
-            start_step = "extract"
-            for name in ["extract", "asr", "shot_decompose", "voice_match",
-                         "translate", "tts", "subtitle", "compose", "export"]:
-                if (steps.get(name) or "") != "done":
-                    start_step = name
-                    break
-            translate_lab_runner.resume(
-                task_id=task_id,
-                start_step=start_step,
-                user_id=row.get("user_id"),
-            )
-            restored.append(task_id)
-        except Exception:
-            log.warning(
-                "[translate_lab recovery] resume failed task_id=%s",
-                task_id, exc_info=True,
-            )
-    return restored
+        log.warning("bulk_translate startup interruption marking failed", exc_info=True)
 
 
 def create_app() -> Flask:
@@ -258,15 +184,8 @@ def create_app() -> Flask:
     csrf.exempt(link_check_bp)
     app.register_blueprint(order_analytics_bp)
     csrf.exempt(order_analytics_bp)
-    # 开机任务恢复已禁用：历史上在 subtitle_removal / translate_lab / image_translate
-    # 三类任务并发拉起时把 CPU 打满到 100%，导致机器反复宕机。保留
-    # recover_all_interrupted_tasks() 仅将 running 状态回落为 error（不会启动任务），
-    # 不再自动续跑，需要用户在前端手动"重新处理"。
-    # _run_startup_recovery()
-
-    recover_all_interrupted_tasks()
-    mark_interrupted_bulk_translate_tasks()
-    _start_bulk_translate_recovery_schedulers(prepare_bulk_translate_startup_recovery())
+    # 服务启动只做状态标记，不启动任何任务 runner，避免重启风暴。
+    _run_startup_recovery()
 
     # WebSocket 事件
     @socketio.on("join_task")
