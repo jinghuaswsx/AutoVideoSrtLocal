@@ -89,6 +89,11 @@
   gap: 12px;
 }
 
+.billing-filter-grid > .billing-field:nth-child(2),
+.billing-filter-grid > .billing-field:nth-child(3) {
+  display: none;
+}
+
 .billing-field {
   display: grid;
   gap: 6px;
@@ -124,6 +129,214 @@
   border-color: var(--billing-accent);
   box-shadow: 0 0 0 3px oklch(56% 0.16 230 / 0.14);
   background: white;
+}
+
+.billing-field-range {
+  grid-column: span 2;
+}
+
+.billing-range-picker {
+  position: relative;
+  display: grid;
+  gap: 10px;
+}
+
+.billing-range-trigger {
+  min-height: 38px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--billing-border-strong);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--billing-fg);
+  padding: 9px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.billing-range-trigger:hover,
+.billing-range-trigger[aria-expanded="true"] {
+  border-color: var(--billing-accent);
+  background: white;
+}
+
+.billing-range-trigger:focus-visible,
+.billing-range-nav-btn:focus-visible,
+.billing-range-shortcut:focus-visible,
+.billing-calendar-day:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px oklch(56% 0.16 230 / 0.14);
+}
+
+.billing-range-trigger-label {
+  display: grid;
+  gap: 4px;
+}
+
+.billing-range-trigger-label strong {
+  font-size: 14px;
+  color: var(--billing-fg);
+}
+
+.billing-range-trigger-hint,
+.billing-range-trigger-meta {
+  font-size: 12px;
+  color: var(--billing-fg-subtle);
+}
+
+.billing-range-trigger-meta {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.billing-range-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.billing-range-shortcut,
+.billing-range-nav-btn {
+  border: 1px solid var(--billing-border);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--billing-fg-muted);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.billing-range-shortcut:hover,
+.billing-range-shortcut[aria-pressed="true"],
+.billing-range-nav-btn:hover {
+  background: var(--billing-accent-soft);
+  border-color: oklch(88% 0.03 225);
+  color: var(--billing-accent);
+}
+
+.billing-range-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 30;
+  width: min(720px, calc(100vw - 88px));
+  border: 1px solid var(--billing-border);
+  border-radius: 20px;
+  background: white;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  box-shadow: 0 24px 40px -26px oklch(22% 0.02 235 / 0.36);
+}
+
+.billing-range-panel[hidden] {
+  display: none;
+}
+
+.billing-range-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.billing-range-panel-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--billing-fg);
+}
+
+.billing-range-panel-note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--billing-fg-subtle);
+}
+
+.billing-range-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.billing-range-calendars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.billing-calendar {
+  border: 1px solid var(--billing-border);
+  border-radius: 16px;
+  padding: 12px;
+  background: linear-gradient(180deg, var(--billing-bg), white);
+}
+
+.billing-calendar-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--billing-fg);
+}
+
+.billing-calendar-weekdays,
+.billing-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.billing-calendar-weekdays span {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--billing-fg-subtle);
+}
+
+.billing-calendar-spacer {
+  min-height: 36px;
+}
+
+.billing-calendar-day {
+  min-height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--billing-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.billing-calendar-day:hover {
+  background: var(--billing-bg-muted);
+  transform: translateY(-1px);
+}
+
+.billing-calendar-day.is-today {
+  box-shadow: inset 0 0 0 1px oklch(88% 0.03 225);
+}
+
+.billing-calendar-day.is-in-range {
+  background: var(--billing-accent-soft);
+  color: var(--billing-accent);
+  font-weight: 700;
+}
+
+.billing-calendar-day.is-selected {
+  background: var(--billing-accent);
+  color: white;
+  font-weight: 800;
+  box-shadow: 0 8px 16px -14px oklch(56% 0.16 230 / 0.68);
 }
 
 .billing-toolbar-foot {
@@ -384,6 +597,18 @@
     width: 100%;
     justify-content: center;
   }
+
+  .billing-field-range {
+    grid-column: auto;
+  }
+
+  .billing-range-panel {
+    width: min(100%, calc(100vw - 56px));
+  }
+
+  .billing-range-calendars {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -438,6 +663,61 @@
     <form id="billingFilters" method="get" class="billing-toolbar">
       <input type="hidden" name="page" value="1">
       <div class="billing-filter-grid">
+        <label class="billing-field billing-field-range">
+          <span>日期范围</span>
+          <div class="billing-range-picker" data-billing-date-range>
+            <button
+              type="button"
+              class="billing-range-trigger"
+              data-billing-date-range-trigger
+              aria-haspopup="dialog"
+              aria-expanded="false"
+            >
+              <span class="billing-range-trigger-label">
+                <strong data-billing-date-range-label>{{ filters.date_from|replace('-', '/') }} - {{ filters.date_to|replace('-', '/') }}</strong>
+                <span class="billing-range-trigger-hint">先选开始日期，再选结束日期</span>
+              </span>
+              <span class="billing-range-trigger-meta" data-billing-date-range-meta>点两下即可加载</span>
+            </button>
+            <div class="billing-range-shortcuts">
+              <button type="button" class="billing-range-shortcut" data-range-shortcut="today">今天</button>
+              <button type="button" class="billing-range-shortcut" data-range-shortcut="yesterday">昨天</button>
+              <button type="button" class="billing-range-shortcut" data-range-shortcut="last7">近七天</button>
+              <button type="button" class="billing-range-shortcut" data-range-shortcut="last30">近一个月</button>
+            </div>
+            <div class="billing-range-panel" data-billing-date-range-panel hidden>
+              <div class="billing-range-panel-head">
+                <div>
+                  <div class="billing-range-panel-title">选择账单日期范围</div>
+                  <div class="billing-range-panel-note" data-billing-date-range-summary>
+                    先点开始日期，再点结束日期；第二次点选后会自动加载。
+                  </div>
+                </div>
+                <div class="billing-range-nav">
+                  <button type="button" class="billing-range-nav-btn" data-billing-calendar-nav="prev">上个月</button>
+                  <button type="button" class="billing-range-nav-btn" data-billing-calendar-nav="next">下个月</button>
+                </div>
+              </div>
+              <div class="billing-range-calendars">
+                {% for index in [0, 1] %}
+                <section class="billing-calendar" data-billing-calendar="{{ index }}">
+                  <div class="billing-calendar-title" data-billing-calendar-title></div>
+                  <div class="billing-calendar-weekdays">
+                    <span>一</span>
+                    <span>二</span>
+                    <span>三</span>
+                    <span>四</span>
+                    <span>五</span>
+                    <span>六</span>
+                    <span>日</span>
+                  </div>
+                  <div class="billing-calendar-grid" data-billing-calendar-grid></div>
+                </section>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </label>
         <label class="billing-field">
           <span>开始日期</span>
           <input class="billing-input" type="date" name="from" value="{{ filters.date_from }}">
@@ -708,6 +988,346 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
 {% endblock %}
 {% block scripts %}
 <script>
+  function initBillingDateRangePicker() {
+    var root = document.querySelector("[data-billing-date-range]");
+    var form = document.getElementById("billingFilters");
+    if (!root || !form) return;
+
+    var fromInput = form.querySelector('input[type="date"][name="from"]');
+    var toInput = form.querySelector('input[type="date"][name="to"]');
+    var trigger = root.querySelector("[data-billing-date-range-trigger]");
+    var panel = root.querySelector("[data-billing-date-range-panel]");
+    var label = root.querySelector("[data-billing-date-range-label]");
+    var meta = root.querySelector("[data-billing-date-range-meta]");
+    var summary = root.querySelector("[data-billing-date-range-summary]");
+    var previousButton = root.querySelector('[data-billing-calendar-nav="prev"]');
+    var nextButton = root.querySelector('[data-billing-calendar-nav="next"]');
+    var calendars = root.querySelectorAll("[data-billing-calendar]");
+    var shortcutButtons = root.querySelectorAll("[data-range-shortcut]");
+
+    if (!fromInput || !toInput || !trigger || !panel || !label || !summary) return;
+
+    var monthAnchor = null;
+    var pendingStart = null;
+    var waitingForEnd = false;
+
+    function parseIsoDate(value) {
+      var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+      if (!match) return null;
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    function cloneDate(date) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    function todayDate() {
+      return cloneDate(new Date());
+    }
+
+    function monthStart(date) {
+      return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function shiftDays(date, amount) {
+      var next = cloneDate(date);
+      next.setDate(next.getDate() + amount);
+      return next;
+    }
+
+    function formatIsoDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "-" + month + "-" + day;
+    }
+
+    function formatLabelDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "/" + month + "/" + day;
+    }
+
+    function formatMonthTitle(date) {
+      return date.getFullYear() + "年" + String(date.getMonth() + 1).padStart(2, "0") + "月";
+    }
+
+    function sameDate(left, right) {
+      return !!left && !!right
+        && left.getFullYear() === right.getFullYear()
+        && left.getMonth() === right.getMonth()
+        && left.getDate() === right.getDate();
+    }
+
+    function timeValue(date) {
+      return date ? date.getTime() : 0;
+    }
+
+    function currentStart() {
+      return parseIsoDate(fromInput.value);
+    }
+
+    function currentEnd() {
+      return parseIsoDate(toInput.value);
+    }
+
+    function activeStart() {
+      return waitingForEnd && pendingStart ? pendingStart : currentStart();
+    }
+
+    function activeEnd() {
+      return waitingForEnd ? null : currentEnd();
+    }
+
+    function shortcutRange(kind) {
+      var today = todayDate();
+      if (kind === "today") {
+        return { start: today, end: today };
+      }
+      if (kind === "yesterday") {
+        var yesterday = shiftDays(today, -1);
+        return { start: yesterday, end: yesterday };
+      }
+      if (kind === "last7") {
+        return { start: shiftDays(today, -6), end: today };
+      }
+      return { start: shiftDays(today, -29), end: today };
+    }
+
+    function updateShortcuts() {
+      var start = currentStart();
+      var end = currentEnd();
+      shortcutButtons.forEach(function (button) {
+        var range = shortcutRange(button.getAttribute("data-range-shortcut"));
+        var pressed = sameDate(start, range.start) && sameDate(end, range.end);
+        button.setAttribute("aria-pressed", pressed ? "true" : "false");
+      });
+    }
+
+    function updateTriggerText() {
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        label.textContent = formatLabelDate(start) + " - " + formatLabelDate(end);
+      } else {
+        label.textContent = "选择日期范围";
+      }
+      if (meta) {
+        meta.textContent = waitingForEnd ? "等待结束日期" : "点两下即可加载";
+      }
+    }
+
+    function updateSummary() {
+      if (waitingForEnd && pendingStart) {
+        summary.textContent = "开始日期：" + formatLabelDate(pendingStart) + "，请再点一次选择结束日期。";
+        return;
+      }
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        summary.textContent = "当前范围：" + formatLabelDate(start) + " - " + formatLabelDate(end) + "。第二次点选后会自动加载。";
+        return;
+      }
+      summary.textContent = "先点开始日期，再点结束日期；第二次点选后会自动加载。";
+    }
+
+    function setPageToFirst() {
+      var pageInput = form.querySelector('input[name="page"]');
+      if (pageInput) {
+        pageInput.value = "1";
+      }
+    }
+
+    function submitFilters() {
+      setPageToFirst();
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+        return;
+      }
+      form.submit();
+    }
+
+    function applyRange(start, end) {
+      fromInput.value = formatIsoDate(start);
+      toInput.value = formatIsoDate(end);
+      monthAnchor = monthStart(start);
+      updateTriggerText();
+      updateSummary();
+      updateShortcuts();
+      renderCalendars();
+    }
+
+    function closePanel() {
+      pendingStart = null;
+      waitingForEnd = false;
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function openPanel() {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      monthAnchor = monthAnchor || monthStart(currentStart() || todayDate());
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function togglePanel() {
+      if (panel.hidden) {
+        openPanel();
+        return;
+      }
+      closePanel();
+    }
+
+    function renderCalendars() {
+      var displayMonth = monthAnchor || monthStart(currentStart() || todayDate());
+      var selectedStart = activeStart();
+      var selectedEnd = activeEnd();
+      var today = todayDate();
+
+      calendars.forEach(function (calendar, calendarIndex) {
+        var monthDate = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + calendarIndex, 1);
+        var title = calendar.querySelector("[data-billing-calendar-title]");
+        var grid = calendar.querySelector("[data-billing-calendar-grid]");
+        var firstWeekday = monthDate.getDay();
+        var offset = firstWeekday === 0 ? 6 : firstWeekday - 1;
+        var daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+        var rendered = 0;
+
+        if (title) {
+          title.textContent = formatMonthTitle(monthDate);
+        }
+        if (!grid) {
+          return;
+        }
+
+        grid.innerHTML = "";
+
+        while (rendered < offset) {
+          var spacer = document.createElement("span");
+          spacer.className = "billing-calendar-spacer";
+          grid.appendChild(spacer);
+          rendered += 1;
+        }
+
+        for (var day = 1; day <= daysInMonth; day += 1) {
+          var current = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+          var dayButton = document.createElement("button");
+          dayButton.type = "button";
+          dayButton.className = "billing-calendar-day";
+          dayButton.textContent = String(day);
+          dayButton.setAttribute("data-billing-calendar-day", formatIsoDate(current));
+
+          if (sameDate(current, today)) {
+            dayButton.classList.add("is-today");
+          }
+          if (selectedStart && selectedEnd && timeValue(current) > timeValue(selectedStart) && timeValue(current) < timeValue(selectedEnd)) {
+            dayButton.classList.add("is-in-range");
+          }
+          if ((selectedStart && sameDate(current, selectedStart)) || (selectedEnd && sameDate(current, selectedEnd))) {
+            dayButton.classList.add("is-selected");
+          }
+
+          grid.appendChild(dayButton);
+          rendered += 1;
+        }
+
+        while (rendered % 7 !== 0) {
+          var tail = document.createElement("span");
+          tail.className = "billing-calendar-spacer";
+          grid.appendChild(tail);
+          rendered += 1;
+        }
+      });
+    }
+
+    function applyShortcut(kind) {
+      var range = shortcutRange(kind);
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(range.start, range.end);
+      closePanel();
+      submitFilters();
+    }
+
+    function selectDay(isoValue) {
+      var clickedDate = parseIsoDate(isoValue);
+      if (!clickedDate) return;
+
+      if (!waitingForEnd || !pendingStart) {
+        pendingStart = clickedDate;
+        waitingForEnd = true;
+        monthAnchor = monthStart(clickedDate);
+        updateTriggerText();
+        updateSummary();
+        renderCalendars();
+        return;
+      }
+
+      var start = pendingStart;
+      var end = clickedDate;
+      if (timeValue(end) < timeValue(start)) {
+        var swapped = start;
+        start = end;
+        end = swapped;
+      }
+
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(start, end);
+      closePanel();
+      submitFilters();
+    }
+
+    trigger.addEventListener("click", function () {
+      togglePanel();
+    });
+
+    previousButton.addEventListener("click", function () {
+      monthAnchor = new Date((monthAnchor || monthStart(currentStart() || todayDate())).getFullYear(), (monthAnchor || monthStart(currentStart() || todayDate())).getMonth() - 1, 1);
+      renderCalendars();
+    });
+
+    nextButton.addEventListener("click", function () {
+      monthAnchor = new Date((monthAnchor || monthStart(currentStart() || todayDate())).getFullYear(), (monthAnchor || monthStart(currentStart() || todayDate())).getMonth() + 1, 1);
+      renderCalendars();
+    });
+
+    shortcutButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        applyShortcut(button.getAttribute("data-range-shortcut"));
+      });
+    });
+
+    panel.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.hasAttribute("data-billing-calendar-day")) return;
+      selectDay(target.getAttribute("data-billing-calendar-day"));
+    });
+
+    document.addEventListener("click", function (event) {
+      if (panel.hidden || root.contains(event.target)) return;
+      closePanel();
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !panel.hidden) {
+        closePanel();
+      }
+    });
+
+    updateTriggerText();
+    updateSummary();
+    updateShortcuts();
+    renderCalendars();
+  }
+
+  initBillingDateRangePicker();
+
   document.querySelectorAll("[data-detail-toggle]").forEach(function (row) {
     row.addEventListener("click", function () {
       var detail = document.getElementById(row.getAttribute("data-detail-toggle"));

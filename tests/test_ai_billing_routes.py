@@ -6,6 +6,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_ai_billing_template_uses_single_date_range_picker_and_quick_ranges():
+    template = (ROOT / "web" / "templates" / "admin_ai_billing.html").read_text(encoding="utf-8")
+
+    assert 'data-billing-date-range-trigger' in template
+    assert 'data-billing-date-range-panel' in template
+    assert 'data-range-shortcut="today"' in template
+    assert 'data-range-shortcut="yesterday"' in template
+    assert 'data-range-shortcut="last7"' in template
+    assert 'data-range-shortcut="last30"' in template
+    assert "initBillingDateRangePicker" in template
+
+
 def test_ai_billing_template_shows_input_and_output_token_columns():
     template = (ROOT / "web" / "templates" / "admin_ai_billing.html").read_text(encoding="utf-8")
 
