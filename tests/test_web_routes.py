@@ -2246,8 +2246,9 @@ def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db)
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'id="edOpenProductUrlBtn"' in body
-    assert "访问商品链接" in body
+    assert 'id="edOpenProductUrlBtn"' not in body
+    assert "访问商品链接" not in body
+    assert 'id="edCopyProductUrlBtn"' in body
     assert 'id="edLinkCheckSummary"' in body
     assert 'id="edLinkCheckViewBtn"' in body
     assert 'id="edLinkCheckMask"' in body
@@ -2258,8 +2259,8 @@ def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db)
 def test_medias_scripts_wire_material_link_check_flow():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'function edOpenLocalizedProductUrl()' in medias_js
-    assert "window.open(url, '_blank', 'noopener')" in medias_js
+    assert 'function edOpenLocalizedProductUrl()' not in medias_js
+    assert "window.open(url, '_blank', 'noopener')" not in medias_js
     assert 'function edStartLinkCheck()' in medias_js
     assert 'function edPollLinkCheck(lang)' in medias_js
     assert 'function edOpenLinkCheckModal()' in medias_js

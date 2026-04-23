@@ -2012,16 +2012,6 @@
       .catch(() => alert('复制失败，请手动复制'));
   }
 
-  function edOpenLocalizedProductUrl() {
-    const url = edReadVisibleProductUrl();
-    if (!url || !/^https?:\/\//i.test(url)) {
-      alert('请先填写有效的商品链接');
-      $('edProductUrl') && $('edProductUrl').focus();
-      return;
-    }
-    window.open(url, '_blank', 'noopener');
-  }
-
   function edLinkCheckNeedsPolling(task) {
     if (!task || !task.status) return false;
     return !['done', 'review_ready', 'failed'].includes(task.status);
@@ -2097,8 +2087,7 @@
   function edRenderLinkCheckSummary(task) {
     const box = $('edLinkCheckSummary');
     const viewBtn = $('edLinkCheckViewBtn');
-    const openBtn = $('edOpenProductUrlBtn');
-    if (!box || !viewBtn || !openBtn) return;
+    if (!box || !viewBtn) return;
     if (!task) {
       viewBtn.hidden = true;
       box.hidden = true;
@@ -3286,7 +3275,6 @@
         edRenderLinkCheckSummary(edGetLinkCheckTask(edState.activeLang));
       });
     }
-    $('edOpenProductUrlBtn') && $('edOpenProductUrlBtn').addEventListener('click', edOpenLocalizedProductUrl);
     $('edCopyProductIdBtn') && $('edCopyProductIdBtn').addEventListener('click', (e) => edCopyProductId(e.currentTarget));
     $('edCopyProductUrlBtn') && $('edCopyProductUrlBtn').addEventListener('click', (e) => edCopyLocalizedProductUrl(e.currentTarget));
     $('edLinkCheckViewBtn') && $('edLinkCheckViewBtn').addEventListener('click', edOpenLinkCheckModal);
