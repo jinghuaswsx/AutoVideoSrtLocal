@@ -2159,6 +2159,22 @@ def test_image_translate_detail_template_contains_medias_context_block():
     assert "medias_context" in scripts
 
 
+def test_image_translate_templates_show_concurrency_mode_pills():
+    root = Path(__file__).resolve().parents[1]
+    list_template = (root / "web" / "templates" / "image_translate_list.html").read_text(encoding="utf-8")
+    detail_template = (root / "web" / "templates" / "image_translate_detail.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_image_translate_styles.html").read_text(encoding="utf-8")
+
+    assert "处理模式" in list_template
+    assert "处理模式" in detail_template
+    assert "itMetaConcurrencyMode" in detail_template
+    assert "data-concurrency-mode" in list_template
+    assert "data-concurrency-mode" in detail_template
+    assert "it-mode-pill" in list_template
+    assert "it-mode-pill" in detail_template
+    assert ".it-mode-pill" in styles
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

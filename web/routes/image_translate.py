@@ -55,6 +55,14 @@ def _compose_project_name(product_name: str, preset: str, lang_name: str) -> str
     parts = [product_name.strip(), preset_label, (lang_name or "").strip(), today]
     return "-".join(p for p in parts if p)
 
+
+def _normalize_concurrency_mode(value: str | None) -> str:
+    return "parallel" if (value or "").strip().lower() == "parallel" else "sequential"
+
+
+def _concurrency_mode_label(value: str | None) -> str:
+    return "并行" if _normalize_concurrency_mode(value) == "parallel" else "串行"
+
 _upload_guard = threading.Lock()
 _upload_reservations: dict[str, dict] = {}
 _local_upload_guard = threading.Lock()
@@ -201,6 +209,7 @@ def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object
 
 
 def _state_payload(task: dict) -> dict:
+    concurrency_mode = _normalize_concurrency_mode(task.get("concurrency_mode"))
     return {
         "id": task.get("id"),
         "type": "image_translate",
@@ -212,6 +221,8 @@ def _state_payload(task: dict) -> dict:
         "prompt": task.get("prompt") or "",
         "product_name": task.get("product_name") or "",
         "project_name": task.get("project_name") or "",
+        "concurrency_mode": concurrency_mode,
+        "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
         "progress": dict(task.get("progress") or {}),
         "items": list(task.get("items") or []),
         "medias_context": dict(task.get("medias_context") or {}),
@@ -612,6 +623,7 @@ def page_list():
         preset = state.get("preset") or ""
         preset_label = "封面图翻译" if preset == "cover" else ("产品详情图翻译" if preset == "detail" else "")
         raw_status = row.get("status") or state.get("status") or ""
+        concurrency_mode = _normalize_concurrency_mode(state.get("concurrency_mode"))
         history.append({
             "id": row["id"],
             "created_at": row.get("created_at"),
@@ -624,6 +636,8 @@ def page_list():
             "project_name": state.get("project_name") or "",
             "product_name": state.get("product_name") or "",
             "model_id": state.get("model_id") or "",
+            "concurrency_mode": concurrency_mode,
+            "concurrency_mode_label": _concurrency_mode_label(concurrency_mode),
             "total": len(items),
             "done": done,
         })

@@ -246,6 +246,46 @@ def test_detail_images_download_zip_returns_sorted_archive(authed_client_no_db, 
     assert archive.read("demo-item_en_detail-images/01.webp") == b"BYTES-1/medias/1/a.webp"
 
 
+def test_detail_images_download_zip_prefixes_locale_country_for_de(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": "清洁布",
+            "product_code": "reusable-diamond-weave-scrubber-cloths-rjc",
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "de")
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [
+            {"id": 21, "product_id": pid, "lang": lang, "sort_order": 0, "object_key": "1/medias/1/a.webp"},
+        ],
+    )
+
+    def fake_download(object_key, local_path):
+        with open(local_path, "wb") as fh:
+            fh.write(b"BYTES-" + object_key.encode())
+
+    monkeypatch.setattr(r.tos_clients, "download_media_file", fake_download)
+
+    resp = authed_client_no_db.get("/medias/api/products/123/detail-images/download-zip?lang=de")
+
+    assert resp.status_code == 200
+    archive = zipfile.ZipFile(io.BytesIO(resp.data))
+    assert archive.namelist() == [
+        "德国-reusable-diamond-weave-scrubber-cloths-rjc_de_detail-images/01.webp",
+    ]
+    cd = resp.headers.get("Content-Disposition", "")
+    assert "%E5%BE%B7%E5%9B%BD-reusable-diamond-weave-scrubber-cloths-rjc_de_detail-images.zip" in cd
+
+
 def test_detail_images_download_zip_404_when_empty(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 
