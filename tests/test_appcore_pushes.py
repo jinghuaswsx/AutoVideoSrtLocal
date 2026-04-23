@@ -179,10 +179,7 @@ def test_resolve_product_page_url_falls_back_to_default_template():
 def test_build_item_payload_basic(monkeypatch, product_with_item):
     import config
     pid, item_id = product_with_item
-    monkeypatch.setattr(
-        "appcore.pushes.tos_clients.generate_signed_media_download_url",
-        lambda key: f"https://signed/{key}",
-    )
+    monkeypatch.setattr(config, "LOCAL_SERVER_BASE_URL", "http://local.test")
     monkeypatch.setattr(
         "appcore.pushes.medias.list_enabled_language_codes",
         lambda: ["en", "de", "fr", "es", "pt", "ja", "it"],
@@ -198,8 +195,8 @@ def test_build_item_payload_basic(monkeypatch, product_with_item):
     assert payload["author"] == "蔡靖华"
     assert payload["push_admin"] == "蔡靖华"
     assert len(payload["videos"]) == 1
-    assert payload["videos"][0]["url"].startswith("https://signed/")
-    assert payload["videos"][0]["image_url"].startswith("https://signed/")
+    assert payload["videos"][0]["url"].startswith("http://local.test/medias/obj/")
+    assert payload["videos"][0]["image_url"].startswith("http://local.test/medias/obj/")
     # 6 条非英文链接（排除 en）
     assert len(payload["product_links"]) == 6
     for link in payload["product_links"]:

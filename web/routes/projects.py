@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from flask import Blueprint, render_template, abort, redirect
+from flask import Blueprint, render_template, abort
 from flask_login import login_required, current_user
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_OPTIONS,
@@ -82,6 +82,7 @@ def detail(task_id: str):
 @bp.route("/projects/<task_id>/download/tos/<path:tos_key>")
 @login_required
 def download_tos(task_id: str, tos_key: str):
+    del tos_key
     row = query_one(
         "SELECT id, deleted_at FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
@@ -90,14 +91,4 @@ def download_tos(task_id: str, tos_key: str):
         abort(404)
     if row.get("deleted_at"):
         abort(410)
-    try:
-        import tos as tos_sdk
-        import config
-        client = tos_sdk.TosClientV2(
-            ak=config.TOS_ACCESS_KEY, sk=config.TOS_SECRET_KEY,
-            endpoint=config.TOS_ENDPOINT, region=config.TOS_REGION,
-        )
-        signed_url = client.pre_signed_url("GET", config.TOS_BUCKET, tos_key, expires=3600).signed_url
-        return redirect(signed_url)
-    except Exception:
-        abort(404)
+    abort(410)

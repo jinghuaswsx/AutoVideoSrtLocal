@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
-from appcore import ai_billing, tos_clients
+from appcore import ai_billing
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -51,12 +51,12 @@ from appcore.tts_language_guard import (
 )
 
 
-def _upload_artifacts_to_tos(task: dict, task_id: str) -> None:
-    """Compatibility shim for legacy TOS-backed downloads.
+def _skip_legacy_artifact_upload(task: dict, task_id: str) -> None:
+    """Compatibility shim for legacy object-storage metadata.
 
-    New tasks keep generated artifacts in local storage. Historical `tos_uploads`
-    metadata remains readable through download routes, but runtime no longer
-    uploads final outputs to object storage by default.
+    New tasks keep generated artifacts in local storage. Historical metadata
+    remains readable through download routes, but runtime no longer uploads
+    final outputs to object storage by default.
     """
     return
 
@@ -978,8 +978,7 @@ class PipelineRunner:
 
     def _run(self, task_id: str, start_step: str = "extract") -> None:
         # Make sure the source video is present locally before any step runs.
-        # If it was orphaned (e.g. uploads dir cleanup) but we have a TOS backup,
-        # this pulls it back. Otherwise we fail loud with a user-friendly message.
+        # Missing sources must be materialized by migration or re-uploaded.
         try:
             from appcore.source_video import ensure_local_source_video
             ensure_local_source_video(task_id)
@@ -1025,7 +1024,7 @@ class PipelineRunner:
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
-        self._set_step(task_id, "asr", "running", "正在上传音频到 TOS...")
+        self._set_step(task_id, "asr", "running", "正在准备 ASR 公网音频...")
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
         from pipeline.asr import transcribe
@@ -1800,7 +1799,7 @@ class PipelineRunner:
             "task_id": task_id,
             "exports": {"normal": exports},
         })
-        _upload_artifacts_to_tos(task_state.get(task_id) or {}, task_id)
+        _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
 
 def _default_av_variant_state(label: str = "音画同步版") -> dict:
     return {

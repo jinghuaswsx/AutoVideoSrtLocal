@@ -1,59 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
-from pathlib import Path
 
 import appcore.cleanup as cleanup
 
 
-def test_run_cleanup_deletes_stale_orphan_upload_objects(monkeypatch):
-    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
-    objects = [
-        SimpleNamespace(
-            key="uploads/1/task-orphan/demo.mp4",
-            last_modified=now - timedelta(hours=3),
-        ),
-        SimpleNamespace(
-            key="uploads/1/task-fresh/demo.mp4",
-            last_modified=now - timedelta(minutes=20),
-        ),
-        SimpleNamespace(
-            key="uploads/1/task-claimed/demo.mp4",
-            last_modified=now - timedelta(hours=3),
-        ),
-        SimpleNamespace(
-            key="artifacts/1/task-claimed/normal/result.mp4",
-            last_modified=now - timedelta(hours=3),
-        ),
-    ]
-    deleted = []
-
-    def fake_query(sql: str, args: tuple = ()):
-        if "expires_at < NOW()" in sql:
-            return []
-        if "expires_at IS NULL" in sql:
-            return []
-        if "SELECT id FROM projects WHERE id IN" in sql:
-            assert sorted(args) == ["task-claimed", "task-orphan"]
-            return [{"id": "task-claimed"}]
-        raise AssertionError(sql)
-
-    monkeypatch.setattr(cleanup, "query", fake_query)
-    monkeypatch.setattr(cleanup.tos_clients, "is_tos_configured", lambda: True)
-    monkeypatch.setattr(cleanup.tos_clients, "list_objects", lambda prefix: objects, raising=False)
-    monkeypatch.setattr(cleanup.tos_clients, "delete_object", lambda key: deleted.append(key))
-    monkeypatch.setattr(cleanup, "_utcnow", lambda: now, raising=False)
-    monkeypatch.setattr(cleanup, "TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS", 3600)
-
-    cleanup.run_cleanup()
-
-    assert deleted == ["uploads/1/task-orphan/demo.mp4"]
-
-
 def test_run_cleanup_handles_zombie_projects(monkeypatch):
-    """expires_at IS NULL 且非运行中且超过 30 天的项目应被清理"""
     expired_rows = []
     zombie_rows = [
         {
@@ -70,7 +22,7 @@ def test_run_cleanup_handles_zombie_projects(monkeypatch):
             return expired_rows
         if "expires_at IS NULL" in sql:
             return zombie_rows
-        if "SELECT id FROM projects WHERE id IN" in sql:
+        if "SELECT id FROM projects WHERE deleted_at IS NULL" in sql:
             return []
         return []
 
@@ -79,11 +31,10 @@ def test_run_cleanup_handles_zombie_projects(monkeypatch):
 
     monkeypatch.setattr(cleanup, "query", fake_query)
     monkeypatch.setattr(cleanup, "execute", fake_execute)
-    monkeypatch.setattr(cleanup.tos_clients, "is_tos_configured", lambda: False)
 
     cleanup.run_cleanup()
 
-    assert any("zombie-task" in str(a) for a in updated)
+    assert any("zombie-task" in str(args) for args in updated)
 
 
 def test_run_cleanup_skips_link_check_from_null_expiry_cleanup(monkeypatch):
@@ -94,7 +45,6 @@ def test_run_cleanup_skips_link_check_from_null_expiry_cleanup(monkeypatch):
         return []
 
     monkeypatch.setattr(cleanup, "query", fake_query)
-    monkeypatch.setattr(cleanup.tos_clients, "is_tos_configured", lambda: False)
 
     cleanup.run_cleanup()
 
@@ -102,61 +52,50 @@ def test_run_cleanup_skips_link_check_from_null_expiry_cleanup(monkeypatch):
     assert "type NOT IN ('image_translate', 'link_check')" in zombie_sql
 
 
-def test_trim_local_uploads_keeps_local_primary_source_file(tmp_path, monkeypatch):
-    upload_dir = tmp_path / "uploads"
-    upload_dir.mkdir()
-    video_path = upload_dir / "task-1.mp4"
-    video_path.write_bytes(b"video")
+def test_delete_task_storage_removes_only_local_paths(tmp_path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "result.mp4").write_bytes(b"result")
+    upload_path = tmp_path / "uploads" / "task.mp4"
+    upload_path.parent.mkdir()
+    upload_path.write_bytes(b"source")
 
-    monkeypatch.setattr("config.UPLOAD_DIR", str(upload_dir))
-    monkeypatch.setattr(
-        cleanup,
-        "query",
-        lambda sql, args=(): [
-            {
-                "id": "task-1",
-                "state_json": json.dumps(
-                    {
-                        "delivery_mode": "local_primary",
-                        "source_tos_key": "uploads/1/task-1/source.mp4",
-                        "video_path": str(video_path),
-                    },
-                    ensure_ascii=False,
-                ),
-            }
-        ],
+    cleanup.delete_task_storage(
+        {
+            "task_dir": str(task_dir),
+            "state_json": json.dumps({"video_path": str(upload_path)}, ensure_ascii=False),
+            "tos_keys": ["uploads/1/task/source.mp4"],
+        }
     )
 
-    cleanup._trim_local_uploads_with_tos_backup()
+    assert not task_dir.exists()
+    assert not upload_path.exists()
 
-    assert video_path.exists()
 
-
-def test_trim_local_uploads_removes_pure_tos_source_file(tmp_path, monkeypatch):
-    upload_dir = tmp_path / "uploads"
-    upload_dir.mkdir()
-    video_path = upload_dir / "task-2.mp4"
-    video_path.write_bytes(b"video")
-
-    monkeypatch.setattr("config.UPLOAD_DIR", str(upload_dir))
-    monkeypatch.setattr(
-        cleanup,
-        "query",
-        lambda sql, args=(): [
-            {
-                "id": "task-2",
-                "state_json": json.dumps(
-                    {
-                        "delivery_mode": "pure_tos",
-                        "source_tos_key": "uploads/1/task-2/source.mp4",
-                        "video_path": str(video_path),
+def test_collect_task_tos_keys_keeps_legacy_metadata_for_reports():
+    keys = cleanup.collect_task_tos_keys(
+        {
+            "state_json": json.dumps(
+                {
+                    "source_tos_key": "uploads/1/task/source.mp4",
+                    "result_tos_key": "artifacts/1/task/result.mp4",
+                    "tos_uploads": {
+                        "normal:srt": {"tos_key": "artifacts/1/task/subtitle.srt"},
+                        "legacy": "artifacts/1/task/legacy.bin",
                     },
-                    ensure_ascii=False,
-                ),
-            }
-        ],
+                },
+                ensure_ascii=False,
+            )
+        }
     )
 
-    cleanup._trim_local_uploads_with_tos_backup()
+    assert keys == [
+        "uploads/1/task/source.mp4",
+        "artifacts/1/task/result.mp4",
+        "artifacts/1/task/subtitle.srt",
+        "artifacts/1/task/legacy.bin",
+    ]
 
-    assert not Path(video_path).exists()
+
+def test_delete_stale_upload_objects_is_noop():
+    assert cleanup.delete_stale_upload_objects() is None

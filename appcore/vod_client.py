@@ -54,10 +54,10 @@ _configured = False
 
 
 def _resolve_ak_sk() -> tuple[str, str]:
-    ak = (getattr(config, "VOD_ACCESS_KEY", "") or config.TOS_ACCESS_KEY or "").strip()
-    sk = (getattr(config, "VOD_SECRET_KEY", "") or config.TOS_SECRET_KEY or "").strip()
+    ak = (getattr(config, "VOD_ACCESS_KEY", "") or "").strip()
+    sk = (getattr(config, "VOD_SECRET_KEY", "") or "").strip()
     if not ak or not sk:
-        raise VodClientError("VOD AK/SK is not configured (set VOD_ACCESS_KEY/VOD_SECRET_KEY or TOS_ACCESS_KEY/TOS_SECRET_KEY)")
+        raise VodClientError("VOD AK/SK is not configured (set VOD_ACCESS_KEY/VOD_SECRET_KEY)")
     return ak, sk
 
 

@@ -39,7 +39,7 @@ VOLC_ASR_QUERY_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query
 # Flask 服务的外部可访问地址
 LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", "http://127.0.0.1:5000")
 
-# 火山引擎 TOS
+# 火山引擎 TOS：仅用于第三方 API 公网 URL 临时交换、历史文件回填迁移。
 TOS_ACCESS_KEY = _env("TOS_ACCESS_KEY")
 TOS_SECRET_KEY = _env("TOS_SECRET_KEY")
 TOS_REGION = _env("TOS_REGION", "cn-shanghai")
@@ -164,8 +164,8 @@ SUBTITLE_REMOVAL_PROVIDER = _env("SUBTITLE_REMOVAL_PROVIDER", "goodline").strip(
 # 火山引擎视频点播（VOD）- 字幕擦除依赖
 VOD_SPACE_NAME = _env("VOD_SPACE_NAME")
 VOD_REGION = _env("VOD_REGION", "cn-north-1")
-VOD_ACCESS_KEY = _env("VOD_ACCESS_KEY") or TOS_ACCESS_KEY
-VOD_SECRET_KEY = _env("VOD_SECRET_KEY") or TOS_SECRET_KEY
+VOD_ACCESS_KEY = _env("VOD_ACCESS_KEY")
+VOD_SECRET_KEY = _env("VOD_SECRET_KEY")
 VOD_PLAYBACK_DOMAIN = _env("VOD_PLAYBACK_DOMAIN")
 VOD_ERASE_MAX_WAIT_SECONDS = int(_env("VOD_ERASE_MAX_WAIT_SECONDS", "3600"))
 VOD_UPLOAD_MAX_WAIT_SECONDS = int(_env("VOD_UPLOAD_MAX_WAIT_SECONDS", "600"))

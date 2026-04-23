@@ -1,14 +1,12 @@
-"""Shared artifact download logic for translation tasks."""
+"""Shared local artifact download logic for translation tasks."""
 
 from __future__ import annotations
 
 import os
-from datetime import datetime
 
-from flask import Response, jsonify, redirect, send_file
+from flask import Response, jsonify, send_file
 from flask_login import current_user
 
-from appcore import tos_clients
 from appcore.api_keys import resolve_jianying_project_root
 from pipeline.capcut import build_capcut_archive_name, rewrite_capcut_project_paths
 from web import store
@@ -25,18 +23,8 @@ _PREVIEW_NAME_TO_ARTIFACT_KIND: set[str] = {"hard_video", "soft_video", "srt"}
 
 
 def preview_artifact_tos_redirect(task: dict, name: str, variant: str | None = None):
-    """Return a signed TOS redirect for preview routes when local preview is unavailable."""
-    if name not in _PREVIEW_NAME_TO_ARTIFACT_KIND:
-        return None
-    if not _is_pure_tos_task(task) and _local_artifact_exists(_preview_artifact_path(task, name, variant)):
-        return None
-    record = get_tos_upload_record(task, name, variant)
-    if not record:
-        return None
-    try:
-        return redirect(tos_clients.generate_signed_download_url(record["tos_key"]))
-    except Exception:
-        return None
+    """Compatibility hook kept for callers; local mode never redirects to TOS."""
+    return None
 
 
 def _resolved_variant_key(variant: str | None) -> str:
@@ -53,10 +41,6 @@ def _preview_artifact_path(task: dict, name: str, variant: str | None) -> str | 
     }.get(name)
 
 
-def _is_pure_tos_task(task: dict) -> bool:
-    return (task.get("delivery_mode") or "").strip() == "pure_tos"
-
-
 def _local_artifact_exists(path: str | None) -> bool:
     return bool(path and os.path.exists(path))
 
@@ -70,6 +54,7 @@ def artifact_upload_slot(artifact_kind: str, variant: str | None = None) -> str:
 
 
 def get_tos_upload_record(task: dict, artifact_kind: str, variant: str | None = None) -> dict | None:
+    """Return legacy metadata only; downloads no longer use it."""
     payload = (task.get("tos_uploads") or {}).get(artifact_upload_slot(artifact_kind, variant))
     if isinstance(payload, dict) and payload.get("tos_key"):
         return payload
@@ -82,38 +67,15 @@ def upload_capcut_archive_for_current_user(
     variant: str | None,
     archive_path: str,
 ) -> dict | None:
-    """Upload a rewritten CapCut archive to TOS for the current user."""
-    if not archive_path or not os.path.exists(archive_path) or not tos_clients.is_tos_configured():
+    """Compatibility hook; CapCut archives are served from local disk."""
+    if not archive_path or not os.path.exists(archive_path):
         return None
-
-    resolved_variant = _resolved_variant_key(variant)
-    source_name = task.get("display_name") or task.get("original_filename") or task_id
-    download_name = build_capcut_archive_name(source_name, variant=variant)
-    tos_key = tos_clients.build_artifact_object_key(current_user.id, task_id, resolved_variant, download_name)
-    slot = artifact_upload_slot("capcut_archive", variant)
-    uploads = dict(task.get("tos_uploads") or {})
-    previous = uploads.get(slot)
-
-    if isinstance(previous, dict):
-        previous_key = previous.get("tos_key")
-        if previous_key and previous_key != tos_key:
-            try:
-                tos_clients.delete_object(previous_key)
-            except Exception:
-                pass
-
-    tos_clients.upload_file(archive_path, tos_key)
-    payload = {
-        "tos_key": tos_key,
+    return {
+        "storage_backend": "local",
         "artifact_kind": "capcut_archive",
-        "variant": resolved_variant,
+        "variant": _resolved_variant_key(variant),
         "file_size": os.path.getsize(archive_path),
-        "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-        "jianying_project_root": resolve_jianying_project_root(current_user.id),
     }
-    uploads[slot] = payload
-    store.update(task_id, tos_uploads=uploads)
-    return payload
 
 
 def _paths_for(task: dict, variant: str | None) -> tuple[dict, dict, dict, str | None]:
@@ -178,7 +140,7 @@ def serve_artifact_download(
     variant: str | None = None,
     rewrite_capcut_paths: bool = True,
 ) -> Response:
-    """Serve a task artifact with local-first behavior for non-``pure_tos`` tasks."""
+    """Serve a task artifact from local disk only."""
     _variant_state, result, exports, srt_path = _paths_for(task, variant)
     path_map = {
         "soft": result.get("soft_video"),
@@ -187,39 +149,15 @@ def serve_artifact_download(
         "capcut": exports.get("capcut_archive"),
     }
     path = path_map.get(file_type)
-    artifact_kind = artifact_kind_for_download(file_type)
-    pure_tos = _is_pure_tos_task(task)
     local_available = _local_artifact_exists(path)
 
     if file_type == "capcut":
         _rewrite_capcut_for_current_user(task_id, task, variant, exports, path, rewrite_capcut_paths)
 
-    if local_available and not pure_tos:
+    if local_available:
         return _send_local_artifact(task, task_id, file_type, variant, path)
 
-    uploaded_artifact = get_tos_upload_record(task, artifact_kind, variant) if artifact_kind else None
-    if uploaded_artifact:
-        try:
-            return redirect(tos_clients.generate_signed_download_url(uploaded_artifact["tos_key"]))
-        except Exception:
-            pass
-
-    if file_type == "capcut" and pure_tos and local_available:
-        try:
-            upload_payload = upload_capcut_archive_for_current_user(task_id, task, variant, path)
-        except Exception:
-            upload_payload = None
-        if upload_payload:
-            try:
-                return redirect(tos_clients.generate_signed_download_url(upload_payload["tos_key"]))
-            except Exception:
-                pass
-        return jsonify({"error": "CapCut 工程包尚未上传到 TOS，暂不可下载"}), 409
-
-    if pure_tos and artifact_kind:
-        return jsonify({"error": "下载文件尚未上传到 TOS，暂不可下载"}), 409
-
-    if not local_available:
-        return jsonify({"error": "File not ready"}), 404
-
-    return _send_local_artifact(task, task_id, file_type, variant, path)
+    return jsonify({
+        "error": "local artifact missing",
+        "message": "本地产物缺失，请先运行本地存储迁移回填，或重新生成该任务。",
+    }), 404

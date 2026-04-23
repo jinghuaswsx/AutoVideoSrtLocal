@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from appcore import local_media_storage, medias, tos_clients
+from appcore import local_media_storage, medias
 from appcore.bulk_translate_backfill import (
     sync_detail_images_result,
     sync_video_cover_result,
@@ -52,11 +52,8 @@ def _download_media_source_to(object_key: str, destination: str) -> str:
         raise ValueError("raw source video object key missing")
     try:
         return local_media_storage.download_to(key, destination)
-    except Exception:
-        try:
-            return tos_clients.download_media_file(key, destination)
-        except Exception as media_exc:
-            raise RuntimeError(f"raw source video not available: {key}") from media_exc
+    except Exception as exc:
+        raise RuntimeError(f"raw source video not available locally: {key}") from exc
 
 
 def create_bulk_translate_task(

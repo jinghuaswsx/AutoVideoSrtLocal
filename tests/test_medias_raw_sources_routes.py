@@ -61,7 +61,7 @@ def test_upload_ok(authed_client_no_db, monkeypatch):
     fake_write = MagicMock()
     monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
     monkeypatch.setattr(
-        r.tos_clients,
+        r.object_keys,
         "build_media_raw_source_key",
         lambda uid, pid, kind, filename: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
     )
@@ -108,7 +108,7 @@ def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
     deletes = []
 
     monkeypatch.setattr(
-        r.tos_clients,
+        r.object_keys,
         "build_media_raw_source_key",
         lambda uid, pid, kind, filename: f"{uid}/medias/{pid}/raw_sources/{kind}_{filename}",
     )
@@ -120,7 +120,6 @@ def test_upload_cover_fails_rollbacks_video(authed_client_no_db, monkeypatch):
 
     monkeypatch.setattr(r.local_media_storage, "write_bytes", fake_write)
     monkeypatch.setattr(r.local_media_storage, "delete", lambda key: deletes.append(key))
-    monkeypatch.setattr(r.tos_clients, "delete_media_object", lambda key: None)
     monkeypatch.setattr(r.medias, "list_raw_sources", lambda pid: [])
 
     resp = authed_client_no_db.post(

@@ -237,13 +237,13 @@ def _resolve_model_only(provider: str, user_id: int | None = None) -> str:
         return extra.get("model_id") or CLAUDE_MODEL
 
 
-def _upload_to_tos(local_path: str, prefix: str = "copywriting_media/") -> str:
-    """上传文件到 TOS，返回签名下载 URL。"""
-    from appcore.tos_clients import upload_file, generate_signed_download_url
+def _upload_to_public_exchange(local_path: str, prefix: str = "copywriting_media/") -> str:
+    """Stage a local media file for provider URL-pull APIs."""
+    from pipeline.storage import upload_file
+
     object_key = f"{prefix}{os.path.basename(local_path)}"
-    upload_file(local_path, object_key)
-    url = generate_signed_download_url(object_key, expires=3600)
-    log.info("已上传到 TOS: %s -> %s", os.path.basename(local_path), object_key)
+    url = upload_file(local_path, object_key, expires=3600)
+    log.info("provider public exchange staged: %s -> %s", os.path.basename(local_path), object_key)
     return url
 
 
@@ -270,15 +270,14 @@ def _call_doubao_multimodal(
         if item["type"] == "text":
             ark_content.append({"type": "input_text", "text": item["text"]})
         elif item["type"] == "image_url":
-            # TOS URL
             ark_content.append({
                 "type": "input_image",
-                "image_url": item["tos_url"],
+                "image_url": item["public_url"],
             })
         elif item["type"] == "video_url":
             ark_content.append({
                 "type": "input_video",
-                "video_url": item["tos_url"],
+                "video_url": item["public_url"],
             })
 
     response = client.responses.create(
@@ -473,19 +472,19 @@ def generate_copy(
     use_video = _supports_video(provider, model) and video_path and os.path.isfile(video_path)
     use_vision = _supports_vision(provider) and keyframe_paths and not use_video
 
-    # 豆包多模态：先上传媒体到 TOS，拿 URL
-    tos_urls: dict[str, str] = {}  # local_path -> tos_url
+    # 豆包多模态：模型只接收可拉取的媒体 URL，这里走公网交换例外。
+    exchange_urls: dict[str, str] = {}  # local_path -> public URL
 
     if is_doubao and (use_video or use_vision):
-        log.info("豆包多模态：上传媒体文件到 TOS...")
+        log.info("豆包多模态：暂存媒体文件供上游模型拉取...")
         if use_video:
-            tos_urls[video_path] = _upload_to_tos(video_path)
+            exchange_urls[video_path] = _upload_to_public_exchange(video_path)
         elif use_vision:
             for path in keyframe_paths:
-                tos_urls[path] = _upload_to_tos(path)
+                exchange_urls[path] = _upload_to_public_exchange(path)
         product_image = product_inputs.get("product_image_url") or product_inputs.get("product_image_path")
         if product_image and os.path.isfile(product_image):
-            tos_urls[product_image] = _upload_to_tos(product_image)
+            exchange_urls[product_image] = _upload_to_public_exchange(product_image)
 
     # 构建用户消息内容
     content: list[dict[str, Any]] = []
@@ -496,8 +495,8 @@ def generate_copy(
         if is_doubao:
             content.append({
                 "type": "video_url",
-                "video_url": {"url": tos_urls[video_path]},
-                "tos_url": tos_urls[video_path],
+                "video_url": {"url": exchange_urls[video_path]},
+                "public_url": exchange_urls[video_path],
             })
         else:
             content.append({
@@ -510,8 +509,8 @@ def generate_copy(
             if is_doubao:
                 content.append({
                     "type": "image_url",
-                    "image_url": {"url": tos_urls[path]},
-                    "tos_url": tos_urls[path],
+                    "image_url": {"url": exchange_urls[path]},
+                    "public_url": exchange_urls[path],
                 })
             else:
                 content.append({
@@ -526,8 +525,8 @@ def generate_copy(
         if is_doubao:
             content.append({
                 "type": "image_url",
-                "image_url": {"url": tos_urls.get(product_image, "")},
-                "tos_url": tos_urls.get(product_image, ""),
+                "image_url": {"url": exchange_urls.get(product_image, "")},
+                "public_url": exchange_urls.get(product_image, ""),
             })
         else:
             content.append({
@@ -562,7 +561,7 @@ def generate_copy(
             for k, v in obj.items():
                 if k in ("url",) and isinstance(v, str) and (v.startswith("data:") or len(v) > 500):
                     out[k] = v[:120] + f"...[TRUNCATED, total {len(v)} chars]"
-                elif k == "tos_url":
+                elif k == "public_url":
                     continue  # 不放入日志
                 else:
                     out[k] = _truncate_data(v)
@@ -576,10 +575,10 @@ def generate_copy(
         if item["type"] == "text":
             debug_content.append({"type": "text", "text": item["text"]})
         elif item["type"] == "image_url":
-            info = "(TOS URL image)" if is_doubao else "(base64 image)"
+            info = "(public URL image)" if is_doubao else "(base64 image)"
             debug_content.append({"type": "image", "info": info})
         elif item["type"] == "video_url":
-            info = f"(TOS URL video: {os.path.basename(video_path)})" if is_doubao else f"(base64 video: {os.path.basename(video_path)})"
+            info = f"(public URL video: {os.path.basename(video_path)})" if is_doubao else f"(base64 video: {os.path.basename(video_path)})"
             debug_content.append({"type": "video", "info": info})
 
     # ── 实际调用 ──
@@ -680,7 +679,10 @@ def generate_copy(
         "video_file": os.path.basename(video_path) if use_video else None,
         "image_count": len(keyframe_paths) if use_vision else 0,
         "keyframe_paths": [os.path.basename(p) for p in keyframe_paths] if not use_video else [],
-        "tos_urls": {os.path.basename(k): v[:80] + "..." for k, v in tos_urls.items()} if tos_urls else None,
+        "public_exchange_urls": (
+            {os.path.basename(k): v[:80] + "..." for k, v in exchange_urls.items()}
+            if exchange_urls else None
+        ),
         "full_request": full_request_log,
     }
     result = _parse_json_content(raw)

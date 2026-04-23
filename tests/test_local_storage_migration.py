@@ -71,6 +71,35 @@ def test_collect_media_refs_includes_object_and_cover_keys():
     }
 
 
+def test_collect_project_refs_includes_image_translate_item_keys():
+    migration = importlib.import_module("appcore.local_storage_migration")
+    state = {
+        "type": "image_translate",
+        "items": [
+            {
+                "src_tos_key": "uploads/image_translate/1/task/src_0.jpg",
+                "dst_tos_key": "artifacts/image_translate/1/task/dst_0.png",
+            },
+            {
+                "src_tos_key": "1/medias/12/source.jpg",
+                "dst_tos_key": "",
+            },
+        ],
+    }
+
+    refs = migration.collect_project_refs("task", state)
+
+    assert refs["logical_key_targets"] == {
+        "1/medias/12/source.jpg": ["media_store/1/medias/12/source.jpg"],
+        "artifacts/image_translate/1/task/dst_0.png": [
+            "media_store/artifacts/image_translate/1/task/dst_0.png",
+        ],
+        "uploads/image_translate/1/task/src_0.jpg": [
+            "media_store/uploads/image_translate/1/task/src_0.jpg",
+        ],
+    }
+
+
 def test_verify_project_row_reports_missing_artifact_target(tmp_path):
     migration = importlib.import_module("appcore.local_storage_migration")
     upload_dir = tmp_path / "uploads"
