@@ -7,6 +7,17 @@
 - When this project gets real source files, update this file with exact run, test, lint, typecheck, and build commands.
 - Prefer installed skills when relevant, especially `superpowers:*`, `Codex-api`, `pdf`, `docx`, `pptx`, `xlsx`, `webapp-testing`, `frontend-design`, and `mcp-builder`.
 
+## 服务器环境使用规则（强制）
+
+- 服务器环境说明见 `docs/server-environments.md`。
+- 线上环境：`http://172.30.254.14/`，目录 `/opt/autovideosrt`，服务 `autovideosrt.service`。
+- 测试环境：`http://172.30.254.14:8080/`，目录 `/opt/autovideosrt-test`，服务 `autovideosrt-test.service`。
+- 后续本项目所有功能验证、页面验证、接口验证、数据库验证，默认去测试环境 `http://172.30.254.14:8080/` 测。
+- 用户明确要求发布或验证线上时，才去线上环境 `http://172.30.254.14/` 操作。
+- 不要在 Windows 开发机本地安装、初始化、启动或依赖 MySQL；数据库以服务器 MySQL 为准。
+- 不要在 Windows 开发机本地长期启动项目 Web 服务来替代测试环境。
+- 不要为了测试随意改线上目录或重启线上服务；先在测试环境验证，再按用户要求发布线上。
+
 ## Link Check Desktop Commands
 
 - 开发运行：`python -m link_check_desktop.main`

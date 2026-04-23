@@ -12,10 +12,12 @@
       </button>
     </div>
 
-    <div class="oc-modal-body oc-edit-form">
-
-      <!-- 语种 Tabs -->
+    <!-- 语种 Tabs：与标题栏一起固定，不随内容区滚动 -->
+    <div class="oc-modal-langbar">
       <div id="edLangTabs" class="oc-lang-tabs"></div>
+    </div>
+
+    <div class="oc-modal-body oc-edit-form">
       <div id="edEnCoverWarn" class="oc-en-cover-warn" hidden>
         必须先上传英文（EN）产品主图才能保存。
       </div>
@@ -185,7 +187,7 @@
                 <svg width="14" height="14"><use href="#ic-upload"/></svg>
                 <span>选择图片批量上传</span>
               </button>
-              <button type="button" class="oc-btn ghost sm" id="edDetailImagesFromUrlBtn" title="从商品链接抓取轮播+详情图">
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesFromUrlBtn" title="从商品链接抓取轮播+详情图" hidden>
                 <svg width="14" height="14"><use href="#ic-upload"/></svg>
                 <span>从商品链接一键下载</span>
               </button>

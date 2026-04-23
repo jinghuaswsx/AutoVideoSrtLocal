@@ -302,9 +302,14 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
     where.append("p.archived=%s")
     args.append(1 if archived else 0)
     if keyword:
-        where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         like = f"%{keyword}%"
-        args.extend([like, like])
+        keyword_clauses = ["p.name LIKE %s", "p.product_code LIKE %s"]
+        keyword_args: list[Any] = [like, like]
+        if keyword.isdigit():
+            keyword_clauses.append("p.mk_id=%s")
+            keyword_args.append(int(keyword))
+        where.append(f"({' OR '.join(keyword_clauses)})")
+        args.extend(keyword_args)
     where_sql = " AND ".join(where)
     owner_name_expr = _media_product_owner_name_expr()
 
