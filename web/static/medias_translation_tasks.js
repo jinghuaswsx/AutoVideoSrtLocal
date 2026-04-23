@@ -1,6 +1,9 @@
 (function () {
   'use strict';
 
+  const POLL_INTERVAL_MS = 5000;
+  const TERMINAL_TASK_STATUSES = new Set(['done', 'failed', 'error', 'cancelled', 'skipped', 'interrupted', 'paused']);
+
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
       '&': '&amp;',
@@ -130,6 +133,24 @@
 
   function emptyState(message) {
     return `<div class="mtt-empty">${esc(message)}</div>`;
+  }
+
+  function hasUnfinishedTasks(items) {
+    return (items || []).some((task) => !isTaskComplete(task));
+  }
+
+  function isTaskComplete(task) {
+    const progress = task?.progress || {};
+    const total = Number(progress.total || 0);
+    if (total > 0) {
+      const completed = Number(progress.done || 0) + Number(progress.skipped || 0);
+      return completed >= total;
+    }
+    const subItems = task?.items || [];
+    if (subItems.length) {
+      return subItems.every((item) => TERMINAL_TASK_STATUSES.has(item.status));
+    }
+    return TERMINAL_TASK_STATUSES.has(task?.status);
   }
 
   function injectStyles() {
@@ -288,12 +309,16 @@
     injectStyles();
     const compact = !!options?.compact;
     let timer = null;
+    let refreshInFlight = false;
+    let destroyed = false;
 
     async function load() {
       container.innerHTML = `<div class="mtt-root${compact ? ' compact' : ''}">${emptyState('翻译任务加载中…')}</div>`;
       try {
         const payload = await fetchJSON(`/medias/api/products/${productId}/translation-tasks`);
-        render(payload.items || []);
+        const items = payload.items || [];
+        render(items);
+        updatePolling(items);
       } catch (error) {
         container.innerHTML = `<div class="mtt-root${compact ? ' compact' : ''}">${emptyState(`加载失败：${error.message || error}`)}</div>`;
       }
@@ -309,6 +334,23 @@
           ${items.map((task) => renderTaskCard(task, compact)).join('')}
         </div>
       `;
+    }
+
+    function stopPolling() {
+      if (timer) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    }
+
+    function updatePolling(items) {
+      if (destroyed || !hasUnfinishedTasks(items)) {
+        stopPolling();
+        return;
+      }
+      if (!timer) {
+        timer = window.setInterval(refresh, POLL_INTERVAL_MS);
+      }
     }
 
     async function trigger(action, taskId, itemIdx) {
@@ -341,11 +383,17 @@
     }
 
     async function refresh() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
       try {
         const payload = await fetchJSON(`/medias/api/products/${productId}/translation-tasks`);
-        render(payload.items || []);
+        const items = payload.items || [];
+        render(items);
+        updatePolling(items);
       } catch (error) {
         console.error('[medias_translation_tasks] refresh failed', error);
+      } finally {
+        refreshInFlight = false;
       }
     }
 
@@ -361,15 +409,12 @@
     });
 
     load();
-    timer = window.setInterval(refresh, compact ? 12000 : 8000);
 
     return {
       refresh,
       destroy() {
-        if (timer) {
-          window.clearInterval(timer);
-          timer = null;
-        }
+        destroyed = true;
+        stopPolling();
       },
     };
   }

@@ -36,6 +36,19 @@ def test_medias_translation_tasks_parent_title_shows_started_time():
     assert '<h3 class="mtt-card__title">批量翻译任务</h3>' in script
 
 
+def test_medias_translation_tasks_polls_every_five_seconds_until_progress_complete():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translation_tasks.js").read_text(encoding="utf-8")
+
+    assert "const POLL_INTERVAL_MS = 5000;" in script
+    assert "function hasUnfinishedTasks(items)" in script
+    assert "function isTaskComplete(task)" in script
+    assert "Number(progress.done || 0) + Number(progress.skipped || 0)" in script
+    assert "return (items || []).some((task) => !isTaskComplete(task));" in script
+    assert "window.setInterval(refresh, POLL_INTERVAL_MS)" in script
+    assert "window.clearInterval(timer)" in script
+
+
 def test_medias_translate_modal_matches_shared_subtitle_size_options():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")

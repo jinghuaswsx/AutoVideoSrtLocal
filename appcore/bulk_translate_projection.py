@@ -4,7 +4,7 @@ import json
 import logging
 
 from appcore import medias
-from appcore.bulk_translate_runtime import compute_progress, refresh_task_from_children
+from appcore.bulk_translate_runtime import compute_progress, sync_task_with_children_once
 from appcore.db import query
 
 
@@ -55,7 +55,7 @@ def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> lis
         if int(state.get("product_id") or 0) != int(product_id):
             continue
         try:
-            refreshed = refresh_task_from_children(row["id"], user_id=user_id)
+            refreshed = sync_task_with_children_once(row["id"], user_id=user_id)
         except Exception:
             log.warning("bulk_translate projection refresh failed: %s", row.get("id"), exc_info=True)
             refreshed = None
