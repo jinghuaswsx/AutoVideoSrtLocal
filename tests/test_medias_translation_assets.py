@@ -44,8 +44,9 @@ def test_medias_translation_tasks_action_labels_are_explicit():
     assert "重新启动整个批量任务" in script
     assert ">重跑失败项</button>" in script
     assert "只重跑失败或中断的子项" in script
-    assert ">单个重新启动</button>" in script
-    assert "只重新启动这一项" in script
+    assert ">重跑此项</button>" in script
+    assert "如果这一项是图片翻译，只会补跑其中失败或中断的图片" in script
+    assert "单个重新启动" not in script
 
 
 def test_medias_translation_tasks_polls_every_five_seconds_until_progress_complete():

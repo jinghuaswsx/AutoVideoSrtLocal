@@ -162,7 +162,7 @@
       return {
         title: `有 ${progress.failed || '部分'} 个子任务失败`,
         detail: `失败项会停在“需要处理”分区，已完成结果会保留。`,
-        next: '先查看失败原因，再选择“单个重新启动”或“重跑失败项”。',
+        next: '先查看失败原因，再选择“重跑此项”或“重跑失败项”。',
       };
     }
     if (status === 'done') {
@@ -353,7 +353,7 @@
     box.querySelectorAll('[data-retry-idx]').forEach(b => {
       b.addEventListener('click', async () => {
         const idx = parseInt(b.dataset.retryIdx, 10);
-        if (!confirm(`将只重新启动 #${idx} 这一项，其他子项保持当前状态。确定继续吗？`)) return;
+        if (!confirm(`将只重跑 #${idx} 这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？`)) return;
         const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/retry-item`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -395,7 +395,7 @@
     const opts = options || {};
     const status = normalizeStatus(item.status);
     const retry = isRetryableItem(item)
-      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}" title="只重新启动这一项：其他子项保持当前状态。">单个重新启动</button>`
+      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}" title="只重跑这一项：其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>`
       : '';
     const ref = refHintText(item);
     const childTaskId = item.child_task_id || item.sub_task_id;
@@ -666,7 +666,7 @@
       pause: '暂停任务',
       resume: '整个任务重新启动',
       cancel: '取消任务',
-      retry_item: '单个重新启动',
+      retry_item: '重跑此项',
       retry_failed: '重跑失败项',
     }[action] || action || '系统记录';
   }

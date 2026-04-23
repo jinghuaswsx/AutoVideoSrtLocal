@@ -111,7 +111,7 @@
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
     }
     if (item.retryable) {
-      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重新启动这一项，其他子项保持当前状态。">单个重新启动</button>');
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>');
     }
     return `
       <article class="mtt-item">
@@ -362,7 +362,7 @@
       const confirmMap = {
         resume: '将重新启动整个批量任务，只恢复中断的子项，已完成项不会重复执行。确定继续吗？',
         'retry-failed': '将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？',
-        'retry-item': '将只重新启动这一项，其他子项保持当前状态。确定继续吗？',
+        'retry-item': '将只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？',
       };
       if (confirmMap[action] && !window.confirm(confirmMap[action])) {
         return;

@@ -56,7 +56,9 @@ def test_bulk_translate_detail_script_renders_status_and_task_sections():
     assert "查看详情" in script
     assert "整个任务重新启动" in script
     assert "重跑失败项" in script
-    assert "单个重新启动" in script
+    assert "重跑此项" in script
+    assert "如果这一项是图片翻译，只会补跑其中失败或中断的图片" in script
+    assert "单个重新启动" not in script
     assert "中断项不会在服务启动时自动重跑" in script
 
 
@@ -237,7 +239,7 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
     assert plan_html.count("mtt-item") >= 4
     assert "图片翻译失败" in plan_html
     assert "等待人工选声音" in plan_html
-    assert "单个重新启动" in plan_html
+    assert "重跑此项" in plan_html
     assert "去选声音" in plan_html
     assert "2/4" in rendered["statsHtml"]
     assert "50%" in rendered["statusHtml"]
