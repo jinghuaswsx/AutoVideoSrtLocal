@@ -42,7 +42,7 @@ SERVICES = [
 
 TRANSLATE_PROVIDERS = [
     "vertex_gemini_31_flash_lite", "vertex_gemini_3_flash", "vertex_gemini_31_pro",
-    "gemini_31_flash", "gemini_31_pro", "gemini_3_flash",
+    "gemini_31_flash", "gemini_31_pro", "gemini_3_flash", "gpt_5_mini",
     "claude_sonnet",
     "openrouter",
     "doubao",
