@@ -1,6 +1,7 @@
 """推送管理蓝图骨架测试。"""
 
 
+from decimal import Decimal
 from datetime import datetime
 
 
@@ -106,6 +107,64 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
     assert data["items"][0]["product_page_url"] == (
         "https://newjoyloo.com/de/products/gold-foil-naturalization-display-rjc-special"
     )
+
+
+def test_pushes_api_items_includes_product_ai_review_fields(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 102,
+        "product_id": 13,
+        "product_name": "AI审核测试产品",
+        "product_code": "ai-review-rjc",
+        "mk_id": 998878,
+        "localized_links_json": {},
+        "lang": "de",
+        "filename": "review-demo.mp4",
+        "display_name": "review-demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/review-demo.jpg",
+        "ad_supported_langs": "de,fr",
+        "selling_points": "",
+        "importance": 3,
+        "remark": "不适合推广：车标侵权风险",
+        "ai_score": Decimal("38.50"),
+        "ai_evaluation_result": "不适合推广",
+        "ai_evaluation_detail": '{"de":{"fit":false,"reason":"trademark risk"}}',
+        "listing_status": "下架",
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?page=1")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["remark"] == "不适合推广：车标侵权风险"
+    assert item["ai_score"] == 38.5
+    assert item["ai_evaluation_result"] == "不适合推广"
+    assert item["ai_evaluation_detail"] == '{"de":{"fit":false,"reason":"trademark risk"}}'
+    assert item["listing_status"] == "下架"
 
 
 import pytest

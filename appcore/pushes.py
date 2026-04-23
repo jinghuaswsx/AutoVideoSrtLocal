@@ -625,7 +625,9 @@ def list_items_for_push(
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
         f"       p.localized_links_json, p.ad_supported_langs, "
-        f"       p.selling_points, p.importance "
+        f"       p.selling_points, p.importance, "
+        f"       p.remark, p.ai_score, p.ai_evaluation_result, "
+        f"       p.ai_evaluation_detail, p.listing_status "
         f"FROM media_items i "
         f"JOIN media_products p ON p.id = i.product_id "
         f"WHERE {where_sql} "

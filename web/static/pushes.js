@@ -162,6 +162,62 @@
     return `<span class="badge ${s.cls}">${s.text}</span>`;
   }
 
+  function normalizeListingStatus(status) {
+    const value = String(status || '上架').trim();
+    return value || '上架';
+  }
+
+  function listingStatusClass(status) {
+    return normalizeListingStatus(status) === '下架' ? 'audit-status-off' : 'audit-status-on';
+  }
+
+  function renderListingStatusBadge(status) {
+    const value = normalizeListingStatus(status);
+    return `<span class="audit-status ${listingStatusClass(value)}">${escapeHtml(value)}</span>`;
+  }
+
+  function createListingStatusBadge(status) {
+    const value = normalizeListingStatus(status);
+    return el('span', { class: `audit-status ${listingStatusClass(value)}` }, value);
+  }
+
+  function formatAuditScore(score) {
+    if (score === null || score === undefined || score === '') return '未评分';
+    const num = Number(score);
+    if (!Number.isFinite(num)) return String(score);
+    return Number.isInteger(num) ? String(num) : num.toFixed(1);
+  }
+
+  function formatAuditDetail(detail) {
+    if (detail && typeof detail === 'object') {
+      return JSON.stringify(detail, null, 2);
+    }
+    const text = String(detail || '').trim();
+    if (!text) return '暂无详情';
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  function renderAuditCell(it) {
+    const result = String(it.ai_evaluation_result || '').trim() || '未评估';
+    const remark = String(it.remark || '').trim() || '暂无备注';
+    const resultClass = result.includes('不适合') || normalizeListingStatus(it.listing_status) === '下架'
+      ? 'audit-result-bad'
+      : result.includes('适合') ? 'audit-result-good' : 'audit-result-empty';
+
+    return `<div class="audit-cell">
+      <div class="audit-line">
+        ${renderListingStatusBadge(it.listing_status)}
+        <span class="audit-result ${resultClass}">${escapeHtml(result)}</span>
+      </div>
+      <div class="audit-score">AI评分: <span>${escapeHtml(formatAuditScore(it.ai_score))}</span></div>
+      <div class="audit-remark" title="${escapeAttr(remark)}">${escapeHtml(remark)}</div>
+    </div>`;
+  }
+
   function renderActionCell(it) {
     if (!window.PUSH_IS_ADMIN) return '';
     if (it.status === 'pushed') {
@@ -238,6 +294,7 @@
       </td>
       <td><span class="lang-pill">${escapeHtml(it.lang || '')}</span></td>
       <td class="ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
       <td>${renderStatusBadge(it.status)}</td>
       <td class="time">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
       ${window.PUSH_IS_ADMIN ? `<td>${renderActionCell(it)}</td>` : ''}
@@ -246,7 +303,7 @@
 
   async function load() {
     const tbody = document.getElementById('push-tbody');
-    const colspan = window.PUSH_IS_ADMIN ? 9 : 8;
+    const colspan = window.PUSH_IS_ADMIN ? 10 : 9;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());
@@ -471,6 +528,23 @@
     addKV('状态', STATUS_LABELS[item.status]?.text || item.status);
     infoCard.appendChild(infoKV);
     body.appendChild(infoCard);
+
+    const auditCard = el('section', { class: 'pm-section audit-modal-section' }, [el('h4', {}, 'AI评估信息')]);
+    const auditKV = el('div', { class: 'pm-kv' });
+    const addAuditKV = (k, v) => {
+      auditKV.appendChild(el('span', { class: 'k' }, k));
+      if (v instanceof Node) auditKV.appendChild(v);
+      else auditKV.appendChild(el('span', { class: 'v' }, v));
+    };
+    addAuditKV('上架', el('span', { class: 'v' }, [createListingStatusBadge(item.listing_status)]));
+    addAuditKV('AI评分', formatAuditScore(item.ai_score));
+    addAuditKV('AI评估结果', item.ai_evaluation_result || '未评估');
+    addAuditKV('备注说明', item.remark || '暂无备注');
+    addAuditKV('AI评估详情', el('span', { class: 'v' }, [
+      el('pre', { class: 'audit-detail-pre' }, formatAuditDetail(item.ai_evaluation_detail)),
+    ]));
+    auditCard.appendChild(auditKV);
+    body.appendChild(auditCard);
 
     const contentCard = el('section', { class: 'pm-section' }, [el('h4', {}, '推送内容')]);
     const loadingTip = el('p', { class: 'pm-empty' }, '加载中…');

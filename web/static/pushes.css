@@ -319,6 +319,84 @@
   white-space: nowrap;
 }
 
+/* ---------- AI 审核信息 ---------- */
+.audit-cell-wrap {
+  min-width: 220px;
+  max-width: 300px;
+}
+.audit-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-sp-1);
+  line-height: 1.45;
+}
+.audit-line {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-sp-2);
+  flex-wrap: wrap;
+}
+.audit-status,
+.audit-result {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: var(--oc-r-full);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.audit-status-on,
+.audit-result-good {
+  background: var(--oc-success-bg);
+  color: var(--oc-success-fg);
+}
+.audit-status-off,
+.audit-result-bad {
+  background: var(--oc-danger-bg);
+  color: var(--oc-danger-fg);
+}
+.audit-result-empty {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-muted);
+}
+.audit-score {
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+}
+.audit-score span {
+  color: var(--oc-fg);
+  font-family: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.audit-remark {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.audit-modal-section .audit-status {
+  vertical-align: middle;
+}
+.audit-detail-pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: var(--oc-sp-2);
+  background: var(--oc-bg-subtle);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  color: var(--oc-fg);
+  font-family: "JetBrains Mono", "Geist Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---------- 语种圆片 ---------- */
 .lang-pill {
   display: inline-block;

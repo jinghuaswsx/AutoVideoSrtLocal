@@ -474,6 +474,30 @@ def test_list_items_for_push_filter_by_keyword(product_with_item):
     assert rows[0]["id"] == item_id
 
 
+def test_list_items_for_push_selects_product_ai_review_fields(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    sql = captured["sql"]
+    assert "p.remark" in sql
+    assert "p.ai_score" in sql
+    assert "p.ai_evaluation_result" in sql
+    assert "p.ai_evaluation_detail" in sql
+    assert "p.listing_status" in sql
+
+
 # ---------- resolve_push_texts ----------
 
 

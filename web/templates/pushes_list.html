@@ -53,12 +53,13 @@
       <th>素材</th>
       <th>语种</th>
       <th>就绪</th>
+      <th>审核信息</th>
       <th>状态</th>
       <th>创建时间</th>
       {% if is_admin %}<th>操作</th>{% endif %}
     </tr>
   </thead>
-  <tbody id="push-tbody"><tr><td colspan="9">加载中…</td></tr></tbody>
+  <tbody id="push-tbody"><tr><td colspan="{{ 10 if is_admin else 9 }}">加载中…</td></tr></tbody>
 </table>
 
 <div class="pagination" id="push-pagination"></div>

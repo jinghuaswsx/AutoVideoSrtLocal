@@ -42,6 +42,15 @@ from appcore import medias, pushes, tos_clients
 _PAGE_SIZE_DEFAULT = 20
 
 
+def _serialize_ai_score(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _serialize_row(row: dict) -> dict:
     item_shape = dict(row)
     product_shape = {
@@ -52,6 +61,11 @@ def _serialize_row(row: dict) -> dict:
         "ad_supported_langs": row.get("ad_supported_langs"),
         "selling_points": row.get("selling_points"),
         "importance": row.get("importance"),
+        "remark": row.get("remark"),
+        "ai_score": row.get("ai_score"),
+        "ai_evaluation_result": row.get("ai_evaluation_result"),
+        "ai_evaluation_detail": row.get("ai_evaluation_detail"),
+        "listing_status": row.get("listing_status"),
     }
     readiness = pushes.compute_readiness(item_shape, product_shape)
     status = pushes.compute_status(item_shape, product_shape)
@@ -75,6 +89,11 @@ def _serialize_row(row: dict) -> dict:
         "pushed_at": row["pushed_at"].isoformat() if row.get("pushed_at") else None,
         "status": status,
         "readiness": readiness,
+        "remark": row.get("remark") or "",
+        "ai_score": _serialize_ai_score(row.get("ai_score")),
+        "ai_evaluation_result": row.get("ai_evaluation_result") or "",
+        "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
+        "listing_status": row.get("listing_status") or "上架",
         # 走本地代理 /medias/obj/<key>（local-first：先查本地，缺了再从 TOS 懒加载），
         # 适配 local-first 存储下 TOS 尚无对象的素材
         "cover_url": (
