@@ -11,6 +11,10 @@
     }[ch]));
   }
 
+  function newTabAttrs(url) {
+    return `href="${esc(url || '#')}" target="_blank" rel="noopener noreferrer"`;
+  }
+
   function fmtTime(value) {
     if (!value) return '—';
     const date = new Date(value);
@@ -52,7 +56,7 @@
     if (task.can_retry_failed) {
       actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-failed" data-task-id="${task.id}">重跑失败项</button>`);
     }
-    actions.push(`<a class="bt-btn bt-btn--ghost" href="${task.detail_url}">父任务详情</a>`);
+    actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(task.detail_url)}>父任务详情</a>`);
 
     return `
       <section class="mtt-card">
@@ -94,7 +98,7 @@
   function renderTaskItem(task, item) {
     const actions = [];
     if (item.detail_url) {
-      actions.push(`<a class="bt-btn bt-btn--ghost" href="${item.detail_url}">${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
+      actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
     }
     if (item.retryable) {
       actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="${task.id}" data-item-idx="${item.idx}">重新启动</button>`);
