@@ -3,18 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_mk_selection_video_cover_uses_portrait_thumb_frame():
+def test_mk_selection_video_cards_use_compact_cover_and_video_frame():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "--mk-video-cover-w: 90px;" in template
-    assert "--mk-video-cover-h: 160px;" in template
+    assert "--mk-video-media-w: 135px;" in template
+    assert "--mk-video-media-h: 240px;" in template
+    assert "mk-video-media-frame" in template
     assert "mk-video-cover-frame" in template
+    assert "mk-video-source-frame" in template
 
 
 def test_mk_selection_video_cards_include_local_video_preview():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
-    assert "mk-video-player" in template
+    assert "mk-video-source" in template
     assert "/medias/api/mk-video?path=" in template
     assert "controls" in template
 
