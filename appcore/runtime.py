@@ -44,6 +44,11 @@ from web.preview_artifacts import (
     build_translate_artifact,
     build_tts_artifact,
 )
+from appcore.tts_language_guard import (
+    TtsLanguageValidationError,
+    extract_tts_script_text,
+    validate_tts_script_language_or_raise,
+)
 
 
 def _upload_artifacts_to_tos(task: dict, task_id: str) -> None:
@@ -349,6 +354,23 @@ class PipelineRunner:
             payload["model_tag"] = existing_tag
         self._emit(task_id, EVT_STEP_UPDATE, payload)
 
+    def _get_localization_module(self, task: dict):
+        del task
+        import importlib
+        return importlib.import_module(self.localization_module)
+
+    def _get_tts_target_language_label(self, task: dict) -> str:
+        del task
+        return self.target_language_label
+
+    def _get_tts_model_id(self, task: dict) -> str:
+        del task
+        return self.tts_model_id
+
+    def _get_tts_language_code(self, task: dict) -> str | None:
+        del task
+        return self.tts_language_code
+
     def _emit_duration_round(self, task_id: str, round_index: int,
                              phase: str, record: dict) -> None:
         """Emit EVT_TTS_DURATION_ROUND with merged payload."""
@@ -364,6 +386,9 @@ class PipelineRunner:
         initial_localized_translation: dict, source_full_text: str,
         source_language: str, elevenlabs_api_key: str,
         script_segments: list, variant: str,
+        target_language_label: str | None = None,
+        tts_model_id: str | None = None,
+        tts_language_code: str | None = None,
     ) -> dict:
         """Iterate translate_rewrite → tts_script_regen → audio_gen → measure
         up to 5 rounds until audio duration lands in [video-3, video].
@@ -374,6 +399,11 @@ class PipelineRunner:
         import importlib
         from pipeline.tts import generate_full_audio, _get_audio_duration
         from pipeline.translate import generate_tts_script, generate_localized_rewrite
+
+        target_language_label = target_language_label or self.target_language_label
+        tts_model_id = tts_model_id or self.tts_model_id
+        if tts_language_code is None:
+            tts_language_code = self.tts_language_code
 
         MAX_ROUNDS = 5
         # Final target range (shown to the user, used for final success judgement):
@@ -387,14 +417,14 @@ class PipelineRunner:
         round_products: list[dict] = []  # full per-round products (kept in-memory only)
         last_audio_duration = 0.0
         last_word_count = 0
-        default_wps = _DEFAULT_WPS.get(self.target_language_label, 2.5)
+        default_wps = _DEFAULT_WPS.get(target_language_label, 2.5)
 
         from functools import partial
         from pipeline.localization import count_words as _count_words
         validator = partial(
             getattr(loc_mod, "validate_tts_script", None)
             or importlib.import_module("pipeline.localization").validate_tts_script,
-            max_words=14 if self.target_language_label in ("de", "fr") else 10,
+            max_words=14 if target_language_label in ("de", "fr") else 10,
         )
 
         for round_index in range(1, MAX_ROUNDS + 1):
@@ -450,7 +480,7 @@ class PipelineRunner:
                 round_record["wps_used"] = wps
                 round_record["direction"] = direction
                 round_record["message"] = (
-                    f"第 {round_index} 轮：重译{_lang_display(self.target_language_label)}文案"
+                    f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
                     f"（目标 {target_words} 单词，{direction}）"
                 )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
@@ -603,10 +633,36 @@ class PipelineRunner:
                 tts_segments, voice["elevenlabs_voice_id"], task_dir,
                 variant=f"round_{round_index}",
                 elevenlabs_api_key=elevenlabs_api_key,
-                model_id=self.tts_model_id,
-                language_code=self.tts_language_code,
+                model_id=tts_model_id,
+                language_code=tts_language_code,
             )
             round_record["artifact_paths"]["tts_full_audio"] = f"tts_full.round_{round_index}.mp3"
+
+            language_check_filename = f"tts_language_check.round_{round_index}.json"
+            try:
+                language_check = validate_tts_script_language_or_raise(
+                    text=extract_tts_script_text(tts_script),
+                    target_language=target_language_label,
+                    user_id=self.user_id,
+                    project_id=task_id,
+                    variant=variant,
+                    round_index=round_index,
+                )
+            except TtsLanguageValidationError as exc:
+                language_check = exc.result or {
+                    "is_target_language": False,
+                    "reason": str(exc),
+                }
+                _save_json(task_dir, language_check_filename, language_check)
+                round_record["language_check"] = language_check
+                round_record["artifact_paths"]["tts_language_check"] = language_check_filename
+                self._emit_duration_round(task_id, round_index, "language_check_failed", round_record)
+                self._set_step(task_id, "tts", "error", str(exc))
+                raise
+
+            _save_json(task_dir, language_check_filename, language_check)
+            round_record["language_check"] = language_check
+            round_record["artifact_paths"]["tts_language_check"] = language_check_filename
 
             # Phase 4: measure
             tts_full_text = tts_script.get("full_text", "")
@@ -1148,7 +1204,6 @@ class PipelineRunner:
         })
 
     def _step_tts(self, task_id: str, task_dir: str) -> None:
-        import importlib
         import appcore.task_state as task_state
 
         task = task_state.get(task_id)
@@ -1157,9 +1212,12 @@ class PipelineRunner:
                 return
             run_av_localize(task_id, runner=self, variant="av")
             return
-        loc_mod = importlib.import_module(self.localization_module)
+        loc_mod = self._get_localization_module(task)
+        target_language_label = self._get_tts_target_language_label(task)
+        tts_model_id = self._get_tts_model_id(task)
+        tts_language_code = self._get_tts_language_code(task)
 
-        lang_display = _lang_display(self.target_language_label)
+        lang_display = _lang_display(target_language_label)
 
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
@@ -1226,6 +1284,9 @@ class PipelineRunner:
                 elevenlabs_api_key=elevenlabs_api_key,
                 script_segments=task.get("script_segments", []),
                 variant=variant,
+                target_language_label=target_language_label,
+                tts_model_id=tts_model_id,
+                tts_language_code=tts_language_code,
             )
 
             final_round = loop_result["final_round"]
@@ -1373,7 +1434,7 @@ class PipelineRunner:
                     user_id=self.user_id,
                     project_id=task_id,
                     provider="elevenlabs",
-                    model=self.tts_model_id,
+                    model=tts_model_id,
                     request_units=tts_char_count,
                     units_type="chars",
                     success=True,
@@ -2010,6 +2071,29 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             variant=variant,
             language_code=target_language,
         )
+        av_tts_text = " ".join(
+            str(segment.get("tts_text") or segment.get("translated") or "").strip()
+            for segment in tts_input_segments
+            if segment.get("tts_text") or segment.get("translated")
+        ).strip()
+        av_language_check_path = f"tts_language_check.{variant}.json"
+        try:
+            av_language_check = validate_tts_script_language_or_raise(
+                text=av_tts_text,
+                target_language=target_language,
+                user_id=runner.user_id,
+                project_id=task_id,
+                variant=variant,
+                round_index=1,
+            )
+        except TtsLanguageValidationError as exc:
+            _save_json(
+                task_dir,
+                av_language_check_path,
+                exc.result or {"is_target_language": False, "reason": str(exc)},
+            )
+            raise
+        _save_json(task_dir, av_language_check_path, av_language_check)
         final_sentences = reconcile_duration(
             task=task_state.get(task_id) or task,
             av_output={"sentences": av_sentences},

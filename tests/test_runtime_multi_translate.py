@@ -50,3 +50,111 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
     assert billing["provider"] == "openrouter"
     assert billing["model"] == "gpt"
     assert billing["units_type"] == "tokens"
+
+
+def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-es-tts-context"
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"fake-video")
+    task_state.create(task_id, str(video_path), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="es",
+        source_language="en",
+        selected_voice_id="voice-es",
+        selected_voice_name="Spanish Voice",
+        script_segments=[
+            {"index": 0, "text": "source", "start_time": 0.0, "end_time": 3.0},
+        ],
+        variants={
+            "normal": {
+                "localized_translation": {
+                    "full_text": "¿Sabías que esto funciona?",
+                    "sentences": [
+                        {
+                            "index": 0,
+                            "text": "¿Sabías que esto funciona?",
+                            "source_segment_indices": [0],
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    captured = {}
+
+    def fake_tts_loop(**kwargs):
+        captured.update(kwargs)
+        audio_path = tmp_path / "tts_full.round_1.mp3"
+        audio_path.write_bytes(b"fake-audio")
+        tts_script = {
+            "full_text": "¿Sabías que esto funciona?",
+            "blocks": [
+                {
+                    "index": 0,
+                    "text": "¿Sabías que esto funciona?",
+                    "sentence_indices": [0],
+                    "source_segment_indices": [0],
+                },
+            ],
+            "subtitle_chunks": [
+                {
+                    "index": 0,
+                    "text": "¿Sabías que esto funciona",
+                    "block_indices": [0],
+                    "sentence_indices": [0],
+                    "source_segment_indices": [0],
+                },
+            ],
+        }
+        return {
+            "localized_translation": kwargs["initial_localized_translation"],
+            "tts_script": tts_script,
+            "tts_audio_path": str(audio_path),
+            "tts_segments": [
+                {
+                    "index": 0,
+                    "text": "source",
+                    "translated": "¿Sabías que esto funciona?",
+                    "tts_text": "¿Sabías que esto funciona?",
+                    "tts_duration": 2.0,
+                },
+            ],
+            "rounds": [{"round": 1, "audio_duration": 2.0, "tts_char_count": 25}],
+            "final_round": 1,
+        }
+
+    runner = _make_runner()
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fake_tts_loop)
+    monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "openrouter")
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 3.0)
+    monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 2.0)
+    monkeypatch.setattr("appcore.runtime.ai_billing.log_request", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "appcore.runtime_multi.resolve_prompt_config",
+        lambda slot, lang: {
+            "provider": "openrouter",
+            "model": "gpt",
+            "content": "Prepare Spanish text for ElevenLabs TTS.",
+        },
+    )
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    assert captured["target_language_label"] == "es"
+    assert captured["tts_language_code"] == "es"
+    assert captured["tts_model_id"] == "eleven_multilingual_v2"
+
+    messages = captured["loc_mod"].build_tts_script_messages(
+        captured["initial_localized_translation"]
+    )
+    assert "Spanish" in messages[0]["content"]
+    assert "localized English" not in messages[0]["content"]

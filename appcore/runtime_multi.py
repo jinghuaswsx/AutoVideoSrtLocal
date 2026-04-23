@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -28,7 +29,7 @@ from appcore.runtime import (
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline.voice_embedding import embed_audio_file
 from pipeline.voice_match import extract_sample_from_utterances, match_candidates
-from pipeline.localization import build_source_full_text_zh
+from pipeline.localization import build_source_full_text_zh, build_tts_segments, validate_tts_script
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from web.preview_artifacts import (
     build_asr_artifact,
@@ -38,6 +39,53 @@ from web.preview_artifacts import (
 )
 
 log = logging.getLogger(__name__)
+
+
+class _PromptLocalizationAdapter:
+    """Language-bound prompt adapter for the shared multi-translate TTS loop."""
+
+    def __init__(self, lang: str):
+        self.lang = lang
+        self.__name__ = f"multi_translate.localization.{lang}"
+
+    def build_tts_script_messages(self, localized_translation: dict) -> list[dict]:
+        config = resolve_prompt_config("base_tts_script", self.lang)
+        return [
+            {"role": "system", "content": config["content"]},
+            {
+                "role": "user",
+                "content": json.dumps(localized_translation, ensure_ascii=False, indent=2),
+            },
+        ]
+
+    def build_localized_rewrite_messages(
+        self,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_words: int,
+        direction: str,
+        source_language: str = "zh",
+    ) -> list[dict]:
+        config = resolve_prompt_config("base_rewrite", self.lang)
+        prompt = config["content"].replace(
+            "{target_words}", str(target_words)
+        ).replace("{direction}", direction)
+        lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+        return [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                    f"{source_full_text}\n\n"
+                    f"Previous localization (rewrite this to {direction} to ~{target_words} words):\n"
+                    f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
+                ),
+            },
+        ]
+
+    validate_tts_script = staticmethod(validate_tts_script)
+    build_tts_segments = staticmethod(build_tts_segments)
 
 
 class MultiTranslateRunner(PipelineRunner):
@@ -56,6 +104,20 @@ class MultiTranslateRunner(PipelineRunner):
     def _get_lang_rules(self, lang: str):
         from pipeline.languages.registry import get_rules
         return get_rules(lang)
+
+    def _get_localization_module(self, task: dict):
+        return _PromptLocalizationAdapter(self._resolve_target_lang(task))
+
+    def _get_tts_target_language_label(self, task: dict) -> str:
+        return self._resolve_target_lang(task)
+
+    def _get_tts_model_id(self, task: dict) -> str:
+        lang = self._resolve_target_lang(task)
+        return getattr(self._get_lang_rules(lang), "TTS_MODEL_ID", self.tts_model_id)
+
+    def _get_tts_language_code(self, task: dict) -> str | None:
+        lang = self._resolve_target_lang(task)
+        return getattr(self._get_lang_rules(lang), "TTS_LANGUAGE_CODE", lang)
 
     def _build_system_prompt(self, lang: str) -> str:
         base = resolve_prompt_config("base_translation", lang)

@@ -357,6 +357,10 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
         lambda segments, voice_id, output_dir, variant=None, **kwargs: call_order.append("tts") or tts_output,
     )
     monkeypatch.setattr(
+        "appcore.runtime.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True, "answer": "是"},
+    )
+    monkeypatch.setattr(
         "pipeline.duration_reconcile.reconcile_duration",
         lambda **kwargs: call_order.append("reconcile") or final_sentences,
     )

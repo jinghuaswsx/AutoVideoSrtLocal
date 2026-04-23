@@ -83,6 +83,16 @@ USE_CASES: dict[str, UseCase] = {
         "elevenlabs",
         "chars",
     ),
+    "video_translate.tts_language_check": _uc(
+        "video_translate.tts_language_check",
+        "video_translate",
+        "TTS 语言校验",
+        "Gemini 检查 ElevenLabs 最终使用的 TTS 文案是否为目标语种",
+        "gemini_aistudio",
+        "gemini-3.1-flash-lite-preview",
+        "gemini",
+        "tokens",
+    ),
     "video_translate.asr": _uc(
         "video_translate.asr",
         "video_translate",
