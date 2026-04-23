@@ -42,6 +42,47 @@ def test_translate_copy_text_delegates_to_llm(monkeypatch):
     assert captured == {"text": "Welcome to our product", "src": "en", "tgt": "de"}
 
 
+def test_translate_copy_text_normalizes_localized_copywriting_labels(monkeypatch):
+    """结构化标题文案翻译后仍应保留中文字段标签。"""
+    source = "标题: Ready. Aim. LAUNCH!\n文案: Experience the thrill.\n描述: Fly High Today"
+
+    def fake(_source_text, _source_lang, _target_lang):
+        return (
+            "Titolo: Pronti. Mirare. LANCIO!\n"
+            "Testo: Vivi l'emozione.\n"
+            "Descrizione: Vola alto oggi",
+            88,
+        )
+
+    from appcore import copywriting_translate_runtime as mod
+    monkeypatch.setattr(mod, "_llm_translate", fake)
+
+    text, tokens = mod.translate_copy_text(source, "en", "it")
+
+    assert text == (
+        "标题: Pronti. Mirare. LANCIO!\n"
+        "文案: Vivi l'emozione.\n"
+        "描述: Vola alto oggi"
+    )
+    assert tokens == 88
+
+
+def test_translate_copy_text_strips_nested_localized_title_label(monkeypatch):
+    """兼容模型输出“标题: Titolo: ...”这类嵌套标签。"""
+    source = "标题: Ready\n文案: Do it\n描述: Go"
+
+    def fake(_source_text, _source_lang, _target_lang):
+        return "标题: Titolo: Pronti\n文案: Testo: Fallo\n描述: Descrizione: Vai", 42
+
+    from appcore import copywriting_translate_runtime as mod
+    monkeypatch.setattr(mod, "_llm_translate", fake)
+
+    text, tokens = mod.translate_copy_text(source, "en", "it")
+
+    assert text == "标题: Pronti\n文案: Fallo\n描述: Vai"
+    assert tokens == 42
+
+
 def test_llm_translate_sums_input_and_output_tokens(monkeypatch):
     """内部 _llm_translate 把 input + output tokens 合成总数。"""
     def fake_translate_text(text, src, tgt, **kw):
