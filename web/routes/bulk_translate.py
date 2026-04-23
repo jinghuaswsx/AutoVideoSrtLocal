@@ -30,6 +30,7 @@ from appcore.bulk_translate_runtime import (
     run_scheduler,
     start_task,
 )
+from appcore.bulk_translate_projection import list_admin_tasks
 from appcore.db import query
 from appcore.events import EVT_BT_DONE, EVT_BT_PROGRESS, Event, EventBus
 from appcore.video_translate_defaults import (
@@ -37,6 +38,7 @@ from appcore.video_translate_defaults import (
     load_effective_params,
     save_profile,
 )
+from web.auth import admin_required
 from web.background import start_background_task
 
 bp = Blueprint("bulk_translate", __name__, url_prefix="/api/bulk-translate")
@@ -55,7 +57,15 @@ def tasks_list_page():
 @pages_bp.get("/tasks/<task_id>")
 @login_required
 def tasks_detail_page(task_id):
-    return render_template("bulk_translate_detail.html", task_id=task_id)
+    admin_scope = getattr(current_user, "role", "") == "admin" and request.args.get("scope") == "admin"
+    return render_template("bulk_translate_detail.html", task_id=task_id, admin_scope=admin_scope)
+
+
+@pages_bp.get("/admin/bulk-translate/tasks")
+@login_required
+@admin_required
+def admin_tasks_page():
+    return render_template("admin_bulk_translate_tasks.html")
 
 
 # ============================================================
@@ -196,7 +206,8 @@ def _load_and_check_ownership(task_id: str):
     task = get_task(task_id)
     if not task:
         return None, (jsonify({"error": "Task not found"}), 404)
-    if task["user_id"] != current_user.id:
+    admin_scope = getattr(current_user, "role", "") == "admin" and request.args.get("scope") == "admin"
+    if task["user_id"] != current_user.id and not admin_scope:
         return None, (jsonify({"error": "Forbidden"}), 403)
     return task, None
 
@@ -309,6 +320,14 @@ def list_endpoint():
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         })
     return jsonify(result), 200
+
+
+@bp.get("/admin/list")
+@login_required
+@admin_required
+def admin_list_endpoint():
+    limit = request.args.get("limit", type=int) or 300
+    return jsonify(list_admin_tasks(limit=limit)), 200
 
 
 # ------------------------------------------------------------

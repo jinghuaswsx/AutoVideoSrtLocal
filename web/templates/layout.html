@@ -352,6 +352,9 @@
         <span class="nav-icon">📘</span> API 账单
       </a>
       {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('bulk_translate_pages.admin_tasks_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'bulk_translate_pages.admin_tasks_page' %}class="active"{% endif %}>
+        <span class="nav-icon">🗂️</span> 批量翻译任务管理
+      </a>
       <a href="{{ url_for('admin.users') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
       </a>
