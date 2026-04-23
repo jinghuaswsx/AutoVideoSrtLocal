@@ -611,8 +611,10 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table th:last-child, .oc-table td.actions { text-align:center; }
 .oc-table td.actions { white-space:normal; min-width:260px; }
 .oc-table td.actions .oc-btn svg { margin-right:2px; }
-.oc-row-actions { display:flex; align-items:center; justify-content:center; gap:var(--oc-sp-2); flex-wrap:wrap; }
-.oc-row-actions .bt-row-btn { margin:0; flex:0 0 auto; }
+.oc-row-actions { display:grid; grid-template-columns:repeat(2, minmax(0, max-content)); justify-content:center; gap:var(--oc-sp-2); }
+.oc-row-actions > .oc-btn,
+.oc-row-actions > .bt-row-btn { margin:0; min-width:120px; justify-content:center; }
+.oc-row-actions > .bt-row-btn { display:inline-flex; align-items:center; justify-content:center; }
 
 .oc-pill { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 8px; border-radius:9999px; background:var(--oc-accent-subtle); color:var(--oc-accent); font-size:12px; font-weight:500; font-variant-numeric:tabular-nums; }
 .oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; }
@@ -1153,6 +1155,27 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-edit-form .oc-new-item-col .oc-url-row { width:100%; }
 .oc-edit-form .oc-new-item-footer { justify-content:center; }
 .oc-edit-meta-section .oc-field { margin-bottom:0; }
+.oc-readonly-meta {
+  display:-webkit-box;
+  max-width:164px;
+  min-height:40px;
+  padding:10px 12px;
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg);
+  font-size:12px;
+  line-height:1.4;
+  font-family:var(--font-mono, ui-monospace, Consolas, monospace);
+  overflow:hidden;
+  overflow-wrap:anywhere;
+  word-break:break-all;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+.oc-readonly-meta-shopify {
+  font-variant-numeric:tabular-nums;
+}
 .oc-edit-modal-foot { justify-content:flex-end !important; }
 @media (max-width: 980px) {
   .oc-edit-main-grid,

@@ -1733,6 +1733,12 @@
       $('edCode').value = data.product.product_code || '';
       $('edMkId').value = (data.product.mk_id === null || data.product.mk_id === undefined)
         ? '' : String(data.product.mk_id);
+      const shopifyIdText = (data.product.shopifyid === null || data.product.shopifyid === undefined)
+        ? '' : String(data.product.shopifyid);
+      if ($('edShopifyIdValue')) {
+        $('edShopifyIdValue').textContent = shopifyIdText || '—';
+        $('edShopifyIdValue').title = shopifyIdText || '';
+      }
       edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
       $('edUploadProgress').innerHTML = '';
       edResetNewItemForm();

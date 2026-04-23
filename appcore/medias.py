@@ -356,6 +356,7 @@ def update_product(product_id: int, **fields) -> int:
                "localized_links_json", "ad_supported_langs",
                "link_check_tasks_json",
                "mk_id",
+               "shopifyid",
                "remark", "ai_score", "ai_evaluation_result",
                "ai_evaluation_detail", "listing_status"}
     # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
@@ -368,6 +369,15 @@ def update_product(product_id: int, **fields) -> int:
             if not s.isdigit() or not (1 <= len(s) <= 8):
                 raise ValueError("mk_id 必须是 1-8 位数字")
             fields["mk_id"] = int(s)
+    if "shopifyid" in fields:
+        v = fields["shopifyid"]
+        if v is None or (isinstance(v, str) and not v.strip()):
+            fields["shopifyid"] = None
+        else:
+            s = str(v).strip()
+            if not s.isdigit():
+                raise ValueError("shopifyid 必须是纯数字字符串")
+            fields["shopifyid"] = s
     if "listing_status" in fields:
         fields["listing_status"] = normalize_listing_status(fields.get("listing_status"))
     if "ai_score" in fields:
