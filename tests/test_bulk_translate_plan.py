@@ -28,7 +28,13 @@ class _FakeDB:
         if "from media_copywritings" in s:
             return list(self.copies)
         if "from media_product_detail_images" in s:
-            return [{"id": i} for i in self.details]
+            rows = []
+            for detail in self.details:
+                if isinstance(detail, dict):
+                    rows.append(dict(detail))
+                else:
+                    rows.append({"id": detail})
+            return rows
         if "from media_product_covers" in s:
             return [{"id": i} for i in self.covers]
         if "from media_raw_sources" in s:
@@ -93,6 +99,24 @@ def test_detail_batch_one_per_lang(monkeypatch):
     for p in plan:
         assert p["kind"] == "detail"
         assert p["ref"]["source_detail_ids"] == [100, 101, 102]
+
+
+def test_detail_images_plan_skips_gif_sources(monkeypatch):
+    _patch(
+        monkeypatch,
+        _FakeDB(details=[
+            {"id": 100, "object_key": "1/medias/1/en_1.jpg", "content_type": "image/jpeg"},
+            {"id": 101, "object_key": "1/medias/1/en_2.gif"},
+            {"id": 102, "object_key": "1/medias/1/en_3.png", "content_type": "image/gif; charset=binary"},
+            {"id": 103, "object_key": "1/medias/1/en_4.webp"},
+        ]),
+    )
+
+    from appcore.bulk_translate_plan import generate_plan
+    plan = generate_plan(1, 77, ["de"], ["detail_images"], False)
+
+    assert len(plan) == 1
+    assert plan[0]["ref"]["source_detail_ids"] == [100, 103]
 
 
 def test_cover_batch_one_per_lang(monkeypatch):

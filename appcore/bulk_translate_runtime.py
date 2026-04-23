@@ -840,6 +840,9 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
     ]
     if not source_rows:
         raise ValueError("english detail images are required first")
+    source_rows = [row for row in source_rows if not medias.detail_image_is_gif(row)]
+    if not source_rows:
+        raise ValueError("english detail images contain no translatable static images")
 
     child_task_id = _ensure_child_identity(parent_id, item)
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)

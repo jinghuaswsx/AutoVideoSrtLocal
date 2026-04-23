@@ -80,6 +80,17 @@ def _reset_item_processing_state(item: dict) -> None:
     item["result_source"] = ""
 
 
+def _item_source_is_gif(item: dict) -> bool:
+    for value in (
+        item.get("src_tos_key"),
+        item.get("filename"),
+        item.get("dst_tos_key"),
+    ):
+        if str(value or "").strip().lower().endswith(".gif"):
+            return True
+    return False
+
+
 def reset_failed_items_for_retry(task_id: str, user_id: int | None = None) -> int:
     """Reset only failed image items on an existing image_translate task."""
     task = store.get(task_id)
@@ -271,6 +282,15 @@ class ImageTranslateRuntime:
         self._emit_item(task_id, item)
         return has_text
 
+    def _mark_gif_passthrough(self, task: dict, task_id: str, item: dict) -> None:
+        with self._state_lock:
+            item["text_detect_status"] = "done"
+            item["text_detect_has_text"] = False
+            item["text_detect_reason"] = "GIF 动图跳过文字检测与图片翻译"
+            item["text_detect_error"] = ""
+            store.update(task_id, items=task["items"], progress=task["progress"])
+        self._emit_item(task_id, item)
+
     def _process_one(self, task: dict, task_id: str, idx: int) -> None:
         item = task["items"][idx]
         with self._state_lock:
@@ -293,10 +313,18 @@ class ImageTranslateRuntime:
                 self._download_source_image(task, item, src_path)
                 with open(src_path, "rb") as f:
                     src_bytes = f.read()
-                mime = self._guess_mime(item["src_tos_key"])
+                mime = self._guess_mime(
+                    item["src_tos_key"],
+                    filename=item.get("filename") or "",
+                    data=src_bytes,
+                )
 
                 # 2. 先判断图片是否有文字；无文字时直接复制源图，保持一图一结果。
-                has_text = self._detect_source_text(task, task_id, item, src_path)
+                if _item_source_is_gif(item) or mime == "image/gif":
+                    self._mark_gif_passthrough(task, task_id, item)
+                    has_text = False
+                else:
+                    has_text = self._detect_source_text(task, task_id, item, src_path)
                 if has_text:
                     out_bytes, out_mime = gemini_image.generate_image(
                         prompt=task["prompt"],
@@ -402,7 +430,7 @@ class ImageTranslateRuntime:
     @staticmethod
     def _ext_from_key(key: str) -> str:
         lower = key.lower()
-        for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
             if lower.endswith(ext):
                 return ext
         return ""
@@ -416,17 +444,38 @@ class ImageTranslateRuntime:
             return ".png"
         if mime == "image/webp":
             return ".webp"
+        if mime == "image/gif":
+            return ".gif"
         return ""
 
     @staticmethod
-    def _guess_mime(key: str) -> str:
-        lower = key.lower()
-        if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+    def _sniff_mime_bytes(data: bytes | None) -> str:
+        raw = data or b""
+        if raw.startswith(b"\xff\xd8\xff"):
             return "image/jpeg"
-        if lower.endswith(".png"):
+        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
             return "image/png"
-        if lower.endswith(".webp"):
+        if len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
             return "image/webp"
+        if raw[:6] in {b"GIF87a", b"GIF89a"}:
+            return "image/gif"
+        return ""
+
+    @classmethod
+    def _guess_mime(cls, key: str, *, filename: str = "", data: bytes | None = None) -> str:
+        sniffed = cls._sniff_mime_bytes(data)
+        if sniffed:
+            return sniffed
+        for candidate in (key, filename):
+            lower = candidate.lower()
+            if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+                return "image/jpeg"
+            if lower.endswith(".png"):
+                return "image/png"
+            if lower.endswith(".webp"):
+                return "image/webp"
+            if lower.endswith(".gif"):
+                return "image/gif"
         return "application/octet-stream"
 
     @staticmethod
@@ -505,10 +554,14 @@ def apply_translated_detail_images_from_task(
     done_items: list[dict] = []
     failed_items: list[dict] = []
     pending_items: list[dict] = []
+    skipped_source_gif_items: list[dict] = []
     for it in items:
         st = (it.get("status") or "").strip()
         if st == "done":
-            done_items.append(it)
+            if _item_source_is_gif(it):
+                skipped_source_gif_items.append(it)
+            else:
+                done_items.append(it)
         elif st == "failed":
             failed_items.append(it)
         else:
@@ -521,15 +574,33 @@ def apply_translated_detail_images_from_task(
 
     if not allow_partial and failed_items:
         ctx["apply_status"] = "skipped_failed"
+        ctx["skipped_source_gif_indices"] = [it.get("idx") for it in skipped_source_gif_items]
         task["medias_context"] = ctx
         store.update(task["id"], medias_context=ctx)
         return {
             "applied_ids": [],
             "skipped_failed_indices": [it.get("idx") for it in failed_items],
+            "skipped_source_gif_indices": [it.get("idx") for it in skipped_source_gif_items],
             "apply_status": "skipped_failed",
         }
 
     if not done_items:
+        if skipped_source_gif_items and not failed_items:
+            skipped_gif_indices = [it.get("idx") for it in skipped_source_gif_items]
+            ctx["apply_status"] = "skipped_source_gif_only"
+            ctx["applied_at"] = datetime.now().isoformat()
+            ctx["applied_detail_image_ids"] = []
+            ctx["skipped_failed_indices"] = []
+            ctx["skipped_source_gif_indices"] = skipped_gif_indices
+            ctx["last_apply_error"] = ""
+            task["medias_context"] = ctx
+            store.update(task["id"], medias_context=ctx)
+            return {
+                "applied_ids": [],
+                "skipped_failed_indices": [],
+                "skipped_source_gif_indices": skipped_gif_indices,
+                "apply_status": "skipped_source_gif_only",
+            }
         raise RuntimeError("没有成功的翻译结果可回填")
 
     created_images: list[dict] = []
@@ -575,12 +646,14 @@ def apply_translated_detail_images_from_task(
     )
 
     failed_indices = [it.get("idx") for it in failed_items]
+    skipped_gif_indices = [it.get("idx") for it in skipped_source_gif_items]
     apply_status = "applied_partial" if failed_indices else "applied"
 
     ctx["apply_status"] = apply_status
     ctx["applied_at"] = datetime.now().isoformat()
     ctx["applied_detail_image_ids"] = created_ids
     ctx["skipped_failed_indices"] = failed_indices
+    ctx["skipped_source_gif_indices"] = skipped_gif_indices
     ctx["last_apply_error"] = ""
     task["medias_context"] = ctx
     store.update(task["id"], medias_context=ctx)
@@ -588,5 +661,6 @@ def apply_translated_detail_images_from_task(
     return {
         "applied_ids": created_ids,
         "skipped_failed_indices": failed_indices,
+        "skipped_source_gif_indices": skipped_gif_indices,
         "apply_status": apply_status,
     }

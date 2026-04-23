@@ -97,6 +97,48 @@ def test_runtime_passes_seedream_model_through_generate_image(tmp_path):
     assert gen.call_args.kwargs["model"] == "doubao-seedream-5-0-260128"
 
 
+def test_runtime_skips_gif_source_without_text_detection_or_generate(tmp_path):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([{
+        **_item(0, src="1/medias/1/en_anim.gif"),
+        "filename": "en_anim.gif",
+    }])
+    written = {}
+
+    def fake_download_local(key, local_path):
+        open(local_path, "wb").write(b"GIF89a-test")
+        return local_path
+
+    def fake_write_bytes(object_key, data):
+        written["object_key"] = object_key
+        written["data"] = data
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"), \
+         patch.object(rt.local_media_storage, "exists", return_value=True), \
+         patch.object(rt.local_media_storage, "download_to", side_effect=fake_download_local), \
+         patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
+         patch.object(
+             rt.ImageTranslateRuntime,
+             "_detect_source_text",
+             side_effect=AssertionError("gif source should bypass text detection"),
+         ), \
+         patch.object(
+             rt.gemini_image,
+             "generate_image",
+             side_effect=AssertionError("gif source should bypass image generation"),
+         ):
+        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+
+    assert task["items"][0]["status"] == "done"
+    assert task["items"][0]["result_source"] == "copied_source"
+    assert task["items"][0]["dst_tos_key"].endswith(".gif")
+    assert written["object_key"].endswith(".gif")
+    assert written["data"] == b"GIF89a-test"
+
+
 def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
     from appcore import image_translate_runtime as rt
     from web import store
@@ -392,6 +434,50 @@ def test_apply_allow_partial_applies_all_when_all_done():
     assert result["apply_status"] == "applied"
     assert result["skipped_failed_indices"] == []
     assert len(applied["replace"][2]) == 2
+
+
+def test_apply_allow_partial_skips_done_gif_source_items():
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _apply_test_task([
+        _done_item(0),
+        {
+            **_done_item(1),
+            "filename": "anim.gif",
+            "src_tos_key": "1/medias/100/src_1.gif",
+            "dst_tos_key": "artifacts/image_translate/1/t-img-1/out_1.gif",
+        },
+    ])
+    applied = {}
+
+    def fake_download(key, local_path):
+        open(local_path, "wb").write(b"BIN-" + key.encode())
+        return local_path
+
+    def fake_write_bytes(object_key, payload):
+        applied.setdefault("stored", []).append((object_key, payload))
+
+    def fake_replace(product_id, lang, images):
+        applied["replace"] = (product_id, lang, list(images))
+        return [901]
+
+    with patch.object(store, "update"), \
+         patch.object(rt.local_media_storage, "exists", return_value=True), \
+         patch.object(rt.local_media_storage, "download_to", side_effect=fake_download), \
+         patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
+         patch.object(rt.object_keys, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
+         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
+        result = rt.apply_translated_detail_images_from_task(
+            task, allow_partial=True, user_id=1,
+        )
+
+    assert result["apply_status"] == "applied"
+    assert result["applied_ids"] == [901]
+    assert result["skipped_source_gif_indices"] == [1]
+    assert len(applied["replace"][2]) == 1
+    assert applied["replace"][2][0]["source_detail_image_id"] == 10
+    assert task["medias_context"]["skipped_source_gif_indices"] == [1]
 
 
 def test_apply_allow_partial_false_skips_when_any_failed():
