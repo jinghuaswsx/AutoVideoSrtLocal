@@ -814,7 +814,7 @@ def api_product_translate(pid: int):
     content_types = body.get("content_types") or ["copywriting", "detail_images", "video_covers", "videos"]
     allowed_content_types = {"copywriting", "detail_images", "video_covers", "videos"}
 
-    if not raw_ids:
+    if ("videos" in content_types or "video_covers" in content_types) and not raw_ids:
         return jsonify({"error": "raw_ids 涓嶈兘涓虹┖"}), 400
     if not target_langs:
         return jsonify({"error": "target_langs 涓嶈兘涓虹┖"}), 400

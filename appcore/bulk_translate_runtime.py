@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from appcore import local_media_storage, medias
+from appcore import local_media_storage, medias, tos_clients
 from appcore.bulk_translate_backfill import (
     sync_detail_images_result,
     sync_video_cover_result,
@@ -43,6 +43,20 @@ _FAILURE_CHILD_STATUSES = {"error", "failed", "cancelled", "interrupted"}
 _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_voice"}
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja"}
+
+
+def _download_media_source_to(object_key: str, destination: str) -> str:
+    """Materialize a medias raw-source object into a local pipeline file."""
+    key = (object_key or "").strip()
+    if not key:
+        raise ValueError("raw source video object key missing")
+    try:
+        return local_media_storage.download_to(key, destination)
+    except Exception:
+        try:
+            return tos_clients.download_media_file(key, destination)
+        except Exception as media_exc:
+            raise RuntimeError(f"raw source video not available: {key}") from media_exc
 
 
 def create_bulk_translate_task(
@@ -669,9 +683,11 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    source_name = Path(raw_source.get("video_object_key") or "").name or f"raw_{source_raw_id}.mp4"
+    source_media_object_key = (raw_source.get("video_object_key") or "").strip()
+    source_name = Path(source_media_object_key).name or f"raw_{source_raw_id}.mp4"
     ext = Path(source_name).suffix or ".mp4"
     video_path = os.path.join(UPLOAD_DIR, f"{child_task_id}{ext}")
+    _download_media_source_to(source_media_object_key, video_path)
 
     store.create(
         child_task_id,
@@ -688,13 +704,15 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         type="multi_translate",
         display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}",
         target_lang=lang,
-        source_tos_key=raw_source.get("video_object_key") or "",
+        source_tos_key="",
         source_object_info={
             "file_size": raw_source.get("file_size"),
             "original_filename": source_name,
+            "source_media_object_key": source_media_object_key,
+            "storage_backend": "media_store",
             "uploaded_at": datetime.now().isoformat(timespec="seconds"),
         },
-        delivery_mode="pure_tos",
+        delivery_mode="local_primary",
         interactive_review=False,
         subtitle_font=params.get("subtitle_font") or "Impact",
         subtitle_size=int(params.get("subtitle_size") or 14),
@@ -705,6 +723,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
             "parent_task_id": parent_id,
             "product_id": product_id,
             "source_raw_id": source_raw_id,
+            "source_media_object_key": source_media_object_key,
             "target_lang": lang,
         },
     )

@@ -211,6 +211,77 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
     assert state["plan"][0]["status"] == "awaiting_voice"
 
 
+def test_create_video_child_materializes_media_raw_source_locally(runtime_env, monkeypatch, tmp_path):
+    mod, _fake_db = runtime_env
+    raw_key = "1/medias/77/raw_sources/raw-demo.mp4"
+    created = {}
+    updated = {}
+    started = []
+
+    monkeypatch.setattr(mod, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(mod, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda rid: {
+            "id": rid,
+            "product_id": 77,
+            "user_id": 1,
+            "display_name": "raw-demo",
+            "video_object_key": raw_key,
+            "file_size": 1234,
+        },
+    )
+    monkeypatch.setattr(mod, "execute", lambda *args, **kwargs: 1)
+
+    import web.store as store
+    from web.services import multi_pipeline_runner
+
+    def fake_create(task_id, video_path, task_dir, original_filename, user_id):
+        created.update({
+            "task_id": task_id,
+            "video_path": video_path,
+            "task_dir": task_dir,
+            "original_filename": original_filename,
+            "user_id": user_id,
+        })
+
+    def fake_update(task_id, **fields):
+        updated[task_id] = fields
+
+    def fake_download_to(object_key, destination):
+        created["download"] = (object_key, destination)
+        with open(destination, "wb") as fh:
+            fh.write(b"video")
+        return destination
+
+    monkeypatch.setattr(store, "create", fake_create)
+    monkeypatch.setattr(store, "update", fake_update)
+    monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
+    monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: started.append((task_id, user_id)))
+
+    child_task_id, child_type, status = mod._create_video_child(
+        "parent-1",
+        _item(0, kind="videos", lang="pt", ref={"source_raw_id": 301}),
+        {
+            "product_id": 77,
+            "initiator": {"user_id": 1},
+            "video_params_snapshot": {"subtitle_size": 18, "subtitle_position_y": 0.55},
+        },
+    )
+
+    assert child_type == "multi_translate"
+    assert status == "running"
+    assert created["download"] == (raw_key, created["video_path"])
+    assert started == [(child_task_id, 1)]
+    assert updated[child_task_id]["source_tos_key"] == ""
+    assert updated[child_task_id]["delivery_mode"] == "local_primary"
+    assert updated[child_task_id]["source_object_info"]["storage_backend"] == "media_store"
+    assert updated[child_task_id]["medias_context"]["source_media_object_key"] == raw_key
+    assert updated[child_task_id]["subtitle_size"] == 18
+    assert updated[child_task_id]["subtitle_position_y"] == 0.55
+
+
 def test_run_scheduler_syncs_completed_child_and_finishes_parent(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(

@@ -46,7 +46,38 @@ def test_translate_empty_raw_ids(authed_client_no_db, pid, monkeypatch, patch_bt
 
     resp = authed_client_no_db.post(
         f"/medias/api/products/{pid}/translate",
-        json={"raw_ids": [], "target_langs": ["de"]},
+        json={"raw_ids": [], "target_langs": ["de"], "content_types": ["videos"]},
+    )
+
+    assert resp.status_code == 400
+    assert "raw_ids" in resp.get_json()["error"]
+
+
+def test_translate_non_video_types_do_not_require_raw_ids(authed_client_no_db, pid, monkeypatch, patch_bt):
+    _stub_product(monkeypatch, pid, raw_sources=[], valid_langs={"de", "fr"})
+    fake_create, _fake_start, _fake_background = patch_bt
+
+    resp = authed_client_no_db.post(
+        f"/medias/api/products/{pid}/translate",
+        json={
+            "raw_ids": [],
+            "target_langs": ["de"],
+            "content_types": ["copywriting", "detail_images"],
+        },
+    )
+
+    assert resp.status_code == 202
+    _args, kwargs = fake_create.call_args
+    assert kwargs["raw_source_ids"] == []
+    assert kwargs["content_types"] == ["copywriting", "detail_images"]
+
+
+def test_translate_video_covers_require_raw_ids(authed_client_no_db, pid, monkeypatch, patch_bt):
+    _stub_product(monkeypatch, pid, raw_sources=[], valid_langs={"de", "fr"})
+
+    resp = authed_client_no_db.post(
+        f"/medias/api/products/{pid}/translate",
+        json={"raw_ids": [], "target_langs": ["de"], "content_types": ["video_covers"]},
     )
 
     assert resp.status_code == 400
@@ -58,7 +89,7 @@ def test_translate_invalid_raw_id(authed_client_no_db, pid, monkeypatch, patch_b
 
     resp = authed_client_no_db.post(
         f"/medias/api/products/{pid}/translate",
-        json={"raw_ids": [999999], "target_langs": ["de"]},
+        json={"raw_ids": [999999], "target_langs": ["de"], "content_types": ["videos"]},
     )
 
     assert resp.status_code == 400
