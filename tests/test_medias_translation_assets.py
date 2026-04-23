@@ -39,6 +39,14 @@ def test_medias_list_keeps_two_row_lang_coverage_layout():
     assert "flex-wrap:nowrap;" in template
 
 
+def test_medias_list_missing_english_cover_warning_has_no_red_row_edge():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "tr.oc-row-warn { box-shadow" not in template
+    assert "inset 3px 0 0 0 var(--oc-danger)" not in template
+
+
 def test_medias_js_copy_translate_uses_validation_message():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
