@@ -1760,7 +1760,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   </div>
 </div>
 
+{% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
+{% endblock %}
 
 <script>
   window.MEDIAS_UPLOAD_READY = true;

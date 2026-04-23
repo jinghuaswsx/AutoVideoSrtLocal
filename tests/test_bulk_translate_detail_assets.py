@@ -21,6 +21,24 @@ def test_bulk_translate_detail_template_provides_clarity_regions():
     assert "操作记录" in template
 
 
+def test_bulk_translate_pages_load_shared_stylesheet_from_extra_head():
+    stylesheet_link = """<link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">"""
+    templates = [
+        "bulk_translate_detail.html",
+        "admin_bulk_translate_tasks.html",
+        "bulk_translate_list.html",
+        "medias_translation_tasks.html",
+        "medias_list.html",
+    ]
+
+    for name in templates:
+        template = (ROOT / "web" / "templates" / name).read_text(encoding="utf-8")
+        normalized = template.replace("\r\n", "\n")
+        assert "{% block extra_head %}" in template
+        assert stylesheet_link in template
+        assert f"{{% block extra_style %}}\n{stylesheet_link}" not in normalized
+
+
 def test_bulk_translate_detail_script_renders_status_and_task_sections():
     script = (ROOT / "web" / "static" / "bulk_translate_detail.js").read_text(
         encoding="utf-8"
