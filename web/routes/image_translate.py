@@ -150,6 +150,18 @@ def _delete_artifact_object(object_key: str | None) -> None:
         pass
 
 
+def _reset_item_processing_state(item: dict) -> None:
+    item["status"] = "pending"
+    item["attempts"] = 0
+    item["error"] = ""
+    item["dst_tos_key"] = ""
+    item["text_detect_status"] = "pending"
+    item["text_detect_has_text"] = None
+    item["text_detect_reason"] = ""
+    item["text_detect_error"] = ""
+    item["result_source"] = ""
+
+
 def _reserve_local_source_upload(*, user_id: int, task_id: str, idx: int, object_key: str, filename: str) -> dict:
     upload_id = uuid.uuid4().hex
     with _local_upload_guard:
@@ -425,10 +437,7 @@ def api_retry_item(task_id: str, idx: int):
     old_dst = (item.get("dst_tos_key") or "").strip()
     if old_dst:
         _delete_artifact_object(old_dst)
-    item["status"] = "pending"
-    item["attempts"] = 0
-    item["error"] = ""
-    item["dst_tos_key"] = ""
+    _reset_item_processing_state(item)
     total = len(task["items"])
     done = sum(1 for it in task["items"] if it["status"] == "done")
     failed = sum(1 for it in task["items"] if it["status"] == "failed")
@@ -454,10 +463,7 @@ def api_retry_failed(task_id: str):
     for item in items:
         if item.get("status") == "failed":
             _delete_artifact_object(item.get("dst_tos_key"))
-            item["status"] = "pending"
-            item["attempts"] = 0
-            item["error"] = ""
-            item["dst_tos_key"] = ""
+            _reset_item_processing_state(item)
             reset_count += 1
     if reset_count == 0:
         return jsonify({"error": "当前没有失败项可重试"}), 409
@@ -493,10 +499,7 @@ def api_retry_unfinished(task_id: str):
         old_dst = (item.get("dst_tos_key") or "").strip()
         if old_dst:
             _delete_artifact_object(old_dst)
-        item["status"] = "pending"
-        item["attempts"] = 0
-        item["error"] = ""
-        item["dst_tos_key"] = ""
+        _reset_item_processing_state(item)
         reset_count += 1
     if reset_count == 0:
         return jsonify({"error": "没有需要重试的图片"}), 409
