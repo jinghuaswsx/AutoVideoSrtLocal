@@ -442,6 +442,82 @@ def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
     assert resp.get_json()["medias_context"]["product_id"] == 123
 
 
+def test_admin_can_view_other_users_image_translate_task(monkeypatch):
+    from types import SimpleNamespace
+
+    from web.routes import image_translate as r
+
+    task = {
+        "id": "foreign-img-task",
+        "type": "image_translate",
+        "status": "done",
+        "preset": "detail",
+        "target_language": "de",
+        "target_language_name": "German",
+        "items": [],
+        "progress": {"total": 0, "done": 0, "failed": 0, "running": 0},
+        "_user_id": 237,
+    }
+
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+
+    assert r._get_viewable_task("foreign-img-task") is task
+
+
+def test_admin_state_api_uses_viewable_task_access(monkeypatch):
+    from types import SimpleNamespace
+
+    from flask import Flask
+
+    from web.routes import image_translate as r
+
+    task = {
+        "id": "foreign-img-task",
+        "type": "image_translate",
+        "status": "done",
+        "items": [],
+        "progress": {"total": 0, "done": 0, "failed": 0, "running": 0},
+        "_user_id": 237,
+    }
+
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+    monkeypatch.setattr(r.image_translate_runner, "is_running", lambda task_id: False)
+
+    app = Flask(__name__)
+    with app.app_context():
+        resp = r.api_state.__wrapped__("foreign-img-task")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["id"] == "foreign-img-task"
+
+
+def test_normal_user_cannot_view_other_users_image_translate_task(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+    from werkzeug.exceptions import NotFound
+
+    from web.routes import image_translate as r
+
+    task = {
+        "id": "foreign-img-task",
+        "type": "image_translate",
+        "status": "done",
+        "items": [],
+        "progress": {"total": 0, "done": 0, "failed": 0, "running": 0},
+        "_user_id": 237,
+    }
+
+    monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=2, role="user"))
+
+    get_viewable_task = getattr(r, "_get_viewable_task", r._get_owned_task)
+    with pytest.raises(NotFound):
+        get_viewable_task("foreign-img-task")
+
+
 def _prep_task(client, monkeypatch, with_done=True):
     """建完整任务，并可选标 done。返回 task_id。"""
     _patch_tos_and_runner(monkeypatch)
