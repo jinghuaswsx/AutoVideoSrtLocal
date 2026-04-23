@@ -56,12 +56,13 @@
   function renderTaskCard(task, compact) {
     const progress = task.progress || {};
     const pct = percent(progress);
+    const rawSourceText = (task.raw_source_display_names || []).join(' / ');
     const actions = [];
     if (task.can_resume) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--primary" data-task-action="resume" data-task-id="${task.id}" title="重新启动整个批量任务：只恢复中断的子项，已完成项不会重复执行。">整个任务重新启动</button>`);
+      actions.push('<button type="button" class="bt-btn bt-btn--primary" data-task-action="resume" data-task-id="' + esc(task.id) + '" title="重新启动整个批量任务：只恢复中断的子项，已完成项不会重复执行。">整个任务重新启动</button>');
     }
     if (task.can_retry_failed) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-failed" data-task-id="${task.id}" title="只重跑失败或中断的子项：已完成项不会重复执行。">重跑失败项</button>`);
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-failed" data-task-id="' + esc(task.id) + '" title="只重跑失败或中断的子项：已完成项不会重复执行。">重跑失败项</button>');
     }
     actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(task.detail_url)}>父任务详情</a>`);
 
@@ -75,9 +76,10 @@
               <span class="bt-plan-item__status ${taskBadgeClass(task.status)}">${esc(task.status_label || task.status)}</span>
             </div>
             <div class="mtt-card__meta">
-              <span>任务 ID: <code>${esc(task.id.slice(0, 8))}</code></span>
+              <span>任务 ID: <code>${esc(String(task.id || '').slice(0, 8))}</code></span>
               <span>语言: ${esc((task.target_lang_labels || []).join(' / ') || '—')}</span>
               <span>范围: ${esc((task.content_type_labels || []).join(' / ') || '—')}</span>
+              ${rawSourceText ? `<span>原始视频: ${esc(rawSourceText)}</span>` : ''}
               <span>更新时间: ${esc(fmtTime(task.updated_at || task.created_at))}</span>
             </div>
           </div>
@@ -109,7 +111,7 @@
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '去选声音' : '查看详情'}</a>`);
     }
     if (item.retryable) {
-      actions.push(`<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="${task.id}" data-item-idx="${item.idx}" title="只重新启动这一项：其他子项保持当前状态。">单个重新启动</button>`);
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重新启动这一项，其他子项保持当前状态。">单个重新启动</button>');
     }
     return `
       <article class="mtt-item">
@@ -121,7 +123,7 @@
           </div>
           <div class="mtt-item__meta">
             <span>${esc(item.summary || '')}</span>
-            ${item.child_task_id ? `<span>子任务 <code>${esc(item.child_task_id.slice(0, 8))}</code></span>` : ''}
+            ${item.child_task_id ? `<span>子任务 <code>${esc(String(item.child_task_id).slice(0, 8))}</code></span>` : ''}
             ${item.manual_step === 'voice_selection' ? '<span class="mtt-item__manual">卡在选择声音</span>' : ''}
           </div>
           ${item.error ? `<div class="mtt-item__error">${esc(item.error)}</div>` : ''}
@@ -366,7 +368,7 @@
         return;
       }
       let url = '';
-      let payload = undefined;
+      let payload;
       if (action === 'resume') {
         url = `/api/bulk-translate/${taskId}/resume`;
       } else if (action === 'retry-failed') {

@@ -126,3 +126,58 @@ def test_list_product_tasks_refreshes_child_status_before_serializing(monkeypatc
     assert items[0]["progress"]["done"] == 1
     assert items[0]["items"][0]["status"] == "done"
     assert items[0]["items"][0]["error"] == ""
+
+
+def test_list_product_tasks_exposes_raw_source_filenames(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    raw_sources = {
+        17: {
+            "id": 17,
+            "display_name": "2026.04.24-smart-ball-source.mp4",
+            "video_object_key": "1/medias/417/unused.mp4",
+        },
+        18: {
+            "id": 18,
+            "display_name": "",
+            "video_object_key": "1/medias/417/fallback-source-18.mov",
+        },
+    }
+
+    monkeypatch.setattr(
+        mod,
+        "query",
+        lambda sql, args=None: [
+            {
+                "id": "bt-raw-names",
+                "status": "running",
+                "state_json": {
+                    "product_id": 417,
+                    "target_langs": ["it"],
+                    "content_types": ["videos"],
+                    "raw_source_ids": [17, 18],
+                    "plan": [
+                        {
+                            "idx": 0,
+                            "kind": "videos",
+                            "lang": "it",
+                            "status": "running",
+                            "ref": {"source_raw_id": 17},
+                        }
+                    ],
+                },
+                "created_at": datetime(2026, 4, 24, 10, 0, 0),
+            }
+        ],
+    )
+    monkeypatch.setattr(mod, "sync_task_with_children_once", lambda task_id, user_id=None: None, raising=False)
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"it": "意大利语"}.get(code, code))
+    monkeypatch.setattr(mod.medias, "get_raw_source", lambda rid: raw_sources.get(int(rid)))
+
+    items = mod.list_product_tasks(1, 417)
+
+    assert items[0]["raw_source_display_names"] == [
+        "2026.04.24-smart-ball-source.mp4",
+        "fallback-source-18.mov",
+    ]
+    assert items[0]["items"][0]["summary"] == "原始视频 2026.04.24-smart-ball-source.mp4"

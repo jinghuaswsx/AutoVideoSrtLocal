@@ -143,3 +143,11 @@ def test_medias_search_input_runs_live_search():
     assert "window.setTimeout(runLiveSearch, 250);" in script
     assert "kwInput.addEventListener('input', scheduleLiveSearch);" in script
     assert "searchBtn.addEventListener('click', runSearchNow);" in script
+
+
+def test_medias_translation_tasks_parent_meta_shows_raw_source_filenames():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translation_tasks.js").read_text(encoding="utf-8")
+
+    assert "原始视频:" in script
+    assert "task.raw_source_display_names" in script
