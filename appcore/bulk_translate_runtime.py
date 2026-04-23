@@ -43,6 +43,7 @@ _FAILURE_CHILD_STATUSES = {"error", "failed", "cancelled", "interrupted"}
 _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_voice"}
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
 _REFRESHABLE_ITEM_STATUSES = _ACTIVE_ITEM_STATUSES | _RETRYABLE_ITEM_STATUSES
+_RUNNING_ITEM_STATUSES = {"dispatching", "running", "syncing_result"}
 _MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 _SYSTEM_AUTO_RETRY_LIMIT = 1
 _POST_VOICE_VIDEO_STEPS = ["alignment", "translate", "tts", "subtitle", "compose", "analysis", "export"]
@@ -222,19 +223,13 @@ def run_scheduler(
             state["scheduler_anchor_ts"] = now_provider()
             _save_state(task_id, state, status="running")
 
-        active_item = _find_active_item(plan)
-        if active_item:
-            parent_status = _poll_active_item(
+        for active_item in _find_active_items(plan):
+            _poll_active_item(
                 task_id,
                 active_item,
                 state,
                 bus=bus,
             )
-            if parent_status is not None:
-                return
-            if active_item["status"] in {"running", "dispatching", "syncing_result"}:
-                sleep_fn(1)
-                continue
 
         due_item = _next_due_pending_item(state, now_provider())
         if due_item:
@@ -256,6 +251,15 @@ def run_scheduler(
         if any(_normalized_status(item.get("status")) == "pending" for item in plan):
             sleep_fn(1)
             continue
+
+        if any(_normalized_status(item.get("status")) in _RUNNING_ITEM_STATUSES for item in plan):
+            sleep_fn(1)
+            continue
+
+        if any(_normalized_status(item.get("status")) in {"failed", "error", "interrupted"} for item in plan):
+            _save_state(task_id, state, status="failed")
+            _emit(bus, EVT_BT_PROGRESS, task_id, state, "failed")
+            return
 
         if any(_normalized_status(item.get("status")) in {"awaiting_voice"} for item in plan):
             _save_state(task_id, state, status="waiting_manual")
@@ -432,7 +436,7 @@ def _poll_active_item(
     parent_state: dict,
     *,
     bus: EventBus | None,
-) -> str | None:
+) -> None:
     child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
     return _apply_child_snapshot(parent_task_id, item, parent_state, child_state, bus=bus)
 
@@ -444,14 +448,14 @@ def _apply_child_snapshot(
     child_state: dict,
     *,
     bus: EventBus | None,
-) -> str | None:
+) -> None:
     child_status = _normalized_status(child_state.get("_project_status"))
 
     if _child_needs_voice(child_state):
         item["status"] = "awaiting_voice"
-        _save_state(parent_task_id, parent_state, status="waiting_manual")
-        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "waiting_manual")
-        return "waiting_manual"
+        _save_state(parent_task_id, parent_state, status="running")
+        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+        return
 
     if child_status == "done":
         completed_child_error = _get_completed_child_error(item, child_state)
@@ -459,9 +463,9 @@ def _apply_child_snapshot(
             item["status"] = "failed"
             item["error"] = completed_child_error
             item["finished_at"] = _now_iso()
-            _save_state(parent_task_id, parent_state, status="failed")
-            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-            return "failed"
+            _save_state(parent_task_id, parent_state, status="running")
+            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+            return
         item["status"] = "syncing_result"
         _save_state(parent_task_id, parent_state, status="running")
         try:
@@ -470,9 +474,9 @@ def _apply_child_snapshot(
             item["status"] = "failed"
             item["error"] = str(exc)
             item["finished_at"] = _now_iso()
-            _save_state(parent_task_id, parent_state, status="failed")
-            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-            return "failed"
+            _save_state(parent_task_id, parent_state, status="running")
+            _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+            return
         item["result_synced"] = True
         item["status"] = "done"
         item["error"] = None
@@ -480,7 +484,7 @@ def _apply_child_snapshot(
         _roll_up_cost(parent_state, item, child_state)
         _save_state(parent_task_id, parent_state, status="running")
         _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
-        return None
+        return
 
     if child_status in _FAILURE_CHILD_STATUSES:
         item["status"] = "failed"
@@ -491,14 +495,14 @@ def _apply_child_snapshot(
             or f"child task failed: {child_status}"
         )
         item["finished_at"] = _now_iso()
-        _save_state(parent_task_id, parent_state, status="failed")
-        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "failed")
-        return "failed"
+        _save_state(parent_task_id, parent_state, status="running")
+        _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
+        return
 
     item["status"] = "running"
     _save_state(parent_task_id, parent_state, status="running")
     _emit(bus, EVT_BT_PROGRESS, parent_task_id, parent_state, "running")
-    return None
+    return
 
 
 def _get_completed_child_error(item: dict, child_state: dict) -> str:
@@ -710,7 +714,8 @@ def _derive_parent_status(plan: list[dict], fallback_status: str) -> str:
 
 
 def _next_due_pending_item(state: dict, now_ts: float) -> dict | None:
-    anchor = float(state.get("scheduler_anchor_ts") or now_ts)
+    raw_anchor = state.get("scheduler_anchor_ts")
+    anchor = float(now_ts if raw_anchor is None else raw_anchor)
     for item in state.get("plan") or []:
         if _normalized_status(item.get("status")) != "pending":
             continue
@@ -719,25 +724,82 @@ def _next_due_pending_item(state: dict, now_ts: float) -> dict | None:
     return None
 
 
-def _find_active_item(plan: list[dict]) -> dict | None:
-    for item in plan:
-        if _normalized_status(item.get("status")) in _ACTIVE_ITEM_STATUSES and item.get("child_task_id"):
-            return item
-    return None
+def _find_active_items(plan: list[dict]) -> list[dict]:
+    return [
+        item
+        for item in plan
+        if _normalized_status(item.get("status")) in _ACTIVE_ITEM_STATUSES and item.get("child_task_id")
+    ]
+
+
+def _stable_child_task_id(parent_id: str, item: dict) -> str:
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"bulk_translate:{parent_id}:{int(item.get('idx') or 0)}").hex
+
+
+def _ensure_child_identity(parent_id: str, item: dict) -> str:
+    child_task_id = (item.get("child_task_id") or item.get("sub_task_id") or "").strip()
+    if not child_task_id:
+        child_task_id = _stable_child_task_id(parent_id, item)
+    item["child_task_id"] = child_task_id
+    item["sub_task_id"] = child_task_id
+    return child_task_id
+
+
+def _load_existing_child_project(child_task_id: str) -> dict | None:
+    if not child_task_id:
+        return None
+    row = query_one(
+        "SELECT id, type, status FROM projects WHERE id = %s AND deleted_at IS NULL",
+        (child_task_id,),
+    )
+    return row or None
+
+
+def _child_type_for_kind(kind: str | None) -> str:
+    if kind in {"copy", "copywriting"}:
+        return "copywriting_translate"
+    if kind in {"detail", "detail_images", "cover", "video_covers"}:
+        return "image_translate"
+    if kind in {"video", "videos"}:
+        return "multi_translate"
+    return ""
 
 
 def _create_child_task(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
+    child_task_id = _ensure_child_identity(parent_id, item)
+    existing_child = _load_existing_child_project(child_task_id)
+    if existing_child:
+        child_task_type = (
+            existing_child.get("type")
+            or item.get("child_task_type")
+            or _child_type_for_kind(item.get("kind"))
+        )
+        item["child_task_type"] = child_task_type
+        return child_task_id, child_task_type, existing_child.get("status") or "running"
+
     kind = item.get("kind")
-    if kind in {"copy", "copywriting"}:
-        return _create_copy_child(parent_id, item, parent_state)
-    if kind in {"detail", "detail_images"}:
-        return _create_detail_images_child(parent_id, item, parent_state)
-    if kind == "video_covers":
-        return _create_video_cover_child(parent_id, item, parent_state)
-    if kind in {"video", "videos"}:
-        return _create_video_child(parent_id, item, parent_state)
-    if kind == "cover":
-        return _create_video_cover_child(parent_id, item, parent_state)
+    try:
+        if kind in {"copy", "copywriting"}:
+            return _create_copy_child(parent_id, item, parent_state)
+        if kind in {"detail", "detail_images"}:
+            return _create_detail_images_child(parent_id, item, parent_state)
+        if kind == "video_covers":
+            return _create_video_cover_child(parent_id, item, parent_state)
+        if kind in {"video", "videos"}:
+            return _create_video_child(parent_id, item, parent_state)
+        if kind == "cover":
+            return _create_video_cover_child(parent_id, item, parent_state)
+    except Exception:
+        existing_child = _load_existing_child_project(child_task_id)
+        if existing_child:
+            child_task_type = (
+                existing_child.get("type")
+                or item.get("child_task_type")
+                or _child_type_for_kind(kind)
+            )
+            item["child_task_type"] = child_task_type
+            return child_task_id, child_task_type, existing_child.get("status") or "running"
+        raise
     raise ValueError(f"Unknown plan kind: {kind}")
 
 
@@ -824,7 +886,7 @@ def _sync_child_result(
 def _create_copy_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
 
-    child_task_id = str(uuid.uuid4())
+    child_task_id = _ensure_child_identity(parent_id, item)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     state = {
         "product_id": parent_state.get("product_id"),
@@ -861,7 +923,7 @@ def _create_detail_images_child(parent_id: str, item: dict, parent_state: dict) 
     if not source_rows:
         raise ValueError("english detail images are required first")
 
-    child_task_id = uuid.uuid4().hex
+    child_task_id = _ensure_child_identity(parent_id, item)
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)
     os.makedirs(task_dir, exist_ok=True)
     prompt = its.get_prompt("detail", lang).replace("{target_language_name}", target_language_name)
@@ -920,7 +982,7 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
     if not raw_rows:
         raise ValueError("raw source covers are required first")
 
-    child_task_id = uuid.uuid4().hex
+    child_task_id = _ensure_child_identity(parent_id, item)
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)
     os.makedirs(task_dir, exist_ok=True)
     prompt = its.get_prompt("cover", lang).replace("{target_language_name}", target_language_name)
@@ -973,7 +1035,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
     if not raw_source:
         raise ValueError(f"raw source missing: {source_raw_id}")
 
-    child_task_id = str(uuid.uuid4())
+    child_task_id = _ensure_child_identity(parent_id, item)
     task_dir = os.path.join(OUTPUT_DIR, child_task_id)
     os.makedirs(task_dir, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
