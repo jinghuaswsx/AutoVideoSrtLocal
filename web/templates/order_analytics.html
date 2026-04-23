@@ -69,28 +69,33 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
-.oa-table-title { font-size: 15px; font-weight: 600; color: var(--fg); }
-.oa-table-scroll { overflow-x: auto; }
+.oa-table-title { font-size: 18px; font-weight: 600; color: var(--fg); }
+.oa-table-scroll { overflow-x: auto; overflow-y: auto; max-height: 70vh; }
 .oa-table {
-  border-collapse: collapse; font-size: 13px; table-layout: fixed;
+  width: 100%; border-collapse: collapse; font-size: 19px;
 }
 .oa-table th, .oa-table td {
-  padding: 8px 6px; text-align: left; border-bottom: 1px solid var(--border);
-  overflow: hidden; text-overflow: ellipsis;
+  padding: 10px 10px; text-align: left; border-bottom: 1px solid var(--border);
 }
 .oa-table th {
   background: var(--bg-subtle); font-weight: 600; color: var(--fg);
-  position: sticky; top: 0; z-index: 1;
+  position: sticky; top: 0; z-index: 2; white-space: nowrap;
+}
+/* 冻结第一列（商品名） */
+.oa-table th.oa-col-product {
+  position: sticky; left: 0; z-index: 3; background: var(--bg-subtle);
 }
 .oa-table td.oa-col-product {
-  font-weight: 500; white-space: normal; word-break: break-word; text-overflow: clip;
+  position: sticky; left: 0; z-index: 1; background: var(--bg-card);
+  font-weight: 500; white-space: normal; word-break: break-word;
 }
+.oa-table tr:hover td.oa-col-product { background: oklch(97% 0.01 230); }
 .oa-table th.oa-col-num, .oa-table td.oa-col-num {
   text-align: right; white-space: nowrap;
 }
 .oa-table td.oa-col-num { font-weight: 600; color: var(--accent); }
 .oa-table th.oa-col-country, .oa-table td.oa-col-country {
-  text-align: right; white-space: nowrap; font-size: 12px;
+  text-align: right; white-space: nowrap; font-size: 18px;
 }
 .oa-table td.oa-col-country { color: var(--fg-muted); }
 .oa-table tr:last-child td { border-bottom: none; }
@@ -153,15 +158,15 @@
   padding: 0 !important; border-bottom: 1px solid var(--border) !important;
 }
 .oa-daily-detail-inner {
-  padding: 8px 12px 12px 32px; background: var(--bg-subtle);
+  padding: 10px 14px 14px 36px; background: var(--bg-subtle);
 }
 .oa-daily-detail-inner table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
+  width: 100%; border-collapse: collapse; font-size: 17px;
 }
 .oa-daily-detail-inner th, .oa-daily-detail-inner td {
-  padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--border);
+  padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border);
 }
-.oa-daily-detail-inner th { font-weight: 600; color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
+.oa-daily-detail-inner th { font-weight: 600; color: var(--fg-muted); font-size: 16px; white-space: nowrap; }
 .oa-daily-detail-inner td { white-space: nowrap; }
 .oa-daily-detail-inner td.oa-col-num { text-align: right; color: var(--accent); font-weight: 500; }
 
@@ -311,7 +316,6 @@
         </div>
         <div class="oa-table-scroll">
           <table class="oa-table" id="monthTable">
-            <colgroup id="monthColGroup"></colgroup>
             <thead><tr id="monthTableHead"></tr></thead>
             <tbody id="monthTableBody"></tbody>
           </table>
@@ -617,17 +621,6 @@
     data.country_list.forEach(function(c) {
       addTh(headRow, 'oa-col-country', c);
     });
-
-    // 设置列宽（table-layout: fixed 需要 colgroup + 明确 table width）
-    var colGroup = document.getElementById('monthColGroup');
-    colGroup.innerHTML = '';
-    var totalW = 200 + 64 + 64;
-    addCol(colGroup, '200px'); // 商品名
-    addCol(colGroup, '64px');  // 总单量
-    addCol(colGroup, '64px');  // 订单数
-    if (!currentProductId) { addCol(colGroup, '72px'); totalW += 72; }
-    data.country_list.forEach(function() { addCol(colGroup, '56px'); totalW += 56; });
-    document.getElementById('monthTable').style.width = totalW + 'px';
 
     // 表体
     var tbody = document.getElementById('monthTableBody');
@@ -935,11 +928,6 @@
     if (cls) td.className = cls;
     td.textContent = text;
     row.appendChild(td);
-  }
-  function addCol(colGroup, width) {
-    var col = document.createElement('col');
-    col.style.width = width;
-    colGroup.appendChild(col);
   }
 
   function escHtml(s) {
