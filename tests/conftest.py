@@ -53,6 +53,7 @@ def authed_client_no_db(monkeypatch):
     """Flask client authenticated via session with a patched user loader."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     from web.app import create_app
 
@@ -79,6 +80,7 @@ def authed_user_client_no_db(monkeypatch):
     """Flask client for a normal user with app startup recovery disabled."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     from web.app import create_app
 
