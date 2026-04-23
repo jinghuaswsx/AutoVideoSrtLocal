@@ -100,22 +100,14 @@ def build_suggested_material_filename(
 
 
 def _validate_english_filename(filename: str, product_name: str) -> list[str]:
-    errors: list[str] = []
     if not product_name:
-        return ["当前产品尚未加载，请重试"]
-    if len(filename) < 11 or filename[10] != "-":
-        return ['开头必须是 "YYYY.MM.DD-" 格式']
-
-    date_str = filename[:10]
-    if not _valid_date_prefix(date_str):
-        return [f'日期段 "{date_str}" 格式必须是 YYYY.MM.DD']
-
+        return [“当前产品尚未加载，请重试”]
+    if len(filename) < 11 or filename[10] != “-”:
+        return ['开头必须是 “YYYY.MM.DD-” 格式']
     rest = filename[11:]
-    if rest != product_name and not rest.startswith(product_name + "-") and not rest.startswith(product_name + "."):
-        errors.append(f'商品名不符：日期之后必须紧跟 "{product_name}"')
-    if _LOCALIZED_MARKER in filename:
-        errors.append("英语素材文件名不能使用“补充素材(语种)”格式，请切到对应语种后按规范命名")
-    return errors
+    if not rest.startswith(product_name + “-”):
+        return [f'日期之后必须紧跟 “{product_name}-”']
+    return []
 
 
 def _validate_localized_filename(

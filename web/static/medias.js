@@ -39,7 +39,7 @@
   function validateMaterialFilename(filename, productName, langCode) {
     const fn = String(filename || '');
 
-    // 英语素材只校验 "YYYY.MM.DD-{产品名}" 开头两段，其他部分不限制
+    // 英语素材只校验 YYYY.MM.DD-{产品名}- 前缀，其余不限制
     if (langCode === 'en') {
       const errs = [];
       if (!productName) {
@@ -50,21 +50,9 @@
         errs.push('开头必须是 "YYYY.MM.DD-" 格式');
         return errs;
       }
-      const dateStr = fn.slice(0, 10);
-      const dateMatch = /^(\d{4})\.(\d{2})\.(\d{2})$/.exec(dateStr);
-      if (!dateMatch) {
-        errs.push(`日期段 "${dateStr}" 格式必须是 YYYY.MM.DD`);
-        return errs;
-      }
-      const y = +dateMatch[1], mo = +dateMatch[2], d = +dateMatch[3];
-      const dObj = new Date(y, mo - 1, d);
-      if (dObj.getFullYear() !== y || dObj.getMonth() !== mo - 1 || dObj.getDate() !== d) {
-        errs.push(`日期 "${dateStr}" 不是合法日期`);
-        return errs;
-      }
       const rest = fn.slice(11);
-      if (rest !== productName && !rest.startsWith(productName + '-') && !rest.startsWith(productName + '.')) {
-        errs.push(`商品名不符：日期之后必须紧跟 "${productName}"`);
+      if (!rest.startsWith(productName + '-')) {
+        errs.push(`日期之后必须紧跟 "${productName}-"`);
       }
       return errs;
     }
