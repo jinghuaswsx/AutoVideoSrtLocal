@@ -596,12 +596,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 
 /* ────────── List wrapper ────────── */
-.oc-list { display:block; width:100%; overflow-x:auto; margin-top:var(--oc-sp-4); }
+.oc-list { display:block; width:100%; overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 300px); margin-top:var(--oc-sp-4); }
 
 /* ────────── Table（列表） ────────── */
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:hidden; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
-.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:var(--sticky-thead-top,196px); z-index:2; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:0; z-index:2; }
 .oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
 .oc-table tbody tr:last-child td { border-bottom:none; }
 .oc-table td.mono { font-family:var(--font-mono,ui-monospace,Consolas,monospace); font-size:12px; color:var(--oc-fg); font-variant-numeric:tabular-nums; }
@@ -1516,13 +1516,14 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   function updateStickyOffsets() {
     var header = document.querySelector('.oc-header');
     var toolbar = document.querySelector('.oc-toolbar');
-    if (!header || !toolbar) return;
+    var list = document.querySelector('.oc-list');
+    if (!header || !toolbar || !list) return;
     var hh = header.getBoundingClientRect().height;
     var th = toolbar.getBoundingClientRect().height;
     var toolbarTop = TOPBAR + hh;
-    var theadTop = toolbarTop + th;
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
-    document.documentElement.style.setProperty('--sticky-thead-top', theadTop + 'px');
+    var tableTop = toolbarTop + th + 16; /* 16px margin-top */
+    list.style.maxHeight = Math.max(window.innerHeight - tableTop - 80, 320) + 'px';
   }
   updateStickyOffsets();
   window.addEventListener('resize', updateStickyOffsets);

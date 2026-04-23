@@ -338,7 +338,7 @@
            + `</span>`;
     });
     const rows = [];
-    for (let i = 0; i < chips.length; i += 3) rows.push(chips.slice(i, i + 3));
+    for (let i = 0; i < chips.length; i += 4) rows.push(chips.slice(i, i + 4));
     return `<div class="oc-lang-bar">`
          + rows.filter((row) => row.length).map((row) => `<div class="oc-lang-row">${row.join('')}</div>`).join('')
          + `</div>`;
@@ -718,7 +718,7 @@
         <col style="width:64px">
         <col style="width:88px">
         <col style="width:56px">
-        <col style="width:240px">
+        <col style="width:300px">
         <col style="width:92px">
         <col style="width:150px">
         <col style="width:200px">
