@@ -14,7 +14,7 @@ RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动
 RECOVERY_INTERRUPTED_MESSAGE = "任务因服务重启或后台执行中断，已标记为中断；请在页面手动重新启动。"
 IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
 
-PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "copywriting"}
+PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_translate", "copywriting"}
 INTERRUPTED_PIPELINE_PROJECT_TYPES = {"multi_translate", "translate_lab"}
 LINK_CHECK_RUNNING_STATUSES = {"locking_locale", "downloading", "analyzing", "summarizing"}
 RECOVERABLE_PROJECT_TYPES = (

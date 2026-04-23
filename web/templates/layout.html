@@ -313,6 +313,9 @@
       <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🌐</span> 多语种视频翻译
       </a>
+      <a href="/ja-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/ja-translate') %}class="active"{% endif %}>
+        <span class="nav-icon">日</span> 视频翻译（日语）
+      </a>
       <a href="{{ url_for('title_translate.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/title-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🏷️</span> 多语言标题翻译
       </a>

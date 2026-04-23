@@ -954,13 +954,15 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
 
 def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from web import store
-    from web.services import multi_pipeline_runner
+    from web.services import ja_pipeline_runner, multi_pipeline_runner
 
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     lang = (item.get("lang") or "").strip()
     if lang not in _MULTI_TRANSLATE_SUPPORTED_LANGS:
         raise ValueError(f"unsupported multi_translate target lang: {lang}")
+    child_project_type = "ja_translate" if lang == "ja" else "multi_translate"
+    runner = ja_pipeline_runner if child_project_type == "ja_translate" else multi_pipeline_runner
 
     source_raw_id = int((item.get("ref") or {}).get("source_raw_id") or 0)
     raw_source = medias.get_raw_source(source_raw_id)
@@ -984,12 +986,12 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
         original_filename=source_name,
         user_id=user_id,
     )
-    execute("UPDATE projects SET type = 'multi_translate' WHERE id = %s", (child_task_id,))
+    execute("UPDATE projects SET type = %s WHERE id = %s", (child_project_type, child_task_id))
 
     params = dict(parent_state.get("video_params_snapshot") or {})
     store.update(
         child_task_id,
-        type="multi_translate",
+        type=child_project_type,
         display_name=f"{(raw_source.get('display_name') or Path(source_name).stem)}-{lang}",
         target_lang=lang,
         source_tos_key="",
@@ -1015,8 +1017,8 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
             "target_lang": lang,
         },
     )
-    multi_pipeline_runner.start(child_task_id, user_id=user_id)
-    return child_task_id, "multi_translate", "running"
+    runner.start(child_task_id, user_id=user_id)
+    return child_task_id, child_project_type, "running"
 
 
 def _materialize_multi_translate_video(
