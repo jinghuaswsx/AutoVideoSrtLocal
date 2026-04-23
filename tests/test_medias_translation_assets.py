@@ -26,6 +26,16 @@ def test_medias_translate_modal_script_exposes_new_orchestration_ui():
     assert "subtitle_position_y" in script
 
 
+def test_medias_translation_tasks_parent_title_shows_started_time():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias_translation_tasks.js").read_text(encoding="utf-8")
+
+    assert "function fmtTaskStartTime(value)" in script
+    assert 'class="mtt-card__start"' in script
+    assert "启动 ${esc(fmtTaskStartTime(task.created_at))}" in script
+    assert '<h3 class="mtt-card__title">批量翻译任务</h3>' in script
+
+
 def test_medias_translate_modal_matches_shared_subtitle_size_options():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")

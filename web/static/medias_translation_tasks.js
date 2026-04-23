@@ -23,6 +23,10 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
+  function fmtTaskStartTime(value) {
+    return value ? fmtTime(value) : '未知时间';
+  }
+
   function percent(progress) {
     const total = Number(progress?.total || 0);
     const done = Number(progress?.done || 0) + Number(progress?.skipped || 0);
@@ -64,6 +68,7 @@
           <div class="mtt-card__main">
             <div class="mtt-card__title-row">
               <h3 class="mtt-card__title">批量翻译任务</h3>
+              <span class="mtt-card__start">启动 ${esc(fmtTaskStartTime(task.created_at))}</span>
               <span class="bt-plan-item__status ${taskBadgeClass(task.status)}">${esc(task.status_label || task.status)}</span>
             </div>
             <div class="mtt-card__meta">
@@ -171,7 +176,16 @@
       }
       .mtt-card__title {
         margin: 0;
-        font-size: 16px;
+        color: var(--accent-active, oklch(45% 0.16 230));
+        font-size: var(--text-lg, 18px);
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      .mtt-card__start {
+        color: var(--fg-muted, oklch(48% 0.018 230));
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
       }
       .mtt-card__meta,
       .mtt-card__stats,
