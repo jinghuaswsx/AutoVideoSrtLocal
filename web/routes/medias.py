@@ -16,7 +16,7 @@ import requests
 from flask import Blueprint, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import local_media_storage, medias, task_state, tos_clients
+from appcore import local_media_storage, medias, pushes, task_state, tos_clients
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -2155,19 +2155,46 @@ def api_mk_detail_proxy(mk_id: int):
     """代理请求明空 API 获取产品详情，避免浏览器 CORS 问题。"""
     if not _is_admin():
         return jsonify({"error": "仅管理员可访问"}), 403
-    import requests as _req
-    mk_token = _get_mk_token()
-    if not mk_token:
-        return jsonify({"error": "明空 token 未配置"}), 500
+    headers = _build_mk_request_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        return jsonify({"error": "明空凭据未配置，请先在设置页同步 wedev 凭据"}), 500
+    base_url = _get_mk_api_base_url()
     try:
-        resp = _req.get(
-            f"https://os.wedev.vip/api/marketing/medias/{mk_id}",
-            headers={"Authorization": f"Bearer {mk_token}", "Accept": "application/json"},
+        resp = requests.get(
+            f"{base_url}/api/marketing/medias/{mk_id}",
+            headers=headers,
             timeout=15,
         )
-        return jsonify(resp.json()), resp.status_code
+        data = resp.json()
+        if _is_mk_login_expired(data):
+            return jsonify({"error": "明空登录已失效，请重新同步 wedev 凭据"}), 401
+        return jsonify(data), resp.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+
+
+def _get_mk_api_base_url() -> str:
+    return (pushes.get_localized_texts_base_url() or "https://os.wedev.vip").rstrip("/")
+
+
+def _build_mk_request_headers() -> dict[str, str]:
+    """Build server-side wedev headers, preferring synced settings over legacy token."""
+    headers = dict(pushes.build_localized_texts_headers())
+    headers.pop("Content-Type", None)
+    headers["Accept"] = "application/json"
+    if "Authorization" not in headers:
+        mk_token = _get_mk_token()
+        if mk_token:
+            headers["Authorization"] = (
+                mk_token if mk_token.lower().startswith("bearer ") else f"Bearer {mk_token}"
+            )
+    return headers
+
+
+def _is_mk_login_expired(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    return data.get("is_guest") is True or str(data.get("message") or "").startswith("登录")
 
 
 def _get_mk_token() -> str:
