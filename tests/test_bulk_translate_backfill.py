@@ -137,3 +137,57 @@ def test_sync_video_result_creates_item_and_marks_auto_translated(monkeypatch):
     assert created["cover_object_key"] == "1/medias/77/de_cover.png"
     assert executed == [(301, 701)]
     assert marked == [("media_items", 701, 301, "bt-1")]
+
+
+def test_sync_video_result_uses_material_filename_rule_for_translated_video(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    source_filename = "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-张晴-去字幕.mp4"
+    source_key = f"1/medias/6/raw_sources/a1b2c3d4e5f6_{source_filename}"
+    expected = "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4"
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 1,
+            "display_name": "",
+            "video_object_key": source_key,
+            "duration_seconds": 90.0,
+            "file_size": 1234,
+        },
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_product",
+        lambda product_id: {"id": product_id, "name": "可堆叠棒球帽收纳盒"},
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "list_languages",
+        lambda: [
+            {"code": "en", "name_zh": "英语"},
+            {"code": "it", "name_zh": "意大利语"},
+        ],
+    )
+    created = {}
+    monkeypatch.setattr(
+        mod.medias,
+        "create_item",
+        lambda **kwargs: created.update(kwargs) or 701,
+    )
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: 1)
+    monkeypatch.setattr(mod, "mark_auto_translated", lambda *args, **kwargs: 1)
+
+    mod.sync_video_result(
+        parent_task_id="bt-1",
+        product_id=6,
+        lang="it",
+        source_raw_id=301,
+        video_object_key=f"1/medias/6/it_a1b2c3d4e5f6_{source_filename}",
+        cover_object_key="1/medias/6/it_cover.png",
+    )
+
+    assert created["filename"] == expected
+    assert created["display_name"] == expected
