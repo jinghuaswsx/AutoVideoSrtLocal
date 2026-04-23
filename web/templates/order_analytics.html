@@ -3,6 +3,7 @@
 {% block page_title %}订单分析{% endblock %}
 {% block extra_style %}
 .oa-upload-zone {
+  position: relative;
   border: 2px dashed var(--border-main); border-radius: 16px;
   padding: 60px 40px; text-align: center; cursor: pointer;
   background: var(--bg-card); transition: border-color .2s, background .2s;
@@ -14,7 +15,10 @@
 .oa-upload-icon { font-size: 48px; margin-bottom: 12px; }
 .oa-upload-text { font-size: 15px; color: #6b7280; }
 .oa-upload-hint { font-size: 13px; color: #9ca3af; margin-top: 8px; }
-.oa-upload-zone input[type="file"] { display: none; }
+.oa-upload-zone input[type="file"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
 
 /* 统计卡片 */
 .oa-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -117,6 +121,10 @@
     </div>
   </div>
 
+  <div style="margin-bottom: 16px;">
+    <button class="btn btn-ghost btn-sm" onclick="location.reload()">重新上传</button>
+  </div>
+
   <div class="oa-table-wrap">
     <div class="oa-table-header">
       <div class="oa-table-title">商品 × 国家订单分布</div>
@@ -142,13 +150,17 @@
   var resultBox = document.getElementById('resultBox');
   var lastData = null;
 
-  zone.addEventListener('click', function() { input.click(); });
+  // input 覆盖整个 zone，点击自然触发文件选择器，无需手动绑定 click
   input.addEventListener('change', function() { if (input.files[0]) doUpload(input.files[0]); });
+
+  // 在 document 级别阻止浏览器默认下载行为
+  document.addEventListener('dragover', function(e) { e.preventDefault(); });
+  document.addEventListener('drop', function(e) { e.preventDefault(); });
 
   zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
   zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
   zone.addEventListener('drop', function(e) {
-    e.preventDefault(); zone.classList.remove('dragover');
+    e.preventDefault(); e.stopPropagation(); zone.classList.remove('dragover');
     if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]);
   });
 

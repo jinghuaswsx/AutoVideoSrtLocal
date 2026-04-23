@@ -297,9 +297,6 @@
       <a href="/pushes" {% if request.path.startswith('/pushes') %}class="active"{% endif %}>
         <span class="nav-icon">🚀</span> 推送管理
       </a>
-      <a href="/order-analytics" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
-        <span class="nav-icon">📊</span> 订单分析
-      </a>
       {# 德语/法语独立入口已合并到多语种翻译，暂时隐藏
       <a href="/de-translate" {% if request.path.startswith('/de-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🇩🇪</span> 视频翻译（德语）
@@ -366,6 +363,11 @@
       <a href="{{ url_for('projects.index') }}" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 视频翻译
       </a>
+      {% if current_user.role == 'admin' %}
+      <a href="/order-analytics" {% if request.path.startswith('/order-analytics') %}class="active"{% endif %}>
+        <span class="nav-icon">📊</span> 订单分析
+      </a>
+      {% endif %}
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-user">

@@ -8,6 +8,7 @@ from collections import defaultdict
 
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required
+from web.auth import admin_required
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ COL_COUNTRY = "Billing Country"
 
 @bp.route("/order-analytics")
 @login_required
+@admin_required
 def page():
     return render_template("order_analytics.html")
 
@@ -31,6 +33,7 @@ def page():
 
 @bp.route("/order-analytics/upload", methods=["POST"])
 @login_required
+@admin_required
 def upload():
     """接收 CSV 或 Excel 文件，解析后返回按商品×国家聚合的数据。"""
     f = request.files.get("file")
