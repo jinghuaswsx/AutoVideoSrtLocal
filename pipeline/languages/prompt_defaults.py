@@ -401,6 +401,88 @@ STYLE: です・ます調, 親しみやすい自然な口調, no hype, no CTA, n
 cosmetics/health must not claim medical efficacy (薬機法)."""
 
 
+def _build_generic_translation(language_name: str, market_note: str, style_note: str) -> str:
+    return f"""You are a native {language_name} short-form commerce video creator.
+Return valid JSON only, shaped as {{"full_text": "...", "sentences": [{{"index": 0, "text": "...", "source_segment_indices": [...]}}]}}.
+
+You are NOT translating word-for-word. Recreate the English script so it sounds like a local creator
+would naturally say it for {market_note}. Keep every original claim and source_segment_indices.
+
+STYLE:
+- {style_note}
+- Friendly, practical, and trustworthy; no hype, no fake urgency, no CTA at the end.
+- Use local vocabulary for ecommerce, home, beauty, tech, and daily-life products.
+- Prefer concise sentences with natural spoken rhythm.
+- No em-dashes or en-dashes; use plain punctuation only."""
+
+
+def _build_generic_tts_script(language_name: str, subtitle_note: str) -> str:
+    return f"""Prepare {language_name} text for ElevenLabs TTS and on-screen subtitles.
+Return valid JSON only: {{"full_text": "...", "blocks": [...], "subtitle_chunks": [...]}} with the same schema as other language variants.
+
+Blocks should sound natural and energetic for short-form commerce video. Subtitle chunks should be
+semantically complete, easy to read, and short enough for mobile overlays. {subtitle_note}
+No trailing punctuation in subtitle_chunks. No em-dashes or en-dashes."""
+
+
+def _build_generic_rewrite(language_name: str, rewrite_note: str) -> str:
+    return f"""You are a native {language_name} content creator REWRITING an existing localization.
+Return valid JSON only with the same schema as the original translation.
+
+HARD WORD COUNT CONSTRAINT:
+Target: EXACTLY {{target_words}} whitespace-separated words in full_text.
+Allowed range: [{{target_words}}-5, {{target_words}}+5]. SELF-CHECK before returning.
+
+DIRECTION: {{direction}} (shrink = remove modifiers/repetitions; expand = add natural elaboration,
+never invent facts).
+
+STRUCTURAL: keep the same number of sentences when possible; preserve every source_segment_indices mapping.
+STYLE: natural spoken {language_name}, practical and trustworthy, no hype, no CTA. {rewrite_note}"""
+
+
+_NL_TRANSLATION = _build_generic_translation(
+    "Dutch",
+    "the Netherlands and Dutch-speaking audiences",
+    "Use natural Dutch (je/jij by default), common loanwords where Dutch shoppers use them, and avoid stiff literal phrasing.",
+)
+_NL_TTS_SCRIPT = _build_generic_tts_script(
+    "Dutch",
+    "Prefer 4-8 words per subtitle chunk; avoid starting chunks with articles or small connector words.",
+)
+_NL_REWRITE = _build_generic_rewrite(
+    "Dutch",
+    "Keep Dutch compounds readable and avoid overly formal Belgian/Dutch bureaucratic phrasing.",
+)
+
+_SV_TRANSLATION = _build_generic_translation(
+    "Swedish",
+    "Sweden and Swedish-speaking audiences",
+    "Use natural Swedish (du by default), direct but warm phrasing, and avoid over-selling or American-style hype.",
+)
+_SV_TTS_SCRIPT = _build_generic_tts_script(
+    "Swedish",
+    "Prefer 4-8 words per subtitle chunk; keep particles and connectors attached to the phrase they introduce.",
+)
+_SV_REWRITE = _build_generic_rewrite(
+    "Swedish",
+    "Keep the tone lagom: clear, useful, and understated rather than exaggerated.",
+)
+
+_FI_TRANSLATION = _build_generic_translation(
+    "Finnish",
+    "Finland and Finnish-speaking audiences",
+    "Use natural Finnish with concise phrasing, avoid direct English syntax, and keep product benefits concrete.",
+)
+_FI_TTS_SCRIPT = _build_generic_tts_script(
+    "Finnish",
+    "Finnish words can be long, so prefer compact 3-6 word chunks when needed and avoid tiny one-word tails.",
+)
+_FI_REWRITE = _build_generic_rewrite(
+    "Finnish",
+    "Account for Finnish inflection and long compounds; keep sentences compact and spoken.",
+)
+
+
 DEFAULTS: dict[tuple[str, str | None], dict] = {
     # 共享电商插件
     ("ecommerce_plugin", None): {
@@ -484,5 +566,44 @@ DEFAULTS: dict[tuple[str, str | None], dict] = {
     ("base_rewrite", "ja"): {
         "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
         "content": _JA_REWRITE,
+    },
+    # 荷兰语
+    ("base_translation", "nl"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _NL_TRANSLATION,
+    },
+    ("base_tts_script", "nl"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _NL_TTS_SCRIPT,
+    },
+    ("base_rewrite", "nl"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _NL_REWRITE,
+    },
+    # 瑞典语
+    ("base_translation", "sv"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _SV_TRANSLATION,
+    },
+    ("base_tts_script", "sv"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _SV_TTS_SCRIPT,
+    },
+    ("base_rewrite", "sv"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _SV_REWRITE,
+    },
+    # 芬兰语
+    ("base_translation", "fi"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _FI_TRANSLATION,
+    },
+    ("base_tts_script", "fi"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _FI_TTS_SCRIPT,
+    },
+    ("base_rewrite", "fi"): {
+        "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
+        "content": _FI_REWRITE,
     },
 }

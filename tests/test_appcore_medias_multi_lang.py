@@ -15,7 +15,7 @@ def test_list_languages_returns_enabled_sorted():
     langs = medias.list_languages()
     codes = [l["code"] for l in langs]
     assert codes[0] == "en"
-    assert set(codes) >= {"en", "de", "fr", "es", "it", "ja", "pt"}
+    assert set(codes) >= {"en", "de", "fr", "es", "it", "ja", "pt", "nl", "sv", "fi"}
     assert "ko" not in codes
     assert "jp" not in codes
     assert all(l["enabled"] == 1 for l in langs)

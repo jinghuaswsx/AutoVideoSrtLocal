@@ -72,19 +72,19 @@ def test_cover_batch_one_per_lang(monkeypatch):
     assert plan[0]["ref"]["source_cover_ids"] == [200, 201]
 
 
-def test_video_only_de_fr_generates_items(monkeypatch):
-    """视频 target_lang ∈ {de, fr} 才生成 plan 项;其他语言 skip 规划。"""
+def test_video_supported_languages_generate_items(monkeypatch):
+    """视频 target_lang 在支持集内才生成 plan 项;未知语言 skip 规划。"""
     _patch(monkeypatch, _FakeDB(raw_sources=[{"id": 1}, {"id": 2}]))
 
     from appcore.bulk_translate_plan import generate_plan
     plan = generate_plan(
-        1, 77, ["de", "fr", "es", "it"], ["video"], False, raw_source_ids=[1, 2],
+        1, 77, ["de", "fr", "nl", "sv", "fi", "xx"], ["video"], False, raw_source_ids=[1, 2],
     )
 
-    # 2 视频 × 2 支持语种 = 4,es/it 不规划
+    # 2 视频 × 5 支持语种 = 10,xx 不规划
     video_items = [p for p in plan if p["kind"] == "video"]
-    assert len(video_items) == 4
-    assert {p["lang"] for p in video_items} == {"de", "fr"}
+    assert len(video_items) == 10
+    assert {p["lang"] for p in video_items} == {"de", "fr", "nl", "sv", "fi"}
 
 
 def test_mixed_content_types(monkeypatch):

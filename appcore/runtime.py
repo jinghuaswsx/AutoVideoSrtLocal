@@ -169,7 +169,18 @@ def _resolve_translate_provider(user_id: int | None) -> str:
 
 def _lang_display(label: str) -> str:
     """Convert language label (en/de/fr) to Chinese display name for step messages."""
-    return {"en": "英语", "de": "德语", "fr": "法语"}.get(label, label)
+    return {
+        "en": "英语",
+        "de": "德语",
+        "fr": "法语",
+        "es": "西班牙语",
+        "it": "意大利语",
+        "pt": "葡萄牙语",
+        "ja": "日语",
+        "nl": "荷兰语",
+        "sv": "瑞典语",
+        "fi": "芬兰语",
+    }.get(label, label)
 
 
 def _is_av_pipeline_task(task: dict | None) -> bool:
@@ -180,7 +191,18 @@ def _is_av_pipeline_task(task: dict | None) -> bool:
 
 
 # Default words-per-second by target language (fallback when no measured data).
-_DEFAULT_WPS = {"en": 2.5, "de": 2.0, "fr": 2.8}
+_DEFAULT_WPS = {
+    "en": 2.5,
+    "de": 2.0,
+    "fr": 2.8,
+    "es": 2.7,
+    "it": 2.6,
+    "pt": 2.6,
+    "ja": 2.2,
+    "nl": 2.4,
+    "sv": 2.5,
+    "fi": 2.1,
+}
 
 
 def _compute_next_target(

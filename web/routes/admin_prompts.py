@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 
 from appcore import llm_prompt_configs as dao
+from pipeline.languages.registry import SUPPORTED_LANGS
 
 bp = Blueprint("admin_prompts", __name__)
 
@@ -24,7 +25,7 @@ def page():
     return render_template(
         "admin_prompts.html",
         slots=sorted(dao.VALID_SLOTS),
-        langs=["de", "fr", "es", "it", "pt", "ja"],
+        langs=list(SUPPORTED_LANGS),
     )
 
 

@@ -116,8 +116,8 @@ def test_force_retranslate_ignores_existing(monkeypatch):
     assert r["skipped"]["copy"] == 0
 
 
-def test_video_only_de_fr_counted(monkeypatch):
-    """视频仅 de/fr 计入;es/it/ja 直接跳过。"""
+def test_video_supported_languages_counted_and_unknown_skipped(monkeypatch):
+    """视频支持语言计入;未知语言直接跳过。"""
     fake = _FakeDB(videos_en=[
         {"id": 1, "duration_seconds": 120},  # 2 分钟
         {"id": 2, "duration_seconds": 60},   # 1 分钟
@@ -125,11 +125,10 @@ def test_video_only_de_fr_counted(monkeypatch):
     _patch_db(monkeypatch, fake)
 
     from appcore.bulk_translate_estimator import estimate
-    r = estimate(1, 77, ["de", "fr", "es", "it"], ["video"], False)
-    # de+fr: 2 个视频 × (2+1)/60 × 2 语种 = (2+1) × 2 = 6 分钟
-    # es+it 跳过:2 视频 × 2 = 4 项
-    assert r["video_minutes"] == pytest.approx(6.0)
-    assert r["skipped"]["video"] == 4
+    r = estimate(1, 77, ["de", "fr", "nl", "sv", "fi", "xx"], ["video"], False)
+    # 5 个支持语种 × (2+1) 分钟 = 15 分钟；未知 xx 跳过 2 个视频。
+    assert r["video_minutes"] == pytest.approx(15.0)
+    assert r["skipped"]["video"] == 2
 
 
 def test_image_cover_and_detail_sum(monkeypatch):

@@ -36,6 +36,12 @@ def test_defaults_cover_ja():
         assert (slot, "ja") in DEFAULTS, f"missing ja {slot}"
 
 
+def test_defaults_cover_nl_sv_fi():
+    for lang in ("nl", "sv", "fi"):
+        for slot in ("base_translation", "base_tts_script", "base_rewrite"):
+            assert (slot, lang) in DEFAULTS, f"missing {lang} {slot}"
+
+
 def test_ja_tts_script_mentions_particle_rule():
     """日语 TTS 脚本 prompt 必须显式告诫 LLM：不要把助词放在 chunk 开头。"""
     entry = DEFAULTS[("base_tts_script", "ja")]

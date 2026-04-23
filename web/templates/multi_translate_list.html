@@ -164,7 +164,7 @@
 <div class="lang-pills">
   <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="/multi-translate">全部</a>
   {% for lang in supported_langs %}
-    {% set label = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语'}[lang] %}
+    {% set label = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语','nl':'🇳🇱 荷兰语','sv':'🇸🇪 瑞典语','fi':'🇫🇮 芬兰语'}[lang] %}
     <a class="lang-pill {{ 'active' if current_lang == lang else '' }}"
        href="/multi-translate?lang={{ lang }}">{{ label }}</a>
   {% endfor %}
@@ -327,7 +327,7 @@ document.getElementById('uploadOverlay').addEventListener('click', function(e) {
 function _getTargetLang() {
   var params = new URLSearchParams(window.location.search);
   var lang = (params.get('lang') || '').trim();
-  var supported = ['de', 'fr', 'es', 'it', 'pt', 'ja'];
+  var supported = ['de', 'fr', 'es', 'it', 'pt', 'ja', 'nl', 'sv', 'fi'];
   return supported.indexOf(lang) >= 0 ? lang : 'de';
 }
 

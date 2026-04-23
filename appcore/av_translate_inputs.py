@@ -11,6 +11,9 @@ AV_TARGET_LANGUAGE_OPTIONS = [
     {"code": "ja", "label": "日语 Japanese", "name": "Japanese"},
     {"code": "es", "label": "西语 Espanol", "name": "Spanish"},
     {"code": "pt", "label": "葡语 Portugues", "name": "Portuguese"},
+    {"code": "nl", "label": "荷兰语 Dutch", "name": "Dutch"},
+    {"code": "sv", "label": "瑞典语 Swedish", "name": "Swedish"},
+    {"code": "fi", "label": "芬兰语 Finnish", "name": "Finnish"},
 ]
 
 AV_TARGET_MARKET_OPTIONS = [
@@ -20,6 +23,9 @@ AV_TARGET_MARKET_OPTIONS = [
     {"code": "CA", "label": "CA"},
     {"code": "SEA", "label": "SEA"},
     {"code": "JP", "label": "JP"},
+    {"code": "NL", "label": "NL"},
+    {"code": "SE", "label": "SE"},
+    {"code": "FI", "label": "FI"},
     {"code": "OTHER", "label": "OTHER"},
 ]
 

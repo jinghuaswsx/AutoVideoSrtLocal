@@ -13,7 +13,19 @@ def action_item(label: str, url: str, method: str = "POST") -> dict:
     return {"type": "action", "label": label, "url": url, "method": method}
 
 
-_LANG_LABELS = {"zh": "中文", "en": "英文", "de": "德文", "fr": "法文"}
+_LANG_LABELS = {
+    "zh": "中文",
+    "en": "英文",
+    "de": "德语",
+    "fr": "法语",
+    "es": "西班牙语",
+    "it": "意大利语",
+    "pt": "葡萄牙语",
+    "ja": "日语",
+    "nl": "荷兰语",
+    "sv": "瑞典语",
+    "fi": "芬兰语",
+}
 
 
 def _lang(code: str) -> str:

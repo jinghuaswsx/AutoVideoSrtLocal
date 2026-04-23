@@ -41,7 +41,7 @@ bp = Blueprint("translate_lab", __name__)
 
 # 允许的目标语言 / 源语言 / 音色匹配模式
 _ALLOWED_SOURCE_LANGUAGES = {"zh", "en"}
-_ALLOWED_TARGET_LANGUAGES = {"en", "de", "fr", "ja", "es", "pt"}
+_ALLOWED_TARGET_LANGUAGES = {"en", "de", "fr", "ja", "es", "pt", "nl", "sv", "fi"}
 _ALLOWED_VOICE_MODES = {"auto", "manual"}
 
 
@@ -157,7 +157,7 @@ def upload_and_create():
     表单字段：
     - ``video``（必填）视频文件。
     - ``source_language``（可选，默认 zh）:``zh|en``。
-    - ``target_language``（可选，默认 en）:``en|de|fr|ja|es|pt``。
+    - ``target_language``（可选，默认 en）:``en|de|fr|ja|es|pt|nl|sv|fi``。
     - ``voice_match_mode``（可选，默认 auto）:``auto|manual``。
 
     成功返回 ``{"task_id": "..."}``。

@@ -42,7 +42,7 @@ _RUNNING_PARENT_STATUSES = {"running", "waiting_manual"}
 _FAILURE_CHILD_STATUSES = {"error", "failed", "cancelled", "interrupted"}
 _ACTIVE_ITEM_STATUSES = {"dispatching", "running", "syncing_result", "awaiting_voice"}
 _RETRYABLE_ITEM_STATUSES = {"failed", "error", "interrupted"}
-_MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja"}
+_MULTI_TRANSLATE_SUPPORTED_LANGS = {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
 
 
 def _download_media_source_to(object_key: str, destination: str) -> str:

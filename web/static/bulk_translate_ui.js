@@ -11,6 +11,9 @@
     { code: 'it', label: '🇮🇹 意大利语' },
     { code: 'ja', label: '🇯🇵 日语' },
     { code: 'pt', label: '🇵🇹 葡萄牙语' },
+    { code: 'nl', label: '🇳🇱 荷兰语' },
+    { code: 'sv', label: '🇸🇪 瑞典语' },
+    { code: 'fi', label: '🇫🇮 芬兰语' },
   ];
 
   let dialog;
@@ -356,8 +359,9 @@
     }[m]));
   }
   function flagOf(code) {
-    const m = { de: '🇩🇪 德语', fr: '🇫🇷 法语', es: '🇪🇸 西班牙语',
-                 it: '🇮🇹 意大利语', ja: '🇯🇵 日语', pt: '🇵🇹 葡萄牙语' };
+      const m = { de: '🇩🇪 德语', fr: '🇫🇷 法语', es: '🇪🇸 西班牙语',
+                   it: '🇮🇹 意大利语', ja: '🇯🇵 日语', pt: '🇵🇹 葡萄牙语',
+                   nl: '🇳🇱 荷兰语', sv: '🇸🇪 瑞典语', fi: '🇫🇮 芬兰语' };
     return m[code] || code;
   }
 

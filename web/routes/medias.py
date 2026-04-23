@@ -1341,6 +1341,8 @@ _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
     "ja": "日本",
     "pt": "葡萄牙",
     "nl": "荷兰",
+    "sv": "瑞典",
+    "fi": "芬兰",
 }
 
 

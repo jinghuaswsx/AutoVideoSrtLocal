@@ -10,7 +10,7 @@ from appcore import medias
 
 
 # 支持的目标语言（与 media_languages 表 enabled=1 的小语种保持一致；en 是源语言）
-SUPPORTED_LANGS: tuple[str, ...] = ("de", "fr", "es", "it", "ja", "pt")
+SUPPORTED_LANGS: tuple[str, ...] = ("de", "fr", "es", "it", "ja", "pt", "nl", "sv", "fi")
 PRESETS: tuple[str, ...] = ("cover", "detail")
 
 # 图片翻译 Gemini 通道（全局配置，存 system_settings）

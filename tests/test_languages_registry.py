@@ -68,6 +68,15 @@ def test_supported_langs_includes_ja():
     assert "ja" in registry.SUPPORTED_LANGS
 
 
+def test_supported_langs_includes_nl_sv_fi():
+    for lang in ("nl", "sv", "fi"):
+        assert lang in registry.SUPPORTED_LANGS
+        rules = registry.get_rules(lang)
+        assert rules.TTS_LANGUAGE_CODE == lang
+        assert rules.TTS_MODEL_ID == "eleven_multilingual_v2"
+        assert rules.MAX_LINES == 2
+
+
 def test_get_rules_ja_has_full_width_line_width_and_slower_cps():
     rules = registry.get_rules("ja")
     assert rules.TTS_LANGUAGE_CODE == "ja"
