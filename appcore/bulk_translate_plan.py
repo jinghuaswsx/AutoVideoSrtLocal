@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+from appcore import medias
 from appcore.db import query
 from appcore.video_translate_defaults import VIDEO_SUPPORTED_LANGS
 
@@ -55,7 +56,7 @@ def generate_plan(
 
     detail_kind = _pick_kind(content_types, "detail_images", "detail")
     if detail_kind:
-        detail_ids = _list_en_ids(product_id, "media_product_detail_images")
+        detail_ids = _list_en_detail_ids(product_id)
         if detail_ids:
             for offset, lang in enumerate(target_langs):
                 dispatch_after_seconds = (
@@ -206,6 +207,21 @@ def _new_item(
 
 
 _SOFT_DELETE_TABLES = {"media_items", "media_product_detail_images"}
+
+
+def _list_en_detail_ids(product_id: int) -> list[int]:
+    rows = query(
+        "SELECT id, object_key, content_type "
+        "FROM media_product_detail_images "
+        "WHERE product_id = %s AND lang = 'en' AND deleted_at IS NULL "
+        "ORDER BY id ASC",
+        (product_id,),
+    )
+    return [
+        int(row["id"])
+        for row in rows
+        if int(row.get("id") or 0) and not medias.detail_image_is_gif(row)
+    ]
 
 
 def _list_en_ids(product_id: int, table: str) -> list[int]:

@@ -105,6 +105,55 @@ def _store_state(fake_db: _FakeProjectsDB, task_id: str, state: dict) -> None:
     fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
 
 
+def test_create_detail_images_child_skips_gif_sources(runtime_env, monkeypatch, tmp_path):
+    mod, _fake_db = runtime_env
+    created = {}
+    started = []
+
+    monkeypatch.setattr(mod, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_ensure_child_identity", lambda parent_id, item: "img-child-1")
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda lang: "德语")
+    monkeypatch.setattr(
+        mod.medias,
+        "list_detail_images",
+        lambda product_id, lang: [
+            {"id": 11, "object_key": "1/medias/77/en_1.jpg", "content_type": "image/jpeg"},
+            {"id": 12, "object_key": "1/medias/77/en_2.gif"},
+            {"id": 13, "object_key": "1/medias/77/en_3.png", "content_type": "image/gif; charset=binary"},
+            {"id": 14, "object_key": "1/medias/77/en_4.webp"},
+        ],
+    )
+
+    import appcore.image_translate_settings as its
+    import appcore.task_state as task_state
+    from web.routes import image_translate as image_translate_routes
+
+    monkeypatch.setattr(its, "get_prompt", lambda preset, lang: "翻成 {target_language_name}")
+    monkeypatch.setattr(
+        task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kwargs: created.update(
+            {"task_id": task_id, "task_dir": task_dir, **kwargs}
+        ) or {"id": task_id},
+    )
+    monkeypatch.setattr(
+        image_translate_routes,
+        "start_image_translate_runner",
+        lambda task_id, user_id: started.append((task_id, user_id)) or True,
+    )
+
+    child_task_id, child_type, child_status = mod._create_detail_images_child(
+        "parent-1",
+        _item(0, kind="detail_images", lang="de", ref={"source_detail_ids": [11, 12, 13, 14]}),
+        {"product_id": 77, "initiator": {"user_id": 1}},
+    )
+
+    assert (child_task_id, child_type, child_status) == ("img-child-1", "image_translate", "running")
+    assert [it["source_detail_image_id"] for it in created["items"]] == [11, 14]
+    assert created["medias_context"]["source_detail_image_ids"] == [11, 14]
+    assert started == [("img-child-1", 1)]
+
+
 def test_create_stores_plan_and_raw_source_ids(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(

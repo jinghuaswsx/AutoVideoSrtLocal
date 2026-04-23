@@ -807,6 +807,12 @@ def _next_detail_image_sort_order(product_id: int, lang: str) -> int:
     return int(row.get("m") or -1) + 1
 
 
+def detail_image_is_gif(row: dict) -> bool:
+    content_type = str((row or {}).get("content_type") or "").split(";")[0].strip().lower()
+    object_key = str((row or {}).get("object_key") or "").strip().lower()
+    return content_type == "image/gif" or object_key.endswith(".gif")
+
+
 def add_detail_image(
     product_id: int,
     lang: str,
