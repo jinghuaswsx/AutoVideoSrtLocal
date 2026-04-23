@@ -66,10 +66,6 @@ def _delete_artifact_object(object_key: str | None) -> None:
         local_media_storage.delete(key)
     except Exception:
         pass
-    try:
-        tos_clients.delete_object(key)
-    except Exception:
-        pass
 
 
 def _reset_item_processing_state(item: dict) -> None:

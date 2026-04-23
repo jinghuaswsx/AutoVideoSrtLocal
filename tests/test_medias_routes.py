@@ -71,7 +71,7 @@ def test_create_raw_source_rejects_invalid_display_name_before_storage(
     writes = []
     monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
     monkeypatch.setattr(
-        r.tos_clients,
+        r.object_keys,
         "build_media_raw_source_key",
         lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
     )
@@ -119,7 +119,7 @@ def test_create_raw_source_accepts_valid_display_name(
     valid_name = "2026.03.25-可堆叠棒球帽收纳盒-原始视频.mp4"
     monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
     monkeypatch.setattr(
-        r.tos_clients,
+        r.object_keys,
         "build_media_raw_source_key",
         lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
     )
@@ -188,7 +188,7 @@ def test_item_bootstrap_skip_validation_accepts_initial_loose_material_filename(
 ):
     r = _stub_material_filename_product(monkeypatch)
     monkeypatch.setattr(
-        r.tos_clients,
+        r.object_keys,
         "build_media_object_key",
         lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
     )
