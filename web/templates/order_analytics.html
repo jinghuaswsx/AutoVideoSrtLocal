@@ -618,14 +618,16 @@
       addTh(headRow, 'oa-col-country', c);
     });
 
-    // 设置列宽（table-layout: fixed 需要 colgroup）
+    // 设置列宽（table-layout: fixed 需要 colgroup + 明确 table width）
     var colGroup = document.getElementById('monthColGroup');
     colGroup.innerHTML = '';
+    var totalW = 200 + 64 + 64;
     addCol(colGroup, '200px'); // 商品名
     addCol(colGroup, '64px');  // 总单量
     addCol(colGroup, '64px');  // 订单数
-    if (!currentProductId) addCol(colGroup, '72px'); // 收入
-    data.country_list.forEach(function() { addCol(colGroup, '56px'); });
+    if (!currentProductId) { addCol(colGroup, '72px'); totalW += 72; }
+    data.country_list.forEach(function() { addCol(colGroup, '56px'); totalW += 56; });
+    document.getElementById('monthTable').style.width = totalW + 'px';
 
     // 表体
     var tbody = document.getElementById('monthTableBody');
