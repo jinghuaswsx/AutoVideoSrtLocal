@@ -127,3 +127,60 @@ def test_translate_ok(authed_client_no_db, pid, monkeypatch, patch_bt):
     bg_args, _bg_kwargs = fake_background.call_args
     assert callable(bg_args[0])
     assert bg_args[1] == "task-xyz"
+
+
+def test_product_detail_items_include_raw_source_provenance(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "user_id": 1,
+            "name": "t-tr",
+            "created_at": None,
+            "updated_at": None,
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda product_id: {})
+    monkeypatch.setattr(r.medias, "list_copywritings", lambda product_id: [])
+    monkeypatch.setattr(
+        r.medias,
+        "list_items",
+        lambda product_id: [{
+            "id": 701,
+            "product_id": product_id,
+            "lang": "de",
+            "filename": "de-final.mp4",
+            "display_name": "DE Final",
+            "object_key": "1/medias/123/de-final.mp4",
+            "cover_object_key": "1/medias/123/de-cover.png",
+            "duration_seconds": 88.0,
+            "file_size": 1024,
+            "source_raw_id": 88,
+            "source_ref_id": 88,
+            "bulk_task_id": "bt-1",
+            "auto_translated": 1,
+            "created_at": None,
+        }],
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "list_raw_sources",
+        lambda product_id: [{
+            "id": 88,
+            "display_name": "Clean English Raw",
+            "video_object_key": "raw.mp4",
+            "cover_object_key": "raw.jpg",
+        }],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/123")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["source_raw_id"] == 88
+    assert item["auto_translated"] is True
+    assert item["source_raw"]["display_name"] == "Clean English Raw"

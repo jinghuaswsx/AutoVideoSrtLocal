@@ -109,14 +109,45 @@
     return (state.languages || []).filter((lang) => lang && lang.code !== 'en' && lang.enabled !== false);
   }
 
-  function existingVideoLangs() {
-    const langs = new Set();
-    const items = ((state.product || {}).items || []);
-    items.forEach((item) => {
-      const lang = String(item && item.lang || '').trim().toLowerCase();
-      if (lang && lang !== 'en') langs.add(lang);
+  function rawHasTranslation(raw, langCode) {
+    const code = String(langCode || '').trim().toLowerCase();
+    const translations = (raw && raw.translations) || {};
+    const status = translations[code] || null;
+    return Boolean(status && status.status === 'translated');
+  }
+
+  function selectedRawSources() {
+    return (state.rawSources || []).filter((raw) => state.selectedRawIds.has(Number(raw.id)));
+  }
+
+  function selectedRawTranslationStats(langCode) {
+    const selected = selectedRawSources();
+    const translated = selected.filter((raw) => rawHasTranslation(raw, langCode)).length;
+    return {
+      total: selected.length,
+      translated,
+      missing: Math.max(0, selected.length - translated),
+      complete: selected.length > 0 && translated === selected.length,
+      partial: translated > 0 && translated < selected.length,
+    };
+  }
+
+  function missingVideoPairCount() {
+    if (!state.selectedContentTypes.has('videos')) return 0;
+    let count = 0;
+    selectedRawSources().forEach((raw) => {
+      state.selectedLangs.forEach((langCode) => {
+        if (!rawHasTranslation(raw, langCode)) count += 1;
+      });
     });
-    return langs;
+    return count;
+  }
+
+  function pruneCompletedSelectedLangs() {
+    if (!state.selectedContentTypes.has('videos')) return;
+    state.selectedLangs = new Set(
+      Array.from(state.selectedLangs).filter((langCode) => !selectedRawTranslationStats(langCode).complete)
+    );
   }
 
   function syncVideoConfigState() {
@@ -136,13 +167,30 @@
     `).join('');
   }
 
+  function languageName(code) {
+    const normalized = String(code || '').trim().toLowerCase();
+    const row = enabledLanguages().find((lang) => lang.code === normalized);
+    return row ? (row.name_zh || row.code.toUpperCase()) : normalized.toUpperCase();
+  }
+
+  function rawTranslationSummary(raw) {
+    const translations = (raw && raw.translations) || {};
+    const translatedCodes = Object.keys(translations)
+      .filter((code) => translations[code] && translations[code].status === 'translated')
+      .sort();
+    if (!translatedCodes.length) return '';
+    return `已翻译：${translatedCodes.map(languageName).join(' / ')}`;
+  }
+
   function renderRawSources() {
     if (!state.rawSources.length) {
       rawList.innerHTML = '<div class="mt-empty">当前商品还没有原始视频素材，先补充原始视频后才能发起翻译。</div>';
       return;
     }
-    rawList.innerHTML = state.rawSources.map((item, index) => `
-      <label class="mt-choice mt-choice--raw">
+    rawList.innerHTML = state.rawSources.map((item, index) => {
+      const translatedSummary = rawTranslationSummary(item);
+      return `
+      <label class="mt-choice mt-choice--raw ${translatedSummary ? 'mt-choice--has-status' : ''}">
         <input type="checkbox" value="${item.id}" ${state.selectedRawIds.has(Number(item.id)) ? 'checked' : ''}>
         <span class="mt-choice__cover">
           ${item.cover_url ? `<img src="${esc(item.cover_url)}" alt="${esc(item.display_name || `原始视频 #${item.id}`)}" loading="lazy">` : '<span class="mt-choice__cover-ph">VIDEO</span>'}
@@ -150,9 +198,11 @@
         <span class="mt-choice__body">
           <strong>${esc(item.display_name || `原始视频 #${item.id}`)}</strong>
           <small>${esc(fmtDuration(item.duration_seconds))} · ${esc(fmtBytes(item.file_size))}${index === 0 ? ' · 默认优先预览' : ''}</small>
+          ${translatedSummary ? `<small class="mt-status-line">${esc(translatedSummary)}</small>` : ''}
         </span>
       </label>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderLanguages() {
@@ -161,15 +211,26 @@
       langList.innerHTML = '<div class="mt-empty">当前没有可用的小语种。</div>';
       return;
     }
-    langList.innerHTML = langs.map((lang) => `
-      <label class="mt-choice mt-choice--lang">
-        <input type="checkbox" value="${lang.code}" ${state.selectedLangs.has(lang.code) ? 'checked' : ''}>
+    pruneCompletedSelectedLangs();
+    langList.innerHTML = langs.map((lang) => {
+      const stats = selectedRawTranslationStats(lang.code);
+      const checkVideoCompletion = state.selectedContentTypes.has('videos');
+      const disabled = checkVideoCompletion && stats.complete;
+      const statusText = !checkVideoCompletion
+        ? lang.code.toUpperCase()
+        : (stats.complete
+        ? `已完成 ${stats.translated}/${stats.total}，本次跳过`
+        : (stats.partial ? `已完成 ${stats.translated}/${stats.total}，仅补未完成` : '未翻译'));
+      return `
+      <label class="mt-choice mt-choice--lang ${disabled ? 'mt-choice--done' : ''}">
+        <input type="checkbox" value="${lang.code}" ${state.selectedLangs.has(lang.code) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
         <span class="mt-choice__body">
           <strong>${esc(lang.name_zh || lang.code.toUpperCase())}</strong>
-          <small>${esc(lang.code.toUpperCase())}</small>
+          <small>${esc(statusText)}</small>
         </span>
       </label>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderSizeButtons() {
@@ -188,6 +249,10 @@
       summary.textContent = extra;
       return;
     }
+    if (state.selectedContentTypes.has('videos') && state.selectedRawIds.size > 0 && state.selectedLangs.size === 0) {
+      summary.textContent = '所选原始视频的可用目标语种都已有视频成品，本次不会重复创建视频翻译';
+      return;
+    }
     if (!state.selectedContentTypes.size || !state.selectedRawIds.size || !state.selectedLangs.size) {
       summary.textContent = '请选择翻译范围、原始视频和目标语言';
       return;
@@ -195,11 +260,18 @@
     const rawCount = state.selectedRawIds.size;
     const langCount = state.selectedLangs.size;
     const types = CONTENT_TYPES.filter((item) => state.selectedContentTypes.has(item.code)).map((item) => item.label);
-    summary.textContent = `将为 ${rawCount} 条原始视频发起 ${langCount} 个语种的 ${types.join(' / ')} 任务`;
+    const missingPairs = missingVideoPairCount();
+    if (state.selectedContentTypes.has('videos') && missingPairs === 0) {
+      summary.textContent = '所选原始视频的目标语种都已有视频成品，本次不会重复创建视频翻译';
+      return;
+    }
+    const suffix = state.selectedContentTypes.has('videos') ? `，其中 ${missingPairs} 个视频组合待翻译` : '';
+    summary.textContent = `将为 ${rawCount} 条原始视频发起 ${langCount} 个语种的 ${types.join(' / ')} 任务${suffix}`;
   }
 
   function updateSubmitState() {
-    const ready = !state.busy && state.selectedContentTypes.size > 0 && state.selectedRawIds.size > 0 && state.selectedLangs.size > 0;
+    const hasVideoWork = !state.selectedContentTypes.has('videos') || missingVideoPairCount() > 0;
+    const ready = !state.busy && state.selectedContentTypes.size > 0 && state.selectedRawIds.size > 0 && state.selectedLangs.size > 0 && hasVideoWork;
     submitBtn.disabled = !ready;
     submitBtn.textContent = state.busy ? '创建中...' : '创建翻译任务';
   }
@@ -268,8 +340,8 @@
     const langs = enabledLanguages();
     const missing = langs
       .map((lang) => lang.code)
-      .filter((code) => !existingVideoLangs().has(code));
-    state.selectedLangs = new Set((missing.length ? missing : langs.map((lang) => lang.code)));
+      .filter((code) => (state.rawSources || []).some((raw) => !rawHasTranslation(raw, code)));
+    state.selectedLangs = new Set(missing);
 
     state.videoFont = 'Impact';
     state.videoSize = 10;
@@ -534,6 +606,14 @@
       .mt-choice:hover {
         border-color: var(--accent, oklch(56% 0.16 230));
       }
+      .mt-choice--done {
+        opacity: 0.62;
+        cursor: not-allowed;
+        background: var(--bg-muted, oklch(94% 0.010 230));
+      }
+      .mt-choice--done:hover {
+        border-color: var(--border, oklch(91% 0.012 230));
+      }
       .mt-choice input {
         margin-top: 3px;
         width: 16px;
@@ -554,6 +634,9 @@
         color: var(--fg-muted, oklch(48% 0.018 230));
         font-size: 12px;
         line-height: 1.55;
+      }
+      .mt-status-line {
+        color: var(--success-fg, oklch(38% 0.09 165)) !important;
       }
       .mt-choice--raw {
         align-items: center;
@@ -735,6 +818,7 @@
   contentTypesBox.addEventListener('change', () => {
     state.selectedContentTypes = collectCheckedValues(contentTypesBox, (input) => String(input.value || ''));
     syncVideoConfigState();
+    renderLanguages();
     renderSummary();
     updateSubmitState();
     applyPreviewStyles();
@@ -742,12 +826,13 @@
 
   rawList.addEventListener('change', () => {
     state.selectedRawIds = collectCheckedValues(rawList, (input) => Number(input.value));
+    renderLanguages();
     renderSummary();
     updateSubmitState();
   });
 
   langList.addEventListener('change', () => {
-    state.selectedLangs = collectCheckedValues(langList, (input) => String(input.value || ''));
+    state.selectedLangs = collectCheckedValues(langList, (input) => (input.disabled ? '' : String(input.value || '')));
     renderSummary();
     updateSubmitState();
   });

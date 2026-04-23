@@ -330,6 +330,15 @@ def _json_number_or_none(value):
         return value
 
 
+def _int_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
     return image_translate_routes.start_image_translate_runner(task_id, user_id)
 
@@ -404,8 +413,24 @@ def _serialize_product(p: dict, items_count: int | None = None,
     }
 
 
-def _serialize_item(it: dict) -> dict:
+def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) -> dict:
     has_user_cover = bool(it.get("cover_object_key"))
+    raw_sources_by_id = raw_sources_by_id or {}
+    source_raw_id = _int_or_none(it.get("source_raw_id"))
+    if source_raw_id is None and it.get("auto_translated"):
+        source_raw_id = _int_or_none(it.get("source_ref_id"))
+    source_raw = raw_sources_by_id.get(source_raw_id or 0)
+    source_raw_payload = None
+    if source_raw_id is not None:
+        source_raw_payload = {
+            "id": source_raw_id,
+            "display_name": (
+                (source_raw or {}).get("display_name")
+                or f"原始去字幕素材 #{source_raw_id}"
+            ),
+            "video_url": f"/medias/raw-sources/{source_raw_id}/video",
+            "cover_url": f"/medias/raw-sources/{source_raw_id}/cover",
+        }
     return {
         "id": it["id"],
         "lang": it.get("lang") or "en",
@@ -420,6 +445,11 @@ def _serialize_item(it: dict) -> dict:
         ),
         "duration_seconds": it.get("duration_seconds"),
         "file_size": it.get("file_size"),
+        "source_raw_id": source_raw_id,
+        "source_ref_id": _int_or_none(it.get("source_ref_id")),
+        "bulk_task_id": it.get("bulk_task_id") or "",
+        "auto_translated": bool(it.get("auto_translated")),
+        "source_raw": source_raw_payload,
         "created_at": it["created_at"].isoformat() if it.get("created_at") else None,
     }
 
@@ -436,6 +466,7 @@ def _serialize_raw_source(row: dict) -> dict:
         "width": row.get("width"),
         "height": row.get("height"),
         "sort_order": row.get("sort_order") or 0,
+        "translations": row.get("translations") or {},
         "video_url": f"/medias/raw-sources/{row['id']}/video",
         "cover_url": f"/medias/raw-sources/{row['id']}/cover",
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -595,11 +626,24 @@ def api_get_product(pid: int):
     if not _can_access_product(p):
         abort(404)
     covers = medias.get_product_covers(pid)
+    items = medias.list_items(pid)
+    needs_raw_sources = any(
+        _int_or_none(item.get("source_raw_id"))
+        or (item.get("auto_translated") and _int_or_none(item.get("source_ref_id")))
+        for item in items
+    )
+    raw_sources_by_id = {}
+    if needs_raw_sources:
+        raw_sources_by_id = {
+            int(row["id"]): row
+            for row in medias.list_raw_sources(pid)
+            if row.get("id") is not None
+        }
     return jsonify({
         "product": _serialize_product(p, None, covers=covers),
         "covers": covers,
         "copywritings": medias.list_copywritings(pid),
-        "items": [_serialize_item(i) for i in medias.list_items(pid)],
+        "items": [_serialize_item(i, raw_sources_by_id) for i in items],
     })
 
 
@@ -716,7 +760,7 @@ def api_product_link_check_create(pid: int):
     task_dir.mkdir(parents=True, exist_ok=True)
     references = _collect_link_check_reference_images(pid, lang, task_dir)
     if not references:
-        return jsonify({"error": "current language is missing reference images"}), 400
+        return jsonify({"error": "当前语种缺少参考图"}), 400
 
     store.create_link_check(
         task_id,

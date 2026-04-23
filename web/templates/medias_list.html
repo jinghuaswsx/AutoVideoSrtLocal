@@ -496,6 +496,22 @@
   overflow-wrap:anywhere;
   word-break:break-word;
 }
+.oc-vitem .vsource {
+  display:inline-flex;
+  align-items:center;
+  align-self:flex-start;
+  max-width:100%;
+  padding:3px 8px;
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-accent-subtle);
+  color:var(--oc-accent);
+  font-size:11px;
+  line-height:1.4;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .oc-vitem .vtabs { display:flex; gap:var(--oc-sp-1); border-bottom:1px solid var(--oc-border); }
 .oc-vitem .vtab { flex:1; height:28px; background:none; border:none; color:var(--oc-fg-muted); font-size:12px; font-family:inherit; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; transition:color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-vitem .vtab:hover { color:var(--oc-fg); }

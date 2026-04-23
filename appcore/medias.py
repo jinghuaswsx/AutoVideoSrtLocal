@@ -524,6 +524,50 @@ def list_items(product_id: int, lang: str | None = None) -> list[dict]:
     )
 
 
+def list_raw_source_video_translation_statuses(
+    product_id: int,
+    raw_source_ids: list[int] | None = None,
+) -> dict[int, dict[str, dict]]:
+    args: list[object] = [product_id]
+    raw_filter = ""
+    normalized_ids = [int(raw_id) for raw_id in (raw_source_ids or []) if int(raw_id)]
+    if normalized_ids:
+        placeholders = ",".join(["%s"] * len(normalized_ids))
+        raw_filter = f" AND source_raw_id IN ({placeholders})"
+        args.extend(normalized_ids)
+
+    rows = query(
+        "SELECT id, source_raw_id, lang, filename, display_name, "
+        "       auto_translated, bulk_task_id, created_at "
+        "FROM media_items "
+        "WHERE product_id=%s AND source_raw_id IS NOT NULL "
+        "  AND deleted_at IS NULL"
+        f"{raw_filter} "
+        "ORDER BY source_raw_id ASC, lang ASC, id DESC",
+        tuple(args),
+    )
+    status_by_raw: dict[int, dict[str, dict]] = {}
+    for row in rows:
+        raw_id = int(row.get("source_raw_id") or 0)
+        lang = str(row.get("lang") or "").strip().lower()
+        if not raw_id or not lang or lang == "en":
+            continue
+        raw_status = status_by_raw.setdefault(raw_id, {})
+        if lang in raw_status:
+            continue
+        created_at = row.get("created_at")
+        raw_status[lang] = {
+            "status": "translated",
+            "item_id": int(row.get("id") or 0),
+            "filename": row.get("filename") or "",
+            "display_name": row.get("display_name") or row.get("filename") or "",
+            "auto_translated": bool(row.get("auto_translated")),
+            "bulk_task_id": row.get("bulk_task_id") or "",
+            "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        }
+    return status_by_raw
+
+
 def get_item(item_id: int) -> dict | None:
     return query_one(
         "SELECT * FROM media_items WHERE id=%s AND deleted_at IS NULL",
@@ -971,12 +1015,22 @@ def get_raw_source(rid: int) -> dict | None:
 
 
 def list_raw_sources(product_id: int) -> list[dict]:
-    return query(
+    rows = query(
         "SELECT * FROM media_raw_sources "
         "WHERE product_id=%s AND deleted_at IS NULL "
         "ORDER BY sort_order ASC, id ASC",
         (product_id,),
     )
+    if not rows:
+        return []
+    raw_ids = [int(row["id"]) for row in rows]
+    translations = list_raw_source_video_translation_statuses(product_id, raw_ids)
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["translations"] = translations.get(int(row["id"]), {})
+        result.append(item)
+    return result
 
 
 def upsert_raw_source_translation(
