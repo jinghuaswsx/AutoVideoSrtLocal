@@ -943,8 +943,15 @@ def api_item_bootstrap(pid: int):
     filename = os.path.basename((body.get("filename") or "").strip())
     if not filename:
         return jsonify({"error": "filename required"}), 400
+    skip_validation = bool(body.get("skip_validation"))
+    if skip_validation:
+        effective_lang = resolve_material_filename_lang(filename, lang, _language_name_map())
+    else:
+        validation, error_response = _validate_material_filename_for_product(filename, p, lang)
+        if error_response:
+            return error_response
+        effective_lang = validation.effective_lang
     object_key = tos_clients.build_media_object_key(current_user.id, pid, filename)
-    effective_lang = resolve_material_filename_lang(filename, lang, _language_name_map())
     return jsonify({
         "object_key": object_key,
         "effective_lang": effective_lang,
@@ -971,10 +978,17 @@ def api_item_complete(pid: int):
     file_size = int(body.get("file_size") or 0)
     if not object_key or not filename:
         return jsonify({"error": "object_key and filename required"}), 400
-    prefix_err = _check_filename_prefix(filename, p)
-    if prefix_err:
-        return jsonify({"error": "filename_invalid", "message": prefix_err}), 400
-    lang = resolve_material_filename_lang(filename, lang, _language_name_map())
+    skip_validation = bool(body.get("skip_validation"))
+    if skip_validation:
+        prefix_err = _check_filename_prefix(filename, p)
+        if prefix_err:
+            return jsonify({"error": "filename_invalid", "message": prefix_err}), 400
+        lang = resolve_material_filename_lang(filename, lang, _language_name_map())
+    else:
+        validation, error_response = _validate_material_filename_for_product(filename, p, lang)
+        if error_response:
+            return error_response
+        lang = validation.effective_lang
     if not _is_media_available(object_key):
         return jsonify({"error": "object not found"}), 400
 
