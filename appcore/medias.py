@@ -319,6 +319,15 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
 
 def resolve_shopify_product_id(product_id: int) -> str | None:
     try:
+        product = get_product(product_id) or {}
+    except Exception:
+        product = {}
+
+    direct_value = str(product.get("shopifyid") or "").strip()
+    if direct_value:
+        return direct_value
+
+    try:
         row = query_one(
             "SELECT product_id FROM dianxiaomi_rankings "
             "WHERE media_product_id=%s AND product_id IS NOT NULL AND product_id<>'' "
