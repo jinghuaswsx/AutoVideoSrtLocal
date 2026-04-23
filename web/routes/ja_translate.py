@@ -103,6 +103,22 @@ def _query_viewable_project(
     )
 
 
+def _project_row_from_task(task: dict) -> dict:
+    return {
+        "id": task.get("id", ""),
+        "user_id": task.get("_user_id"),
+        "type": task.get("type", ""),
+        "original_filename": task.get("original_filename", ""),
+        "display_name": task.get("display_name", ""),
+        "thumbnail_path": task.get("thumbnail_path", ""),
+        "status": task.get("status", ""),
+        "state_json": json.dumps(task, ensure_ascii=False, default=str),
+        "created_at": task.get("created_at"),
+        "expires_at": task.get("expires_at"),
+        "deleted_at": task.get("deleted_at"),
+    }
+
+
 def _list_scope() -> tuple[str, tuple]:
     if _is_admin_user():
         return "type = 'ja_translate' AND deleted_at IS NULL", ()
@@ -196,14 +212,19 @@ def index():
 def detail(task_id: str):
     recover_project_if_needed(task_id, "ja_translate")
     row = _query_viewable_project(task_id)
-    if not row:
-        abort(404)
     state = {}
-    if row.get("state_json"):
+    if row and row.get("state_json"):
         try:
             state = json.loads(row["state_json"])
         except Exception:
             pass
+    if not row:
+        task = _get_viewable_task(task_id)
+        if task and task.get("type") == "ja_translate":
+            row = _project_row_from_task(task)
+            state = dict(task)
+    if not row:
+        abort(404)
     return render_template(
         "ja_translate_detail.html",
         project=row,

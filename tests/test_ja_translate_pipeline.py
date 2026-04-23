@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from pipeline import ja_translate
 
 
 def test_count_visible_japanese_chars_ignores_spacing():
-    assert ja_translate.count_visible_japanese_chars("帽子 収納に\n便利です。") == 10
+    assert ja_translate.count_visible_japanese_chars("帽子 収納\n便利です。") == 9
 
 
 def test_compute_ja_char_range_uses_measured_cps(monkeypatch):
@@ -47,7 +49,7 @@ def test_build_ja_tts_script_chunks_do_not_start_with_particles():
     assert script["blocks"][0]["text"] == "帽子をまとめて収納できて、ほこりから守れます。"
     assert script["subtitle_chunks"]
     assert all(
-        not chunk["text"].startswith(("は", "が", "を", "に", "で", "と", "の", "も"))
+        not chunk["text"].startswith(("が", "で", "を", "に", "へ", "と", "は", "も"))
         for chunk in script["subtitle_chunks"]
     )
 
@@ -78,13 +80,51 @@ def test_build_rewrite_sentence_inputs_distributes_total_chars():
 
 def test_split_ja_subtitle_chunks_respects_length_and_particle_boundary():
     chunks = ja_translate.split_ja_subtitle_chunks(
-        "帽子をまとめて収納できてほこりから守れて省スペースです。",
+        "帽子をまとめて収納できて、ほこりから守れて省スペースです。",
         max_chars=12,
     )
 
     assert chunks
     assert all(ja_translate.count_visible_japanese_chars(chunk) <= 14 for chunk in chunks)
     assert all(
-        not chunk.startswith(("は", "が", "を", "に", "で", "と", "の", "も"))
+        not chunk.startswith(("が", "で", "を", "に", "へ", "と", "は", "も"))
         for chunk in chunks
     )
+
+
+def test_generate_ja_localized_translation_makes_usage_json_safe(monkeypatch):
+    monkeypatch.setattr(ja_translate.speech_rate_model, "get_rate", lambda voice_id, language: 5.0)
+
+    def fake_invoke_chat(*args, **kwargs):
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "text": "帽子をまとめて収納できます。",
+                        "est_chars": 14,
+                        "notes": "",
+                    }
+                ]
+            },
+            "usage": {
+                "prompt_tokens": Decimal("1483"),
+                "completion_tokens": Decimal("366"),
+                "nested": {"cost": Decimal("0.1234")},
+            },
+        }
+
+    monkeypatch.setattr(ja_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    result = ja_translate.generate_ja_localized_translation(
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Store your caps neatly."}],
+        voice_id="voice-ja",
+        user_id=1,
+        project_id="task-ja",
+    )
+
+    assert result["_usage"] == {
+        "prompt_tokens": 1483,
+        "completion_tokens": 366,
+        "nested": {"cost": 0.1234},
+    }

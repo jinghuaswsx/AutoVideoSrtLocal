@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from decimal import Decimal
 from typing import Any
 
 from appcore import llm_client
@@ -147,6 +148,18 @@ def _extract_response_json(response: dict) -> dict:
         if isinstance(text, str) and text.strip():
             return json.loads(text)
     raise ValueError("ja_translate requires a JSON response")
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dict]) -> list[dict]:
@@ -324,7 +337,7 @@ def generate_ja_localized_translation(
             return {
                 "full_text": "".join(sentence["text"] for sentence in sentences),
                 "sentences": sentences,
-                "_usage": response.get("usage") or {},
+                "_usage": _json_safe(response.get("usage") or {}),
                 "_messages": messages,
             }
         except Exception as exc:  # pragma: no cover - defensive retry around provider JSON issues
@@ -370,7 +383,7 @@ def rewrite_ja_localized_translation(
     return {
         "full_text": "".join(sentence["text"] for sentence in sentences),
         "sentences": sentences,
-        "_usage": response.get("usage") or {},
+        "_usage": _json_safe(response.get("usage") or {}),
         "_messages": messages,
     }
 

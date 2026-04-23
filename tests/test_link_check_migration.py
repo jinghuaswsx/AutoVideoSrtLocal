@@ -3,7 +3,7 @@ import re
 
 
 SCHEMA_PATH = Path("db/schema.sql")
-MIGRATION_PATH = Path("db/migrations/2026_04_19_add_link_check_project_type.sql")
+MIGRATION_PATH = Path("db/migrations/2026_04_24_add_ja_translate_project_type.sql")
 
 SCHEMA_PROJECTS_TYPE_PATTERN = (
     r"CREATE TABLE IF NOT EXISTS projects\s*\(.*?\btype\s+ENUM\((.*?)\)\s+"
@@ -29,6 +29,7 @@ EXPECTED_PROJECT_TYPES = {
     "bulk_translate",
     "copywriting_translate",
     "link_check",
+    "ja_translate",
 }
 
 
@@ -68,12 +69,12 @@ def test_assert_project_types_match_reports_missing_and_extra_values():
     assert "legacy_type" in message
 
 
-def test_schema_sql_projects_type_includes_link_check_and_current_superset():
+def test_schema_sql_projects_type_includes_current_superset():
     enum_values = _read_project_type_enum(SCHEMA_PATH, SCHEMA_PROJECTS_TYPE_PATTERN)
     _assert_project_types_match(enum_values, "db/schema.sql")
 
 
-def test_link_check_migration_exists_and_keeps_full_projects_type_superset():
+def test_latest_project_type_migration_exists_and_keeps_full_projects_type_superset():
     assert MIGRATION_PATH.exists(), f"缺少 migration 文件: {MIGRATION_PATH}"
 
     enum_values = _read_project_type_enum(
@@ -83,7 +84,7 @@ def test_link_check_migration_exists_and_keeps_full_projects_type_superset():
     _assert_project_types_match(enum_values, str(MIGRATION_PATH))
 
 
-def test_schema_sql_and_link_check_migration_keep_identical_projects_type_sets():
+def test_schema_sql_and_latest_project_type_migration_keep_identical_projects_type_sets():
     schema_enum_values = _read_project_type_enum(
         SCHEMA_PATH,
         SCHEMA_PROJECTS_TYPE_PATTERN,

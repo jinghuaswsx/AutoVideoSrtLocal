@@ -84,3 +84,33 @@ def test_layout_contains_ja_translate_menu_entry():
 
     assert 'href="/ja-translate"' in template
     assert "视频翻译（日语）" in template
+
+
+def test_ja_translate_detail_falls_back_to_in_memory_task_when_db_type_is_stale(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr("web.routes.ja_translate.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.ja_translate.db_query_one", lambda *args, **kwargs: None)
+
+    from web import store
+
+    task = store.create(
+        "ja-detail-fallback",
+        "/tmp/demo.mp4",
+        "/tmp/ja-detail-fallback",
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        task["id"],
+        type="ja_translate",
+        display_name="Demo JA",
+        target_lang="ja",
+        source_language="en",
+    )
+
+    response = authed_client_no_db.get(f"/ja-translate/{task['id']}")
+
+    assert response.status_code == 200
+    assert "Demo JA".encode("utf-8") in response.data
