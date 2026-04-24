@@ -73,6 +73,7 @@ from web.routes.image_translate import bp as image_translate_bp
 from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
+from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 
 log = logging.getLogger(__name__)
 
@@ -190,6 +191,24 @@ def create_app() -> Flask:
     csrf.exempt(link_check_bp)
     app.register_blueprint(order_analytics_bp)
     csrf.exempt(order_analytics_bp)
+    app.register_blueprint(scheduled_tasks_bp)
+
+    @app.context_processor
+    def inject_scheduled_task_failure_alert():
+        from flask_login import current_user
+        if (
+            not current_user.is_authenticated
+            or getattr(current_user, "role", None) != "admin"
+            or getattr(current_user, "username", None) != "admin"
+        ):
+            return {"scheduled_task_failure_alert": None}
+        try:
+            from appcore.scheduled_tasks import latest_failure_alert
+            return {"scheduled_task_failure_alert": latest_failure_alert()}
+        except Exception:
+            log.warning("scheduled task alert injection failed", exc_info=True)
+            return {"scheduled_task_failure_alert": None}
+
     # 服务启动只做状态标记，不启动任何任务 runner，避免重启风暴。
     _run_startup_recovery()
 

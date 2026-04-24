@@ -335,3 +335,53 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_shopifyid_dia
 4. 回终端按回车
 5. 等待同步完成
 6. 看终端里的“新回填”数量和日志路径
+## 17. Ubuntu Server 共享浏览器模式
+
+服务端部署后，Shopify ID 回填不再依赖 Windows 本机 Chrome。脚本可以直接连接服务器上的共享 Chromium：
+
+```bash
+python tools/shopifyid_dianxiaomi_sync.py \
+  --skip-login-prompt \
+  --browser-mode server-cdp \
+  --browser-cdp-url http://127.0.0.1:9222 \
+  --db-mode local
+```
+
+共享浏览器由 `autovideosrt-browser.service` 常驻，登录态保存在：
+
+```text
+/data/autovideosrt/browser/profiles/shared
+```
+
+每天 12:10 的服务端定时任务由 `autovideosrt-shopifyid-sync.timer` 触发。该任务使用 `/data/autovideosrt/browser/runtime/automation.lock` 加锁，避免后续多个依赖浏览器登录态的模块同时操作同一个 Chromium。
+
+## 18. 2026-04-25 生产运行与失败告警更新
+
+当前生产环境采用 Ubuntu Server 共享浏览器运行时执行本功能，不再依赖人工每天打开 Windows 浏览器：
+
+- 浏览器服务：`autovideosrt-browser.service`
+- 定时同步任务：`autovideosrt-shopifyid-sync.timer`
+- 执行时间：每天 `12:10`
+- 执行脚本：`/opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py`
+- 数据库：默认生产库 `auto_video`
+
+每日任务的执行顺序固定为：
+
+1. 连接服务器上已登录店小秘的 Chrome CDP 会话。
+2. 打开 `https://www.dianxiaomi.com/web/shopifyProduct/online`。
+3. 在店小秘页面先点击“同步产品”，并选择“同步全部产品”。
+4. 只有当全部店铺同步完成且没有店铺级失败时，才继续抓取 Shopify 在线商品列表。
+5. 按 `handle == media_products.product_code` 精确匹配并回填 `shopifyid`。
+6. 将本次运行结果写入 `scheduled_task_runs` 表。
+
+失败告警规则：
+
+- 每次定时任务都会写入一条运行结果，状态为 `running`、`success` 或 `failed`。
+- 如果最新一次 `shopifyid` 任务失败，网站顶部会对 `username=admin` 且 `role=admin` 的单用户显示红色紧急横幅。
+- 横幅可以点击关闭；关闭只在当前浏览器本地生效。下一次新的失败记录会再次弹出。
+- 左侧菜单新增“定时任务”，仅 `admin` 单用户可见；当前功能放在“Shopify ID 获取”TAB。
+
+当前已知失败示例：
+
+- 店小秘“同步全部产品”阶段如果返回某个店铺授权过期，例如 `SmartGearX`，脚本会中止并记录失败。
+- 这是故意设计：如果店小秘产品库未能完整同步，就不继续回填 Shopify ID，避免用过期数据污染素材库。

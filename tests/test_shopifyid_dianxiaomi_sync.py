@@ -43,6 +43,22 @@ def test_build_payload_uses_fixed_online_filters():
     }
 
 
+def test_auto_runtime_modes_use_windows_local_browser_and_ssh(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(mod.os, "name", "nt", raising=False)
+
+    assert mod.resolve_browser_mode("auto") == "local-chrome"
+    assert mod.resolve_db_mode("auto") == "ssh"
+
+
+def test_auto_runtime_modes_use_server_browser_and_local_mysql_on_linux(monkeypatch):
+    mod = _load_module()
+    monkeypatch.setattr(mod.os, "name", "posix", raising=False)
+
+    assert mod.resolve_browser_mode("auto") == "server-cdp"
+    assert mod.resolve_db_mode("auto") == "local"
+
+
 def test_extract_page_summary_reads_total_size_fields():
     mod = _load_module()
 
@@ -318,3 +334,45 @@ def test_run_sync_applies_updates_and_writes_report(tmp_path):
     assert payload["unmatched_remote"] == [
         {"product_code": "demo-only", "shopifyid": "777", "status": "unmatched_remote"}
     ]
+
+
+def test_scheduled_task_table_sql_contains_run_tracking_fields():
+    mod = _load_module()
+
+    sql = mod.build_scheduled_task_runs_table_sql()
+
+    assert "CREATE TABLE IF NOT EXISTS scheduled_task_runs" in sql
+    assert "task_code VARCHAR(64)" in sql
+    assert "status ENUM('running', 'success', 'failed')" in sql
+    assert "summary_json JSON" in sql
+    assert "idx_scheduled_task_runs_task_started" in sql
+
+
+def test_sql_quote_escapes_single_quotes_and_null():
+    mod = _load_module()
+
+    assert mod._sql_quote(None) == "NULL"
+    assert mod._sql_quote("SmartGearX's token") == "'SmartGearX''s token'"
+
+
+def test_product_sync_success_allows_zero_failed_products():
+    mod = _load_module()
+
+    mod._assert_shopify_product_sync_success(
+        "状态：已完成! 详情：店铺《Newjoyloo》同步完成，同步成功12个产品，同步失败0个"
+    )
+
+
+def test_product_sync_success_rejects_store_level_failure():
+    mod = _load_module()
+
+    with pytest.raises(RuntimeError, match="未完全成功"):
+        mod._assert_shopify_product_sync_success(
+            "状态：已完成! 详情：店铺《SmartGearX》同步失败，原因：店铺授权信息已过期！"
+        )
+
+
+def test_module_exposes_main_entrypoint_for_systemd_timer():
+    mod = _load_module()
+
+    assert callable(getattr(mod, "main", None))

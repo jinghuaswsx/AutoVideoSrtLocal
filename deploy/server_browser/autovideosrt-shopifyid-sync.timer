@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AutoVideoSrt Shopify ID Dianxiaomi sync every day
+
+[Timer]
+OnCalendar=*-*-* 12:10:00
+Persistent=true
+Unit=autovideosrt-shopifyid-sync.service
+
+[Install]
+WantedBy=timers.target
+

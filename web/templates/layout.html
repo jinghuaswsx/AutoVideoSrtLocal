@@ -329,6 +329,45 @@
       transition: all 0.2s;
     }
     .theme-btn:hover { background: var(--bg-card); border-color: var(--primary-color); }
+    .scheduled-failure-alert {
+      margin: 14px 28px 0;
+      border: 1px solid #ef4444;
+      background: #fef2f2;
+      color: #991b1b;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 10px 24px rgba(185, 28, 28, .12);
+    }
+    .scheduled-failure-alert[hidden] { display: none; }
+    .scheduled-failure-alert-main { flex: 1; min-width: 0; line-height: 1.5; }
+    .scheduled-failure-alert-title { font-weight: 800; margin-right: 8px; }
+    .scheduled-failure-alert-text { font-size: 13px; }
+    .scheduled-failure-alert-link {
+      color: #b91c1c;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+      border: 1px solid #fecaca;
+      border-radius: 7px;
+      padding: 6px 9px;
+      background: #fff;
+    }
+    .scheduled-failure-alert-close {
+      border: none;
+      background: transparent;
+      color: #991b1b;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+    }
+    .scheduled-failure-alert-close:hover { background: #fee2e2; }
     {% block extra_style %}{% endblock %}
   </style>
   {% block extra_head %}{% endblock %}
@@ -412,6 +451,11 @@
         <span class="nav-icon">📊</span> 数据分析
       </a>
       {% endif %}
+      {% if current_user.role == 'admin' and current_user.username == 'admin' %}
+      <a href="{{ url_for('scheduled_tasks.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/scheduled-tasks') %}class="active"{% endif %}>
+        <span class="nav-icon">⏱</span> 定时任务
+      </a>
+      {% endif %}
       <details class="sidebar-group sidebar-lab-group">
         <summary {% if lab_active %}class="active"{% endif %}>
           <span class="nav-icon">🧪</span>
@@ -478,6 +522,18 @@
       </div>
       <a href="{{ url_for('auth.logout') }}" class="topbar-logout-btn">退出登录</a>
     </header>
+    {% if scheduled_task_failure_alert %}
+    <div class="scheduled-failure-alert" data-scheduled-alert-id="{{ scheduled_task_failure_alert.id }}">
+      <div class="scheduled-failure-alert-main">
+        <span class="scheduled-failure-alert-title">定时任务失败：{{ scheduled_task_failure_alert.task_name }}</span>
+        <span class="scheduled-failure-alert-text">
+          最近一次执行 {{ scheduled_task_failure_alert.started_at }} 失败。{{ scheduled_task_failure_alert.error_message or "请进入定时任务查看详情。" }}
+        </span>
+      </div>
+      <a class="scheduled-failure-alert-link" href="{{ url_for('scheduled_tasks.page', tab=scheduled_task_failure_alert.task_code) }}" target="_blank" rel="noopener noreferrer">查看详情</a>
+      <button class="scheduled-failure-alert-close" type="button" data-scheduled-alert-close aria-label="关闭定时任务失败提示">×</button>
+    </div>
+    {% endif %}
     <main class="main-content">
       {% block content %}{% endblock %}
     </main>
@@ -503,6 +559,24 @@
         updateBtnIcon();
       });
     }
+  </script>
+  <script>
+    (function() {
+      var alertBox = document.querySelector('[data-scheduled-alert-id]');
+      if (!alertBox) return;
+      var key = 'scheduled-task-alert-dismissed:' + alertBox.getAttribute('data-scheduled-alert-id');
+      if (localStorage.getItem(key) === '1') {
+        alertBox.hidden = true;
+        return;
+      }
+      var closeBtn = alertBox.querySelector('[data-scheduled-alert-close]');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function() {
+          localStorage.setItem(key, '1');
+          alertBox.hidden = true;
+        });
+      }
+    })();
   </script>
   <script>
     // 全局 CSRF token：自动附加到所有 fetch POST/PUT/PATCH/DELETE 请求

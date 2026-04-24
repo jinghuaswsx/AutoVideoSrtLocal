@@ -1,0 +1,115 @@
+{% extends "layout.html" %}
+
+{% block title %}定时任务{% endblock %}
+{% block page_title %}定时任务{% endblock %}
+
+{% block extra_style %}
+.scheduled-page { max-width: 1280px; margin: 0 auto; }
+.scheduled-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:18px; }
+.scheduled-title { font-size:24px; font-weight:750; color:#0f172a; margin-bottom:6px; }
+.scheduled-desc { color:#64748b; font-size:14px; line-height:1.6; max-width:720px; }
+.scheduled-tabs { display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid #dbe4ef; }
+.scheduled-tab { text-decoration:none; color:#475569; font-weight:650; padding:10px 14px; border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; }
+.scheduled-tab.active { color:#0f5ea8; background:#fff; border-color:#dbe4ef; }
+.scheduled-card { background:#fff; border:1px solid #dbe4ef; border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.04); overflow:hidden; }
+.scheduled-summary { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:1px; background:#dbe4ef; margin-bottom:16px; border:1px solid #dbe4ef; border-radius:10px; overflow:hidden; }
+.scheduled-metric { background:#fff; padding:14px 16px; }
+.scheduled-metric-label { color:#64748b; font-size:12px; margin-bottom:6px; }
+.scheduled-metric-value { color:#0f172a; font-size:18px; font-weight:750; font-family:ui-monospace, SFMono-Regular, Consolas, monospace; }
+.scheduled-table { width:100%; border-collapse:collapse; font-size:13px; }
+.scheduled-table th { background:#f8fafc; color:#475569; text-align:left; font-weight:700; padding:11px 12px; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+.scheduled-table td { padding:11px 12px; border-bottom:1px solid #eef2f7; color:#334155; vertical-align:top; }
+.scheduled-table tr:last-child td { border-bottom:none; }
+.scheduled-status { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; font-weight:700; font-size:12px; white-space:nowrap; }
+.scheduled-status.success { background:#dcfce7; color:#166534; }
+.scheduled-status.failed { background:#fee2e2; color:#b91c1c; }
+.scheduled-status.running { background:#dbeafe; color:#1d4ed8; }
+.scheduled-error { color:#b91c1c; max-width:360px; line-height:1.45; white-space:pre-wrap; }
+.scheduled-log-link { color:#0f5ea8; text-decoration:none; font-weight:650; }
+.scheduled-empty { padding:38px 18px; text-align:center; color:#64748b; }
+@media (max-width: 980px) {
+  .scheduled-summary { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .scheduled-table-wrap { overflow-x:auto; }
+}
+{% endblock %}
+
+{% block content %}
+<section class="scheduled-page">
+  <div class="scheduled-head">
+    <div>
+      <h1 class="scheduled-title">定时任务</h1>
+      <p class="scheduled-desc">{{ task.description }} 当前计划：{{ task.schedule }}。这里保留最近执行结果，失败时会在网站顶部显示红色紧急提示。</p>
+    </div>
+  </div>
+
+  <nav class="scheduled-tabs" aria-label="定时任务类型">
+    {% for item in tasks %}
+      <a class="scheduled-tab{% if item.code == active_tab %} active{% endif %}" href="{{ url_for('scheduled_tasks.page', tab=item.code) }}">{{ item.name }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if latest_run %}
+  <div class="scheduled-summary">
+    <div class="scheduled-metric">
+      <div class="scheduled-metric-label">最近状态</div>
+      <div class="scheduled-metric-value">{{ {"success":"成功","failed":"失败","running":"运行中"}.get(latest_run.status, latest_run.status) }}</div>
+    </div>
+    <div class="scheduled-metric">
+      <div class="scheduled-metric-label">最近开始</div>
+      <div class="scheduled-metric-value">{{ latest_run.started_at }}</div>
+    </div>
+    <div class="scheduled-metric">
+      <div class="scheduled-metric-label">新回填</div>
+      <div class="scheduled-metric-value">{{ latest_run.summary.updated if latest_run.summary else "-" }}</div>
+    </div>
+    <div class="scheduled-metric">
+      <div class="scheduled-metric-label">抓取商品</div>
+      <div class="scheduled-metric-value">{{ latest_run.summary.fetched if latest_run.summary else "-" }}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="scheduled-card">
+    {% if runs %}
+    <div class="scheduled-table-wrap">
+      <table class="scheduled-table">
+        <thead>
+          <tr>
+            <th>开始时间</th>
+            <th>状态</th>
+            <th>耗时</th>
+            <th>在线总数</th>
+            <th>抓取</th>
+            <th>命中</th>
+            <th>新回填</th>
+            <th>已一致</th>
+            <th>冲突</th>
+            <th>错误</th>
+            <th>日志</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for run in runs %}
+          <tr>
+            <td>{{ run.started_at }}</td>
+            <td><span class="scheduled-status {{ run.status }}">{{ {"success":"成功","failed":"失败","running":"运行中"}.get(run.status, run.status) }}</span></td>
+            <td>{{ run.duration_seconds if run.duration_seconds is not none else "-" }}{% if run.duration_seconds is not none %}s{% endif %}</td>
+            <td>{{ run.summary.total_size if run.summary else "-" }}</td>
+            <td>{{ run.summary.fetched if run.summary else "-" }}</td>
+            <td>{{ run.summary.matched if run.summary else "-" }}</td>
+            <td>{{ run.summary.updated if run.summary else "-" }}</td>
+            <td>{{ run.summary.unchanged if run.summary else "-" }}</td>
+            <td>{{ run.summary.conflict if run.summary else "-" }}</td>
+            <td>{% if run.error_message %}<div class="scheduled-error">{{ run.error_message }}</div>{% else %}-{% endif %}</td>
+            <td>{% if run.output_file %}<span class="scheduled-log-link">{{ run.output_file }}</span>{% else %}-{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="scheduled-empty">还没有执行记录。下一次定时任务跑完后会自动出现在这里。</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

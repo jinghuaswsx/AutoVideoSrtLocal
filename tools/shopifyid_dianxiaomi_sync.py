@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from collections import defaultdict
@@ -27,6 +28,11 @@ SSH_KEY_PATH = Path(r"C:\Users\admin\.ssh\CC.pem")
 REMOTE_MEDIA_TABLE = "media_products"
 CDP_PORT = 9222
 CDP_URL = f"http://127.0.0.1:{CDP_PORT}"
+SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9222"
+BROWSER_MODES = ("auto", "local-chrome", "server-cdp")
+DB_MODES = ("auto", "ssh", "local")
+TASK_CODE = "shopifyid"
+TASK_NAME = "Shopify ID 获取"
 REMOTE_ENVS = {
     "prod": {
         "db_name": "auto_video",
@@ -362,12 +368,24 @@ def _stop_profile_chrome_processes() -> None:
         time.sleep(0.5)
 
 
-def _wait_for_cdp_ready() -> None:
-    deadline = time.time() + 15
+def resolve_browser_mode(mode: str) -> str:
+    if mode != "auto":
+        return mode
+    return "local-chrome" if os.name == "nt" else "server-cdp"
+
+
+def resolve_db_mode(mode: str) -> str:
+    if mode != "auto":
+        return mode
+    return "ssh" if os.name == "nt" else "local"
+
+
+def _wait_for_cdp_ready(cdp_url: str = CDP_URL, *, timeout_s: float = 15) -> None:
+    deadline = time.time() + timeout_s
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            with urlopen(f"{CDP_URL}/json/version", timeout=1) as response:
+            with urlopen(f"{cdp_url}/json/version", timeout=1) as response:
                 if response.status == 200:
                     return
         except (URLError, OSError, TimeoutError) as exc:
@@ -376,7 +394,18 @@ def _wait_for_cdp_ready() -> None:
     raise RuntimeError(f"Chrome 调试端口未就绪：{last_error}")
 
 
-def _launch_browser_context(playwright):
+def _connect_existing_browser_context(playwright, cdp_url: str):
+    _wait_for_cdp_ready(cdp_url, timeout_s=30)
+    browser = playwright.chromium.connect_over_cdp(cdp_url)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if browser.contexts:
+            return browser, browser.contexts[0]
+        time.sleep(0.2)
+    raise RuntimeError("Connected to shared Chrome, but no browser context is available.")
+
+
+def _launch_local_browser_context(playwright):
     CHROME_USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
     chrome_path = _find_chrome_executable()
     if not chrome_path:
@@ -417,6 +446,17 @@ def _launch_browser_context(playwright):
         ) from exc
 
 
+def _open_browser_context(playwright, *, browser_mode: str, cdp_url: str):
+    resolved_mode = resolve_browser_mode(browser_mode)
+    if resolved_mode == "server-cdp":
+        browser, context = _connect_existing_browser_context(playwright, cdp_url)
+        return None, browser, context, resolved_mode
+    if resolved_mode == "local-chrome":
+        browser_process, browser, context = _launch_local_browser_context(playwright)
+        return browser_process, browser, context, resolved_mode
+    raise ValueError(f"Unsupported browser mode: {browser_mode}")
+
+
 def _fetch_page_via_browser(page, page_no: int) -> dict[str, Any]:
     result = page.evaluate(
         """
@@ -451,6 +491,64 @@ def _fetch_page_via_browser(page, page_no: int) -> dict[str, Any]:
     return payload
 
 
+def _extract_shopify_product_sync_text(page) -> str:
+    try:
+        body_text = page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        return ""
+    marker = "从shopify同步产品"
+    index = body_text.find(marker)
+    if index < 0:
+        return ""
+    return body_text[index:index + 1200].strip()
+
+
+def _close_shopify_product_sync_dialog(page) -> None:
+    text = _extract_shopify_product_sync_text(page)
+    if not text:
+        return
+    close = page.get_by_text("关闭", exact=True)
+    count = close.count()
+    if count <= 0:
+        return
+    try:
+        close.nth(count - 1).click(timeout=1500)
+        page.wait_for_timeout(400)
+    except Exception:
+        return
+
+
+def _assert_shopify_product_sync_success(detail_text: str) -> None:
+    failure_markers = ("同步失败，", "同步失败,")
+    if any(marker in detail_text for marker in failure_markers) or "原因：" in detail_text:
+        raise RuntimeError(f"店小秘同步全部产品未完全成功：{detail_text}")
+
+
+def _sync_all_shopify_products(page, *, timeout_s: int = 180) -> dict[str, str]:
+    _close_shopify_product_sync_dialog(page)
+    button = page.locator("button").filter(has_text="同步产品")
+    if button.count() != 1:
+        raise RuntimeError("未找到唯一的店小秘“同步产品”按钮")
+    button.click()
+    option = page.get_by_text("同步全部产品", exact=True)
+    option.wait_for(state="visible", timeout=5000)
+    option.click()
+
+    deadline = time.time() + timeout_s
+    last_text = ""
+    while time.time() < deadline:
+        detail_text = _extract_shopify_product_sync_text(page)
+        if detail_text:
+            last_text = detail_text
+            if "状态：已完成" in detail_text or "状态:已完成" in detail_text:
+                _assert_shopify_product_sync_success(detail_text)
+                return {"status": "completed", "detail": detail_text}
+            if "状态：失败" in detail_text or "状态:失败" in detail_text:
+                raise RuntimeError(f"店小秘同步全部产品失败：{detail_text}")
+        page.wait_for_timeout(2000)
+    raise RuntimeError(f"等待店小秘同步全部产品超时：{last_text or '未出现同步状态弹窗'}")
+
+
 def _run_remote_mysql(sql: str, db_name: str) -> str:
     if not SSH_KEY_PATH.exists():
         raise RuntimeError(f"SSH key 不存在：{SSH_KEY_PATH}")
@@ -481,24 +579,122 @@ def _run_remote_mysql(sql: str, db_name: str) -> str:
     return completed.stdout
 
 
-def _ensure_remote_shopifyid_column(db_name: str) -> None:
-    count_text = _run_remote_mysql(build_remote_column_exists_sql(db_name), db_name).strip()
+def _run_local_mysql(sql: str, db_name: str) -> str:
+    command = ["mysql", "-N", "-B", db_name]
+    completed = subprocess.run(
+        command,
+        input=sql,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(f"Local MySQL execution failed: {stderr}")
+    return completed.stdout
+
+
+def _run_mysql(sql: str, db_name: str, *, db_mode: str) -> str:
+    resolved_mode = resolve_db_mode(db_mode)
+    if resolved_mode == "local":
+        return _run_local_mysql(sql, db_name)
+    if resolved_mode == "ssh":
+        return _run_remote_mysql(sql, db_name)
+    raise ValueError(f"Unsupported db mode: {db_mode}")
+
+
+def _sql_quote(value: object | None) -> str:
+    if value is None:
+        return "NULL"
+    text = str(value)
+    return "'" + text.replace("\\", "\\\\").replace("'", "''") + "'"
+
+
+def build_scheduled_task_runs_table_sql() -> str:
+    return (
+        "CREATE TABLE IF NOT EXISTS scheduled_task_runs ("
+        "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+        "task_code VARCHAR(64) NOT NULL,"
+        "task_name VARCHAR(120) NOT NULL,"
+        "status ENUM('running', 'success', 'failed') NOT NULL DEFAULT 'running',"
+        "scheduled_for DATETIME NULL,"
+        "started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "finished_at DATETIME NULL,"
+        "duration_seconds INT UNSIGNED NULL,"
+        "summary_json JSON NULL,"
+        "error_message MEDIUMTEXT NULL,"
+        "output_file VARCHAR(512) NULL,"
+        "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+        "KEY idx_scheduled_task_runs_task_started (task_code, started_at),"
+        "KEY idx_scheduled_task_runs_status_started (status, started_at)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
+    )
+
+
+def _ensure_scheduled_task_runs_table(db_name: str, *, db_mode: str) -> None:
+    _run_mysql(build_scheduled_task_runs_table_sql(), db_name, db_mode=db_mode)
+
+
+def _start_scheduled_task_run(db_name: str, *, db_mode: str) -> int:
+    _ensure_scheduled_task_runs_table(db_name, db_mode=db_mode)
+    sql = (
+        "INSERT INTO scheduled_task_runs (task_code, task_name, status, started_at) "
+        f"VALUES ({_sql_quote(TASK_CODE)}, {_sql_quote(TASK_NAME)}, 'running', NOW());\n"
+        "SELECT LAST_INSERT_ID();\n"
+    )
+    output = _run_mysql(sql, db_name, db_mode=db_mode).strip()
+    for line in reversed(output.splitlines()):
+        text = line.strip()
+        if text.isdigit():
+            return int(text)
+    raise RuntimeError(f"无法读取定时任务运行记录 ID：{output!r}")
+
+
+def _finish_scheduled_task_run(
+    db_name: str,
+    run_id: int,
+    *,
+    db_mode: str,
+    status: str,
+    summary: dict[str, Any] | None = None,
+    error_message: str | None = None,
+    output_file: str | None = None,
+) -> None:
+    summary_sql = _sql_quote(json.dumps(summary, ensure_ascii=False)) if summary is not None else "NULL"
+    sql = (
+        "UPDATE scheduled_task_runs SET "
+        f"status={_sql_quote(status)}, "
+        "finished_at=NOW(), "
+        "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), "
+        f"summary_json={summary_sql}, "
+        f"error_message={_sql_quote(error_message)}, "
+        f"output_file={_sql_quote(output_file)} "
+        f"WHERE id={int(run_id)};\n"
+    )
+    _run_mysql(sql, db_name, db_mode=db_mode)
+
+
+def _ensure_remote_shopifyid_column(db_name: str, *, db_mode: str = "auto") -> None:
+    count_text = _run_mysql(build_remote_column_exists_sql(db_name), db_name, db_mode=db_mode).strip()
     exists = int(count_text or "0") > 0
     if exists:
         return
-    _run_remote_mysql(build_remote_add_column_sql(), db_name)
+    _run_mysql(build_remote_add_column_sql(), db_name, db_mode=db_mode)
 
 
-def _load_remote_local_products(db_name: str) -> list[dict[str, Any]]:
-    output = _run_remote_mysql(build_remote_select_products_sql(), db_name)
+def _load_remote_local_products(db_name: str, *, db_mode: str = "auto") -> list[dict[str, Any]]:
+    output = _run_mysql(build_remote_select_products_sql(), db_name, db_mode=db_mode)
     return parse_remote_products_tsv(output)
 
 
-def _apply_remote_updates(db_name: str, updates: list[dict[str, object]]) -> None:
+def _apply_remote_updates(db_name: str, updates: list[dict[str, object]], *, db_mode: str = "auto") -> None:
     sql = build_remote_batch_update_sql(updates)
     if not sql:
         return
-    _run_remote_mysql(sql, db_name)
+    _run_mysql(sql, db_name, db_mode=db_mode)
 
 
 def _now_text() -> str:
@@ -522,7 +718,7 @@ def _print_report(report: dict[str, Any], *, remote_label: str, db_name: str) ->
     print(f"  结果日志: {report['output_file']}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run_main_impl(argv: list[str] | None = None) -> tuple[int, dict[str, Any], str, str, str]:
     parser = argparse.ArgumentParser(description="从店小秘 Shopify 在线商品库回填正式/测试库 media_products.shopifyid")
     parser.add_argument(
         "--env",
@@ -535,17 +731,44 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="跳过“登录后回车继续”的提示，适合已经确认登录态有效时使用",
     )
+    parser.add_argument(
+        "--browser-mode",
+        choices=BROWSER_MODES,
+        default=os.environ.get("SHOPIFYID_BROWSER_MODE", "auto"),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--browser-cdp-url",
+        default=os.environ.get("SHOPIFYID_BROWSER_CDP_URL", SERVER_BROWSER_CDP_URL),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--db-mode",
+        choices=DB_MODES,
+        default=os.environ.get("SHOPIFYID_DB_MODE", "auto"),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--skip-product-sync",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args(argv)
     remote_config = REMOTE_ENVS[args.env]
     db_name = str(remote_config["db_name"])
     remote_label = str(remote_config["label"])
+    db_mode = resolve_db_mode(args.db_mode)
 
-    _ensure_remote_shopifyid_column(db_name)
+    _ensure_remote_shopifyid_column(db_name, db_mode=db_mode)
 
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser_process, browser, context = _launch_browser_context(playwright)
+        browser_process, browser, context, browser_mode = _open_browser_context(
+            playwright,
+            browser_mode=args.browser_mode,
+            cdp_url=args.browser_cdp_url,
+        )
         try:
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(ONLINE_URL, wait_until="domcontentloaded")
@@ -554,15 +777,32 @@ def main(argv: list[str] | None = None) -> int:
                 input("如果还没登录，请先登录店小秘；登录完成后按回车继续...")
                 page.goto(ONLINE_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
+            product_sync = None
+            if not args.skip_product_sync:
+                print("Starting Dianxiaomi all-product sync before Shopify ID backfill...")
+                product_sync = _sync_all_shopify_products(page)
+                page.goto(ONLINE_URL, wait_until="domcontentloaded")
+                page.wait_for_timeout(1200)
             report = run_sync(
                 fetch_page=lambda page_no: _fetch_page_via_browser(page, page_no),
-                local_products=_load_remote_local_products(db_name),
-                apply_updates=lambda updates: _apply_remote_updates(db_name, updates),
+                local_products=_load_remote_local_products(db_name, db_mode=db_mode),
+                apply_updates=lambda updates: _apply_remote_updates(db_name, updates, db_mode=db_mode),
                 output_dir=OUTPUT_DIR,
             )
+            if product_sync is not None:
+                report["product_sync"] = product_sync
+                report_path = Path(str(report["output_file"]))
+                report_path.write_text(
+                    json.dumps(
+                        {key: value for key, value in report.items() if key != "output_file"},
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
         finally:
             browser.close()
-            if browser_process.poll() is None:
+            if browser_process is not None and browser_process.poll() is None:
                 subprocess.run(
                     ["taskkill", "/PID", str(browser_process.pid), "/T", "/F"],
                     capture_output=True,
@@ -571,7 +811,46 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
     _print_report(report, remote_label=remote_label, db_name=db_name)
-    return 0
+    return 0, report, remote_label, db_name, db_mode
+
+
+def _parse_task_record_args(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--env", choices=sorted(REMOTE_ENVS.keys()), default="prod")
+    parser.add_argument(
+        "--db-mode",
+        choices=DB_MODES,
+        default=os.environ.get("SHOPIFYID_DB_MODE", "auto"),
+    )
+    args, _ = parser.parse_known_args(argv)
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    record_args = _parse_task_record_args(argv)
+    db_name = str(REMOTE_ENVS[record_args.env]["db_name"])
+    db_mode = resolve_db_mode(record_args.db_mode)
+    run_id = _start_scheduled_task_run(db_name, db_mode=db_mode)
+    try:
+        exit_code, report, _remote_label, _db_name, final_db_mode = _run_main_impl(argv)
+    except Exception as exc:
+        _finish_scheduled_task_run(
+            db_name,
+            run_id,
+            db_mode=db_mode,
+            status="failed",
+            error_message=str(exc),
+        )
+        raise
+    _finish_scheduled_task_run(
+        db_name,
+        run_id,
+        db_mode=final_db_mode,
+        status="success",
+        summary=report.get("summary"),
+        output_file=str(report.get("output_file") or ""),
+    )
+    return exit_code
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution entrypoint

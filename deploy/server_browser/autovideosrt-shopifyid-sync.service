@@ -1,0 +1,15 @@
+[Unit]
+Description=AutoVideoSrt Shopify ID Dianxiaomi sync
+Wants=autovideosrt-browser.service
+After=network-online.target autovideosrt-browser.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/etc/default/autovideosrt-browser
+Environment=SHOPIFYID_BROWSER_MODE=server-cdp
+Environment=SHOPIFYID_BROWSER_CDP_URL=http://127.0.0.1:9222
+Environment=SHOPIFYID_DB_MODE=local
+ExecStart=/usr/bin/flock -n /data/autovideosrt/browser/runtime/automation.lock /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt --browser-mode server-cdp --browser-cdp-url http://127.0.0.1:9222 --db-mode local
+

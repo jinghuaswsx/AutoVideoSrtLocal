@@ -1,0 +1,21 @@
+[Unit]
+Description=AutoVideoSrt Shared Browser Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment="PATH=/opt/autovideosrt/venv/bin:/usr/bin:/usr/local/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="APP_DIR=/opt/autovideosrt"
+Environment="VENV_DIR=/opt/autovideosrt/venv"
+Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/autovideosrt/.playwright-browsers"
+EnvironmentFile=-/etc/default/autovideosrt-browser
+ExecStart=/opt/autovideosrt/deploy/server_browser/run_server_browser.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
