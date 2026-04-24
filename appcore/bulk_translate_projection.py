@@ -44,7 +44,19 @@ _IMAGE_TERMINAL_ITEM_STATUSES = {"done", "failed", "error", "cancelled", "interr
 _IMAGE_RUNNING_PROJECT_STATUSES = {"planning", "queued", "dispatching", "running", "syncing_result"}
 
 
-def _list_candidate_rows(user_id: int, *, limit: int = 50) -> list[dict]:
+def _list_candidate_rows(user_id: int | None, *, limit: int = 50) -> list[dict]:
+    if user_id is None:
+        return query(
+            """
+            SELECT id, status, state_json, created_at
+            FROM projects
+            WHERE type = 'bulk_translate'
+              AND deleted_at IS NULL
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
     return query(
         """
         SELECT id, status, state_json, created_at
@@ -59,7 +71,7 @@ def _list_candidate_rows(user_id: int, *, limit: int = 50) -> list[dict]:
     )
 
 
-def list_product_task_ids(user_id: int, product_id: int, *, limit: int = 50) -> list[str]:
+def list_product_task_ids(user_id: int | None, product_id: int, *, limit: int = 50) -> list[str]:
     task_ids: list[str] = []
     for row in _list_candidate_rows(user_id, limit=limit) or []:
         state = _parse_state(row.get("state_json"))
@@ -69,7 +81,7 @@ def list_product_task_ids(user_id: int, product_id: int, *, limit: int = 50) -> 
 
 
 def list_product_tasks(
-    user_id: int,
+    user_id: int | None,
     product_id: int,
     *,
     limit: int = 50,

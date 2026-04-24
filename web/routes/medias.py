@@ -1230,13 +1230,15 @@ def api_product_translation_tasks(pid: int):
     from appcore.bulk_translate_projection import list_product_task_ids, list_product_tasks
     from appcore.bulk_translate_runtime import sync_task_with_children_once
 
-    for task_id in list_product_task_ids(current_user.id, pid):
+    scope_user_id = None if _is_admin() else current_user.id
+
+    for task_id in list_product_task_ids(scope_user_id, pid):
         try:
-            sync_task_with_children_once(task_id, user_id=current_user.id)
+            sync_task_with_children_once(task_id, user_id=scope_user_id)
         except Exception:
             log.warning("bulk translation child sync failed task_id=%s", task_id, exc_info=True)
 
-    return jsonify({"items": list_product_tasks(current_user.id, pid)})
+    return jsonify({"items": list_product_tasks(scope_user_id, pid)})
 
 
 @bp.route("/api/products/<int:pid>/items/bootstrap", methods=["POST"])

@@ -86,13 +86,13 @@ def test_product_translation_tasks_api_returns_projection(authed_client_no_db, m
     assert payload["items"][0]["items"][0]["detail_url"] == "/multi-translate/child-1"
 
 
-def test_product_translation_tasks_api_syncs_before_projection(authed_client_no_db, monkeypatch):
+def test_product_translation_tasks_api_admin_scope_crosses_users(authed_client_no_db, monkeypatch):
     _stub_product(monkeypatch)
     calls = []
 
     monkeypatch.setattr(
         "appcore.bulk_translate_projection.list_product_task_ids",
-        lambda user_id, product_id: ["bt-1"],
+        lambda user_id, product_id: calls.append(("task_ids", user_id, product_id)) or ["bt-1"],
         raising=False,
     )
     monkeypatch.setattr(
@@ -108,4 +108,37 @@ def test_product_translation_tasks_api_syncs_before_projection(authed_client_no_
     resp = authed_client_no_db.get("/medias/api/products/123/translation-tasks")
 
     assert resp.status_code == 200
-    assert calls == [("sync", "bt-1", 1), ("project", 1, 123)]
+    assert calls == [
+        ("task_ids", None, 123),
+        ("sync", "bt-1", None),
+        ("project", None, 123),
+    ]
+
+
+def test_product_translation_tasks_api_user_scope_keeps_owner_filter(authed_user_client_no_db, monkeypatch):
+    _stub_product(monkeypatch)
+    calls = []
+
+    monkeypatch.setattr(
+        "appcore.bulk_translate_projection.list_product_task_ids",
+        lambda user_id, product_id: calls.append(("task_ids", user_id, product_id)) or ["bt-1"],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.bulk_translate_runtime.sync_task_with_children_once",
+        lambda task_id, user_id=None: calls.append(("sync", task_id, user_id)) or {"actions": []},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.bulk_translate_projection.list_product_tasks",
+        lambda user_id, product_id: calls.append(("project", user_id, product_id)) or [],
+    )
+
+    resp = authed_user_client_no_db.get("/medias/api/products/123/translation-tasks")
+
+    assert resp.status_code == 200
+    assert calls == [
+        ("task_ids", 2, 123),
+        ("sync", "bt-1", 2),
+        ("project", 2, 123),
+    ]
