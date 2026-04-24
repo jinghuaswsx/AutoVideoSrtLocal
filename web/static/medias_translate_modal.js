@@ -802,7 +802,12 @@
       taskButton.dataset.pid = pid;
       taskButton.dataset.name = button.dataset.name || '';
       taskButton.textContent = '翻译任务管理';
-      rowActions.appendChild(taskButton);
+      const aiEvalBtn = rowActions.querySelector('[data-ai-evaluate]');
+      if (aiEvalBtn) {
+        rowActions.insertBefore(taskButton, aiEvalBtn);
+      } else {
+        rowActions.appendChild(taskButton);
+      }
     });
   }
 
