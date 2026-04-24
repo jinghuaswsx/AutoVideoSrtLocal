@@ -47,16 +47,13 @@ def test_ja_translate_start_creates_ja_task_and_starts_ja_runner(tmp_path, authe
     assert started["task_id"] == payload["task_id"]
 
 
-def test_multi_translate_start_routes_ja_to_ja_module(tmp_path, authed_client_no_db, monkeypatch):
+def test_multi_translate_start_keeps_ja_on_multi_module(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "multi-output"))
     monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "multi-uploads"))
-    monkeypatch.setattr("web.routes.ja_translate.OUTPUT_DIR", str(tmp_path / "ja-output"))
-    monkeypatch.setattr("web.routes.ja_translate.UPLOAD_DIR", str(tmp_path / "ja-uploads"))
-    monkeypatch.setattr("web.routes.ja_translate.db_query_one", lambda sql, args: None)
-    monkeypatch.setattr("web.routes.ja_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
     started = {}
     monkeypatch.setattr(
-        "web.routes.ja_translate.ja_pipeline_runner.start",
+        "web.routes.multi_translate.multi_pipeline_runner.start",
         lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
     )
 
@@ -74,9 +71,8 @@ def test_multi_translate_start_routes_ja_to_ja_module(tmp_path, authed_client_no
     from web import store
 
     task = store.get(payload["task_id"])
-    assert task["type"] == "ja_translate"
+    assert task["type"] == "multi_translate"
     assert task["target_lang"] == "ja"
-    assert payload["redirect_url"] == f"/ja-translate/{payload['task_id']}"
     assert started["task_id"] == payload["task_id"]
 
 
