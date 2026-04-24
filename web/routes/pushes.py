@@ -180,6 +180,14 @@ def api_build_payload(item_id: int):
     mk_id = product.get("mk_id")
     localized_text = pushes.resolve_localized_text_payload(item)
     localized_texts_request = pushes.build_localized_texts_request(item)
+    # UI 专用的预览封面：优先本地 thumbnail_path（入库即生成，必有），
+    # 回退 item-cover（带懒加载）。不放进 payload.videos[]，避免污染 JSON 预览和下游。
+    if item.get("thumbnail_path"):
+        preview_cover_url = f"/medias/thumb/{item_id}"
+    elif item.get("cover_object_key"):
+        preview_cover_url = f"/medias/item-cover/{item_id}"
+    else:
+        preview_cover_url = None
     return jsonify({
         "payload": payload,
         "push_url": pushes.get_push_target_url(),
@@ -187,6 +195,7 @@ def api_build_payload(item_id: int):
         "localized_text": localized_text,
         "localized_texts_request": localized_texts_request,
         "localized_push_target_url": pushes.build_localized_texts_target_url(mk_id),
+        "preview_cover_url": preview_cover_url,
     })
 
 

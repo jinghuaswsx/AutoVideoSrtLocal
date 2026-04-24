@@ -357,7 +357,7 @@
 
   // ---------- 弹窗 · 4 胶囊 ----------
 
-  function renderPayloadView(payload) {
+  function renderPayloadView(payload, previewCoverUrl) {
     const root = el('div');
 
     const kv = el('div', { class: 'pm-kv' });
@@ -417,12 +417,16 @@
         sub.appendChild(vkv);
 
         const preview = el('div', { class: 'pm-video-preview' });
-        if (v.image_url) {
-          preview.appendChild(el('img', { class: 'pm-thumb', src: v.image_url, alt: `cover-${i}` }));
+        // 展示用封面优先走 previewCoverUrl（/medias/thumb/<id> 等已登录路由，
+        // 依赖本地入库 thumbnail，可靠性高）。v.image_url 是发给下游的 /medias/obj URL，
+        // 老素材本地未回填时会 404。
+        const coverSrc = previewCoverUrl || v.image_url || null;
+        if (coverSrc) {
+          preview.appendChild(el('img', { class: 'pm-thumb', src: coverSrc, alt: `cover-${i}` }));
         }
         if (v.url) {
           preview.appendChild(el('video', {
-            class: 'pm-thumb', src: v.url, poster: v.image_url || null,
+            class: 'pm-thumb', src: v.url, poster: coverSrc,
             controls: true, preload: 'metadata',
           }));
         }
@@ -672,7 +676,7 @@
           el('code', {}, data.push_url || '(未配置)'),
         ]));
         paneConfirm.appendChild(pushUrlRow);
-        paneConfirm.appendChild(renderPayloadView(payloadData));
+        paneConfirm.appendChild(renderPayloadView(payloadData, data.preview_cover_url || null));
         paneJson.textContent = JSON.stringify(payloadData, null, 2);
 
         clear(paneLocalized);
