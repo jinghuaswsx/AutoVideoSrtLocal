@@ -926,6 +926,9 @@ def test_recovery_clears_task_id_and_regenerates_on_upstream_failure():
     m_poll.assert_called_once()
     m_gen.assert_called_once()
     # 快照应被清理，避免下轮又去 poll 同一个已失败的 task
+    assert task["items"][0]["provider_task_id"] == ""
+    assert task["items"][0]["provider_task_submitted_at"] == 0.0
+    # 旧字段同步清空
     assert task["items"][0]["apimart_task_id"] == ""
     assert task["items"][0]["apimart_submitted_at"] == 0.0
 
@@ -957,8 +960,9 @@ def test_recovery_normal_path_saves_task_id_via_callback():
 
     assert out == b"FRESH"
     m_poll.assert_not_called()
-    assert task["items"][0]["apimart_task_id"] == "task_fresh_xyz"
-    assert task["items"][0]["apimart_submitted_at"] > 0
+    # 新代码统一写通用字段 provider_task_id / provider_task_submitted_at
+    assert task["items"][0]["provider_task_id"] == "task_fresh_xyz"
+    assert task["items"][0]["provider_task_submitted_at"] > 0
 
 
 def test_recovery_non_apimart_channel_skips_recovery_logic():

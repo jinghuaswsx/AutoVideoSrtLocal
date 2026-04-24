@@ -82,7 +82,10 @@ def _reset_item_processing_state(item: dict) -> None:
     item["text_detect_reason"] = ""
     item["text_detect_error"] = ""
     item["result_source"] = ""
-    # 显式重试：清掉 APIMART 任务快照，下一轮走重新提交
+    # 显式重试：清掉异步 provider 任务快照，下一轮走重新提交。
+    # provider_task_id 是通用字段；apimart_* 是旧命名，同时清掉避免残留。
+    item["provider_task_id"] = ""
+    item["provider_task_submitted_at"] = 0.0
     item["apimart_task_id"] = ""
     item["apimart_submitted_at"] = 0.0
 
@@ -416,20 +419,32 @@ class ImageTranslateRuntime:
         src_bytes: bytes,
         mime: str,
     ) -> tuple[bytes, str]:
-        """调用 gemini_image.generate_image，但对 APIMART 通道先尝试复用已提交的 task_id。
+        """调用 gemini_image.generate_image；对异步 provider（目前只有 APIMART）先尝试
+        复用 item 上已落盘的 provider_task_id。
+
+        字段约定：
+        - provider_task_id / provider_task_submitted_at：通用字段，新代码统一写入。
+        - apimart_task_id / apimart_submitted_at：旧字段，仅用于读路径兼容在途任务，
+          新写入统一走 provider_* 命名。
 
         逻辑：
-        - 如果 item 里有 apimart_task_id，且提交时间在 _APIMART_RECOVERY_WINDOW_SEC 以内，
-          直接轮询原 task_id 取结果，避免服务重启后重复扣费。
+        - 如果 item 里有新鲜的 provider_task_id（窗口内），直接轮询取结果。
         - 轮询得到 GeminiImageError（任务失败）：清理快照 → 走重新提交。
-        - 否则（没有 task_id / 超出窗口）：调用 generate_image，传 on_apimart_submitted
-          回调，提交成功立即把 task_id 记到 item 上。
+        - 否则（没有 task_id / 超出窗口）：调用 generate_image，提交成功立即把 task_id
+          记到 item 上。
         """
         channel = (task.get("channel") or "").strip()
 
         if channel == "apimart":
-            existing_task_id = (item.get("apimart_task_id") or "").strip()
-            submitted_at = float(item.get("apimart_submitted_at") or 0.0)
+            existing_task_id = (
+                (item.get("provider_task_id") or "").strip()
+                or (item.get("apimart_task_id") or "").strip()
+            )
+            submitted_at = float(
+                item.get("provider_task_submitted_at")
+                or item.get("apimart_submitted_at")
+                or 0.0
+            )
             age = time.time() - submitted_at if submitted_at else float("inf")
             if existing_task_id and age <= _APIMART_RECOVERY_WINDOW_SEC:
                 logger.info(
@@ -449,6 +464,8 @@ class ImageTranslateRuntime:
                         existing_task_id, e,
                     )
                     with self._state_lock:
+                        item["provider_task_id"] = ""
+                        item["provider_task_submitted_at"] = 0.0
                         item["apimart_task_id"] = ""
                         item["apimart_submitted_at"] = 0.0
                         store.update(task_id, items=task["items"])
@@ -457,8 +474,11 @@ class ImageTranslateRuntime:
         if channel == "apimart":
             def on_submitted(submitted_task_id: str, _item=item, _task=task, _task_id=task_id) -> None:
                 with self._state_lock:
-                    _item["apimart_task_id"] = submitted_task_id
-                    _item["apimart_submitted_at"] = time.time()
+                    _item["provider_task_id"] = submitted_task_id
+                    _item["provider_task_submitted_at"] = time.time()
+                    # 旧字段清空，避免脏数据让 recovery 误判
+                    _item["apimart_task_id"] = ""
+                    _item["apimart_submitted_at"] = 0.0
                     store.update(_task_id, items=_task["items"])
 
         return gemini_image.generate_image(
