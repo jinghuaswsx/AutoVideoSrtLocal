@@ -172,3 +172,34 @@ def test_log_request_auto_fills_token_request_units():
     _, kwargs = ai_billing.usage_log.record.call_args
     assert kwargs["request_units"] == 20
     assert kwargs["units_type"] == "tokens"
+
+
+def test_log_request_saves_request_and_response_payloads():
+    ai_billing = importlib.import_module("appcore.ai_billing")
+    ai_billing = importlib.reload(ai_billing)
+
+    ai_billing.get_use_case = Mock(return_value={
+        "module": "video_translate",
+        "usage_log_service": "gemini",
+    })
+    ai_billing.compute_cost_cny = Mock(return_value=(Decimal("0.12"), "pricebook"))
+    ai_billing.usage_log.record = Mock(return_value=123)
+    ai_billing.usage_log.record_payload = Mock()
+
+    ai_billing.log_request(
+        use_case_code="video_translate.localize",
+        user_id=11,
+        project_id="task-payload",
+        provider="gemini_vertex",
+        model="gemini-3.1-flash-lite-preview",
+        input_tokens=10,
+        output_tokens=5,
+        request_payload={"messages": [{"role": "user", "content": "hi"}]},
+        response_payload={"text": "ok"},
+    )
+
+    ai_billing.usage_log.record_payload.assert_called_once_with(
+        123,
+        {"messages": [{"role": "user", "content": "hi"}]},
+        {"text": "ok"},
+    )

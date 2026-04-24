@@ -114,6 +114,38 @@ def test_pipeline_runner_has_tts_class_attributes():
     assert PipelineRunner.target_language_label == "en"
 
 
+def test_log_translate_billing_forwards_payloads(monkeypatch):
+    from appcore import runtime
+
+    captured = {}
+    monkeypatch.setattr(
+        runtime.ai_billing,
+        "log_request",
+        lambda **kwargs: captured.update(kwargs),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_translate_billing_model",
+        lambda provider, user_id: "gemini-3.1-flash-lite-preview",
+    )
+
+    runtime._log_translate_billing(
+        user_id=7,
+        project_id="task-7",
+        use_case_code="video_translate.localize",
+        provider="vertex_gemini_31_flash_lite",
+        input_tokens=10,
+        output_tokens=5,
+        request_payload={"messages": [{"role": "user", "content": "hi"}]},
+        response_payload={"full_text": "ok"},
+    )
+
+    assert captured["request_payload"] == {
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    assert captured["response_payload"] == {"full_text": "ok"}
+
+
 def test_de_runner_overrides_tts_class_attributes():
     from appcore.runtime_de import DeTranslateRunner
     assert DeTranslateRunner.tts_language_code == "de"

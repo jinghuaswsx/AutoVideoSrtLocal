@@ -49,19 +49,8 @@ def _sanitize_messages(messages: list[dict]) -> list[dict]:
 def _save_payload(log_id: int, request_data: Any, response_data: Any) -> None:
     """写入 usage_log_payloads，失败静默忽略。"""
     try:
-        import json
-        from appcore.db import execute
-        execute(
-            "INSERT INTO usage_log_payloads (log_id, request_data, response_data)"
-            " VALUES (%s, %s, %s)",
-            (
-                log_id,
-                json.dumps(request_data, ensure_ascii=False, default=str)
-                if request_data is not None else None,
-                json.dumps(response_data, ensure_ascii=False, default=str)
-                if response_data is not None else None,
-            ),
-        )
+        from appcore import usage_log
+        usage_log.record_payload(log_id, request_data, response_data)
     except Exception:
         log.debug("_save_payload failed for log_id=%s", log_id, exc_info=True)
 
