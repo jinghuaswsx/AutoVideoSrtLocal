@@ -59,9 +59,6 @@ TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS = int(_env("TOS_UPLOAD_CLEANUP_MAX_AGE_SECOND
 # OpenRouter Claude
 OPENROUTER_API_KEY = _env("OPENROUTER_API_KEY")
 OPENAPI_MEDIA_API_KEY = _env("OPENAPI_MEDIA_API_KEY")
-
-# APIMART 图片生成
-APIMART_IMAGE_API_KEY = _env("APIMART_IMAGE_API_KEY")
 # 推送管理
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")
 # 小语种文案推送（运行时可在 /settings?tab=push 覆盖；env 为兜底默认）
@@ -72,6 +69,9 @@ AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
                        "https://newjoyloo.com/{lang}/products/{product_code}")
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# APIMART 图片生成
+APIMART_IMAGE_API_KEY = _env("APIMART_IMAGE_API_KEY")
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")
 USD_TO_CNY = 6.8
 
