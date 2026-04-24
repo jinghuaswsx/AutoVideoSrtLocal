@@ -396,7 +396,7 @@ def update_product(product_id: int, **fields) -> int:
                "importance", "trend_score", "selling_points",
                "product_code", "cover_object_key",
                "localized_links_json", "ad_supported_langs",
-               "link_check_tasks_json",
+               "link_check_tasks_json", "shopify_image_status_json",
                "mk_id",
                "remark", "ai_score", "ai_evaluation_result",
                "ai_evaluation_detail", "listing_status"}
@@ -430,7 +430,7 @@ def update_product(product_id: int, **fields) -> int:
     # localized_links_json：支持 dict 输入，自动序列化为 JSON 字符串
     def _val(k):
         v = fields[k]
-        if k in {"localized_links_json", "link_check_tasks_json"} and isinstance(v, dict):
+        if k in {"localized_links_json", "link_check_tasks_json", "shopify_image_status_json"} and isinstance(v, dict):
             return _json.dumps(v, ensure_ascii=False)
         return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)

@@ -10,7 +10,7 @@ from typing import Any
 import requests
 
 import config
-from appcore import medias, settings as system_settings
+from appcore import medias, settings as system_settings, shopify_image_tasks
 from appcore.db import query, query_one, execute
 
 log = logging.getLogger(__name__)
@@ -251,6 +251,10 @@ def compute_readiness(item: dict, product: dict) -> dict:
     lang_supported = lang in supported
 
     has_push_texts = _has_valid_en_push_texts(pid) if pid else False
+    shopify_image_confirmed, shopify_image_reason = shopify_image_tasks.is_confirmed_for_push(
+        product,
+        lang,
+    )
 
     return {
         "is_listed": is_listed,
@@ -259,11 +263,17 @@ def compute_readiness(item: dict, product: dict) -> dict:
         "has_copywriting": has_copywriting,
         "lang_supported": lang_supported,
         "has_push_texts": has_push_texts,
+        "shopify_image_confirmed": shopify_image_confirmed,
+        "shopify_image_reason": shopify_image_reason,
     }
 
 
 def is_ready(readiness: dict) -> bool:
-    return all(readiness.values())
+    return all(
+        value
+        for key, value in readiness.items()
+        if not str(key).endswith("_reason")
+    )
 
 
 # ---------- 状态计算 ----------
@@ -636,6 +646,7 @@ def list_items_for_push(
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
         f"       p.localized_links_json, p.ad_supported_langs, "
+        f"       p.shopify_image_status_json, "
         f"       p.selling_points, p.importance, "
         f"       p.remark, p.ai_score, p.ai_evaluation_result, "
         f"       p.ai_evaluation_detail, p.listing_status, "

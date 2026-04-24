@@ -64,3 +64,69 @@ def fetch_bootstrap(
     if response.status_code >= 400:
         raise ApiError(response.status_code, payload)
     return payload
+
+
+def claim_task(
+    base_url: str,
+    api_key: str,
+    *,
+    worker_id: str,
+    lock_seconds: int = 900,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/tasks/claim",
+        headers={"X-API-Key": api_key},
+        json={"worker_id": worker_id, "lock_seconds": int(lock_seconds)},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
+def complete_task(
+    base_url: str,
+    api_key: str,
+    task_id: int,
+    *,
+    result: dict[str, Any],
+    timeout: int = 30,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/tasks/{int(task_id)}/complete",
+        headers={"X-API-Key": api_key},
+        json={"result": result or {}},
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
+def fail_task(
+    base_url: str,
+    api_key: str,
+    task_id: int,
+    *,
+    error_code: str,
+    error_message: str,
+    result: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/tasks/{int(task_id)}/fail",
+        headers={"X-API-Key": api_key},
+        json={
+            "error_code": error_code,
+            "error_message": error_message,
+            "result": result or {},
+        },
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload

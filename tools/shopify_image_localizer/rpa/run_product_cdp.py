@@ -372,12 +372,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             port=args.port,
             limit=args.carousel_limit if args.carousel_limit > 0 else None,
         )
+        selected_pairs = pairs[:args.carousel_limit] if args.carousel_limit > 0 else pairs
+        carousel_verify = ez_cdp.verify_many_language_markers(
+            ez_url=ez_url,
+            user_data_dir=cfg["browser_user_data_dir"],
+            expected_slots=[slot_idx for slot_idx, _path in selected_pairs],
+            language=args.language,
+            port=args.port,
+        )
         result["carousel"] = {
             "requested": len(pairs),
             "results": carousel_results,
             "ok": sum(1 for row in carousel_results if row.get("status") == "ok"),
             "skipped": sum(1 for row in carousel_results if row.get("status") == "skipped"),
+            "verify": carousel_verify,
         }
+        if not carousel_verify.get("ok"):
+            raise RuntimeError(f"EZ language marker verification failed: {carousel_verify}")
 
     if not args.skip_detail:
         detail_html = str(target_product.get("description") or target_product.get("body_html") or "")

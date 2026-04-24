@@ -169,6 +169,67 @@ def _target_exists(frame, language: str) -> bool:
     return frame.locator(f'button[aria-label="Remove {language}"]').count() > 0
 
 
+def verify_target_language_markers(frame, expected_slots: list[int], language: str) -> dict:
+    rows = frame.evaluate(
+        """() => Array.from(document.querySelectorAll('s-button.image-button')).map((button, idx) => {
+            const container = button.closest('tr, li, [data-index], .Polaris-IndexTable__TableRow, div') || button.parentElement || button;
+            const text = (container.textContent || '').trim();
+            const labels = Array.from(container.querySelectorAll('[aria-label], button, span, s-badge'))
+                .map((node) => node.getAttribute('aria-label') || node.textContent || '')
+                .map((value) => value.trim())
+                .filter(Boolean);
+            return {slot: idx, text, languages: labels};
+        })"""
+    ) or []
+    wanted = str(language or "").strip().lower()
+    expected = {int(slot) for slot in expected_slots}
+    matched: list[int] = []
+    missing: list[int] = []
+    for slot in sorted(expected):
+        row = next((item for item in rows if int(item.get("slot") or 0) == slot), None)
+        labels = " ".join(str(value) for value in ((row or {}).get("languages") or []))
+        text = f"{(row or {}).get('text') or ''} {labels}".lower()
+        if wanted and wanted in text:
+            matched.append(slot)
+        else:
+            missing.append(slot)
+    return {
+        "ok": not missing,
+        "expected": len(expected),
+        "matched": len(matched),
+        "missing": missing,
+    }
+
+
+def verify_many_language_markers(
+    *,
+    ez_url: str,
+    user_data_dir: str,
+    expected_slots: list[int],
+    language: str = "Italian",
+    port: int = DEFAULT_CDP_PORT,
+) -> dict:
+    ensure_cdp_chrome(user_data_dir, ez_url, port=port)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+        context = browser.contexts[0] if browser.contexts else browser.new_context()
+        context.set_default_timeout(15000)
+        page = context.new_page()
+        try:
+            page.goto(ez_url, wait_until="domcontentloaded", timeout=30000)
+            frame = _wait_plugin_frame(page)
+            return verify_target_language_markers(frame, expected_slots, language)
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+            try:
+                browser.close()
+            except Exception:
+                pass
+
+
 def _select_language(frame, language: str) -> None:
     result = frame.evaluate(
         """(language) => {

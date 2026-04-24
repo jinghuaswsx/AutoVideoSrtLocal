@@ -197,3 +197,20 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     assert captured_args[0].no_preserve_detail_size is False
     assert saved_config[0]["base_url"] == "http://172.30.254.14"
     assert any("开始连续替换流程" in message for message in statuses)
+
+
+def test_verify_target_language_marks_all_expected_slots():
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    class FakeFrame:
+        def evaluate(self, script, arg=None):
+            return [
+                {"slot": 0, "languages": ["Italian"]},
+                {"slot": 1, "languages": ["Italian", "Spanish"]},
+            ]
+
+    result = ez_cdp.verify_target_language_markers(FakeFrame(), [0, 1], "Italian")
+
+    assert result["ok"] is True
+    assert result["expected"] == 2
+    assert result["matched"] == 2

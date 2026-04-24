@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from typing import Callable
 
-from tools.shopify_image_localizer import settings, storage
+from tools.shopify_image_localizer import api_client, settings, storage
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
@@ -121,3 +121,54 @@ def run_shopify_localizer(
         "workspace_root": str(result.get("workspace") or workspace.root),
         "manifest_path": str(output_path),
     }
+
+
+def run_worker_once(
+    *,
+    base_url: str,
+    api_key: str,
+    browser_user_data_dir: str,
+    worker_id: str,
+    status_cb: StatusCallback | None = None,
+) -> dict:
+    reporter = status_cb or _noop
+    claimed = api_client.claim_task(
+        base_url,
+        api_key,
+        worker_id=worker_id,
+    )
+    task = claimed.get("task")
+    if not task:
+        reporter("当前没有待处理任务")
+        return {"status": "idle"}
+
+    reporter(
+        f"领取任务 #{task.get('id')}: {task.get('product_code')} / {task.get('lang')}"
+    )
+    try:
+        result = run_shopify_localizer(
+            base_url=base_url,
+            api_key=api_key,
+            browser_user_data_dir=browser_user_data_dir,
+            product_code=task["product_code"],
+            lang=task["lang"],
+            shopify_product_id=task.get("shopify_product_id") or "",
+            status_cb=reporter,
+        )
+    except Exception as exc:
+        api_client.fail_task(
+            base_url,
+            api_key,
+            int(task["id"]),
+            error_code=exc.__class__.__name__,
+            error_message=str(exc),
+        )
+        return {"status": "failed", "task": task, "error": str(exc)}
+
+    api_client.complete_task(
+        base_url,
+        api_key,
+        int(task["id"]),
+        result=result,
+    )
+    return {"status": "completed", "task": task, "result": result}
