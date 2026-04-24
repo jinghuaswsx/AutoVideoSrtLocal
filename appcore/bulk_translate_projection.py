@@ -100,10 +100,12 @@ def list_product_tasks(
 
 def list_admin_tasks(*, limit: int = 300) -> dict:
     """Return an admin-facing overview for all bulk translation parent tasks."""
+    creator_name_expr = _admin_creator_name_expr()
     rows = query(
-        """
+        f"""
         SELECT p.id, p.user_id, p.status, p.state_json, p.created_at,
-               u.username AS username
+               u.username AS username,
+               {creator_name_expr} AS creator_name
         FROM projects p
         LEFT JOIN users u ON u.id = p.user_id
         WHERE p.type = 'bulk_translate'
@@ -125,6 +127,14 @@ def list_admin_tasks(*, limit: int = 300) -> dict:
     return {"stats": stats, "items": tasks}
 
 
+def _admin_creator_name_expr() -> str:
+    try:
+        return medias._media_product_owner_name_expr()
+    except Exception:
+        log.warning("bulk_translate admin creator name expr failed; fallback to username", exc_info=True)
+        return "u.username"
+
+
 def _serialize_admin_task(row: dict, state: dict) -> dict:
     detail_url = f"/tasks/{row['id']}?scope=admin"
     raw_plan = list(state.get("plan") or [])
@@ -144,7 +154,12 @@ def _serialize_admin_task(row: dict, state: dict) -> dict:
     cost_tracking = dict(state.get("cost_tracking") or {})
     cost_actual = dict(cost_tracking.get("actual") or {})
     initiator = dict(state.get("initiator") or {})
-    creator = (row.get("username") or initiator.get("user_name") or "").strip()
+    creator = (
+        row.get("creator_name")
+        or row.get("username")
+        or initiator.get("user_name")
+        or ""
+    ).strip()
 
     return {
         "id": row["id"],
