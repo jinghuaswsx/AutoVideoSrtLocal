@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import re
+from contextlib import contextmanager
 
 from appcore import medias, task_state
 from appcore.bulk_translate_associations import mark_auto_translated
-from appcore.db import execute
+from appcore.db import execute, get_conn, query_one
 from appcore.image_translate_runtime import apply_translated_detail_images_from_task
 from appcore.material_filename_rules import build_suggested_material_filename
 
 
 _MATERIAL_DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
 _RAW_SOURCE_KEY_PREFIX_RE = re.compile(r"^[0-9a-f]{12}_(?=\d{4}\.\d{2}\.\d{2}-)")
+_VIDEO_SYNC_LOCK_TIMEOUT_SECONDS = 10
 
 
 def _object_basename(value: str | None) -> str:
@@ -71,6 +74,68 @@ def _translated_video_filename(*, product_id: int, lang: str, raw_source: dict, 
         product_name,
         lang,
         _language_name_map(lang),
+    )
+
+
+def _video_sync_lock_name(
+    *,
+    parent_task_id: str,
+    product_id: int,
+    lang: str,
+    source_raw_id: int,
+    video_object_key: str,
+) -> str:
+    digest = hashlib.sha1(  # noqa: S324 - deterministic lock key, not security-sensitive
+        f"{parent_task_id}:{product_id}:{lang}:{source_raw_id}:{video_object_key}".encode("utf-8")
+    ).hexdigest()
+    return f"bulk_video_sync:{digest}"
+
+
+@contextmanager
+def _acquire_video_sync_lock(
+    *,
+    parent_task_id: str,
+    product_id: int,
+    lang: str,
+    source_raw_id: int,
+    video_object_key: str,
+):
+    lock_name = _video_sync_lock_name(
+        parent_task_id=parent_task_id,
+        product_id=product_id,
+        lang=lang,
+        source_raw_id=source_raw_id,
+        video_object_key=video_object_key,
+    )
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT GET_LOCK(%s, %s) AS ok", (lock_name, _VIDEO_SYNC_LOCK_TIMEOUT_SECONDS))
+            row = cur.fetchone() or {}
+            ok = row.get("ok") if isinstance(row, dict) else (row[0] if row else None)
+            if ok != 1:
+                raise RuntimeError(f"failed to acquire bulk video sync lock: {lock_name}")
+        yield
+    finally:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchone()
+        except Exception:  # noqa: BLE001
+            pass
+        conn.close()
+
+
+def _find_existing_video_item(*, product_id: int, lang: str, video_object_key: str) -> dict | None:
+    return query_one(
+        """
+        SELECT id, cover_object_key
+        FROM media_items
+        WHERE product_id=%s AND lang=%s AND object_key=%s AND deleted_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (product_id, lang, video_object_key),
     )
 
 
@@ -155,25 +220,44 @@ def sync_video_result(
         raw_source=raw_source,
         fallback_object_key=video_object_key,
     )
-    target_id = medias.create_item(
+    with _acquire_video_sync_lock(
+        parent_task_id=parent_task_id,
         product_id=product_id,
-        user_id=int(raw_source.get("user_id") or 0),
-        filename=filename,
-        object_key=video_object_key,
-        display_name=filename,
-        cover_object_key=cover_object_key,
-        duration_seconds=raw_source.get("duration_seconds"),
-        file_size=raw_source.get("file_size"),
         lang=lang,
-    )
-    execute(
-        "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
-        (source_raw_id, target_id),
-    )
-    mark_auto_translated(
-        "media_items",
-        target_id=target_id,
-        source_ref_id=source_raw_id,
-        bulk_task_id=parent_task_id,
-    )
-    return target_id
+        source_raw_id=source_raw_id,
+        video_object_key=video_object_key,
+    ):
+        existing = _find_existing_video_item(
+            product_id=product_id,
+            lang=lang,
+            video_object_key=video_object_key,
+        ) or {}
+        target_id = int(existing.get("id") or 0)
+        if target_id:
+            execute(
+                "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s WHERE id=%s",
+                (source_raw_id, cover_object_key, target_id),
+            )
+        else:
+            target_id = medias.create_item(
+                product_id=product_id,
+                user_id=int(raw_source.get("user_id") or 0),
+                filename=filename,
+                object_key=video_object_key,
+                display_name=filename,
+                cover_object_key=cover_object_key,
+                duration_seconds=raw_source.get("duration_seconds"),
+                file_size=raw_source.get("file_size"),
+                lang=lang,
+            )
+            execute(
+                "UPDATE media_items SET source_raw_id=%s WHERE id=%s",
+                (source_raw_id, target_id),
+            )
+        mark_auto_translated(
+            "media_items",
+            target_id=target_id,
+            source_ref_id=source_raw_id,
+            bulk_task_id=parent_task_id,
+        )
+        return target_id

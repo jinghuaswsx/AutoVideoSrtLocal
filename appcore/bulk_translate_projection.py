@@ -64,25 +64,32 @@ def list_product_task_ids(user_id: int, product_id: int, *, limit: int = 50) -> 
     return task_ids
 
 
-def list_product_tasks(user_id: int, product_id: int, *, limit: int = 50) -> list[dict]:
+def list_product_tasks(
+    user_id: int,
+    product_id: int,
+    *,
+    limit: int = 50,
+    refresh_children: bool = False,
+) -> list[dict]:
     rows = _list_candidate_rows(user_id, limit=limit)
     tasks: list[dict] = []
     for row in rows or []:
         state = _parse_state(row.get("state_json"))
         if int(state.get("product_id") or 0) != int(product_id):
             continue
-        try:
-            refreshed = sync_task_with_children_once(row["id"], user_id=user_id)
-        except Exception:
-            log.warning("bulk_translate projection refresh failed: %s", row.get("id"), exc_info=True)
-            refreshed = None
-        if refreshed:
-            state = dict(refreshed.get("state") or state)
-            row = {
-                **row,
-                "status": refreshed.get("status") or row.get("status"),
-                "created_at": refreshed.get("created_at") or row.get("created_at"),
-            }
+        if refresh_children:
+            try:
+                refreshed = sync_task_with_children_once(row["id"], user_id=user_id)
+            except Exception:
+                log.warning("bulk_translate projection refresh failed: %s", row.get("id"), exc_info=True)
+                refreshed = None
+            if refreshed:
+                state = dict(refreshed.get("state") or state)
+                row = {
+                    **row,
+                    "status": refreshed.get("status") or row.get("status"),
+                    "created_at": refreshed.get("created_at") or row.get("created_at"),
+                }
         tasks.append(_serialize_task(row, state))
     return tasks
 
