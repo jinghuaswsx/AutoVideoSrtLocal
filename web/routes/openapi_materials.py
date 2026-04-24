@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from flask import Blueprint, jsonify, request
 
 import config
-from appcore import medias, pushes
+from appcore import medias, pushes, tos_clients
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 
@@ -34,12 +34,6 @@ def _media_download_url(object_key: str | None) -> str | None:
 
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
-
-
-def _media_download_url(object_key: str | None) -> str | None:
-    return pushes.build_media_public_url(object_key)
-
-
 def _api_key_valid() -> bool:
     expected = (config.OPENAPI_MEDIA_API_KEY or "").strip()
     provided = (request.headers.get("X-API-Key") or "").strip()

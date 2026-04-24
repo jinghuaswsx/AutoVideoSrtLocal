@@ -12,6 +12,29 @@ TRANSLATE_IMAGE_SELECTORS = [
 ]
 
 
+def _resolve_flow_status(
+    *,
+    slot_images: list[dict],
+    assigned: list[dict],
+    uploads: list[dict],
+    review: list[dict],
+    conflicts: list[dict],
+) -> tuple[str, str]:
+    if not slot_images:
+        return "failed", "no visible image slots captured"
+    if not assigned:
+        return "failed", "no localized images assigned"
+
+    uploaded_count = sum(1 for row in uploads if row.get("uploaded"))
+    if uploaded_count <= 0:
+        return "failed", "no uploads succeeded"
+    if uploaded_count < len(assigned):
+        return "partial", "some uploads failed"
+    if review or conflicts:
+        return "partial", "completed with review items"
+    return "done", "all assigned uploads succeeded"
+
+
 def run_translate_flow(
     *,
     page,
@@ -61,12 +84,23 @@ def run_translate_flow(
                 "error": str(exc),
             })
 
+    status, summary = _resolve_flow_status(
+        slot_images=slot_images,
+        assigned=assignments["assigned"],
+        uploads=uploads,
+        review=assignments["review"],
+        conflicts=assignments["conflicts"],
+    )
     session.save_page_snapshot(page, workspace.screenshots_taa_dir, "translate-page-after.png")
     return {
-        "status": "done",
+        "status": status,
+        "summary": summary,
         "page_url": page.url,
         "shop_locale": shop_locale,
         "captured_slots": len(slot_images),
+        "assigned_count": len(assignments["assigned"]),
+        "uploaded_count": sum(1 for row in uploads if row.get("uploaded")),
+        "failed_upload_count": sum(1 for row in uploads if not row.get("uploaded")),
         "assigned": assignments["assigned"],
         "conflicts": assignments["conflicts"],
         "review": assignments["review"],

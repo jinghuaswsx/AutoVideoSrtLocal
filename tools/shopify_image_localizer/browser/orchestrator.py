@@ -9,6 +9,15 @@ class FlowConflictError(RuntimeError):
     pass
 
 
+def _merge_statuses(*statuses: str) -> str:
+    normalized = {str(status or "").strip().lower() for status in statuses if status is not None}
+    if not normalized or normalized == {"done"}:
+        return "done"
+    if normalized == {"failed"}:
+        return "failed"
+    return "partial"
+
+
 def _safe_page(context, index: int):
     pages = list(context.pages)
     while len(pages) <= index:
@@ -82,11 +91,10 @@ def run_shopify_localizer(
 
         context.close()
 
-    overall_status = "done"
-    if ez_result.get("status") == "failed" and translate_result.get("status") == "failed":
-        overall_status = "failed"
-    elif ez_result.get("status") == "failed" or translate_result.get("status") == "failed":
-        overall_status = "partial"
+    overall_status = _merge_statuses(
+        str(ez_result.get("status") or ""),
+        str(translate_result.get("status") or ""),
+    )
 
     return {
         "status": overall_status,
