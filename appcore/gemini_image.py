@@ -263,21 +263,13 @@ def _extract_openrouter_cost_cny(resp: Any) -> Decimal | None:
         return None
 
 
+_SEEDREAM_REQUEST_TIMEOUT = 360
+
+
 def _save_payload(log_id: int, request_data: Any, response_data: Any) -> None:
     try:
-        import json
-        from appcore.db import execute
-        execute(
-            "INSERT INTO usage_log_payloads (log_id, request_data, response_data)"
-            " VALUES (%s, %s, %s)",
-            (
-                log_id,
-                json.dumps(request_data, ensure_ascii=False, default=str)
-                if request_data is not None else None,
-                json.dumps(response_data, ensure_ascii=False, default=str)
-                if response_data is not None else None,
-            ),
-        )
+        from appcore import usage_log
+        usage_log.record_payload(log_id, request_data, response_data)
     except Exception:
         logger.debug("gemini_image _save_payload failed for log_id=%s", log_id, exc_info=True)
 
@@ -560,7 +552,7 @@ def _generate_via_seedream(
                 "Content-Type": "application/json",
             },
             json=payload,
-            timeout=120,
+            timeout=_SEEDREAM_REQUEST_TIMEOUT,
         )
     except requests.RequestException as e:
         raise GeminiImageRetryable(f"Seedream 请求失败：{e}") from e
@@ -594,7 +586,7 @@ def _generate_via_seedream(
 
 _APIMART_BASE_URL = "https://api.apimart.ai"
 _APIMART_POLL_INTERVAL = 5    # 秒
-_APIMART_POLL_TIMEOUT = 300   # 秒
+_APIMART_POLL_TIMEOUT = 900   # 秒
 _APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
 
 

@@ -30,7 +30,7 @@ from config import (
 logger = logging.getLogger(__name__)
 
 _INLINE_MAX_BYTES = 20 * 1024 * 1024  # 小于 20MB 走 inline，避免 Files API 往返
-_FILE_ACTIVE_TIMEOUT = 300
+_FILE_ACTIVE_TIMEOUT = 900
 _FILE_POLL_INTERVAL = 2
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
@@ -282,6 +282,7 @@ def _resolve_billing_provider(use_case_code: str | None) -> str:
 def _log_gemini_usage(
     *, user_id: int | None, project_id: str | None, service: str,
     model_id: str, success: bool, resp: Any = None, error: Exception | None = None,
+    request_payload: dict | None = None, response_payload: dict | None = None,
 ) -> None:
     if user_id is None:
         return
@@ -306,6 +307,8 @@ def _log_gemini_usage(
             units_type="tokens",
             success=success,
             extra=extra,
+            request_payload=request_payload,
+            response_payload=response_payload,
         )
     except Exception:
         logger.debug("Gemini ai_billing record failed", exc_info=True)
@@ -345,6 +348,22 @@ def generate(
     client = _get_client(api_key)
     model_id = model or resolved_model
     media_list = [media] if isinstance(media, (str, Path)) else list(media) if media else None
+    request_payload: dict[str, Any] = {
+        "type": "generate",
+        "service": service,
+        "model": model_id,
+        "prompt": prompt,
+    }
+    if system:
+        request_payload["system"] = system
+    if media_list:
+        request_payload["media"] = [str(item) for item in media_list]
+    if response_schema is not None:
+        request_payload["response_schema"] = response_schema
+    if temperature is not None:
+        request_payload["temperature"] = temperature
+    if max_output_tokens is not None:
+        request_payload["max_output_tokens"] = max_output_tokens
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(
         system=system,
@@ -359,15 +378,17 @@ def generate(
             resp = client.models.generate_content(
                 model=model_id, contents=contents, config=cfg,
             )
-            _log_gemini_usage(
-                user_id=user_id, project_id=project_id, service=service,
-                model_id=model_id, success=True, resp=resp,
-            )
             input_tokens, output_tokens = _extract_gemini_tokens(resp)
             usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
             if response_schema is not None:
                 parsed = getattr(resp, "parsed", None)
                 if parsed is not None:
+                    _log_gemini_usage(
+                        user_id=user_id, project_id=project_id, service=service,
+                        model_id=model_id, success=True, resp=resp,
+                        request_payload=request_payload,
+                        response_payload={"json": parsed, "usage": usage},
+                    )
                     if return_payload:
                         return {
                             "text": None,
@@ -378,6 +399,12 @@ def generate(
                     return parsed
                 import json
                 payload = json.loads(resp.text)
+                _log_gemini_usage(
+                    user_id=user_id, project_id=project_id, service=service,
+                    model_id=model_id, success=True, resp=resp,
+                    request_payload=request_payload,
+                    response_payload={"json": payload, "usage": usage},
+                )
                 if return_payload:
                     return {
                         "text": None,
@@ -387,6 +414,12 @@ def generate(
                     }
                 return payload
             text = resp.text or ""
+            _log_gemini_usage(
+                user_id=user_id, project_id=project_id, service=service,
+                model_id=model_id, success=True, resp=resp,
+                request_payload=request_payload,
+                response_payload={"text": text, "usage": usage},
+            )
             if return_payload:
                 return {
                     "text": text,
@@ -407,6 +440,8 @@ def generate(
     _log_gemini_usage(
         user_id=user_id, project_id=project_id, service=service,
         model_id=model_id, success=False, error=last_err,
+        request_payload=request_payload,
+        response_payload={"error": str(last_err)[:500] if last_err else "unknown"},
     )
     raise GeminiError(f"Gemini 调用失败：{last_err}") from last_err
 
@@ -442,23 +477,39 @@ def generate_stream(
         response_schema=None,
         max_output_tokens=max_output_tokens,
     )
+    request_payload = {
+        "type": "generate_stream",
+        "service": service,
+        "model": model_id,
+        "prompt": prompt,
+        "system": system,
+        "media": [str(item) for item in media_list] if media_list else [],
+        "temperature": temperature,
+        "max_output_tokens": max_output_tokens,
+    }
     last_chunk: Any = None
+    text_chunks: list[str] = []
     try:
         for chunk in client.models.generate_content_stream(
             model=model_id, contents=contents, config=cfg,
         ):
             last_chunk = chunk
             if chunk.text:
+                text_chunks.append(chunk.text)
                 yield chunk.text
     except Exception as e:
         _log_gemini_usage(
             user_id=user_id, project_id=project_id, service=service,
             model_id=model_id, success=False, error=e,
+            request_payload=request_payload,
+            response_payload={"error": str(e)[:500]},
         )
         raise GeminiError(f"Gemini 流式调用失败：{e}") from e
     _log_gemini_usage(
         user_id=user_id, project_id=project_id, service=service,
         model_id=model_id, success=True, resp=last_chunk,
+        request_payload=request_payload,
+        response_payload={"text": "".join(text_chunks), "stream": True},
     )
 
 

@@ -369,6 +369,7 @@ def generate_tts_script(
         result["_usage"] = usage
         log.info("tts_script token usage: input=%s, output=%s",
                  usage["input_tokens"], usage["output_tokens"])
+    result["_messages"] = messages
     return result
 
 

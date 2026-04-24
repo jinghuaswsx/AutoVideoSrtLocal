@@ -158,6 +158,56 @@ def test_generate_logs_usage_via_ai_billing(monkeypatch):
     assert billing_calls[0]["success"] is True
 
 
+def test_generate_logs_request_and_response_payloads(monkeypatch, tmp_path):
+    _, gemini = _reload_gemini(monkeypatch)
+
+    media_path = tmp_path / "frame.png"
+    media_path.write_bytes(b"PNG")
+    resp = SimpleNamespace(
+        text="ok",
+        parsed=None,
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=11,
+            candidates_token_count=7,
+        ),
+    )
+    client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=lambda **_: resp)
+    )
+    billing_calls: list[dict] = []
+
+    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_build_contents", lambda client, prompt, media: ["parts"])
+    monkeypatch.setattr(gemini.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
+
+    out = gemini.generate(
+        "hello",
+        system="system",
+        media=[media_path],
+        model="gemini-3.1-pro-preview",
+        user_id=9,
+        project_id="proj-9",
+        service="video_score.run",
+        temperature=0.2,
+        max_output_tokens=1024,
+        max_retries=1,
+    )
+
+    assert out == "ok"
+    payload_call = billing_calls[0]
+    assert payload_call["request_payload"]["prompt"] == "hello"
+    assert payload_call["request_payload"]["system"] == "system"
+    assert payload_call["request_payload"]["media"] == [str(media_path)]
+    assert payload_call["request_payload"]["temperature"] == 0.2
+    assert payload_call["request_payload"]["max_output_tokens"] == 1024
+    assert payload_call["response_payload"]["text"] == "ok"
+    assert payload_call["response_payload"]["usage"] == {
+        "input_tokens": 11,
+        "output_tokens": 7,
+    }
+
+
 def test_generate_logs_failure_via_ai_billing(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
 

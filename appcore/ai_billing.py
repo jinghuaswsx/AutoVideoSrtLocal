@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 import logging
+from typing import Any
 
 from appcore import usage_log
 from appcore.llm_use_cases import get_use_case
@@ -26,6 +27,8 @@ def log_request(
     response_cost_cny: Decimal | None = None,
     success: bool = True,
     extra: dict | None = None,
+    request_payload: Any = None,
+    response_payload: Any = None,
 ) -> int | None:
     """Returns the new usage_logs row id, or None on failure."""
     if user_id is None:
@@ -51,7 +54,7 @@ def log_request(
                 request_units=request_units,
             )
 
-        return usage_log.record(
+        log_id = usage_log.record(
             user_id,
             project_id,
             service,
@@ -69,6 +72,9 @@ def log_request(
             cost_source=cost_source,
             extra_data=extra,
         )
+        if log_id and (request_payload is not None or response_payload is not None):
+            usage_log.record_payload(log_id, request_payload, response_payload)
+        return log_id
     except Exception:
         log.debug("ai_billing.log_request failed", exc_info=True)
         return None

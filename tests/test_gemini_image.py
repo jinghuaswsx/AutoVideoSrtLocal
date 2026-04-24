@@ -219,6 +219,14 @@ def test_image_model_registry_is_channel_scoped():
     ) == "doubao-seedream-5-0-260128"
 
 
+def test_long_running_image_timeouts_are_tripled():
+    from appcore import gemini, gemini_image
+
+    assert gemini._FILE_ACTIVE_TIMEOUT == 900
+    assert gemini_image._SEEDREAM_REQUEST_TIMEOUT == 360
+    assert gemini_image._APIMART_POLL_TIMEOUT == 900
+
+
 def test_generate_image_doubao_channel_uses_seedream_without_resolve_config():
     from appcore import gemini_image
 

@@ -167,6 +167,8 @@ def _log_translate_billing(
     output_tokens: int | None = None,
     success: bool = True,
     extra: dict | None = None,
+    request_payload: dict | None = None,
+    response_payload: dict | None = None,
 ) -> None:
     ai_billing.log_request(
         use_case_code=use_case_code,
@@ -179,7 +181,32 @@ def _log_translate_billing(
         units_type="tokens",
         success=success,
         extra=extra,
+        request_payload=request_payload,
+        response_payload=response_payload,
     )
+
+
+def _llm_request_payload(
+    result: dict | None,
+    provider: str,
+    use_case_code: str,
+    messages: list[dict] | None = None,
+) -> dict | None:
+    messages = messages if messages is not None else (result or {}).get("_messages")
+    if not messages:
+        return None
+    return {
+        "type": "chat",
+        "use_case_code": use_case_code,
+        "provider": provider,
+        "messages": messages,
+    }
+
+
+def _llm_response_payload(result: dict | None) -> dict | None:
+    if not isinstance(result, dict):
+        return None
+    return {k: v for k, v in result.items() if not str(k).startswith("_")}
 
 
 def _seconds_to_request_units(audio_duration_seconds: float | None) -> int | None:
@@ -762,6 +789,7 @@ class PipelineRunner:
                     "tts_audio_path": result["full_audio_path"],
                     "tts_segments": result["segments"],
                     "rounds": rounds,
+                    "round_products": round_products,
                     "final_round": round_index,
                 }
 
@@ -806,6 +834,7 @@ class PipelineRunner:
             "tts_audio_path": best_product["tts_audio_path"],
             "tts_segments": best_product["tts_segments"],
             "rounds": rounds,
+            "round_products": round_products,
             "final_round": best_i + 1,
         }
 
@@ -1222,6 +1251,17 @@ class PipelineRunner:
             units_type="seconds",
             audio_duration_seconds=audio_duration_seconds,
             success=True,
+            request_payload={
+                "type": "asr",
+                "provider": "doubao_asr",
+                "audio_url": audio_url,
+                "audio_path": audio_path,
+            },
+            response_payload={
+                "utterances": utterances,
+                "source_full_text": source_full_text,
+                "audio_duration_seconds": audio_duration_seconds,
+            },
         )
 
         if passthrough["enabled"]:
@@ -1367,6 +1407,13 @@ class PipelineRunner:
             input_tokens=_translate_usage.get("input_tokens"),
             output_tokens=_translate_usage.get("output_tokens"),
             success=True,
+            request_payload=_llm_request_payload(
+                localized_translation,
+                provider,
+                "video_translate.localize",
+                messages=initial_messages,
+            ),
+            response_payload=_llm_response_payload(localized_translation),
         )
 
         if requires_confirmation:
@@ -1598,6 +1645,14 @@ class PipelineRunner:
             loop_result = result["loop_result"]
             for round_record in loop_result["rounds"]:
                 round_idx = round_record["round"]
+                round_products = loop_result.get("round_products") or []
+                round_product = (
+                    round_products[round_idx - 1]
+                    if 0 <= round_idx - 1 < len(round_products)
+                    else {}
+                )
+                round_translation = round_product.get("localized_translation") or {}
+                round_tts_script = round_product.get("tts_script") or {}
                 if round_idx >= 2:
                     _log_translate_billing(
                         user_id=self.user_id,
@@ -1607,6 +1662,10 @@ class PipelineRunner:
                         input_tokens=round_record.get("translate_tokens_in"),
                         output_tokens=round_record.get("translate_tokens_out"),
                         success=True,
+                        request_payload=_llm_request_payload(
+                            round_translation, provider, "video_translate.rewrite"
+                        ),
+                        response_payload=_llm_response_payload(round_translation),
                     )
                 _log_translate_billing(
                     user_id=self.user_id,
@@ -1616,6 +1675,10 @@ class PipelineRunner:
                     input_tokens=round_record.get("tts_script_tokens_in"),
                     output_tokens=round_record.get("tts_script_tokens_out"),
                     success=True,
+                    request_payload=_llm_request_payload(
+                        round_tts_script, provider, "video_translate.tts_script"
+                    ),
+                    response_payload=_llm_response_payload(round_tts_script),
                 )
                 tts_char_count = round_record.get("tts_char_count")
                 if tts_char_count is None and round_idx == loop_result["final_round"]:
@@ -1630,6 +1693,18 @@ class PipelineRunner:
                     request_units=tts_char_count,
                     units_type="chars",
                     success=True,
+                    request_payload={
+                        "type": "tts",
+                        "provider": "elevenlabs",
+                        "model": tts_model_id,
+                        "voice_id": voice.get("elevenlabs_voice_id"),
+                        "text": (round_tts_script.get("full_text") or ""),
+                        "segments": round_product.get("tts_segments") or [],
+                    },
+                    response_payload={
+                        "audio_path": round_product.get("tts_audio_path"),
+                        "chars": tts_char_count,
+                    },
                 )
         return
 
@@ -1745,6 +1820,14 @@ class PipelineRunner:
         # Usage log for LLM + ElevenLabs (rewrite rounds 2/3 also recorded)
         for round_record in loop_result["rounds"]:
             round_idx = round_record["round"]
+            round_products = loop_result.get("round_products") or []
+            round_product = (
+                round_products[round_idx - 1]
+                if 0 <= round_idx - 1 < len(round_products)
+                else {}
+            )
+            round_translation = round_product.get("localized_translation") or {}
+            round_tts_script = round_product.get("tts_script") or {}
             if round_idx >= 2:
                 _log_translate_billing(
                     user_id=self.user_id,
@@ -1754,6 +1837,10 @@ class PipelineRunner:
                     input_tokens=round_record.get("translate_tokens_in"),
                     output_tokens=round_record.get("translate_tokens_out"),
                     success=True,
+                    request_payload=_llm_request_payload(
+                        round_translation, provider, "video_translate.rewrite"
+                    ),
+                    response_payload=_llm_response_payload(round_translation),
                 )
             _log_translate_billing(
                 user_id=self.user_id,
@@ -1763,6 +1850,10 @@ class PipelineRunner:
                 input_tokens=round_record.get("tts_script_tokens_in"),
                 output_tokens=round_record.get("tts_script_tokens_out"),
                 success=True,
+                request_payload=_llm_request_payload(
+                    round_tts_script, provider, "video_translate.tts_script"
+                ),
+                response_payload=_llm_response_payload(round_tts_script),
             )
             tts_char_count = round_record.get("tts_char_count")
             if tts_char_count is None and round_idx == loop_result["final_round"]:
@@ -1777,6 +1868,18 @@ class PipelineRunner:
                 request_units=tts_char_count,
                 units_type="chars",
                 success=True,
+                request_payload={
+                    "type": "tts",
+                    "provider": "elevenlabs",
+                    "model": self.tts_model_id,
+                    "voice_id": voice.get("elevenlabs_voice_id"),
+                    "text": (round_tts_script.get("full_text") or ""),
+                    "segments": round_product.get("tts_segments") or [],
+                },
+                response_payload={
+                    "audio_path": round_product.get("tts_audio_path"),
+                    "chars": tts_char_count,
+                },
             )
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:

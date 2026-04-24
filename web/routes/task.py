@@ -15,7 +15,13 @@ from flask import Blueprint, request, jsonify, send_file, render_template, abort
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
-from appcore.runtime import _VALID_TRANSLATE_PREFS, _build_av_localized_translation, _build_av_tts_segments
+from appcore.runtime import (
+    _VALID_TRANSLATE_PREFS,
+    _build_av_localized_translation,
+    _build_av_tts_segments,
+    _llm_request_payload,
+    _llm_response_payload,
+)
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
     AV_TARGET_LANGUAGE_OPTIONS,
@@ -672,6 +678,10 @@ def retranslate(task_id):
             response_cost_cny=usage.get("cost_cny"),
             success=True,
             extra={"source": "task.retranslate"},
+            request_payload=_llm_request_payload(
+                result, model_provider, "video_translate.localize"
+            ),
+            response_payload=_llm_response_payload(result),
         )
     except Exception as exc:
         ai_billing.log_request(
@@ -683,6 +693,15 @@ def retranslate(task_id):
             units_type="tokens",
             success=False,
             extra={"source": "task.retranslate", "error": str(exc)[:500]},
+            request_payload={
+                "type": "chat",
+                "use_case_code": "video_translate.localize",
+                "provider": model_provider,
+                "source_full_text": source_full_text_zh,
+                "script_segments": script_segments,
+                "custom_system_prompt": prompt_text,
+            },
+            response_payload={"error": str(exc)[:500]},
         )
         return jsonify({"error": f"翻译失败: {exc}"}), 500
 
