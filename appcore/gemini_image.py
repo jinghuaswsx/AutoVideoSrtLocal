@@ -13,6 +13,7 @@ import io
 import logging
 import math
 import re
+import time
 from typing import Any
 
 from google import genai
@@ -583,6 +584,111 @@ def _generate_via_seedream(
     except Exception as e:
         raise GeminiImageError(f"Seedream 图像 base64 解析失败：{e}") from e
     return image_bytes, "image/png", resp_json
+
+
+_APIMART_BASE_URL = "https://api.apimart.ai"
+_APIMART_POLL_INTERVAL = 5    # 秒
+_APIMART_POLL_TIMEOUT = 120   # 秒
+_APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
+
+
+def _generate_via_apimart(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    *,
+    api_key: str,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError(
+            "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
+        )
+    mime = source_mime or "image/png"
+    b64 = base64.b64encode(source_image).decode("ascii")
+    data_url = f"data:{mime};base64,{b64}"
+    payload = {
+        "model": "gpt-image-2",
+        "prompt": prompt,
+        "n": 1,
+        "size": "auto",
+        "resolution": "1k",
+        "image_urls": [data_url],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        submit_resp = requests.post(
+            f"{_APIMART_BASE_URL}/v1/images/generations",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        raise GeminiImageRetryable(f"APIMART 提交请求失败：{e}") from e
+
+    try:
+        submit_json = submit_resp.json()
+    except Exception:
+        submit_json = {}
+
+    if submit_resp.status_code != 200 or submit_json.get("code") != 200:
+        message = str(submit_json) or f"HTTP {submit_resp.status_code}"
+        if submit_resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(
+                f"APIMART 提交失败（HTTP {submit_resp.status_code}）：{message}"
+            )
+        raise GeminiImageError(f"APIMART 提交失败：{message}")
+
+    task_id = ((submit_json.get("data") or [{}])[0]).get("task_id")
+    if not task_id:
+        raise GeminiImageError("APIMART 未返回 task_id")
+
+    time.sleep(_APIMART_INITIAL_WAIT)
+
+    deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
+    while True:
+        try:
+            poll_resp = requests.get(
+                f"{_APIMART_BASE_URL}/v1/tasks/{task_id}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=15,
+            )
+            poll_json = poll_resp.json()
+        except requests.RequestException as e:
+            raise GeminiImageRetryable(f"APIMART 轮询失败：{e}") from e
+        except Exception:
+            poll_json = {}
+
+        data = poll_json.get("data") or {}
+        status = data.get("status", "")
+
+        if status == "completed":
+            image_url_field = ((data.get("result") or {}).get("images") or [{}])[0].get("url") or []
+            image_url = image_url_field[0] if isinstance(image_url_field, list) and image_url_field else image_url_field
+            if not image_url:
+                raise GeminiImageError("APIMART 任务完成但未返回图片 URL")
+            try:
+                img_resp = requests.get(image_url, timeout=30)
+            except requests.RequestException as e:
+                raise GeminiImageRetryable(f"APIMART 图片下载失败：{e}") from e
+            if img_resp.status_code != 200:
+                raise GeminiImageError(
+                    f"APIMART 图片下载失败（HTTP {img_resp.status_code}）"
+                )
+            return img_resp.content, "image/png", poll_json
+
+        if status == "failed":
+            error_msg = (data.get("error") or {}).get("message") or "unknown error"
+            raise GeminiImageError(f"APIMART 任务失败：{error_msg}")
+
+        if time.monotonic() > deadline:
+            raise GeminiImageRetryable(
+                f"APIMART 任务超时（>{_APIMART_POLL_TIMEOUT}s，task_id={task_id}）"
+            )
+
+        time.sleep(_APIMART_POLL_INTERVAL)
 
 
 # ---------------------------------------------------------------------------

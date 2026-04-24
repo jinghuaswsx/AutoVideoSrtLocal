@@ -583,3 +583,82 @@ def test_apimart_channel_registered_in_image_models():
 def test_apimart_channel_provider():
     from appcore import gemini_image
     assert gemini_image._channel_provider("apimart") == "apimart"
+
+
+def test_generate_via_apimart_success():
+    from unittest.mock import patch, MagicMock
+    from appcore import gemini_image
+
+    submit_mock = MagicMock()
+    submit_mock.status_code = 200
+    submit_mock.json.return_value = {
+        "code": 200,
+        "data": [{"status": "submitted", "task_id": "task_test_abc"}],
+    }
+
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://example.com/img.png"]}]},
+        },
+    }
+
+    img_dl_mock = MagicMock()
+    img_dl_mock.status_code = 200
+    img_dl_mock.content = b"PNG-BYTES"
+
+    def fake_get(url, **kwargs):
+        if "tasks" in url:
+            return poll_mock
+        return img_dl_mock
+
+    with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
+         patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep"):
+        result_bytes, result_mime, raw = gemini_image._generate_via_apimart(
+            "翻译这张图",
+            b"RAW-IMAGE",
+            "image/jpeg",
+            api_key="test-key",
+        )
+
+    assert result_bytes == b"PNG-BYTES"
+    assert result_mime == "image/png"
+    assert raw == poll_mock.json.return_value
+
+
+def test_generate_via_apimart_task_failed():
+    from unittest.mock import patch, MagicMock
+    import pytest
+    from appcore import gemini_image
+
+    submit_mock = MagicMock()
+    submit_mock.status_code = 200
+    submit_mock.json.return_value = {
+        "code": 200,
+        "data": [{"status": "submitted", "task_id": "task_fail"}],
+    }
+
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "failed",
+            "error": {"message": "content policy violation"},
+        },
+    }
+
+    with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
+         patch("appcore.gemini_image.requests.get", return_value=poll_mock), \
+         patch("appcore.gemini_image.time.sleep"):
+        with pytest.raises(gemini_image.GeminiImageError, match="content policy violation"):
+            gemini_image._generate_via_apimart(
+                "prompt",
+                b"RAW",
+                "image/png",
+                api_key="key",
+            )
