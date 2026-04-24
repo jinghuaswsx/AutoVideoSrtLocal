@@ -236,6 +236,48 @@ def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypat
     assert "跳过西班牙语配音" in updated["step_messages"]["tts"]
 
 
+def test_step_translate_completes_original_video_passthrough_for_sparse_multi_task(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    task_id = "multi-it-old-passthrough"
+    video_path = tmp_path / "music.mp4"
+    video_path.write_bytes(b"music-video")
+    task_state.create(task_id, str(video_path), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        status="error",
+        target_lang="it",
+        source_language="en",
+        media_passthrough_mode="original_video",
+        media_passthrough_reason="no_asr",
+        media_passthrough_source_chars=0,
+        source_full_text_zh="",
+        script_segments=[],
+    )
+    task_state.set_step(task_id, "translate", "running")
+
+    runner = _make_runner()
+    monkeypatch.setattr(
+        "appcore.runtime_multi.generate_localized_translation",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("multi translate should not call LLM for passthrough tasks")
+        ),
+    )
+
+    runner._step_translate(task_id)
+
+    updated = task_state.get(task_id)
+    assert updated["status"] == "done"
+    for step in ("alignment", "voice_match", "translate", "tts", "subtitle", "compose", "export"):
+        assert updated["steps"][step] == "done"
+    assert updated["result"]["hard_video"].endswith("_hard.normal.mp4")
+    assert (tmp_path / "music_hard.normal.mp4").read_bytes() == b"music-video"
+
+
 def test_resolve_translate_provider_accepts_gpt_5_mini(monkeypatch):
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_mini")
 

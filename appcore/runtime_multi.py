@@ -153,6 +153,12 @@ class MultiTranslateRunner(PipelineRunner):
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
+        if self._complete_original_video_passthrough(
+            task_id,
+            task.get("video_path") or "",
+            task_dir,
+        ):
+            return
         lang = self._resolve_target_lang(task)
         source_language = task.get("source_language", "zh")
 
@@ -247,6 +253,12 @@ class MultiTranslateRunner(PipelineRunner):
 
     def _step_subtitle(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if self._complete_original_video_passthrough(
+            task_id,
+            task.get("video_path") or "",
+            task_dir,
+        ):
+            return
         lang = self._resolve_target_lang(task)
         rules = self._get_lang_rules(lang)
 
