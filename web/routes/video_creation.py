@@ -96,6 +96,8 @@ def _log_video_creation_billing(
     *,
     success: bool,
     seedance_task_id: str | None = None,
+    request_payload: dict | None = None,
+    response_payload: dict | None = None,
     error: Exception | None = None,
 ) -> None:
     extra = {}
@@ -113,6 +115,22 @@ def _log_video_creation_billing(
         units_type="seconds",
         success=success,
         extra=extra or None,
+        request_payload=request_payload or {
+            "type": "video_generation",
+            "provider": "doubao",
+            "model": "doubao-seedance-2-0-260128",
+            "prompt": state.get("prompt"),
+            "video_path": state.get("video_path"),
+            "image_paths": state.get("image_paths") or [],
+            "audio_path": state.get("audio_path"),
+            "ratio": state.get("ratio"),
+            "duration": state.get("duration"),
+            "generate_audio": state.get("generate_audio"),
+            "watermark": state.get("watermark"),
+        },
+        response_payload=response_payload or (
+            {"error": str(error)[:500]} if error is not None else None
+        ),
     )
 
 
@@ -337,6 +355,20 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
             state,
             success=True,
             seedance_task_id=seedance_task_id,
+            request_payload={
+                "type": "video_generation",
+                "provider": "doubao",
+                "model": "doubao-seedance-2-0-260128",
+                "prompt": state["prompt"],
+                "video_url": video_url,
+                "image_urls": image_urls,
+                "audio_url": audio_url,
+                "ratio": state.get("ratio", "9:16"),
+                "duration": state.get("duration", 5),
+                "generate_audio": state.get("generate_audio", True),
+                "watermark": state.get("watermark", False),
+            },
+            response_payload=result,
         )
         billing_logged = True
 

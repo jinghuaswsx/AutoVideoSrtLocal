@@ -168,6 +168,8 @@ class CopywritingRunner:
             units_type="tokens",
             response_cost_cny=_cw_usage.get("cost_cny"),
             success=True,
+            request_payload=(result.get("_debug") or {}).get("full_request"),
+            response_payload={k: v for k, v in result.items() if not str(k).startswith("_")},
         )
         self._emit(task_id, EVT_CW_COPY_READY, {"copy": result})
 

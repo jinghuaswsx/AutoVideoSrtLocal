@@ -2,8 +2,32 @@
 from __future__ import annotations
 from decimal import Decimal
 import logging
+from typing import Any
 
 log = logging.getLogger(__name__)
+
+
+def record_payload(log_id: int, request_data: Any, response_data: Any) -> None:
+    """Store request/response JSON for an existing usage log row. Never raises."""
+    if not log_id:
+        return
+    try:
+        import json
+        from appcore.db import execute
+
+        execute(
+            """INSERT INTO usage_log_payloads (log_id, request_data, response_data)
+               VALUES (%s, %s, %s)""",
+            (
+                log_id,
+                json.dumps(request_data, ensure_ascii=False, default=str)
+                if request_data is not None else None,
+                json.dumps(response_data, ensure_ascii=False, default=str)
+                if response_data is not None else None,
+            ),
+        )
+    except Exception as e:
+        log.debug("usage_log.record_payload failed: %s", e)
 
 
 def record(

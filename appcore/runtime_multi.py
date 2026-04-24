@@ -23,6 +23,8 @@ from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
+    _llm_request_payload,
+    _llm_response_payload,
     _log_translate_billing,
     _save_json,
     _resolve_translate_provider,
@@ -233,6 +235,13 @@ class MultiTranslateRunner(PipelineRunner):
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             success=True,
+            request_payload=_llm_request_payload(
+                localized_translation,
+                provider,
+                "video_translate.localize",
+                messages=initial_messages,
+            ),
+            response_payload=_llm_response_payload(localized_translation),
         )
 
         if requires_confirmation:

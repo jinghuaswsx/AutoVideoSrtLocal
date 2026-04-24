@@ -17,7 +17,7 @@ DEFAULT_MODEL = "doubao-seedance-1-5-pro-251215"
 
 # 轮询配置
 POLL_INTERVAL = 10     # 秒
-POLL_TIMEOUT = 600     # 最长等待 10 分钟
+POLL_TIMEOUT = 1800    # 最长等待 30 分钟
 
 
 def create_video_task(

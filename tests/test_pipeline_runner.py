@@ -798,6 +798,8 @@ def test_video_creation_generate_logs_ai_billing(tmp_path, monkeypatch):
     assert logged[0]["request_units"] == 8
     assert logged[0]["units_type"] == "seconds"
     assert logged[0]["success"] is True
+    assert logged[0]["request_payload"]["prompt"] == "demo prompt"
+    assert logged[0]["response_payload"]["task_id"] == "seed-task-8"
 
 
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):

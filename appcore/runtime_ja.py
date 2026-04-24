@@ -20,6 +20,7 @@ from appcore.runtime import (
     _build_review_segments,
     _compute_next_target,
     _distance_to_duration_range,
+    _llm_response_payload,
     _save_json,
     _tts_final_target_range,
 )
@@ -515,6 +516,19 @@ class JapaneseTranslateRunner(PipelineRunner):
             request_units=ja_char_count,
             units_type="chars",
             success=True,
+            request_payload={
+                "type": "tts",
+                "provider": "elevenlabs",
+                "model": self.tts_model_id,
+                "voice_id": voice_id,
+                "text": tts_script.get("full_text") or "",
+                "segments": final_segments,
+            },
+            response_payload={
+                "audio_path": final_audio_path,
+                "chars": ja_char_count,
+                "tts_script": _llm_response_payload(tts_script),
+            },
         )
         self._emit(task_id, EVT_TTS_SCRIPT_READY, {"tts_script": tts_script})
         self._set_step(task_id, "tts", "done", "日语配音生成完成并完成时长收敛")

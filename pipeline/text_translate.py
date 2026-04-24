@@ -95,6 +95,16 @@ def _invoke_translation_chat(
             output_tokens=usage_dict["output_tokens"],
             units_type="tokens",
             success=True,
+            request_payload={
+                "type": "chat",
+                "use_case_code": "text_translate.generate",
+                "provider": provider_code,
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            response_payload={"text": text, "usage": usage_dict},
         )
         return {"text": text, "usage": usage_dict}
 
