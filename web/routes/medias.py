@@ -2370,10 +2370,14 @@ def public_media_object(object_key: str):
     # 最低限度的防护：禁止 path traversal 和空值
     if not key or ".." in key.split("/") or key.startswith("/"):
         abort(404)
-    # 实际 object_key 形如 "<uid>/medias/<pid>/<filename>" —— 要求至少 3 段且
-    # 第二段是 "medias"，拦住误读无关本地文件
+    # 项目内合法 object_key 命名空间（local_media_storage 已做 traversal 校验）：
+    #   <uid>/medias/<pid>/<filename>              -- 原始素材 / 封面 / raw_sources
+    #   artifacts/<variant>/<uid>/<tid>/<file>    -- 产物（image_translate 译图/译封面等）
+    #   uploads/<variant>/<uid>/<tid>/<file>      -- 上传源文件
     parts = key.split("/")
-    if len(parts) < 3 or parts[1] != "medias":
+    if len(parts) < 3:
+        abort(404)
+    if not (parts[1] == "medias" or parts[0] in ("artifacts", "uploads")):
         abort(404)
     return _send_media_object(key)
 
