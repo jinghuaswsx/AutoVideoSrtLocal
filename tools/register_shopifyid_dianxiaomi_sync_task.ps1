@@ -33,6 +33,10 @@ $settings = New-ScheduledTaskSettingsSet `
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
 $description = "Run the Dianxiaomi Shopify ID sync every day at 12:10 and backfill empty media_products.shopifyid values."
 
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+}
+
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
