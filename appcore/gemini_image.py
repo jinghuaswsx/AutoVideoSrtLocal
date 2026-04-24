@@ -634,7 +634,11 @@ def _generate_via_apimart(
         submit_json = {}
 
     if submit_resp.status_code != 200 or submit_json.get("code") != 200:
-        message = str(submit_json) or f"HTTP {submit_resp.status_code}"
+        if isinstance(submit_json, dict):
+            err = submit_json.get("error") or submit_json.get("message") or submit_json
+            message = str(err)[:500]
+        else:
+            message = f"HTTP {submit_resp.status_code}"
         if submit_resp.status_code in {429, 500, 502, 503, 504}:
             raise GeminiImageRetryable(
                 f"APIMART 提交失败（HTTP {submit_resp.status_code}）：{message}"
@@ -655,9 +659,14 @@ def _generate_via_apimart(
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=15,
             )
-            poll_json = poll_resp.json()
         except requests.RequestException as e:
             raise GeminiImageRetryable(f"APIMART 轮询失败：{e}") from e
+        if poll_resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(
+                f"APIMART 轮询失败（HTTP {poll_resp.status_code}）"
+            )
+        try:
+            poll_json = poll_resp.json()
         except Exception:
             poll_json = {}
 
@@ -665,8 +674,13 @@ def _generate_via_apimart(
         status = data.get("status", "")
 
         if status == "completed":
-            image_url_field = ((data.get("result") or {}).get("images") or [{}])[0].get("url") or []
-            image_url = image_url_field[0] if isinstance(image_url_field, list) and image_url_field else image_url_field
+            images = (data.get("result") or {}).get("images") or []
+            first_image = images[0] if images else {}
+            url_value = first_image.get("url") if isinstance(first_image, dict) else None
+            if isinstance(url_value, list):
+                image_url = url_value[0] if url_value else None
+            else:
+                image_url = url_value or None
             if not image_url:
                 raise GeminiImageError("APIMART 任务完成但未返回图片 URL")
             try:
