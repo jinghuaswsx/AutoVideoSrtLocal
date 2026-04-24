@@ -167,59 +167,27 @@ def shopify_localizer_bootstrap():
             "message": "未找到 Shopify ID。请先到产品编辑页最底部填写 Shopify ID 后，再执行图片本地化工具。",
         }), 409
 
-    reference_images = medias.list_reference_images_for_lang(int(product["id"]), "en")
-    localized_images = medias.list_reference_images_for_lang(int(product["id"]), lang)
+    # 本接口只服务详情图本地化流程，cover 归 EZ Product Image 另走流程，统一过滤掉
+    reference_images = [
+        item for item in medias.list_reference_images_for_lang(int(product["id"]), "en")
+        if item.get("kind") == "detail" and item.get("object_key")
+    ]
+    localized_images = [
+        item for item in medias.list_reference_images_for_lang(int(product["id"]), lang)
+        if item.get("kind") == "detail" and item.get("object_key")
+    ]
     if not reference_images:
         return jsonify({"error": "english references not ready"}), 409
-    if not any(item.get("kind") == "detail" for item in localized_images):
-        # 详情图缺失直接阻塞；cover 缺失放行并通过 missing_kinds 告知下游
+    if not localized_images:
         return jsonify({"error": "localized images not ready"}), 409
 
-    ref_kinds = {item.get("kind") for item in reference_images}
-    loc_kinds = {item.get("kind") for item in localized_images}
-    missing_kinds: list[str] = []
-    if "cover" in ref_kinds and "cover" not in loc_kinds:
-        missing_kinds.append("cover")
-
-    reference_payload = [
-        {
+    def _serialize(item: dict) -> dict:
+        return {
             "id": item.get("id"),
             "kind": item.get("kind"),
             "filename": item.get("filename"),
             "url": _media_download_url(item.get("object_key")),
         }
-        for item in reference_images
-        if item.get("object_key")
-    ]
-    localized_payload = [
-        {
-            "id": item.get("id"),
-            "kind": item.get("kind"),
-            "filename": item.get("filename"),
-            "url": _media_download_url(item.get("object_key")),
-        }
-        for item in localized_images
-        if item.get("object_key")
-    ]
-
-    # 目标语言没有 cover 时用英文 cover 作为回退，下游通过 fallback_from 字段识别来源
-    if "cover" in missing_kinds:
-        en_cover = next(
-            (
-                item
-                for item in reference_images
-                if item.get("kind") == "cover" and item.get("object_key")
-            ),
-            None,
-        )
-        if en_cover:
-            localized_payload.insert(0, {
-                "id": en_cover.get("id"),
-                "kind": "cover",
-                "filename": en_cover.get("filename"),
-                "url": _media_download_url(en_cover.get("object_key")),
-                "fallback_from": "en",
-            })
 
     return jsonify({
         "product": {
@@ -234,9 +202,8 @@ def shopify_localizer_bootstrap():
             "shop_locale": lang,
             "folder_code": lang,
         },
-        "reference_images": reference_payload,
-        "localized_images": localized_payload,
-        "missing_kinds": missing_kinds,
+        "reference_images": [_serialize(item) for item in reference_images],
+        "localized_images": [_serialize(item) for item in localized_images],
     })
 
 
