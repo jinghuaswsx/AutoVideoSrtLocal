@@ -42,3 +42,23 @@ def test_edit_mk_id_section_has_no_duplicate_field_label():
     assert 'id="edMkIdSectionTitle"' in section
     assert 'id="edMkId"' in section
     assert 'aria-labelledby="edMkIdSectionTitle"' in section
+
+
+def test_edit_modal_places_shopifyid_section_after_mk_id():
+    html = (ROOT / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(
+        encoding="utf-8"
+    )
+
+    mk_id_index = html.index('id="edMkIdSection"')
+    shopify_id_index = html.index('id="edShopifyIdSection"')
+
+    assert mk_id_index < shopify_id_index
+    assert 'id="edShopifyIdValue"' in html
+    assert "Shopify ID" in html
+
+
+def test_medias_list_uses_two_column_grid_for_row_actions():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert ".oc-row-actions { display:grid;" in html
+    assert "grid-template-columns:repeat(2, minmax(0, max-content));" in html

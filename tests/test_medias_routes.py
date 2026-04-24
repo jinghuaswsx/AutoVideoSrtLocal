@@ -1246,3 +1246,45 @@ def test_detail_image_proxy_serves_local_media_store_file(
 
     assert resp.status_code == 200
     assert resp.data == b"detail-bytes"
+
+
+def test_get_product_api_includes_shopifyid(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": "测试商品",
+            "product_code": "demo-product",
+            "mk_id": 123456,
+            "shopifyid": "8560559554733",
+            "ad_supported_langs": "",
+            "archived": 0,
+            "created_at": None,
+            "updated_at": None,
+            "listing_status": "上架",
+            "localized_links_json": None,
+            "link_check_tasks_json": None,
+            "remark": "",
+            "ai_score": None,
+            "ai_evaluation_result": "",
+            "ai_evaluation_detail": "",
+            "owner_name": "",
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda pid: {"en": "covers/demo.jpg"})
+    monkeypatch.setattr(r.medias, "list_items", lambda pid: [])
+    monkeypatch.setattr(r.medias, "list_copywritings", lambda pid: [])
+    monkeypatch.setattr(r.medias, "normalize_listing_status", lambda status: status or "上架")
+
+    resp = authed_client_no_db.get("/medias/api/products/123")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["product"]["shopifyid"] == "8560559554733"

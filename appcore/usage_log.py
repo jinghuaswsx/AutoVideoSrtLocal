@@ -24,13 +24,14 @@ def record(
     cost_cny: Decimal | None = None,
     cost_source: str = "unknown",
     extra_data: dict | None = None,
-) -> None:
+) -> int | None:
+    """Returns the new row's id, or None on failure."""
     if user_id is None:
-        return
+        return None
     try:
         import json
         from appcore.db import execute
-        execute(
+        return execute(
             """INSERT INTO usage_logs
                (user_id, project_id, service, use_case_code, module, provider,
                 model_name, success, input_tokens, output_tokens,
@@ -41,6 +42,7 @@ def record(
              model_name, int(success), input_tokens, output_tokens,
              audio_duration_seconds, request_units, units_type, cost_cny,
              cost_source, json.dumps(extra_data) if extra_data else None),
-        )
+        ) or None
     except Exception as e:
         log.debug("usage_log.record failed: %s", e)
+        return None

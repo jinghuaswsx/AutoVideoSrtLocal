@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import time
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 
 STORE_SLUG = "0ixug9-pv"
+DEFAULT_CDP_PORT = 7777
+
 LOGIN_URL_HINTS = ("login", "signin", "sign-in", "account", "identity")
 LOGIN_TEXT_HINTS = (
     "log in",
@@ -13,6 +21,11 @@ LOGIN_TEXT_HINTS = (
     "enter your email",
     "shopify",
 )
+
+
+# ---------------------------------------------------------------------------
+# URL builders
+# ---------------------------------------------------------------------------
 
 
 def build_ez_url(shopify_product_id: str) -> str:
@@ -29,20 +42,139 @@ def build_translate_url(shopify_product_id: str, shop_locale: str) -> str:
     )
 
 
-def launch_persistent_context(playwright, user_data_dir: str):
-    launch_kwargs = {
-        "user_data_dir": user_data_dir,
-        "headless": False,
-        "no_viewport": True,
-        "args": ["--start-maximized"],
-    }
+# ---------------------------------------------------------------------------
+# Chrome launch + CDP connect
+# ---------------------------------------------------------------------------
+
+
+def _find_chrome_executable() -> str | None:
+    candidates: list[str] = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    localappdata = os.environ.get("LOCALAPPDATA")
+    if localappdata:
+        candidates.append(str(Path(localappdata) / "Google" / "Chrome" / "Application" / "chrome.exe"))
+    for path in candidates:
+        if path and Path(path).is_file():
+            return path
+    which = shutil.which("chrome")
+    if which:
+        return which
+    return None
+
+
+def _cdp_alive(port: int, *, timeout: float = 1.0) -> bool:
     try:
-        return playwright.chromium.launch_persistent_context(
-            channel="msedge",
-            **launch_kwargs,
-        )
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/json/version", timeout=timeout
+        ) as response:
+            return response.status == 200
     except Exception:
-        return playwright.chromium.launch_persistent_context(**launch_kwargs)
+        return False
+
+
+def ensure_chrome_running(
+    user_data_dir: str,
+    *,
+    port: int = DEFAULT_CDP_PORT,
+    startup_timeout_s: int = 30,
+) -> bool:
+    """确保一个普通 Chrome 进程在 `port` 上开着 DevTools 协议。
+
+    返回：True 表示本函数刚启动了 Chrome；False 表示发现已有 Chrome 在监听。
+
+    关键点：
+    - 不加 `--enable-automation`、`--test-type` 等会触发"自动化控制"横幅的 flag
+    - 以 detached 方式启动，不是 Playwright 的子进程
+    - 仅当 `port` 上还没有 DevTools 时才启动新的 Chrome
+    """
+    if _cdp_alive(port):
+        return False
+
+    chrome_exe = _find_chrome_executable()
+    if not chrome_exe:
+        raise RuntimeError(
+            "未找到 chrome.exe，请安装 Google Chrome，或确认 chrome.exe 在 PATH 中"
+        )
+    Path(user_data_dir).mkdir(parents=True, exist_ok=True)
+
+    creation_flags = 0
+    if os.name == "nt":
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP — Chrome 独立于本进程存活
+        creation_flags = 0x00000008 | 0x00000200
+
+    subprocess.Popen(
+        [
+            chrome_exe,
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={user_data_dir}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--restore-last-session",
+        ],
+        creationflags=creation_flags,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+
+    deadline = time.time() + startup_timeout_s
+    while time.time() < deadline:
+        if _cdp_alive(port):
+            return True
+        time.sleep(0.5)
+    raise RuntimeError(
+        f"Chrome 在 127.0.0.1:{port} 未在 {startup_timeout_s}s 内就绪，请手动启动后重试"
+    )
+
+
+@dataclass
+class ChromeSession:
+    """持有 CDP 连接句柄的会话。关闭时只断开 CDP，不杀 Chrome 进程。"""
+
+    browser: object
+    context: object
+
+    def close(self) -> None:
+        try:
+            if self.browser is not None:
+                # connect_over_cdp 返回的 browser.close() 只断开连接，不会终止外部 Chrome
+                self.browser.close()
+        except Exception:
+            pass
+
+
+def open_chrome_session(
+    playwright,
+    user_data_dir: str,
+    *,
+    port: int = DEFAULT_CDP_PORT,
+) -> ChromeSession:
+    """确保 Chrome 在 `port` 上运行并用 CDP 接入，返回默认 context。"""
+    ensure_chrome_running(user_data_dir, port=port)
+    browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+    if browser.contexts:
+        context = browser.contexts[0]
+    else:
+        context = browser.new_context()
+    return ChromeSession(browser=browser, context=context)
+
+
+# 兼容旧调用点：返回一个 BrowserContext，内部把 browser 句柄挂在上面防被 GC
+def launch_persistent_context(playwright, user_data_dir: str, *, port: int = DEFAULT_CDP_PORT):
+    chrome_session = open_chrome_session(playwright, user_data_dir, port=port)
+    context = chrome_session.context
+    try:
+        setattr(context, "_chrome_session", chrome_session)
+    except Exception:
+        pass
+    return context
+
+
+# ---------------------------------------------------------------------------
+# Page helpers
+# ---------------------------------------------------------------------------
 
 
 def page_requires_login(page) -> bool:

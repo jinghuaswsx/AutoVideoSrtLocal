@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 
 def test_list_product_tasks_does_not_require_updated_at(monkeypatch):
     from appcore import bulk_translate_projection as mod
@@ -44,6 +46,39 @@ def test_list_product_tasks_does_not_require_updated_at(monkeypatch):
     assert "updated_at" not in captured["sql"].lower()
     assert items[0]["updated_at"] == "2026-04-22T23:00:00"
     assert items[0]["items"][0]["manual_step"] == "voice_selection"
+
+
+def test_list_product_tasks_skips_child_refresh_by_default(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    monkeypatch.setattr(
+        mod,
+        "query",
+        lambda sql, args=None: [
+            {
+                "id": "bt-1",
+                "status": "running",
+                "state_json": {
+                    "product_id": 417,
+                    "target_langs": ["it"],
+                    "content_types": ["videos"],
+                    "plan": [],
+                },
+                "created_at": datetime(2026, 4, 24, 10, 0, 0),
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "sync_task_with_children_once",
+        lambda *args, **kwargs: pytest.fail("default projection should not refresh children"),
+        raising=False,
+    )
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"it": "意大利语"}.get(code, code))
+
+    items = mod.list_product_tasks(1, 417)
+
+    assert items[0]["id"] == "bt-1"
 
 
 def test_list_product_tasks_exposes_ja_translate_voice_selection_link(monkeypatch):
@@ -159,7 +194,7 @@ def test_list_product_tasks_refreshes_child_status_before_serializing(monkeypatc
     )
     monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"it": "意大利语"}.get(code, code))
 
-    items = mod.list_product_tasks(1, 417)
+    items = mod.list_product_tasks(1, 417, refresh_children=True)
 
     assert refreshed == [("bt-1", 1)]
     assert items[0]["status"] == "done"

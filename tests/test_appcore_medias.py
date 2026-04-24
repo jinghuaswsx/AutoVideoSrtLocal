@@ -250,6 +250,43 @@ def test_update_product_link_check_tasks_json(monkeypatch):
     assert captured["args"][-1] == 7
 
 
+def test_update_product_shopifyid_normalizes_numeric_string(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    medias.update_product(12, shopifyid="8560559554733")
+
+    assert "shopifyid=%s" in captured["sql"]
+    assert captured["args"] == ("8560559554733", 12)
+
+
+def test_update_product_shopifyid_normalizes_blank_to_none(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    medias.update_product(18, shopifyid="   ")
+
+    assert "shopifyid=%s" in captured["sql"]
+    assert captured["args"] == (None, 18)
+
+
+def test_update_product_shopifyid_rejects_non_digits():
+    with pytest.raises(ValueError, match="shopifyid 必须是纯数字字符串"):
+        medias.update_product(21, shopifyid="abc-123")
+
+
 def test_parse_link_check_tasks_json_handles_str_dict_and_none():
     assert medias.parse_link_check_tasks_json(None) == {}
     assert medias.parse_link_check_tasks_json("") == {}
