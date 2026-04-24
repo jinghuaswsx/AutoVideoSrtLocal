@@ -13,22 +13,27 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from flask import Blueprint, jsonify, request
 
 import config
-from appcore import medias, pushes
+from appcore import medias, pushes, tos_clients
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
 link_check_bp = Blueprint("openapi_link_check", __name__, url_prefix="/openapi/link-check")
-
-_LIST_PAGE_SIZE_MAX = 100
-_OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
+shopify_localizer_bp = Blueprint(
+    "openapi_shopify_localizer",
+    __name__,
+    url_prefix="/openapi/medias/shopify-image-localizer",
+)
 
 
 def _media_download_url(object_key: str | None) -> str | None:
-    return pushes.build_media_public_url(object_key)
+    if not object_key:
+        return None
+    return tos_clients.generate_signed_media_download_url(object_key)
 
-
+_LIST_PAGE_SIZE_MAX = 100
+_OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
 def _api_key_valid() -> bool:
     expected = (config.OPENAPI_MEDIA_API_KEY or "").strip()
     provided = (request.headers.get("X-API-Key") or "").strip()
@@ -122,6 +127,80 @@ def _normalize_target_url(target_url: str) -> str:
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     normalized_query = urlencode(query_pairs, doseq=True)
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, normalized_query, ""))
+
+
+@shopify_localizer_bp.route("/languages", methods=["GET"])
+def shopify_localizer_languages():
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    return jsonify({"items": medias.list_shopify_localizer_languages()})
+
+
+@shopify_localizer_bp.route("/bootstrap", methods=["POST"])
+def shopify_localizer_bootstrap():
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+
+    body = request.get_json(silent=True) or {}
+    product_code = str(body.get("product_code") or "").strip().lower()
+    lang = str(body.get("lang") or "").strip().lower()
+    if not product_code or not lang:
+        return jsonify({"error": "missing product_code or lang"}), 400
+    if not medias.is_valid_language(lang):
+        return jsonify({"error": "invalid lang"}), 400
+
+    product = medias.get_product_by_code(product_code)
+    if not product:
+        return jsonify({"error": "product not found"}), 404
+
+    shopify_product_id = medias.resolve_shopify_product_id(int(product["id"]))
+    if not shopify_product_id:
+        return jsonify({
+            "error": "shopify_product_id_missing",
+            "message": "未找到 Shopify ID。请先到产品编辑页最底部填写 Shopify ID 后，再执行图片本地化工具。",
+        }), 409
+
+    reference_images = medias.list_shopify_localizer_images(int(product["id"]), "en")
+    localized_images = medias.list_shopify_localizer_images(int(product["id"]), lang)
+    if not reference_images:
+        return jsonify({"error": "english references not ready"}), 409
+    if not localized_images:
+        return jsonify({"error": "localized images not ready"}), 409
+
+    return jsonify({
+        "product": {
+            "id": product.get("id"),
+            "product_code": product.get("product_code"),
+            "shopify_product_id": shopify_product_id,
+            "name": product.get("name"),
+        },
+        "language": {
+            "code": lang,
+            "name_zh": medias.get_language_name(lang),
+            "shop_locale": lang,
+            "folder_code": lang,
+        },
+        "reference_images": [
+            {
+                "id": item.get("id"),
+                "kind": item.get("kind"),
+                "filename": item.get("filename"),
+                "url": _media_download_url(item.get("object_key")),
+            }
+            for item in reference_images
+            if item.get("object_key")
+        ],
+        "localized_images": [
+            {
+                "id": item.get("id"),
+                "kind": item.get("kind"),
+                "filename": item.get("filename"),
+                "url": _media_download_url(item.get("object_key")),
+            }
+            for item in localized_images
+            if item.get("object_key")
+        ],
+    })
 
 
 @bp.route("/<product_code>", methods=["GET"])

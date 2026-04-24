@@ -53,27 +53,17 @@ def _raw_source_upload_files(video_name="bad.mp4"):
     }
 
 
-@pytest.mark.parametrize(
-    "display_name",
-    [
-        "bad.mp4",
-        "2026-03-25-可堆叠棒球帽收纳盒-原始视频.mp4",
-        "2026.02.30-可堆叠棒球帽收纳盒-原始视频.mp4",
-        "2026.03.25-其他产品-原始视频.mp4",
-        "2026.03.25-可堆叠棒球帽收纳盒-.mp4",
-        "2026.03.25-可堆叠棒球帽收纳盒-原始视频.mov",
-    ],
-)
-def test_create_raw_source_rejects_invalid_display_name_before_storage(
-    authed_client_no_db, monkeypatch, display_name
+def test_create_raw_source_rejects_when_english_video_missing_before_storage(
+    authed_client_no_db, monkeypatch
 ):
     r = _stub_raw_source_upload_product(monkeypatch)
     writes = []
     monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
+    monkeypatch.setattr(r.medias, "list_items", lambda pid, lang=None: [])
     monkeypatch.setattr(
         r.object_keys,
         "build_media_raw_source_key",
-        lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
+        lambda user_id, pid, kind, filename, **kwargs: f"{user_id}/raw/{pid}/{kind}/{filename}",
     )
     monkeypatch.setattr(r.medias, "create_raw_source", lambda *args, **kwargs: 123)
     monkeypatch.setattr(
@@ -97,7 +87,7 @@ def test_create_raw_source_rejects_invalid_display_name_before_storage(
     resp = authed_client_no_db.post(
         "/medias/api/products/123/raw-sources",
         data={
-            "display_name": display_name,
+            "display_name": "manual-name.mp4",
             **_raw_source_upload_files("2026.03.25-baseball.mp4"),
         },
         content_type="multipart/form-data",
@@ -105,23 +95,31 @@ def test_create_raw_source_rejects_invalid_display_name_before_storage(
 
     assert resp.status_code == 400
     data = resp.get_json()
-    assert data["error"] == "raw_source_title_invalid"
-    assert data["message"] == "原始去字幕视频素材名称不符合命名规范"
+    assert data["error"] == "english_video_required"
     assert writes == []
 
 
-def test_create_raw_source_accepts_valid_display_name(
+def test_create_raw_source_accepts_matching_english_video_filename_without_auto_rename(
     authed_client_no_db, monkeypatch
 ):
     r = _stub_raw_source_upload_product(monkeypatch)
     writes = []
     created = {}
-    valid_name = "2026.03.25-可堆叠棒球帽收纳盒-原始视频.mp4"
+    key_calls = []
+    valid_name = "2026.03.25-baseball-cap-organizer-english.mp4"
     monkeypatch.setattr(r.local_media_storage, "write_bytes", lambda *args: writes.append(args))
+    monkeypatch.setattr(
+        r.medias,
+        "list_items",
+        lambda pid, lang=None: [
+            {"id": 321, "product_id": pid, "lang": "en", "filename": valid_name, "created_at": None},
+            {"id": 322, "product_id": pid, "lang": "en", "filename": "2026.03.26-baseball-cap-organizer-english.mp4", "created_at": None},
+        ],
+    )
     monkeypatch.setattr(
         r.object_keys,
         "build_media_raw_source_key",
-        lambda user_id, pid, kind, filename: f"{user_id}/raw/{pid}/{kind}/{filename}",
+        lambda user_id, pid, kind, filename, **kwargs: key_calls.append((kind, filename, kwargs)) or f"{user_id}/raw/{pid}/{kind}/{filename}",
     )
     monkeypatch.setattr(
         r.medias,
@@ -134,7 +132,7 @@ def test_create_raw_source_accepts_valid_display_name(
         lambda rid: {
             "id": rid,
             "product_id": 123,
-            "display_name": valid_name,
+            "display_name": "manual-name.mp4",
             "video_object_key": "1/raw/123/video/source.mp4",
             "cover_object_key": "1/raw/123/cover/cover.jpg",
             "duration_seconds": None,
@@ -149,15 +147,16 @@ def test_create_raw_source_accepts_valid_display_name(
     resp = authed_client_no_db.post(
         "/medias/api/products/123/raw-sources",
         data={
-            "display_name": valid_name,
+            "display_name": "manual-name.mp4",
             **_raw_source_upload_files(valid_name),
         },
         content_type="multipart/form-data",
     )
 
     assert resp.status_code == 201
-    assert resp.get_json()["item"]["display_name"] == valid_name
-    assert created["kwargs"]["display_name"] == valid_name
+    assert resp.get_json()["item"]["display_name"] == "manual-name.mp4"
+    assert created["kwargs"]["display_name"] == "manual-name.mp4"
+    assert key_calls[0] == ("video", valid_name, {})
     assert len(writes) == 2
 
 

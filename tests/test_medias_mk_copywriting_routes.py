@@ -141,3 +141,15 @@ def test_add_material_modal_has_mk_copywriting_fetch_button():
     assert "一键从明空系统获取" in html
     assert "/medias/api/mk-copywriting" in script
     assert "fillCopywritingFromMkSystem" in script
+
+
+def test_edit_material_modal_has_en_mk_copywriting_fetch_button():
+    html = (ROOT / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(
+        encoding="utf-8"
+    )
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'id="edCwTranslateSlot"' in html
+    assert "edMkCopyFetchBtn" in script
+    assert "edFillCopywritingFromMkSystem" in script
+    assert "/medias/api/mk-copywriting" in script

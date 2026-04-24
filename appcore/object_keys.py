@@ -31,6 +31,7 @@ def build_media_raw_source_key(
     *,
     kind: str,
     filename: str,
+    exact_filename: bool = False,
 ) -> str:
     if kind not in ("video", "cover"):
         raise ValueError(f"invalid kind: {kind}")
@@ -39,6 +40,8 @@ def build_media_raw_source_key(
     ext = Path(raw).suffix or (".mp4" if kind == "video" else ".jpg")
     unique = uuid.uuid4().hex[:12]
     if kind == "video":
+        if exact_filename:
+            return f"{user_id}/medias/{product_id}/raw_sources/{raw}"
         return f"{user_id}/medias/{product_id}/raw_sources/{unique}_{raw}"
     return f"{user_id}/medias/{product_id}/raw_sources/{unique}_{stem}.cover{ext}"
 

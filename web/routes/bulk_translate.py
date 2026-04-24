@@ -22,6 +22,7 @@ from appcore.bulk_translate_estimator import estimate as do_estimate
 from appcore.bulk_translate_runtime import (
     cancel_task,
     create_bulk_translate_task,
+    force_backfill_item,
     get_task,
     pause_task,
     resume_task,
@@ -410,6 +411,26 @@ def retry_failed_endpoint(task_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     start_background_task(_spawn_scheduler, task_id)
+    return jsonify({"ok": True}), 202
+
+
+# ------------------------------------------------------------
+# POST /api/bulk-translate/<id>/force-backfill-item
+# ------------------------------------------------------------
+@bp.post("/<task_id>/force-backfill-item")
+@login_required
+def force_backfill_item_endpoint(task_id):
+    _, err = _load_and_check_ownership(task_id)
+    if err:
+        return err
+    payload = request.get_json(force=True, silent=True) or {}
+    idx = payload.get("idx")
+    if not isinstance(idx, int):
+        return jsonify({"error": "idx 必填且为 int"}), 400
+    try:
+        force_backfill_item(task_id, idx=idx, user_id=current_user.id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
     return jsonify({"ok": True}), 202
 
 

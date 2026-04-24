@@ -57,6 +57,8 @@ def test_bulk_translate_detail_script_renders_status_and_task_sections():
     assert "整个任务重新启动" in script
     assert "重跑失败项" in script
     assert "重跑此项" in script
+    assert "强制回填" in script
+    assert "将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成" in script
     assert "如果这一项是图片翻译，只会补跑其中失败或中断的图片" in script
     assert "单个重新启动" not in script
     assert "中断项不会在服务启动时自动重跑" in script
@@ -205,6 +207,8 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
                         "lang": "it",
                         "kind": "detail_images",
                         "status": "failed",
+                        "force_backfillable": True,
+                        "force_backfill_summary": "强制回填：已回填 2 张，忽略失败 1 张",
                         "error": "图片翻译失败",
                         "ref": {"source_detail_ids": [1, 2, 3]},
                         "child_task_id": "sub-fail-1",
@@ -240,10 +244,44 @@ def test_bulk_translate_detail_renders_intervention_cards_before_normal_cards():
     assert "图片翻译失败" in plan_html
     assert "等待人工选声音" in plan_html
     assert "重跑此项" in plan_html
+    assert "强制回填" in plan_html
+    assert "强制回填：已回填 2 张，忽略失败 1 张" in plan_html
     assert "去选声音" in plan_html
     assert "2/4" in rendered["statsHtml"]
     assert "50%" in rendered["statusHtml"]
     assert "剩余 2 个" in rendered["statusHtml"]
+
+
+def test_bulk_translate_detail_renders_ja_translate_voice_entry():
+    rendered = _run_detail_harness(
+        {
+            "id": "task-ja-voice",
+            "status": "running",
+            "created_at": "2026-04-24T08:00:00+00:00",
+            "updated_at": "2026-04-24T08:05:00+00:00",
+            "state": {
+                "initiator": {"user_name": "admin", "ip": "127.0.0.1"},
+                "progress": {"total": 1, "done": 0, "awaiting_voice": 1, "pending": 0, "failed": 0},
+                "cost_tracking": {"actual": {"actual_cost_cny": 0}},
+                "plan": [
+                    {
+                        "idx": 0,
+                        "lang": "ja",
+                        "kind": "videos",
+                        "status": "awaiting_voice",
+                        "ref": {"source_raw_id": 21},
+                        "child_task_id": "sub-voice-ja",
+                        "child_task_type": "ja_translate",
+                    }
+                ],
+                "audit_events": [],
+            },
+        }
+    )
+
+    plan_html = rendered["planHtml"]
+    assert 'href="/ja-translate/sub-voice-ja"' in plan_html
+    assert "bt-task-card__no-action" not in plan_html
 
 
 def test_bulk_translate_detail_stats_hide_estimate_copy():

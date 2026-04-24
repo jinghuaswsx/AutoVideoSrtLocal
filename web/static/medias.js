@@ -1230,6 +1230,29 @@
     return text ? [{ body: text }] : [];
   }
 
+  async function requestMkCopywriting(rawCode) {
+    const params = new URLSearchParams({ product_code: rawCode });
+    const data = await fetchJSON(`/medias/api/mk-copywriting?${params.toString()}`);
+    const copywriting = (data.copywriting || '').trim();
+    if (!copywriting) throw new Error('明空系统没有返回可用文案');
+    return copywriting;
+  }
+
+  function alertMkCopywritingFetchError(error) {
+    const msg = (error && error.message ? error.message : error || '').toString();
+    if (msg.includes('mk_credentials_expired')) {
+      alert('明空登录已失效，请重新同步 wedev 凭据');
+    } else if (msg.includes('mk_credentials_missing')) {
+      alert('明空凭据未配置，请先在设置页同步 wedev 凭据');
+    } else if (msg.includes('mk_copywriting_not_found')) {
+      alert('明空系统未找到与当前产品 ID 精准匹配的文案');
+    } else if (msg.includes('mk_copywriting_empty')) {
+      alert('明空系统找到了该产品，但没有可用文案');
+    } else {
+      alert('从明空系统获取文案失败：' + msg);
+    }
+  }
+
   async function fillCopywritingFromMkSystem() {
     const nameInput = $('mName');
     const codeInput = $('mCode');
@@ -1256,28 +1279,14 @@
     if (btn) btn.disabled = true;
     if (label) label.textContent = '获取中...';
     try {
-      const params = new URLSearchParams({ product_code: rawCode });
-      const data = await fetchJSON(`/medias/api/mk-copywriting?${params.toString()}`);
-      const copywriting = (data.copywriting || '').trim();
-      if (!copywriting) throw new Error('明空系统没有返回可用文案');
+      const copywriting = await requestMkCopywriting(rawCode);
       if (textarea.value.trim() && !confirm('当前文案不为空，是否用明空文案覆盖？')) {
         return;
       }
       textarea.value = copywriting;
       textarea.focus();
     } catch (e) {
-      const msg = (e.message || '').toString();
-      if (msg.includes('mk_credentials_expired')) {
-        alert('明空登录已失效，请重新同步 wedev 凭据');
-      } else if (msg.includes('mk_credentials_missing')) {
-        alert('明空凭据未配置，请先在设置页同步 wedev 凭据');
-      } else if (msg.includes('mk_copywriting_not_found')) {
-        alert('明空系统未找到与当前产品 ID 精准匹配的文案');
-      } else if (msg.includes('mk_copywriting_empty')) {
-        alert('明空系统找到了该产品，但没有可用文案');
-      } else {
-        alert('从明空系统获取文案失败：' + msg);
-      }
+      alertMkCopywritingFetchError(e);
     } finally {
       if (btn) btn.disabled = false;
       if (label) label.textContent = originalLabel || '一键从明空系统获取';
@@ -1637,7 +1646,20 @@
     if (!slot) return;
     const lang = (edState.activeLang || '').trim().toLowerCase();
     if (lang === 'en') {
-      slot.innerHTML = '';
+      let btn = slot.querySelector('#edMkCopyFetchBtn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.className = 'oc-btn ghost sm';
+        btn.type = 'button';
+        btn.id = 'edMkCopyFetchBtn';
+        btn.innerHTML = `${icon('search', 14)}<span>一键从名控系统获取文案</span>`;
+        btn.addEventListener('click', () => {
+          edFillCopywritingFromMkSystem().catch((err) => {
+            console.error('[copywriting] fetch from mk system failed:', err);
+          });
+        });
+        slot.replaceChildren(btn);
+      }
       return;
     }
     let btn = slot.querySelector('#edCwTranslateBtn');
@@ -1657,6 +1679,57 @@
     const source = edGetEnglishSourceCopy();
     btn.disabled = !source;
     btn.title = source ? '读取英文文案并生成当前语种文案' : '当前没有可用的英文文案';
+  }
+
+  async function edFillCopywritingFromMkSystem() {
+    const lang = (edState.activeLang || '').trim().toLowerCase();
+    if (lang !== 'en') return;
+
+    const nameInput = $('edName');
+    const codeInput = $('edCode');
+    const btn = $('edMkCopyFetchBtn');
+    const label = btn ? btn.querySelector('span') : null;
+    const originalLabel = label ? label.textContent : '';
+    const name = nameInput ? nameInput.value.trim() : '';
+    const rawCode = codeInput ? codeInput.value.trim() : '';
+    const normalizedCode = rawCode.toLowerCase();
+
+    if (!name) {
+      alert('请先填写产品名称');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!SLUG_RE.test(normalizedCode)) {
+      alert('请先填写合法的产品 ID（小写字母/数字/连字符，3–128）');
+      if (codeInput) codeInput.focus();
+      return;
+    }
+    if (!edState.productData) return;
+
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = '获取中...';
+    try {
+      edFlushCopywritings();
+      const copywriting = edNormalizeCopywritingBody(await requestMkCopywriting(rawCode));
+      const hasExisting = edGetCopywritingsByLang('en').some((item) => edHasMeaningfulCopywritingBody(item && item.body));
+      if (hasExisting && !confirm('当前文案不为空，是否用明空文案覆盖？')) {
+        return;
+      }
+      const nextCopywritings = edEnsureCopywritingsArray().filter(
+        (item) => (item.lang || '').trim().toLowerCase() !== 'en'
+      );
+      nextCopywritings.push({ lang: 'en', body: copywriting });
+      edState.productData.copywritings = nextCopywritings;
+      edRenderLangTabs();
+      edRenderCopyBlock('en');
+      const textarea = $('edCwList') && $('edCwList').querySelector('[data-field="body"]');
+      if (textarea) textarea.focus();
+    } catch (e) {
+      alertMkCopywritingFetchError(e);
+    } finally {
+      if (btn) btn.disabled = false;
+      if (label) label.textContent = originalLabel || '一键从名控系统获取文案';
+    }
   }
 
   async function edTranslateEnglishCopywriting() {
@@ -3683,6 +3756,9 @@
   const uploadVideoFilled = $('rsUploadVideoFilled');
   const uploadVideoName = $('rsUploadVideoName');
   const uploadVideoSize = $('rsUploadVideoSize');
+  const nameHelpMask = $('rsNameHelpMask');
+  const nameHelpMessage = $('rsNameHelpMessage');
+  const nameHelpList = $('rsNameHelpList');
   const translateMask = $('rsTranslateMask');
   const translateTitleMeta = $('rstTitleMeta');
   const translateRsList = $('rstRsList');
@@ -3697,12 +3773,12 @@
   };
   let rawSourceCoverObjectUrl = '';
 
-  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !uploadSubmit || !uploadVideoInput || !uploadCoverInput || !uploadNameInput || !uploadCoverBox || !uploadCoverPreview || !uploadVideoBox || !uploadVideoEmpty || !uploadVideoFilled || !uploadVideoName || !uploadVideoSize || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
+  if (!modalMask || !modalClose || !list || !uploadMask || !uploadForm || !uploadSubmit || !uploadVideoInput || !uploadCoverInput || !uploadNameInput || !uploadCoverBox || !uploadCoverPreview || !uploadVideoBox || !uploadVideoEmpty || !uploadVideoFilled || !uploadVideoName || !uploadVideoSize || !nameHelpMask || !nameHelpMessage || !nameHelpList || !translateMask || !translateRsList || !translateLangs || !translatePreview || !translateSubmit) {
     return;
   }
 
   uploadNameInput.maxLength = 128;
-  uploadNameInput.placeholder = 'YYYY.MM.DD-产品名-xxxxxx.mp4';
+  uploadNameInput.placeholder = '默认读取所选视频文件名，可按需修改';
 
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -3762,7 +3838,10 @@
     const resp = await fetch(url, options);
     if (resp.ok) return resp.json();
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || `${resp.status}`);
+    const error = new Error(err.message || err.error || `${resp.status}`);
+    Object.assign(error, err || {});
+    error.status = resp.status;
+    throw error;
   }
 
   function syncRawSourceCount(pid, count) {
@@ -3870,7 +3949,7 @@
           <textarea
             class="oc-rs-title-input js-rs-title-input"
             rows="2"
-            maxlength="64"
+            maxlength="128"
             aria-label="编辑原始素材名称"
             hidden
           >${title}</textarea>
@@ -4169,6 +4248,45 @@
     uploadSubmit.disabled = false;
     setRawSourceUploadCover(null);
     setRawSourceUploadVideo(null);
+    closeRawSourceFilenameHelp();
+  }
+
+  function closeRawSourceFilenameHelp() {
+    nameHelpMask.hidden = true;
+    nameHelpMessage.textContent = '';
+    nameHelpList.innerHTML = '';
+  }
+
+  function openRawSourceFilenameHelp(payload) {
+    const uploadedFilename = String(payload?.uploaded_filename || '').trim();
+    const englishFilenames = Array.isArray(payload?.english_filenames) ? payload.english_filenames : [];
+    if (!englishFilenames.length) {
+      nameHelpMessage.textContent = uploadedFilename
+        ? `当前上传文件「${uploadedFilename}」无法提交，因为该产品还没有英语视频。请先补英语视频。`
+        : '当前产品还没有英语视频。请先补英语视频后再上传原始视频。';
+      nameHelpList.innerHTML = '';
+      nameHelpMask.hidden = false;
+      return;
+    }
+    nameHelpMessage.textContent = uploadedFilename
+      ? `当前上传文件名「${uploadedFilename}」没有命中现有英语视频。请把本地视频重命名为下面任一英语文件名后重新提交。`
+      : '请把本地视频重命名为下面任一英语文件名后重新提交。';
+    nameHelpList.innerHTML = englishFilenames.map((filename) => `
+      <li class="oc-rst-choice">
+        <div class="oc-rst-choice-row">
+          <div class="oc-rst-choice-meta">
+            <strong title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong>
+          </div>
+          <button
+            type="button"
+            class="oc-btn ghost sm js-rs-name-copy"
+            data-filename="${escapeHtml(filename)}"
+            data-copy-label="复制"
+          >复制</button>
+        </div>
+      </li>
+    `).join('');
+    nameHelpMask.hidden = false;
   }
 
   async function refreshRawSourceList(pid) {
@@ -4192,13 +4310,6 @@
   async function submitRawSourceUpload(event) {
     event.preventDefault();
     if (!uiState.currentPid) return;
-    const titleErrors = validateRawSourceDisplayName(uploadNameInput.value, uiState.currentName);
-    if (titleErrors.length) {
-      alertRawSourceTitleErrors(titleErrors);
-      uploadNameInput.focus();
-      uploadNameInput.select();
-      return;
-    }
     const fd = new FormData(uploadForm);
     uploadSubmit.disabled = true;
     try {
@@ -4209,7 +4320,11 @@
       closeRawSourceUpload();
       await refreshRawSourceList(uiState.currentPid);
     } catch (err) {
-      alert(`上传失败：${err.message || err}`);
+      if (err?.error === 'raw_source_filename_mismatch' || err?.error === 'english_video_required') {
+        openRawSourceFilenameHelp(err);
+      } else {
+        alert(`上传失败：${err.message || err}`);
+      }
       uploadSubmit.disabled = false;
     }
   }
@@ -4408,6 +4523,11 @@
       return;
     }
 
+    if (event.target === nameHelpMask || event.target.closest('#rsNameHelpClose') || event.target.closest('#rsNameHelpCancel')) {
+      closeRawSourceFilenameHelp();
+      return;
+    }
+
     if (event.target === translateMask || event.target.closest('#rstClose') || event.target.closest('#rstCancel')) {
       closeTranslateDialog();
       return;
@@ -4417,6 +4537,15 @@
     if (del) {
       event.preventDefault();
       await deleteRawSource(del);
+      return;
+    }
+
+    const copyBtn = event.target.closest('.js-rs-name-copy');
+    if (copyBtn) {
+      event.preventDefault();
+      copyText(copyBtn.dataset.filename || '')
+        .then(() => flashCopiedButton(copyBtn))
+        .catch(() => alert('复制失败，请手动复制'));
       return;
     }
 

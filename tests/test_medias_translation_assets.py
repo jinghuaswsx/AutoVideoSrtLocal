@@ -46,6 +46,8 @@ def test_medias_translation_tasks_action_labels_are_explicit():
     assert "只重跑失败或中断的子项" in script
     assert ">重跑此项</button>" in script
     assert "如果这一项是图片翻译，只会补跑其中失败或中断的图片" in script
+    assert ">强制回填</button>" in script
+    assert "将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成" in script
     assert "单个重新启动" not in script
 
 

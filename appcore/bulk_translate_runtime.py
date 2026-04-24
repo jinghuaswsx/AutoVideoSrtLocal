@@ -328,6 +328,41 @@ def retry_item(task_id: str, idx: int, user_id: int) -> None:
     _save_state(task_id, state, status=_derive_parent_status(state.get("plan") or [], "running"))
 
 
+def force_backfill_item(task_id: str, idx: int, user_id: int) -> None:
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+
+    state = task["state"]
+    plan = [_normalize_item(item) for item in state.get("plan") or []]
+    state["plan"] = plan
+    if idx < 0 or idx >= len(plan):
+        raise ValueError(f"Invalid idx={idx}, plan has {len(plan)} items")
+
+    item = plan[idx]
+    _validate_force_backfill_target(item)
+    child_state = _load_child_snapshot(item.get("child_task_type"), item.get("child_task_id"))
+    if not child_state:
+        raise ValueError("image translate child task not found")
+
+    result = _force_backfill_detail_image_child(item, child_state, user_id)
+    _mark_item_force_backfilled(item, result)
+    _roll_up_cost_once_for_item(state, item, child_state)
+    _append_audit(
+        state,
+        user_id,
+        "force_backfill_item",
+        {
+            "idx": idx,
+            "child_task_id": item.get("child_task_id"),
+            "applied_count": int(item.get("forced_backfill_applied_count") or 0),
+            "skipped_failed_count": int(item.get("forced_backfill_skipped_failed_count") or 0),
+            "apply_status": item.get("forced_backfill_apply_status") or "",
+        },
+    )
+    _save_state(task_id, state, status=_derive_parent_status(plan, task.get("status") or "running"))
+
+
 def refresh_task_from_children(task_id: str, user_id: int | None = None) -> dict | None:
     """Poll existing child tasks and sync recovered results without creating new children."""
     task = get_task(task_id)
@@ -579,6 +614,67 @@ def _mark_image_child_retry_running(item: dict) -> None:
     item["result_synced"] = False
     item["started_at"] = item.get("started_at") or _now_iso()
     item["finished_at"] = None
+
+
+def _validate_force_backfill_target(item: dict) -> None:
+    if _normalized_status(item.get("status")) != "failed":
+        raise ValueError("only failed items can be force backfilled")
+    if (item.get("kind") or "").strip() != "detail_images":
+        raise ValueError("force backfill only supports detail image items")
+    if (item.get("child_task_type") or "").strip() != "image_translate":
+        raise ValueError("force backfill only supports image_translate children")
+    if not (item.get("child_task_id") or item.get("sub_task_id")):
+        raise ValueError("image translate child task missing")
+    if bool(item.get("forced_backfill")):
+        raise ValueError("item already force backfilled")
+
+
+def _force_backfill_detail_image_child(item: dict, child_state: dict, user_id: int) -> dict:
+    from appcore.image_translate_runtime import apply_translated_detail_images_from_task
+
+    normalized_child = dict(child_state or {})
+    child_status = _normalized_status(normalized_child.get("_project_status"))
+    if child_status in {"queued", "planning", "dispatching", "running", "syncing_result"}:
+        raise ValueError("image translate child task is still running")
+
+    normalized_child.setdefault("id", item.get("child_task_id") or item.get("sub_task_id"))
+    normalized_child.setdefault("type", "image_translate")
+    normalized_child.setdefault("_user_id", user_id)
+    result = apply_translated_detail_images_from_task(
+        normalized_child,
+        allow_partial=True,
+        user_id=user_id,
+    )
+    if not result.get("applied_ids"):
+        raise ValueError("image translate child task has no successful images to apply")
+    return result
+
+
+def _mark_item_force_backfilled(item: dict, result: dict) -> None:
+    applied_ids = [int(item_id) for item_id in result.get("applied_ids") or []]
+    skipped_failed_indices = [
+        int(failed_idx) for failed_idx in result.get("skipped_failed_indices") or []
+        if failed_idx is not None
+    ]
+    item["status"] = "done"
+    item["error"] = None
+    item["result_synced"] = True
+    item["forced_backfill"] = True
+    item["forced_backfill_at"] = _now_iso()
+    item["forced_backfill_child_task_id"] = item.get("child_task_id") or item.get("sub_task_id")
+    item["forced_backfill_apply_status"] = result.get("apply_status") or ""
+    item["forced_backfill_applied_ids"] = applied_ids
+    item["forced_backfill_applied_count"] = len(applied_ids)
+    item["forced_backfill_skipped_failed_indices"] = skipped_failed_indices
+    item["forced_backfill_skipped_failed_count"] = len(skipped_failed_indices)
+    item["finished_at"] = _now_iso()
+
+
+def _roll_up_cost_once_for_item(parent_state: dict, item: dict, child_state: dict) -> None:
+    if bool(item.get("cost_rolled_up")):
+        return
+    _roll_up_cost(parent_state, item, child_state)
+    item["cost_rolled_up"] = True
 
 
 def _should_refresh_from_child(item: dict) -> bool:
@@ -943,15 +1039,15 @@ def _create_video_cover_child(parent_id: str, item: dict, parent_state: dict) ->
 
 def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
     from web import store
-    from web.services import ja_pipeline_runner, multi_pipeline_runner
+    from web.services import multi_pipeline_runner
 
     product_id = int(parent_state.get("product_id") or 0)
     user_id = int((parent_state.get("initiator") or {}).get("user_id") or 0)
     lang = (item.get("lang") or "").strip()
     if lang not in _MULTI_TRANSLATE_SUPPORTED_LANGS:
         raise ValueError(f"unsupported multi_translate target lang: {lang}")
-    child_project_type = "ja_translate" if lang == "ja" else "multi_translate"
-    runner = ja_pipeline_runner if child_project_type == "ja_translate" else multi_pipeline_runner
+    child_project_type = "multi_translate"
+    runner = multi_pipeline_runner
 
     source_raw_id = int((item.get("ref") or {}).get("source_raw_id") or 0)
     raw_source = medias.get_raw_source(source_raw_id)
@@ -1145,6 +1241,11 @@ def _normalize_item(raw_item: dict) -> dict:
     item.setdefault("error", None)
     item.setdefault("started_at", None)
     item.setdefault("finished_at", None)
+    item["cost_rolled_up"] = bool(item.get("cost_rolled_up", False))
+    item["forced_backfill"] = bool(item.get("forced_backfill", False))
+    item.setdefault("forced_backfill_applied_count", 0)
+    item.setdefault("forced_backfill_skipped_failed_count", 0)
+    item.setdefault("forced_backfill_apply_status", "")
     return item
 
 
@@ -1157,6 +1258,15 @@ def _reset_item_for_retry(item: dict) -> None:
     item["result_synced"] = False
     item["started_at"] = None
     item["finished_at"] = None
+    item["cost_rolled_up"] = False
+    item["forced_backfill"] = False
+    item["forced_backfill_at"] = None
+    item["forced_backfill_child_task_id"] = None
+    item["forced_backfill_apply_status"] = ""
+    item["forced_backfill_applied_ids"] = []
+    item["forced_backfill_applied_count"] = 0
+    item["forced_backfill_skipped_failed_indices"] = []
+    item["forced_backfill_skipped_failed_count"] = 0
 
 
 def _normalized_status(status: str | None) -> str:
