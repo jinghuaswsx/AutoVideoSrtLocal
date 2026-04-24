@@ -803,35 +803,70 @@ def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
     assert '<span class="nav-icon">🧽</span>' in body
 
 
-def test_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
+def test_layout_hides_api_config_nav_for_normal_user(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/subtitle-removal")
 
-    response = authed_client_no_db.get("/settings")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "API 配置" not in body
+    assert 'href="/settings"' not in body
+
+
+def test_layout_contains_user_settings_nav_for_normal_user(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "用户设置" in body
+    assert 'href="/user-settings"' in body
+
+
+def test_user_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.user_settings.resolve_extra", lambda user_id, service: {})
+
+    response = authed_client_no_db.get("/user-settings")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "jianying_project_root" in body
     assert DEFAULT_JIANYING_PROJECT_ROOT in body
+    assert "data-settings-copy" in body
 
 
-def test_settings_page_saves_custom_jianying_project_root(authed_client_no_db, monkeypatch):
+def test_user_settings_page_saves_custom_jianying_project_root(authed_client_no_db, monkeypatch):
     custom_root = r"D:\JianyingDrafts"
     captured = []
 
     def fake_set_key(user_id, service, key_value, extra=None):
         captured.append((user_id, service, key_value, extra))
 
-    monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {"jianying": {"key_value": "", "extra": {"project_root": custom_root}}})
-    monkeypatch.setattr("web.routes.settings.set_key", fake_set_key)
+    monkeypatch.setattr("web.routes.user_settings.resolve_extra", lambda user_id, service: {"project_root": custom_root})
+    monkeypatch.setattr("web.routes.user_settings.set_key", fake_set_key)
 
     response = authed_client_no_db.post(
-        "/settings",
+        "/user-settings",
         data={"jianying_project_root": custom_root},
         follow_redirects=True,
     )
 
     assert response.status_code == 200
     assert (1, "jianying", "", {"project_root": custom_root}) in captured
+
+
+def test_settings_page_no_longer_contains_jianying_project_root(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
+    monkeypatch.setattr("web.routes.settings.llm_bindings.list_all", lambda: [])
+    monkeypatch.setattr("appcore.pushes.get_push_target_url", lambda: "")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url", lambda: "")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_authorization", lambda: "")
+    monkeypatch.setattr("appcore.pushes.get_localized_texts_cookie", lambda: "")
+
+    response = authed_client_no_db.get("/settings")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "jianying_project_root" not in body
+    assert "导出目录设置" not in body
 
 
 def test_task_detail_returns_artifacts_structure(authed_client_no_db):

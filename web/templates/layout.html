@@ -389,12 +389,17 @@
         <span class="nav-icon">🗂️</span> 批量翻译任务管理
       </a>
       {% endif %}
+      {% if current_user.username == 'admin' %}
       <a href="{{ url_for('settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
         <span class="nav-icon">⚙️</span> API 配置
       </a>
+      {% endif %}
       <a href="{% if current_user.role == 'admin' %}{{ url_for('admin_ai_billing.admin_ai_usage') }}{% else %}{{ url_for('user_ai_billing.my_ai_usage') }}{% endif %}"
          target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/admin/ai-usage') or request.path.startswith('/my-ai-usage') %}class="active"{% endif %}>
         <span class="nav-icon">📘</span> API 账单
+      </a>
+      <a href="{{ url_for('user_settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'user_settings.index' %}class="active"{% endif %}>
+        <span class="nav-icon">⚙️</span> 用户设置
       </a>
       {% if current_user.role == 'admin' %}
       <a href="{{ url_for('admin.users') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>

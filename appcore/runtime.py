@@ -217,6 +217,13 @@ def _resolve_translate_provider(user_id: int | None) -> str:
     return pref if pref in _VALID_TRANSLATE_PREFS else default
 
 
+def _resolve_task_translate_provider(user_id: int | None, task: dict | None) -> str:
+    provider = str((task or {}).get("custom_translate_provider") or "").strip()
+    if provider in _VALID_TRANSLATE_PREFS:
+        return provider
+    return _resolve_translate_provider(user_id)
+
+
 def _lang_display(label: str) -> str:
     """Convert language label (en/de/fr) to Chinese display name for step messages."""
     return {
@@ -1303,7 +1310,7 @@ class PipelineRunner:
         from pipeline.localization import build_source_full_text_zh
         from pipeline.translate import generate_localized_translation
 
-        provider = _resolve_translate_provider(self.user_id)
+        provider = _resolve_task_translate_provider(self.user_id, task)
         from pipeline.translate import get_model_display_name as _get_model_name
         _model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
         self._set_step(task_id, "translate", "running", "正在生成整段本土化翻译...", model_tag=_model_tag)
@@ -1402,7 +1409,7 @@ class PipelineRunner:
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
 
-        provider = _resolve_translate_provider(self.user_id)
+        provider = _resolve_task_translate_provider(self.user_id, task)
         from pipeline.translate import get_model_display_name as _get_model_name
         _tts_model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
         self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...", model_tag=_tts_model_tag)
