@@ -199,12 +199,10 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
         evaluation_result = "部分适合推广"
     else:
         evaluation_result = "不适合推广"
-    listing_status = "上架" if suitable_count > 0 else "下架"
     return {
         "countries": countries,
         "ai_score": avg_score,
         "ai_evaluation_result": evaluation_result,
-        "listing_status": listing_status,
     }
 
 
@@ -327,14 +325,12 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
         ai_score=normalized["ai_score"],
         ai_evaluation_result=normalized["ai_evaluation_result"],
         ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
-        listing_status=normalized["listing_status"],
     )
     return {
         "status": "evaluated",
         "product_id": product_id,
         "ai_score": normalized["ai_score"],
         "ai_evaluation_result": normalized["ai_evaluation_result"],
-        "listing_status": normalized["listing_status"],
     }
 
 

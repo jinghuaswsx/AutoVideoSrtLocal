@@ -78,7 +78,7 @@ def test_normalize_result_covers_all_languages_and_truncates_reason():
     assert len(normalized["countries"][0]["reason"]) <= 100
     assert normalized["ai_score"] == 63.5
     assert normalized["ai_evaluation_result"] == "部分适合推广"
-    assert normalized["listing_status"] == "上架"
+    assert "listing_status" not in normalized
 
 
 def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp_path):
@@ -159,7 +159,8 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert result["status"] == "evaluated"
     assert updates["ai_score"] == 88.0
     assert updates["ai_evaluation_result"] == "适合推广"
-    assert updates["listing_status"] == "上架"
+    assert "listing_status" not in updates
+    assert "listing_status" not in result
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
     assert detail["countries"][0]["lang"] == "de"
@@ -228,4 +229,4 @@ def test_normalize_result_fills_missing_language_for_manual_review():
     assert normalized["countries"][1]["decision"] == "谨慎推广"
     assert normalized["countries"][1]["reason"] == "模型未返回该语种结果，需人工复核。"
     assert normalized["ai_evaluation_result"] == "需人工复核"
-    assert normalized["listing_status"] == "上架"
+    assert "listing_status" not in normalized
