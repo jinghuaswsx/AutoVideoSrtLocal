@@ -179,6 +179,32 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
     assert billing_calls[0]["request_units"] == 13
 
 
+def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_path, monkeypatch):
+    task = store.create("task-asr-short-passthrough", "video.mp4", str(tmp_path), user_id=9)
+    task["audio_path"] = str(tmp_path / "audio.wav")
+
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
+    monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
+    monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
+    monkeypatch.setattr(
+        "pipeline.asr.transcribe",
+        lambda audio_url, volc_api_key=None: [
+            {"start_time": 0.0, "end_time": 12.4, "text": "Yeah, yeah Yeah."},
+        ],
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
+    monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=9)
+    runner._step_asr("task-asr-short-passthrough", str(tmp_path))
+
+    saved = store.get("task-asr-short-passthrough")
+    assert saved["media_passthrough_mode"] == "original_video"
+    assert saved["media_passthrough_reason"] == "short_asr"
+    assert saved["media_passthrough_source_chars"] < 50
+    assert saved["steps"]["asr"] == "done"
+
+
 def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypatch):
     task = store.create("task-manual-translate", "video.mp4", str(tmp_path))
     task["interactive_review"] = True
@@ -444,6 +470,60 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
         "normal": "example",
         "hook_cta": "example",
     }
+
+
+def test_step_compose_copies_original_video_when_passthrough_enabled(tmp_path, monkeypatch):
+    task = store.create("task-compose-passthrough", "video.mp4", str(tmp_path), user_id=1)
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"original-video")
+    task["video_path"] = str(source_video)
+    task["media_passthrough_mode"] = "original_video"
+    task["media_passthrough_reason"] = "short_asr"
+    task["media_passthrough_source_chars"] = 12
+
+    monkeypatch.setattr(
+        "pipeline.compose.compose_video",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("compose_video should not run for passthrough tasks")),
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
+    runner._step_compose("task-compose-passthrough", str(source_video), str(tmp_path))
+
+    saved = store.get("task-compose-passthrough")
+    result = saved["result"]
+    assert result["hard_video"].endswith("_hard.normal.mp4")
+    assert (tmp_path / "source_hard.normal.mp4").read_bytes() == b"original-video"
+    assert saved["steps"]["compose"] == "done"
+
+
+def test_step_export_skips_capcut_when_passthrough_enabled(tmp_path, monkeypatch):
+    task = store.create("task-export-passthrough", "video.mp4", str(tmp_path), user_id=1)
+    source_video = tmp_path / "source.mp4"
+    hard_video = tmp_path / "source_hard.normal.mp4"
+    source_video.write_bytes(b"original-video")
+    hard_video.write_bytes(b"original-video")
+    task["video_path"] = str(source_video)
+    task["media_passthrough_mode"] = "original_video"
+    task["media_passthrough_reason"] = "short_asr"
+    task["media_passthrough_source_chars"] = 12
+    task["variants"]["normal"]["result"] = {
+        "hard_video": str(hard_video),
+        "soft_video": str(hard_video),
+        "srt": "",
+    }
+
+    monkeypatch.setattr(
+        "pipeline.capcut.export_capcut_project",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("CapCut export should be skipped for passthrough tasks")),
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=1)
+    runner._step_export("task-export-passthrough", str(source_video), str(tmp_path))
+
+    saved = store.get("task-export-passthrough")
+    assert saved["status"] == "done"
+    assert saved["exports"] == {}
+    assert saved["steps"]["export"] == "done"
 
 
 def test_upload_artifacts_to_tos_keeps_new_artifacts_local_by_default(tmp_path, monkeypatch):

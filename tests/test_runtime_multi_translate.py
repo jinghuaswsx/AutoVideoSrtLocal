@@ -160,6 +160,79 @@ def test_step_tts_uses_target_language_context_for_multilingual_tasks(tmp_path, 
     assert "localized English" not in messages[0]["content"]
 
 
+def test_step_tts_skips_dubbing_when_source_asr_is_too_short(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+
+    task_id = "multi-es-short-asr"
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"fake-video")
+
+    task_state.create(task_id, str(video_path), str(tmp_path), user_id=1)
+    task_state.update(
+        task_id,
+        target_lang="es",
+        source_language="en",
+        source_full_text_zh="This source text is intentionally long enough to avoid the legacy short-ASR branch.",
+        media_passthrough_mode="original_video",
+        media_passthrough_reason="short_asr",
+        media_passthrough_source_chars=14,
+        selected_voice_id="voice-es",
+        selected_voice_name="Spanish Voice",
+        script_segments=[
+            {"index": 0, "text": "Yeah, yeah Yeah.", "start_time": 0.0, "end_time": 3.0},
+        ],
+        localized_translation={
+            "full_text": "Sí, sí, sí.",
+            "sentences": [
+                {
+                    "index": 0,
+                    "text": "Sí, sí, sí.",
+                    "source_segment_indices": [0],
+                },
+            ],
+        },
+        variants={
+            "normal": {
+                "localized_translation": {
+                    "full_text": "Sí, sí, sí.",
+                    "sentences": [
+                        {
+                            "index": 0,
+                            "text": "Sí, sí, sí.",
+                            "source_segment_indices": [0],
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    runner = _make_runner()
+    monkeypatch.setattr("appcore.runtime._resolve_translate_provider", lambda user_id: "openrouter")
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "gpt")
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 18.0)
+    monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 18.0)
+    monkeypatch.setattr("appcore.runtime.ai_billing.log_request", lambda **kwargs: None)
+    monkeypatch.setattr("appcore.runtime_multi.resolve_prompt_config", lambda slot, lang: {"content": "x"})
+
+    def fail_loop(**kwargs):
+        raise AssertionError("duration loop should be skipped for short ASR")
+
+    monkeypatch.setattr(runner, "_run_tts_duration_loop", fail_loop)
+
+    runner._step_tts(task_id, str(tmp_path))
+
+    updated = task_state.get(task_id)
+    assert updated["tts_duration_status"] == "source_video_passthrough"
+    assert updated["tts_skip_reason"] == "short_asr"
+    assert updated["steps"]["tts"] == "done"
+    assert "跳过西班牙语配音" in updated["step_messages"]["tts"]
+
+
 def test_resolve_translate_provider_accepts_gpt_5_mini(monkeypatch):
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_mini")
 

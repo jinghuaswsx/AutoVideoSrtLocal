@@ -282,6 +282,8 @@ class MultiTranslateRunner(PipelineRunner):
         from appcore.events import EVT_VOICE_MATCH_READY
 
         task = task_state.get(task_id)
+        if self._skip_original_video_passthrough_step(task_id, "voice_match", task=task):
+            return
         lang = self._resolve_target_lang(task)
         utterances = task.get("utterances") or []
         video_path = task.get("video_path")
