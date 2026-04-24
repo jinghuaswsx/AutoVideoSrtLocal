@@ -16,6 +16,7 @@ from pipeline.voice_embedding import (
 from pipeline.ffutil import get_media_duration
 
 SAMPLE_CLIP_SECONDS = 10.0
+DEFAULT_VOICE_MATCH_TOP_K = 10
 _BASE_TABLE = "elevenlabs_voices"
 _VARIANTS_TABLE = "elevenlabs_voice_variants"
 
@@ -107,7 +108,7 @@ def match_candidates(
     *,
     language: str,
     gender: Optional[str] = None,
-    top_k: int = 3,
+    top_k: int = DEFAULT_VOICE_MATCH_TOP_K,
     exclude_voice_ids: Optional[Iterable[str]] = None,
 ) -> List[Dict[str, Any]]:
     """对候选音色按余弦相似度排序，返回前 top_k 条。"""
@@ -145,7 +146,7 @@ def match_for_video(
     *,
     language: str,
     gender: Optional[str] = None,
-    top_k: int = 3,
+    top_k: int = DEFAULT_VOICE_MATCH_TOP_K,
     exclude_voice_ids: Optional[Iterable[str]] = None,
     out_dir: str,
 ) -> List[Dict[str, Any]]:

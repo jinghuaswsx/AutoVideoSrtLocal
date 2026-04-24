@@ -56,3 +56,25 @@ def test_await_voice_confirmation_times_out_to_none():
             "t1", [], poll_interval=0.0, timeout_seconds=0,
         )
     assert result is None
+
+
+def test_step_voice_match_requests_top10_candidates():
+    bus = EventBus()
+    runner = PipelineRunnerV2(bus=bus, user_id=1)
+    task = {
+        "voice_match_mode": "auto",
+        "target_language": "de",
+        "voice_gender": "female",
+    }
+
+    with patch.object(runner, "_set_step"), \
+         patch.object(runner, "_emit"), \
+         patch("appcore.runtime_v2.task_state.get", return_value=task), \
+         patch("appcore.runtime_v2.task_state.update"), \
+         patch("pipeline.voice_match.match_for_video",
+               return_value=[{"voice_id": "voice-1"}]) as m_match, \
+         patch("pipeline.speech_rate_model.get_rate", return_value=None), \
+         patch("appcore.runtime_v2.resolve_key", return_value=None):
+        runner._step_voice_match("t1", "/tmp/demo.mp4", "/tmp/task")
+
+    assert m_match.call_args.kwargs["top_k"] == 10

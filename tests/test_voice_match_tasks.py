@@ -57,6 +57,28 @@ def test_run_task_success(monkeypatch, tmp_path):
     assert t["result"]["sample_audio_path"] == str(clip_path)
 
 
+def test_run_task_requests_top10_candidates(monkeypatch, tmp_path):
+    video_path = tmp_path / "demo.mp4"
+    video_path.write_bytes(b"video")
+    clip_path = tmp_path / "clip.wav"
+    clip_path.write_bytes(b"wav")
+    seen = {}
+
+    monkeypatch.setattr(vmt, "_extract_sample_clip",
+                        lambda p, out_dir: str(clip_path))
+    monkeypatch.setattr(vmt, "_embed_audio_file",
+                        lambda p: np.ones(256, dtype=np.float32))
+    monkeypatch.setattr(vmt, "_match_candidates", lambda vec, **kwargs: (
+        seen.update(kwargs) or [{"voice_id": "x", "similarity": 0.9}]
+    ))
+
+    tid = vmt.create_task(user_id=1, source_video_path=str(video_path),
+                          language="de", gender="male")
+    vmt._run_task_sync(tid)
+
+    assert seen["top_k"] == 10
+
+
 def test_run_task_failure_marks_failed(monkeypatch, tmp_path):
     source_video = tmp_path / "demo.mp4"
     source_video.write_bytes(b"video")

@@ -34,6 +34,7 @@ def test_step_voice_match_writes_candidates_to_state():
 
     payload = m_update.call_args.kwargs
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
+    assert m_match.call_args.kwargs["top_k"] == 10
     assert payload["voice_match_candidates"][0]["voice_id"] == "v1"
     assert len(payload["voice_match_candidates"]) == 3
 

@@ -197,7 +197,7 @@ class PipelineRunnerV2(PipelineRunner):
         self, task_id: str, video_path: str, task_dir: str,
     ) -> None:
         from pipeline.speech_rate_model import get_rate, initialize_baseline
-        from pipeline.voice_match import match_for_video
+        from pipeline.voice_match import DEFAULT_VOICE_MATCH_TOP_K, match_for_video
 
         self._set_step(task_id, "voice_match", "running", "正在匹配音色...")
         task = task_state.get(task_id) or {}
@@ -209,7 +209,7 @@ class PipelineRunnerV2(PipelineRunner):
             video_path=video_path,
             language=target_lang,
             gender=gender,
-            top_k=3,
+            top_k=DEFAULT_VOICE_MATCH_TOP_K,
             out_dir=os.path.join(task_dir, "voice_match"),
         )
         task_state.update(task_id, voice_candidates=candidates)
