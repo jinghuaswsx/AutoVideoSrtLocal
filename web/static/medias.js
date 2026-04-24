@@ -2433,6 +2433,137 @@
     return `<span class="oc-link-check-badge ${kind || 'info'}">${escapeHtml(label)}</span>`;
   }
 
+  const SHOPIFY_IMAGE_REPLACE_LABELS = {
+    none: '未替换',
+    pending: '已排队',
+    running: '替换中',
+    auto_done: '自动替换完成',
+    failed: '替换失败',
+    confirmed: '人工确认完成',
+  };
+
+  const SHOPIFY_IMAGE_LINK_LABELS = {
+    unknown: '链接未确认',
+    needs_review: '待人工确认',
+    normal: '链接正常',
+    unavailable: '链接不可用',
+  };
+
+  function edShopifyImageStatusMap() {
+    if (!edState.productData || !edState.productData.product) return {};
+    if (!edState.productData.product.shopify_image_status || typeof edState.productData.product.shopify_image_status !== 'object') {
+      edState.productData.product.shopify_image_status = {};
+    }
+    return edState.productData.product.shopify_image_status;
+  }
+
+  function edShopifyImageStatusForLang(lang) {
+    const raw = edShopifyImageStatusMap()[lang] || {};
+    return {
+      replace_status: raw.replace_status || 'none',
+      link_status: raw.link_status || 'unknown',
+      last_error: raw.last_error || '',
+      last_task_id: raw.last_task_id || '',
+      updated_at: raw.updated_at || '',
+      confirmed_at: raw.confirmed_at || '',
+      result_summary: raw.result_summary || {},
+    };
+  }
+
+  const SHOPIFY_IMAGE_ACTION_ENDPOINTS = {
+    confirm: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/confirm`,
+    unavailable: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/unavailable`,
+    requeue: (pid, lang) => `/medias/api/products/${pid}/shopify-image/${encodeURIComponent(lang)}/requeue`,
+  };
+
+  function edShopifyImageBadgeKind(status) {
+    if (!status) return 'info';
+    if (status.link_status === 'unavailable' || status.replace_status === 'failed') return 'danger';
+    if (status.replace_status === 'confirmed' && status.link_status === 'normal') return 'success';
+    if (status.replace_status === 'auto_done' || status.link_status === 'needs_review') return 'warning';
+    return 'info';
+  }
+
+  function edRenderShopifyImageStatus(lang) {
+    const box = $('edShopifyImageStatus');
+    if (!box) return;
+    if (!lang || lang === 'en') {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+
+    const status = edShopifyImageStatusForLang(lang);
+    const summary = status.result_summary || {};
+    const parts = [
+      edLinkCheckBadge(SHOPIFY_IMAGE_REPLACE_LABELS[status.replace_status] || status.replace_status, edShopifyImageBadgeKind(status)),
+      edLinkCheckBadge(SHOPIFY_IMAGE_LINK_LABELS[status.link_status] || status.link_status, edShopifyImageBadgeKind(status)),
+    ];
+    if (status.last_task_id) {
+      parts.push(`<span class="oc-link-check-meta">任务 #${escapeHtml(status.last_task_id)}</span>`);
+    }
+    if (typeof summary.carousel_ok === 'number') {
+      parts.push(`<span class="oc-link-check-meta">轮播 ${escapeHtml(summary.carousel_ok)}/${escapeHtml(summary.carousel_requested || 0)}</span>`);
+    }
+    if (typeof summary.detail_replacement_count === 'number') {
+      parts.push(`<span class="oc-link-check-meta">详情 ${escapeHtml(summary.detail_replacement_count)}</span>`);
+    }
+    if (status.updated_at) {
+      parts.push(`<span class="oc-link-check-meta">更新 ${escapeHtml(fmtDate(status.updated_at))}</span>`);
+    }
+    if (status.last_error) {
+      parts.push(edLinkCheckBadge(status.last_error, 'danger'));
+    }
+
+    const actions = [];
+    if (status.replace_status !== 'confirmed' || status.link_status !== 'normal') {
+      actions.push(`<button type="button" class="oc-btn primary sm" data-shopify-image-action="confirm" data-lang="${escapeHtml(lang)}">确认图片正常</button>`);
+    }
+    actions.push(`<button type="button" class="oc-btn ghost sm" data-shopify-image-action="requeue" data-lang="${escapeHtml(lang)}">重新排队换图</button>`);
+    if (status.link_status !== 'unavailable') {
+      actions.push(`<button type="button" class="oc-btn text sm" data-shopify-image-action="unavailable" data-lang="${escapeHtml(lang)}">标记链接不可用</button>`);
+    }
+
+    box.hidden = false;
+    box.innerHTML = parts.join('') + `<span class="oc-link-check-actions">${actions.join('')}</span>`;
+    box.querySelectorAll('[data-shopify-image-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        edApplyShopifyImageAction(btn.dataset.shopifyImageAction, btn.dataset.lang || lang).catch((err) => {
+          alert('图片换图状态更新失败：' + (err.message || err));
+        });
+      });
+    });
+  }
+
+  async function edApplyShopifyImageAction(action, lang) {
+    const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+    if (!pid || !lang || lang === 'en') return;
+    let body = null;
+    if (action === 'unavailable') {
+      const reason = prompt('请填写链接不可用原因', '链接不可用，等待负责人处理');
+      if (reason === null) return;
+      body = { reason };
+    }
+    if (action === 'requeue' && !confirm('确认重新排队执行该语种的轮播图和详情图替换？')) {
+      return;
+    }
+    const endpoint = SHOPIFY_IMAGE_ACTION_ENDPOINTS[action];
+    if (!endpoint) return;
+    const resp = await fetchJSON(endpoint(pid, lang), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (resp.status) {
+      edShopifyImageStatusMap()[lang] = resp.status;
+    }
+    const fresh = await fetchJSON('/medias/api/products/' + pid);
+    edSetProductData(fresh);
+    edRenderLangTabs();
+    await edRenderActiveLangView();
+    loadList();
+  }
+
   function edLinkCheckPercent(task) {
     const progress = (task && task.progress) || {};
     const total = progress.total || 0;
@@ -2927,6 +3058,7 @@
     edRenderCopyTranslateButton();
     edRenderProductUrl(lang);
     edRenderLinkCheckSummary(edGetLinkCheckTask(lang));
+    edRenderShopifyImageStatus(lang);
     if (edGetLinkCheckTask(lang)) {
       edPollLinkCheck(lang);
     } else {

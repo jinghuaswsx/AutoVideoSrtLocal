@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from flask import Blueprint, jsonify, request
 
 import config
-from appcore import medias, pushes
+from appcore import medias, pushes, shopify_image_tasks
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
 
@@ -102,6 +102,19 @@ def _group_copywritings(rows: list[dict]) -> dict:
     return dict(grouped)
 
 
+def _serialize_shopify_image_task(task: dict | None) -> dict | None:
+    if not task:
+        return None
+    return {
+        "id": task.get("id"),
+        "product_id": task.get("product_id"),
+        "product_code": task.get("product_code"),
+        "lang": task.get("lang"),
+        "shopify_product_id": task.get("shopify_product_id"),
+        "link_url": task.get("link_url"),
+    }
+
+
 def _serialize_items(rows: list[dict]) -> list[dict]:
     items: list[dict] = []
     for row in rows or []:
@@ -160,7 +173,8 @@ def shopify_localizer_bootstrap():
     if not product:
         return jsonify({"error": "product not found"}), 404
 
-    shopify_product_id = medias.resolve_shopify_product_id(int(product["id"]))
+    shopify_product_id_override = str(body.get("shopify_product_id") or "").strip()
+    shopify_product_id = shopify_product_id_override or medias.resolve_shopify_product_id(int(product["id"]))
     if not shopify_product_id:
         return jsonify({
             "error": "shopify_product_id_missing",
@@ -205,6 +219,57 @@ def shopify_localizer_bootstrap():
         "reference_images": [_serialize(item) for item in reference_images],
         "localized_images": [_serialize(item) for item in localized_images],
     })
+
+
+@shopify_localizer_bp.route("/tasks/claim", methods=["POST"])
+def shopify_localizer_task_claim():
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    body = request.get_json(silent=True) or {}
+    worker_id = str(body.get("worker_id") or "").strip() or "unknown-worker"
+    try:
+        lock_seconds = int(body.get("lock_seconds") or 900)
+    except (TypeError, ValueError):
+        lock_seconds = 900
+    task = shopify_image_tasks.claim_next_task(worker_id, lock_seconds=lock_seconds)
+    return jsonify({"task": _serialize_shopify_image_task(task)})
+
+
+@shopify_localizer_bp.route("/tasks/<int:task_id>/heartbeat", methods=["POST"])
+def shopify_localizer_task_heartbeat(task_id: int):
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    body = request.get_json(silent=True) or {}
+    worker_id = str(body.get("worker_id") or "").strip()
+    try:
+        lock_seconds = int(body.get("lock_seconds") or 900)
+    except (TypeError, ValueError):
+        lock_seconds = 900
+    updated = shopify_image_tasks.heartbeat_task(task_id, worker_id, lock_seconds)
+    return jsonify({"ok": bool(updated)})
+
+
+@shopify_localizer_bp.route("/tasks/<int:task_id>/complete", methods=["POST"])
+def shopify_localizer_task_complete(task_id: int):
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    body = request.get_json(silent=True) or {}
+    status = shopify_image_tasks.complete_task(task_id, body.get("result") or {})
+    return jsonify({"ok": True, "status": status})
+
+
+@shopify_localizer_bp.route("/tasks/<int:task_id>/fail", methods=["POST"])
+def shopify_localizer_task_fail(task_id: int):
+    if not _api_key_valid():
+        return jsonify({"error": "invalid api key"}), 401
+    body = request.get_json(silent=True) or {}
+    status = shopify_image_tasks.fail_task(
+        task_id,
+        str(body.get("error_code") or "worker_failed"),
+        str(body.get("error_message") or ""),
+        body.get("result") or {},
+    )
+    return jsonify({"ok": True, "status": status})
 
 
 @bp.route("/<product_code>", methods=["GET"])
@@ -590,6 +655,7 @@ def list_push_items():
             "name": row.get("product_name"),
             "product_code": row.get("product_code"),
             "ad_supported_langs": row.get("ad_supported_langs"),
+            "shopify_image_status_json": row.get("shopify_image_status_json"),
             "selling_points": row.get("selling_points"),
             "importance": row.get("importance"),
             "listing_status": row.get("listing_status"),

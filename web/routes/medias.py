@@ -19,7 +19,7 @@ import requests
 from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import local_media_storage, material_evaluation, medias, object_keys, pushes, task_state
+from appcore import local_media_storage, material_evaluation, medias, object_keys, pushes, shopify_image_tasks, task_state
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -408,6 +408,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         except (json.JSONDecodeError, ValueError):
             pass
     link_check_tasks = medias.parse_link_check_tasks_json(p.get("link_check_tasks_json"))
+    shopify_image_status = shopify_image_tasks.parse_status_map(p.get("shopify_image_status_json"))
     return {
         "id": p["id"],
         "name": p["name"],
@@ -434,6 +435,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "lang_coverage": lang_coverage or {},
         "localized_links": localized_links,
         "link_check_tasks": link_check_tasks,
+        "shopify_image_status": shopify_image_status,
         "raw_sources_count": raw_sources_count or 0,
     }
 
@@ -915,6 +917,59 @@ def api_update_product_owner(pid: int):
 
     owner_name = medias.get_user_display_name(new_uid)
     return jsonify({"user_id": new_uid, "owner_name": owner_name})
+
+
+def _shopify_image_lang_or_404(pid: int, lang: str) -> tuple[dict, str]:
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    normalized_lang = (lang or "").strip().lower()
+    if not normalized_lang or normalized_lang == "en" or not medias.is_valid_language(normalized_lang):
+        abort(404)
+    return p, normalized_lang
+
+
+@bp.route("/api/products/<int:pid>/shopify-image/<lang>/confirm", methods=["POST"])
+@login_required
+def api_product_shopify_image_confirm(pid: int, lang: str):
+    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
+    status = shopify_image_tasks.confirm_lang(
+        pid,
+        normalized_lang,
+        getattr(current_user, "id", None),
+    )
+    return jsonify({"ok": True, "status": status})
+
+
+@bp.route("/api/products/<int:pid>/shopify-image/<lang>/unavailable", methods=["POST"])
+@login_required
+def api_product_shopify_image_unavailable(pid: int, lang: str):
+    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
+    body = request.get_json(silent=True) or {}
+    status = shopify_image_tasks.mark_link_unavailable(
+        pid,
+        normalized_lang,
+        (body.get("reason") or "").strip(),
+    )
+    return jsonify({"ok": True, "status": status})
+
+
+@bp.route("/api/products/<int:pid>/shopify-image/<lang>/clear", methods=["POST"])
+@login_required
+def api_product_shopify_image_clear(pid: int, lang: str):
+    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
+    status = shopify_image_tasks.reset_lang(pid, normalized_lang)
+    return jsonify({"ok": True, "status": status})
+
+
+@bp.route("/api/products/<int:pid>/shopify-image/<lang>/requeue", methods=["POST"])
+@login_required
+def api_product_shopify_image_requeue(pid: int, lang: str):
+    _p, normalized_lang = _shopify_image_lang_or_404(pid, lang)
+    shopify_image_tasks.reset_lang(pid, normalized_lang)
+    task = shopify_image_tasks.create_or_reuse_task(pid, normalized_lang)
+    status_code = 202 if task.get("status") != shopify_image_tasks.TASK_BLOCKED else 409
+    return jsonify({"ok": status_code == 202, "task": task}), status_code
 
 
 @bp.route("/api/products/<int:pid>/link-check", methods=["POST"])

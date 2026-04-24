@@ -322,6 +322,24 @@ def resolve_shopify_product_id(product_id: int) -> str | None:
     return direct_value or None
 
 
+def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:
+    """给 Shopify 图片本地化工具用的图片清单。
+
+    在 list_reference_images_for_lang 的基础上**过滤掉 GIF**：
+    Shopify 图片本地化只替换静态图，GIF 不参与翻译（见素材编辑界面"GIF 不参与翻译
+    但会归入 GIF 栏"）。客户端再做一次兜底过滤也没问题，但接口层先挡一道更干净。
+    """
+    items = list_reference_images_for_lang(product_id, (lang or "").strip().lower())
+    result: list[dict] = []
+    for item in items:
+        filename = str(item.get("filename") or "").lower()
+        object_key = str(item.get("object_key") or "").lower()
+        if filename.endswith(".gif") or object_key.endswith(".gif"):
+            continue
+        result.append(item)
+    return result
+
+
 def _media_product_owner_name_expr() -> str:
     row = query_one(
         "SELECT 1 AS ok FROM information_schema.COLUMNS "
@@ -374,7 +392,7 @@ def update_product(product_id: int, **fields) -> int:
                "importance", "trend_score", "selling_points",
                "product_code", "cover_object_key",
                "localized_links_json", "ad_supported_langs",
-               "link_check_tasks_json",
+               "link_check_tasks_json", "shopify_image_status_json",
                "mk_id",
                "shopifyid",
                "remark", "ai_score", "ai_evaluation_result",
@@ -418,7 +436,7 @@ def update_product(product_id: int, **fields) -> int:
     # localized_links_json：支持 dict 输入，自动序列化为 JSON 字符串
     def _val(k):
         v = fields[k]
-        if k in {"localized_links_json", "link_check_tasks_json"} and isinstance(v, dict):
+        if k in {"localized_links_json", "link_check_tasks_json", "shopify_image_status_json"} and isinstance(v, dict):
             return _json.dumps(v, ensure_ascii=False)
         return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)

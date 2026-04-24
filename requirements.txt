@@ -27,4 +27,5 @@ resemblyzer>=0.1.1
 librosa>=0.10.0
 gunicorn>=21.2.0,<26.0
 simple-websocket>=1.1.0,<2.0
+websocket-client>=1.8.0,<2.0
 volcengine-python-sdk>=5.0.0,<6.0

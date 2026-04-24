@@ -91,7 +91,7 @@ def main() -> None:
 
     env = dict(os.environ)
     subprocess.run(
-        [str(python_exe), "-m", "PyInstaller", "--noconfirm", str(spec_path)],
+        [str(python_exe), "-m", "PyInstaller", "--noconfirm", "--clean", str(spec_path)],
         cwd=repo_root,
         env=env,
         check=True,
