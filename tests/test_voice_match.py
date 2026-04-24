@@ -39,6 +39,22 @@ def test_match_candidates_limits_top_k():
     assert len(top) == 3
 
 
+def test_match_candidates_defaults_to_top10():
+    query_vec = np.array([1.0, 0.0], dtype=np.float32)
+    rows = [
+        {"voice_id": chr(65 + i), "name": "x", "language": "en",
+         "gender": None, "accent": None, "preview_url": None,
+         "audio_embedding": np.array(
+             [1.0 - i * 0.01, i * 0.01], dtype=np.float32).tobytes()}
+        for i in range(12)
+    ]
+    with patch("pipeline.voice_match._query_voices_by_language",
+               return_value=rows):
+        top = match_candidates(query_vec, language="en")
+    assert len(top) == 10
+    assert [c["voice_id"] for c in top] == list("ABCDEFGHIJ")
+
+
 def test_match_candidates_excludes_voice_ids_without_shrinking_top_k():
     query_vec = np.array([1.0, 0.0], dtype=np.float32)
     rows = [

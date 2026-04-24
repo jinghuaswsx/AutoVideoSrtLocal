@@ -205,3 +205,4 @@ def test_ja_rematch_route_reuses_saved_embedding(authed_client_no_db):
     assert resp.status_code == 200
     assert resp.get_json()["candidates"][0]["voice_id"] == "ja-voice-b"
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"ja-default"}
+    assert m_match.call_args.kwargs["top_k"] == 10

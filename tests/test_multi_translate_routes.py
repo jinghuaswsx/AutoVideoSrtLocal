@@ -217,6 +217,7 @@ def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
     assert resp.status_code == 200
     assert resp.get_json()["candidates"][0]["voice_id"] == "voice-b"
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
+    assert m_match.call_args.kwargs["top_k"] == 10
 
 
 def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):

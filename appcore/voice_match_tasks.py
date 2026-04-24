@@ -81,6 +81,8 @@ def _set(task_id: str, **updates) -> None:
 
 
 def _run_task_sync(task_id: str) -> None:
+    from pipeline.voice_match import DEFAULT_VOICE_MATCH_TOP_K
+
     with _LOCK:
         task = dict(_TASKS.get(task_id) or {})
     if not task:
@@ -104,7 +106,7 @@ def _run_task_sync(task_id: str) -> None:
             vec,
             language=task["language"],
             gender=task["gender"],
-            top_k=3,
+            top_k=DEFAULT_VOICE_MATCH_TOP_K,
         )
         if not candidates:
             raise RuntimeError("该语种声音库尚未同步，请联系管理员")
