@@ -184,6 +184,26 @@ python tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt
 - 不需要手动选择数据库环境
 - 日常操作推荐还是直接双击 `.bat`
 
+### 10.5 每日定时任务安装方式
+
+如果要在当前电脑上安装“每天 12:10 自动执行一次”的 Windows 定时任务，运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_shopifyid_dianxiaomi_sync_task.ps1
+```
+
+安装完成后，系统会注册一个任务：
+
+- 任务名：`AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily`
+- 执行时间：每天 `12:10`
+- 实际执行脚本：`tools\shopifyid_dianxiaomi_sync_daily.ps1`
+
+该定时脚本会自动：
+
+1. 进入项目根目录
+2. 调用 `python tools\shopifyid_dianxiaomi_sync.py --skip-login-prompt`
+3. 把运行输出写入 `output/shopifyid_dianxiaomi_sync/` 下的调度日志
+
 ## 11. 成功输出
 
 脚本完成后，终端会输出以下类型的信息：
@@ -285,6 +305,13 @@ python tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt
 - 只更新空 `shopifyid`
 - 单次批量更新放在事务里执行
 - 所有跳过与冲突都写入日志
+
+### 14.4 定时运行约束
+
+- 定时任务默认使用 `--skip-login-prompt`，因此不会卡在“等待按回车”这一步
+- 定时任务依赖 `C:\chrome-shopifyid-diaoxiaomi` 中仍然有效的店小秘登录态
+- 如果店小秘登录态失效，本次任务会失败并在日志中记录错误
+- 由于脚本需要调用本机 Chrome 浏览器，推荐在用户已登录桌面会话时运行
 
 ## 15. 验收标准
 
