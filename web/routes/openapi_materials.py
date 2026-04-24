@@ -148,6 +148,12 @@ def shopify_localizer_bootstrap():
         return jsonify({"error": "missing product_code or lang"}), 400
     if not medias.is_valid_language(lang):
         return jsonify({"error": "invalid lang"}), 400
+    if lang == "en":
+        # en 是源语言；作为本地化目标无语义，避免下游把英文图覆盖回英文自身
+        return jsonify({
+            "error": "invalid_target_lang",
+            "message": "英文为源语言，不能作为图片本地化目标语言。",
+        }), 400
 
     product = medias.get_product_by_code(product_code)
     if not product:
@@ -160,12 +166,19 @@ def shopify_localizer_bootstrap():
             "message": "未找到 Shopify ID。请先到产品编辑页最底部填写 Shopify ID 后，再执行图片本地化工具。",
         }), 409
 
-    reference_images = medias.list_shopify_localizer_images(int(product["id"]), "en")
-    localized_images = medias.list_shopify_localizer_images(int(product["id"]), lang)
+    reference_images = medias.list_reference_images_for_lang(int(product["id"]), "en")
+    localized_images = medias.list_reference_images_for_lang(int(product["id"]), lang)
     if not reference_images:
         return jsonify({"error": "english references not ready"}), 409
-    if not localized_images:
+    if not any(item.get("kind") == "detail" for item in localized_images):
+        # 详情图缺失直接阻塞；cover 缺失放行并通过 missing_kinds 告知下游
         return jsonify({"error": "localized images not ready"}), 409
+
+    ref_kinds = {item.get("kind") for item in reference_images}
+    loc_kinds = {item.get("kind") for item in localized_images}
+    missing_kinds: list[str] = []
+    if "cover" in ref_kinds and "cover" not in loc_kinds:
+        missing_kinds.append("cover")
 
     return jsonify({
         "product": {
@@ -200,6 +213,7 @@ def shopify_localizer_bootstrap():
             for item in localized_images
             if item.get("object_key")
         ],
+        "missing_kinds": missing_kinds,
     })
 
 

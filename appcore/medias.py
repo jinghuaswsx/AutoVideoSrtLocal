@@ -317,17 +317,9 @@ def list_reference_images_for_lang(product_id: int, lang: str) -> list[dict]:
     return images
 
 def resolve_shopify_product_id(product_id: int) -> str | None:
-    try:
-        product = get_product(product_id) or {}
-    except Exception:
-        product = {}
-
+    product = get_product(product_id) or {}
     direct_value = str(product.get("shopifyid") or "").strip()
     return direct_value or None
-
-
-def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:
-    return list_reference_images_for_lang(product_id, (lang or "").strip().lower())
 
 
 def _media_product_owner_name_expr() -> str:
