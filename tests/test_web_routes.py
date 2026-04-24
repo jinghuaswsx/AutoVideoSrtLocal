@@ -2248,6 +2248,18 @@ def test_medias_scripts_include_owner_column():
     assert "p.owner_name" in medias_js
 
 
+def test_medias_scripts_make_listing_status_inline_editable():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function listingStatusSelect" in medias_js
+    assert "startListingStatusInlineEdit" in medias_js
+    assert "data-listing-status" in medias_js
+    assert "data-listing-edit" in medias_js
+    assert "listing_status: nextStatus" in medias_js
+    assert "body: JSON.stringify({ listing_status: nextStatus })" in medias_js
+    assert "grid.querySelectorAll('td.listing-status-cell')" in medias_js
+
+
 def test_image_translate_detail_template_contains_medias_context_block():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "image_translate_detail.html").read_text(encoding="utf-8")

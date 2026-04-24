@@ -396,6 +396,19 @@
     return `<span class="oc-listing-pill ${cls}">${escapeHtml(normalized)}</span>`;
   }
 
+  function listingStatusSelect(status) {
+    const normalized = status === '下架' ? '下架' : '上架';
+    return `
+      <select class="oc-listing-select" data-listing-edit aria-label="上架状态">
+        <option value="上架" ${normalized === '上架' ? 'selected' : ''}>上架</option>
+        <option value="下架" ${normalized === '下架' ? 'selected' : ''}>下架</option>
+      </select>`;
+  }
+
+  function listingActionTitleForStatus(status) {
+    return status === '下架' ? '产品已下架，不能执行翻译等生产操作' : '基于原始视频发起多语言翻译';
+  }
+
   // ---------- 商品详情图（通用控制器） ----------
   // 在"添加产品"与"编辑产品"两个弹窗里都复用。
   function createDetailImagesController(opts) {
@@ -753,6 +766,8 @@
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
+    grid.querySelectorAll('td.listing-status-cell').forEach(td =>
+      td.addEventListener('click', (e) => { e.stopPropagation(); startListingStatusInlineEdit(td); }));
   }
 
   function rowHTML(p) {
@@ -765,7 +780,7 @@
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const listed = isListed(p);
-    const listingTitle = listed ? '基于原始视频发起多语言翻译' : '产品已下架，不能执行翻译等生产操作';
+    const listingTitle = listingActionTitleForStatus(listingStatus(p));
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
@@ -778,7 +793,7 @@
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
         <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">${compactCellText(p.ai_evaluation_result)}</td>
-        <td>${listingStatusPill(listingStatus(p))}</td>
+        <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="wrap" title="${escapeHtml(ownerName)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
@@ -861,6 +876,81 @@
       else if (e.key === 'Escape') { e.preventDefault(); settled = true; restore(original); }
     });
     input.addEventListener('blur', commit);
+  }
+
+  async function startListingStatusInlineEdit(td) {
+    if (td.dataset.listingEdit === '1') return;
+    td.dataset.listingEdit = '1';
+    const pid = +td.dataset.pid;
+    const original = listingStatus({ listing_status: td.dataset.listingStatus });
+    td.innerHTML = listingStatusSelect(original);
+    const select = td.querySelector('select');
+    select.focus();
+
+    let settled = false;
+
+    function syncRowAction(status) {
+      const row = td.closest('tr');
+      const translateBtn = row ? row.querySelector('.js-translate') : null;
+      if (!translateBtn) return;
+      const listed = status === '上架';
+      translateBtn.disabled = !listed;
+      if (listed) {
+        translateBtn.removeAttribute('aria-disabled');
+      } else {
+        translateBtn.setAttribute('aria-disabled', 'true');
+      }
+      translateBtn.title = listingActionTitleForStatus(status);
+    }
+
+    function restore(status) {
+      td.dataset.listingStatus = status;
+      td.dataset.listingEdit = '';
+      td.innerHTML = listingStatusPill(status);
+      syncRowAction(status);
+    }
+
+    async function commit() {
+      if (settled) return;
+      settled = true;
+      const nextStatus = select.value === '下架' ? '下架' : '上架';
+      if (nextStatus === original) {
+        restore(original);
+        return;
+      }
+      select.disabled = true;
+      try {
+        await fetchJSON('/medias/api/products/' + pid, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ listing_status: nextStatus }),
+        });
+        restore(nextStatus);
+      } catch (e) {
+        alert('保存上架状态失败：' + (e.message || e));
+        restore(original);
+      }
+    }
+
+    function cancel() {
+      if (settled) return;
+      settled = true;
+      restore(original);
+    }
+
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', commit);
+    select.addEventListener('blur', commit);
+    select.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit();
+      }
+    });
   }
 
   function closeAllMenus() {
