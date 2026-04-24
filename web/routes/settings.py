@@ -22,8 +22,12 @@ from appcore.image_translate_settings import (
     CHANNELS as IMAGE_TRANSLATE_CHANNELS,
     get_channel as get_image_translate_channel,
     get_default_model as get_image_translate_default_model,
+    get_openrouter_openai_image2_default_quality,
+    is_openrouter_openai_image2_enabled,
     set_channel as set_image_translate_channel,
     set_default_model as set_image_translate_default_model,
+    set_openrouter_openai_image2_default_quality,
+    set_openrouter_openai_image2_enabled,
 )
 from appcore.gemini_image import coerce_image_model, list_image_models
 from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
@@ -148,6 +152,15 @@ def index():
         ),
     }
 
+    try:
+        openrouter_openai_image2_enabled = is_openrouter_openai_image2_enabled()
+    except Exception:
+        openrouter_openai_image2_enabled = False
+    try:
+        openrouter_openai_image2_default_quality = get_openrouter_openai_image2_default_quality()
+    except Exception:
+        openrouter_openai_image2_default_quality = "mid"
+
     return render_template(
         "settings.html",
         keys=keys,
@@ -164,6 +177,8 @@ def index():
         image_translate_default_model=current_image_default_model,
         image_translate_current_models=image_translate_current_models,
         image_translate_models_by_channel=image_translate_models_by_channel,
+        openrouter_openai_image2_enabled=openrouter_openai_image2_enabled,
+        openrouter_openai_image2_default_quality=openrouter_openai_image2_default_quality,
         bindings_grouped=bindings_grouped,
         module_labels=MODULE_LABELS,
         binding_allowed_providers=BINDING_ALLOWED_PROVIDERS,
@@ -194,10 +209,25 @@ def _handle_providers_post() -> None:
                               or DEFAULT_JIANYING_PROJECT_ROOT)
     set_key(current_user.id, "jianying", "", {"project_root": jianying_project_root})
 
+    # OpenRouter OpenAI Image 2：先保存开关与默认质量，再让后续 coerce_image_model 感知最新开关状态
+    image2_enabled_raw = (request.form.get("openrouter_openai_image2_enabled") or "").strip().lower()
+    image2_enabled = image2_enabled_raw in {"1", "true", "on", "yes"}
+    image2_quality = (request.form.get("openrouter_openai_image2_default_quality") or "mid").strip().lower()
+    try:
+        set_openrouter_openai_image2_enabled(image2_enabled)
+    except Exception:
+        pass
+    try:
+        set_openrouter_openai_image2_default_quality(image2_quality)
+    except ValueError:
+        # 非法值：忽略保存，保持旧值
+        pass
+
     image_translate_channel = request.form.get("image_translate_channel", "").strip().lower()
     if image_translate_channel in IMAGE_TRANSLATE_CHANNELS:
         set_image_translate_channel(image_translate_channel)
         image_translate_model = request.form.get("image_translate_default_model", "").strip()
+        # coerce 在开关关闭时会自动把 OpenAI Image 2 档位回退到普通默认
         set_image_translate_default_model(
             image_translate_channel,
             coerce_image_model(image_translate_model, channel=image_translate_channel),

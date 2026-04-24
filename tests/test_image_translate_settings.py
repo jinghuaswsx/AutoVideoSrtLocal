@@ -451,6 +451,62 @@ def test_set_default_model_rejects_invalid_channel_or_model(monkeypatch):
         its.set_default_model("doubao", "gemini-3-pro-image-preview")
 
 
+def test_openrouter_openai_image2_defaults(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(monkeypatch, {})
+
+    assert its.is_openrouter_openai_image2_enabled() is False
+    assert its.get_openrouter_openai_image2_default_quality() == "mid"
+
+
+def test_openrouter_openai_image2_settings_round_trip(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    store = {}
+    _patch_store(monkeypatch, store)
+
+    its.set_openrouter_openai_image2_enabled(True)
+    its.set_openrouter_openai_image2_default_quality("high")
+
+    assert store["image_translate.openrouter_openai_image2_enabled"] == "1"
+    assert store["image_translate.openrouter_openai_image2_default_quality"] == "high"
+    assert its.is_openrouter_openai_image2_enabled() is True
+    assert its.get_openrouter_openai_image2_default_quality() == "high"
+
+
+def test_openrouter_openai_image2_enabled_accepts_truthy_strings(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    for value in ("1", "true", "yes", "on", "TRUE"):
+        _patch_store(monkeypatch, {"image_translate.openrouter_openai_image2_enabled": value})
+        assert its.is_openrouter_openai_image2_enabled() is True
+
+    for value in ("0", "false", "no", "off", "", "bogus"):
+        _patch_store(monkeypatch, {"image_translate.openrouter_openai_image2_enabled": value})
+        assert its.is_openrouter_openai_image2_enabled() is False
+
+
+def test_openrouter_openai_image2_quality_rejects_invalid_value(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(monkeypatch, {})
+
+    with pytest.raises(ValueError):
+        its.set_openrouter_openai_image2_default_quality("ultra")
+
+
+def test_openrouter_openai_image2_quality_falls_back_when_corrupt(monkeypatch):
+    from appcore import image_translate_settings as its
+
+    _patch_store(
+        monkeypatch,
+        {"image_translate.openrouter_openai_image2_default_quality": "ultra"},
+    )
+
+    assert its.get_openrouter_openai_image2_default_quality() == "mid"
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 

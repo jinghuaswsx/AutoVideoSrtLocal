@@ -342,6 +342,229 @@ def test_resolve_seedream_size_scales_large_images_down():
     assert pytest.approx(width / height, rel=0.01) == 1.0
 
 
+def test_list_image_models_openrouter_appends_openai_image2_when_enabled():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
+        models = gemini_image.list_image_models("openrouter")
+
+    ids = [mid for mid, _ in models]
+    assert "openai/gpt-5.4-image-2:low" in ids
+    assert "openai/gpt-5.4-image-2:mid" in ids
+    assert "openai/gpt-5.4-image-2:high" in ids
+    # 原有 Gemini 模型不应被移除
+    assert "gemini-3.1-flash-image-preview" in ids
+    assert "gemini-3-pro-image-preview" in ids
+
+
+def test_list_image_models_openrouter_hides_openai_image2_when_disabled():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=False):
+        ids = [mid for mid, _ in gemini_image.list_image_models("openrouter")]
+
+    assert "openai/gpt-5.4-image-2:low" not in ids
+    assert "openai/gpt-5.4-image-2:mid" not in ids
+    assert "openai/gpt-5.4-image-2:high" not in ids
+
+
+def test_list_image_models_other_channels_unaffected_when_enabled():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
+        aistudio = [mid for mid, _ in gemini_image.list_image_models("aistudio")]
+        cloud = [mid for mid, _ in gemini_image.list_image_models("cloud")]
+        doubao = [mid for mid, _ in gemini_image.list_image_models("doubao")]
+
+    assert "openai/gpt-5.4-image-2:mid" not in aistudio
+    assert "openai/gpt-5.4-image-2:mid" not in cloud
+    assert "openai/gpt-5.4-image-2:mid" not in doubao
+
+
+def test_default_image_model_uses_openai_image2_default_quality_when_enabled():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True), \
+         patch("appcore.image_translate_settings.get_openrouter_openai_image2_default_quality", return_value="high"):
+        assert gemini_image.default_image_model("openrouter") == "openai/gpt-5.4-image-2:high"
+
+
+def test_default_image_model_ignores_openai_image2_when_disabled():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=False):
+        assert gemini_image.default_image_model("openrouter") == "gemini-3.1-flash-image-preview"
+
+
+def test_parse_openrouter_openai_image2_model_maps_quality():
+    from appcore import gemini_image
+
+    assert gemini_image.parse_openrouter_openai_image2_model("openai/gpt-5.4-image-2:low") == (
+        "openai/gpt-5.4-image-2", "low",
+    )
+    assert gemini_image.parse_openrouter_openai_image2_model("openai/gpt-5.4-image-2:mid") == (
+        "openai/gpt-5.4-image-2", "medium",
+    )
+    assert gemini_image.parse_openrouter_openai_image2_model("openai/gpt-5.4-image-2:high") == (
+        "openai/gpt-5.4-image-2", "high",
+    )
+
+
+def test_parse_openrouter_openai_image2_model_rejects_unrelated_ids():
+    from appcore import gemini_image
+
+    assert gemini_image.parse_openrouter_openai_image2_model("gemini-3-pro-image-preview") is None
+    assert gemini_image.parse_openrouter_openai_image2_model("") is None
+    assert gemini_image.parse_openrouter_openai_image2_model(None) is None
+    assert gemini_image.parse_openrouter_openai_image2_model("openai/gpt-5.4-image-2:ultra") is None
+
+
+def test_is_openrouter_openai_image2_model():
+    from appcore import gemini_image
+
+    assert gemini_image.is_openrouter_openai_image2_model("openai/gpt-5.4-image-2:mid") is True
+    assert gemini_image.is_openrouter_openai_image2_model(" openai/gpt-5.4-image-2:high ") is True
+    assert gemini_image.is_openrouter_openai_image2_model("gemini-3-pro-image-preview") is False
+    assert gemini_image.is_openrouter_openai_image2_model(None) is False
+
+
+def test_generate_image_openrouter_image2_passes_quality_to_openrouter():
+    import base64 as _b64
+    from appcore import gemini_image
+
+    raw = b"PNG-I2"
+    data_url = f"data:image/png;base64,{_b64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=0, cost="0.05")
+
+    created: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+
+            def _create(**kwargs):
+                created.update(kwargs)
+                return or_resp
+
+            self.chat.completions.create = _create
+
+    with patch("openai.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "openai/gpt-5.4-image-2:mid")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
+        out, mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"SRC",
+            source_mime="image/jpeg",
+            model="openai/gpt-5.4-image-2:mid",
+        )
+
+    assert out == raw
+    assert mime == "image/png"
+    assert created["model"] == "openai/gpt-5.4-image-2"
+    assert created["extra_body"]["quality"] == "medium"
+    assert created["extra_body"]["usage"] == {"include": True}
+
+
+def test_generate_image_openrouter_non_image2_does_not_set_quality():
+    """普通 Gemini OpenRouter 模型仍走原逻辑，不应追加 quality。"""
+    import base64 as _b64
+    from appcore import gemini_image
+
+    raw = b"PNG-GM"
+    data_url = f"data:image/png;base64,{_b64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=1, completion_tokens=0, cost="0.01")
+
+    created: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+
+            def _create(**kwargs):
+                created.update(kwargs)
+                return or_resp
+
+            self.chat.completions.create = _create
+
+    with patch("openai.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"):
+        gemini_image.generate_image(
+            prompt="x",
+            source_image=b"S",
+            source_mime="image/jpeg",
+            model="gemini-3-pro-image-preview",
+        )
+
+    assert created["model"] == "google/gemini-3-pro-image-preview"
+    assert "quality" not in created.get("extra_body", {})
+
+
+def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_off():
+    """开关关闭，但历史任务 model_id 是 OpenAI Image 2 虚拟 ID：仍应照原档位执行。"""
+    import base64 as _b64
+    from appcore import gemini_image
+
+    raw = b"PNG-HIST"
+    data_url = f"data:image/png;base64,{_b64.b64encode(raw).decode()}"
+    or_resp = MagicMock()
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    image_obj = MagicMock()
+    image_obj.image_url = MagicMock(url=data_url)
+    choice.message = MagicMock(images=[image_obj])
+    or_resp.choices = [choice]
+    or_resp.usage = MagicMock(prompt_tokens=2, completion_tokens=0, cost="0.02")
+
+    created: dict = {}
+
+    class _FakeOpenAI:
+        def __init__(self, *, api_key, base_url):
+            self.chat = MagicMock()
+            self.chat.completions = MagicMock()
+
+            def _create(**kwargs):
+                created.update(kwargs)
+                return or_resp
+
+            self.chat.completions.create = _create
+
+    with patch("openai.OpenAI", _FakeOpenAI), \
+         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "openai/gpt-5.4-image-2:high")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=False):
+        out, _mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"SRC",
+            source_mime="image/jpeg",
+            model="openai/gpt-5.4-image-2:high",
+        )
+
+    assert out == raw
+    assert created["model"] == "openai/gpt-5.4-image-2"
+    assert created["extra_body"]["quality"] == "high"
+
+
 def test_resolve_seedream_size_falls_back_to_2k():
     from appcore import gemini_image
 

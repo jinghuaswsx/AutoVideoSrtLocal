@@ -138,6 +138,136 @@ def test_medias_default_image_model_uses_global_default_model(authed_client_no_d
     assert created["model_id"] == "gemini-3-pro-image-preview"
 
 
+def test_models_endpoint_returns_openai_image2_variants_when_enabled(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "openai/gpt-5.4-image-2:high")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+    monkeypatch.setattr(app_its, "get_openrouter_openai_image2_default_quality", lambda: "high")
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
+
+    resp = authed_client_no_db.get("/api/image-translate/models")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    ids = [item["id"] for item in data["items"]]
+    assert "openai/gpt-5.4-image-2:low" in ids
+    assert "openai/gpt-5.4-image-2:mid" in ids
+    assert "openai/gpt-5.4-image-2:high" in ids
+    assert data["default_model_id"] == "openai/gpt-5.4-image-2:high"
+
+
+def test_models_endpoint_hides_openai_image2_when_disabled(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "gemini-3.1-flash-image-preview")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: False)
+    monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda uid, svc: {})
+
+    resp = authed_client_no_db.get("/api/image-translate/models")
+
+    assert resp.status_code == 200
+    ids = [item["id"] for item in resp.get_json()["items"]]
+    assert "openai/gpt-5.4-image-2:low" not in ids
+    assert "openai/gpt-5.4-image-2:mid" not in ids
+    assert "openai/gpt-5.4-image-2:high" not in ids
+
+
+def test_upload_complete_rejects_openai_image2_when_disabled(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: False)
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "openai/gpt-5.4-image-2:mid",
+        "prompt": "x",
+        "product_name": "demo",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "unsupported model"
+
+
+def test_upload_complete_accepts_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from appcore import image_translate_settings as app_its
+
+    _patch_tos_and_runner(monkeypatch)
+    _patch_lang(monkeypatch)
+    mem = _patch_task_state(monkeypatch)
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(app_its, "is_openrouter_openai_image2_enabled", lambda: True)
+
+    b = authed_client_no_db.post("/api/image-translate/upload/bootstrap", json={
+        "count": 1,
+        "files": [{"filename": "a.jpg", "size": 1, "content_type": "image/jpeg"}],
+    }).get_json()
+
+    resp = authed_client_no_db.post("/api/image-translate/upload/complete", json={
+        "task_id": b["task_id"],
+        "preset": "cover",
+        "target_language": "de",
+        "model_id": "openai/gpt-5.4-image-2:mid",
+        "prompt": "x",
+        "product_name": "demo",
+        "uploaded": [{"idx": 0, "object_key": b["uploads"][0]["object_key"], "filename": "a.jpg", "size": 1}],
+    })
+
+    assert resp.status_code == 201
+    assert mem[b["task_id"]]["model_id"] == "openai/gpt-5.4-image-2:mid"
+
+
+def test_medias_default_image_model_uses_openai_image2_when_enabled(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    created = {}
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "demo"})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r, "_ensure_product_listed", lambda product: None)
+    monkeypatch.setattr(
+        r.medias,
+        "list_detail_images",
+        lambda pid, lang: [{"id": 11, "object_key": "1/medias/1/a.jpg"}] if lang == "en" else [],
+    )
+    monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code in {"en", "de"})
+    monkeypatch.setattr(r.medias, "get_language_name", lambda lang: "German")
+    monkeypatch.setattr(r.its, "get_channel", lambda: "openrouter")
+    monkeypatch.setattr(r.its, "get_prompts_for_lang", lambda lang: {"detail": "translate {target_language_name}"})
+    monkeypatch.setattr(r.its, "get_default_model", lambda channel: "openai/gpt-5.4-image-2:high")
+    monkeypatch.setattr(
+        r.task_state,
+        "create_image_translate",
+        lambda task_id, task_dir, **kw: created.update(kw) or {"id": task_id},
+    )
+    monkeypatch.setattr(r, "_start_image_translate_runner", lambda task_id, user_id: True)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/detail-images/translate-from-en",
+        json={"lang": "de"},
+    )
+
+    assert resp.status_code == 201
+    assert created["model_id"] == "openai/gpt-5.4-image-2:high"
+
+
 def test_models_endpoint_returns_doubao_models_for_doubao_channel(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
 

@@ -162,6 +162,30 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       OpenRouter 调用 OpenRouter 的 Gemini 图像能力；
       豆包 ARK 调用 Seedream 5.0，并复用下方豆包 ARK 的 Key，或环境变量 <code>DOUBAO_LLM_API_KEY</code>（未设置时继续回落 <code>VOLC_API_KEY</code>）。
     </p>
+
+    <div id="openrouterOpenaiImage2Controls" {% if image_translate_channel != 'openrouter' %}hidden{% endif %}>
+      <label style="margin-top:12px;">OpenRouter 附加能力</label>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:8px; text-transform:none; font-weight:500;">
+        <input type="checkbox"
+               id="openrouterOpenaiImage2Enabled"
+               name="openrouter_openai_image2_enabled"
+               value="1"
+               {{ 'checked' if openrouter_openai_image2_enabled }}>
+        <span>启用 OpenAI Image 2</span>
+      </label>
+      <label>OpenAI Image 2 默认质量</label>
+      <select id="openrouterOpenaiImage2DefaultQuality"
+              name="openrouter_openai_image2_default_quality">
+        <option value="low" {{ 'selected' if openrouter_openai_image2_default_quality == 'low' }}>Low</option>
+        <option value="mid" {{ 'selected' if openrouter_openai_image2_default_quality == 'mid' }}>Mid</option>
+        <option value="high" {{ 'selected' if openrouter_openai_image2_default_quality == 'high' }}>High</option>
+      </select>
+      <p class="hint">
+        关闭时不在图片翻译模型备选中展示 OpenAI Image 2；开启后会在 OpenRouter 通道下追加 Low / Mid / High 三档，
+        并把默认质量用于新建任务的默认模型。历史任务不受关闭影响。
+      </p>
+    </div>
+
     <script id="imageTranslateModelOptions" type="application/json">
       {{ image_translate_models_by_channel | tojson }}
     </script>
@@ -170,9 +194,18 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         var channelEl = document.getElementById('imageTranslateChannel');
         var modelEl = document.getElementById('imageTranslateDefaultModel');
         var dataEl = document.getElementById('imageTranslateModelOptions');
+        var extraWrap = document.getElementById('openrouterOpenaiImage2Controls');
+        var extraToggle = document.getElementById('openrouterOpenaiImage2Enabled');
+        var qualityEl = document.getElementById('openrouterOpenaiImage2DefaultQuality');
         if (!channelEl || !modelEl || !dataEl) return;
         var modelsByChannel = {};
         try { modelsByChannel = JSON.parse(dataEl.textContent || '{}'); } catch (e) { modelsByChannel = {}; }
+
+        function syncExtraVisibility() {
+          var isOpenrouter = channelEl.value === 'openrouter';
+          if (extraWrap) extraWrap.hidden = !isOpenrouter;
+          if (qualityEl) qualityEl.disabled = !isOpenrouter || !(extraToggle && extraToggle.checked);
+        }
 
         function renderModels(channel, preferred) {
           var models = modelsByChannel[channel] || [];
@@ -186,8 +219,13 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         }
 
         channelEl.addEventListener('change', function() {
+          syncExtraVisibility();
           renderModels(channelEl.value, '');
         });
+        if (extraToggle) {
+          extraToggle.addEventListener('change', syncExtraVisibility);
+        }
+        syncExtraVisibility();
       })();
     </script>
   </div>

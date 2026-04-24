@@ -39,6 +39,26 @@ _SEEDREAM_MIN_PIXELS = 2560 * 1440
 _SEEDREAM_MAX_PIXELS = 10_404_496
 
 
+# OpenRouter OpenAI Image 2 真实模型 + 三档质量虚拟 ID
+_OPENROUTER_OPENAI_IMAGE2_MODEL = "openai/gpt-5.4-image-2"
+_OPENROUTER_OPENAI_IMAGE2_MODEL_IDS: dict[str, str] = {
+    "low":  f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:low",
+    "mid":  f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:mid",
+    "high": f"{_OPENROUTER_OPENAI_IMAGE2_MODEL}:high",
+}
+_OPENROUTER_OPENAI_IMAGE2_LABELS: dict[str, str] = {
+    "low":  "OpenAI Image 2（Low）",
+    "mid":  "OpenAI Image 2（Mid）",
+    "high": "OpenAI Image 2（High）",
+}
+# 面向用户的 low/mid/high → OpenAI 官方 quality low/medium/high
+_OPENROUTER_OPENAI_IMAGE2_QUALITY_MAP: dict[str, str] = {
+    "low":  "low",
+    "mid":  "medium",
+    "high": "high",
+}
+
+
 IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
     "aistudio": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
@@ -59,17 +79,72 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
 
 
+def is_openrouter_openai_image2_model(model_id: str | None) -> bool:
+    """是否是 OpenAI Image 2 三档质量的虚拟 model_id。"""
+    normalized = (model_id or "").strip()
+    return normalized in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS.values()
+
+
+def parse_openrouter_openai_image2_model(model_id: str | None) -> tuple[str, str] | None:
+    """解析虚拟 model_id 为 (真实 openrouter 模型, OpenAI quality 参数)。"""
+    normalized = (model_id or "").strip()
+    for quality, virtual_id in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS.items():
+        if normalized == virtual_id:
+            return _OPENROUTER_OPENAI_IMAGE2_MODEL, _OPENROUTER_OPENAI_IMAGE2_QUALITY_MAP[quality]
+    return None
+
+
+def _is_openrouter_openai_image2_enabled() -> bool:
+    """读 system_settings，读取失败时回落 False。避免 gemini_image 对配置层硬依赖。"""
+    try:
+        from appcore.image_translate_settings import is_openrouter_openai_image2_enabled
+        return bool(is_openrouter_openai_image2_enabled())
+    except Exception:
+        logger.debug("读取 openrouter openai image2 开关失败", exc_info=True)
+        return False
+
+
+def _openrouter_openai_image2_default_quality() -> str:
+    try:
+        from appcore.image_translate_settings import get_openrouter_openai_image2_default_quality
+        value = (get_openrouter_openai_image2_default_quality() or "").strip().lower()
+    except Exception:
+        value = ""
+    return value if value in _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS else "mid"
+
+
+def _openrouter_models_with_optional_openai_image2() -> list[tuple[str, str]]:
+    """OpenRouter 通道基础模型 + 可选的 OpenAI Image 2 三档质量。"""
+    models = list(IMAGE_MODELS_BY_CHANNEL["openrouter"])
+    if _is_openrouter_openai_image2_enabled():
+        for quality in ("low", "mid", "high"):
+            models.append(
+                (_OPENROUTER_OPENAI_IMAGE2_MODEL_IDS[quality],
+                 _OPENROUTER_OPENAI_IMAGE2_LABELS[quality])
+            )
+    return models
+
+
 def normalize_image_channel(channel: str | None) -> str:
     value = (channel or "").strip().lower()
     return value if value in IMAGE_MODELS_BY_CHANNEL else "aistudio"
 
 
 def list_image_models(channel: str | None = None) -> list[tuple[str, str]]:
-    return list(IMAGE_MODELS_BY_CHANNEL[normalize_image_channel(channel)])
+    normalized = normalize_image_channel(channel)
+    if normalized == "openrouter":
+        return _openrouter_models_with_optional_openai_image2()
+    return list(IMAGE_MODELS_BY_CHANNEL[normalized])
 
 
 def default_image_model(channel: str | None = None) -> str:
-    models = list_image_models(channel)
+    normalized = normalize_image_channel(channel)
+    models = list_image_models(normalized)
+    if normalized == "openrouter" and _is_openrouter_openai_image2_enabled():
+        quality = _openrouter_openai_image2_default_quality()
+        preferred = _OPENROUTER_OPENAI_IMAGE2_MODEL_IDS.get(quality)
+        if preferred and any(mid == preferred for mid, _ in models):
+            return preferred
     return models[0][0] if models else "gemini-3.1-flash-image-preview"
 
 
@@ -391,7 +466,12 @@ def _generate_via_openrouter(
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
-    or_model = _to_openrouter_model(model_id)
+    parsed = parse_openrouter_openai_image2_model(model_id)
+    if parsed is not None:
+        or_model, image_quality = parsed
+    else:
+        or_model = _to_openrouter_model(model_id)
+        image_quality = None
     b64 = base64.b64encode(source_image).decode("ascii")
     data_url = f"data:{source_mime or 'image/png'};base64,{b64}"
     messages = [
@@ -403,19 +483,22 @@ def _generate_via_openrouter(
             ],
         }
     ]
+    extra_body: dict[str, Any] = {"usage": {"include": True}}
+    if image_quality is not None:
+        extra_body["quality"] = image_quality
     try:
         resp = client.chat.completions.create(
             model=or_model,
             messages=messages,
             modalities=["image", "text"],
-            extra_body={"usage": {"include": True}},
+            extra_body=extra_body,
         )
     except TypeError:
         # 旧版 SDK 不认 modalities 参数，退回 extra_body
         resp = client.chat.completions.create(
             model=or_model,
             messages=messages,
-            extra_body={"modalities": ["image", "text"], "usage": {"include": True}},
+            extra_body={"modalities": ["image", "text"], **extra_body},
         )
     except Exception as e:
         raise _classify_error(e)(str(e)) from e
@@ -512,7 +595,11 @@ def generate_image(
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
     channel = _resolve_channel()
-    model_id = coerce_image_model(model, channel=channel)
+    # 历史任务若保存了 OpenAI Image 2 虚拟 model_id，即使管理员关了开关也要保持原模型运行
+    if channel == "openrouter" and is_openrouter_openai_image2_model(model):
+        model_id = (model or "").strip()
+    else:
+        model_id = coerce_image_model(model, channel=channel)
     provider = _channel_provider(channel)
 
     req_payload: dict = {
@@ -542,7 +629,12 @@ def generate_image(
             api_key_from_gemini, resolved_model = resolve_config(
                 user_id, service=service, default_model=model,
             )
-            model_id = coerce_image_model(model or resolved_model, channel=channel)
+            # 同样保护 OpenAI Image 2 历史 model_id 不被 coerce 掉
+            candidate_model = model or resolved_model
+            if channel == "openrouter" and is_openrouter_openai_image2_model(candidate_model):
+                model_id = (candidate_model or "").strip()
+            else:
+                model_id = coerce_image_model(candidate_model, channel=channel)
             if channel == "openrouter":
                 api_key = OPENROUTER_API_KEY
                 image_bytes, mime, resp = _generate_via_openrouter(

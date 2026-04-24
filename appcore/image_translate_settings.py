@@ -25,6 +25,12 @@ _CHANNEL_KEY = "image_translate.channel"
 _DEFAULT_CHANNEL = "aistudio"
 _DEFAULT_MODEL_KEY_PREFIX = "image_translate.default_model."
 
+# OpenRouter OpenAI Image 2 质量档位开关与默认值
+_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY = "image_translate.openrouter_openai_image2_enabled"
+_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY = "image_translate.openrouter_openai_image2_default_quality"
+_OPENROUTER_OPENAI_IMAGE2_QUALITIES: tuple[str, ...] = ("low", "mid", "high")
+_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY = "mid"
+
 
 def _key(preset: str, lang: str) -> str:
     return f"image_translate.prompt_{preset}_{lang}"
@@ -679,6 +685,31 @@ def set_default_model(channel: str, model_id: str) -> None:
     if not is_valid_image_model(normalized_model, channel=normalized_channel):
         raise ValueError(f"unsupported image model for {normalized_channel}: {model_id}")
     _write(_default_model_key(normalized_channel), normalized_model)
+
+
+def is_openrouter_openai_image2_enabled() -> bool:
+    """是否启用 OpenRouter 的 OpenAI Image 2 三档模型。"""
+    raw = (_read(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY) or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def set_openrouter_openai_image2_enabled(value: bool) -> None:
+    _write(_OPENROUTER_OPENAI_IMAGE2_ENABLED_KEY, "1" if value else "0")
+
+
+def get_openrouter_openai_image2_default_quality() -> str:
+    """返回默认质量（low/mid/high），非法/未设置时回到 mid。"""
+    raw = (_read(_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY) or "").strip().lower()
+    if raw in _OPENROUTER_OPENAI_IMAGE2_QUALITIES:
+        return raw
+    return _OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY
+
+
+def set_openrouter_openai_image2_default_quality(value: str) -> None:
+    normalized = (value or "").strip().lower()
+    if normalized not in _OPENROUTER_OPENAI_IMAGE2_QUALITIES:
+        raise ValueError(f"unsupported openrouter openai image2 quality: {value}")
+    _write(_OPENROUTER_OPENAI_IMAGE2_DEFAULT_QUALITY_KEY, normalized)
 
 
 def list_all_prompts() -> dict[str, dict[str, str]]:

@@ -98,6 +98,83 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
     assert "Nano Banana Pro（高保真）" in body
 
 
+def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3-pro-image-preview"), \
+         patch("web.routes.settings.is_openrouter_openai_image2_enabled", return_value=True), \
+         patch("web.routes.settings.get_openrouter_openai_image2_default_quality", return_value="high"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "启用 OpenAI Image 2" in body
+    assert 'name="openrouter_openai_image2_enabled"' in body
+    assert 'name="openrouter_openai_image2_default_quality"' in body
+    assert 'value="high"' in body and 'selected' in body
+    # 开启状态下 checkbox 应该有 checked
+    assert 'id="openrouterOpenaiImage2Enabled"' in body
+    assert "checked" in body
+
+
+def test_settings_get_hides_openai_image2_controls_for_non_openrouter(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"), \
+         patch("web.routes.settings.is_openrouter_openai_image2_enabled", return_value=False), \
+         patch("web.routes.settings.get_openrouter_openai_image2_default_quality", return_value="mid"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    # 控件存在但 hidden
+    assert 'id="openrouterOpenaiImage2Controls"' in body
+    assert "hidden" in body
+
+
+def test_settings_post_providers_saves_openai_image2_controls(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled") as m_enabled, \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality") as m_quality:
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "jianying_project_root": "/custom/path",
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+            "openrouter_openai_image2_enabled": "1",
+            "openrouter_openai_image2_default_quality": "high",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_enabled.assert_called_once_with(True)
+    m_quality.assert_called_once_with("high")
+
+
+def test_settings_post_providers_persists_false_when_checkbox_absent(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled") as m_enabled, \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "jianying_project_root": "/custom/path",
+            "image_translate_channel": "openrouter",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+            # checkbox 未勾选 → 浏览器不会提交该字段
+            "openrouter_openai_image2_default_quality": "mid",
+        })
+
+    assert resp.status_code in (302, 303)
+    m_enabled.assert_called_once_with(False)
+
+
 def test_settings_post_providers_saves_global_image_translate_channel_and_model(admin_no_db_client):
     with patch("web.routes.settings.set_image_translate_channel") as m_set_channel, \
          patch("web.routes.settings.set_image_translate_default_model") as m_set_model:
