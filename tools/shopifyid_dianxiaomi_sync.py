@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import time
 from collections import defaultdict
@@ -33,6 +34,7 @@ BROWSER_MODES = ("auto", "local-chrome", "server-cdp")
 DB_MODES = ("auto", "ssh", "local")
 TASK_CODE = "shopifyid"
 TASK_NAME = "Shopify ID 获取"
+IGNORED_PRODUCT_SYNC_FAILURE_STORES = {"SmartGearX"}
 REMOTE_ENVS = {
     "prod": {
         "db_name": "auto_video",
@@ -519,8 +521,24 @@ def _close_shopify_product_sync_dialog(page) -> None:
 
 
 def _assert_shopify_product_sync_success(detail_text: str) -> None:
-    failure_markers = ("同步失败，", "同步失败,")
-    if any(marker in detail_text for marker in failure_markers) or "原因：" in detail_text:
+    failure_matches = list(
+        re.finditer(
+            r"店铺《(?P<store>[^》]+)》同步失败[，,]原因[:：](?P<reason>.*?)(?=店铺《|关闭|$)",
+            detail_text,
+            flags=re.S,
+        )
+    )
+    if failure_matches:
+        unignored = [
+            f"{match.group('store')}：{match.group('reason').strip()}"
+            for match in failure_matches
+            if match.group("store") not in IGNORED_PRODUCT_SYNC_FAILURE_STORES
+        ]
+        if unignored:
+            raise RuntimeError(f"店小秘同步全部产品未完全成功：{'; '.join(unignored)}")
+        return
+    failure_markers = ("同步失败，", "同步失败,", "原因：", "原因:")
+    if any(marker in detail_text for marker in failure_markers):
         raise RuntimeError(f"店小秘同步全部产品未完全成功：{detail_text}")
 
 

@@ -363,12 +363,20 @@ def test_product_sync_success_allows_zero_failed_products():
     )
 
 
-def test_product_sync_success_rejects_store_level_failure():
+def test_product_sync_success_ignores_smartgearx_store_failure():
     mod = _load_module()
 
-    with pytest.raises(RuntimeError, match="未完全成功"):
+    mod._assert_shopify_product_sync_success(
+        "状态：已完成! 详情：店铺《SmartGearX》同步失败，原因：店铺授权信息已过期！店铺《Newjoyloo》同步完成，同步成功14个产品，同步失败0个"
+    )
+
+
+def test_product_sync_success_rejects_unignored_store_level_failure():
+    mod = _load_module()
+
+    with pytest.raises(RuntimeError, match="Newjoyloo"):
         mod._assert_shopify_product_sync_success(
-            "状态：已完成! 详情：店铺《SmartGearX》同步失败，原因：店铺授权信息已过期！"
+            "状态：已完成! 详情：店铺《Newjoyloo》同步失败，原因：店铺授权信息已过期！"
         )
 
 
