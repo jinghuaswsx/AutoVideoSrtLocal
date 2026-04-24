@@ -118,3 +118,41 @@ def test_admin_bulk_translate_projection_sorts_intervention_first(monkeypatch):
     assert overview["items"][0]["detail_url"] == "/tasks/bt-stuck?scope=admin"
     assert overview["items"][0]["intervention_count"] == 1
     assert overview["items"][2]["cost_actual"] == 2.5
+
+
+def test_admin_bulk_translate_projection_prefers_chinese_creator_name(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    rows = [
+        {
+            "id": "bt-zqq",
+            "user_id": 8,
+            "username": "zqq",
+            "creator_name": "张青青",
+            "status": "running",
+            "created_at": datetime(2026, 4, 24, 12, 0, 0),
+            "state_json": json.dumps({
+                "product_id": 9,
+                "target_langs": ["fr"],
+                "content_types": ["copywriting"],
+                "plan": [{"idx": 0, "kind": "copywriting", "lang": "fr", "status": "running"}],
+            }, ensure_ascii=False),
+        },
+    ]
+
+    monkeypatch.setattr(mod, "query", lambda *args, **kwargs: rows)
+    monkeypatch.setattr(
+        mod.medias,
+        "_media_product_owner_name_expr",
+        lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_product",
+        lambda product_id: {"id": product_id, "name": f"商品 {product_id}", "product_code": f"P{product_id}"},
+    )
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"fr": "法语"}.get(code, code))
+
+    overview = mod.list_admin_tasks(limit=20)
+
+    assert overview["items"][0]["creator"]["name"] == "张青青"
