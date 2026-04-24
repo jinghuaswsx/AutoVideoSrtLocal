@@ -13,6 +13,7 @@ import io
 import logging
 import math
 import re
+import time
 from typing import Any
 
 from google import genai
@@ -23,6 +24,7 @@ import requests
 from appcore import ai_billing
 from appcore.gemini import resolve_config
 from config import (
+    APIMART_IMAGE_API_KEY,
     DOUBAO_LLM_API_KEY,
     DOUBAO_LLM_BASE_URL,
     GEMINI_AISTUDIO_API_KEY,
@@ -74,6 +76,9 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
     ],
     "doubao": [
         ("doubao-seedream-5-0-260128", "Seedream 5.0（豆包）"),
+    ],
+    "apimart": [
+        ("gpt-image-2", "GPT-Image-2"),
     ],
 }
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
@@ -232,6 +237,8 @@ def _channel_provider(channel: str) -> str:
         return "openrouter"
     if channel == "cloud":
         return "gemini_vertex"
+    if channel == "apimart":
+        return "apimart"
     return "gemini_aistudio"
 
 
@@ -579,6 +586,125 @@ def _generate_via_seedream(
     return image_bytes, "image/png", resp_json
 
 
+_APIMART_BASE_URL = "https://api.apimart.ai"
+_APIMART_POLL_INTERVAL = 5    # 秒
+_APIMART_POLL_TIMEOUT = 120   # 秒
+_APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
+
+
+def _generate_via_apimart(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    *,
+    api_key: str,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError(
+            "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
+        )
+    mime = source_mime or "image/png"
+    b64 = base64.b64encode(source_image).decode("ascii")
+    data_url = f"data:{mime};base64,{b64}"
+    payload = {
+        "model": "gpt-image-2",
+        "prompt": prompt,
+        "n": 1,
+        "size": "auto",
+        "resolution": "1k",
+        "image_urls": [data_url],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        submit_resp = requests.post(
+            f"{_APIMART_BASE_URL}/v1/images/generations",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        raise GeminiImageRetryable(f"APIMART 提交请求失败：{e}") from e
+
+    try:
+        submit_json = submit_resp.json()
+    except Exception:
+        submit_json = {}
+
+    if submit_resp.status_code != 200 or submit_json.get("code") != 200:
+        if isinstance(submit_json, dict):
+            err = submit_json.get("error") or submit_json.get("message") or submit_json
+            message = str(err)[:500]
+        else:
+            message = f"HTTP {submit_resp.status_code}"
+        if submit_resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(
+                f"APIMART 提交失败（HTTP {submit_resp.status_code}）：{message}"
+            )
+        raise GeminiImageError(f"APIMART 提交失败：{message}")
+
+    task_id = ((submit_json.get("data") or [{}])[0]).get("task_id")
+    if not task_id:
+        raise GeminiImageError("APIMART 未返回 task_id")
+
+    time.sleep(_APIMART_INITIAL_WAIT)
+
+    deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
+    while True:
+        try:
+            poll_resp = requests.get(
+                f"{_APIMART_BASE_URL}/v1/tasks/{task_id}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            raise GeminiImageRetryable(f"APIMART 轮询失败：{e}") from e
+        if poll_resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(
+                f"APIMART 轮询失败（HTTP {poll_resp.status_code}）"
+            )
+        try:
+            poll_json = poll_resp.json()
+        except Exception:
+            poll_json = {}
+
+        data = poll_json.get("data") or {}
+        status = data.get("status", "")
+
+        if status == "completed":
+            images = (data.get("result") or {}).get("images") or []
+            first_image = images[0] if images else {}
+            url_value = first_image.get("url") if isinstance(first_image, dict) else None
+            if isinstance(url_value, list):
+                image_url = url_value[0] if url_value else None
+            else:
+                image_url = url_value or None
+            if not image_url:
+                raise GeminiImageError("APIMART 任务完成但未返回图片 URL")
+            try:
+                img_resp = requests.get(image_url, timeout=30)
+            except requests.RequestException as e:
+                raise GeminiImageRetryable(f"APIMART 图片下载失败：{e}") from e
+            if img_resp.status_code != 200:
+                raise GeminiImageError(
+                    f"APIMART 图片下载失败（HTTP {img_resp.status_code}）"
+                )
+            return img_resp.content, "image/png", poll_json
+
+        if status == "failed":
+            error_msg = (data.get("error") or {}).get("message") or "unknown error"
+            raise GeminiImageError(f"APIMART 任务失败：{error_msg}")
+
+        if time.monotonic() > deadline:
+            raise GeminiImageRetryable(
+                f"APIMART 任务超时（>{_APIMART_POLL_TIMEOUT}s，task_id={task_id}）"
+            )
+
+        time.sleep(_APIMART_POLL_INTERVAL)
+
+
 # ---------------------------------------------------------------------------
 # 对外入口
 # ---------------------------------------------------------------------------
@@ -622,6 +748,15 @@ def generate_image(
                 model_id=model_id,
                 api_key=api_key,
                 base_url=base_url,
+            )
+            input_tokens = output_tokens = None
+            response_cost_cny = None
+        elif channel == "apimart":
+            image_bytes, mime, resp = _generate_via_apimart(
+                prompt,
+                source_image,
+                source_mime,
+                api_key=APIMART_IMAGE_API_KEY,
             )
             input_tokens = output_tokens = None
             response_cost_cny = None

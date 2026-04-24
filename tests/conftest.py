@@ -59,7 +59,7 @@ def authed_client_no_db(monkeypatch):
 
     fake_user = {
         "id": 1,
-        "username": "test-admin",
+        "username": "admin",
         "role": "admin",
         "is_active": 1,
     }
