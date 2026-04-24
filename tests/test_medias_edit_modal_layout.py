@@ -53,8 +53,24 @@ def test_edit_modal_places_shopifyid_section_after_mk_id():
     shopify_id_index = html.index('id="edShopifyIdSection"')
 
     assert mk_id_index < shopify_id_index
-    assert 'id="edShopifyIdValue"' in html
+    assert 'id="edShopifyId"' in html
     assert "Shopify ID" in html
+
+
+def test_edit_modal_shopifyid_field_is_editable_input():
+    html = (ROOT / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(
+        encoding="utf-8"
+    )
+
+    section_start = html.index('id="edShopifyIdSection"')
+    section_end = html.index("</section>", section_start)
+    section = html[section_start:section_end]
+
+    assert 'id="edShopifyIdValue"' not in section
+    assert "仅展示不可编辑" not in section
+    assert 'id="edShopifyId"' in section
+    assert 'inputmode="numeric"' in section
+    assert 'aria-labelledby="edShopifyIdSectionTitle"' in section
 
 
 def test_medias_list_uses_two_column_grid_for_row_actions():

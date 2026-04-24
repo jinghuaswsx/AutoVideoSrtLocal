@@ -1697,6 +1697,13 @@
       throw new Error('明空 ID 必须是 1-8 位数字');
     }
 
+    const shopifyIdInput = $('edShopifyId');
+    const shopifyIdRaw = shopifyIdInput ? (shopifyIdInput.value || '').trim() : '';
+    if (shopifyIdRaw && !/^\d{1,32}$/.test(shopifyIdRaw)) {
+      if (shopifyIdInput) shopifyIdInput.focus();
+      throw new Error('Shopify ID 必须是纯数字');
+    }
+
     const adSupportedLangs = [...document.querySelectorAll(
       '#edAdSupportedLangsBox input[name="ad_supported_langs"]:checked'
     )].map(i => i.value).join(',');
@@ -1707,6 +1714,7 @@
         name,
         product_code: code,
         mk_id: mkIdRaw === '' ? null : parseInt(mkIdRaw, 10),
+        shopifyid: shopifyIdRaw,
         copywritings,
         localized_links: edState.productData.product.localized_links || {},
         ad_supported_langs: adSupportedLangs,
@@ -1898,9 +1906,8 @@
         ? '' : String(data.product.mk_id);
       const shopifyIdText = (data.product.shopifyid === null || data.product.shopifyid === undefined)
         ? '' : String(data.product.shopifyid);
-      if ($('edShopifyIdValue')) {
-        $('edShopifyIdValue').textContent = shopifyIdText || '—';
-        $('edShopifyIdValue').title = shopifyIdText || '';
+      if ($('edShopifyId')) {
+        $('edShopifyId').value = shopifyIdText;
       }
       edRenderAdSupportedLangs(data.product.ad_supported_langs || '');
       $('edUploadProgress').innerHTML = '';

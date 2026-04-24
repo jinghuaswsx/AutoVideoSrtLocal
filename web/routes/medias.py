@@ -413,6 +413,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "name": p["name"],
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
+        "shopifyid": p.get("shopifyid"),
         "owner_name": (p.get("owner_name") or "").strip(),
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
@@ -811,6 +812,10 @@ def api_update_product(pid: int):
     # 鏄庣┖ ID锛坢k_id锛夛細閫夊～锛?-8 浣嶆暟瀛楋紝绌轰覆浠ｈ〃娓呴櫎
     if "mk_id" in body:
         update_fields["mk_id"] = body.get("mk_id")
+
+    # Shopify ID：选填，纯数字字符串；空白由 DB 层归一化为 NULL，非数字由 DB 层抛 ValueError
+    if "shopifyid" in body:
+        update_fields["shopifyid"] = body.get("shopifyid")
 
     for key in (
         "remark",

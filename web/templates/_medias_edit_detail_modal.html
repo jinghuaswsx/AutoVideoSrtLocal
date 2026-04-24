@@ -284,9 +284,11 @@
       <section class="oc-section oc-section-card oc-edit-meta-section" id="edShopifyIdSection">
         <div class="oc-section-title" id="edShopifyIdSectionTitle">Shopify ID</div>
         <div class="oc-field">
-          <div id="edShopifyIdValue" class="oc-readonly-meta oc-readonly-meta-shopify"
-               aria-labelledby="edShopifyIdSectionTitle">—</div>
-          <div class="oc-hint">店小秘同步回填的 Shopify 商品 ID，仅展示不可编辑</div>
+          <input id="edShopifyId" class="oc-input" type="text"
+                 inputmode="numeric" maxlength="32"
+                 aria-labelledby="edShopifyIdSectionTitle"
+                 placeholder="选填，Shopify 商品 ID（纯数字）" autocomplete="off">
+          <div class="oc-hint">店小秘同步会自动回填；同步漏掉或冲突时可在此手动填写，必须是纯数字</div>
         </div>
       </section>
 

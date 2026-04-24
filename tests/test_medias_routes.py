@@ -1288,3 +1288,81 @@ def test_get_product_api_includes_shopifyid(
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["product"]["shopifyid"] == "8560559554733"
+
+
+def _stub_update_product_target(monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {
+            "id": pid,
+            "user_id": 1,
+            "name": "测试商品",
+            "product_code": "demo-product",
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    return r
+
+
+def test_update_product_accepts_shopifyid(authed_client_no_db, monkeypatch):
+    r = _stub_update_product_target(monkeypatch)
+
+    captured: dict = {}
+
+    def _fake_update_product(pid, **fields):
+        captured["pid"] = pid
+        captured["fields"] = fields
+
+    monkeypatch.setattr(r.medias, "update_product", _fake_update_product)
+
+    resp = authed_client_no_db.put(
+        "/medias/api/products/123",
+        json={"shopifyid": "8559391932589"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["pid"] == 123
+    assert captured["fields"] == {"shopifyid": "8559391932589"}
+
+
+def test_update_product_passes_blank_shopifyid_through_to_db_layer(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_update_product_target(monkeypatch)
+
+    captured: dict = {}
+
+    def _fake_update_product(pid, **fields):
+        captured["fields"] = fields
+
+    monkeypatch.setattr(r.medias, "update_product", _fake_update_product)
+
+    resp = authed_client_no_db.put(
+        "/medias/api/products/9",
+        json={"shopifyid": ""},
+    )
+
+    assert resp.status_code == 200
+    assert captured["fields"] == {"shopifyid": ""}
+
+
+def test_update_product_rejects_non_numeric_shopifyid(authed_client_no_db, monkeypatch):
+    r = _stub_update_product_target(monkeypatch)
+
+    def _raise_value_error(pid, **fields):
+        raise ValueError("shopifyid 必须是纯数字字符串")
+
+    monkeypatch.setattr(r.medias, "update_product", _raise_value_error)
+
+    resp = authed_client_no_db.put(
+        "/medias/api/products/7",
+        json={"shopifyid": "abc"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body.get("error") == "invalid_product_field"
+    assert "shopifyid" in body.get("message", "")
