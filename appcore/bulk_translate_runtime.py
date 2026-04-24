@@ -217,11 +217,25 @@ def run_scheduler(
 
         due_item = _next_due_pending_item(state, now_provider())
         if due_item:
-            child_task_id, child_task_type, _child_status = _create_child_task(
-                task_id,
-                due_item,
-                state,
-            )
+            try:
+                child_task_id, child_task_type, _child_status = _create_child_task(
+                    task_id,
+                    due_item,
+                    state,
+                )
+            except Exception as exc:
+                _mark_dispatch_failed(due_item, exc)
+                _append_dispatch_failure_audit(state, due_item, exc)
+                log.exception(
+                    "bulk_translate child dispatch failed task_id=%s idx=%s kind=%s lang=%s",
+                    task_id,
+                    due_item.get("idx"),
+                    due_item.get("kind"),
+                    due_item.get("lang"),
+                )
+                _save_state(task_id, state, status="failed")
+                _emit(bus, EVT_BT_PROGRESS, task_id, state, "failed")
+                return
             due_item["child_task_id"] = child_task_id
             due_item["sub_task_id"] = child_task_id
             due_item["child_task_type"] = child_task_type
@@ -1267,6 +1281,29 @@ def _reset_item_for_retry(item: dict) -> None:
     item["forced_backfill_applied_count"] = 0
     item["forced_backfill_skipped_failed_indices"] = []
     item["forced_backfill_skipped_failed_count"] = 0
+
+
+def _mark_dispatch_failed(item: dict, exc: Exception) -> None:
+    item["status"] = "failed"
+    item["error"] = f"child dispatch failed: {exc}"
+    item["finished_at"] = _now_iso()
+
+
+def _append_dispatch_failure_audit(state: dict, item: dict, exc: Exception) -> None:
+    initiator = state.get("initiator") or {}
+    user_id = int(initiator.get("user_id") or 0)
+    _append_audit(
+        state,
+        user_id,
+        "dispatch_failed",
+        {
+            "idx": item.get("idx"),
+            "kind": item.get("kind"),
+            "lang": item.get("lang"),
+            "child_task_id": item.get("child_task_id") or item.get("sub_task_id"),
+            "error": str(exc),
+        },
+    )
 
 
 def _normalized_status(status: str | None) -> str:

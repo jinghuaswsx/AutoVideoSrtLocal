@@ -385,6 +385,52 @@ def test_run_scheduler_dispatches_spaced_items_while_previous_children_still_run
     assert [item["status"] for item in state["plan"]] == ["running", "running", "running"]
 
 
+def test_run_scheduler_marks_due_item_failed_when_child_creation_crashes(runtime_env, monkeypatch):
+    mod, fake_db = runtime_env
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="detail_images", ref={"source_detail_ids": [1]}, dispatch_after_seconds=0),
+        ],
+    )
+
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["it"],
+        content_types=["detail_images"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[],
+    )
+    mod.start_task(task_id, user_id=1)
+    state = _load_state(fake_db, task_id)
+    state["scheduler_anchor_ts"] = 0
+    _store_state(fake_db, task_id, state)
+
+    def crash_create_child(parent_id, item, parent_state):
+        raise RuntimeError("temporary child dispatch failure")
+
+    monkeypatch.setattr(mod, "_create_child_task", crash_create_child)
+
+    mod.run_scheduler(
+        task_id,
+        now_provider=lambda: 10,
+        sleep_fn=lambda *_args, **_kwargs: None,
+        max_loops=1,
+    )
+
+    assert fake_db.rows[task_id]["status"] == "failed"
+    state = _load_state(fake_db, task_id)
+    assert state["progress"]["failed"] == 1
+    assert state["progress"]["pending"] == 0
+    assert state["plan"][0]["status"] == "failed"
+    assert "temporary child dispatch failure" in state["plan"][0]["error"]
+    assert state["plan"][0]["finished_at"]
+
+
 def test_run_scheduler_waiting_voice_does_not_block_other_due_items(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
