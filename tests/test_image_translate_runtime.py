@@ -836,3 +836,153 @@ def test_parallel_no_lost_updates_under_contention(tmp_path):
     for p in store_updates:
         assert p["done"] + p["failed"] + p["running"] <= p["total"], p
     assert task["progress"]["done"] == 20
+
+
+def test_recovery_poll_resumes_existing_apimart_task_within_window():
+    """item 带有 10 分钟内的 apimart_task_id 时，应直接轮询而不是重新提交。"""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_resume_me"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 30  # 30 秒前提交
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(
+             rt.gemini_image, "poll_apimart_task",
+             return_value=(b"RESUMED", "image/png", {}),
+         ) as m_poll, \
+         patch.object(rt.gemini_image, "generate_image") as m_gen:
+        out, mime = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"RESUMED"
+    assert mime == "image/png"
+    m_poll.assert_called_once()
+    assert m_poll.call_args.kwargs["initial_wait"] is False
+    m_gen.assert_not_called()  # 不能走重新提交
+
+
+def test_recovery_falls_back_to_regenerate_when_task_expired():
+    """apimart_task_id 超出 10 分钟窗口时放弃快照，走完整重新提交。"""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_too_old"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 9999
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "poll_apimart_task") as m_poll, \
+         patch.object(
+             rt.gemini_image, "generate_image",
+             return_value=(b"NEW", "image/png"),
+         ) as m_gen:
+        out, _ = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"NEW"
+    m_poll.assert_not_called()
+    m_gen.assert_called_once()
+
+
+def test_recovery_clears_task_id_and_regenerates_on_upstream_failure():
+    """已提交的 APIMART 任务在 upstream 明确 failed 时，清掉快照并重新提交。"""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_will_fail"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 20
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(
+             rt.gemini_image, "poll_apimart_task",
+             side_effect=rt.gemini_image.GeminiImageError("content policy violation"),
+         ) as m_poll, \
+         patch.object(
+             rt.gemini_image, "generate_image",
+             return_value=(b"RETRY", "image/png"),
+         ) as m_gen:
+        out, _ = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"RETRY"
+    m_poll.assert_called_once()
+    m_gen.assert_called_once()
+    # 快照应被清理，避免下轮又去 poll 同一个已失败的 task
+    assert task["items"][0]["apimart_task_id"] == ""
+    assert task["items"][0]["apimart_submitted_at"] == 0.0
+
+
+def test_recovery_normal_path_saves_task_id_via_callback():
+    """首次提交时，generate_image 的 on_apimart_submitted 回调要把 task_id 落到 item 上。"""
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    # 没有 apimart_task_id
+    assert not task["items"][0].get("apimart_task_id")
+
+    def fake_generate(**kwargs):
+        on_cb = kwargs.get("on_apimart_submitted")
+        assert callable(on_cb)
+        on_cb("task_fresh_xyz")
+        return b"FRESH", "image/png"
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "poll_apimart_task") as m_poll, \
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_generate):
+        out, _ = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"FRESH"
+    m_poll.assert_not_called()
+    assert task["items"][0]["apimart_task_id"] == "task_fresh_xyz"
+    assert task["items"][0]["apimart_submitted_at"] > 0
+
+
+def test_recovery_non_apimart_channel_skips_recovery_logic():
+    """非 APIMART 通道不启用 task_id 快照机制。"""
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "openrouter"
+    # 即使误带 apimart_task_id，也不该触发 poll
+    task["items"][0]["apimart_task_id"] = "task_should_be_ignored"
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "poll_apimart_task") as m_poll, \
+         patch.object(
+             rt.gemini_image, "generate_image",
+             return_value=(b"OPENROUTER-OUT", "image/png"),
+         ) as m_gen:
+        runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    m_poll.assert_not_called()
+    m_gen.assert_called_once()
+    # non-apimart 通道，on_apimart_submitted 应该传 None
+    assert m_gen.call_args.kwargs.get("on_apimart_submitted") is None

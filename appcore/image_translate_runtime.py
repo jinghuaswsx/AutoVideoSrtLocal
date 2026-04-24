@@ -40,6 +40,10 @@ _TEXT_DETECT_PROMPT = (
 _RATE_LIMIT_THRESHOLD = 5
 _RATE_LIMIT_WINDOW_SEC = 60.0
 
+# APIMART 任务恢复窗口：服务重启后，对提交时间在此窗口内的 APIMART 任务
+# 先轮询取结果，而不是重新提交（避免重复扣费）
+_APIMART_RECOVERY_WINDOW_SEC = 600  # 10 分钟
+
 
 class _CircuitOpen(Exception):
     """上游持续限流，任务级熔断信号；由 start() 在外层捕获。"""
@@ -78,6 +82,9 @@ def _reset_item_processing_state(item: dict) -> None:
     item["text_detect_reason"] = ""
     item["text_detect_error"] = ""
     item["result_source"] = ""
+    # 显式重试：清掉 APIMART 任务快照，下一轮走重新提交
+    item["apimart_task_id"] = ""
+    item["apimart_submitted_at"] = 0.0
 
 
 def _item_source_is_gif(item: dict) -> bool:
@@ -326,14 +333,8 @@ class ImageTranslateRuntime:
                 else:
                     has_text = self._detect_source_text(task, task_id, item, src_path)
                 if has_text:
-                    out_bytes, out_mime = gemini_image.generate_image(
-                        prompt=task["prompt"],
-                        source_image=src_bytes,
-                        source_mime=mime,
-                        model=task["model_id"],
-                        user_id=task.get("_user_id"),
-                        project_id=task_id,
-                        service="image_translate.generate",
+                    out_bytes, out_mime = self._generate_with_apimart_recovery(
+                        task, task_id, item, idx, src_bytes, mime,
                     )
                     dst_ext = self._ext_from_mime(out_mime) or ".png"
                     dst_key = self._build_dst_key(task, idx, dst_ext)
@@ -405,6 +406,71 @@ class ImageTranslateRuntime:
                             os.unlink(p)
                         except OSError:
                             pass
+
+    def _generate_with_apimart_recovery(
+        self,
+        task: dict,
+        task_id: str,
+        item: dict,
+        idx: int,
+        src_bytes: bytes,
+        mime: str,
+    ) -> tuple[bytes, str]:
+        """调用 gemini_image.generate_image，但对 APIMART 通道先尝试复用已提交的 task_id。
+
+        逻辑：
+        - 如果 item 里有 apimart_task_id，且提交时间在 _APIMART_RECOVERY_WINDOW_SEC 以内，
+          直接轮询原 task_id 取结果，避免服务重启后重复扣费。
+        - 轮询得到 GeminiImageError（任务失败）：清理快照 → 走重新提交。
+        - 否则（没有 task_id / 超出窗口）：调用 generate_image，传 on_apimart_submitted
+          回调，提交成功立即把 task_id 记到 item 上。
+        """
+        channel = (task.get("channel") or "").strip()
+
+        if channel == "apimart":
+            existing_task_id = (item.get("apimart_task_id") or "").strip()
+            submitted_at = float(item.get("apimart_submitted_at") or 0.0)
+            age = time.time() - submitted_at if submitted_at else float("inf")
+            if existing_task_id and age <= _APIMART_RECOVERY_WINDOW_SEC:
+                logger.info(
+                    "[image_translate] resuming APIMART task %s for %s item %d (age=%.0fs)",
+                    existing_task_id, task_id, idx, age,
+                )
+                try:
+                    out_bytes, out_mime, _ = gemini_image.poll_apimart_task(
+                        existing_task_id,
+                        api_key=gemini_image.APIMART_IMAGE_API_KEY,
+                        initial_wait=False,
+                    )
+                    return out_bytes, out_mime
+                except gemini_image.GeminiImageError as e:
+                    logger.info(
+                        "[image_translate] APIMART task %s failed upstream, re-generating: %s",
+                        existing_task_id, e,
+                    )
+                    with self._state_lock:
+                        item["apimart_task_id"] = ""
+                        item["apimart_submitted_at"] = 0.0
+                        store.update(task_id, items=task["items"])
+
+        on_submitted = None
+        if channel == "apimart":
+            def on_submitted(submitted_task_id: str, _item=item, _task=task, _task_id=task_id) -> None:
+                with self._state_lock:
+                    _item["apimart_task_id"] = submitted_task_id
+                    _item["apimart_submitted_at"] = time.time()
+                    store.update(_task_id, items=_task["items"])
+
+        return gemini_image.generate_image(
+            prompt=task["prompt"],
+            source_image=src_bytes,
+            source_mime=mime,
+            model=task["model_id"],
+            user_id=task.get("_user_id"),
+            project_id=task_id,
+            service="image_translate.generate",
+            on_apimart_submitted=on_submitted,
+        )
 
     def _download_source_image(self, task: dict, item: dict, local_path: str) -> str:
         object_key = item["src_tos_key"]
