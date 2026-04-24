@@ -595,8 +595,7 @@ def start_translate(task_id):
     # Save choices to task state so runtime can read them
     updates = {"_translate_pre_select": False}
     if model_provider in _VALID_TRANSLATE_PREFS:
-        from appcore.api_keys import set_key
-        set_key(current_user.id, "translate_pref", model_provider)
+        updates["custom_translate_provider"] = model_provider
     if prompt_text:
         updates["custom_translate_prompt"] = prompt_text
 

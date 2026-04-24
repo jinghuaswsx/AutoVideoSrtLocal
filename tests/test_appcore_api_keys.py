@@ -107,3 +107,10 @@ def test_resolve_extra_reads_admin_extra(fake_api_key_db):
     }
 
     assert resolve_extra(2, "doubao_llm") == {"base_url": "https://ark.example"}
+
+
+def test_jianying_remains_user_scoped(fake_api_key_db):
+    set_key(1, "jianying", "", extra={"project_root": r"C:\AdminDrafts"})
+    set_key(2, "jianying", "", extra={"project_root": r"D:\AliceDrafts"})
+
+    assert resolve_extra(2, "jianying") == {"project_root": r"D:\AliceDrafts"}

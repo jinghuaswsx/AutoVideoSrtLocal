@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+{% block title %}用户设置 - AutoVideoSrt{% endblock %}
+{% block page_title %}用户设置{% endblock %}
+{% block extra_style %}
+:root {
+  --user-settings-accent: oklch(56% 0.16 230);
+  --user-settings-accent-subtle: oklch(95% 0.04 225);
+  --user-settings-fg: oklch(22% 0.02 235);
+  --user-settings-fg-muted: oklch(50% 0.018 230);
+  --user-settings-fg-soft: oklch(64% 0.015 230);
+  --user-settings-border: oklch(91% 0.012 230);
+  --user-settings-border-strong: oklch(84% 0.015 230);
+  --user-settings-surface: oklch(99% 0.004 230);
+  --user-settings-surface-muted: oklch(97% 0.006 230);
+  --user-settings-success-bg: oklch(95% 0.04 165);
+  --user-settings-success-fg: oklch(38% 0.09 165);
+}
+.user-settings-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+.user-settings-head h1 { font-size:20px; font-weight:700; color:var(--user-settings-fg); margin:0; }
+.user-settings-card { background:var(--user-settings-surface); border:1.5px solid var(--user-settings-border); border-radius:14px; padding:24px; margin-bottom:16px; }
+.user-settings-card h2 { font-size:15px; font-weight:700; color:var(--user-settings-fg); margin-bottom:4px; }
+.step-desc { font-size:13px; color:var(--user-settings-fg-muted); margin-bottom:16px; }
+.hint { color:var(--user-settings-fg-soft); font-size:12px; margin-top:4px; }
+label { display:block; color:var(--user-settings-fg-muted); font-size:12px; font-weight:600; text-transform:uppercase; margin-bottom:6px; margin-top:14px; }
+input[type=text] { width:100%; background:var(--user-settings-surface-muted); border:1.5px solid var(--user-settings-border); border-radius:10px; color:var(--user-settings-fg); padding:10px 12px; font-size:14px; font-family:inherit; outline:none; transition:border-color 120ms, box-shadow 120ms, background-color 120ms; }
+input[type=text]:focus { border-color:var(--user-settings-accent); box-shadow:0 0 0 3px oklch(56% 0.16 230 / 0.18); background:var(--user-settings-surface); }
+.settings-copy-wrap { display:flex; gap:8px; align-items:center; width:100%; }
+.settings-copy-wrap input[type=text] { flex:1; min-width:0; }
+.settings-copy-btn { flex:0 0 auto; height:36px; padding:0 12px; border-radius:8px; border:1px solid var(--user-settings-border-strong); background:var(--user-settings-surface); color:var(--user-settings-fg-muted); font-size:12px; font-weight:600; cursor:pointer; transition:background-color 120ms, border-color 120ms, color 120ms; }
+.settings-copy-btn:hover { background:var(--user-settings-accent-subtle); color:var(--user-settings-accent); border-color:var(--user-settings-accent); }
+.settings-copy-btn.copied { background:var(--user-settings-success-bg); color:var(--user-settings-success-fg); border-color:oklch(84% 0.06 165); }
+.success { background:var(--user-settings-success-bg); border:1px solid oklch(88% 0.06 165); color:var(--user-settings-success-fg); font-size:13px; padding:10px 12px; border-radius:8px; margin-bottom:16px; }
+{% endblock %}
+{% block content %}
+{% with messages = get_flashed_messages() %}
+  {% if messages %}<p class="success">{{ messages[0] }}</p>{% endif %}
+{% endwith %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="user-settings-head">
+    <h1>用户设置</h1>
+    <button class="btn btn-primary" type="submit">保存设置</button>
+  </div>
+
+  <div class="user-settings-card">
+    <h2>导出目录设置</h2>
+    <p class="step-desc">导出到剪映项目</p>
+    <label>剪映项目根目录</label>
+    <input type="text" name="jianying_project_root" value="{{ jianying_project_root }}">
+    <p class="hint">导出的 CapCut 工程会把素材路径指向这个本机剪映项目根目录。默认值：{{ default_jianying_project_root }}</p>
+  </div>
+
+  <button class="btn btn-primary" type="submit">保存设置</button>
+</form>
+
+<script>
+  (function () {
+    function copyText(value) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(value);
+      }
+      var ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    }
+
+    document.querySelectorAll('.user-settings-card input[type="text"]').forEach(function (field) {
+      var parent = field.parentNode;
+      var wrap = document.createElement('div');
+      wrap.className = 'settings-copy-wrap';
+      parent.insertBefore(wrap, field);
+      wrap.appendChild(field);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-copy-btn';
+      btn.setAttribute('data-settings-copy', '1');
+      btn.textContent = '复制';
+      btn.addEventListener('click', function () {
+        copyText(field.value || '').then(function () {
+          btn.classList.add('copied');
+          btn.textContent = '已复制';
+          window.setTimeout(function () {
+            btn.classList.remove('copied');
+            btn.textContent = '复制';
+          }, 1200);
+        });
+      });
+      wrap.appendChild(btn);
+    });
+  })();
+</script>
+{% endblock %}

@@ -25,7 +25,7 @@ def test_ai_billing_template_shows_input_and_output_token_columns():
     assert "<th>输出 Token</th>" in template
     assert "{{ row.input_tokens if row.input_tokens is not none else '' }}" in template
     assert "{{ row.output_tokens if row.output_tokens is not none else '' }}" in template
-    assert 'colspan="{% if admin_mode %}11{% else %}10{% endif %}"' in template
+    assert 'colspan="{% if admin_mode %}13{% else %}12{% endif %}"' in template
 
 
 def _install_template_stub(monkeypatch):

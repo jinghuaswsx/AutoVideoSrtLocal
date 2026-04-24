@@ -8,14 +8,9 @@ def test_start_translate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monk
     store.update("task-start-gpt5-mini", _translate_pre_select=True)
 
     resume_calls = []
-    saved_prefs = []
     monkeypatch.setattr(
         "web.routes.task.pipeline_runner.resume",
         lambda task_id, step, user_id=None: resume_calls.append((task_id, step, user_id)),
-    )
-    monkeypatch.setattr(
-        "appcore.api_keys.set_key",
-        lambda user_id, service, key_value, extra=None: saved_prefs.append((user_id, service, key_value, extra)),
     )
 
     resp = authed_client_no_db.post(
@@ -25,7 +20,8 @@ def test_start_translate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monk
 
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "started"
-    assert (1, "translate_pref", "gpt_5_mini", None) in saved_prefs
+    updated = store.get("task-start-gpt5-mini")
+    assert updated["custom_translate_provider"] == "gpt_5_mini"
     assert resume_calls == [("task-start-gpt5-mini", "translate", 1)]
 
 

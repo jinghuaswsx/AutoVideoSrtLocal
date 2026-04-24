@@ -10,6 +10,15 @@ def _neutralize_db(monkeypatch):
     monkeypatch.setattr("appcore.db.query", lambda *a, **k: [])
     monkeypatch.setattr("appcore.db.query_one", lambda *a, **k: None)
     monkeypatch.setattr("appcore.db.execute", lambda *a, **k: 0)
+    def fake_api_key_query_one(sql, params=()):
+        if "FROM users WHERE username = %s" in sql and params and params[0] == "admin":
+            return {"id": 1, "username": "admin", "is_active": 1}
+        if "FROM users WHERE id = %s" in sql and params and int(params[0]) == 1:
+            return {"id": 1, "username": "admin", "is_active": 1}
+        return None
+    monkeypatch.setattr("appcore.api_keys.query", lambda *a, **k: [])
+    monkeypatch.setattr("appcore.api_keys.query_one", fake_api_key_query_one)
+    monkeypatch.setattr("appcore.api_keys.execute", lambda *a, **k: 0)
     # _get_pool 被任何地方触发都返回 MagicMock，避免初始化连接
     monkeypatch.setattr("appcore.db._get_pool", lambda: MagicMock())
 
@@ -36,49 +45,37 @@ def admin_no_db_client(monkeypatch):
 
 
 @pytest.fixture
-def manager_no_db_client(monkeypatch):
-    """Role-admin user whose username is not the API config owner."""
+def non_owner_clients(monkeypatch):
+    """Clients for users who are not username=admin."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     from web.app import create_app
 
-    fake_user = {"id": 3, "username": "manager", "role": "admin", "is_active": 1}
-    monkeypatch.setattr(
-        "web.auth.get_by_id",
-        lambda user_id: fake_user if int(user_id) == 3 else None,
-    )
+    users = {
+        2: {"id": 2, "username": "alice", "role": "user", "is_active": 1},
+        3: {"id": 3, "username": "manager", "role": "admin", "is_active": 1},
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: users.get(int(user_id)))
 
     app = create_app()
-    client = app.test_client()
-    with client.session_transaction() as session:
-        session["_user_id"] = "3"
-        session["_fresh"] = True
-    return client
-
-
-@pytest.fixture
-def normal_no_db_client(monkeypatch):
-    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
-    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
-    from web.app import create_app
-
-    fake_user = {"id": 2, "username": "alice", "role": "user", "is_active": 1}
-    monkeypatch.setattr(
-        "web.auth.get_by_id",
-        lambda user_id: fake_user if int(user_id) == 2 else None,
-    )
-
-    app = create_app()
-    client = app.test_client()
-    with client.session_transaction() as session:
+    normal = app.test_client()
+    with normal.session_transaction() as session:
         session["_user_id"] = "2"
         session["_fresh"] = True
-    return client
+    manager = app.test_client()
+    with manager.session_transaction() as session:
+        session["_user_id"] = "3"
+        session["_fresh"] = True
+    return manager, normal
 
 
-def test_settings_requires_exact_admin_username(manager_no_db_client, normal_no_db_client):
+def test_settings_requires_exact_admin_username(non_owner_clients):
+    manager_no_db_client, normal_no_db_client = non_owner_clients
     assert manager_no_db_client.get("/settings").status_code == 403
     assert normal_no_db_client.get("/settings").status_code == 403
+    assert manager_no_db_client.get("/admin/settings/ai-pricing/list").status_code == 403
 
 
 def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):
@@ -110,6 +107,50 @@ def test_settings_get_renders_gpt_5_mini_translate_option(admin_no_db_client):
     body = resp.get_data(as_text=True)
     assert 'value="gpt_5_mini"' in body
     assert "GPT 5-mini" in body
+
+
+def test_settings_provider_secrets_render_as_plain_text(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={
+        "openrouter": {
+            "key_value": "sk-openrouter-visible",
+            "extra": {"base_url": "https://openrouter.example/api", "model_id": "model-visible"},
+        },
+        "doubao_llm": {
+            "key_value": "ark-visible",
+            "extra": {"base_url": "https://ark.example/api", "model_id": "doubao-visible"},
+        },
+    }), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3-pro-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert 'type="password"' not in body
+    assert 'value="sk-openrouter-visible"' in body
+    assert 'value="https://openrouter.example/api"' in body
+    assert 'value="ark-visible"' in body
+    assert "data-settings-copy" in body
+
+
+def test_settings_push_secrets_render_values(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"), \
+         patch("appcore.pushes.get_push_target_url", return_value="http://push.example"), \
+         patch("appcore.pushes.get_localized_texts_base_url", return_value="https://wedev.example"), \
+         patch("appcore.pushes.get_localized_texts_authorization", return_value="Bearer visible-token"), \
+         patch("appcore.pushes.get_localized_texts_cookie", return_value="sessionid=visible-cookie"):
+        resp = admin_no_db_client.get("/settings?tab=push")
+
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert 'value="Bearer visible-token"' in body
+    assert 'value="sessionid=visible-cookie"' in body
 
 
 def test_settings_get_renders_seedream_channel_label(admin_no_db_client):

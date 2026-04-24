@@ -36,6 +36,7 @@ from web.routes.voice import bp as voice_bp
 from web.routes.auth import bp as auth_bp
 from web.routes.projects import bp as projects_bp
 from web.routes.settings import bp as settings_bp
+from web.routes.user_settings import bp as user_settings_bp
 from web.routes.admin import bp as admin_bp
 from web.routes.admin_ai_billing import (
     admin_ai_billing_bp,
@@ -133,6 +134,7 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(user_settings_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_ai_billing_bp)
     app.register_blueprint(admin_usage_bp)
