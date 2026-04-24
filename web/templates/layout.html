@@ -143,6 +143,53 @@
       font-weight: 600;
     }
     .sidebar-nav .nav-icon { font-size: 16px; flex-shrink: 0; }
+    .sidebar-group {
+      margin-top: 4px;
+    }
+    .sidebar-group summary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      color: rgba(255,255,255,0.75);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      list-style: none;
+      user-select: none;
+      transition: background .12s, color .12s;
+    }
+    .sidebar-group summary::-webkit-details-marker { display: none; }
+    .sidebar-group summary::marker { content: ""; }
+    .sidebar-group summary:hover {
+      background: var(--sidebar-hover-bg);
+      color: var(--sidebar-text);
+      box-shadow: 0 0 10px var(--sidebar-hover-bg);
+    }
+    .sidebar-group summary.active {
+      background: var(--sidebar-active-bg);
+      color: var(--sidebar-text);
+      font-weight: 600;
+    }
+    .sidebar-group .nav-label {
+      flex: 1;
+    }
+    .sidebar-group-caret {
+      font-size: 12px;
+      transition: transform .12s ease;
+    }
+    .sidebar-group[open] .sidebar-group-caret {
+      transform: rotate(180deg);
+    }
+    .sidebar-subnav {
+      padding-top: 4px;
+      padding-left: 14px;
+    }
+    .sidebar-subnav a {
+      padding-left: 32px;
+      font-size: 13px;
+    }
     .sidebar-footer {
       padding: 14px 16px;
       border-top: 1px solid var(--sidebar-border);
@@ -286,6 +333,18 @@
 <body>
   <!-- Sidebar -->
   <aside class="sidebar">
+    {% set lab_active =
+      request.path.startswith('/voice-library')
+      or request.path.startswith('/prompt-library')
+      or request.path.startswith('/copywriting')
+      or request.path.startswith('/text-translate')
+      or request.path.startswith('/video-creation')
+      or request.path.startswith('/video-review')
+      or request.path.startswith('/link-check')
+      or request.path.startswith('/translate-lab')
+      or request.path.startswith('/ja-translate')
+      or request.endpoint == 'projects.av_sync_page'
+    %}
     <a class="sidebar-brand" href="{{ url_for('projects.index') }}">
       <div class="sidebar-brand-icon">🎬</div>
       <span class="sidebar-brand-text">AutoVideoSrt</span>
@@ -293,14 +352,6 @@
     <nav class="sidebar-nav">
       <a href="/medias" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/medias') and not request.path.startswith('/medias/mk') %}class="active"{% endif %}>
         <span class="nav-icon">📦</span> 素材管理
-      </a>
-      {% if current_user.role == 'admin' %}
-      <a href="/medias/mk-selection" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/medias/mk') %}class="active"{% endif %}>
-        <span class="nav-icon">🔍</span> 明空选品
-      </a>
-      {% endif %}
-      <a href="/pushes" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/pushes') %}class="active"{% endif %}>
-        <span class="nav-icon">🚀</span> 推送管理
       </a>
       {# 德语/法语独立入口已合并到多语种翻译，暂时隐藏
       <a href="/de-translate" {% if request.path.startswith('/de-translate') %}class="active"{% endif %}>
@@ -313,40 +364,28 @@
       <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🌐</span> 多语种视频翻译
       </a>
-      <a href="/ja-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/ja-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">日</span> 视频翻译（日语）
-      </a>
       <a href="{{ url_for('title_translate.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/title-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🏷️</span> 多语言标题翻译
-      </a>
-      <a href="/copywriting" target="_blank" rel="noopener noreferrer" class="nav-link{% if request.path.startswith('/copywriting') %} active{% endif %}">
-          <span class="nav-icon">✍️</span>
-          <span class="nav-label">文案创作</span>
-      </a>
-      <a href="/text-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/text-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🌐</span> 文案翻译
-      </a>
-      <a href="/video-creation" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-creation') %}class="active"{% endif %}>
-        <span class="nav-icon">🎥</span> 视频创作
-      </a>
-      <a href="/video-review" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-review') %}class="active"{% endif %}>
-        <span class="nav-icon">📊</span> 视频评分
-      </a>
-      <a href="{{ url_for('subtitle_removal.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
-        <span class="nav-icon">🧽</span> 字幕移除
       </a>
       <a href="{{ url_for('image_translate.page_list') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/image-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🖼️</span> 图片翻译
       </a>
-      <a href="{{ url_for('link_check.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
-        <span class="nav-icon">🔎</span> 链接检查
+      <a href="{{ url_for('subtitle_removal.list_page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/subtitle-removal') %}class="active"{% endif %}>
+        <span class="nav-icon">🧽</span> 字幕移除
       </a>
-      <a href="/voice-library" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/voice-library') %}class="active"{% endif %}>
-        <span class="nav-icon">🎙️</span> 声音仓库
+      {% if current_user.role == 'admin' %}
+      <a href="/medias/mk-selection" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/medias/mk') %}class="active"{% endif %}>
+        <span class="nav-icon">🔍</span> 明空选品
       </a>
-      <a href="/prompt-library" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/prompt-library') %}class="active"{% endif %}>
-        <span class="nav-icon">✨</span> 提示词典
+      {% endif %}
+      <a href="/pushes" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/pushes') %}class="active"{% endif %}>
+        <span class="nav-icon">🚀</span> 推送管理
       </a>
+      {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('bulk_translate_pages.admin_tasks_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'bulk_translate_pages.admin_tasks_page' %}class="active"{% endif %}>
+        <span class="nav-icon">🗂️</span> 批量翻译任务管理
+      </a>
+      {% endif %}
       <a href="{{ url_for('settings.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'settings.index' %}class="active"{% endif %}>
         <span class="nav-icon">⚙️</span> API 配置
       </a>
@@ -355,9 +394,6 @@
         <span class="nav-icon">📘</span> API 账单
       </a>
       {% if current_user.role == 'admin' %}
-      <a href="{{ url_for('bulk_translate_pages.admin_tasks_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'bulk_translate_pages.admin_tasks_page' %}class="active"{% endif %}>
-        <span class="nav-icon">🗂️</span> 批量翻译任务管理
-      </a>
       <a href="{{ url_for('admin.users') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
         <span class="nav-icon">👥</span> 用户管理
       </a>
@@ -365,12 +401,6 @@
         <span class="nav-icon">⚙️</span> 系统设置
       </a>
       {% endif %}
-      <a href="/translate-lab" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
-        <span class="nav-icon">🧪</span> 视频翻译（测试）
-      </a>
-      <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' %}class="active"{% endif %}>
-        <span class="nav-icon">🎧</span> 视频翻译音画同步
-      </a>
       <a href="{{ url_for('projects.index') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.index' %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 视频翻译
       </a>
@@ -379,6 +409,46 @@
         <span class="nav-icon">📊</span> 订单分析
       </a>
       {% endif %}
+      <details class="sidebar-group sidebar-lab-group">
+        <summary {% if lab_active %}class="active"{% endif %}>
+          <span class="nav-icon">🧪</span>
+          <span class="nav-label">实验室</span>
+          <span class="sidebar-group-caret">⌄</span>
+        </summary>
+        <div class="sidebar-subnav">
+          <a href="/voice-library" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/voice-library') %}class="active"{% endif %}>
+            <span class="nav-icon">🎙️</span> 声音仓库
+          </a>
+          <a href="/prompt-library" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/prompt-library') %}class="active"{% endif %}>
+            <span class="nav-icon">✨</span> 提示词典
+          </a>
+          <a href="/copywriting" target="_blank" rel="noopener noreferrer" class="nav-link{% if request.path.startswith('/copywriting') %} active{% endif %}">
+            <span class="nav-icon">✍️</span>
+            <span class="nav-label">文案创作</span>
+          </a>
+          <a href="/text-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/text-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">🌐</span> 文案翻译
+          </a>
+          <a href="/video-creation" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-creation') %}class="active"{% endif %}>
+            <span class="nav-icon">🎥</span> 视频创作
+          </a>
+          <a href="/video-review" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/video-review') %}class="active"{% endif %}>
+            <span class="nav-icon">📊</span> 视频评分
+          </a>
+          <a href="{{ url_for('link_check.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
+            <span class="nav-icon">🔎</span> 链接检查
+          </a>
+          <a href="/translate-lab" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
+            <span class="nav-icon">🧪</span> 视频翻译（测试）
+          </a>
+          <a href="/ja-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/ja-translate') %}class="active"{% endif %}>
+            <span class="nav-icon">日</span> 视频翻译（日语）
+          </a>
+          <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' %}class="active"{% endif %}>
+            <span class="nav-icon">🎧</span> 视频翻译音画同步
+          </a>
+        </div>
+      </details>
     </nav>
     <div class="sidebar-footer">
       <div class="sidebar-user">

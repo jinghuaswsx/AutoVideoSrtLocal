@@ -39,23 +39,59 @@ def test_av_sync_menu_page_renders_shared_workbench(authed_client_no_db):
     assert 'href="/video-translate-av-sync"' in html
 
 
-def test_dashboard_sidebar_places_video_translate_near_sidebar_bottom(authed_client_no_db):
+def test_dashboard_sidebar_prioritizes_primary_translation_entries(
+    authed_client_no_db,
+):
     resp = authed_client_no_db.get("/video-translate-av-sync")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     nav_html = html[html.index('<nav class="sidebar-nav">'):html.index("</nav>")]
 
-    lab_idx = nav_html.index('href="/translate-lab"')
-    av_sync_idx = nav_html.index('href="/video-translate-av-sync"')
-    video_translate_idx = nav_html.index('href="/"')
-    video_translate_anchor_idx = nav_html.rfind('<a href="/"')
-    order_analytics_idx = nav_html.index('href="/order-analytics"')
-    order_analytics_anchor_idx = nav_html.rfind('<a href="/order-analytics"')
-    last_anchor_idx = nav_html.rfind("<a ")
+    medias_idx = nav_html.index('href="/medias"')
+    multi_translate_idx = nav_html.index('href="/multi-translate"')
+    title_translate_idx = nav_html.index('href="/title-translate"')
+    image_translate_idx = nav_html.index('href="/image-translate"')
+    subtitle_removal_idx = nav_html.index('href="/subtitle-removal"')
+    mk_selection_idx = nav_html.index('href="/medias/mk-selection"')
+    pushes_idx = nav_html.index('href="/pushes"')
 
-    assert lab_idx < av_sync_idx < video_translate_idx < order_analytics_idx
-    assert order_analytics_anchor_idx == last_anchor_idx
-    assert video_translate_anchor_idx < order_analytics_anchor_idx
+    assert medias_idx < multi_translate_idx < title_translate_idx
+    assert title_translate_idx < image_translate_idx < subtitle_removal_idx
+    assert subtitle_removal_idx < mk_selection_idx
+    assert subtitle_removal_idx < pushes_idx
+
+
+def test_dashboard_sidebar_moves_lab_group_to_bottom(authed_client_no_db):
+    resp = authed_client_no_db.get("/video-translate-av-sync")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    nav_html = html[html.index('<nav class="sidebar-nav">'):html.index("</nav>")]
+
+    lab_group_marker = '<details class="sidebar-group sidebar-lab-group"'
+    lab_group_idx = nav_html.index(lab_group_marker)
+    video_translate_idx = nav_html.index('href="/"')
+    order_analytics_idx = nav_html.index('href="/order-analytics"')
+    voice_library_idx = nav_html.index('href="/voice-library"')
+    prompt_library_idx = nav_html.index('href="/prompt-library"')
+    copywriting_idx = nav_html.index('href="/copywriting"')
+    text_translate_idx = nav_html.index('href="/text-translate"')
+    video_creation_idx = nav_html.index('href="/video-creation"')
+    video_review_idx = nav_html.index('href="/video-review"')
+    link_check_idx = nav_html.index('href="/link-check"')
+    translate_lab_idx = nav_html.index('href="/translate-lab"')
+    ja_translate_idx = nav_html.index('href="/ja-translate"')
+    av_sync_idx = nav_html.index('href="/video-translate-av-sync"')
+
+    assert "实验室" in nav_html
+    assert lab_group_idx > order_analytics_idx > video_translate_idx
+    assert lab_group_idx == nav_html.rfind(lab_group_marker)
+    assert nav_html.index("<details") > nav_html.rfind('<a href="/order-analytics"')
+    assert voice_library_idx > lab_group_idx
+    assert voice_library_idx < prompt_library_idx < copywriting_idx
+    assert copywriting_idx < text_translate_idx < video_creation_idx
+    assert video_creation_idx < video_review_idx < link_check_idx
+    assert link_check_idx < translate_lab_idx < ja_translate_idx < av_sync_idx
+    assert '<details class="sidebar-group sidebar-lab-group" open' not in nav_html
 
 
 def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
