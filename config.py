@@ -69,6 +69,9 @@ AD_URL_TEMPLATE = _env("AD_URL_TEMPLATE",
                        "https://newjoyloo.com/{lang}/products/{product_code}")
 AD_URL_PROBE_TIMEOUT = int(_env("AD_URL_PROBE_TIMEOUT", "5"))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# APIMART 图片生成
+APIMART_IMAGE_API_KEY = _env("APIMART_IMAGE_API_KEY")
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "anthropic/claude-sonnet-4-5")
 USD_TO_CNY = 6.8
 
