@@ -1,5 +1,17 @@
-ALTER TABLE media_products
-  ADD COLUMN shopify_image_status_json JSON NULL COMMENT '按语种记录 Shopify 图片替换和链接确认状态 {lang: payload}';
+SET @shopify_image_status_sql = IF(
+  (
+    SELECT COUNT(*)
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'media_products'
+      AND column_name = 'shopify_image_status_json'
+  ) = 0,
+  'ALTER TABLE media_products ADD COLUMN shopify_image_status_json JSON NULL COMMENT ''按语种记录 Shopify 图片替换和链接确认状态 {lang: payload}''',
+  'SELECT 1'
+);
+PREPARE shopify_image_status_stmt FROM @shopify_image_status_sql;
+EXECUTE shopify_image_status_stmt;
+DEALLOCATE PREPARE shopify_image_status_stmt;
 
 CREATE TABLE IF NOT EXISTS media_shopify_image_replace_tasks (
   id                 BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
