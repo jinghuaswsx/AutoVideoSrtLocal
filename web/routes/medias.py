@@ -1028,6 +1028,16 @@ def api_product_link_check_detail(pid: int, lang: str):
     return jsonify(_serialize_link_check_task(task))
 
 
+@bp.route("/api/products/<int:pid>/evaluate", methods=["POST"])
+@login_required
+def api_product_evaluate(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    _schedule_material_evaluation(pid, force=True)
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])
 @login_required
 def api_delete_product(pid: int):

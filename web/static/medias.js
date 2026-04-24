@@ -762,6 +762,8 @@
       b.addEventListener('click', (e) => { e.stopPropagation(); openEdit(+b.dataset.edit); }));
     grid.querySelectorAll('[data-del]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); deleteProduct(+b.dataset.del); }));
+    grid.querySelectorAll('[data-ai-evaluate]').forEach(b =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); triggerAiEvaluate(+b.dataset.aiEvaluate, b); }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
@@ -809,6 +811,7 @@
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
             <button class="oc-btn sm ghost js-raw-sources" data-pid="${p.id}" data-name="${escapeHtml(p.name)}">原始视频 (${rawCount})</button>
             <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="${escapeHtml(listingTitle)}" ${listed ? '' : 'disabled aria-disabled="true"'}>🌐 翻译</button>
+            <button class="oc-btn sm ghost" data-ai-evaluate="${p.id}" title="手动触发 AI 评估">${icon('zap', 12)}<span>${aiEvalBtnLabel(p)}</span></button>
           </div>
         </td>
       </tr>`;
@@ -1098,6 +1101,28 @@
     if (!confirm('确认删除该产品及其所有素材？此操作不可恢复。')) return;
     await fetch('/medias/api/products/' + pid, { method: 'DELETE' });
     loadList();
+  }
+
+  function aiEvalBtnLabel(p) {
+    const r = p.ai_evaluation_result || '';
+    if (r === '评估失败') return 'AI评估(失败)';
+    if (r) return 'AI重评';
+    return 'AI评估';
+  }
+
+  async function triggerAiEvaluate(pid, btn) {
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = icon('loader', 12) + '<span>触发中…</span>';
+    try {
+      await fetchJSON('/medias/api/products/' + pid + '/evaluate', { method: 'POST' });
+      btn.innerHTML = icon('check', 12) + '<span>已触发</span>';
+      setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; }, 2000);
+    } catch (err) {
+      btn.innerHTML = origHTML;
+      btn.disabled = false;
+      alert('触发失败：' + (err.message || err));
+    }
   }
 
   // ---------- Modal ----------

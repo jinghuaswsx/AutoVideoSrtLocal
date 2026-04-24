@@ -291,47 +291,55 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
     if not video:
         return {"status": "missing_video", "product_id": product_id}
 
-    cover_path = _materialize_media(cover_key)
-    video_path = _materialize_media(video["object_key"])
-    prompt = build_prompt(product, product_url, languages)
-    llm_result = llm_client.invoke_generate(
-        USE_CASE_CODE,
-        prompt=prompt,
-        system=build_system_prompt(),
-        media=[cover_path, video_path],
-        user_id=product.get("user_id"),
-        project_id=f"media-product-{product_id}",
-        response_schema=build_response_schema(languages),
-        temperature=0.2,
-        max_output_tokens=4096,
-    )
-    raw_json = llm_result.get("json")
-    if raw_json is None:
-        raw_json = llm_result.get("text") or "{}"
-    normalized = normalize_result(raw_json, languages)
-    detail = {
-        "schema_version": 1,
-        "use_case": USE_CASE_CODE,
-        "evaluated_at": datetime.now(UTC).isoformat(),
-        "product_id": product_id,
-        "product_url": product_url,
-        "cover_object_key": cover_key,
-        "video_item_id": video.get("id"),
-        "video_object_key": video.get("object_key"),
-        "countries": normalized["countries"],
-    }
-    medias.update_product(
-        product_id,
-        ai_score=normalized["ai_score"],
-        ai_evaluation_result=normalized["ai_evaluation_result"],
-        ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
-    )
-    return {
-        "status": "evaluated",
-        "product_id": product_id,
-        "ai_score": normalized["ai_score"],
-        "ai_evaluation_result": normalized["ai_evaluation_result"],
-    }
+    try:
+        cover_path = _materialize_media(cover_key)
+        video_path = _materialize_media(video["object_key"])
+        prompt = build_prompt(product, product_url, languages)
+        llm_result = llm_client.invoke_generate(
+            USE_CASE_CODE,
+            prompt=prompt,
+            system=build_system_prompt(),
+            media=[cover_path, video_path],
+            user_id=product.get("user_id"),
+            project_id=f"media-product-{product_id}",
+            response_schema=build_response_schema(languages),
+            temperature=0.2,
+            max_output_tokens=4096,
+        )
+        raw_json = llm_result.get("json")
+        if raw_json is None:
+            raw_json = llm_result.get("text") or "{}"
+        normalized = normalize_result(raw_json, languages)
+        detail = {
+            "schema_version": 1,
+            "use_case": USE_CASE_CODE,
+            "evaluated_at": datetime.now(UTC).isoformat(),
+            "product_id": product_id,
+            "product_url": product_url,
+            "cover_object_key": cover_key,
+            "video_item_id": video.get("id"),
+            "video_object_key": video.get("object_key"),
+            "countries": normalized["countries"],
+        }
+        medias.update_product(
+            product_id,
+            ai_score=normalized["ai_score"],
+            ai_evaluation_result=normalized["ai_evaluation_result"],
+            ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
+        )
+        return {
+            "status": "evaluated",
+            "product_id": product_id,
+            "ai_score": normalized["ai_score"],
+            "ai_evaluation_result": normalized["ai_evaluation_result"],
+        }
+    except Exception:
+        logger.exception("material evaluation LLM call failed for product_id=%s", product_id)
+        try:
+            medias.update_product(product_id, ai_evaluation_result="评估失败")
+        except Exception:
+            logger.exception("failed to save evaluation failure status for product_id=%s", product_id)
+        return {"status": "failed", "product_id": product_id}
 
 
 def _resolve_product_cover_key(product_id: int, product: dict) -> str:
