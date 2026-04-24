@@ -151,6 +151,12 @@ def test_step_translate_logs_ai_billing_for_localize(tmp_path, monkeypatch):
 
 
 def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
     task = store.create("task-asr-billing", "video.mp4", str(tmp_path), user_id=9)
     task["audio_path"] = str(tmp_path / "audio.wav")
 
@@ -160,7 +166,11 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "pipeline.asr.transcribe",
         lambda audio_url, volc_api_key=None: [
-            {"start_time": 0.0, "end_time": 12.4, "text": "hello"},
+            {
+                "start_time": 0.0,
+                "end_time": 12.4,
+                "text": "This transcript is deliberately longer than fifty visible characters for billing.",
+            },
         ],
     )
     monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
@@ -180,7 +190,15 @@ def test_step_asr_logs_ai_billing_with_audio_seconds(tmp_path, monkeypatch):
 
 
 def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_path, monkeypatch):
-    task = store.create("task-asr-short-passthrough", "video.mp4", str(tmp_path), user_id=9)
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"original-video")
+    task = store.create("task-asr-short-passthrough", str(source_video), str(tmp_path), user_id=9)
     task["audio_path"] = str(tmp_path / "audio.wav")
 
     monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
@@ -203,6 +221,43 @@ def test_step_asr_marks_original_video_passthrough_when_transcript_is_short(tmp_
     assert saved["media_passthrough_reason"] == "short_asr"
     assert saved["media_passthrough_source_chars"] < 50
     assert saved["steps"]["asr"] == "done"
+    assert saved["status"] == "done"
+    for step in ("alignment", "translate", "tts", "subtitle", "compose", "export"):
+        assert saved["steps"][step] == "done"
+    assert saved["result"]["hard_video"].endswith("_hard.normal.mp4")
+    assert (tmp_path / "source_hard.normal.mp4").read_bytes() == b"original-video"
+
+
+def test_step_asr_completes_original_video_passthrough_when_transcript_is_empty(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
+    source_video = tmp_path / "music.mp4"
+    source_video.write_bytes(b"music-video")
+    task = store.create("task-asr-empty-passthrough", str(source_video), str(tmp_path), user_id=9)
+    task["audio_path"] = str(tmp_path / "audio.wav")
+
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda user_id, service, env_key: "volc-key")
+    monkeypatch.setattr("pipeline.storage.upload_file", lambda path, tos_key: "https://example.com/audio.wav")
+    monkeypatch.setattr("pipeline.storage.delete_file", lambda tos_key: None)
+    monkeypatch.setattr("pipeline.asr.transcribe", lambda audio_url, volc_api_key=None: [])
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 12.4)
+    monkeypatch.setattr(runtime.ai_billing, "log_request", lambda **kw: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus(), user_id=9)
+    runner._step_asr("task-asr-empty-passthrough", str(tmp_path))
+
+    saved = store.get("task-asr-empty-passthrough")
+    assert saved["media_passthrough_mode"] == "original_video"
+    assert saved["media_passthrough_reason"] == "no_asr"
+    assert saved["status"] == "done"
+    for step in ("alignment", "translate", "tts", "subtitle", "compose", "export"):
+        assert saved["steps"][step] == "done"
+    assert saved["result"]["hard_video"].endswith("_hard.normal.mp4")
+    assert (tmp_path / "music_hard.normal.mp4").read_bytes() == b"music-video"
 
 
 def test_step_translate_waits_when_interactive_review_enabled(tmp_path, monkeypatch):
@@ -473,6 +528,12 @@ def test_step_export_passes_display_name_to_capcut_export(tmp_path, monkeypatch)
 
 
 def test_step_compose_copies_original_video_when_passthrough_enabled(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
     task = store.create("task-compose-passthrough", "video.mp4", str(tmp_path), user_id=1)
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"original-video")
@@ -497,6 +558,12 @@ def test_step_compose_copies_original_video_when_passthrough_enabled(tmp_path, m
 
 
 def test_step_export_skips_capcut_when_passthrough_enabled(tmp_path, monkeypatch):
+    from appcore import task_state
+
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    monkeypatch.setattr(task_state, "set_expires_at", lambda *args, **kwargs: None)
+
     task = store.create("task-export-passthrough", "video.mp4", str(tmp_path), user_id=1)
     source_video = tmp_path / "source.mp4"
     hard_video = tmp_path / "source_hard.normal.mp4"

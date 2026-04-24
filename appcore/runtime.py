@@ -1051,7 +1051,7 @@ class PipelineRunner:
                 current = task_state.get(task_id) or {}
                 if current.get("steps", {}).get(step_name) == "waiting":
                     return
-                if current.get("status") in {"failed", "error"}:
+                if current.get("status") in {"failed", "error", "done"}:
                     return
         except Exception as exc:
             task_state.update(task_id, status="error", error=str(exc))
@@ -1114,6 +1114,53 @@ class PipelineRunner:
             task_state.update(task_id, **update_kwargs)
         self._set_step(task_id, step_name, "done", message_map.get(step_name, f"{source_hint}，已跳过该步骤"))
         return True
+
+    def _complete_original_video_passthrough(self, task_id: str, video_path: str, task_dir: str) -> dict:
+        import shutil
+
+        task = task_state.get(task_id) or {}
+        if not _is_original_video_passthrough(task):
+            return {}
+
+        skip_steps = ["alignment", "translate", "tts", "subtitle"]
+        if self.project_type in {"multi_translate", "ja_translate"} or "voice_match" in (task.get("steps") or {}):
+            skip_steps.insert(1, "voice_match")
+        if self.include_analysis_in_main_flow:
+            skip_steps.append("analysis")
+        for step_name in skip_steps:
+            self._skip_original_video_passthrough_step(task_id, step_name, task=task_state.get(task_id) or task)
+
+        self._set_step(task_id, "compose", "running", "识别结果过短，正在直接复用原视频...")
+        variant = "normal"
+        task = task_state.get(task_id) or task
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get(variant, {}))
+        base_name = os.path.splitext(os.path.basename(video_path))[0] or "source"
+        hard_output = os.path.join(task_dir, f"{base_name}_hard.{variant}.mp4")
+        soft_output = os.path.join(task_dir, f"{base_name}_soft.{variant}.mp4")
+        shutil.copy2(video_path, hard_output)
+        if self.include_soft_video:
+            shutil.copy2(video_path, soft_output)
+        else:
+            soft_output = None
+
+        result = {"soft_video": soft_output, "hard_video": hard_output, "srt": ""}
+        exports: dict = {}
+        variant_state["result"] = result
+        variant_state["exports"] = exports
+        variants[variant] = variant_state
+        task_state.update(task_id, variants=variants, result=result, exports=exports, status="done")
+        if soft_output:
+            task_state.set_preview_file(task_id, "soft_video", soft_output)
+        task_state.set_preview_file(task_id, "hard_video", hard_output)
+        task_state.set_artifact(task_id, "compose", build_compose_artifact())
+        self._set_step(task_id, "compose", "done", "识别结果过短，已直接复用原视频")
+        task_state.set_expires_at(task_id, self.project_type)
+        task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
+        self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
+        self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {"normal": exports}})
+        _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
+        return result
 
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
@@ -1184,6 +1231,7 @@ class PipelineRunner:
                 message = "识别结果少于 50 个字符，已按音乐视频直通处理"
             self._set_step(task_id, "asr", "done", message)
             self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
+            self._complete_original_video_passthrough(task_id, task["video_path"], task_dir)
             return
 
         if not utterances:
@@ -1792,30 +1840,7 @@ class PipelineRunner:
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
-            import shutil
-
-            self._set_step(task_id, "compose", "running", "识别结果过短，正在直接复用原视频...")
-            variant = "normal"
-            variants = dict(task.get("variants", {}))
-            variant_state = dict(variants.get(variant, {}))
-            base_name = os.path.splitext(os.path.basename(video_path))[0]
-            hard_output = os.path.join(task_dir, f"{base_name}_hard.{variant}.mp4")
-            soft_output = os.path.join(task_dir, f"{base_name}_soft.{variant}.mp4")
-            shutil.copy2(video_path, hard_output)
-            if self.include_soft_video:
-                shutil.copy2(video_path, soft_output)
-            else:
-                soft_output = None
-            result = {"soft_video": soft_output, "hard_video": hard_output, "srt": ""}
-            variant_state["result"] = result
-            variant_state["exports"] = {}
-            variants[variant] = variant_state
-            task_state.update(task_id, variants=variants, result=result, status="composing_done")
-            if soft_output:
-                task_state.set_preview_file(task_id, "soft_video", soft_output)
-            task_state.set_preview_file(task_id, "hard_video", hard_output)
-            task_state.set_artifact(task_id, "compose", build_compose_artifact())
-            self._set_step(task_id, "compose", "done", "识别结果过短，已直接复用原视频")
+            self._complete_original_video_passthrough(task_id, video_path, task_dir)
             return
         self._set_step(task_id, "compose", "running", "正在合成视频...")
         from pipeline.compose import compose_video
@@ -1916,19 +1941,7 @@ class PipelineRunner:
     def _step_export(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
-            variant = "normal"
-            variants = dict(task.get("variants", {}))
-            variant_state = dict(variants.get(variant, {}))
-            exports = {}
-            variant_state["exports"] = exports
-            variants[variant] = variant_state
-            self._set_step(task_id, "export", "running", "音乐视频直通收尾中...")
-            task_state.update(task_id, variants=variants, exports=exports, status="done")
-            task_state.set_expires_at(task_id, self.project_type)
-            task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
-            self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
-            self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {"normal": exports}})
-            _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
+            self._complete_original_video_passthrough(task_id, video_path, task_dir)
             return
         self._set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
         from pipeline.capcut import export_capcut_project
