@@ -26,9 +26,10 @@ def log_request(
     response_cost_cny: Decimal | None = None,
     success: bool = True,
     extra: dict | None = None,
-) -> None:
+) -> int | None:
+    """Returns the new usage_logs row id, or None on failure."""
     if user_id is None:
-        return
+        return None
 
     try:
         uc = get_use_case(use_case_code)
@@ -50,7 +51,7 @@ def log_request(
                 request_units=request_units,
             )
 
-        usage_log.record(
+        return usage_log.record(
             user_id,
             project_id,
             service,
@@ -70,3 +71,4 @@ def log_request(
         )
     except Exception:
         log.debug("ai_billing.log_request failed", exc_info=True)
+        return None
