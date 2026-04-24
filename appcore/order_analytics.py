@@ -405,6 +405,76 @@ def _resolve_meta_ad_period(
     return latest.get("report_start_date"), latest.get("report_end_date"), latest.get("batch_id")
 
 
+_META_AD_SUMMARY_NUMERIC_FIELDS = (
+    "result_count",
+    "spend_usd",
+    "purchase_value_usd",
+    "link_clicks",
+    "add_to_cart_count",
+    "initiate_checkout_count",
+    "impressions",
+)
+
+
+def _coerce_meta_product_id(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _aggregate_meta_ad_summary_rows(metric_rows: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, int | str], dict] = {}
+
+    for metric in metric_rows:
+        product_id = _coerce_meta_product_id(metric.get("product_id"))
+        campaign_name = (metric.get("campaign_name") or "").strip()
+        if product_id is not None:
+            group_key: tuple[str, int | str] = ("product", product_id)
+            display_name = metric.get("product_name") or campaign_name
+            product_code = metric.get("matched_product_code") or metric.get("media_product_code")
+        else:
+            group_key = ("campaign", campaign_name or str(metric.get("id") or ""))
+            display_name = campaign_name
+            product_code = None
+
+        if group_key not in grouped:
+            grouped[group_key] = {
+                "product_id": product_id,
+                "display_name": display_name,
+                "product_code": product_code,
+                "campaign_count": 0,
+                "_campaign_names": [],
+                **{field: 0 for field in _META_AD_SUMMARY_NUMERIC_FIELDS},
+            }
+
+        row = grouped[group_key]
+        if product_id is not None:
+            row["display_name"] = row.get("display_name") or display_name
+            row["product_code"] = row.get("product_code") or product_code
+        row["campaign_count"] += 1
+        if campaign_name:
+            row["_campaign_names"].append(campaign_name)
+        for field in _META_AD_SUMMARY_NUMERIC_FIELDS:
+            row[field] += metric.get(field) or 0
+
+    rows: list[dict] = []
+    for row in grouped.values():
+        campaign_names = sorted(row.pop("_campaign_names"))
+        row["campaign_names"] = ", ".join(campaign_names)
+        spend = row.get("spend_usd") or 0
+        purchase_value = row.get("purchase_value_usd") or 0
+        result_count = row.get("result_count") or 0
+        row["roas_purchase"] = purchase_value / spend if spend else None
+        row["cost_per_result_usd"] = spend / result_count if result_count else None
+        rows.append(row)
+
+    rows.sort(key=lambda row: row.get("spend_usd") or 0, reverse=True)
+    return rows
+
+
 def get_meta_ad_summary(
     batch_id: int | None = None,
     start_date: str | None = None,
@@ -414,23 +484,18 @@ def get_meta_ad_summary(
     if not report_start or not report_end:
         return {"period": None, "rows": [], "unmatched": []}
 
-    rows = query(
-        "SELECT m.product_id, COALESCE(mp.name, m.campaign_name) AS display_name, "
-        "COALESCE(m.matched_product_code, mp.product_code) AS product_code, "
-        "COUNT(*) AS campaign_count, GROUP_CONCAT(m.campaign_name ORDER BY m.campaign_name SEPARATOR ', ') AS campaign_names, "
-        "SUM(m.result_count) AS result_count, SUM(m.spend_usd) AS spend_usd, "
-        "SUM(m.purchase_value_usd) AS purchase_value_usd, "
-        "CASE WHEN SUM(m.spend_usd) > 0 THEN SUM(m.purchase_value_usd) / SUM(m.spend_usd) ELSE NULL END AS roas_purchase, "
-        "SUM(m.link_clicks) AS link_clicks, SUM(m.add_to_cart_count) AS add_to_cart_count, "
-        "SUM(m.initiate_checkout_count) AS initiate_checkout_count, SUM(m.impressions) AS impressions, "
-        "CASE WHEN SUM(m.result_count) > 0 THEN SUM(m.spend_usd) / SUM(m.result_count) ELSE NULL END AS cost_per_result_usd "
+    metric_rows = query(
+        "SELECT m.id, m.product_id, mp.name AS product_name, mp.product_code AS media_product_code, "
+        "m.matched_product_code, m.campaign_name, m.result_count, m.spend_usd, "
+        "m.purchase_value_usd, m.link_clicks, m.add_to_cart_count, "
+        "m.initiate_checkout_count, m.impressions "
         "FROM meta_ad_campaign_metrics m "
         "LEFT JOIN media_products mp ON mp.id = m.product_id "
         "WHERE m.report_start_date=%s AND m.report_end_date=%s "
-        "GROUP BY m.product_id, display_name, product_code "
-        "ORDER BY spend_usd DESC",
+        "ORDER BY m.spend_usd DESC",
         (report_start, report_end),
     )
+    rows = _aggregate_meta_ad_summary_rows(metric_rows)
 
     product_ids = [int(row["product_id"]) for row in rows if row.get("product_id")]
     orders_by_product: dict[int, dict] = {}

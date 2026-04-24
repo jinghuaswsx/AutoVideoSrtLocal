@@ -153,6 +153,117 @@ def test_import_meta_ad_rows_creates_batch_and_upserts_metrics(monkeypatch):
     assert metric_args[7] == 42
 
 
+def test_get_meta_ad_summary_aggregates_metric_rows_in_python(monkeypatch):
+    report_start = oa._parse_meta_date("2026-04-01")
+    report_end = oa._parse_meta_date("2026-04-22")
+    queries = []
+
+    def fake_query_one(sql, args=()):
+        assert "meta_ad_import_batches" in sql
+        assert args == (9,)
+        return {
+            "id": 9,
+            "report_start_date": report_start,
+            "report_end_date": report_end,
+        }
+
+    def fake_query(sql, args=()):
+        queries.append(sql)
+        if "FROM meta_ad_campaign_metrics m" in sql:
+            return [
+                {
+                    "product_id": 42,
+                    "product_name": "Glow Set",
+                    "media_product_code": "glow-set-rjc",
+                    "matched_product_code": "glow-set-rjc",
+                    "campaign_name": "Campaign B",
+                    "result_count": 4,
+                    "spend_usd": 5.0,
+                    "purchase_value_usd": 10.0,
+                    "link_clicks": 20,
+                    "add_to_cart_count": 3,
+                    "initiate_checkout_count": 2,
+                    "impressions": 100,
+                },
+                {
+                    "product_id": 42,
+                    "product_name": "Glow Set",
+                    "media_product_code": "glow-set-rjc",
+                    "matched_product_code": "glow-set-rjc",
+                    "campaign_name": "Campaign A",
+                    "result_count": 6,
+                    "spend_usd": 15.0,
+                    "purchase_value_usd": 40.0,
+                    "link_clicks": 30,
+                    "add_to_cart_count": 4,
+                    "initiate_checkout_count": 3,
+                    "impressions": 200,
+                },
+                {
+                    "product_id": None,
+                    "product_name": None,
+                    "media_product_code": None,
+                    "matched_product_code": None,
+                    "campaign_name": "Unmatched Campaign",
+                    "result_count": 1,
+                    "spend_usd": 3.0,
+                    "purchase_value_usd": 0.0,
+                    "link_clicks": 5,
+                    "add_to_cart_count": 0,
+                    "initiate_checkout_count": 0,
+                    "impressions": 50,
+                },
+            ]
+        if "FROM shopify_orders" in sql:
+            return [
+                {
+                    "product_id": 42,
+                    "shopify_order_count": 2,
+                    "shopify_quantity": 3,
+                    "shopify_revenue": 99.0,
+                }
+            ]
+        if "FROM meta_ad_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            return [
+                {
+                    "id": 7,
+                    "campaign_name": "Unmatched Campaign",
+                    "normalized_campaign_code": "unmatched-campaign",
+                    "spend_usd": 3.0,
+                    "result_count": 1,
+                    "purchase_value_usd": 0.0,
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(batch_id=9)
+
+    assert len(summary["rows"]) == 2
+    product_row = summary["rows"][0]
+    assert product_row["product_id"] == 42
+    assert product_row["display_name"] == "Glow Set"
+    assert product_row["product_code"] == "glow-set-rjc"
+    assert product_row["campaign_count"] == 2
+    assert product_row["campaign_names"] == "Campaign A, Campaign B"
+    assert product_row["result_count"] == 10
+    assert product_row["spend_usd"] == 20.0
+    assert product_row["purchase_value_usd"] == 50.0
+    assert product_row["roas_purchase"] == 2.5
+    assert product_row["cost_per_result_usd"] == 2.0
+    assert product_row["shopify_order_count"] == 2
+    assert product_row["shopify_quantity"] == 3
+    assert product_row["shopify_revenue"] == 99.0
+
+    unmatched_row = summary["rows"][1]
+    assert unmatched_row["product_id"] is None
+    assert unmatched_row["display_name"] == "Unmatched Campaign"
+    assert summary["unmatched"][0]["campaign_name"] == "Unmatched Campaign"
+    assert all("GROUP BY m.product_id, display_name, product_code" not in sql for sql in queries)
+
+
 def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
