@@ -21,7 +21,7 @@ def admin_no_db_client(monkeypatch):
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     from web.app import create_app
 
-    fake_user = {"id": 1, "username": "test-admin", "role": "admin", "is_active": 1}
+    fake_user = {"id": 1, "username": "admin", "role": "admin", "is_active": 1}
     monkeypatch.setattr(
         "web.auth.get_by_id",
         lambda user_id: fake_user if int(user_id) == 1 else None,
@@ -33,6 +33,52 @@ def admin_no_db_client(monkeypatch):
         session["_user_id"] = "1"
         session["_fresh"] = True
     return client
+
+
+@pytest.fixture
+def manager_no_db_client(monkeypatch):
+    """Role-admin user whose username is not the API config owner."""
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    from web.app import create_app
+
+    fake_user = {"id": 3, "username": "manager", "role": "admin", "is_active": 1}
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: fake_user if int(user_id) == 3 else None,
+    )
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "3"
+        session["_fresh"] = True
+    return client
+
+
+@pytest.fixture
+def normal_no_db_client(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    from web.app import create_app
+
+    fake_user = {"id": 2, "username": "alice", "role": "user", "is_active": 1}
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: fake_user if int(user_id) == 2 else None,
+    )
+
+    app = create_app()
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["_user_id"] = "2"
+        session["_fresh"] = True
+    return client
+
+
+def test_settings_requires_exact_admin_username(manager_no_db_client, normal_no_db_client):
+    assert manager_no_db_client.get("/settings").status_code == 403
+    assert normal_no_db_client.get("/settings").status_code == 403
 
 
 def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):

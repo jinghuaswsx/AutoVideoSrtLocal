@@ -803,6 +803,15 @@ def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
     assert '<span class="nav-icon">🧽</span>' in body
 
 
+def test_layout_hides_api_config_nav_for_normal_user(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "API 配置" not in body
+    assert 'href="/settings"' not in body
+
+
 def test_settings_page_contains_default_jianying_project_root(authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
 
