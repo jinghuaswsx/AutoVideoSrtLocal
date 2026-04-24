@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
-{% block title %}订单分析 — AutoVideoSrt{% endblock %}
-{% block page_title %}订单分析{% endblock %}
+{% block title %}数据分析 — AutoVideoSrt{% endblock %}
+{% block page_title %}数据分析{% endblock %}
 {% block extra_style %}
 /* ── Tab 导航 ─────────────────────────────────── */
 .oa-tabs {
@@ -206,6 +206,18 @@
 .oa-search-item:last-child { border-bottom: none; }
 .oa-search-item:hover { background: var(--accent-subtle); }
 .oa-search-item .oa-si-code { font-size: 11px; color: var(--fg-subtle); margin-left: 8px; }
+.oa-chip {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+  border-radius: var(--radius-md); background: var(--accent-subtle);
+  color: var(--accent); font-size: 12px; font-weight: 600;
+}
+.oa-chip-muted { background: var(--bg-muted); color: var(--fg-muted); }
+.oa-ad-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.oa-ad-note {
+  padding: 12px 16px; background: var(--info-bg); border-radius: var(--radius-md);
+  color: var(--fg-muted); font-size: 13px; line-height: 1.6;
+}
+.oa-ad-unmatched { color: var(--warning-fg); font-weight: 600; }
 {% endblock %}
 
 {% block content %}
@@ -214,8 +226,9 @@
 
 <!-- Tab 导航 -->
 <div class="oa-tabs">
-  <button class="oa-tab active" data-tab="import">导入文件</button>
-  <button class="oa-tab" data-tab="analytics">数据分析</button>
+  <button class="oa-tab active" data-tab="import">订单导入</button>
+  <button class="oa-tab" data-tab="analytics">订单分析</button>
+  <button class="oa-tab" data-tab="ads">广告分析</button>
 </div>
 
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
@@ -250,7 +263,7 @@
         执行产品匹配
       </button>
       <button class="btn btn-ghost btn-sm" onclick="switchToAnalytics()">
-        查看数据分析 →
+        查看订单分析 →
       </button>
     </div>
   </div>
@@ -364,6 +377,81 @@
     </div>
   </div>
 </div>
+
+<!-- ═══════ Tab 3: 广告分析 ═══════ -->
+<div class="oa-panel" id="panelAds">
+  <div class="oa-ad-layout">
+    <div class="oa-controls">
+      <label>导入类型：</label>
+      <select id="adFrequency">
+        <option value="weekly">周报</option>
+        <option value="monthly">月报</option>
+        <option value="custom">自定义周期</option>
+      </select>
+      <button class="btn btn-default btn-sm" onclick="matchAdProducts()">重新匹配产品</button>
+    </div>
+
+    <div class="oa-upload-zone" id="adUploadZone">
+      <div class="oa-upload-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      </div>
+      <div class="oa-upload-text">拖拽或点击上传 Meta 广告报表</div>
+      <div class="oa-upload-hint">支持 CSV / Excel (.xlsx)，按报表开始日期、结束日期和广告系列名称去重更新</div>
+      <input type="file" id="adFileInput" accept=".csv,.xls,.xlsx">
+    </div>
+
+    <div id="adLoadingBox" style="display:none;">
+      <div class="oa-loading">
+        <div class="oa-spinner"></div>
+        <div>正在解析并导入广告数据…</div>
+      </div>
+    </div>
+
+    <div id="adImportResult" style="display:none;"></div>
+
+    <div id="adStats" style="display:none;">
+      <div class="oa-stats" id="adStatsCards"></div>
+    </div>
+
+    <div class="oa-controls">
+      <label>报表周期：</label>
+      <select id="adPeriodSelect" onchange="loadAdSummary()"></select>
+    </div>
+
+    <div id="adEmpty" class="oa-empty" style="display:none;">
+      <div class="oa-empty-icon">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+      </div>
+      <div>暂无广告数据，请先上传 Meta 广告报表</div>
+    </div>
+
+    <div id="adContent" style="display:none;">
+      <div class="oa-table-wrap">
+        <div class="oa-table-header">
+          <div class="oa-table-title" id="adTableTitle">广告 × 订单关联分析</div>
+        </div>
+        <div class="oa-table-scroll">
+          <table class="oa-table" id="adTable">
+            <thead><tr id="adTableHead"></tr></thead>
+            <tbody id="adTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="oa-table-wrap" id="adUnmatchedWrap" style="display:none;">
+        <div class="oa-table-header">
+          <div class="oa-table-title">未匹配广告系列</div>
+        </div>
+        <div class="oa-table-scroll">
+          <table class="oa-table">
+            <thead><tr id="adUnmatchedHead"></tr></thead>
+            <tbody id="adUnmatchedBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -385,6 +473,8 @@
 
       if (tab.dataset.tab === 'analytics') {
         initAnalytics();
+      } else if (tab.dataset.tab === 'ads') {
+        initAds();
       }
     });
   });
@@ -519,6 +609,224 @@
       })
       .catch(function(e) { debug('匹配失败: ' + e.message); alert('匹配失败: ' + e.message); });
   };
+
+  // ── 广告分析 ──────────────────────────────────────
+  var adsInited = false;
+  var adZone = document.getElementById('adUploadZone');
+  var adInput = document.getElementById('adFileInput');
+
+  adInput.addEventListener('change', function() {
+    if (adInput.files[0]) doAdUpload(adInput.files[0]);
+  });
+  adZone.addEventListener('dragover', function(e) { e.preventDefault(); adZone.classList.add('dragover'); });
+  adZone.addEventListener('dragleave', function() { adZone.classList.remove('dragover'); });
+  adZone.addEventListener('drop', function(e) {
+    e.preventDefault(); e.stopPropagation(); adZone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) doAdUpload(e.dataTransfer.files[0]);
+  });
+
+  function initAds() {
+    if (adsInited) return;
+    adsInited = true;
+    loadAdStats();
+    loadAdPeriods();
+  }
+
+  function showAdError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+    document.getElementById('adLoadingBox').style.display = 'none';
+    adZone.style.display = '';
+  }
+
+  function doAdUpload(file) {
+    debug('上传广告报表: ' + file.name);
+    errorBox.style.display = 'none';
+    document.getElementById('adLoadingBox').style.display = 'block';
+    adZone.style.display = 'none';
+    document.getElementById('adImportResult').style.display = 'none';
+
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('frequency', document.getElementById('adFrequency').value || 'custom');
+
+    fetch('/order-analytics/ad-upload', { method: 'POST', body: fd })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || ('服务器返回 ' + r.status)); });
+        return r.json();
+      })
+      .then(function(data) {
+        document.getElementById('adLoadingBox').style.display = 'none';
+        if (data.error) { showAdError(data.error); return; }
+        renderAdImportResult(data);
+        adZone.style.display = '';
+        loadAdStats();
+        loadAdPeriods();
+      })
+      .catch(function(err) {
+        showAdError('广告报表上传失败：' + err.message);
+      });
+  }
+
+  function renderAdImportResult(data) {
+    var box = document.getElementById('adImportResult');
+    box.innerHTML = '<div class="oa-import-result">' +
+      '<h4>广告数据导入完成</h4>' +
+      '<div class="oa-import-row">' +
+      '<span>新增 <strong>' + (data.imported || 0) + '</strong> 条</span>' +
+      '<span>更新 <strong>' + (data.updated || 0) + '</strong> 条</span>' +
+      '<span>跳过 <strong>' + (data.skipped || 0) + '</strong> 条</span>' +
+      '<span>匹配产品 <strong>' + (data.matched || 0) + '</strong> 条</span>' +
+      '</div></div>';
+    box.style.display = '';
+  }
+
+  function loadAdStats() {
+    fetch('/order-analytics/ad-stats')
+      .then(function(r) { return r.json(); })
+      .then(function(s) {
+        var box = document.getElementById('adStats');
+        var cards = document.getElementById('adStatsCards');
+        var totalRows = parseInt(s.total_rows) || 0;
+        cards.innerHTML =
+          statCard('广告记录', totalRows.toLocaleString()) +
+          statCard('报表周期', parseInt(s.period_count || 0).toLocaleString()) +
+          statCard('已匹配', parseInt(s.matched_rows || 0).toLocaleString()) +
+          statCard('未匹配', Math.max(0, totalRows - (parseInt(s.matched_rows) || 0)).toLocaleString()) +
+          statCard('总花费', fmtMoney(s.total_spend_usd)) +
+          statCard('购物转化价值', fmtMoney(s.total_purchase_value_usd));
+        box.style.display = '';
+      })
+      .catch(function() {
+        document.getElementById('adStats').style.display = 'none';
+      });
+  }
+
+  function loadAdPeriods() {
+    fetch('/order-analytics/ad-periods')
+      .then(function(r) { return r.json(); })
+      .then(function(periods) {
+        var sel = document.getElementById('adPeriodSelect');
+        sel.innerHTML = '';
+        if (!periods.length) {
+          sel.innerHTML = '<option value="">暂无广告数据</option>';
+          showEl('adEmpty'); hideEl('adContent');
+          return;
+        }
+        periods.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.batch_id || '';
+          opt.textContent = (p.report_start_date || '').slice(0, 10) + ' ~ ' +
+            (p.report_end_date || '').slice(0, 10) + ' · ' +
+            ((p.import_frequency || 'custom') === 'weekly' ? '周报' : ((p.import_frequency || '') === 'monthly' ? '月报' : '自定义')) +
+            ' · ' + (p.row_count || 0) + '条';
+          sel.appendChild(opt);
+        });
+        loadAdSummary();
+      })
+      .catch(function(e) { showAdError('广告周期加载失败：' + e.message); });
+  }
+
+  window.loadAdSummary = function() {
+    var batchId = document.getElementById('adPeriodSelect').value;
+    if (!batchId) {
+      showEl('adEmpty'); hideEl('adContent');
+      return;
+    }
+    fetch('/order-analytics/ad-summary?batch_id=' + encodeURIComponent(batchId))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.rows || !data.rows.length) { showEl('adEmpty'); hideEl('adContent'); return; }
+        renderAdSummary(data);
+        hideEl('adEmpty'); showEl('adContent');
+      })
+      .catch(function(e) { showAdError('广告分析加载失败：' + e.message); });
+  };
+
+  function renderAdSummary(data) {
+    var period = data.period || {};
+    document.getElementById('adTableTitle').textContent =
+      '广告 × 订单关联分析 · ' + (period.report_start_date || '').slice(0, 10) +
+      ' ~ ' + (period.report_end_date || '').slice(0, 10);
+
+    var head = document.getElementById('adTableHead');
+    head.innerHTML = '';
+    ['产品 / 广告系列', '匹配', '广告花费', 'Meta购买', '购物价值', 'ROAS', 'CPA', '链接点击',
+     '加购', '发起结账', '展示', 'Shopify订单', 'Shopify件数', 'Shopify收入'].forEach(function(text, idx) {
+      addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
+    });
+
+    var tbody = document.getElementById('adTableBody');
+    tbody.innerHTML = '';
+    data.rows.forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTd(tr, 'oa-col-product', (row.display_name || row.campaign_names || '未知') +
+        (row.product_code ? ' · ' + row.product_code : ''));
+      addTd(tr, 'oa-col-num', row.product_id ? '已匹配' : '未匹配');
+      addTd(tr, 'oa-col-num', fmtMoney(row.spend_usd));
+      addTd(tr, 'oa-col-num', fmtInt(row.result_count));
+      addTd(tr, 'oa-col-num', fmtMoney(row.purchase_value_usd));
+      addTd(tr, 'oa-col-num', fmtRatio(row.roas_purchase));
+      addTd(tr, 'oa-col-num', fmtMoney(row.cost_per_result_usd));
+      addTd(tr, 'oa-col-num', fmtInt(row.link_clicks));
+      addTd(tr, 'oa-col-num', fmtInt(row.add_to_cart_count));
+      addTd(tr, 'oa-col-num', fmtInt(row.initiate_checkout_count));
+      addTd(tr, 'oa-col-num', fmtInt(row.impressions));
+      addTd(tr, 'oa-col-num', fmtInt(row.shopify_order_count));
+      addTd(tr, 'oa-col-num', fmtInt(row.shopify_quantity));
+      addTd(tr, 'oa-col-num', fmtMoney(row.shopify_revenue));
+      tbody.appendChild(tr);
+    });
+    renderAdUnmatched(data.unmatched || []);
+  }
+
+  function renderAdUnmatched(rows) {
+    var wrap = document.getElementById('adUnmatchedWrap');
+    if (!rows.length) { wrap.style.display = 'none'; return; }
+    var head = document.getElementById('adUnmatchedHead');
+    head.innerHTML = '';
+    ['广告系列', '花费', 'Meta购买', '购物价值'].forEach(function(text, idx) {
+      addTh(head, idx === 0 ? 'oa-col-product' : 'oa-col-num', text);
+    });
+    var body = document.getElementById('adUnmatchedBody');
+    body.innerHTML = '';
+    rows.forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTd(tr, 'oa-col-product', row.campaign_name || row.normalized_campaign_code || '未知');
+      addTd(tr, 'oa-col-num', fmtMoney(row.spend_usd));
+      addTd(tr, 'oa-col-num', fmtInt(row.result_count));
+      addTd(tr, 'oa-col-num', fmtMoney(row.purchase_value_usd));
+      body.appendChild(tr);
+    });
+    wrap.style.display = '';
+  }
+
+  window.matchAdProducts = function() {
+    fetch('/order-analytics/ad-match', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        alert('广告产品匹配完成\n新匹配: ' + d.matched + ' 条');
+        loadAdStats();
+        loadAdSummary();
+      })
+      .catch(function(e) { alert('匹配失败: ' + e.message); });
+  };
+
+  function fmtInt(value) {
+    return (parseInt(value) || 0).toLocaleString();
+  }
+
+  function fmtMoney(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) n = 0;
+    return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtRatio(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) return '-';
+    return n.toFixed(2);
+  }
 
   // ── 数据分析 ──────────────────────────────────────
   var analyticsInited = false;
