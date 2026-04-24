@@ -694,7 +694,8 @@
           statCard('已匹配', parseInt(s.matched_rows || 0).toLocaleString()) +
           statCard('未匹配', Math.max(0, totalRows - (parseInt(s.matched_rows) || 0)).toLocaleString()) +
           statCard('总花费', fmtMoney(s.total_spend_usd)) +
-          statCard('购物转化价值', fmtMoney(s.total_purchase_value_usd));
+          statCard('购物转化价值', fmtMoney(s.total_purchase_value_usd)) +
+          statCard('ROAS', fmtAdRoas(s.total_purchase_value_usd, s.total_spend_usd));
         box.style.display = '';
       })
       .catch(function() {
@@ -820,6 +821,13 @@
     var n = parseFloat(value);
     if (!isFinite(n)) n = 0;
     return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtAdRoas(purchaseValue, spend) {
+    var purchase = parseFloat(purchaseValue);
+    var cost = parseFloat(spend);
+    if (!isFinite(purchase) || !isFinite(cost) || cost === 0) return '-';
+    return (purchase / cost).toFixed(2);
   }
 
   function fmtRatio(value) {

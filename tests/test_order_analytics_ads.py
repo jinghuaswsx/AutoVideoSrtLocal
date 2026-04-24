@@ -277,6 +277,16 @@ def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     assert 'id="panelAds"' in body
 
 
+def test_ads_stats_card_shows_report_roas(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "statCard('购物转化价值', fmtMoney(s.total_purchase_value_usd))" in body
+    assert "statCard('ROAS', fmtAdRoas(s.total_purchase_value_usd, s.total_spend_usd))" in body
+    assert "function fmtAdRoas(purchaseValue, spend)" in body
+
+
 def test_ad_upload_route_imports_meta_report(authed_client_no_db, monkeypatch):
     parsed_rows = [{"campaign_name": "demo", "report_start_date": oa._parse_meta_date("2026-04-01"), "report_end_date": oa._parse_meta_date("2026-04-07")}]
 
