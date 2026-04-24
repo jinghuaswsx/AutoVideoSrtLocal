@@ -1,7 +1,10 @@
 """订单分析模块：导入 Shopify 订单 CSV/Excel，持久化到数据库，按商品 × 国家统计单量。"""
 from __future__ import annotations
 
+import io
 import logging
+from datetime import date, datetime
+from decimal import Decimal
 
 from flask import Blueprint, render_template, request, jsonify, make_response
 from flask_login import login_required
@@ -12,6 +15,18 @@ from appcore import order_analytics as oa
 log = logging.getLogger(__name__)
 
 bp = Blueprint("order_analytics", __name__)
+
+
+def _json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    return value
 
 
 # ── 页面路由 ──────────────────────────────────────────
@@ -64,12 +79,77 @@ def upload():
     })
 
 
+@bp.route("/order-analytics/ad-upload", methods=["POST"])
+@login_required
+@admin_required
+def ad_upload():
+    """接收 Meta 广告 CSV/Excel，按报表周期 upsert 到长期广告数据表。"""
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify(error="请选择广告报表文件"), 400
+
+    frequency = (request.form.get("frequency") or "custom").strip().lower()
+    file_bytes = f.stream.read()
+
+    try:
+        rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), f.filename)
+    except Exception as exc:
+        log.warning("order_analytics ad upload parse error: %s", exc, exc_info=True)
+        return jsonify(error=f"广告报表解析失败：{exc}"), 400
+
+    if not rows:
+        return jsonify(error="广告报表为空或格式不正确"), 400
+
+    result = oa.import_meta_ad_rows(
+        rows,
+        filename=f.filename,
+        file_bytes=file_bytes,
+        import_frequency=frequency,
+    )
+    stats = oa.get_meta_ad_stats()
+    return jsonify(_json_safe({
+        **result,
+        "total_rows": stats.get("total_rows", 0),
+        "matched_rows": stats.get("matched_rows", 0),
+        "period_count": stats.get("period_count", 0),
+        "min_date": stats.get("min_date"),
+        "max_date": stats.get("max_date"),
+    }))
+
+
 @bp.route("/order-analytics/stats")
 @login_required
 @admin_required
 def stats():
     """返回数据库统计概览。"""
     return jsonify(oa.get_import_stats())
+
+
+@bp.route("/order-analytics/ad-stats")
+@login_required
+@admin_required
+def ad_stats():
+    """返回 Meta 广告长期数据统计概览。"""
+    return jsonify(_json_safe(oa.get_meta_ad_stats()))
+
+
+@bp.route("/order-analytics/ad-periods")
+@login_required
+@admin_required
+def ad_periods():
+    """返回已导入的广告报表周期。"""
+    return jsonify(_json_safe(oa.get_meta_ad_periods()))
+
+
+@bp.route("/order-analytics/ad-summary")
+@login_required
+@admin_required
+def ad_summary():
+    """返回所选广告报表周期的广告 × 订单关联分析。"""
+    batch_id = request.args.get("batch_id", type=int)
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
+    return jsonify(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
 @bp.route("/order-analytics/available-months")
@@ -162,4 +242,13 @@ def refresh_titles():
 def match():
     """执行产品匹配。"""
     affected = oa.match_orders_to_products()
+    return jsonify({"matched": affected})
+
+
+@bp.route("/order-analytics/ad-match", methods=["POST"])
+@login_required
+@admin_required
+def ad_match():
+    """重新执行广告系列到素材库产品的匹配。"""
+    affected = oa.match_meta_ads_to_products()
     return jsonify({"matched": affected})
