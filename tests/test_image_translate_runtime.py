@@ -2,6 +2,41 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 
+class _LegacyTosClientShim:
+    def download_file(self, key, local_path):
+        open(local_path, "wb").write(b"IMG-" + str(key).encode())
+        return local_path
+
+    def download_media_file(self, key, local_path):
+        open(local_path, "wb").write(b"IMG-" + str(key).encode())
+        return local_path
+
+    def upload_file(self, *args, **kwargs):
+        return None
+
+    def upload_media_object(self, *args, **kwargs):
+        return None
+
+    def build_media_object_key(self, uid, pid, filename):
+        return f"{uid}/medias/{pid}/{filename}"
+
+
+@pytest.fixture(autouse=True)
+def _fake_local_media_storage(monkeypatch):
+    """Keep legacy runtime tests local-only after image runtime moved off TOS."""
+    from appcore import image_translate_runtime as rt
+
+    monkeypatch.setattr(rt, "tos_clients", _LegacyTosClientShim(), raising=False)
+    monkeypatch.setattr(rt.local_media_storage, "exists", lambda key: True)
+    monkeypatch.setattr(
+        rt.local_media_storage,
+        "download_to",
+        lambda key, local_path: open(local_path, "wb").write(b"IMG-" + str(key).encode()) or local_path,
+    )
+    monkeypatch.setattr(rt.local_media_storage, "write_bytes", lambda object_key, data: None)
+    monkeypatch.setattr(rt.ImageTranslateRuntime, "_detect_source_text", lambda self, task, task_id, item, src_path: True)
+
+
 def _fake_task(items):
     return {
         "id": "t-img-1",
@@ -599,7 +634,7 @@ def test_apply_translated_detail_images_writes_local_media_store_instead_of_tos_
              "upload_media_object",
              side_effect=AssertionError("should not upload long-lived detail images back to TOS media"),
          ), \
-         patch.object(rt.tos_clients, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
+         patch.object(rt.object_keys, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
          patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
         result = rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
@@ -868,7 +903,7 @@ def test_recovery_poll_resumes_existing_apimart_task_within_window():
     m_gen.assert_not_called()  # 不能走重新提交
 
 
-def test_recovery_falls_back_to_regenerate_when_task_expired():
+def test_recovery_generates_when_no_apimart_snapshot_exists():
     """apimart_task_id 超出 10 分钟窗口时放弃快照，走完整重新提交。"""
     import time
     from appcore import image_translate_runtime as rt
@@ -876,8 +911,8 @@ def test_recovery_falls_back_to_regenerate_when_task_expired():
 
     task = _fake_task([_item(0)])
     task["channel"] = "apimart"
-    task["items"][0]["apimart_task_id"] = "task_too_old"
-    task["items"][0]["apimart_submitted_at"] = time.time() - 9999
+    task["items"][0]["apimart_task_id"] = ""
+    task["items"][0]["apimart_submitted_at"] = 0.0
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
@@ -894,6 +929,119 @@ def test_recovery_falls_back_to_regenerate_when_task_expired():
     assert out == b"NEW"
     m_poll.assert_not_called()
     m_gen.assert_called_once()
+
+
+def test_recovery_polls_existing_apimart_task_even_when_snapshot_is_old():
+    """Existing APIMART task ids must be checked before a new submission."""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_too_old_but_done"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 9999
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(
+             rt.gemini_image, "poll_apimart_task",
+             return_value=(b"OLD-RESULT", "image/png", {}),
+         ) as m_poll, \
+         patch.object(
+             rt.gemini_image, "generate_image",
+             return_value=(b"NEW", "image/png"),
+         ) as m_gen:
+        out, _ = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"OLD-RESULT"
+    m_poll.assert_called_once()
+    m_gen.assert_not_called()
+
+
+def test_recovery_regenerates_old_apimart_task_only_after_poll_timeout():
+    """A saved task id may be replaced only after checking it and passing the minimum timeout."""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_old_still_running"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 9999
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(
+             rt.gemini_image, "poll_apimart_task",
+             side_effect=rt.gemini_image.GeminiImageRetryable("still running"),
+         ) as m_poll, \
+         patch.object(
+             rt.gemini_image, "generate_image",
+             return_value=(b"NEW", "image/png"),
+         ) as m_gen:
+        out, _ = runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert out == b"NEW"
+    m_poll.assert_called_once()
+    m_gen.assert_called_once()
+
+
+def test_recent_apimart_task_retryable_poll_does_not_regenerate_before_min_timeout():
+    """A recent saved task id that is still running must not trigger a new submission."""
+    import time
+    import pytest
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["items"][0]["apimart_task_id"] = "task_recent_running"
+    task["items"][0]["apimart_submitted_at"] = time.time() - 60
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(
+             rt.gemini_image, "poll_apimart_task",
+             side_effect=rt.gemini_image.GeminiImageRetryable("still running"),
+         ), \
+         patch.object(rt.gemini_image, "generate_image") as m_gen:
+        with pytest.raises(rt.gemini_image.GeminiImageRetryable, match="still running"):
+            runtime._generate_with_apimart_recovery(
+                task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+            )
+
+    m_gen.assert_not_called()
+
+
+def test_reset_failed_items_for_retry_preserves_apimart_snapshot_for_result_check():
+    """Manual retry must keep saved APIMART ids so the next run can check results first."""
+    import time
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    submitted_at = time.time() - 120
+    task = _fake_task([{
+        **_item(0, status="failed"),
+        "apimart_task_id": "task_keep_for_retry",
+        "apimart_submitted_at": submitted_at,
+    }])
+
+    with patch.object(store, "get", return_value=task), \
+         patch.object(store, "update"):
+        reset_count = rt.reset_failed_items_for_retry("t-img-1", user_id=1)
+
+    assert reset_count == 1
+    assert task["items"][0]["status"] == "pending"
+    assert task["items"][0]["apimart_task_id"] == "task_keep_for_retry"
+    assert task["items"][0]["apimart_submitted_at"] == submitted_at
 
 
 def test_recovery_clears_task_id_and_regenerates_on_upstream_failure():

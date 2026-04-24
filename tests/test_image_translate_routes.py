@@ -6,6 +6,7 @@ def _patch_tos_and_runner(monkeypatch, tos_ok=True, obj_exists=True):
     del tos_ok
     monkeypatch.setattr(r.local_media_storage, "exists", lambda k: obj_exists)
     monkeypatch.setattr(r.local_media_storage, "write_stream", lambda object_key, stream: None)
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda object_key: None)
     monkeypatch.setattr(r, "_start_runner", lambda tid, uid: True)
 
 
@@ -585,7 +586,7 @@ def test_get_state(authed_client_no_db, monkeypatch):
     assert state["preset"] == "cover"
     assert state["target_language_name"] == "德语"
     assert len(state["items"]) == 1
-    assert state["items"][0]["source_bucket"] == "media"
+    assert state["items"][0]["source_bucket"] == "upload"
 
 
 def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
@@ -616,7 +617,7 @@ def test_get_state_includes_medias_context(authed_client_no_db, monkeypatch):
         "_user_id": 1,
     }
 
-    monkeypatch.setattr(r, "_get_owned_task", lambda task_id: task)
+    monkeypatch.setattr(r, "_get_viewable_task", lambda task_id: task)
 
     resp = authed_client_no_db.get("/api/image-translate/img-state-1")
     assert resp.status_code == 200
@@ -848,10 +849,7 @@ def test_result_artifact_404_when_not_done(authed_client_no_db, monkeypatch):
 
 
 def test_result_artifact_redirects_when_done(authed_client_no_db, monkeypatch):
-    from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
-    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
-                         lambda k, expires=None: f"https://tos-dl/{k}")
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}/artifact/result/0",
                                     follow_redirects=False)
     assert resp.status_code == 302
@@ -859,10 +857,7 @@ def test_result_artifact_redirects_when_done(authed_client_no_db, monkeypatch):
 
 
 def test_result_download_redirects_when_done(authed_client_no_db, monkeypatch):
-    from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
-    monkeypatch.setattr(r.tos_clients, "generate_signed_download_url",
-                         lambda k, expires=None: f"https://tos-dl/{k}")
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/result/0",
                                     follow_redirects=False)
     assert resp.status_code == 302
@@ -905,7 +900,7 @@ def test_zip_download_contains_done_items(authed_client_no_db, monkeypatch):
         with open(local_path, "wb") as f:
             f.write(b"BYTES-" + key.encode())
         return local_path
-    monkeypatch.setattr(r.tos_clients, "download_file", fake_download)
+    monkeypatch.setattr(r.local_media_storage, "download_to", fake_download)
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}/download/zip")
     assert resp.status_code == 200
     assert resp.headers["Content-Type"] == "application/zip"
@@ -1048,7 +1043,6 @@ def test_retry_failed_route_409_when_no_failed(authed_client_no_db, monkeypatch)
 def test_delete_task(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
-    monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: None)
     called = {}
     monkeypatch.setattr(r, "db_execute", lambda sql, params: called.setdefault("db_execute", True))
     # mock store.update 以防写真实 DB
@@ -1101,7 +1095,7 @@ def test_retry_item_allows_done_status_and_deletes_old_dst(authed_client_no_db, 
     task = store.get(tid)
     task["items"][0]["dst_tos_key"] = "artifacts/image_translate/1/tid/out_0.png"
     deleted: list[str] = []
-    monkeypatch.setattr(r.tos_clients, "delete_object", lambda k: deleted.append(k))
+    monkeypatch.setattr(r.local_media_storage, "delete", lambda k: deleted.append(k))
     monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
     monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: True)
     resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry/0")
@@ -1172,13 +1166,36 @@ def test_retry_unfinished_409_when_runner_active(authed_client_no_db, monkeypatc
     assert "正在跑" in resp.get_json().get("error", "")
 
 
+def test_retry_unfinished_heals_when_all_done_but_task_status_stale(authed_client_no_db, monkeypatch):
+    from web.services import image_translate_runner
+    from web import store
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["status"] = "interrupted"
+    task.setdefault("steps", {})["process"] = "interrupted"
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-unfinished")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "done"
+    assert data["healed"] is True
+    assert task["status"] == "done"
+    assert task["steps"]["process"] == "done"
+
+
 def test_retry_unfinished_409_when_all_done(authed_client_no_db, monkeypatch):
     from web.services import image_translate_runner
+    from web import store
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
+    task = store.get(tid)
+    task["status"] = "done"
+    task.setdefault("steps", {})["process"] = "done"
     monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
     resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry-unfinished")
     assert resp.status_code == 409
     assert "没有" in resp.get_json().get("error", "")
+
+
 def _post_complete(client, body_extra=None):
     """共用：提交一张图走完 bootstrap -> complete 的 happy path，返回 complete 响应。"""
     bootstrap = client.post("/api/image-translate/upload/bootstrap", json={

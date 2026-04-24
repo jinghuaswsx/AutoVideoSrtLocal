@@ -4,7 +4,6 @@ import copy
 import json
 import logging
 import threading
-import time
 
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 import appcore.task_state as task_state
@@ -15,9 +14,8 @@ RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动
 RECOVERY_INTERRUPTED_MESSAGE = "任务因服务重启或后台执行中断，已标记为中断；请在页面手动重新启动。"
 IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
 
-# 图片翻译自动恢复窗口：item 记录的 apimart_submitted_at 在此窗口内的任务，
-# 启动恢复时不标中断、自动拉起 worker 继续轮询结果（避免重复提交重复扣费）。
-_IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC = 600  # 10 分钟
+# 图片翻译 APIMART 任务在上游已提交即可能计费；启动恢复时只要有 task_id，
+# 就自动拉起 worker 先检查上游结果，避免本地重启后直接重复提交。
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_translate", "copywriting"}
 INTERRUPTED_PIPELINE_PROJECT_TYPES = {"multi_translate", "translate_lab"}
@@ -104,14 +102,10 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             summary["overall_decision"] = "unfinished"
         return True, recovered, "failed"
     elif project_type == "image_translate" and recovered.get("status") in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES:
-        # image_translate 的执行单位是 items[].status。恢复策略按下面 3 档依次判断：
-        #   A. 所有 item 已到终态（done/failed）→ 直接把任务级状态拉回终态，避免出现
-        #      "11/11 完成但任务仍显示中断" 的 UI 不一致（start() 末尾的 status="done"
-        #      写入可能被服务重启截断）。
-        #   B. 存在近期提交的异步生成任务（provider_task_id 在窗口内）→ 保持 running，
-        #      自动拉起 worker 继续轮询。适用于任何异步 channel（目前是 APIMART，未来
-        #      新增的异步 provider 只要把 task_id 写到同样的 item 字段即可复用）。
-        #   C. 其他 → 标中断等用户手动点「重新生成」。
+        # image_translate recovers by item status:
+        #   A. all items terminal -> heal the task-level status;
+        #   B. any saved async provider task -> keep running and poll upstream;
+        #   C. otherwise mark interrupted for manual retry.
         items = recovered.get("items") or []
         total = len(items)
         done = sum(1 for it in items if (it.get("status") or "") == "done")
@@ -137,8 +131,8 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             recovered["error"] = IMAGE_TRANSLATE_INTERRUPTED_MESSAGE
             return True, recovered, "interrupted"
 
-        # B. 有可恢复的异步生成任务 — 保留 running 状态自动拉起 worker
-        now = time.time()
+        # B. Keep running when an upstream async task was already submitted.
+        # The worker will poll that task before considering any new submission.
         has_resumable = False
         for it in items:
             # 兼容旧字段名 apimart_task_id；新代码统一写 provider_task_id
@@ -155,9 +149,8 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             )
             if submitted_at <= 0:
                 continue
-            if now - submitted_at <= _IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC:
-                has_resumable = True
-                break
+            has_resumable = True
+            break
 
         if has_resumable:
             recovered["items"] = items

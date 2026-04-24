@@ -40,9 +40,9 @@ _TEXT_DETECT_PROMPT = (
 _RATE_LIMIT_THRESHOLD = 5
 _RATE_LIMIT_WINDOW_SEC = 60.0
 
-# APIMART 任务恢复窗口：服务重启后，对提交时间在此窗口内的 APIMART 任务
-# 先轮询取结果，而不是重新提交（避免重复扣费）
-_APIMART_RECOVERY_WINDOW_SEC = 600  # 10 分钟
+# APIMART 提交即可能计费：有已保存 task_id 时永远先检查上游结果；
+# 只有检查后仍无结果且提交已满 5 分钟，才允许重新提交。
+_APIMART_MIN_REGENERATE_AGE_SEC = 300  # 5 minutes
 
 
 class _CircuitOpen(Exception):
@@ -82,12 +82,8 @@ def _reset_item_processing_state(item: dict) -> None:
     item["text_detect_reason"] = ""
     item["text_detect_error"] = ""
     item["result_source"] = ""
-    # 显式重试：清掉异步 provider 任务快照，下一轮走重新提交。
-    # provider_task_id 是通用字段；apimart_* 是旧命名，同时清掉避免残留。
-    item["provider_task_id"] = ""
-    item["provider_task_submitted_at"] = 0.0
-    item["apimart_task_id"] = ""
-    item["apimart_submitted_at"] = 0.0
+    # Keep async provider snapshots across retries. The next run checks the
+    # saved upstream task before submitting another paid generation.
 
 
 def _item_source_is_gif(item: dict) -> bool:
@@ -428,10 +424,13 @@ class ImageTranslateRuntime:
           新写入统一走 provider_* 命名。
 
         逻辑：
-        - 如果 item 里有新鲜的 provider_task_id（窗口内），直接轮询取结果。
-        - 轮询得到 GeminiImageError（任务失败）：清理快照 → 走重新提交。
-        - 否则（没有 task_id / 超出窗口）：调用 generate_image，提交成功立即把 task_id
-          记到 item 上。
+        - If the item has a provider_task_id, poll that upstream task first.
+        - GeminiImageError means the upstream task failed: clear the snapshot,
+          then submit a new generation.
+        - GeminiImageRetryable means the upstream task may still finish: only
+          submit a new generation after the saved task is at least 5 minutes old.
+        - If there is no task snapshot, call generate_image and persist the new
+          provider_task_id via on_apimart_submitted.
         """
         channel = (task.get("channel") or "").strip()
 
@@ -446,7 +445,7 @@ class ImageTranslateRuntime:
                 or 0.0
             )
             age = time.time() - submitted_at if submitted_at else float("inf")
-            if existing_task_id and age <= _APIMART_RECOVERY_WINDOW_SEC:
+            if existing_task_id:
                 logger.info(
                     "[image_translate] resuming APIMART task %s for %s item %d (age=%.0fs)",
                     existing_task_id, task_id, idx, age,
@@ -462,6 +461,19 @@ class ImageTranslateRuntime:
                     logger.info(
                         "[image_translate] APIMART task %s failed upstream, re-generating: %s",
                         existing_task_id, e,
+                    )
+                    with self._state_lock:
+                        item["provider_task_id"] = ""
+                        item["provider_task_submitted_at"] = 0.0
+                        item["apimart_task_id"] = ""
+                        item["apimart_submitted_at"] = 0.0
+                        store.update(task_id, items=task["items"])
+                except gemini_image.GeminiImageRetryable as e:
+                    if age < _APIMART_MIN_REGENERATE_AGE_SEC:
+                        raise
+                    logger.info(
+                        "[image_translate] APIMART task %s still unavailable after %.0fs; re-generating: %s",
+                        existing_task_id, age, e,
                     )
                     with self._state_lock:
                         item["provider_task_id"] = ""

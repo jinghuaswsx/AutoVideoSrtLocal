@@ -491,7 +491,7 @@ def test_recover_project_state_auto_resumes_image_translate_with_recent_apimart_
     assert recovered["progress"]["running"] == 1
 
 
-def test_recover_project_state_expired_apimart_task_falls_back_to_interrupted():
+def test_recover_project_state_old_apimart_task_auto_resumes_for_result_check():
     """提交已超过 10 分钟的 APIMART 任务不再自动恢复，走默认中断路径。"""
     import time
     from appcore import task_recovery
@@ -516,10 +516,11 @@ def test_recover_project_state_expired_apimart_task_falls_back_to_interrupted():
     )
 
     assert changed is True
-    assert status == "interrupted"
-    assert recovered["status"] == "interrupted"
+    assert status == "running"
+    assert recovered["status"] == "running"
     # 过期任务 running 退回 pending
-    assert recovered["items"][0]["status"] == "pending"
+    assert recovered["items"][0]["status"] == "running"
+    assert recovered["items"][0]["apimart_task_id"] == "task_old"
 
 
 def test_recover_all_interrupted_tasks_auto_starts_resumable_image_translate():
