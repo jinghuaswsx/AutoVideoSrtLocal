@@ -5,10 +5,13 @@ from tools.shopify_image_localizer.browser import session
 
 
 EZ_IMAGE_SELECTORS = [
-    "main img[src]",
-    "[class*='Polaris'] img[src]",
+    ".image-card img.actual-image",
+    "img.actual-image",
+    ".image-card img[src^='blob:']",
     "img[src]",
 ]
+
+EZ_FRAME_TITLES = ("EZ Product Translate",)
 
 
 def _resolve_flow_status(
@@ -51,9 +54,15 @@ def run_ez_flow(
     target_url = session.build_ez_url(shopify_product_id)
     session.ensure_target_page(page, target_url, status_cb=status_cb, label="EZ Product Image")
     session.save_page_snapshot(page, workspace.screenshots_ez_dir, "ez-page-before.png")
+    scope = session.resolve_embedded_scope(
+        page,
+        label="EZ Product Image",
+        frame_titles=EZ_FRAME_TITLES,
+        status_cb=status_cb,
+    )
 
     slot_images = session.capture_visible_images(
-        page,
+        scope,
         workspace.classify_ez_dir,
         prefix="ez",
         selectors=EZ_IMAGE_SELECTORS,
@@ -68,8 +77,8 @@ def run_ez_flow(
     uploads: list[dict] = []
     for row in assignments["assigned"]:
         try:
-            session.click_slot(page, row["slot"])
-            uploaded = session.upload_file_to_page(page, row["local_path"])
+            session.click_slot(scope, row["slot"], post_click_page=page)
+            uploaded = session.upload_file_to_page(scope, row["local_path"], host_page=page)
             uploads.append({
                 "slot_id": row["slot_id"],
                 "localized_id": row["localized_id"],

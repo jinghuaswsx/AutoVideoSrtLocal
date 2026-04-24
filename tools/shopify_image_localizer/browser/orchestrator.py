@@ -1,26 +1,46 @@
 from __future__ import annotations
 
-from playwright.sync_api import sync_playwright
+"""半自动模式 orchestrator。
 
-from tools.shopify_image_localizer.browser import ez_flow, session, translate_flow
+本工具不再通过 CDP 控制 Shopify embedded app 的 iframe（Shopify App Bridge 会
+反调试，任何 automation 启动都会拒绝渲染）。改为：
+- 启动普通 Chrome，保留登录态
+- 把 EZ 和 TAA 两个页面开在现有 Chrome 实例里
+- 把配对结果整理好返回给 controller / GUI，由用户在浏览器里点几下完成最后上传
+"""
 
-
-class FlowConflictError(RuntimeError):
-    pass
-
-
-def _merge_statuses(*statuses: str) -> str:
-    normalized = {str(status or "").strip().lower() for status in statuses if status is not None}
-    if not normalized or normalized == {"done"}:
-        return "done"
-    if normalized == {"failed"}:
-        return "failed"
-    return "partial"
+from tools.shopify_image_localizer import matcher
+from tools.shopify_image_localizer.browser import session
 
 
-def _open_worker_page(context):
-    """在当前 context 里新开一个属于本工具的 tab。"""
-    return context.new_page()
+def _pair_for_flow(
+    flow_label: str,
+    reference_images: list[dict],
+    localized_images: list[dict],
+    *,
+    reserved_localized_ids: set[str],
+) -> dict:
+    """配对一个 flow 下的图。flow_label 是 'ez' 或 'taa'，仅用于记录。
+
+    这里没有页面 slot 可以抓（因为不能 CDP 控制 iframe），所以把每张英文参考图直接
+    当作一个 slot：slot_id = f"{flow_label}-{idx:03d}"，local_path 用英文参考图本身。
+    这样 matcher 仍能按 reference 找到对应德语图，结构上和原来一致。
+    """
+    slot_images: list[dict] = []
+    for idx, ref in enumerate(reference_images, start=1):
+        slot_images.append({
+            "slot_id": f"{flow_label}-{idx:03d}",
+            "local_path": str(ref.get("local_path") or ""),
+            "reference_id": ref.get("id"),
+        })
+
+    result = matcher.assign_images(
+        slot_images,
+        reference_images,
+        localized_images,
+        reserved_localized_ids=reserved_localized_ids,
+    )
+    return result
 
 
 def run_shopify_localizer(
@@ -31,8 +51,9 @@ def run_shopify_localizer(
     localized_images: list[dict],
     workspace,
     status_cb=None,
-    cdp_port: int = session.DEFAULT_CDP_PORT,
+    **_legacy_kwargs,
 ) -> dict:
+    """半自动主流程：启动 Chrome → 开两个 tab → 返回两条链路的配对清单。"""
     product = bootstrap.get("product") or {}
     language = bootstrap.get("language") or {}
     shopify_product_id = str(product.get("shopify_product_id") or "").strip()
@@ -42,81 +63,45 @@ def run_shopify_localizer(
     if not shop_locale:
         raise RuntimeError("missing shop locale")
 
-    # 先保证用户那台 Chrome 在 CDP 端口上就位（没起就启动一个普通 Chrome）
-    started_chrome = session.ensure_chrome_running(
-        browser_user_data_dir, port=cdp_port
-    )
     if status_cb is not None:
-        status_cb(
-            "本地 Chrome 已就绪"
-            + ("（本次由工具启动）" if started_chrome else "（复用已在运行的 Chrome）")
-        )
+        status_cb("正在启动 Chrome（普通用户模式）")
 
-    ez_result: dict = {"status": "failed", "used_localized_ids": []}
-    translate_result: dict = {"status": "failed", "used_localized_ids": []}
-    ez_page = None
-    translate_page = None
+    ez_url = session.build_ez_url(shopify_product_id)
+    translate_url = session.build_translate_url(shopify_product_id, shop_locale)
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-        context = browser.contexts[0] if browser.contexts else browser.new_context()
-        context.set_default_timeout(15000)
-
-        try:
-            ez_page = _open_worker_page(context)
-            translate_page = _open_worker_page(context)
-
-            used_localized_ids: set[str] = set()
-            try:
-                ez_result = ez_flow.run_ez_flow(
-                    page=ez_page,
-                    shopify_product_id=shopify_product_id,
-                    language_code=str(language.get("code") or shop_locale),
-                    reference_images=reference_images,
-                    localized_images=localized_images,
-                    workspace=workspace,
-                    reserved_localized_ids=used_localized_ids,
-                    status_cb=status_cb,
-                )
-                used_localized_ids.update(ez_result.get("used_localized_ids") or [])
-            except Exception as exc:
-                ez_result = {"status": "failed", "error": str(exc), "used_localized_ids": []}
-
-            try:
-                translate_result = translate_flow.run_translate_flow(
-                    page=translate_page,
-                    shopify_product_id=shopify_product_id,
-                    shop_locale=shop_locale,
-                    reference_images=reference_images,
-                    localized_images=localized_images,
-                    workspace=workspace,
-                    reserved_localized_ids=used_localized_ids,
-                    status_cb=status_cb,
-                )
-            except Exception as exc:
-                translate_result = {"status": "failed", "error": str(exc), "used_localized_ids": []}
-        finally:
-            # 工具自己开的 tab 跑完关掉；不要关用户的 tabs、不要关 context、不要杀 Chrome
-            for page in (ez_page, translate_page):
-                if page is None:
-                    continue
-                try:
-                    page.close()
-                except Exception:
-                    pass
-            try:
-                browser.close()  # 仅断开 CDP
-            except Exception:
-                pass
-
-    overall_status = _merge_statuses(
-        str(ez_result.get("status") or ""),
-        str(translate_result.get("status") or ""),
+    session.ensure_chrome_started(
+        browser_user_data_dir,
+        initial_urls=[ez_url, translate_url],
     )
+
+    if status_cb is not None:
+        status_cb("Chrome 已打开 EZ 与 Translate and Adapt 两个页面")
+
+    # --- 配对两条链路 ---
+    used_ids: set[str] = set()
+    ez_result = _pair_for_flow("ez", reference_images, localized_images, reserved_localized_ids=used_ids)
+    used_ids.update(ez_result.get("used_localized_ids") or [])
+    taa_result = _pair_for_flow("taa", reference_images, localized_images, reserved_localized_ids=used_ids)
+
+    # 总状态
+    ez_has_matches = bool(ez_result.get("assigned"))
+    taa_has_matches = bool(taa_result.get("assigned"))
+    if ez_has_matches or taa_has_matches:
+        overall = "pending_user_action"
+    else:
+        overall = "failed"
 
     return {
-        "status": overall_status,
-        "mode": "dual_page_serial",
-        "ez": ez_result,
-        "translate": translate_result,
+        "status": overall,
+        "mode": "semi_auto",
+        "ez": {
+            **ez_result,
+            "page_url": ez_url,
+            "language_code": str(language.get("code") or shop_locale),
+        },
+        "translate": {
+            **taa_result,
+            "page_url": translate_url,
+            "shop_locale": shop_locale,
+        },
     }

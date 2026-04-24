@@ -238,29 +238,85 @@ def _dump_page(page, out_dir: Path, tag: str) -> dict:
     }
 
 
+def _dump_frame(frame, out_dir: Path, tag: str) -> dict:
+    """Dump a single frame: HTML, body text, and key metadata."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    html_path = out_dir / f"{tag}.html"
+    body_path = out_dir / f"{tag}.txt"
+    try:
+        html_path.write_text(frame.content(), encoding="utf-8")
+    except Exception as exc:
+        html_path.write_text(f"<!-- failed: {exc} -->", encoding="utf-8")
+    body_text = ""
+    try:
+        body_text = frame.locator("body").inner_text(timeout=2000) or ""
+    except Exception:
+        body_text = ""
+    body_path.write_text(body_text, encoding="utf-8")
+    return {
+        "html_path": str(html_path),
+        "body_text_path": str(body_path),
+        "url": getattr(frame, "url", ""),
+        "name": getattr(frame, "name", "") or "",
+        "body_text_len": len(body_text),
+    }
+
+
+def _probe_frames(page, selectors: list[str], out_dir: Path) -> list[dict]:
+    """遍历 page.frames，对每个 frame 独立抓 HTML + 跑选择器命中。"""
+    reports: list[dict] = []
+    for idx, frame in enumerate(page.frames):
+        tag = _safe_name(f"frame_{idx:02d}_{(frame.url or 'about_blank')[:60]}")
+        try:
+            dump = _dump_frame(frame, out_dir, tag)
+        except Exception as exc:
+            dump = {"error": str(exc)[:200]}
+        try:
+            slot_rows = _probe_selectors(frame, selectors)
+        except Exception as exc:
+            slot_rows = [{"error": str(exc)[:200]}]
+        try:
+            upload_rows = _probe_selectors(frame, UPLOAD_PROBE_SELECTORS)
+        except Exception as exc:
+            upload_rows = [{"error": str(exc)[:200]}]
+        reports.append({
+            "frame_index": idx,
+            "dump": dump,
+            "slot_selectors": slot_rows,
+            "upload_selectors": upload_rows,
+        })
+    return reports
+
+
 def _probe_page(page, label: str, url: str, selectors: list[str], out_dir: Path) -> dict:
     print(f"[probe] 打开 {label}: {url}")
     page = _wait_for_logged_in(page, url)
 
-    for wait_s in (2, 2, 3, 3):
+    # 给插件 iframe 足够时间初始化
+    for wait_s in (2, 3, 3, 3, 3):
         page.wait_for_timeout(int(wait_s * 1000))
         try:
-            if page.locator("main").count() > 0 or page.locator("#app").count() > 0:
+            # 当出现非空 iframe 或 >1 个 frame 时说明插件外壳已加载
+            if len(page.frames) > 1:
                 break
         except Exception:
             pass
 
     dump = _dump_page(page, out_dir, tag=_safe_name(label))
 
-    print(f"[probe] 正在扫描 {label} 选择器命中数")
+    print(f"[probe] 正在扫描 {label} 顶层 page 的选择器命中数")
     slot_rows = _probe_selectors(page, selectors)
     upload_rows = _probe_selectors(page, UPLOAD_PROBE_SELECTORS)
+
+    print(f"[probe] 正在逐 frame 扫描 {label}（共 {len(page.frames)} 个 frame）")
+    frame_reports = _probe_frames(page, selectors, out_dir / "frames")
 
     return {
         "label": label,
         "dump": dump,
         "slot_selectors": slot_rows,
         "upload_selectors": upload_rows,
+        "frames": frame_reports,
     }
 
 

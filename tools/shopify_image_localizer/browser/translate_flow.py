@@ -1,15 +1,37 @@
 from __future__ import annotations
 
+import re
+
 from tools.shopify_image_localizer import matcher
 from tools.shopify_image_localizer.browser import session
 
 
 TRANSLATE_IMAGE_SELECTORS = [
-    "main img[src]",
     "[contenteditable='true'] img[src]",
-    "[class*='Polaris'] img[src]",
+    "[class*='RichTextEditor'] img[src]",
+    "img[src*='cdn.shopify.com/s/files/']",
+    "img[src*='wxalbum-']",
     "img[src]",
 ]
+
+TRANSLATE_FRAME_TITLES = ("Translate & Adapt",)
+
+
+def _dismiss_onboarding_if_needed(scope, *, status_cb=None) -> None:
+    buttons = [
+        scope.get_by_role("button", name=re.compile(r"close", re.I)).first,
+        scope.get_by_role("button", name=re.compile(r"skip", re.I)).first,
+    ]
+    for button in buttons:
+        try:
+            if button.count() <= 0:
+                continue
+            button.click(timeout=2000)
+            if status_cb is not None:
+                status_cb("已尝试关闭 Translate and Adapt 引导弹窗")
+            return
+        except Exception:
+            continue
 
 
 def _resolve_flow_status(
@@ -52,9 +74,16 @@ def run_translate_flow(
     target_url = session.build_translate_url(shopify_product_id, shop_locale)
     session.ensure_target_page(page, target_url, status_cb=status_cb, label="Translate and Adapt")
     session.save_page_snapshot(page, workspace.screenshots_taa_dir, "translate-page-before.png")
+    scope = session.resolve_embedded_scope(
+        page,
+        label="Translate and Adapt",
+        frame_titles=TRANSLATE_FRAME_TITLES,
+        status_cb=status_cb,
+    )
+    _dismiss_onboarding_if_needed(scope, status_cb=status_cb)
 
     slot_images = session.capture_visible_images(
-        page,
+        scope,
         workspace.classify_taa_dir,
         prefix="taa",
         selectors=TRANSLATE_IMAGE_SELECTORS,
@@ -69,8 +98,8 @@ def run_translate_flow(
     uploads: list[dict] = []
     for row in assignments["assigned"]:
         try:
-            session.click_slot(page, row["slot"])
-            uploaded = session.upload_file_to_page(page, row["local_path"])
+            session.click_slot(scope, row["slot"], post_click_page=page)
+            uploaded = session.upload_file_to_page(scope, row["local_path"], host_page=page)
             uploads.append({
                 "slot_id": row["slot_id"],
                 "localized_id": row["localized_id"],

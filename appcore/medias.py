@@ -327,7 +327,21 @@ def resolve_shopify_product_id(product_id: int) -> str | None:
 
 
 def list_shopify_localizer_images(product_id: int, lang: str) -> list[dict]:
-    return list_reference_images_for_lang(product_id, (lang or "").strip().lower())
+    """给 Shopify 图片本地化工具用的图片清单。
+
+    在 list_reference_images_for_lang 的基础上**过滤掉 GIF**：
+    Shopify 图片本地化只替换静态图，GIF 不参与翻译（见素材编辑界面"GIF 不参与翻译
+    但会归入 GIF 栏"）。客户端再做一次兜底过滤也没问题，但接口层先挡一道更干净。
+    """
+    items = list_reference_images_for_lang(product_id, (lang or "").strip().lower())
+    result: list[dict] = []
+    for item in items:
+        filename = str(item.get("filename") or "").lower()
+        object_key = str(item.get("object_key") or "").lower()
+        if filename.endswith(".gif") or object_key.endswith(".gif"):
+            continue
+        result.append(item)
+    return result
 
 
 def _media_product_owner_name_expr() -> str:

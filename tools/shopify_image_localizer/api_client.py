@@ -46,12 +46,18 @@ def fetch_bootstrap(
     product_code: str,
     lang: str,
     *,
+    shopify_product_id: str = "",
     timeout: int = 30,
 ) -> dict[str, Any]:
+    payload = {"product_code": product_code, "lang": lang}
+    normalized_shopify_product_id = str(shopify_product_id or "").strip()
+    if normalized_shopify_product_id:
+        payload["shopify_product_id"] = normalized_shopify_product_id
+
     response = requests.post(
         f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/bootstrap",
         headers={"X-API-Key": api_key},
-        json={"product_code": product_code, "lang": lang},
+        json=payload,
         timeout=timeout,
     )
     payload = _json_payload(response)

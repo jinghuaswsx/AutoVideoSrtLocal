@@ -237,6 +237,51 @@ def test_returns_product_assets(client, monkeypatch):
     assert payload["storage_backend"] == "local"
 
 
+def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.is_valid_language",
+        lambda lang: lang == "it",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product_by_code",
+        lambda code: {"id": 123, "product_code": code, "name": "Demo Product"},
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.resolve_shopify_product_id",
+        lambda product_id: "",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.list_shopify_localizer_images",
+        lambda product_id, lang: [
+            {"id": 1, "kind": "image", "filename": f"{lang}.jpg", "object_key": f"{lang}.jpg"}
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_language_name",
+        lambda lang: "意大利语",
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._media_download_url",
+        lambda object_key: f"http://local.test/{object_key}",
+    )
+
+    response = client.post(
+        "/openapi/medias/shopify-image-localizer/bootstrap",
+        headers={"X-API-Key": "demo-key"},
+        json={
+            "product_code": "sonic-lens-refresher-rjc",
+            "lang": "it",
+            "shopify_product_id": "8559391932589",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["product"]["shopify_product_id"] == "8559391932589"
+    assert payload["reference_images"][0]["url"] == "http://local.test/en.jpg"
+    assert payload["localized_images"][0]["url"] == "http://local.test/it.jpg"
+
+
 # ================================================================
 # /openapi/push-items 路由测试
 # ================================================================

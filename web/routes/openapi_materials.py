@@ -153,7 +153,8 @@ def shopify_localizer_bootstrap():
     if not product:
         return jsonify({"error": "product not found"}), 404
 
-    shopify_product_id = medias.resolve_shopify_product_id(int(product["id"]))
+    shopify_product_id_override = str(body.get("shopify_product_id") or "").strip()
+    shopify_product_id = shopify_product_id_override or medias.resolve_shopify_product_id(int(product["id"]))
     if not shopify_product_id:
         return jsonify({
             "error": "shopify_product_id_missing",

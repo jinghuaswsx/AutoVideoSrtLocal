@@ -4,7 +4,6 @@ __all__ = [
     "api_client",
     "controller",
     "downloader",
-    "matcher",
     "settings",
     "storage",
 ]
