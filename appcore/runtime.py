@@ -67,6 +67,50 @@ def _save_json(task_dir: str, filename: str, data) -> None:
         json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
+def _count_visible_chars(text: str) -> int:
+    return sum(1 for ch in str(text or "") if not ch.isspace())
+
+
+_SHORT_ASR_PASSTHROUGH_CHAR_THRESHOLD = 50
+
+
+def _join_utterance_text(utterances: list[dict]) -> str:
+    return " ".join(
+        str(item.get("text") or "").strip()
+        for item in (utterances or [])
+        if str(item.get("text") or "").strip()
+    ).strip()
+
+
+def _resolve_original_video_passthrough(utterances: list[dict]) -> dict:
+    source_full_text = _join_utterance_text(utterances)
+    source_chars = _count_visible_chars(source_full_text)
+    if not utterances:
+        return {
+            "enabled": True,
+            "reason": "no_asr",
+            "source_full_text": source_full_text,
+            "source_chars": source_chars,
+        }
+    if source_chars < _SHORT_ASR_PASSTHROUGH_CHAR_THRESHOLD:
+        return {
+            "enabled": True,
+            "reason": "short_asr",
+            "source_full_text": source_full_text,
+            "source_chars": source_chars,
+        }
+    return {
+        "enabled": False,
+        "reason": "",
+        "source_full_text": source_full_text,
+        "source_chars": source_chars,
+    }
+
+
+def _is_original_video_passthrough(task: dict | None) -> bool:
+    return str((task or {}).get("media_passthrough_mode") or "") == "original_video"
+
+
 def _build_review_segments(script_segments: list[dict], localized_translation: dict) -> list[dict]:
     review_segments: list[dict] = []
     sentences = localized_translation.get("sentences", []) or []
@@ -1014,6 +1058,63 @@ class PipelineRunner:
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
 
+    def _skip_original_video_passthrough_step(
+        self,
+        task_id: str,
+        step_name: str,
+        *,
+        task: dict | None = None,
+        lang_display: str = "",
+    ) -> bool:
+        task = task or task_state.get(task_id) or {}
+        if not _is_original_video_passthrough(task):
+            return False
+
+        source_chars = int(task.get("media_passthrough_source_chars") or 0)
+        reason = str(task.get("media_passthrough_reason") or "short_asr")
+        source_hint = f"源 ASR {source_chars} 字符" if source_chars else "源 ASR 过短"
+        lang_prefix = f"{lang_display}配音" if lang_display else "配音"
+        message_map = {
+            "alignment": f"{source_hint}，已跳过分段处理并保留原视频",
+            "voice_match": f"{source_hint}，已跳过音色选择并保留原视频",
+            "translate": f"{source_hint}，已跳过翻译文案生成并保留原视频",
+            "tts": f"{source_hint}，已跳过{lang_prefix}并保留原视频",
+            "subtitle": f"{source_hint}，已跳过字幕生成并保留原视频",
+            "analysis": f"{source_hint}，已跳过 AI 分析并保留原视频",
+        }
+        update_kwargs: dict = {}
+        if step_name == "voice_match":
+            task_state.set_current_review_step(task_id, "")
+            update_kwargs.update(
+                voice_match_candidates=[],
+                voice_match_fallback_voice_id=None,
+                voice_match_query_embedding=None,
+            )
+        elif step_name == "alignment":
+            task_state.set_current_review_step(task_id, "")
+            update_kwargs["_alignment_confirmed"] = True
+        elif step_name == "translate":
+            task_state.set_current_review_step(task_id, "")
+        elif step_name == "tts":
+            update_kwargs.update(
+                tts_duration_rounds=[],
+                tts_duration_status="source_video_passthrough",
+                tts_final_round=0,
+                tts_final_reason="source_video_passthrough",
+                tts_skip_reason=reason,
+                tts_skip_source_chars=source_chars,
+            )
+        elif step_name == "subtitle":
+            update_kwargs.update(
+                english_asr_result={},
+                corrected_subtitle={"chunks": [], "srt_content": ""},
+                srt_path="",
+            )
+        if update_kwargs:
+            task_state.update(task_id, **update_kwargs)
+        self._set_step(task_id, step_name, "done", message_map.get(step_name, f"{source_hint}，已跳过该步骤"))
+        return True
+
     def _step_extract(self, task_id: str, video_path: str, task_dir: str) -> None:
         self._set_step(task_id, "extract", "running", "正在提取音频...")
         from pipeline.extract import extract_audio
@@ -1045,7 +1146,9 @@ class PipelineRunner:
             except Exception:
                 pass
 
-        task_state.update(task_id, utterances=utterances)
+        passthrough = _resolve_original_video_passthrough(utterances)
+        source_full_text = passthrough["source_full_text"]
+        task_state.update(task_id, utterances=utterances, source_full_text=source_full_text)
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
         try:
@@ -1067,6 +1170,22 @@ class PipelineRunner:
             success=True,
         )
 
+        if passthrough["enabled"]:
+            task_state.update(
+                task_id,
+                source_full_text_zh=source_full_text,
+                media_passthrough_mode="original_video",
+                media_passthrough_reason=passthrough["reason"],
+                media_passthrough_source_chars=passthrough["source_chars"],
+            )
+            if passthrough["reason"] == "no_asr":
+                message = "未检测到有效语音，已按音乐视频直通处理"
+            else:
+                message = "识别结果少于 50 个字符，已按音乐视频直通处理"
+            self._set_step(task_id, "asr", "done", message)
+            self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
+            return
+
         if not utterances:
             self._set_step(task_id, "asr", "done", "未检测到语音内容，可能是纯音乐/音效视频")
             self._emit(task_id, EVT_ASR_RESULT, {"segments": []})
@@ -1077,6 +1196,8 @@ class PipelineRunner:
 
     def _step_alignment(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if self._skip_original_video_passthrough_step(task_id, "alignment", task=task):
+            return
         self._set_step(task_id, "alignment", "running", "正在分析镜头并生成分段建议...")
         from pipeline.alignment import compile_alignment, detect_scene_cuts
         from pipeline.voice_library import get_voice_library
@@ -1127,6 +1248,8 @@ class PipelineRunner:
         task = task_state.get(task_id)
         if _is_av_pipeline_task(task):
             run_av_localize(task_id, runner=self, variant="av")
+            return
+        if self._skip_original_video_passthrough_step(task_id, "translate", task=task):
             return
         task_dir = task["task_dir"]
         from pipeline.localization import build_source_full_text_zh
@@ -1214,6 +1337,13 @@ class PipelineRunner:
                 return
             run_av_localize(task_id, runner=self, variant="av")
             return
+        if self._skip_original_video_passthrough_step(
+            task_id,
+            "tts",
+            task=task,
+            lang_display=_lang_display(self._get_tts_target_language_label(task)),
+        ):
+            return
         loc_mod = self._get_localization_module(task)
         target_language_label = self._get_tts_target_language_label(task)
         tts_model_id = self._get_tts_model_id(task)
@@ -1228,9 +1358,6 @@ class PipelineRunner:
         from pipeline.translate import get_model_display_name as _get_model_name
         _tts_model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
         self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...", model_tag=_tts_model_tag)
-        elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
-        voice = self._resolve_voice(task, loc_mod)
-
         variants = dict(task.get("variants", {}))
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
@@ -1264,6 +1391,9 @@ class PipelineRunner:
         from pipeline.tts import _get_audio_duration
         from pipeline.timeline import build_timeline_manifest
         import shutil
+
+        elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
+        voice = self._resolve_voice(task, loc_mod)
 
         variant_results: dict[str, dict] = {}
         for variant in variant_order:
@@ -1601,6 +1731,8 @@ class PipelineRunner:
                 return
             run_av_localize(task_id, runner=self, variant="av")
             return
+        if self._skip_original_video_passthrough_step(task_id, "subtitle", task=task):
+            return
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
         from appcore.api_keys import resolve_key
         from pipeline.asr import transcribe_local_audio
@@ -1659,6 +1791,32 @@ class PipelineRunner:
 
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if _is_original_video_passthrough(task):
+            import shutil
+
+            self._set_step(task_id, "compose", "running", "识别结果过短，正在直接复用原视频...")
+            variant = "normal"
+            variants = dict(task.get("variants", {}))
+            variant_state = dict(variants.get(variant, {}))
+            base_name = os.path.splitext(os.path.basename(video_path))[0]
+            hard_output = os.path.join(task_dir, f"{base_name}_hard.{variant}.mp4")
+            soft_output = os.path.join(task_dir, f"{base_name}_soft.{variant}.mp4")
+            shutil.copy2(video_path, hard_output)
+            if self.include_soft_video:
+                shutil.copy2(video_path, soft_output)
+            else:
+                soft_output = None
+            result = {"soft_video": soft_output, "hard_video": hard_output, "srt": ""}
+            variant_state["result"] = result
+            variant_state["exports"] = {}
+            variants[variant] = variant_state
+            task_state.update(task_id, variants=variants, result=result, status="composing_done")
+            if soft_output:
+                task_state.set_preview_file(task_id, "soft_video", soft_output)
+            task_state.set_preview_file(task_id, "hard_video", hard_output)
+            task_state.set_artifact(task_id, "compose", build_compose_artifact())
+            self._set_step(task_id, "compose", "done", "识别结果过短，已直接复用原视频")
+            return
         self._set_step(task_id, "compose", "running", "正在合成视频...")
         from pipeline.compose import compose_video
 
@@ -1695,6 +1853,8 @@ class PipelineRunner:
         from appcore.gemini import resolve_config, model_display_name
 
         task = task_state.get(task_id) or {}
+        if self._skip_original_video_passthrough_step(task_id, "analysis", task=task):
+            return
         variants = task.get("variants") or {}
         variant_state = variants.get("normal") or {}
         hard_video = (variant_state.get("result") or {}).get("hard_video")
@@ -1755,6 +1915,21 @@ class PipelineRunner:
 
     def _step_export(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
+        if _is_original_video_passthrough(task):
+            variant = "normal"
+            variants = dict(task.get("variants", {}))
+            variant_state = dict(variants.get(variant, {}))
+            exports = {}
+            variant_state["exports"] = exports
+            variants[variant] = variant_state
+            self._set_step(task_id, "export", "running", "音乐视频直通收尾中...")
+            task_state.update(task_id, variants=variants, exports=exports, status="done")
+            task_state.set_expires_at(task_id, self.project_type)
+            task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
+            self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
+            self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {"normal": exports}})
+            _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
+            return
         self._set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
         from pipeline.capcut import export_capcut_project
 
