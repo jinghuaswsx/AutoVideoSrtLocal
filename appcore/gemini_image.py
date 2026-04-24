@@ -175,6 +175,25 @@ def _extract_openrouter_cost_cny(resp: Any) -> Decimal | None:
         return None
 
 
+def _save_payload(log_id: int, request_data: Any, response_data: Any) -> None:
+    try:
+        import json
+        from appcore.db import execute
+        execute(
+            "INSERT INTO usage_log_payloads (log_id, request_data, response_data)"
+            " VALUES (%s, %s, %s)",
+            (
+                log_id,
+                json.dumps(request_data, ensure_ascii=False, default=str)
+                if request_data is not None else None,
+                json.dumps(response_data, ensure_ascii=False, default=str)
+                if response_data is not None else None,
+            ),
+        )
+    except Exception:
+        logger.debug("gemini_image _save_payload failed for log_id=%s", log_id, exc_info=True)
+
+
 def _log_usage(
     *,
     user_id: int | None,
@@ -189,6 +208,8 @@ def _log_usage(
     response_cost_cny: Decimal | None = None,
     success: bool = True,
     error: Exception | None = None,
+    request_payload: dict | None = None,
+    response_payload: dict | None = None,
 ) -> None:
     if user_id is None:
         return
@@ -198,7 +219,7 @@ def _log_usage(
             extra["bytes"] = image_bytes_len
         if error is not None:
             extra["error"] = str(error)[:500]
-        ai_billing.log_request(
+        log_id = ai_billing.log_request(
             use_case_code=use_case_code,
             user_id=user_id,
             project_id=project_id,
@@ -212,6 +233,8 @@ def _log_usage(
             success=success,
             extra=extra,
         )
+        if log_id and (request_payload is not None or response_payload is not None):
+            _save_payload(log_id, request_payload, response_payload)
     except Exception:
         logger.debug("gemini_image ai_billing record failed", exc_info=True)
 
@@ -492,6 +515,16 @@ def generate_image(
     model_id = coerce_image_model(model, channel=channel)
     provider = _channel_provider(channel)
 
+    req_payload: dict = {
+        "type": "generate_image",
+        "service": service,
+        "model": model_id,
+        "channel": channel,
+        "prompt": prompt,
+        "source_mime": source_mime,
+        "source_image_bytes": len(source_image),
+    }
+
     try:
         if channel == "doubao":
             api_key, base_url = _resolve_doubao_credentials(user_id)
@@ -553,6 +586,8 @@ def generate_image(
             channel=channel,
             success=False,
             error=e,
+            request_payload=req_payload,
+            response_payload={"error": str(e)[:500]},
         )
         raise
 
@@ -568,5 +603,12 @@ def generate_image(
         channel=channel,
         response_cost_cny=response_cost_cny,
         success=True,
+        request_payload=req_payload,
+        response_payload={
+            "output_mime": mime,
+            "output_bytes": len(image_bytes),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        },
     )
     return image_bytes, mime
