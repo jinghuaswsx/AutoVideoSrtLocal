@@ -751,6 +751,15 @@ def generate_image(
             )
             input_tokens = output_tokens = None
             response_cost_cny = None
+        elif channel == "apimart":
+            image_bytes, mime, resp = _generate_via_apimart(
+                prompt,
+                source_image,
+                source_mime,
+                api_key=APIMART_IMAGE_API_KEY,
+            )
+            input_tokens = output_tokens = None
+            response_cost_cny = None
         else:
             api_key_from_gemini, resolved_model = resolve_config(
                 user_id, service=service, default_model=model,

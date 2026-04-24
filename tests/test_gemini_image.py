@@ -662,3 +662,38 @@ def test_generate_via_apimart_task_failed():
                 "image/png",
                 api_key="key",
             )
+
+
+def test_generate_image_apimart_channel_dispatches_correctly():
+    from unittest.mock import patch, MagicMock
+    from appcore import gemini_image
+
+    fake_img_bytes = b"APIMART-PNG"
+    fake_raw = {"data": {"status": "completed"}}
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
+         patch.object(gemini_image, "APIMART_IMAGE_API_KEY", "test-key"), \
+         patch.object(
+             gemini_image, "_generate_via_apimart",
+             return_value=(fake_img_bytes, "image/png", fake_raw),
+         ) as m_gen, \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"RAW",
+            source_mime="image/jpeg",
+            model="gpt-image-2",
+            user_id=7,
+            project_id="proj-99",
+        )
+
+    assert out == fake_img_bytes
+    assert mime == "image/png"
+    m_gen.assert_called_once()
+    call_kwargs = m_gen.call_args
+    assert call_kwargs.kwargs["api_key"] == "test-key"
+    log_kwargs = m_log.call_args.kwargs
+    assert log_kwargs["provider"] == "apimart"
+    assert log_kwargs["model"] == "gpt-image-2"
+    assert log_kwargs["success"] is True
+    assert log_kwargs["units_type"] == "images"
