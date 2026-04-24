@@ -570,3 +570,16 @@ def test_resolve_seedream_size_falls_back_to_2k():
 
     with patch.object(gemini_image.Image, "open", side_effect=OSError("bad image")):
         assert gemini_image._resolve_seedream_size(b"not-an-image") == "2K"
+
+
+def test_apimart_channel_registered_in_image_models():
+    from appcore import gemini_image
+    assert "apimart" in gemini_image.IMAGE_MODELS_BY_CHANNEL
+    models = gemini_image.IMAGE_MODELS_BY_CHANNEL["apimart"]
+    assert len(models) == 1
+    assert models[0][0] == "gpt-image-2"
+
+
+def test_apimart_channel_provider():
+    from appcore import gemini_image
+    assert gemini_image._channel_provider("apimart") == "apimart"

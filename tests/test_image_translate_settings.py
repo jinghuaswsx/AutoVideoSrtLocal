@@ -507,6 +507,13 @@ def test_openrouter_openai_image2_quality_falls_back_when_corrupt(monkeypatch):
     assert its.get_openrouter_openai_image2_default_quality() == "mid"
 
 
+def test_apimart_channel_registered():
+    from appcore import image_translate_settings as its
+    assert "apimart" in its.CHANNELS
+    assert "apimart" in its.CHANNEL_LABELS
+    assert its.CHANNEL_LABELS["apimart"] == "APIMART (GPT-Image-2)"
+
+
 def test_list_all_prompts_uses_dynamic_languages(monkeypatch):
     from appcore import image_translate_settings as its
 

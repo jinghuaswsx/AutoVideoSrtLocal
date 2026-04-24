@@ -23,6 +23,7 @@ import requests
 from appcore import ai_billing
 from appcore.gemini import resolve_config
 from config import (
+    APIMART_IMAGE_API_KEY,
     DOUBAO_LLM_API_KEY,
     DOUBAO_LLM_BASE_URL,
     GEMINI_AISTUDIO_API_KEY,
@@ -74,6 +75,9 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
     ],
     "doubao": [
         ("doubao-seedream-5-0-260128", "Seedream 5.0（豆包）"),
+    ],
+    "apimart": [
+        ("gpt-image-2", "GPT-Image-2"),
     ],
 }
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
@@ -232,6 +236,8 @@ def _channel_provider(channel: str) -> str:
         return "openrouter"
     if channel == "cloud":
         return "gemini_vertex"
+    if channel == "apimart":
+        return "apimart"
     return "gemini_aistudio"
 
 
