@@ -413,7 +413,6 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "name": p["name"],
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
-        "shopifyid": p.get("shopifyid"),
         "owner_name": (p.get("owner_name") or "").strip(),
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
@@ -1770,9 +1769,7 @@ def _detail_images_archive_product_code(product: dict, pid: int) -> str:
 
 
 def _detail_images_is_gif(row: dict) -> bool:
-    content_type = str(row.get("content_type") or "").split(";")[0].strip().lower()
-    object_key = str(row.get("object_key") or "").lower()
-    return content_type == "image/gif" or object_key.endswith(".gif")
+    return medias.detail_image_is_gif(row)
 
 
 def _detail_images_archive_part(value: str, fallback: str) -> str:

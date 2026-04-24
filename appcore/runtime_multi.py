@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 
 import appcore.task_state as task_state
@@ -29,7 +30,12 @@ from appcore.runtime import (
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline.voice_embedding import embed_audio_file
 from pipeline.voice_match import extract_sample_from_utterances, match_candidates
-from pipeline.localization import build_source_full_text_zh, build_tts_segments, validate_tts_script
+from pipeline.localization import (
+    build_source_full_text_zh,
+    build_tts_segments,
+    count_words,
+    validate_tts_script,
+)
 from pipeline.translate import generate_localized_translation, get_model_display_name
 from web.preview_artifacts import (
     build_asr_artifact,
@@ -39,6 +45,26 @@ from web.preview_artifacts import (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _ensure_source_transcript_is_actionable(
+    *,
+    source_full_text: str,
+    video_duration: float,
+    target_lang: str,
+) -> None:
+    """Fail fast when ASR is too sparse to support long-duration dubbing."""
+    source_word_count = count_words(source_full_text)
+    if video_duration < 8.0:
+        return
+    min_words = max(5, int(math.floor(video_duration * 0.45)))
+    if source_word_count >= min_words:
+        return
+    raise RuntimeError(
+        f"源视频语音过短（{video_duration:.1f}s 仅识别到 {source_word_count} 词，"
+        f"低于可靠翻译所需的 {min_words} 词），无法安全生成 {target_lang.upper()} 配音；"
+        "请检查源视频是否为可翻译口播素材，或更换原视频后重试。"
+    )
 
 
 class _PromptLocalizationAdapter:
@@ -136,6 +162,17 @@ class MultiTranslateRunner(PipelineRunner):
                        f"正在翻译为 {lang.upper()}...", model_tag=_model_tag)
         script_segments = task.get("script_segments", [])
         source_full_text = build_source_full_text_zh(script_segments)
+        task_state.update(task_id, source_full_text_zh=source_full_text)
+        _save_json(task_dir, "source_full_text.json", {"full_text": source_full_text})
+
+        from pipeline.extract import get_video_duration
+
+        video_duration = get_video_duration(task.get("video_path") or "")
+        _ensure_source_transcript_is_actionable(
+            source_full_text=source_full_text,
+            video_duration=video_duration,
+            target_lang=lang,
+        )
 
         system_prompt = self._build_system_prompt(lang)
 
@@ -179,7 +216,6 @@ class MultiTranslateRunner(PipelineRunner):
                                                           localized_translation,
                                                           source_language=source_language,
                                                           target_language=lang))
-        _save_json(task_dir, "source_full_text.json", {"full_text": source_full_text})
         _save_json(task_dir, "localized_translation.json", localized_translation)
 
         usage = localized_translation.get("_usage") or {}

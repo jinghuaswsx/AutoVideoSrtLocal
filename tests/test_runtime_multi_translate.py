@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from appcore.events import EventBus
 from appcore.runtime_multi import MultiTranslateRunner
 
@@ -30,6 +32,7 @@ def test_step_translate_calls_resolver_with_base_plus_plugin():
          patch("appcore.runtime._translate_billing_model", return_value="gpt"), \
          patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
          patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
+         patch("pipeline.extract.get_video_duration", return_value=1.0), \
          patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
          patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
         m_resolve.side_effect = [
@@ -166,3 +169,27 @@ def test_resolve_translate_provider_accepts_gpt_5_mini(monkeypatch):
     from appcore.runtime import _resolve_translate_provider
 
     assert _resolve_translate_provider(1) == "gpt_5_mini"
+
+
+def test_step_translate_rejects_sparse_source_for_long_video():
+    runner = _make_runner()
+    task = {
+        "task_dir": "/tmp/x",
+        "video_path": "/tmp/source.mp4",
+        "target_lang": "it",
+        "source_language": "en",
+        "script_segments": [{"index": 0, "text": "Yeah, yeah Yeah."}],
+        "interactive_review": False,
+        "variants": {},
+    }
+    with patch("appcore.task_state.get", return_value=task), \
+         patch.object(runner, "_set_step"), \
+         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.runtime_multi._resolve_translate_provider", return_value="claude_sonnet"), \
+         patch("appcore.runtime_multi.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
+         patch("pipeline.extract.get_video_duration", return_value=18.947), \
+         patch("appcore.runtime_multi.generate_localized_translation") as m_gen:
+        with pytest.raises(RuntimeError, match="源视频语音过短"):
+            runner._step_translate("t1")
+
+    m_gen.assert_not_called()
