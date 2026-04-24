@@ -373,6 +373,86 @@ def test_recover_project_state_marks_queued_image_translate_as_interrupted():
     assert recovered["progress"]["total"] == 1
 
 
+def test_recover_project_state_heals_image_translate_stuck_with_all_items_done():
+    """start() 末尾 status=done 写入被重启打断 → 恢复时识别 items 全 done，直接标 done。"""
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-heal",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "steps": {"process": "running"},
+            "items": [
+                {"idx": 0, "status": "done", "dst_tos_key": "k/0.png"},
+                {"idx": 1, "status": "done", "dst_tos_key": "k/1.png"},
+                {"idx": 2, "status": "done", "dst_tos_key": "k/2.png"},
+            ],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "done"
+    assert recovered["status"] == "done"
+    assert recovered["steps"]["process"] == "done"
+    assert recovered["error"] == ""
+    assert recovered["progress"] == {"total": 3, "done": 3, "failed": 0, "running": 0}
+
+
+def test_recover_project_state_all_terminal_with_failures_goes_to_interrupted():
+    """全 item 都到终态，但含失败 → 走中断路径，开放「重新生成失败图」按钮。"""
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-partial-fail",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "items": [
+                {"idx": 0, "status": "done"},
+                {"idx": 1, "status": "failed", "error": "quota"},
+            ],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    assert recovered["progress"] == {"total": 2, "done": 1, "failed": 1, "running": 0}
+
+
+def test_recover_project_state_recognizes_provider_task_id_field():
+    """新字段 provider_task_id 与旧字段 apimart_task_id 行为等价。"""
+    import time
+    from appcore import task_recovery
+
+    now = time.time()
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-provider-field",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "items": [
+                {
+                    "idx": 0,
+                    "status": "running",
+                    "provider_task_id": "task_new_field",
+                    "provider_task_submitted_at": now - 45,
+                },
+            ],
+        },
+        active=False,
+    )
+
+    assert status == "running"
+    assert recovered["items"][0]["status"] == "running"
+
+
 def test_recover_project_state_auto_resumes_image_translate_with_recent_apimart_task():
     """刚提交的 APIMART 任务（窗口内）应保持 running 并自动拉起 worker 继续轮询。"""
     import time

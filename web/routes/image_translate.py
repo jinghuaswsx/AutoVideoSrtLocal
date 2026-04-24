@@ -530,10 +530,29 @@ def api_retry_unfinished(task_id: str):
             _delete_artifact_object(old_dst)
         _reset_item_processing_state(item)
         reset_count += 1
-    if reset_count == 0:
-        return jsonify({"error": "没有需要重试的图片"}), 409
     total = len(items)
     done = sum(1 for it in items if it["status"] == "done")
+    failed = sum(1 for it in items if it["status"] == "failed")
+    if reset_count == 0:
+        # 自愈：没有需要重试的 item，但任务状态可能卡在 interrupted/running
+        # （start() 末尾的 status="done" 写入被服务重启打断）。若所有 item 都已
+        # 成功完成，直接把任务级状态拉回 done，避免 UI 永远显示「中断」。
+        if total > 0 and done == total and failed == 0 and task.get("status") != "done":
+            task["progress"] = {"total": total, "done": done, "failed": 0, "running": 0}
+            task["status"] = "done"
+            steps = task.setdefault("steps", {})
+            steps["process"] = "done"
+            store.update(
+                task_id,
+                items=items,
+                progress=task["progress"],
+                status="done",
+                steps=steps,
+                error="",
+            )
+            return jsonify({"task_id": task_id, "reset": 0, "status": "done",
+                            "healed": True}), 200
+        return jsonify({"error": "没有需要重试的图片"}), 409
     task["progress"] = {"total": total, "done": done, "failed": 0, "running": 0}
     task["status"] = "queued"
     store.update(

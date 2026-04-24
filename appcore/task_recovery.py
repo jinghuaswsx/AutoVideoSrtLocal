@@ -104,19 +104,55 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             summary["overall_decision"] = "unfinished"
         return True, recovered, "failed"
     elif project_type == "image_translate" and recovered.get("status") in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES:
-        # image_translate 的执行单位是 items[].status。默认语义：把 item 级 running 退回
-        # pending，任务整体标「中断」并开放「重新生成」。但若存在刚提交不久的异步生成
-        # 请求（如 APIMART task_id 在 _IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC 内），说明
-        # 上游可能还在生成/已经生成好了，这种情况要自动拉起 worker 继续轮询，不要重新
-        # 提交（避免重复扣费、避免丢结果）。
+        # image_translate 的执行单位是 items[].status。恢复策略按下面 3 档依次判断：
+        #   A. 所有 item 已到终态（done/failed）→ 直接把任务级状态拉回终态，避免出现
+        #      "11/11 完成但任务仍显示中断" 的 UI 不一致（start() 末尾的 status="done"
+        #      写入可能被服务重启截断）。
+        #   B. 存在近期提交的异步生成任务（provider_task_id 在窗口内）→ 保持 running，
+        #      自动拉起 worker 继续轮询。适用于任何异步 channel（目前是 APIMART，未来
+        #      新增的异步 provider 只要把 task_id 写到同样的 item 字段即可复用）。
+        #   C. 其他 → 标中断等用户手动点「重新生成」。
         items = recovered.get("items") or []
+        total = len(items)
+        done = sum(1 for it in items if (it.get("status") or "") == "done")
+        failed = sum(1 for it in items if (it.get("status") or "") == "failed")
+        running = sum(1 for it in items if (it.get("status") or "") == "running")
+        pending = total - done - failed - running
+
+        # A. 全部到终态 — 修复「完成但状态卡住」的不一致
+        if total > 0 and running == 0 and pending == 0 and (done + failed) == total:
+            recovered["items"] = items
+            recovered["progress"] = {
+                "total": total, "done": done, "failed": failed, "running": 0,
+            }
+            steps = recovered.setdefault("steps", {})
+            if failed == 0:
+                steps["process"] = "done"
+                recovered["status"] = "done"
+                recovered["error"] = ""
+                return True, recovered, "done"
+            # 有失败但没有挂起任务，给用户留「重新生成失败图」的入口
+            steps["process"] = "interrupted"
+            recovered["status"] = "interrupted"
+            recovered["error"] = IMAGE_TRANSLATE_INTERRUPTED_MESSAGE
+            return True, recovered, "interrupted"
+
+        # B. 有可恢复的异步生成任务 — 保留 running 状态自动拉起 worker
         now = time.time()
         has_resumable = False
         for it in items:
-            task_id_snapshot = (it.get("apimart_task_id") or "").strip()
-            if not task_id_snapshot:
+            # 兼容旧字段名 apimart_task_id；新代码统一写 provider_task_id
+            snapshot = (
+                (it.get("provider_task_id") or "").strip()
+                or (it.get("apimart_task_id") or "").strip()
+            )
+            if not snapshot:
                 continue
-            submitted_at = float(it.get("apimart_submitted_at") or 0.0)
+            submitted_at = float(
+                it.get("provider_task_submitted_at")
+                or it.get("apimart_submitted_at")
+                or 0.0
+            )
             if submitted_at <= 0:
                 continue
             if now - submitted_at <= _IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC:
@@ -124,17 +160,9 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
                 break
 
         if has_resumable:
-            # 自动恢复：保留 running item 状态，任务标回 queued 让 worker 自动拉起
-            total = len(items)
-            done = sum(1 for it in items if (it.get("status") or "") == "done")
-            failed = sum(1 for it in items if (it.get("status") or "") == "failed")
-            running = sum(1 for it in items if (it.get("status") or "") == "running")
             recovered["items"] = items
             recovered["progress"] = {
-                "total": total,
-                "done": done,
-                "failed": failed,
-                "running": running,
+                "total": total, "done": done, "failed": failed, "running": running,
             }
             steps = recovered.setdefault("steps", {})
             steps["process"] = "running"
@@ -142,15 +170,12 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             recovered["error"] = ""
             return True, recovered, "running"
 
-        # 默认路径：中断等用户手动点「重新生成」
+        # C. 默认路径：标中断等用户手动处理
         for it in items:
             if (it.get("status") or "") == "running":
                 it["status"] = "pending"
                 it["error"] = ""
                 it["attempts"] = 0
-        total = len(items)
-        done = sum(1 for it in items if (it.get("status") or "") == "done")
-        failed = sum(1 for it in items if (it.get("status") or "") == "failed")
         recovered["items"] = items
         recovered["progress"] = {
             "total": total,
