@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import urllib.parse
 from functools import wraps
 
 import requests
@@ -69,9 +68,18 @@ def _serialize_row(row: dict) -> dict:
     }
     readiness = pushes.compute_readiness(item_shape, product_shape)
     status = pushes.compute_status(item_shape, product_shape)
-    cover_key = row.get("cover_object_key")
+    item_id = row["id"]
+    # 与素材管理页保持一致：优先用入库生成的 thumbnail_path（本地必然存在），
+    # 回退到 item-cover（端点自带懒加载）。/medias/obj 严格要求本地已回填，
+    # 老素材经常缺，导致推送列表缩略图大面积 404。
+    if row.get("thumbnail_path"):
+        cover_url = f"/medias/thumb/{item_id}"
+    elif row.get("cover_object_key"):
+        cover_url = f"/medias/item-cover/{item_id}"
+    else:
+        cover_url = None
     return {
-        "id": row["id"],
+        "id": item_id,
         "product_id": row["product_id"],
         "product_name": row.get("product_name"),
         "product_code": row.get("product_code"),
@@ -95,10 +103,7 @@ def _serialize_row(row: dict) -> dict:
         "ai_evaluation_result": row.get("ai_evaluation_result") or "",
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "listing_status": row.get("listing_status") or "上架",
-    # 走本地代理 /medias/obj/<key>，素材必须已经回填到本地 media_store。
-        "cover_url": (
-            f"/medias/obj/{urllib.parse.quote(cover_key, safe='/')}" if cover_key else None
-        ),
+        "cover_url": cover_url,
     }
 
 
