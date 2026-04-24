@@ -86,7 +86,8 @@ if [[ -z "$CHROMIUM_BIN" || ! -x "$CHROMIUM_BIN" ]]; then
   exit 1
 fi
 
-rm -f /tmp/.X99-lock
+DISPLAY_LOCK="/tmp/.X${DISPLAY_NUM#:}-lock"
+rm -f "$DISPLAY_LOCK"
 
 Xvfb "$DISPLAY" -screen 0 "$SCREEN_SIZE" -nolisten tcp >"$XVFB_LOG" 2>&1 &
 XVFB_PID=$!

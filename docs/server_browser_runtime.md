@@ -25,6 +25,11 @@
 - `127.0.0.1:6080`：noVNC
 - `127.0.0.1:9222`：Chrome DevTools Protocol
 
+明空选品独立浏览器使用另一组端口，避免和 Shopify ID 店小秘会话混用：
+
+- `127.0.0.1:6081`：明空选品 noVNC
+- `127.0.0.1:9223`：明空选品 Chrome DevTools Protocol
+
 外部访问通过 SSH 隧道完成，不直接暴露公网。
 
 ## 共享登录态
@@ -34,6 +39,10 @@
 - `/data/autovideosrt/browser/profiles/shared`
 
 后续不同模块只要复用这一个 profile，即可共用已经登录好的站点状态。
+
+如果某个模块必须隔离账号、Cookie 或店铺上下文，应使用独立 profile。明空选品当前使用：
+
+- `/data/autovideosrt/browser/profiles/mk-selection`
 
 ## 安装
 
@@ -61,6 +70,7 @@ http://127.0.0.1:6080/vnc.html
 ## 服务名
 
 - `autovideosrt-browser.service`
+- `autovideosrt-mk-browser.service`：明空选品独立浏览器
 
 ## 复用方式
 
@@ -71,6 +81,37 @@ http://127.0.0.1:9222
 ```
 
 并使用共享 profile 浏览器上下文，就可以复用同一套登录态。
+
+## 明空选品独立浏览器
+
+明空选品的店小秘环境和 Shopify ID 回填使用的店小秘环境不同，因此单独运行一个隔离浏览器实例：
+
+```bash
+cd /opt/autovideosrt
+bash deploy/server_browser/install_mk_browser.sh
+```
+
+安装后会创建：
+
+- systemd service：`autovideosrt-mk-browser.service`
+- noVNC：`http://127.0.0.1:6081/vnc.html`
+- CDP：`http://127.0.0.1:9223/json/version`
+- profile：`/data/autovideosrt/browser/profiles/mk-selection`
+- 启动页：`https://www.dianxiaomi.com/web/stat/salesStatistics`
+
+Windows 本机访问明空选品浏览器：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser_tunnel.ps1
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:6081/vnc.html
+```
+
+后续明空选品相关的店小秘自动化脚本，应连接 `http://127.0.0.1:9223`，不要连接 Shopify ID 回填使用的 `9222`。
 
 ## Shopify ID 回填定时任务
 
