@@ -632,6 +632,135 @@
     font-size: 24px;
   }
 }
+
+/* ── payload preview ── */
+.billing-payload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius, 6px);
+  border: 1px solid var(--billing-border-strong);
+  background: rgba(255,255,255,0.8);
+  color: var(--billing-accent);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.billing-payload-btn:hover {
+  background: var(--billing-accent-soft);
+  border-color: var(--billing-accent);
+}
+.billing-payload-btn.is-empty {
+  color: var(--billing-fg-subtle);
+  cursor: default;
+  pointer-events: none;
+}
+
+.billing-payload-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.billing-payload-modal[hidden] { display: none; }
+.billing-payload-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: oklch(22% 0.02 235 / 0.36);
+}
+.billing-payload-modal-inner {
+  position: relative;
+  background: white;
+  border: 1px solid var(--billing-border);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px -12px oklch(22% 0.02 235 / 0.22);
+  width: min(880px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.billing-payload-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--billing-border);
+  background: var(--billing-bg-subtle);
+  flex-shrink: 0;
+}
+.billing-payload-modal-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--billing-fg);
+}
+.billing-payload-modal-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--billing-fg-muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease;
+}
+.billing-payload-modal-close:hover { background: var(--billing-bg-muted); }
+.billing-payload-modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  overflow: hidden;
+  flex: 1;
+}
+.billing-payload-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--billing-border);
+}
+.billing-payload-section:last-child { border-right: none; }
+.billing-payload-section-label {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--billing-fg-muted);
+  border-bottom: 1px solid var(--billing-border);
+  background: var(--billing-bg-subtle);
+  flex-shrink: 0;
+}
+.billing-payload-pre {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--billing-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 520px;
+}
+.billing-payload-pre a {
+  color: var(--billing-accent);
+  text-decoration: none;
+}
+.billing-payload-pre a:hover { text-decoration: underline; }
+@media (max-width: 680px) {
+  .billing-payload-modal-body { grid-template-columns: 1fr; }
+  .billing-payload-section { border-right: none; border-bottom: 1px solid var(--billing-border); }
+}
 {% endblock %}
 {% block content %}
 <section class="billing-page">
@@ -880,6 +1009,8 @@
             <th>费用</th>
             <th>状态</th>
             <th>项目 ID</th>
+            <th>请求数据</th>
+            <th>返回数据</th>
           </tr>
         </thead>
         <tbody>
@@ -926,9 +1057,21 @@
               </span>
             </td>
             <td class="billing-mono">{{ row.project_id or '—' }}</td>
+            <td>
+              <button class="billing-payload-btn"
+                data-log-id="{{ row.id }}"
+                data-payload-type="request"
+                data-admin="{{ 'true' if admin_mode else 'false' }}">JSON 预览</button>
+            </td>
+            <td>
+              <button class="billing-payload-btn"
+                data-log-id="{{ row.id }}"
+                data-payload-type="response"
+                data-admin="{{ 'true' if admin_mode else 'false' }}">JSON 预览</button>
+            </td>
           </tr>
           <tr id="{{ detail_id }}" class="billing-detail-row" hidden>
-            <td colspan="{% if admin_mode %}11{% else %}10{% endif %}">
+            <td colspan="{% if admin_mode %}13{% else %}12{% endif %}">
               <div class="billing-detail">
                 <div class="billing-detail-grid">
                   <div class="billing-detail-card">
@@ -951,7 +1094,7 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
           {% endfor %}
           {% if not rows %}
           <tr>
-            <td colspan="{% if admin_mode %}11{% else %}10{% endif %}" class="billing-empty">
+            <td colspan="{% if admin_mode %}13{% else %}12{% endif %}" class="billing-empty">
               当前筛选条件下没有账单记录。
             </td>
           </tr>
@@ -960,6 +1103,27 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
       </table>
     </div>
   </section>
+
+  <!-- payload preview modal -->
+  <div id="billingPayloadModal" class="billing-payload-modal" hidden aria-modal="true" role="dialog" aria-labelledby="billingPayloadModalTitle">
+    <div class="billing-payload-modal-backdrop" id="billingPayloadBackdrop"></div>
+    <div class="billing-payload-modal-inner">
+      <div class="billing-payload-modal-head">
+        <div class="billing-payload-modal-title" id="billingPayloadModalTitle">请求 &amp; 返回数据预览</div>
+        <button type="button" class="billing-payload-modal-close" id="billingPayloadClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="billing-payload-modal-body">
+        <div class="billing-payload-section">
+          <div class="billing-payload-section-label">请求数据</div>
+          <pre class="billing-payload-pre" id="billingPayloadReq">加载中…</pre>
+        </div>
+        <div class="billing-payload-section">
+          <div class="billing-payload-section-label">返回数据</div>
+          <pre class="billing-payload-pre" id="billingPayloadResp">加载中…</pre>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <form method="get" class="billing-pagination">
     <input type="hidden" name="from" value="{{ filters.date_from }}">
@@ -1329,7 +1493,9 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
   initBillingDateRangePicker();
 
   document.querySelectorAll("[data-detail-toggle]").forEach(function (row) {
-    row.addEventListener("click", function () {
+    row.addEventListener("click", function (evt) {
+      // 点预览按钮时不触发行展开
+      if (evt.target.closest(".billing-payload-btn")) return;
       var detail = document.getElementById(row.getAttribute("data-detail-toggle"));
       if (!detail) return;
       var expanded = row.getAttribute("aria-expanded") === "true";
@@ -1337,5 +1503,80 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
       detail.hidden = expanded;
     });
   });
+
+  // ── payload preview modal ──
+  (function () {
+    var modal = document.getElementById("billingPayloadModal");
+    var reqEl = document.getElementById("billingPayloadReq");
+    var respEl = document.getElementById("billingPayloadResp");
+    var closeBtn = document.getElementById("billingPayloadClose");
+    var backdrop = document.getElementById("billingPayloadBackdrop");
+    if (!modal) return;
+
+    var cache = {};
+
+    function renderJson(data) {
+      if (data === null || data === undefined) return "（无数据）";
+      var json = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      // 把服务器路径渲染为链接样式（仅展示，不可跳转）
+      return json.replace(
+        /(")(\/[^"]{3,}")/g,
+        function (_, q, path) { return q + '<a title="服务器路径">' + path; }
+      );
+    }
+
+    function openModal(logId, focusType, isAdmin) {
+      reqEl.innerHTML = "加载中…";
+      respEl.innerHTML = "加载中…";
+      modal.hidden = false;
+      document.body.style.overflow = "hidden";
+
+      if (cache[logId]) {
+        fill(cache[logId]);
+        return;
+      }
+
+      var url = isAdmin
+        ? "{{ url_for('admin_ai_billing.get_ai_usage_payload', log_id=0) }}".replace("/0", "/" + logId)
+        : "{{ url_for('user_ai_billing.get_my_ai_usage_payload', log_id=0) }}".replace("/0", "/" + logId);
+
+      fetch(url, { headers: { "Accept": "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          cache[logId] = data;
+          fill(data);
+        })
+        .catch(function (err) {
+          reqEl.textContent = "加载失败：" + err;
+          respEl.textContent = "";
+        });
+    }
+
+    function fill(data) {
+      reqEl.innerHTML = renderJson(data.request_data);
+      respEl.innerHTML = renderJson(data.response_data);
+    }
+
+    function closeModal() {
+      modal.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    closeBtn.addEventListener("click", closeModal);
+    backdrop.addEventListener("click", closeModal);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modal.hidden) closeModal();
+    });
+
+    document.querySelectorAll(".billing-payload-btn").forEach(function (btn) {
+      btn.addEventListener("click", function (evt) {
+        evt.stopPropagation();
+        var logId = btn.getAttribute("data-log-id");
+        var type = btn.getAttribute("data-payload-type");
+        var isAdmin = btn.getAttribute("data-admin") === "true";
+        openModal(logId, type, isAdmin);
+      });
+    });
+  }());
 </script>
 {% endblock %}

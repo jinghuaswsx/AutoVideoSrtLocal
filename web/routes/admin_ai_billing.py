@@ -6,10 +6,10 @@ import math
 from datetime import date, datetime
 from decimal import Decimal
 
-from flask import Blueprint, Response, render_template, request, stream_with_context
+from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 from flask_login import current_user, login_required
 
-from appcore.db import query
+from appcore.db import query, query_one
 from web.auth import admin_required
 
 
@@ -71,6 +71,40 @@ def export_admin_ai_usage_csv():
         stream_with_context(_stream_csv(report["rows"])),
         headers=headers,
     )
+
+
+@admin_ai_billing_bp.route("/ai-usage/payload/<int:log_id>")
+@login_required
+@admin_required
+def get_ai_usage_payload(log_id: int):
+    row = query_one(
+        "SELECT request_data, response_data FROM usage_log_payloads WHERE log_id = %s",
+        (log_id,),
+    )
+    if not row:
+        return jsonify({"request_data": None, "response_data": None})
+    return jsonify({
+        "request_data": row["request_data"],
+        "response_data": row["response_data"],
+    })
+
+
+@user_ai_billing_bp.route("/my-ai-usage/payload/<int:log_id>")
+@login_required
+def get_my_ai_usage_payload(log_id: int):
+    row = query_one(
+        """SELECT p.request_data, p.response_data
+           FROM usage_log_payloads p
+           JOIN usage_logs ul ON ul.id = p.log_id
+           WHERE p.log_id = %s AND ul.user_id = %s""",
+        (log_id, current_user.id),
+    )
+    if not row:
+        return jsonify({"request_data": None, "response_data": None})
+    return jsonify({
+        "request_data": row["request_data"],
+        "response_data": row["response_data"],
+    })
 
 
 @user_ai_billing_bp.route("/my-ai-usage")
