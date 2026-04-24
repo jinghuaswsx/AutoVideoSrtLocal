@@ -588,7 +588,7 @@ def _generate_via_seedream(
 
 _APIMART_BASE_URL = "https://api.apimart.ai"
 _APIMART_POLL_INTERVAL = 5    # 秒
-_APIMART_POLL_TIMEOUT = 120   # 秒
+_APIMART_POLL_TIMEOUT = 300   # 秒
 _APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
 
 
@@ -649,6 +649,7 @@ def _generate_via_apimart(
     if not task_id:
         raise GeminiImageError("APIMART 未返回 task_id")
 
+    logger.info("APIMART task submitted: %s", task_id)
     time.sleep(_APIMART_INITIAL_WAIT)
 
     deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
