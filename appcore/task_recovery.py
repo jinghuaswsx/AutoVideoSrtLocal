@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 import threading
+import time
 
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 import appcore.task_state as task_state
@@ -13,6 +14,10 @@ log = logging.getLogger(__name__)
 RECOVERY_ERROR_MESSAGE = "任务因服务重启或后台执行中断，已自动标记为失败，请重新发起。"
 RECOVERY_INTERRUPTED_MESSAGE = "任务因服务重启或后台执行中断，已标记为中断；请在页面手动重新启动。"
 IMAGE_TRANSLATE_INTERRUPTED_MESSAGE = "服务重启导致任务中断，点「重新生成」继续处理未完成的图片。"
+
+# 图片翻译自动恢复窗口：item 记录的 apimart_submitted_at 在此窗口内的任务，
+# 启动恢复时不标中断、自动拉起 worker 继续轮询结果（避免重复提交重复扣费）。
+_IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC = 600  # 10 分钟
 
 PIPELINE_PROJECT_TYPES = {"translation", "de_translate", "fr_translate", "ja_translate", "copywriting"}
 INTERRUPTED_PIPELINE_PROJECT_TYPES = {"multi_translate", "translate_lab"}
@@ -99,10 +104,45 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
             summary["overall_decision"] = "unfinished"
         return True, recovered, "failed"
     elif project_type == "image_translate" and recovered.get("status") in IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES:
-        # image_translate 不复用「把 running step 标 error」的语义：它的执行单位是
-        # items[].status，需要把 item 级 running 退回 pending，任务整体标为 interrupted，
-        # 并重算 progress，让前端显示「中断」并开放「重新生成」按钮。
+        # image_translate 的执行单位是 items[].status。默认语义：把 item 级 running 退回
+        # pending，任务整体标「中断」并开放「重新生成」。但若存在刚提交不久的异步生成
+        # 请求（如 APIMART task_id 在 _IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC 内），说明
+        # 上游可能还在生成/已经生成好了，这种情况要自动拉起 worker 继续轮询，不要重新
+        # 提交（避免重复扣费、避免丢结果）。
         items = recovered.get("items") or []
+        now = time.time()
+        has_resumable = False
+        for it in items:
+            task_id_snapshot = (it.get("apimart_task_id") or "").strip()
+            if not task_id_snapshot:
+                continue
+            submitted_at = float(it.get("apimart_submitted_at") or 0.0)
+            if submitted_at <= 0:
+                continue
+            if now - submitted_at <= _IMAGE_TRANSLATE_AUTO_RESUME_WINDOW_SEC:
+                has_resumable = True
+                break
+
+        if has_resumable:
+            # 自动恢复：保留 running item 状态，任务标回 queued 让 worker 自动拉起
+            total = len(items)
+            done = sum(1 for it in items if (it.get("status") or "") == "done")
+            failed = sum(1 for it in items if (it.get("status") or "") == "failed")
+            running = sum(1 for it in items if (it.get("status") or "") == "running")
+            recovered["items"] = items
+            recovered["progress"] = {
+                "total": total,
+                "done": done,
+                "failed": failed,
+                "running": running,
+            }
+            steps = recovered.setdefault("steps", {})
+            steps["process"] = "running"
+            recovered["status"] = "running"
+            recovered["error"] = ""
+            return True, recovered, "running"
+
+        # 默认路径：中断等用户手动点「重新生成」
         for it in items:
             if (it.get("status") or "") == "running":
                 it["status"] = "pending"
@@ -235,4 +275,29 @@ def recover_all_interrupted_tasks() -> int:
             _persist_project_recovery(task_id, recovered, status)
             recovered_count += 1
             log.warning("[task_recovery] recovered interrupted %s task %s during startup", project_type, task_id)
+            _auto_resume_after_recovery(task_id, project_type, recovered, status)
     return recovered_count
+
+
+def _auto_resume_after_recovery(task_id: str, project_type: str, recovered: dict, status: str) -> None:
+    """某些项目类型在恢复后需要立即拉起 worker 继续跑（如 image_translate 的 APIMART
+    异步任务，要继续轮询上游结果）。单独抽出便于测试/失败隔离。"""
+    if project_type != "image_translate" or status != "running":
+        return
+    user_id = recovered.get("_user_id")
+    try:
+        user_id = int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        user_id = None
+    try:
+        from web.routes.image_translate import start_image_translate_runner
+        started = start_image_translate_runner(task_id, user_id)
+        log.warning(
+            "[task_recovery] auto-resumed image_translate task %s (started=%s)",
+            task_id, started,
+        )
+    except Exception:
+        log.warning(
+            "[task_recovery] failed to auto-resume image_translate task %s",
+            task_id, exc_info=True,
+        )

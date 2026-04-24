@@ -575,9 +575,59 @@ def test_resolve_seedream_size_falls_back_to_2k():
 def test_apimart_channel_registered_in_image_models():
     from appcore import gemini_image
     assert "apimart" in gemini_image.IMAGE_MODELS_BY_CHANNEL
-    models = gemini_image.IMAGE_MODELS_BY_CHANNEL["apimart"]
-    assert len(models) == 1
-    assert models[0][0] == "gpt-image-2"
+    model_ids = [m[0] for m in gemini_image.IMAGE_MODELS_BY_CHANNEL["apimart"]]
+    assert "gpt-image-2" in model_ids
+    assert "gemini-3.1-flash-image-preview" in model_ids
+    assert "gemini-3-pro-image-preview" in model_ids
+    assert "gemini-2.5-flash-image-preview" in model_ids
+
+
+def test_all_channels_expose_gemini_2_5_flash_preview():
+    """2.5-flash 作为初代 Nano Banana，在所有 gemini 兼容通道都应可选。"""
+    from appcore import gemini_image
+    expected_in = ("aistudio", "cloud", "openrouter", "apimart")
+    for channel in expected_in:
+        ids = [m[0] for m in gemini_image.IMAGE_MODELS_BY_CHANNEL[channel]]
+        assert "gemini-2.5-flash-image-preview" in ids, f"{channel} 缺少 2.5-flash"
+
+
+def test_generate_via_apimart_uses_dynamic_model_id():
+    """APIMART payload 的 model 字段应跟随 model_id 参数变化。"""
+    from unittest.mock import patch, MagicMock
+    from appcore import gemini_image
+
+    submit_mock = MagicMock()
+    submit_mock.status_code = 200
+    submit_mock.json.return_value = {
+        "code": 200,
+        "data": [{"status": "submitted", "task_id": "task_model"}],
+    }
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://x.png"]}]},
+        },
+    }
+    img_mock = MagicMock()
+    img_mock.status_code = 200
+    img_mock.content = b"BYTES"
+
+    def fake_get(url, **kwargs):
+        return poll_mock if "tasks" in url else img_mock
+
+    with patch("appcore.gemini_image.requests.post", return_value=submit_mock) as m_post, \
+         patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep"):
+        gemini_image._generate_via_apimart(
+            "p", b"R", "image/png",
+            api_key="key",
+            model_id="gemini-3-pro-image-preview",
+        )
+
+    assert m_post.call_args.kwargs["json"]["model"] == "gemini-3-pro-image-preview"
 
 
 def test_apimart_channel_provider():
@@ -697,3 +747,125 @@ def test_generate_image_apimart_channel_dispatches_correctly():
     assert log_kwargs["model"] == "gpt-image-2"
     assert log_kwargs["success"] is True
     assert log_kwargs["units_type"] == "images"
+
+
+def test_poll_apimart_task_returns_result_for_completed():
+    from unittest.mock import patch, MagicMock
+    from appcore import gemini_image
+
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://example.com/img.png"]}]},
+        },
+    }
+    img_mock = MagicMock()
+    img_mock.status_code = 200
+    img_mock.content = b"RESUMED-BYTES"
+
+    def fake_get(url, **kwargs):
+        return poll_mock if "tasks" in url else img_mock
+
+    with patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep") as m_sleep:
+        out, mime, raw = gemini_image.poll_apimart_task(
+            "task_resumed", api_key="key", initial_wait=False,
+        )
+
+    assert out == b"RESUMED-BYTES"
+    assert mime == "image/png"
+    # initial_wait=False 不应调用 _APIMART_INITIAL_WAIT 的 sleep
+    for call in m_sleep.call_args_list:
+        assert call.args[0] != gemini_image._APIMART_INITIAL_WAIT
+
+
+def test_poll_apimart_task_raises_on_failed_status():
+    from unittest.mock import patch, MagicMock
+    import pytest
+    from appcore import gemini_image
+
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "failed",
+            "error": {"message": "blocked by content policy"},
+        },
+    }
+    with patch("appcore.gemini_image.requests.get", return_value=poll_mock), \
+         patch("appcore.gemini_image.time.sleep"):
+        with pytest.raises(gemini_image.GeminiImageError, match="blocked by content policy"):
+            gemini_image.poll_apimart_task("task_fail", api_key="key", initial_wait=False)
+
+
+def test_poll_apimart_task_rejects_empty_task_id():
+    import pytest
+    from appcore import gemini_image
+    with pytest.raises(gemini_image.GeminiImageError, match="task_id"):
+        gemini_image.poll_apimart_task("", api_key="key", initial_wait=False)
+
+
+def test_generate_via_apimart_invokes_on_submitted_callback():
+    from unittest.mock import patch, MagicMock
+    from appcore import gemini_image
+
+    submit_mock = MagicMock()
+    submit_mock.status_code = 200
+    submit_mock.json.return_value = {
+        "code": 200,
+        "data": [{"status": "submitted", "task_id": "task_cb_xyz"}],
+    }
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://x/y.png"]}]},
+        },
+    }
+    img_mock = MagicMock()
+    img_mock.status_code = 200
+    img_mock.content = b"CB-BYTES"
+
+    def fake_get(url, **kwargs):
+        return poll_mock if "tasks" in url else img_mock
+
+    captured = []
+    with patch("appcore.gemini_image.requests.post", return_value=submit_mock), \
+         patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep"):
+        gemini_image._generate_via_apimart(
+            "prompt", b"RAW", "image/png",
+            api_key="key",
+            on_submitted=lambda tid: captured.append(tid),
+        )
+
+    assert captured == ["task_cb_xyz"]
+
+
+def test_generate_image_forwards_on_apimart_submitted_callback():
+    from unittest.mock import patch
+    from appcore import gemini_image
+
+    def fake_gen_via(*args, on_submitted=None, **kwargs):
+        if on_submitted is not None:
+            on_submitted("task_from_gen_image")
+        return b"OK", "image/png", {}
+
+    received = []
+    with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
+         patch.object(gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(gemini_image, "_generate_via_apimart", side_effect=fake_gen_via), \
+         patch.object(gemini_image.ai_billing, "log_request"):
+        gemini_image.generate_image(
+            prompt="p", source_image=b"R", source_mime="image/png",
+            model="gpt-image-2", user_id=1, project_id="task",
+            on_apimart_submitted=lambda tid: received.append(tid),
+        )
+
+    assert received == ["task_from_gen_image"]

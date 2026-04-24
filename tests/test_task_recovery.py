@@ -373,6 +373,113 @@ def test_recover_project_state_marks_queued_image_translate_as_interrupted():
     assert recovered["progress"]["total"] == 1
 
 
+def test_recover_project_state_auto_resumes_image_translate_with_recent_apimart_task():
+    """刚提交的 APIMART 任务（窗口内）应保持 running 并自动拉起 worker 继续轮询。"""
+    import time
+    from appcore import task_recovery
+
+    now = time.time()
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-resumable",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "steps": {"process": "running"},
+            "items": [
+                {"idx": 0, "status": "done"},
+                {
+                    "idx": 1,
+                    "status": "running",
+                    "attempts": 1,
+                    "apimart_task_id": "task_abc",
+                    "apimart_submitted_at": now - 60,  # 提交 60 秒前
+                },
+                {"idx": 2, "status": "pending"},
+            ],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "running"
+    assert recovered["status"] == "running"
+    # running item 不能被退回 pending，否则会走重新提交路径
+    assert recovered["items"][1]["status"] == "running"
+    assert recovered["items"][1]["apimart_task_id"] == "task_abc"
+    assert recovered["error"] == ""
+    assert recovered["progress"]["running"] == 1
+
+
+def test_recover_project_state_expired_apimart_task_falls_back_to_interrupted():
+    """提交已超过 10 分钟的 APIMART 任务不再自动恢复，走默认中断路径。"""
+    import time
+    from appcore import task_recovery
+
+    now = time.time()
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="image_translate",
+        task_id="it-expired",
+        state={
+            "type": "image_translate",
+            "status": "running",
+            "items": [
+                {
+                    "idx": 0,
+                    "status": "running",
+                    "apimart_task_id": "task_old",
+                    "apimart_submitted_at": now - 3600,  # 1 小时前提交
+                },
+            ],
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["status"] == "interrupted"
+    # 过期任务 running 退回 pending
+    assert recovered["items"][0]["status"] == "pending"
+
+
+def test_recover_all_interrupted_tasks_auto_starts_resumable_image_translate():
+    """recover_all_interrupted_tasks 对 running 状态的 image_translate 任务
+    自动调用 start_image_translate_runner 继续处理。"""
+    import time
+    import json as _json
+    from unittest.mock import patch
+    from appcore import task_recovery
+
+    now = time.time()
+    rows = [
+        {
+            "id": "t-resumable",
+            "type": "image_translate",
+            "status": "running",
+            "state_json": _json.dumps({
+                "type": "image_translate",
+                "status": "running",
+                "_user_id": 42,
+                "items": [
+                    {
+                        "idx": 0,
+                        "status": "running",
+                        "apimart_task_id": "task_keep",
+                        "apimart_submitted_at": now - 30,
+                    },
+                ],
+            }),
+        },
+    ]
+    with patch.object(task_recovery, "db_query", return_value=rows), \
+         patch.object(task_recovery, "_persist_project_recovery"), \
+         patch("web.routes.image_translate.start_image_translate_runner", return_value=True) as m_start:
+        count = task_recovery.recover_all_interrupted_tasks()
+
+    assert count == 1
+    m_start.assert_called_once_with("t-resumable", 42)
+
+
 def test_recover_project_state_marks_subtitle_removal_as_interrupted():
     from appcore import task_recovery
 

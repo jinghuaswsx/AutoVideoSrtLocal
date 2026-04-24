@@ -14,7 +14,7 @@ import logging
 import math
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 from google import genai
 from google.genai import types as genai_types
@@ -65,20 +65,26 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
     "aistudio": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
     "cloud": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
     "openrouter": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
     "doubao": [
         ("doubao-seedream-5-0-260128", "Seedream 5.0（豆包）"),
     ],
     "apimart": [
         ("gpt-image-2", "GPT-Image-2"),
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
 }
 IMAGE_MODELS: list[tuple[str, str]] = list(IMAGE_MODELS_BY_CHANNEL["aistudio"])
@@ -592,65 +598,26 @@ _APIMART_POLL_TIMEOUT = 300   # 秒
 _APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
 
 
-def _generate_via_apimart(
-    prompt: str,
-    source_image: bytes,
-    source_mime: str,
+def poll_apimart_task(
+    task_id: str,
     *,
     api_key: str,
+    initial_wait: bool = True,
 ) -> tuple[bytes, str, Any]:
+    """轮询已提交的 APIMART 任务，直到完成或失败。
+
+    initial_wait=True 时会先睡 `_APIMART_INITIAL_WAIT` 秒；
+    服务重启恢复场景应传 False，立即开始轮询。
+    """
     if not api_key:
         raise GeminiImageError(
             "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
         )
-    mime = source_mime or "image/png"
-    b64 = base64.b64encode(source_image).decode("ascii")
-    data_url = f"data:{mime};base64,{b64}"
-    payload = {
-        "model": "gpt-image-2",
-        "prompt": prompt,
-        "n": 1,
-        "size": "auto",
-        "resolution": "1k",
-        "image_urls": [data_url],
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    try:
-        submit_resp = requests.post(
-            f"{_APIMART_BASE_URL}/v1/images/generations",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        )
-    except requests.RequestException as e:
-        raise GeminiImageRetryable(f"APIMART 提交请求失败：{e}") from e
-
-    try:
-        submit_json = submit_resp.json()
-    except Exception:
-        submit_json = {}
-
-    if submit_resp.status_code != 200 or submit_json.get("code") != 200:
-        if isinstance(submit_json, dict):
-            err = submit_json.get("error") or submit_json.get("message") or submit_json
-            message = str(err)[:500]
-        else:
-            message = f"HTTP {submit_resp.status_code}"
-        if submit_resp.status_code in {429, 500, 502, 503, 504}:
-            raise GeminiImageRetryable(
-                f"APIMART 提交失败（HTTP {submit_resp.status_code}）：{message}"
-            )
-        raise GeminiImageError(f"APIMART 提交失败：{message}")
-
-    task_id = ((submit_json.get("data") or [{}])[0]).get("task_id")
     if not task_id:
-        raise GeminiImageError("APIMART 未返回 task_id")
+        raise GeminiImageError("APIMART task_id 为空")
 
-    logger.info("APIMART task submitted: %s", task_id)
-    time.sleep(_APIMART_INITIAL_WAIT)
+    if initial_wait:
+        time.sleep(_APIMART_INITIAL_WAIT)
 
     deadline = time.monotonic() + _APIMART_POLL_TIMEOUT
     while True:
@@ -706,6 +673,75 @@ def _generate_via_apimart(
         time.sleep(_APIMART_POLL_INTERVAL)
 
 
+def _generate_via_apimart(
+    prompt: str,
+    source_image: bytes,
+    source_mime: str,
+    *,
+    api_key: str,
+    model_id: str = "gpt-image-2",
+    on_submitted: Callable[[str], None] | None = None,
+) -> tuple[bytes, str, Any]:
+    if not api_key:
+        raise GeminiImageError(
+            "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
+        )
+    mime = source_mime or "image/png"
+    b64 = base64.b64encode(source_image).decode("ascii")
+    data_url = f"data:{mime};base64,{b64}"
+    payload = {
+        "model": (model_id or "gpt-image-2").strip(),
+        "prompt": prompt,
+        "n": 1,
+        "size": "auto",
+        "resolution": "1k",
+        "image_urls": [data_url],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        submit_resp = requests.post(
+            f"{_APIMART_BASE_URL}/v1/images/generations",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        raise GeminiImageRetryable(f"APIMART 提交请求失败：{e}") from e
+
+    try:
+        submit_json = submit_resp.json()
+    except Exception:
+        submit_json = {}
+
+    if submit_resp.status_code != 200 or submit_json.get("code") != 200:
+        if isinstance(submit_json, dict):
+            err = submit_json.get("error") or submit_json.get("message") or submit_json
+            message = str(err)[:500]
+        else:
+            message = f"HTTP {submit_resp.status_code}"
+        if submit_resp.status_code in {429, 500, 502, 503, 504}:
+            raise GeminiImageRetryable(
+                f"APIMART 提交失败（HTTP {submit_resp.status_code}）：{message}"
+            )
+        raise GeminiImageError(f"APIMART 提交失败：{message}")
+
+    task_id = ((submit_json.get("data") or [{}])[0]).get("task_id")
+    if not task_id:
+        raise GeminiImageError("APIMART 未返回 task_id")
+
+    logger.info("APIMART task submitted: %s", task_id)
+    if on_submitted is not None:
+        try:
+            on_submitted(task_id)
+        except Exception:
+            logger.exception("APIMART on_submitted callback failed for %s", task_id)
+
+    return poll_apimart_task(task_id, api_key=api_key, initial_wait=True)
+
+
 # ---------------------------------------------------------------------------
 # 对外入口
 # ---------------------------------------------------------------------------
@@ -719,6 +755,7 @@ def generate_image(
     user_id: int | None = None,
     project_id: str | None = None,
     service: str = "image_translate.generate",
+    on_apimart_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
     channel = _resolve_channel()
@@ -758,6 +795,8 @@ def generate_image(
                 source_image,
                 source_mime,
                 api_key=APIMART_IMAGE_API_KEY,
+                model_id=model_id,
+                on_submitted=on_apimart_submitted,
             )
             input_tokens = output_tokens = None
             response_cost_cny = None
