@@ -180,6 +180,46 @@ def shopify_localizer_bootstrap():
     if "cover" in ref_kinds and "cover" not in loc_kinds:
         missing_kinds.append("cover")
 
+    reference_payload = [
+        {
+            "id": item.get("id"),
+            "kind": item.get("kind"),
+            "filename": item.get("filename"),
+            "url": _media_download_url(item.get("object_key")),
+        }
+        for item in reference_images
+        if item.get("object_key")
+    ]
+    localized_payload = [
+        {
+            "id": item.get("id"),
+            "kind": item.get("kind"),
+            "filename": item.get("filename"),
+            "url": _media_download_url(item.get("object_key")),
+        }
+        for item in localized_images
+        if item.get("object_key")
+    ]
+
+    # 目标语言没有 cover 时用英文 cover 作为回退，下游通过 fallback_from 字段识别来源
+    if "cover" in missing_kinds:
+        en_cover = next(
+            (
+                item
+                for item in reference_images
+                if item.get("kind") == "cover" and item.get("object_key")
+            ),
+            None,
+        )
+        if en_cover:
+            localized_payload.insert(0, {
+                "id": en_cover.get("id"),
+                "kind": "cover",
+                "filename": en_cover.get("filename"),
+                "url": _media_download_url(en_cover.get("object_key")),
+                "fallback_from": "en",
+            })
+
     return jsonify({
         "product": {
             "id": product.get("id"),
@@ -193,26 +233,8 @@ def shopify_localizer_bootstrap():
             "shop_locale": lang,
             "folder_code": lang,
         },
-        "reference_images": [
-            {
-                "id": item.get("id"),
-                "kind": item.get("kind"),
-                "filename": item.get("filename"),
-                "url": _media_download_url(item.get("object_key")),
-            }
-            for item in reference_images
-            if item.get("object_key")
-        ],
-        "localized_images": [
-            {
-                "id": item.get("id"),
-                "kind": item.get("kind"),
-                "filename": item.get("filename"),
-                "url": _media_download_url(item.get("object_key")),
-            }
-            for item in localized_images
-            if item.get("object_key")
-        ],
+        "reference_images": reference_payload,
+        "localized_images": localized_payload,
         "missing_kinds": missing_kinds,
     })
 
