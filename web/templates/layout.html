@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}AutoVideoSrt{% endblock %}</title>
+  <script>
+    window.IS_ADMIN = {{ 'true' if current_user.is_authenticated and current_user.role == 'admin' else 'false' }};
+  </script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
     (function() {

@@ -414,6 +414,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
         "shopifyid": p.get("shopifyid"),
+        "user_id": int(p["user_id"]) if p.get("user_id") is not None else None,
         "owner_name": (p.get("owner_name") or "").strip(),
         "has_en_cover": has_en_cover,
         "color_people": p.get("color_people"),
@@ -876,6 +877,44 @@ def api_update_product(pid: int):
             if isinstance(lang_items, list):
                 medias.replace_copywritings(pid, lang_items, lang=lang_code)
     return jsonify({"ok": True})
+
+
+@bp.route("/api/users/active", methods=["GET"])
+@login_required
+def api_list_active_users():
+    """管理员专用：列出所有启用中的用户，用于素材项目负责人下拉。"""
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可访问"}), 403
+    return jsonify({"users": medias.list_active_users()})
+
+
+@bp.route("/api/products/<int:pid>/owner", methods=["PATCH"])
+@login_required
+def api_update_product_owner(pid: int):
+    """管理员专用：把项目归属人改为 body.user_id，同步更新 items / raw_sources。"""
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可操作"}), 403
+    body = request.get_json(silent=True) or {}
+    raw_uid = body.get("user_id")
+    try:
+        new_uid = int(raw_uid)
+    except (TypeError, ValueError):
+        return jsonify({"error": "user_id required"}), 400
+
+    product = medias.get_product(pid)
+    if not product or product.get("deleted_at") is not None:
+        abort(404)
+
+    try:
+        medias.update_product_owner(pid, new_uid)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "product not found":
+            abort(404)
+        return jsonify({"error": msg}), 400
+
+    owner_name = medias.get_user_display_name(new_uid)
+    return jsonify({"user_id": new_uid, "owner_name": owner_name})
 
 
 @bp.route("/api/products/<int:pid>/link-check", methods=["POST"])

@@ -768,6 +768,8 @@
       td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
     grid.querySelectorAll('td.listing-status-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startListingStatusInlineEdit(td); }));
+    grid.querySelectorAll('td.owner-cell').forEach(td =>
+      td.addEventListener('click', (e) => { e.stopPropagation(); startOwnerInlineEdit(td); }));
   }
 
   function rowHTML(p) {
@@ -779,6 +781,9 @@
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
+    const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
+    const ownerCellCls = window.IS_ADMIN ? 'wrap owner-cell' : 'wrap';
+    const ownerCellTitle = window.IS_ADMIN ? (ownerName || '点击指派负责人') : ownerName;
     const listed = isListed(p);
     const listingTitle = listingActionTitleForStatus(listingStatus(p));
     const mkIdCell = mkIdText
@@ -794,7 +799,7 @@
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
         <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">${compactCellText(p.ai_evaluation_result)}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
-        <td class="wrap" title="${escapeHtml(ownerName)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
+        <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
@@ -936,6 +941,123 @@
       if (settled) return;
       settled = true;
       restore(original);
+    }
+
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', commit);
+    select.addEventListener('blur', commit);
+    select.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancel();
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit();
+      }
+    });
+  }
+
+  let _activeUsersCache = null;
+  async function ensureActiveUsers() {
+    if (_activeUsersCache) return _activeUsersCache;
+    const data = await fetchJSON('/medias/api/users/active');
+    _activeUsersCache = Array.isArray(data && data.users) ? data.users : [];
+    return _activeUsersCache;
+  }
+
+  async function startOwnerInlineEdit(td) {
+    if (td.dataset.ownerEdit === '1') return;
+    td.dataset.ownerEdit = '1';
+    const pid = +td.dataset.pid;
+    const originalUid = (td.dataset.ownerUid || '').trim();
+    const originalName = td.dataset.ownerName || '';
+    const originalHTML = td.innerHTML;
+
+    let users;
+    try {
+      users = await ensureActiveUsers();
+    } catch (e) {
+      alert('加载用户列表失败：' + (e.message || e));
+      td.dataset.ownerEdit = '';
+      return;
+    }
+
+    const select = document.createElement('select');
+    select.className = 'owner-select';
+    select.setAttribute('aria-label', '指派负责人');
+    // 若原负责人当前不在 active 列表里（被禁用），先占位保留显示
+    const hasOriginalInActive = users.some(u => String(u.id) === originalUid);
+    if (originalUid && !hasOriginalInActive) {
+      const opt = document.createElement('option');
+      opt.value = originalUid;
+      opt.textContent = originalName ? (originalName + '（已停用）') : '(当前负责人)';
+      select.appendChild(opt);
+    }
+    if (!originalUid) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '—';
+      opt.disabled = true;
+      select.appendChild(opt);
+    }
+    users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = String(u.id);
+      opt.textContent = u.display_name || ('#' + u.id);
+      select.appendChild(opt);
+    });
+    select.value = originalUid || '';
+
+    td.innerHTML = '';
+    td.appendChild(select);
+    select.focus();
+
+    let settled = false;
+
+    function restore() {
+      td.dataset.ownerEdit = '';
+      td.innerHTML = originalHTML;
+    }
+
+    function applyNewOwner(uid, name) {
+      td.dataset.ownerEdit = '';
+      td.dataset.ownerUid = String(uid);
+      td.dataset.ownerName = name || '';
+      td.title = name || '点击指派负责人';
+      td.innerHTML = name
+        ? escapeHtml(name)
+        : '<span class="muted">—</span>';
+    }
+
+    async function commit() {
+      if (settled) return;
+      settled = true;
+      const nextUid = (select.value || '').trim();
+      if (!nextUid || nextUid === originalUid) {
+        restore();
+        return;
+      }
+      select.disabled = true;
+      try {
+        const data = await fetchJSON(`/medias/api/products/${pid}/owner`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: +nextUid }),
+        });
+        applyNewOwner(data.user_id, data.owner_name || '');
+        const toastName = (data.owner_name || '').trim();
+        alert(toastName ? `已转交给 ${toastName}` : '负责人已更新');
+      } catch (e) {
+        alert('切换负责人失败：' + (e.message || e));
+        restore();
+      }
+    }
+
+    function cancel() {
+      if (settled) return;
+      settled = true;
+      restore();
     }
 
     select.addEventListener('click', (e) => e.stopPropagation());

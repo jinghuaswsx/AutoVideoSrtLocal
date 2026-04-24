@@ -398,3 +398,138 @@ def test_list_products_falls_back_to_username_when_xingming_column_missing(monke
     assert "LEFT JOIN users u ON u.id = p.user_id" in captured["list_sql"]
     assert "u.username AS owner_name" in captured["list_sql"]
     assert "u.xingming" not in captured["list_sql"]
+
+
+# ==================== 负责人 / 项目归属迁移 ====================
+
+import uuid  # noqa: E402
+from appcore import users as appusers  # noqa: E402
+
+
+def _has_xingming_column() -> bool:
+    return bool(query_one(
+        "SELECT 1 AS ok FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='users' "
+        "AND COLUMN_NAME='xingming'"
+    ))
+
+
+@pytest.fixture
+def ephemeral_users():
+    """创建两个临时 user 作为 owner_a / owner_b，测试结束后硬删除。"""
+    uname_a = f"pytest_owner_a_{uuid.uuid4().hex[:10]}"
+    uname_b = f"pytest_owner_b_{uuid.uuid4().hex[:10]}"
+    uid_a = appusers.create_user(uname_a, "pw")
+    uid_b = appusers.create_user(uname_b, "pw")
+    if _has_xingming_column():
+        db_execute("UPDATE users SET xingming=%s WHERE id=%s", ("乙同学", uid_b))
+    try:
+        yield uid_a, uid_b
+    finally:
+        db_execute("DELETE FROM users WHERE id IN (%s, %s)", (uid_a, uid_b))
+
+
+def test_list_active_users_excludes_inactive(ephemeral_users):
+    uid_a, uid_b = ephemeral_users
+    appusers.set_active(uid_a, False)
+    try:
+        rows = medias.list_active_users()
+        ids = [r["id"] for r in rows]
+        assert uid_b in ids
+        assert uid_a not in ids
+    finally:
+        appusers.set_active(uid_a, True)
+
+
+def test_list_active_users_prefers_chinese_name(ephemeral_users):
+    _, uid_b = ephemeral_users
+    if not _has_xingming_column():
+        pytest.skip("users.xingming column not present in this DB")
+    rows = medias.list_active_users()
+    b_entry = next((r for r in rows if r["id"] == uid_b), None)
+    assert b_entry is not None
+    assert b_entry["display_name"] == "乙同学"
+
+
+def test_get_user_display_name(ephemeral_users):
+    _, uid_b = ephemeral_users
+    name = medias.get_user_display_name(uid_b)
+    assert name  # 至少是 username 或 xingming
+    if _has_xingming_column():
+        assert name == "乙同学"
+
+
+def test_get_user_display_name_unknown_user():
+    assert medias.get_user_display_name(999_999_999) == ""
+
+
+def test_update_product_owner_syncs_all_tables(ephemeral_users):
+    uid_a, uid_b = ephemeral_users
+    pid = medias.create_product(uid_a, "换归属测试")
+    try:
+        medias.create_item(pid, uid_a, "a.mp4", f"{uid_a}/medias/{pid}/a.mp4")
+        medias.create_item(pid, uid_a, "b.mp4", f"{uid_a}/medias/{pid}/b.mp4")
+        medias.create_raw_source(
+            pid, uid_a,
+            display_name="原始",
+            video_object_key=f"{uid_a}/medias/{pid}/raw.mp4",
+            cover_object_key=f"{uid_a}/medias/{pid}/raw.jpg",
+        )
+
+        medias.update_product_owner(pid, uid_b)
+
+        prod = medias.get_product(pid)
+        assert prod["user_id"] == uid_b
+        items = medias.list_items(pid)
+        assert items and all(it["user_id"] == uid_b for it in items)
+        raws = medias.list_raw_sources(pid)
+        assert raws and all(rs["user_id"] == uid_b for rs in raws)
+    finally:
+        medias.soft_delete_product(pid)
+
+
+def test_update_product_owner_skips_soft_deleted_rows(ephemeral_users):
+    uid_a, uid_b = ephemeral_users
+    pid = medias.create_product(uid_a, "软删跳过测试")
+    try:
+        item_live = medias.create_item(pid, uid_a, "live.mp4", f"{uid_a}/medias/{pid}/live.mp4")
+        item_gone = medias.create_item(pid, uid_a, "gone.mp4", f"{uid_a}/medias/{pid}/gone.mp4")
+        db_execute("UPDATE media_items SET deleted_at=NOW() WHERE id=%s", (item_gone,))
+
+        medias.update_product_owner(pid, uid_b)
+
+        live_row = query_one("SELECT user_id FROM media_items WHERE id=%s", (item_live,))
+        gone_row = query_one("SELECT user_id FROM media_items WHERE id=%s", (item_gone,))
+        assert live_row["user_id"] == uid_b
+        assert gone_row["user_id"] == uid_a  # 软删行保留旧归属
+    finally:
+        medias.soft_delete_product(pid)
+        db_execute("DELETE FROM media_items WHERE id=%s", (item_gone,))
+
+
+def test_update_product_owner_rejects_unknown_user(ephemeral_users):
+    uid_a, _ = ephemeral_users
+    pid = medias.create_product(uid_a, "未知用户拒绝")
+    try:
+        with pytest.raises(ValueError):
+            medias.update_product_owner(pid, 999_999_999)
+    finally:
+        medias.soft_delete_product(pid)
+
+
+def test_update_product_owner_rejects_inactive_user(ephemeral_users):
+    uid_a, uid_b = ephemeral_users
+    pid = medias.create_product(uid_a, "停用用户拒绝")
+    appusers.set_active(uid_b, False)
+    try:
+        with pytest.raises(ValueError):
+            medias.update_product_owner(pid, uid_b)
+    finally:
+        appusers.set_active(uid_b, True)
+        medias.soft_delete_product(pid)
+
+
+def test_update_product_owner_rejects_unknown_product(ephemeral_users):
+    _, uid_b = ephemeral_users
+    with pytest.raises(ValueError):
+        medias.update_product_owner(999_999_999, uid_b)

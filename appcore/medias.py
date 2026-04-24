@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from appcore.db import query, query_one, execute
+from appcore.db import query, query_one, execute, get_conn
 
 
 LISTING_STATUS_ON = "上架"
@@ -430,6 +430,93 @@ def soft_delete_product(product_id: int) -> int:
     execute("UPDATE media_items SET deleted_at=NOW() WHERE product_id=%s AND deleted_at IS NULL",
             (product_id,))
     return execute("UPDATE media_products SET deleted_at=NOW() WHERE id=%s", (product_id,))
+
+
+def _user_display_name_expr() -> str:
+    """返回 users 表中用于显示"中文名"的 SQL 表达式，兼容无 xingming 列的部署。"""
+    row = query_one(
+        "SELECT 1 AS ok FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+        "AND COLUMN_NAME = 'xingming'"
+    )
+    if row:
+        return "COALESCE(NULLIF(TRIM(xingming), ''), username)"
+    return "username"
+
+
+def list_active_users() -> list[dict]:
+    """返回 is_active=1 的用户 [{id, display_name}]，按 display_name 升序。
+
+    display_name = COALESCE(NULLIF(TRIM(xingming), ''), username)，如 users 表
+    没有 xingming 列则直接使用 username。
+    """
+    expr = _user_display_name_expr()
+    rows = query(
+        f"SELECT id, {expr} AS display_name FROM users "
+        "WHERE is_active = 1 ORDER BY display_name ASC, id ASC"
+    )
+    return [{"id": int(r["id"]), "display_name": r["display_name"] or ""} for r in rows]
+
+
+def get_user_display_name(user_id: int) -> str:
+    """返回单个用户的显示名（中文名优先，fallback username）。未找到则返回空串。"""
+    expr = _user_display_name_expr()
+    row = query_one(
+        f"SELECT {expr} AS display_name FROM users WHERE id=%s",
+        (int(user_id),),
+    )
+    return ((row or {}).get("display_name") or "").strip()
+
+
+def update_product_owner(product_id: int, new_user_id: int) -> None:
+    """把项目归属人改为 new_user_id，并同步更新该项目下所有 items / raw_sources。
+
+    三条 UPDATE 在同一个事务里执行；任一步失败则整体回滚。软删除的行（deleted_at
+    IS NOT NULL）不更新，保留历史溯源。
+
+    Raises:
+        ValueError: 项目不存在 / new_user_id 不存在或 is_active=0。
+    """
+    pid = int(product_id)
+    uid = int(new_user_id)
+
+    if not query_one(
+        "SELECT id FROM users WHERE id=%s AND is_active=1",
+        (uid,),
+    ):
+        raise ValueError("user not found or inactive")
+    if not query_one(
+        "SELECT id FROM media_products WHERE id=%s AND deleted_at IS NULL",
+        (pid,),
+    ):
+        raise ValueError("product not found")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE media_products SET user_id=%s "
+                    "WHERE id=%s AND deleted_at IS NULL",
+                    (uid, pid),
+                )
+                cur.execute(
+                    "UPDATE media_items SET user_id=%s "
+                    "WHERE product_id=%s AND deleted_at IS NULL",
+                    (uid, pid),
+                )
+                cur.execute(
+                    "UPDATE media_raw_sources SET user_id=%s "
+                    "WHERE product_id=%s AND deleted_at IS NULL",
+                    (uid, pid),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
 
 
 def parse_ad_supported_langs(value: str | None) -> list[str]:

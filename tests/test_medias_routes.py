@@ -1366,3 +1366,171 @@ def test_update_product_rejects_non_numeric_shopifyid(authed_client_no_db, monke
     body = resp.get_json()
     assert body.get("error") == "invalid_product_field"
     assert "shopifyid" in body.get("message", "")
+
+
+# ==================== 负责人指派路由 ====================
+
+
+def test_list_active_users_admin_ok(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "list_active_users",
+        lambda: [
+            {"id": 1, "display_name": "张三"},
+            {"id": 2, "display_name": "李四"},
+        ],
+    )
+
+    resp = authed_client_no_db.get("/medias/api/users/active")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data == {"users": [
+        {"id": 1, "display_name": "张三"},
+        {"id": 2, "display_name": "李四"},
+    ]}
+
+
+def test_list_active_users_rejects_non_admin(authed_user_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    called = []
+    monkeypatch.setattr(r.medias, "list_active_users", lambda: called.append(1) or [])
+
+    resp = authed_user_client_no_db.get("/medias/api/users/active")
+
+    assert resp.status_code == 403
+    assert called == []
+
+
+def test_update_product_owner_admin_ok(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    captured = {}
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 10, "deleted_at": None},
+    )
+
+    def fake_update_owner(pid, new_uid):
+        captured["pid"] = pid
+        captured["uid"] = new_uid
+
+    monkeypatch.setattr(r.medias, "update_product_owner", fake_update_owner)
+    monkeypatch.setattr(r.medias, "get_user_display_name", lambda uid: "李四")
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": 7},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"user_id": 7, "owner_name": "李四"}
+    assert captured == {"pid": 42, "uid": 7}
+
+
+def test_update_product_owner_rejects_non_admin(authed_user_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    called = []
+    monkeypatch.setattr(
+        r.medias,
+        "update_product_owner",
+        lambda *args: called.append(args),
+    )
+
+    resp = authed_user_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": 7},
+    )
+
+    assert resp.status_code == 403
+    assert called == []
+
+
+def test_update_product_owner_rejects_missing_user_id(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 10, "deleted_at": None},
+    )
+    called = []
+    monkeypatch.setattr(
+        r.medias,
+        "update_product_owner",
+        lambda *args: called.append(args),
+    )
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={},
+    )
+
+    assert resp.status_code == 400
+    assert called == []
+
+
+def test_update_product_owner_rejects_non_numeric_user_id(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 10, "deleted_at": None},
+    )
+    called = []
+    monkeypatch.setattr(
+        r.medias,
+        "update_product_owner",
+        lambda *args: called.append(args),
+    )
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": "abc"},
+    )
+
+    assert resp.status_code == 400
+    assert called == []
+
+
+def test_update_product_owner_returns_404_when_product_missing(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: None)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/9999/owner",
+        json={"user_id": 1},
+    )
+
+    assert resp.status_code == 404
+
+
+def test_update_product_owner_maps_user_not_found_to_400(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 10, "deleted_at": None},
+    )
+
+    def raise_user(_pid, _uid):
+        raise ValueError("user not found or inactive")
+
+    monkeypatch.setattr(r.medias, "update_product_owner", raise_user)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/products/42/owner",
+        json={"user_id": 7},
+    )
+
+    assert resp.status_code == 400
+    assert "user" in (resp.get_json() or {}).get("error", "")

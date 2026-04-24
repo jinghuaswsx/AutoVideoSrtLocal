@@ -1473,6 +1473,30 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   border-color: var(--oc-danger);
   box-shadow: 0 0 0 2px var(--oc-danger-bg);
 }
+
+/* ────────── 负责人 inline edit（仅管理员） ────────── */
+.oc-table td.owner-cell {
+  cursor: pointer;
+}
+.oc-table td.owner-cell:hover {
+  background: var(--oc-bg-subtle);
+}
+.oc-table td.owner-cell .owner-select {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: #fff;
+  color: var(--oc-fg);
+  outline: none;
+  transition: border-color var(--oc-dur-fast), box-shadow var(--oc-dur-fast);
+}
+.oc-table td.owner-cell .owner-select:focus {
+  border-color: var(--oc-accent);
+  box-shadow: 0 0 0 2px var(--oc-accent-ring);
+}
 {% endblock %}
 
 {% block content %}
