@@ -66,3 +66,71 @@ def index():
             "can_translate": _has_capability("can_translate"),
         },
     )
+
+
+@bp.route("/api/list", methods=["GET"])
+@login_required
+def api_list():
+    from appcore.db import query_all
+    tab = (request.args.get("tab") or "mine").strip()
+    keyword = (request.args.get("keyword") or "").strip()
+    high_status = (request.args.get("status") or "").strip()
+    page = max(1, int(request.args.get("page") or 1))
+    page_size = min(100, max(1, int(request.args.get("page_size") or 20)))
+    offset = (page - 1) * page_size
+
+    where = ["1=1"]
+    args: list = []
+
+    if tab == "all":
+        if not _is_admin():
+            return jsonify({"error": "需要管理员权限"}), 403
+    elif tab == "mine":
+        where.append(
+            "(t.assignee_id=%s OR (t.parent_task_id IS NULL AND t.status='pending' AND %s))"
+        )
+        args.extend([current_user.id,
+                     1 if _has_capability("can_process_raw_video") else 0])
+
+    if keyword:
+        where.append("p.name LIKE %s")
+        args.append(f"%{keyword}%")
+    if high_status == "in_progress":
+        where.append("t.status NOT IN ('all_done', 'done', 'cancelled')")
+    elif high_status == "completed":
+        where.append("t.status IN ('all_done', 'done')")
+    elif high_status == "terminated":
+        where.append("t.status='cancelled'")
+
+    sql = (
+        "SELECT t.*, p.name AS product_name, "
+        "       u.username AS assignee_username "
+        "FROM tasks t "
+        "JOIN media_products p ON p.id=t.media_product_id "
+        "LEFT JOIN users u ON u.id=t.assignee_id "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY t.id DESC "
+        "LIMIT %s OFFSET %s"
+    )
+    rows = query_all(sql, (*args, page_size, offset))
+    items = [
+        {
+            "id": r["id"],
+            "parent_task_id": r["parent_task_id"],
+            "media_product_id": r["media_product_id"],
+            "product_name": r["product_name"],
+            "country_code": r["country_code"],
+            "assignee_id": r["assignee_id"],
+            "assignee_username": r["assignee_username"],
+            "status": r["status"],
+            "high_level": tasks_svc.high_level_status(r["status"]),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "claimed_at": r["claimed_at"].isoformat() if r["claimed_at"] else None,
+            "completed_at": r["completed_at"].isoformat() if r["completed_at"] else None,
+            "cancelled_at": r["cancelled_at"].isoformat() if r["cancelled_at"] else None,
+            "last_reason": r["last_reason"],
+        }
+        for r in rows
+    ]
+    return jsonify({"items": items, "page": page, "page_size": page_size})
