@@ -1,9 +1,154 @@
 {% extends "layout.html" %}
 {% block title %}任务中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}任务中心{% endblock %}
+{% block extra_style %}
+:root {
+  --tc-bg: oklch(99% 0.004 230);
+  --tc-bg-subtle: oklch(97% 0.006 230);
+  --tc-bg-muted: oklch(94% 0.010 230);
+  --tc-border: oklch(91% 0.012 230);
+  --tc-border-strong: oklch(84% 0.015 230);
+  --tc-fg: oklch(22% 0.020 235);
+  --tc-fg-muted: oklch(48% 0.018 230);
+  --tc-accent: oklch(56% 0.16 230);
+  --tc-accent-hover: oklch(50% 0.17 230);
+  --tc-accent-subtle: oklch(94% 0.04 225);
+  --tc-success-bg: oklch(95% 0.04 165);
+  --tc-success-fg: oklch(38% 0.09 165);
+  --tc-warning-bg: oklch(96% 0.05 85);
+  --tc-warning-fg: oklch(42% 0.10 60);
+  --tc-danger: oklch(58% 0.18 25);
+  --tc-danger-bg: oklch(96% 0.04 25);
+  --tc-danger-fg: oklch(42% 0.14 25);
+  --tc-r: 6px; --tc-r-md: 8px; --tc-r-lg: 12px;
+  --tc-sp-2: 8px; --tc-sp-3: 12px; --tc-sp-4: 16px;
+  --tc-sp-5: 20px; --tc-sp-6: 24px;
+}
+.tc { font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--tc-fg); }
+.tc * { box-sizing: border-box; }
+.tc-header { display:flex; align-items:center; justify-content:space-between; gap:var(--tc-sp-4); margin-bottom:var(--tc-sp-5); flex-wrap:wrap; }
+.tc-tabs { display:flex; gap:var(--tc-sp-2); border-bottom:1px solid var(--tc-border); margin-bottom:var(--tc-sp-4); }
+.tc-tab { background:transparent; border:none; padding:8px 14px; font-size:14px; color:var(--tc-fg-muted); cursor:pointer; border-bottom:2px solid transparent; }
+.tc-tab.active { color:var(--tc-accent); border-bottom-color:var(--tc-accent); }
+.tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
+.tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
+.tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
+.tc-btn { height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); cursor:pointer; font-size:13px; }
+.tc-btn:hover { background:var(--tc-bg-muted); }
+.tc-btn--primary { background:var(--tc-accent); color:#fff; border:none; }
+.tc-btn--primary:hover { background:var(--tc-accent-hover); }
+.tc-btn--danger { background:var(--tc-danger); color:#fff; border:none; }
+.tc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
+.tc-table td { padding:10px 12px; border-bottom:1px solid var(--tc-border); }
+.tc-table tr:hover td { background:var(--tc-bg-subtle); }
+.tc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
+.tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
+.tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
+.tc-badge--terminated { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
+.tc-empty { padding:60px 20px; text-align:center; color:var(--tc-fg-muted); }
+{% endblock %}
 {% block content %}
-<div id="taskCenterRoot">
-  <h1>任务中心</h1>
-  <p>页面骨架占位 — Phase 4 完成实际 UI。</p>
+<div id="tcRoot" class="tc">
+  <div class="tc-header">
+    <div>
+      <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
+      <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理素材原始视频处理与翻译任务</p>
+    </div>
+  </div>
+
+  <div class="tc-tabs">
+    <button class="tc-tab active" data-tab="mine" id="tcTabMine">我的任务</button>
+    {% if is_admin %}
+    <button class="tc-tab" data-tab="all" id="tcTabAll">全部任务</button>
+    <button class="tc-tab" data-tab="dispatch" id="tcTabDispatch">待派单素材</button>
+    {% endif %}
+  </div>
+
+  <div class="tc-filters" id="tcFilters">
+    <input type="text" id="tcKeyword" class="tc-input" placeholder="搜索产品名" style="width:240px;">
+    <select id="tcStatus" class="tc-input">
+      <option value="">全部状态</option>
+      <option value="in_progress">进行中</option>
+      <option value="completed">已完成</option>
+      <option value="terminated">终止</option>
+    </select>
+    <button class="tc-btn" id="tcRefresh">刷新</button>
+  </div>
+
+  <div id="tcTableWrap"></div>
 </div>
+
+<script>
+const TC_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+const TC_CAPS = {
+  can_process_raw_video: {{ 'true' if capabilities.can_process_raw_video else 'false' }},
+  can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
+};
+let TC_CURRENT_TAB = 'mine';
+
+function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+async function tcFetchJson(url, opts) {
+  const rsp = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts || {}));
+  if (!rsp.ok) {
+    const body = await rsp.json().catch(() => ({error: rsp.statusText}));
+    throw new Error(body.error || rsp.statusText);
+  }
+  return rsp.json();
+}
+
+document.querySelectorAll('.tc-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tc-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    TC_CURRENT_TAB = btn.dataset.tab;
+    tcRender();
+  });
+});
+document.getElementById('tcRefresh').addEventListener('click', tcRender);
+document.getElementById('tcKeyword').addEventListener('keyup', e => { if (e.key === 'Enter') tcRender(); });
+document.getElementById('tcStatus').addEventListener('change', tcRender);
+
+async function tcRender() {
+  const wrap = document.getElementById('tcTableWrap');
+  wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
+  try {
+    if (TC_CURRENT_TAB === 'dispatch') {
+      await tcRenderDispatchPool(wrap);
+    } else {
+      await tcRenderTaskList(wrap, TC_CURRENT_TAB);
+    }
+  } catch (e) {
+    wrap.innerHTML = `<div class="tc-empty">加载失败：${tcEsc(e.message)}</div>`;
+  }
+}
+
+async function tcRenderTaskList(wrap, tab) {
+  const kw = document.getElementById('tcKeyword').value.trim();
+  const status = document.getElementById('tcStatus').value;
+  const params = new URLSearchParams({tab, keyword: kw, status});
+  const data = await tcFetchJson('/tasks/api/list?' + params.toString());
+  if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">暂无任务</div>'; return; }
+  const rows = data.items.map(it => {
+    const kind = it.parent_task_id ? '子任务' : '父任务';
+    const country = it.country_code ? tcEsc(it.country_code) : '—';
+    return `<tr data-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">
+      <td>${tcEsc(it.product_name)}</td>
+      <td>${kind}</td>
+      <td>${country}</td>
+      <td><span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(it.high_level)}</span></td>
+      <td>${tcEsc(it.status)}</td>
+      <td>${tcEsc(it.assignee_username || '—')}</td>
+      <td><button class="tc-btn" onclick="tcOpenDetail(${it.id})">详情</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="tc-table"><thead><tr>
+    <th>产品</th><th>类型</th><th>国家</th><th>高层</th><th>子状态</th><th>负责人</th><th>操作</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function tcRenderDispatchPool(wrap) { wrap.innerHTML = '<div class="tc-empty">待派单素材列表 — Task 25 实现</div>'; }
+function tcOpenDetail(id) { alert('详情抽屉 — Task 27 实现 (id=' + id + ')'); }
+tcRender();
+</script>
 {% endblock %}
