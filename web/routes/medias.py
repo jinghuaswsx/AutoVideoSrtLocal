@@ -2508,7 +2508,7 @@ def public_media_object(object_key: str):
 # ---------- 明空选品 ----------
 
 def _is_admin() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 @bp.route("/mk-selection")

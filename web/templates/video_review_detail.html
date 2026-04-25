@@ -144,7 +144,7 @@
             当前使用: <strong id="selectedLangLabel">English</strong> 提示词
             <a href="#" onclick="toggleSelectedLang(); return false;" style="margin-left:6px; font-size:11px; color:var(--primary-color);">切换</a>
           </div>
-          {% if current_user.role == 'admin' %}
+          {% if current_user.is_admin %}
           <button class="btn btn-ghost vr-prompt-save" id="savePromptBtn" onclick="savePrompts()">保存修改</button>
           {% endif %}
         </div>
@@ -185,7 +185,7 @@
 {% block scripts %}
 <script>
 const TASK_ID = '{{ task_id }}';
-const IS_ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 const INITIAL_RESULT = {{ state.get('result') | tojson if state.get('result') else 'null' }};
 const INITIAL_STATS = {{ state.get('stats') | tojson if state.get('stats') else 'null' }};
 

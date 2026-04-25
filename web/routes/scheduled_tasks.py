@@ -11,8 +11,7 @@ bp = Blueprint("scheduled_tasks", __name__, url_prefix="/scheduled-tasks")
 def _is_admin_single_user() -> bool:
     return (
         current_user.is_authenticated
-        and getattr(current_user, "role", None) == "admin"
-        and getattr(current_user, "username", None) == "admin"
+        and getattr(current_user, "is_superadmin", False)
     )
 
 

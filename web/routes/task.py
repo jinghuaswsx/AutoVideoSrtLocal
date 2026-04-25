@@ -65,7 +65,7 @@ def _parse_bool(value) -> bool:
 
 
 def _is_admin_user() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 def _request_payload() -> dict:

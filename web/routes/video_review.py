@@ -288,7 +288,7 @@ def get_prompts():
 @login_required
 def update_prompts():
     """保存全局评分提示词（仅管理员）。"""
-    if current_user.role != "admin":
+    if not current_user.is_admin:
         return jsonify(error="仅管理员可修改提示词"), 403
     body = request.get_json(silent=True) or {}
     en = (body.get("en") or "").strip()

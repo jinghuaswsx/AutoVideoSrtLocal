@@ -15,7 +15,7 @@ bp = Blueprint("pushes", __name__, url_prefix="/pushes")
 
 
 def _is_admin() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 def admin_required(fn):

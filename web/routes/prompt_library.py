@@ -16,7 +16,7 @@ bp = Blueprint("prompt_library", __name__, url_prefix="/prompt-library")
 
 
 def _is_admin() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 def admin_required(fn):

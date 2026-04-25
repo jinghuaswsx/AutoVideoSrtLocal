@@ -99,7 +99,7 @@ def _task_belongs_to_current_user(task: dict) -> bool:
 
 
 def _is_admin_user() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 def _get_owned_task(task_id: str) -> dict:

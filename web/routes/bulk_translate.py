@@ -58,7 +58,7 @@ def tasks_list_page():
 @pages_bp.get("/tasks/<task_id>")
 @login_required
 def tasks_detail_page(task_id):
-    admin_scope = getattr(current_user, "role", "") == "admin" and request.args.get("scope") == "admin"
+    admin_scope = getattr(current_user, "is_admin", False) and request.args.get("scope") == "admin"
     return render_template("bulk_translate_detail.html", task_id=task_id, admin_scope=admin_scope)
 
 
@@ -203,7 +203,7 @@ def _load_and_check_ownership(task_id: str):
     task = get_task(task_id)
     if not task:
         return None, (jsonify({"error": "Task not found"}), 404)
-    admin_scope = getattr(current_user, "role", "") == "admin" and request.args.get("scope") == "admin"
+    admin_scope = getattr(current_user, "is_admin", False) and request.args.get("scope") == "admin"
     if task["user_id"] != current_user.id and not admin_scope:
         return None, (jsonify({"error": "Forbidden"}), 403)
     return task, None

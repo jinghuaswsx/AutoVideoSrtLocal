@@ -82,7 +82,7 @@ def _ensure_uploaded_video_thumbnail(task_id: str, video_path: str, task_dir: st
 
 
 def _is_admin_user() -> bool:
-    return getattr(current_user, "role", "") == "admin"
+    return getattr(current_user, "is_admin", False)
 
 
 def _task_belongs_to_current_user(task: dict) -> bool:

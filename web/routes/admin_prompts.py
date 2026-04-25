@@ -11,7 +11,7 @@ bp = Blueprint("admin_prompts", __name__)
 
 
 def _require_admin():
-    if getattr(current_user, "role", None) != "admin":
+    if not getattr(current_user, "is_admin", False):
         return jsonify({"error": "admin only"}), 403
     return None
 

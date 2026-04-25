@@ -200,8 +200,7 @@ def create_app() -> Flask:
         from flask_login import current_user
         if (
             not current_user.is_authenticated
-            or getattr(current_user, "role", None) != "admin"
-            or getattr(current_user, "username", None) != "admin"
+            or not getattr(current_user, "is_superadmin", False)
         ):
             return {"scheduled_task_failure_alert": None}
         try:
@@ -317,7 +316,7 @@ def create_app() -> Flask:
         from flask_login import current_user
         if not current_user.is_authenticated:
             return
-        if getattr(current_user, "role", None) == "admin":
+        if getattr(current_user, "is_admin", False):
             join_room("admin")
 
     _seed_default_prompts()

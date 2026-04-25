@@ -189,7 +189,7 @@ def index():
             row["model_suggestions"] = []
         bindings_grouped.setdefault(row["module"], []).append(row)
 
-    is_admin = getattr(current_user, "role", None) == "admin"
+    is_admin = getattr(current_user, "is_admin", False)
     active_tab = (request.args.get("tab") or "providers").strip().lower()
     allowed_tabs = {"providers", "bindings"}
     if is_admin:
@@ -359,7 +359,7 @@ def _handle_bindings_post() -> None:
 
 def _handle_push_post() -> None:
     """推送 tab：保存推送目标 + 小语种文案推送凭据到 system_settings。"""
-    if getattr(current_user, "role", None) != "admin":
+    if not getattr(current_user, "is_admin", False):
         return
 
     from appcore.settings import set_setting
