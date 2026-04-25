@@ -16,6 +16,8 @@ from tools.shopify_image_localizer import settings, version
 APP_NAME = "ShopifyImageLocalizer"
 PORTABLE_LAUNCHER_NAME = "run_shopify_image_localizer.bat"
 RELEASE_VERSION_FILENAME = "release_version.txt"
+DEFAULT_OUTPUT_ROOT = Path(r"G:\ShopifyRelease")
+BUILD_WORK_DIR_NAME = "_build"
 
 
 def _resolve_build_python(repo_root: Path) -> Path:
@@ -78,13 +80,13 @@ def _release_dist_name(release_version: str) -> str:
     return f"{APP_NAME}-{_normalize_release_version(release_version)}"
 
 
-def _release_dist_root(repo_root: Path, release_version: str) -> Path:
-    return repo_root / "dist" / _release_dist_name(release_version)
+def _release_dist_root(output_root: Path, release_version: str) -> Path:
+    return output_root / _release_dist_name(release_version)
 
 
-def _release_archive_path(repo_root: Path, release_version: str) -> Path:
+def _release_archive_path(output_root: Path, release_version: str) -> Path:
     normalized = _normalize_release_version(release_version)
-    return repo_root / "dist" / f"{APP_NAME}-portable-{normalized}.zip"
+    return output_root / f"{APP_NAME}-portable-{normalized}.zip"
 
 
 def _write_release_version(dist_root: Path, release_version: str) -> Path:
@@ -133,6 +135,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=version.RELEASE_VERSION,
         help=f"release version suffix, default: {version.RELEASE_VERSION}",
     )
+    parser.add_argument(
+        "--output-root",
+        default=str(DEFAULT_OUTPUT_ROOT),
+        help=f"release/build output root, default: {DEFAULT_OUTPUT_ROOT}",
+    )
     return parser.parse_args(argv)
 
 
@@ -140,17 +147,32 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     release_version = _normalize_release_version(args.version)
     repo_root = Path(__file__).resolve().parents[2]
+    output_root = Path(args.output_root).resolve()
     spec_path = repo_root / "tools" / "shopify_image_localizer" / "packaging" / "shopify_image_localizer.spec"
     python_exe = _resolve_build_python(repo_root)
-    build_dist_root = repo_root / "dist" / APP_NAME
-    release_root = _release_dist_root(repo_root, release_version)
-    archive_path = _release_archive_path(repo_root, release_version)
+    build_dist_root = output_root / APP_NAME
+    build_work_root = output_root / BUILD_WORK_DIR_NAME
+    release_root = _release_dist_root(output_root, release_version)
+    archive_path = _release_archive_path(output_root, release_version)
+    output_root.mkdir(parents=True, exist_ok=True)
     _ensure_release_targets_available(release_root, archive_path)
     _prepare_build_dist_root(build_dist_root)
+    _prepare_build_dist_root(build_work_root)
 
     env = dict(os.environ)
     subprocess.run(
-        [str(python_exe), "-m", "PyInstaller", "--noconfirm", "--clean", str(spec_path)],
+        [
+            str(python_exe),
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--distpath",
+            str(output_root),
+            "--workpath",
+            str(build_work_root),
+            str(spec_path),
+        ],
         cwd=repo_root,
         env=env,
         check=True,

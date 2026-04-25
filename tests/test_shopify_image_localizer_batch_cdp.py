@@ -6,6 +6,7 @@ from tools.shopify_image_localizer import api_client
 from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer import controller
 from tools.shopify_image_localizer import downloader
+from tools.shopify_image_localizer.rpa import ez_cdp
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
@@ -164,6 +165,42 @@ def test_wait_file_input_node_retries_until_modal_input_exists():
 
     assert node_id == 42
     assert cdp.query_count == 2
+
+
+def test_ez_replace_slot_clicks_save_when_upload_input_state_is_empty(monkeypatch, tmp_path):
+    image_path = tmp_path / "loc_from_url_en_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+    image_path.write_bytes(b"image")
+    calls = []
+
+    class FakeLocator:
+        def set_input_files(self, path, timeout):
+            calls.append(("set_input_files", path, timeout))
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeFrame:
+        page = FakePage()
+
+        def locator(self, selector):
+            assert selector == "input[type=file]"
+            return FakeLocator()
+
+    monkeypatch.setattr(ez_cdp, "_open_slot", lambda *_args, **_kwargs: {"visible_buttons": 1})
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(ez_cdp, "_select_language", lambda *_args, **_kwargs: {"ok": True, "value": "Dutch"})
+    monkeypatch.setattr(ez_cdp, "_uploaded_file_state", lambda *_args, **_kwargs: {"ok": False, "count": 0, "names": []})
+    monkeypatch.setattr(ez_cdp, "_click_save_and_wait", lambda *_args, **_kwargs: calls.append(("save",)) or {"dialog_closed": True})
+    monkeypatch.setattr(ez_cdp, "_click_cancel", lambda *_args, **_kwargs: calls.append(("cancel",)) or True)
+
+    result = ez_cdp.replace_slot(FakeFrame(), 0, str(image_path), language="Dutch")
+
+    assert result["status"] == "ok"
+    assert ("set_input_files", str(image_path), 10000) in calls
+    assert ("save",) in calls
+    assert calls.index(("set_input_files", str(image_path), 10000)) < calls.index(("save",))
+    assert ("cancel",) not in calls
 
 
 def test_fetch_bootstrap_sends_optional_shopify_product_id(monkeypatch):

@@ -8,9 +8,13 @@ from tools.shopify_image_localizer import build_exe
 
 
 def test_shopify_build_release_paths_are_versioned(tmp_path):
-    assert build_exe._release_dist_root(tmp_path, "1.0").name == "ShopifyImageLocalizer-1.0"
-    assert build_exe._release_archive_path(tmp_path, "1.0").name == "ShopifyImageLocalizer-portable-1.0.zip"
+    assert build_exe._release_dist_root(tmp_path, "1.0") == tmp_path / "ShopifyImageLocalizer-1.0"
+    assert build_exe._release_archive_path(tmp_path, "1.0") == tmp_path / "ShopifyImageLocalizer-portable-1.0.zip"
     assert build_exe._release_dist_root(tmp_path, "v2.0").name == "ShopifyImageLocalizer-2.0"
+
+
+def test_shopify_build_defaults_to_clean_release_root():
+    assert build_exe.DEFAULT_OUTPUT_ROOT == build_exe.Path(r"G:\ShopifyRelease")
 
 
 def test_shopify_build_portable_zip_keeps_versioned_folder(tmp_path):

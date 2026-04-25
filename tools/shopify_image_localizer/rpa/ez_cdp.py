@@ -348,6 +348,17 @@ def _wait_uploaded_file_registered(
     raise RuntimeError(f"上传文件未写入 input[type=file]，最后状态={last_state}")
 
 
+def _set_upload_file(frame, local_image_path: str, *, cancel_token: cancellation.CancellationToken | None = None) -> dict:
+    frame.locator("input[type=file]").set_input_files(local_image_path, timeout=10000)
+    frame.page.wait_for_timeout(2500)
+    cancellation.throw_if_cancelled(cancel_token)
+    state = _uploaded_file_state(frame)
+    if not state.get("ok"):
+        state["continued"] = True
+        state["note"] = "input.files is empty after set_input_files; continue because EZ may clear the input after accepting the upload"
+    return state
+
+
 def filter_pairs_missing_language_markers(frame, pairs: list[tuple[int, str]], language: str) -> tuple[list[dict], list[tuple[int, str]]]:
     expected_slots = [slot_idx for slot_idx, _path in pairs]
     marker_result = verify_target_language_markers(frame, expected_slots, language)
@@ -429,11 +440,12 @@ def replace_slot(
         file_state = _run_step(
             scope,
             "set upload file",
-            lambda: (
-                frame.locator("input[type=file]").set_input_files(local_image_path, timeout=10000),
-                _wait_uploaded_file_registered(frame, cancel_token=cancel_token),
-            )[1],
-            lambda value: f"ok selected_files={','.join(dict(value).get('names') or [])}",
+            lambda: _set_upload_file(frame, local_image_path, cancel_token=cancel_token),
+            lambda value: (
+                f"ok selected_files={','.join(dict(value).get('names') or []) or '-'} "
+                f"input_count={int(dict(value).get('count') or 0)} "
+                f"continued={bool(dict(value).get('continued'))}"
+            ),
         )
         _pause_after_action(frame, scope, "set upload file", cancel_token=cancel_token)
 
