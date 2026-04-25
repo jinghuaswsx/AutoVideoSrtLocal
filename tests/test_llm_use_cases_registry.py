@@ -56,7 +56,8 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 34
+    assert len(USE_CASES) == 35
+    assert "omni_translate.lid" in USE_CASES
     assert "ja_translate.localize" in USE_CASES
     assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
@@ -75,6 +76,10 @@ def test_material_evaluation_defaults_to_openrouter_gemini_pro():
 
 def test_ja_translate_module_label_exists():
     assert MODULE_LABELS["ja_translate"] == "日语翻译"
+
+
+def test_omni_translate_module_label_exists():
+    assert MODULE_LABELS["omni_translate"] == "全能翻译"
 
 
 def test_same_image_use_case_defaults():
