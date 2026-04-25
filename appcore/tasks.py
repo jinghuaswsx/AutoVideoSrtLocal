@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from appcore.db import execute, get_conn, query_one, query as query_all
+from appcore.db import execute, get_conn, query_one, query_all
 
 # ---- 状态常量 ----
 PARENT_PENDING = "pending"
