@@ -90,6 +90,60 @@ def transcribe_local_audio(local_audio_path: str, prefix: str, volc_api_key: str
             log.warning("[ASR] 清理临时音频文件失败: %s", object_key, exc_info=True)
 
 
+# Source languages that Doubao's volc.seedasr.auc endpoint officially supports.
+# Anything outside this set is routed to ElevenLabs Scribe (99 langs).
+_DOUBAO_NATIVE_LANGUAGES = frozenset({"zh", "en"})
+
+
+def transcribe_local_audio_for_source(
+    local_audio_path: str,
+    source_language: str | None,
+    *,
+    prefix: str = "asr_input",
+    volc_api_key: str | None = None,
+    elevenlabs_api_key: str | None = None,
+) -> List[Dict]:
+    """Source-language-aware ASR dispatcher.
+
+    Routes to Doubao SeedASR for zh/en (strong on those + cheap), and to
+    ElevenLabs Scribe for any other source language (es/pt/de/fr/...).
+    Doubao's volc.seedasr.auc endpoint does not officially support
+    non-zh-non-en sources; previously Spanish input was misidentified as
+    English, producing garbled transcripts that broke downstream rewrites.
+
+    Args:
+        local_audio_path: 本地音频/视频路径。
+        source_language: ISO-639-1 (zh/en/es/...) 或 None（None 视作 zh 默认）。
+        prefix: 豆包路径下用于 TOS object key 的前缀。
+        volc_api_key: 豆包 ASR 自定义 key。None 时走系统配置。
+        elevenlabs_api_key: Scribe 自定义 key。None 时走系统配置。
+
+    Returns:
+        [{"text", "start_time", "end_time", "words": [...]}] —— 两个 backend
+        的输出已对齐到同一结构。
+    """
+    if source_language in (None, "") or source_language in _DOUBAO_NATIVE_LANGUAGES:
+        log.info(
+            "[ASR-router] source_language=%s → Doubao SeedASR",
+            source_language or "(unset)",
+        )
+        return transcribe_local_audio(
+            local_audio_path, prefix=prefix, volc_api_key=volc_api_key,
+        )
+
+    from pipeline import asr_scribe
+    log.info(
+        "[ASR-router] source_language=%s → ElevenLabs Scribe "
+        "(Doubao only supports zh/en officially)",
+        source_language,
+    )
+    return asr_scribe.transcribe_local_audio(
+        local_audio_path,
+        language_code=source_language,
+        api_key=elevenlabs_api_key,
+    )
+
+
 def _build_headers(request_id: str, api_key: str | None = None) -> dict:
     resolved_key = api_key or _resolve_doubao_asr_key()
     return {
