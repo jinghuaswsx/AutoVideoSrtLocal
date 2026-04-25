@@ -227,16 +227,23 @@ def _supports_video(provider: str, model: str) -> bool:
 
 
 def _resolve_model_only(provider: str, user_id: int | None = None) -> str:
-    """仅获取模型 ID，不创建 OpenAI client（避免 doubao 缺 key 时报错）。"""
+    """仅获取模型 ID，不创建 OpenAI client（避免 doubao 缺 key 时报错）。
+
+    model_id 的来源优先级：
+      1) api_keys/legacy resolve_extra 透出的 model_id（兼容旧 admin 设置）
+      2) llm_provider_configs 行的 model_id
+      3) 硬编码默认
+    """
     from appcore.api_keys import resolve_extra
-    from config import CLAUDE_MODEL, DOUBAO_LLM_MODEL
+
+    _FALLBACK_CLAUDE_MODEL = "anthropic/claude-sonnet-4-5"
+    _FALLBACK_DOUBAO_MODEL = "doubao-seed-2-0-pro-260215"
 
     if provider == "doubao":
         extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
-        return extra.get("model_id") or DOUBAO_LLM_MODEL
-    else:
-        extra = resolve_extra(user_id, "openrouter") if user_id else {}
-        return extra.get("model_id") or CLAUDE_MODEL
+        return extra.get("model_id") or _FALLBACK_DOUBAO_MODEL
+    extra = resolve_extra(user_id, "openrouter") if user_id else {}
+    return extra.get("model_id") or _FALLBACK_CLAUDE_MODEL
 
 
 def _upload_to_public_exchange(local_path: str, prefix: str = "copywriting_media/") -> str:
@@ -586,9 +593,8 @@ def generate_copy(
     # ── 实际调用 ──
     if is_doubao and (use_video or use_vision):
         # 豆包多模态：用 Ark SDK
-        from appcore.api_keys import resolve_key
-        api_key = resolve_key(user_id, "doubao_llm", "DOUBAO_LLM_API_KEY")
-        from appcore.api_keys import resolve_extra
+        from appcore.api_keys import resolve_extra, resolve_key
+        api_key = resolve_key(user_id, "doubao_llm")
         extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
         doubao_base_url = extra.get("base_url") or "https://ark.cn-beijing.volces.com/api/v3"
 

@@ -6,15 +6,18 @@ from openai import OpenAI
 
 log = logging.getLogger(__name__)
 
-from config import (
-    CLAUDE_MODEL,
-    DOUBAO_LLM_API_KEY,
-    DOUBAO_LLM_BASE_URL,
-    DOUBAO_LLM_MODEL,
-    GEMINI_CLOUD_API_KEY,
-    OPENROUTER_API_KEY,
-    OPENROUTER_BASE_URL,
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    require_provider_config,
 )
+from config import (
+    DOUBAO_LLM_BASE_URL_DEFAULT,
+    OPENROUTER_BASE_URL_DEFAULT,
+)
+
+# 默认 model_id 作为 DB 行为空时的兜底
+_DEFAULT_CLAUDE_MODEL = "anthropic/claude-sonnet-4-5"
+_DEFAULT_DOUBAO_MODEL = "doubao-seed-2-0-pro-260215"
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
@@ -103,25 +106,29 @@ def resolve_provider_config(
     from appcore.api_keys import resolve_extra, resolve_key
 
     if provider == "doubao":
-        key = api_key_override or (
-            resolve_key(user_id, "doubao_llm", "DOUBAO_LLM_API_KEY") if user_id else DOUBAO_LLM_API_KEY
-        )
+        try:
+            cfg = require_provider_config("doubao_llm")
+            key = api_key_override or cfg.require_api_key()
+            base_url = cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT)
+        except ProviderConfigError as exc:
+            raise RuntimeError(str(exc)) from exc
         extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
-        base_url = extra.get("base_url") or DOUBAO_LLM_BASE_URL
-        model = extra.get("model_id") or DOUBAO_LLM_MODEL
+        model = extra.get("model_id") or cfg.model_id or _DEFAULT_DOUBAO_MODEL
     else:
         # 非 doubao 统一走 openrouter；根据 provider 字符串选模型
-        key = api_key_override or (
-            resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY") if user_id else OPENROUTER_API_KEY
-        )
+        try:
+            cfg = require_provider_config("openrouter_text")
+            key = api_key_override or cfg.require_api_key()
+            base_url = cfg.require_base_url(default=OPENROUTER_BASE_URL_DEFAULT)
+        except ProviderConfigError as exc:
+            raise RuntimeError(str(exc)) from exc
         extra = resolve_extra(user_id, "openrouter") if user_id else {}
-        base_url = extra.get("base_url") or OPENROUTER_BASE_URL
         # 优先级：用户在 OpenRouter 设置里显式 override 的 model_id > provider 映射 > legacy 默认
-        user_override = (extra.get("model_id") or "").strip()
+        user_override = (extra.get("model_id") or cfg.model_id or "").strip()
         if user_override:
             model = user_override
         else:
-            model = _OPENROUTER_PREF_MODELS.get(provider, CLAUDE_MODEL)
+            model = _OPENROUTER_PREF_MODELS.get(provider, _DEFAULT_CLAUDE_MODEL)
 
     return OpenAI(api_key=key, base_url=base_url), model
 
@@ -193,15 +200,26 @@ def _call_vertex_json(
 ):
     """走 Vertex AI 返回 (parsed_payload, usage_dict, raw_text)。
 
-    复用 appcore/gemini_image.py 的 API Key + Express Mode 授权逻辑
-    （`genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)`）。
+    凭据从 llm_provider_configs.gemini_cloud_text 读取：api_key 或
+    extra_config.project（Vertex 官方项目形式）至少一项非空即可。
     """
     from google import genai
     from google.genai import types as genai_types
 
-    if not GEMINI_CLOUD_API_KEY:
+    try:
+        provider_cfg = require_provider_config("gemini_cloud_text")
+    except ProviderConfigError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    api_key = (provider_cfg.api_key or "").strip()
+    extra = provider_cfg.extra_config or {}
+    project = (extra.get("project") or "").strip()
+    location = (extra.get("location") or "global").strip() or "global"
+
+    if not (api_key or project):
         raise RuntimeError(
-            "Vertex AI 通道未配置（缺 GEMINI_CLOUD_API_KEY 环境变量 / google_api_key 里的 CLOUD: 行）"
+            "缺少供应商配置 gemini_cloud_text.api_key 或 extra_config.project，"
+            "请在 /settings 的「服务商接入」页填写。"
         )
 
     system_prompt, user_content = _split_oai_messages(messages)
@@ -215,7 +233,10 @@ def _call_vertex_json(
         cfg_kwargs["response_schema"] = schema
     cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
 
-    client = genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)
+    if project:
+        client = genai.Client(vertexai=True, project=project, location=location)
+    else:
+        client = genai.Client(vertexai=True, api_key=api_key)
     resp = client.models.generate_content(
         model=model_id,
         contents=user_content,
