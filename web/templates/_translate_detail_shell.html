@@ -50,8 +50,13 @@
 {% endblock %}
 {% block content %}
 {% if detail_mode == 'multi' %}
+{% if request.path.startswith('/omni-translate') %}
+{% set detail_back_href = '/omni-translate' %}
+{% set detail_back_label = '← 返回全能视频翻译列表' %}
+{% else %}
 {% set detail_back_href = '/multi-translate' %}
 {% set detail_back_label = '← 返回多语种视频翻译列表' %}
+{% endif %}
 {% elif detail_mode == 'ja' %}
 {% set detail_back_href = '/ja-translate' %}
 {% set detail_back_label = '← 返回视频翻译（日语）列表' %}

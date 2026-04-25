@@ -22,6 +22,7 @@
     avTargetMarkets: {{ (av_target_markets|default([]))|tojson }},
     avTranslateDefaults: {{ (av_translate_defaults|default({}))|tojson }},
   };
+  window.TASK_WORKBENCH_CONFIG = TASK_WORKBENCH_CONFIG;
 
   let taskId = TASK_WORKBENCH_CONFIG.taskId;
   function _apiUrl(path) { return `${TASK_WORKBENCH_CONFIG.apiBase}/${taskId}${path || ''}`; }
