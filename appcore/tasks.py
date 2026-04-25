@@ -255,6 +255,74 @@ def reject_raw(*, task_id: int, actor_user_id: int, reason: str) -> None:
         conn.close()
 
 
+class NotReadyError(RuntimeError):
+    """compute_readiness gate failed; carries missing keys."""
+    def __init__(self, missing: list[str], detail: str = ""):
+        self.missing = missing
+        super().__init__(detail or f"missing: {missing}")
+
+
+def _find_target_lang_item(product_id: int, lang: str) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_items "
+        "WHERE product_id=%s AND lang=%s AND deleted_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (int(product_id), lang),
+    )
+
+
+def _find_product(product_id: int) -> dict | None:
+    return query_one(
+        "SELECT * FROM media_products WHERE id=%s", (int(product_id),)
+    )
+
+
+def submit_child(*, task_id: int, actor_user_id: int) -> None:
+    """翻译员提交子任务；调 compute_readiness 做产物齐全 gate。"""
+    from appcore import pushes
+    row = query_one(
+        "SELECT * FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["status"] != CHILD_ASSIGNED:
+        raise StateError(f"expected status assigned, got {row['status']}")
+    if row["assignee_id"] != int(actor_user_id):
+        raise StateError("only assignee can submit")
+
+    item = _find_target_lang_item(row["media_product_id"], row["country_code"])
+    if not item:
+        raise NotReadyError(missing=["lang_item_missing"],
+                            detail=f"no media_item with lang={row['country_code']}")
+    product = _find_product(row["media_product_id"])
+    readiness = pushes.compute_readiness(item, product)
+    if not pushes.is_ready(readiness):
+        missing = [k for k, v in readiness.items()
+                   if not str(k).endswith("_reason") and not v]
+        raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+                    "WHERE id=%s AND status=%s",
+                    (CHILD_REVIEW, int(task_id), CHILD_ASSIGNED),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not in assigned (race)")
+                _write_event(cur, task_id, "submitted", actor_user_id, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
 def cancel_parent(*, task_id: int, actor_user_id: int, reason: str) -> None:
     """admin 取消父任务；级联取消所有非 done 子任务，已 done 保留。"""
     if not reason or len(reason.strip()) < MIN_REASON_LEN:

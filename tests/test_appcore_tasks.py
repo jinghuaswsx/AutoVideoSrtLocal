@@ -337,3 +337,94 @@ def test_cancel_parent_cascades_non_done_children(
     assert all(c["status"] == tasks.CHILD_CANCELLED for c in others)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_submit_child_passes_with_ready(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    child_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    # Stub readiness: 假装产物齐全 + 假装目标语种 item 存在
+    monkeypatch.setattr(tasks, "_find_target_lang_item",
+                        lambda product_id, lang: {"id": 1, "object_key": "x", "cover_object_key": "c", "lang": lang, "product_id": product_id})
+    monkeypatch.setattr("appcore.pushes.compute_readiness",
+                        lambda i, p: {"has_video": True, "has_cover": True,
+                                      "has_copywriting": True, "has_push_texts": True,
+                                      "is_listed": True})
+    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+
+    tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
+    row = query_one("SELECT * FROM tasks WHERE id=%s", (child_id,))
+    assert row["status"] == tasks.CHILD_REVIEW
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_submit_child_fails_when_not_ready(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    child_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    monkeypatch.setattr(tasks, "_find_target_lang_item",
+                        lambda product_id, lang: {"id": 1, "lang": lang, "product_id": product_id})
+    monkeypatch.setattr("appcore.pushes.compute_readiness",
+                        lambda i, p: {"has_video": True, "has_cover": False,
+                                      "has_copywriting": False})
+    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: False)
+
+    with pytest.raises(tasks.NotReadyError) as exc:
+        tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
+    assert "has_cover" in str(exc.value.missing) or "has_cover" in str(exc.value)
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_submit_child_fails_when_target_lang_item_missing(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    child_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda *a, **k: None)
+    with pytest.raises(tasks.NotReadyError, match="lang_item_missing|missing"):
+        tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
