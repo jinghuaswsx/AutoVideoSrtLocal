@@ -1,18 +1,31 @@
-"""Google AI Studio Gemini 适配器，复用 appcore.gemini（GEMINI_BACKEND=aistudio）。"""
+"""Google AI Studio Gemini 适配器。凭据来自 llm_provider_configs。"""
 from __future__ import annotations
 
 from pathlib import Path
 
 from appcore import gemini as gemini_api
 from appcore.llm_providers.base import LLMAdapter
+from appcore.llm_provider_configs import (
+    credential_provider_for_adapter,
+    require_provider_config,
+)
 
 
 class GeminiAIStudioAdapter(LLMAdapter):
     provider_code = "gemini_aistudio"
 
-    def resolve_credentials(self, user_id):
-        key, _ = gemini_api.resolve_config(user_id=user_id)
-        return {"api_key": key or "", "base_url": None, "extra": {}}
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
+        provider_code = credential_provider_for_adapter(
+            "gemini_aistudio", media_kind=media_kind,
+        )
+        cfg = require_provider_config(provider_code)
+        api_key = cfg.require_api_key()
+        return {
+            "api_key": api_key,
+            "base_url": None,
+            "extra": cfg.extra_config or {},
+            "provider_code": provider_code,
+        }
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,

@@ -1,4 +1,9 @@
-"""OpenRouter / 豆包 ARK 适配器（OpenAI-compatible 协议）。"""
+"""OpenRouter / 豆包 ARK 适配器（OpenAI-compatible 协议）。
+
+凭据完全来自 llm_provider_configs（DB），不再读 .env / api_keys 兼容层。
+text/image 凭据通过 media_kind 在 llm_provider_configs.credential_provider_for_adapter
+处分流。
+"""
 from __future__ import annotations
 
 import base64
@@ -9,11 +14,15 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from appcore.api_keys import resolve_extra, resolve_key
 from appcore.llm_providers.base import LLMAdapter
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    credential_provider_for_adapter,
+    require_provider_config,
+)
 from config import (
-    DOUBAO_LLM_API_KEY, DOUBAO_LLM_BASE_URL,
-    OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
+    DOUBAO_LLM_BASE_URL_DEFAULT,
+    OPENROUTER_BASE_URL_DEFAULT,
     USD_TO_CNY,
 )
 
@@ -77,24 +86,35 @@ def _parse_json_content(raw: str):
     return json.loads(content.strip())
 
 
+def _has_media(messages):
+    for msg in messages or []:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") in {"image_url", "video_url"}:
+                    return True
+    return False
+
+
 class OpenRouterAdapter(LLMAdapter):
     provider_code = "openrouter"
 
-    def resolve_credentials(self, user_id):
-        key = (resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY")
-               if user_id is not None else OPENROUTER_API_KEY)
-        extra = resolve_extra(user_id, "openrouter") if user_id else {}
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
+        provider_code = credential_provider_for_adapter("openrouter", media_kind=media_kind)
+        cfg = require_provider_config(provider_code)
+        api_key = cfg.require_api_key()
+        base_url = cfg.require_base_url(default=OPENROUTER_BASE_URL_DEFAULT)
         return {
-            "api_key": key or "",
-            "base_url": extra.get("base_url") or OPENROUTER_BASE_URL,
-            "extra": extra,
+            "api_key": api_key,
+            "base_url": base_url,
+            "extra": cfg.extra_config or {},
+            "provider_code": provider_code,
         }
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None):
-        creds = self.resolve_credentials(user_id)
-        if not creds["api_key"]:
-            raise RuntimeError("OpenRouter API Key 未配置")
+        media_kind = "image" if _has_media(messages) else "text"
+        creds = self.resolve_credentials(user_id, media_kind=media_kind)
         client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
         body: dict = dict(extra_body or {})
         if response_format is not None:
@@ -164,21 +184,21 @@ class OpenRouterAdapter(LLMAdapter):
 class DoubaoAdapter(LLMAdapter):
     provider_code = "doubao"
 
-    def resolve_credentials(self, user_id):
-        key = (resolve_key(user_id, "doubao_llm", "DOUBAO_LLM_API_KEY")
-               if user_id is not None else DOUBAO_LLM_API_KEY)
-        extra = resolve_extra(user_id, "doubao_llm") if user_id else {}
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
+        provider_code = credential_provider_for_adapter("doubao", media_kind=media_kind)
+        cfg = require_provider_config(provider_code)
+        api_key = cfg.require_api_key()
+        base_url = cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT)
         return {
-            "api_key": key or "",
-            "base_url": extra.get("base_url") or DOUBAO_LLM_BASE_URL,
-            "extra": extra,
+            "api_key": api_key,
+            "base_url": base_url,
+            "extra": cfg.extra_config or {},
+            "provider_code": provider_code,
         }
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None):
         creds = self.resolve_credentials(user_id)
-        if not creds["api_key"]:
-            raise RuntimeError("豆包 LLM API Key 未配置")
         client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
         # 豆包不支持 response_format / OpenRouter plugins；一律忽略
         kwargs: dict = {}
@@ -196,3 +216,6 @@ class DoubaoAdapter(LLMAdapter):
                 "output_tokens": getattr(usage, "completion_tokens", None) if usage else None,
             },
         }
+
+
+__all__ = ["OpenRouterAdapter", "DoubaoAdapter", "ProviderConfigError"]

@@ -2,25 +2,45 @@ from __future__ import annotations
 
 import requests
 
-import config
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    require_provider_config,
+)
+from config import SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT
 
 
 class SubtitleRemovalProviderError(RuntimeError):
     pass
 
 
+def _provider_cfg():
+    try:
+        return require_provider_config("subtitle_removal")
+    except ProviderConfigError as exc:
+        raise SubtitleRemovalProviderError(str(exc)) from exc
+
+
 def _provider_url() -> str:
-    url = (config.SUBTITLE_REMOVAL_PROVIDER_URL or "").strip()
-    if not url:
-        raise SubtitleRemovalProviderError("SUBTITLE_REMOVAL_PROVIDER_URL is not configured")
-    return url
+    cfg = _provider_cfg()
+    try:
+        return cfg.require_base_url(default=SUBTITLE_REMOVAL_PROVIDER_URL_DEFAULT)
+    except ProviderConfigError as exc:
+        raise SubtitleRemovalProviderError(str(exc)) from exc
 
 
 def _headers() -> dict[str, str]:
-    token = (config.SUBTITLE_REMOVAL_PROVIDER_TOKEN or "").strip()
-    if not token:
-        raise SubtitleRemovalProviderError("SUBTITLE_REMOVAL_PROVIDER_TOKEN is not configured")
+    cfg = _provider_cfg()
+    try:
+        token = cfg.require_api_key()
+    except ProviderConfigError as exc:
+        raise SubtitleRemovalProviderError(str(exc)) from exc
     return {"authorization": token}
+
+
+def _notify_url() -> str:
+    cfg = _provider_cfg()
+    extra = cfg.extra_config or {}
+    return (extra.get("notify_url") or extra.get("notifyUrl") or "").strip()
 
 
 def _post(payload: dict) -> dict:
@@ -66,7 +86,7 @@ def submit_task(
         "videoName": video_name,
         "coverUrl": cover_url,
         "url": source_url,
-        "notifyUrl": config.SUBTITLE_REMOVAL_NOTIFY_URL,
+        "notifyUrl": _notify_url(),
     }
     if erase_text_type == "text":
         payload["operation"] = {
