@@ -153,7 +153,6 @@
     }
     previewVideo.src = src;
     previewVideo.load();
-    previewVideo.play().catch(() => {});
     markVideoLoaded();
     setPreviewNote("已复用当前任务的原始视频预览，字幕会直接叠加在真实画面上。", "success");
     return true;
@@ -170,7 +169,6 @@
     previewVideo.preload = "metadata";
     previewVideo.src = src;
     previewVideo.load();
-    previewVideo.play().catch(() => {});
     markVideoLoaded();
     if (message) setPreviewNote(message, "success");
     return true;

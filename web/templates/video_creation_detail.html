@@ -302,7 +302,7 @@ socket.on('vc_done', data => {
 
   let html = '';
   if (data.video_url || data.local_path) {
-    html = `<video class="vc-result-video" controls autoplay>
+    html = `<video class="vc-result-video" controls preload="metadata">
       <source src="/api/video-creation/${TASK_ID}/result-video" type="video/mp4">
     </video>
     <div class="vc-result-actions">

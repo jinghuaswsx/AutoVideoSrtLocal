@@ -326,7 +326,6 @@
       previewVideo.src = payload.url;
       previewVideo.currentTime = 0;
       previewVideo.load();
-      previewVideo.play().catch(() => {});
       setPreviewMessage(`已加载英文视频「${previewItem.display_name || previewItem.filename || `视频 #${previewItem.id}` }」，字幕会直接叠加在画面上。`, 'success');
     } catch (error) {
       setPreviewIdle(`英文视频预览加载失败：${error.message || error}`);
