@@ -271,7 +271,7 @@ def test_reject_raw_returns_to_in_progress_with_same_assignee(
     tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     tasks.reject_raw(task_id=parent_id, actor_user_id=db_user_admin,
-                     reason="字幕没去干净请重做")
+                     reason="字幕没去干净请重做一遍谢谢")
     row = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
     assert row["status"] == tasks.PARENT_RAW_IN_PROGRESS
     assert row["assignee_id"] == db_user_admin
