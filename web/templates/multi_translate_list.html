@@ -171,6 +171,7 @@
   font-family: inherit; outline: none; box-sizing: border-box; transition: all 0.2s;
 }
 .modal-field select:focus, .modal-field input[type="file"]:focus { border-color: var(--primary-color); background: var(--bg-card); }
+.modal-hint { font-size: 12px; color: #9ca3af; margin: -8px 0 16px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 {% endblock %}
 {% block content %}
@@ -296,7 +297,16 @@
         <label for="videoFile">选择视频</label>
         <input type="file" id="videoFile" name="video" accept="video/*" required />
       </div>
-      <p style="font-size:12px;color:#9ca3af;margin-bottom:16px;">上传后将自动识别视频源语言（中文/英文）</p>
+      <div class="modal-field">
+        <label for="targetLangSelect">目标语言</label>
+        <select id="targetLangSelect" name="target_lang" required>
+          {% for lang in supported_langs %}
+            {% set label = {'de':'DE 德语','fr':'FR 法语','es':'ES 西语','it':'IT 意语','ja':'JP 日语','pt':'PT 葡语','nl':'NL 荷兰语','sv':'SE 瑞典语','fi':'FI 芬兰语'}[lang] %}
+            <option value="{{ lang }}" {{ 'selected' if (current_lang or 'de') == lang else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <p class="modal-hint">上传后将自动识别视频源语言（中文/英文）</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
         <button type="submit" class="btn btn-primary btn-sm" id="uploadBtn">上传并创建</button>
@@ -346,18 +356,23 @@ async function deleteTask(e, taskId) {
   else { var data = await res.json(); alert(data.error || '删除失败'); }
 }
 
-function openUpload() { document.getElementById('uploadOverlay').classList.add('open'); }
 function closeUpload() { document.getElementById('uploadOverlay').classList.remove('open'); }
 document.getElementById('uploadOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeUpload();
 });
 
-// 从 URL 查询串拿当前选中的语言；若缺失，默认 de
-function _getTargetLang() {
+// 从 URL 查询串拿当前筛选语言，用作打开弹窗时的默认目标语言。
+function _getInitialTargetLang() {
   var params = new URLSearchParams(window.location.search);
   var lang = (params.get('lang') || '').trim();
   var supported = ['de', 'fr', 'es', 'it', 'pt', 'ja', 'nl', 'sv', 'fi'];
   return supported.indexOf(lang) >= 0 ? lang : 'de';
+}
+
+function openUpload() {
+  var select = document.getElementById('targetLangSelect');
+  if (select) select.value = _getInitialTargetLang();
+  document.getElementById('uploadOverlay').classList.add('open');
 }
 
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
@@ -365,17 +380,22 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   var uploadForm = document.getElementById('uploadForm');
   var btn = document.getElementById('uploadBtn');
   var fileInput = document.getElementById('videoFile');
+  var langSelect = document.getElementById('targetLangSelect');
   if (!fileInput.files[0]) return;
+  if (!langSelect || !langSelect.value) {
+    alert('请选择目标语言');
+    return;
+  }
 
   var file = fileInput.files[0];
   var sizeMB = (file.size / 1024 / 1024).toFixed(1);
-  var targetLang = _getTargetLang();
+  var targetLang = langSelect.value;
   btn.disabled = true;
   btn.textContent = '准备中...';
 
   try {
     var formData = new FormData(uploadForm);
-    formData.append('target_lang', targetLang);
+    formData.set('target_lang', targetLang);
     var res = await fetch('/api/multi-translate/start', {
       method: 'POST',
       body: formData,

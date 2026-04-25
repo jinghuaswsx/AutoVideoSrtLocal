@@ -339,6 +339,17 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     assert "xhr.open('PUT'" not in template
 
 
+def test_multi_translate_create_modal_uses_visible_target_language_select():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+
+    assert 'id="targetLangSelect"' in template
+    assert 'name="target_lang"' in template
+    assert "document.getElementById('targetLangSelect')" in template
+    assert "formData.set('target_lang', targetLang)" in template
+    assert "var targetLang = _getTargetLang();" not in template
+
+
 def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_voice_selector_multi.html").read_text(encoding="utf-8")
