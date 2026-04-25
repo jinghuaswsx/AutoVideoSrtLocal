@@ -70,6 +70,7 @@ def ensure_cdp_chrome(
     """
     if _cdp_alive(port):
         return False
+    session.kill_chrome_for_profile(user_data_dir)
     if proxy_server is None:
         proxy_server = session.detect_system_proxy()
     args = [
@@ -126,7 +127,7 @@ def _wait_plugin_frame(page, *, timeout_s: int = 30, cancel_token: cancellation.
                     return frame
             except Exception:
                 pass
-        cancellation.cancellable_sleep(cancel_token, 0.5)
+        page.wait_for_timeout(500)
     raise RuntimeError("EZ freshify iframe 未加载或未出现图片按钮")
 
 
@@ -295,20 +296,14 @@ def replace_slot(
     try:
         cancellation.throw_if_cancelled(cancel_token)
         if _target_exists(frame, language):
-            if not replace_existing:
-                _click_cancel(frame)
-                return {"slot": slot_idx, "status": "skipped", "reason": f"{language} already exists"}
-            frame.locator(f'button[aria-label="Remove {language}"]').click(timeout=5000)
-            _click_save_and_wait(frame)
-            cancellation.cancellable_sleep(cancel_token, 1.5)
-            frame = _wait_plugin_frame(frame.page, timeout_s=20, cancel_token=cancel_token)
-            _open_slot(frame, slot_idx, local_hash)
+            _click_cancel(frame)
+            return {"slot": slot_idx, "status": "skipped", "reason": f"{language} already exists"}
 
         cancellation.throw_if_cancelled(cancel_token)
         _select_language(frame, language)
         cancellation.throw_if_cancelled(cancel_token)
         frame.locator("input[type=file]").set_input_files(local_image_path, timeout=10000)
-        cancellation.cancellable_sleep(cancel_token, 2.5)
+        frame.page.wait_for_timeout(2500)
         cancellation.throw_if_cancelled(cancel_token)
         _click_save_and_wait(frame)
         return {"slot": slot_idx, "status": "ok", "path": local_image_path}

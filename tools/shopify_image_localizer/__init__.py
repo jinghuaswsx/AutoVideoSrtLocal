@@ -7,4 +7,5 @@ __all__ = [
     "downloader",
     "settings",
     "storage",
+    "version",
 ]

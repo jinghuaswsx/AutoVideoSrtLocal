@@ -12,6 +12,7 @@ from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
 StatusCallback = Callable[[str], None]
+ShopifyProductIdCallback = Callable[[str], None]
 
 
 def _noop(_message: str) -> None:
@@ -82,6 +83,7 @@ def run_shopify_localizer(
     lang: str,
     shopify_product_id: str = "",
     status_cb: StatusCallback | None = None,
+    shopify_product_id_cb: ShopifyProductIdCallback | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
     reporter = status_cb or _noop
@@ -98,6 +100,8 @@ def run_shopify_localizer(
         api_key=api_key,
         browser_user_data_dir=browser_user_data_dir,
     )
+    emit("正在清理旧 Chrome 浏览器进程")
+    session.kill_chrome_for_profile(browser_user_data_dir)
 
     args = _build_batch_args(
         product_code=product_code,
@@ -105,6 +109,16 @@ def run_shopify_localizer(
         shopify_product_id=shopify_product_id,
     )
     cancellation.throw_if_cancelled(cancel_token)
+    resolved_product_id = resolve_shopify_product_id(
+        base_url=base_url,
+        api_key=api_key,
+        product_code=args.product_code,
+        lang=args.lang,
+        shopify_product_id=args.product_id,
+    )
+    args.product_id = resolved_product_id
+    if shopify_product_id_cb is not None:
+        shopify_product_id_cb(resolved_product_id)
     if args.product_id:
         emit(f"使用手动 Shopify ID: {args.product_id}")
     emit("开始连续替换流程：先替换轮播图，再替换详情图")
@@ -260,5 +274,26 @@ def open_shopify_target(
         "target": str(target or "").strip().lower(),
         "shopify_product_id": product_id,
         "lang": str(lang or "").strip().lower(),
+        "url": url,
+    }
+
+
+def open_shopify_login_page(
+    *,
+    base_url: str,
+    api_key: str,
+    browser_user_data_dir: str,
+) -> dict:
+    settings.save_runtime_config(
+        base_url=base_url,
+        api_key=api_key,
+        browser_user_data_dir=browser_user_data_dir,
+    )
+    session.kill_chrome_for_profile(browser_user_data_dir)
+    url = session.build_products_url()
+    session.start_chrome(browser_user_data_dir, [url])
+    return {
+        "status": "opened",
+        "target": "shopify_login",
         "url": url,
     }

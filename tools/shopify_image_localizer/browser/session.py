@@ -16,7 +16,6 @@ from __future__ import annotations
 """
 
 import os
-import re
 import shutil
 import socket
 import subprocess
@@ -117,6 +116,10 @@ def build_translate_url(shopify_product_id: str, shop_locale: str) -> str:
 
 def build_admin_home_url() -> str:
     return f"https://admin.shopify.com/store/{STORE_SLUG}"
+
+
+def build_products_url() -> str:
+    return f"{build_admin_home_url()}/products"
 
 
 # ---------------------------------------------------------------------------
@@ -394,13 +397,17 @@ def ensure_chrome_started(
     time.sleep(wait_s)
 
 
-def kill_chrome_for_profile(user_data_dir: str) -> None:
+def kill_chrome_for_profile(user_data_dir: str, *, wait_s: float = 5.0) -> None:
     """强制结束使用 `user_data_dir` profile 的所有 Chrome 进程。
 
     只在工具需要重启 Chrome 时使用；正常半自动流程不需要杀 Chrome。
     """
     if os.name != "nt":
         return
+    target = str(user_data_dir or "").strip()
+    if not target:
+        return
+    ps_target = target.replace("'", "''")
     try:
         subprocess.run(
             [
@@ -408,10 +415,11 @@ def kill_chrome_for_profile(user_data_dir: str) -> None:
                 "-NoProfile",
                 "-Command",
                 (
+                    f"$target = '{ps_target}'; "
                     "Get-CimInstance Win32_Process -Filter \"name = 'chrome.exe'\" | "
-                    "Where-Object { $_.CommandLine -and $_.CommandLine -match "
-                    f"'{re.escape(str(user_data_dir))}'"
-                    " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+                    "Where-Object { $_.CommandLine -and "
+                    "$_.CommandLine.IndexOf($target, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 } | "
+                    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
                 ),
             ],
             capture_output=True,
@@ -419,3 +427,8 @@ def kill_chrome_for_profile(user_data_dir: str) -> None:
         )
     except Exception:
         pass
+    deadline = time.time() + max(0.0, float(wait_s or 0.0))
+    while time.time() < deadline:
+        if not is_chrome_running_for_profile(user_data_dir):
+            return
+        time.sleep(0.25)

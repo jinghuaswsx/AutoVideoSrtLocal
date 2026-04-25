@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -9,11 +10,12 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.shopify_image_localizer import settings
+from tools.shopify_image_localizer import settings, version
 
 
 APP_NAME = "ShopifyImageLocalizer"
 PORTABLE_LAUNCHER_NAME = "run_shopify_image_localizer.bat"
+RELEASE_VERSION_FILENAME = "release_version.txt"
 
 
 def _resolve_build_python(repo_root: Path) -> Path:
@@ -63,10 +65,37 @@ def _write_portable_launcher(dist_root: Path) -> Path:
     return launcher_path
 
 
-def _build_portable_zip(dist_root: Path) -> Path:
-    archive_path = dist_root.parent / f"{APP_NAME}-portable.zip"
+def _normalize_release_version(release_version: str) -> str:
+    normalized = str(release_version or "").strip().lstrip("vV")
+    if not normalized:
+        raise ValueError("release version cannot be empty")
+    if any(ch in normalized for ch in ('/', "\\", ":", "*", "?", '"', "<", ">", "|")):
+        raise ValueError(f"release version contains invalid filename characters: {release_version!r}")
+    return normalized
+
+
+def _release_dist_name(release_version: str) -> str:
+    return f"{APP_NAME}-{_normalize_release_version(release_version)}"
+
+
+def _release_dist_root(repo_root: Path, release_version: str) -> Path:
+    return repo_root / "dist" / _release_dist_name(release_version)
+
+
+def _release_archive_path(repo_root: Path, release_version: str) -> Path:
+    normalized = _normalize_release_version(release_version)
+    return repo_root / "dist" / f"{APP_NAME}-portable-{normalized}.zip"
+
+
+def _write_release_version(dist_root: Path, release_version: str) -> Path:
+    version_path = dist_root / RELEASE_VERSION_FILENAME
+    version_path.write_text(f"{_normalize_release_version(release_version)}\n", encoding="utf-8")
+    return version_path
+
+
+def _build_portable_zip(dist_root: Path, archive_path: Path) -> Path:
     if archive_path.exists():
-        archive_path.unlink()
+        raise FileExistsError(f"release archive already exists: {archive_path}")
     built_archive = shutil.make_archive(
         str(archive_path.with_suffix("")),
         "zip",
@@ -76,18 +105,48 @@ def _build_portable_zip(dist_root: Path) -> Path:
     return Path(built_archive)
 
 
-def _prepare_dist_root(dist_root: Path) -> None:
-    if not dist_root.exists():
-        return
-    shutil.rmtree(dist_root)
+def _prepare_build_dist_root(dist_root: Path) -> None:
+    if dist_root.exists():
+        shutil.rmtree(dist_root)
 
 
-def main() -> None:
+def _ensure_release_targets_available(release_root: Path, archive_path: Path) -> None:
+    existing = [path for path in (release_root, archive_path) if path.exists()]
+    if existing:
+        joined = ", ".join(str(path) for path in existing)
+        raise FileExistsError(
+            f"release artifact already exists and will not be overwritten: {joined}. "
+            "Use a new --version value for the next release."
+        )
+
+
+def _publish_release(build_dist_root: Path, release_root: Path) -> None:
+    if release_root.exists():
+        raise FileExistsError(f"release folder already exists: {release_root}")
+    shutil.copytree(build_dist_root, release_root)
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--version",
+        default=version.RELEASE_VERSION,
+        help=f"release version suffix, default: {version.RELEASE_VERSION}",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    release_version = _normalize_release_version(args.version)
     repo_root = Path(__file__).resolve().parents[2]
     spec_path = repo_root / "tools" / "shopify_image_localizer" / "packaging" / "shopify_image_localizer.spec"
     python_exe = _resolve_build_python(repo_root)
-    dist_root = repo_root / "dist" / APP_NAME
-    _prepare_dist_root(dist_root)
+    build_dist_root = repo_root / "dist" / APP_NAME
+    release_root = _release_dist_root(repo_root, release_version)
+    archive_path = _release_archive_path(repo_root, release_version)
+    _ensure_release_targets_available(release_root, archive_path)
+    _prepare_build_dist_root(build_dist_root)
 
     env = dict(os.environ)
     subprocess.run(
@@ -97,9 +156,12 @@ def main() -> None:
         check=True,
     )
 
-    _write_runtime_config(repo_root, dist_root)
-    _write_portable_launcher(dist_root)
-    _build_portable_zip(dist_root)
+    _publish_release(build_dist_root, release_root)
+    _write_runtime_config(repo_root, release_root)
+    _write_portable_launcher(release_root)
+    _write_release_version(release_root, release_version)
+    _build_portable_zip(release_root, archive_path)
+    shutil.rmtree(build_dist_root)
 
 
 if __name__ == "__main__":

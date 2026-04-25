@@ -215,9 +215,15 @@ def test_fetch_bootstrap_ready_honors_pre_cancelled_token(monkeypatch):
 def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     saved_config = []
     captured_args = []
+    browser_cleanups = []
     statuses = []
 
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: saved_config.append(kwargs))
+    monkeypatch.setattr(
+        controller.session,
+        "kill_chrome_for_profile",
+        lambda browser_dir: browser_cleanups.append(browser_dir),
+    )
 
     token = cancellation.CancellationToken()
 
@@ -253,7 +259,48 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     assert captured_args[0].replace_shopify_cdn is True
     assert captured_args[0].no_preserve_detail_size is False
     assert saved_config[0]["base_url"] == "http://172.30.254.14"
+    assert browser_cleanups == [r"C:\chrome-shopify-image"]
     assert any("开始连续替换流程" in message for message in statuses)
+
+
+def test_controller_backfills_resolved_shopify_id_before_batch_runner(monkeypatch):
+    backfilled_ids = []
+    captured_args = []
+
+    monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: None)
+    monkeypatch.setattr(controller.session, "kill_chrome_for_profile", lambda browser_dir: None)
+    monkeypatch.setattr(
+        controller,
+        "resolve_shopify_product_id",
+        lambda **kwargs: "8559445180589",
+    )
+
+    def fake_run(args, *, cancel_token=None):
+        captured_args.append(args)
+        return {
+            "product_code": args.product_code,
+            "lang": args.lang,
+            "shopify_product_id": args.product_id,
+            "workspace": "C:/work/demo/de",
+            "carousel": {"requested": 1, "ok": 1, "skipped": 0, "results": [{"status": "ok"}]},
+            "detail": {"replacement_count": 0, "skipped_existing_count": 0, "fallback_original_count": 0},
+        }
+
+    monkeypatch.setattr(controller.run_product_cdp, "run", fake_run)
+
+    result = controller.run_shopify_localizer(
+        base_url="http://172.30.254.14",
+        api_key="demo-key",
+        browser_user_data_dir=r"C:\chrome-shopify-image",
+        product_code="dual-auto-fuse-tester-puller-rjc",
+        lang="de",
+        shopify_product_id="",
+        shopify_product_id_cb=backfilled_ids.append,
+    )
+
+    assert backfilled_ids == ["8559445180589"]
+    assert captured_args[0].product_id == "8559445180589"
+    assert result["shopify_product_id"] == "8559445180589"
 
 
 def test_verify_target_language_marks_all_expected_slots():
@@ -293,3 +340,200 @@ def test_ez_filters_out_slots_that_already_have_language_marker():
     assert [row["slot"] for row in skipped] == [0, 2]
     assert [row["status"] for row in skipped] == ["skipped", "skipped"]
     assert missing_pairs == [(1, "C:/tmp/b.jpg")]
+
+
+def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: object())
+    monkeypatch.setattr(
+        ez_cdp,
+        "filter_pairs_missing_language_markers",
+        lambda frame, pairs, language: (
+            [{"slot": 0, "status": "skipped", "reason": f"{language} already exists", "path": "C:/tmp/a.jpg"}],
+            [(1, "C:/tmp/b.jpg")],
+        ),
+    )
+
+    def fake_replace_slot(frame, slot_idx, path, **kwargs):
+        calls.append(("replace_slot", slot_idx, path, kwargs["language"]))
+        return {"slot": slot_idx, "status": "ok", "path": path}
+
+    monkeypatch.setattr(ez_cdp, "replace_slot", fake_replace_slot)
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg")],
+        language="German",
+    )
+
+    assert result == [
+        {"slot": 0, "status": "skipped", "reason": "German already exists", "path": "C:/tmp/a.jpg"},
+        {"slot": 1, "status": "ok", "path": "C:/tmp/b.jpg"},
+    ]
+    assert ("replace_slot", 0, "C:/tmp/a.jpg", "German") not in calls
+    assert ("replace_slot", 1, "C:/tmp/b.jpg", "German") in calls
+
+
+def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeLocator:
+        def __init__(self, selector: str):
+            self.selector = selector
+
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            calls.append(("nth", self.selector, index))
+            return self
+
+        def click(self, timeout=None):
+            calls.append(("click", self.selector))
+
+        def wait_for(self, state=None, timeout=None):
+            calls.append(("wait_for", self.selector, state))
+
+        def inner_text(self, timeout=None):
+            return "translation for: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+
+    class FakeFrame:
+        page = FakePage()
+
+        def locator(self, selector):
+            calls.append(("locator", selector))
+            return FakeLocator(selector)
+
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda frame, language: True)
+
+    result = ez_cdp.replace_slot(FakeFrame(), 0, "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg", language="German")
+
+    assert result == {"slot": 0, "status": "skipped", "reason": "German already exists"}
+    assert ("click", 'button[aria-label="Remove German"]') not in calls
+
+
+def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+    alive_results = [False, True]
+
+    def fake_cdp_alive(port):
+        calls.append(("alive", port))
+        return alive_results.pop(0)
+
+    monkeypatch.setattr(ez_cdp, "_cdp_alive", fake_cdp_alive)
+    monkeypatch.setattr(ez_cdp, "_chrome_exe", lambda: "chrome.exe")
+    monkeypatch.setattr(ez_cdp.session, "detect_system_proxy", lambda: None)
+    monkeypatch.setattr(
+        ez_cdp.session,
+        "kill_chrome_for_profile",
+        lambda user_data_dir: calls.append(("kill", user_data_dir)),
+    )
+    monkeypatch.setattr(
+        ez_cdp.subprocess,
+        "Popen",
+        lambda args, **kwargs: calls.append(("popen", args)) or object(),
+    )
+
+    started = ez_cdp.ensure_cdp_chrome(
+        r"C:\chrome-shopify-image",
+        "https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        port=7777,
+        startup_timeout_s=1,
+    )
+
+    assert started is True
+    assert calls.index(("kill", r"C:\chrome-shopify-image")) < next(
+        idx for idx, call in enumerate(calls) if call[0] == "popen"
+    )
+
+
+def test_wait_plugin_frame_pumps_playwright_page_events(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakeLocator:
+        def count(self):
+            return 1
+
+    class FakeFrame:
+        url = "https://translate.freshify.click/demo"
+
+        def locator(self, selector):
+            calls.append(("locator", selector))
+            return FakeLocator()
+
+    class FakePage:
+        def __init__(self):
+            self.frames = []
+
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+            self.frames = [FakeFrame()]
+
+    page = FakePage()
+
+    monkeypatch.setattr(
+        ez_cdp.cancellation,
+        "cancellable_sleep",
+        lambda token, seconds: (_ for _ in ()).throw(AssertionError("page waits must use Playwright")),
+    )
+
+    frame = ez_cdp._wait_plugin_frame(page, timeout_s=1)
+
+    assert frame is page.frames[0]
+    assert ("wait_for_timeout", 500) in calls

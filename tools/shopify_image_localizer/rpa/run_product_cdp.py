@@ -386,6 +386,7 @@ def run(
         "shop_locale": args.shop_locale,
         "shopify_product_id": product_id,
         "workspace": str(workspace.root),
+        "download_dir": str(workspace.source_localized_dir),
         "carousel": None,
         "detail": None,
         "storefront": None,
@@ -410,24 +411,12 @@ def run(
             cancel_token=cancel_token,
         )
         cancellation.throw_if_cancelled(cancel_token)
-        selected_pairs = pairs[:args.carousel_limit] if args.carousel_limit > 0 else pairs
-        carousel_verify = ez_cdp.verify_many_language_markers(
-            ez_url=ez_url,
-            user_data_dir=cfg["browser_user_data_dir"],
-            expected_slots=[slot_idx for slot_idx, _path in selected_pairs],
-            language=args.language,
-            port=args.port,
-            cancel_token=cancel_token,
-        )
         result["carousel"] = {
             "requested": len(pairs),
             "results": carousel_results,
             "ok": sum(1 for row in carousel_results if row.get("status") == "ok"),
             "skipped": sum(1 for row in carousel_results if row.get("status") == "skipped"),
-            "verify": carousel_verify,
         }
-        if not carousel_verify.get("ok"):
-            raise RuntimeError(f"EZ language marker verification failed: {carousel_verify}")
 
     if not args.skip_detail:
         cancellation.throw_if_cancelled(cancel_token)

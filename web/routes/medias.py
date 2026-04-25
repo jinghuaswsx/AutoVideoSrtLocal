@@ -19,7 +19,16 @@ import requests
 from flask import Blueprint, Response, render_template, request, jsonify, abort, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import local_media_storage, material_evaluation, medias, object_keys, pushes, shopify_image_tasks, task_state
+from appcore import (
+    local_media_storage,
+    material_evaluation,
+    medias,
+    object_keys,
+    pushes,
+    shopify_image_localizer_release,
+    shopify_image_tasks,
+    task_state,
+)
 from appcore import image_translate_runtime
 from appcore import image_translate_settings as its
 from appcore.db import execute as db_execute
@@ -574,7 +583,10 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 @bp.route("/")
 @login_required
 def index():
-    return render_template("medias_list.html")
+    return render_template(
+        "medias_list.html",
+        shopify_image_localizer_release=shopify_image_localizer_release.get_release_info(),
+    )
 
 
 @bp.route("/products/<int:pid>/translation-tasks", methods=["GET"])

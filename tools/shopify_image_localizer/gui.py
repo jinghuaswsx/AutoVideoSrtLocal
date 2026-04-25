@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from tools.shopify_image_localizer import api_client, cancellation, controller, settings
+from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version
 
 
 FALLBACK_LANGUAGES = [
@@ -23,7 +23,7 @@ class ShopifyImageLocalizerApp:
         runtime_config = settings.load_runtime_config()
 
         self.root = tk.Tk()
-        self.root.title("Shopify 图片本地化替换")
+        self.root.title(f"Shopify 图片本地化替换 v{version.RELEASE_VERSION}")
         self.root.geometry("920x760")
         self.root.minsize(780, 620)
         self.root.resizable(True, True)
@@ -39,6 +39,7 @@ class ShopifyImageLocalizerApp:
         self.language_items: list[dict] = []
         self.language_label_to_code: dict[str, str] = {}
         self._workspace_root = ""
+        self._download_dir = ""
         self._current_cancel_token: cancellation.CancellationToken | None = None
 
         self.main_frame = tk.Frame(self.root)
@@ -58,7 +59,7 @@ class ShopifyImageLocalizerApp:
         self.login_shopify_button = tk.Button(
             self.login_shopify_frame,
             text="登录shopify店铺",
-            command=lambda: self.open_shopify_target("detail"),
+            command=lambda: self.open_shopify_login(),
             width=24,
             height=2,
         )
@@ -149,6 +150,14 @@ class ShopifyImageLocalizerApp:
             width=14,
         )
         self.open_detail_button.pack(side="left", padx=(8, 0))
+        self.open_download_button = tk.Button(
+            self.action_frame,
+            text="打开下载目录",
+            command=self._open_download_dir,
+            state="disabled",
+            width=16,
+        )
+        self.open_download_button.pack(side="left", padx=(8, 0))
         self.advanced_button = tk.Button(
             self.action_frame,
             text="显示高级设置",
@@ -242,11 +251,19 @@ class ShopifyImageLocalizerApp:
     def _open_workspace(self) -> None:
         if not self._workspace_root:
             return
+        self._open_path(self._workspace_root)
+
+    def _open_download_dir(self) -> None:
+        if not self._download_dir:
+            return
+        self._open_path(self._download_dir)
+
+    def _open_path(self, path: str) -> None:
         try:
             if os.name == "nt":
-                os.startfile(self._workspace_root)
+                os.startfile(path)
             else:
-                subprocess.Popen(["xdg-open", self._workspace_root])
+                subprocess.Popen(["xdg-open", path])
         except Exception as exc:
             self._append_log(f"打开目录失败：{exc}")
 
@@ -343,8 +360,11 @@ class ShopifyImageLocalizerApp:
         self._current_cancel_token = cancel_token
         self._set_running_state(True, stoppable=True)
         self._clear_summary()
-        self._workspace_root = ""
-        self.open_workspace_button.configure(state="disabled")
+        workspace = storage.create_workspace(product_code, lang_code)
+        self._workspace_root = str(workspace.root)
+        self._download_dir = str(workspace.source_localized_dir)
+        self.open_workspace_button.configure(state="normal")
+        self.open_download_button.configure(state="normal")
         self.status_var.set("任务已启动")
         self._append_log(
             f"开始任务：product_code={product_code}, lang={lang_code}, "
@@ -392,6 +412,51 @@ class ShopifyImageLocalizerApp:
             daemon=True,
         ).start()
 
+    def open_shopify_login(self) -> None:
+        base_url = settings.DEFAULT_BASE_URL
+        self.base_url_var.set(base_url)
+        api_key = self.api_key_var.get().strip()
+        browser_dir = self.browser_user_data_dir_var.get().strip()
+        if not browser_dir:
+            messagebox.showerror("错误", "高级设置里的 Chrome 用户目录不能为空")
+            return
+
+        self._set_running_state(True)
+        self.status_var.set("正在打开 Shopify 产品列表页")
+        self._append_log("准备打开 Shopify 产品列表页用于店铺登录")
+        threading.Thread(
+            target=self._open_shopify_login_worker,
+            args=(base_url, api_key, browser_dir),
+            daemon=True,
+        ).start()
+
+    def _open_shopify_login_worker(
+        self,
+        base_url: str,
+        api_key: str,
+        browser_dir: str,
+    ) -> None:
+        try:
+            result = controller.open_shopify_login_page(
+                base_url=base_url,
+                api_key=api_key,
+                browser_user_data_dir=browser_dir,
+            )
+            self.root.after(0, self._render_login_open_result, result)
+        except Exception as exc:
+            self.root.after(0, self.status_var.set, "打开 Shopify 登录页失败")
+            self.root.after(0, self._append_log, f"打开 Shopify 登录页失败：{exc}")
+            self.root.after(0, messagebox.showerror, "打开 Shopify 登录页失败", str(exc))
+        finally:
+            self.root.after(0, self._set_running_state, False)
+
+    def _render_login_open_result(self, result: dict) -> None:
+        self._clear_summary()
+        self._add_summary("已打开页面", "Shopify 产品列表页")
+        self._add_summary("URL", result.get("url"))
+        self.status_var.set("已打开 Shopify 产品列表页")
+        self._append_log(f"已打开 Shopify 产品列表页，请在浏览器里手动登录店铺：{result.get('url')}")
+
     def _open_shopify_target_worker(
         self,
         target: str,
@@ -422,6 +487,7 @@ class ShopifyImageLocalizerApp:
 
     def _render_open_result(self, result: dict, product_code: str) -> None:
         target_name = "EZ 页面" if result.get("target") == "ez" else "详情页"
+        self._handle_shopify_product_id(result.get("shopify_product_id"))
         self._clear_summary()
         self._add_summary("商品 ID", product_code)
         self._add_summary("语言", result.get("lang"))
@@ -451,6 +517,11 @@ class ShopifyImageLocalizerApp:
                 shopify_product_id=shopify_product_id,
                 cancel_token=cancel_token,
                 status_cb=lambda message: self.root.after(0, self._handle_status, message),
+                shopify_product_id_cb=lambda product_id: self.root.after(
+                    0,
+                    self._handle_shopify_product_id,
+                    product_id,
+                ),
             )
             self.root.after(0, self._render_result, result)
         except cancellation.OperationCancelled:
@@ -469,16 +540,24 @@ class ShopifyImageLocalizerApp:
         self._add_summary("任务状态", "已停止")
 
     def _render_result(self, result: dict) -> None:
+        self._handle_shopify_product_id(result.get("shopify_product_id"))
         workspace = str(result.get("workspace_root") or result.get("workspace") or "")
         self._workspace_root = workspace
+        download_dir = str(result.get("download_dir") or "")
+        if not download_dir and workspace:
+            download_dir = str(storage.create_workspace(result.get("product_code"), result.get("lang")).source_localized_dir)
+        self._download_dir = download_dir
         if workspace:
             self.open_workspace_button.configure(state="normal")
+        if download_dir:
+            self.open_download_button.configure(state="normal")
 
         self._clear_summary()
         self._add_summary("商品 ID", result.get("product_code"))
         self._add_summary("语言", result.get("lang"))
         self._add_summary("Shopify ID", result.get("shopify_product_id"))
         self._add_summary("任务目录", workspace)
+        self._add_summary("下载目录", download_dir)
         self._add_summary("结果文件", result.get("manifest_path"))
 
         carousel = result.get("carousel") or {}
@@ -521,3 +600,8 @@ class ShopifyImageLocalizerApp:
     def _handle_status(self, message: str) -> None:
         self.status_var.set(message)
         self._append_log(message)
+
+    def _handle_shopify_product_id(self, product_id: object) -> None:
+        value = str(product_id or "").strip()
+        if value:
+            self.shopify_product_id_var.set(value)
