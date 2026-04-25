@@ -182,3 +182,91 @@ def api_create_parent():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     return jsonify({"parent_task_id": parent_id})
+
+
+@bp.route("/api/parent/<int:tid>/claim", methods=["POST"])
+@login_required
+@capability_required("can_process_raw_video")
+def api_parent_claim(tid: int):
+    try:
+        tasks_svc.claim_parent(task_id=tid, actor_user_id=int(current_user.id))
+    except tasks_svc.ConflictError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/upload_done", methods=["POST"])
+@login_required
+def api_parent_upload_done(tid: int):
+    try:
+        tasks_svc.mark_uploaded(task_id=tid, actor_user_id=int(current_user.id))
+    except tasks_svc.StateError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/approve", methods=["POST"])
+@login_required
+@admin_required
+def api_parent_approve(tid: int):
+    try:
+        tasks_svc.approve_raw(task_id=tid, actor_user_id=int(current_user.id))
+    except tasks_svc.StateError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/reject", methods=["POST"])
+@login_required
+@admin_required
+def api_parent_reject(tid: int):
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "").strip()
+    try:
+        tasks_svc.reject_raw(task_id=tid, actor_user_id=int(current_user.id),
+                             reason=reason)
+    except (ValueError, tasks_svc.StateError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/cancel", methods=["POST"])
+@login_required
+@admin_required
+def api_parent_cancel(tid: int):
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "").strip()
+    try:
+        tasks_svc.cancel_parent(task_id=tid, actor_user_id=int(current_user.id),
+                                reason=reason)
+    except (ValueError, tasks_svc.StateError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/parent/<int:tid>/bind_item", methods=["PATCH"])
+@login_required
+def api_parent_bind_item(tid: int):
+    """父任务回填 media_item_id；上传后跳转回时调用。"""
+    from appcore.db import query_one, execute
+    payload = request.get_json(silent=True) or {}
+    item_id = payload.get("media_item_id")
+    if item_id is None:
+        return jsonify({"error": "media_item_id required"}), 400
+    row = query_one(
+        "SELECT assignee_id, media_product_id FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NULL", (tid,)
+    )
+    if not row:
+        return jsonify({"error": "task not found"}), 404
+    if row["assignee_id"] != int(current_user.id) and not _is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    item = query_one(
+        "SELECT id FROM media_items WHERE id=%s AND product_id=%s",
+        (int(item_id), row["media_product_id"])
+    )
+    if not item:
+        return jsonify({"error": "media_item not found or not under this product"}), 400
+    execute("UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
+            (int(item_id), tid))
+    return jsonify({"ok": True})
