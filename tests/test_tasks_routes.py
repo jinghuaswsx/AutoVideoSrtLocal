@@ -22,3 +22,14 @@ def test_api_list_returns_empty_for_fresh_db(authed_client_no_db):
 def test_api_list_my_tasks_filters_by_assignee(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/list?tab=mine")
     assert rsp.status_code in (200, 500)
+
+
+def test_api_dispatch_pool_admin_only(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/api/dispatch_pool")
+    # Without DB the SQL query may 500; we accept 200 OR 500 for smoke
+    assert rsp.status_code in (200, 500)
+
+
+def test_api_dispatch_pool_forbidden_for_non_admin(authed_user_client_no_db):
+    rsp = authed_user_client_no_db.get("/tasks/api/dispatch_pool")
+    assert rsp.status_code == 403
