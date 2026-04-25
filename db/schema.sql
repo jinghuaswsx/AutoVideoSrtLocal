@@ -178,3 +178,22 @@ CREATE TABLE IF NOT EXISTS ai_model_prices (
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_provider_model (provider, model)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- LLM/API 供应商配置（2026-04-25 引入，取代 .env / api_keys 供应商凭据）
+-- 每个功能入口一条独立 provider_code，管理员在 /settings 维护，全局生效。
+CREATE TABLE IF NOT EXISTS llm_provider_configs (
+    provider_code VARCHAR(64)  NOT NULL,
+    display_name  VARCHAR(128) NOT NULL,
+    group_code    VARCHAR(32)  NOT NULL DEFAULT 'llm',
+    api_key       TEXT         NULL,
+    base_url      VARCHAR(512) NULL,
+    model_id      VARCHAR(160) NULL,
+    extra_config  JSON         NULL,
+    enabled       TINYINT(1)   NOT NULL DEFAULT 1,
+    updated_by    BIGINT       NULL,
+    created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (provider_code),
+    KEY idx_llm_provider_group_code (group_code),
+    KEY idx_llm_provider_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

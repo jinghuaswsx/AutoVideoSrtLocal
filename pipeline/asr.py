@@ -15,7 +15,29 @@ import uuid
 import time
 import requests
 from typing import List, Dict
-from config import VOLC_API_KEY, VOLC_RESOURCE_ID, VOLC_ASR_SUBMIT_URL, VOLC_ASR_QUERY_URL
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    require_provider_config,
+)
+from config import VOLC_ASR_SUBMIT_URL, VOLC_ASR_QUERY_URL
+
+_DEFAULT_VOLC_RESOURCE_ID = "volc.seedasr.auc"
+
+
+def _resolve_doubao_asr_key() -> str:
+    try:
+        return require_provider_config("doubao_asr").require_api_key()
+    except ProviderConfigError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+def _resolve_doubao_asr_resource_id() -> str:
+    try:
+        cfg = require_provider_config("doubao_asr")
+    except ProviderConfigError:
+        return _DEFAULT_VOLC_RESOURCE_ID
+    extra = cfg.extra_config or {}
+    return (extra.get("resource_id") or "").strip() or _DEFAULT_VOLC_RESOURCE_ID
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +59,7 @@ def transcribe(audio_url: str, volc_api_key: str | None = None) -> List[Dict]:
         时间单位为秒
     """
     request_id = str(uuid.uuid4())
-    api_key = volc_api_key or VOLC_API_KEY
+    api_key = volc_api_key or _resolve_doubao_asr_key()
 
     log.info("[ASR] 开始识别，request_id=%s, audio_url=%s", request_id, audio_url[:200])
 
@@ -69,10 +91,11 @@ def transcribe_local_audio(local_audio_path: str, prefix: str, volc_api_key: str
 
 
 def _build_headers(request_id: str, api_key: str | None = None) -> dict:
+    resolved_key = api_key or _resolve_doubao_asr_key()
     return {
         "Content-Type": "application/json",
-        "x-api-key": api_key or VOLC_API_KEY,
-        "X-Api-Resource-Id": VOLC_RESOURCE_ID,
+        "x-api-key": resolved_key,
+        "X-Api-Resource-Id": _resolve_doubao_asr_resource_id(),
         "X-Api-Request-Id": request_id,
         "X-Api-Sequence": "-1",
     }

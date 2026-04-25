@@ -1,19 +1,24 @@
-"""Google Cloud Vertex AI (Express Mode) adapter."""
+"""Google Cloud Vertex AI (Express Mode) adapter.
+
+凭据来自 llm_provider_configs:
+  - text 调用走 gemini_cloud_text
+  - image / 多模态调用走 gemini_cloud_image
+extra_config 里可携带 project / location（Vertex 区分项目）。
+"""
 from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 from google import genai
 
-from appcore.api_keys import resolve_key
 from appcore.llm_providers.base import LLMAdapter
-from config import (
-    GEMINI_CLOUD_API_KEY,
-    GEMINI_CLOUD_LOCATION,
-    GEMINI_CLOUD_PROJECT,
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    credential_provider_for_adapter,
+    require_provider_config,
 )
 
 
@@ -28,23 +33,26 @@ def _normalize_media(media):
     return list(media)
 
 
-def _get_client(api_key: str) -> genai.Client:
-    if GEMINI_CLOUD_PROJECT:
-        cache_key = f"project:{GEMINI_CLOUD_PROJECT}:{GEMINI_CLOUD_LOCATION}"
-    elif api_key:
+def _client_cache_key(api_key: str, project: str, location: str) -> str:
+    if project:
+        return f"project:{project}:{location}"
+    if api_key:
         key_hash = hashlib.sha1(api_key.encode("utf-8")).hexdigest()[:16]
-        cache_key = f"api_key:{key_hash}"
-    else:
-        raise RuntimeError(
-            "Vertex AI channel is not configured: missing GEMINI_CLOUD_API_KEY or GEMINI_CLOUD_PROJECT"
-        )
+        return f"api_key:{key_hash}"
+    raise RuntimeError(
+        "Vertex AI channel is not configured: missing api_key or extra_config.project"
+    )
+
+
+def _get_client(api_key: str, project: str, location: str) -> genai.Client:
+    cache_key = _client_cache_key(api_key, project, location)
     client = _clients.get(cache_key)
     if client is None:
-        if GEMINI_CLOUD_PROJECT:
+        if project:
             client = genai.Client(
                 vertexai=True,
-                project=GEMINI_CLOUD_PROJECT,
-                location=GEMINI_CLOUD_LOCATION,
+                project=project,
+                location=location or "global",
             )
         else:
             client = genai.Client(vertexai=True, api_key=api_key)
@@ -55,13 +63,26 @@ def _get_client(api_key: str) -> genai.Client:
 class GeminiVertexAdapter(LLMAdapter):
     provider_code = "gemini_vertex"
 
-    def resolve_credentials(self, user_id):
-        key = (
-            resolve_key(user_id, "gemini_cloud", "GEMINI_CLOUD_API_KEY")
-            if user_id is not None else None
-        )
-        key = key or GEMINI_CLOUD_API_KEY
-        return {"api_key": key or "", "base_url": None, "extra": {}}
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
+        provider_code = credential_provider_for_adapter("gemini_vertex", media_kind=media_kind)
+        cfg = require_provider_config(provider_code)
+        extra = cfg.extra_config or {}
+        project = (extra.get("project") or "").strip()
+        location = (extra.get("location") or "global").strip() or "global"
+        api_key = (cfg.api_key or "").strip()
+        if not api_key and not project:
+            raise ProviderConfigError(
+                f"缺少供应商配置 {cfg.provider_code}.api_key 或 extra_config.project，"
+                f"请在 /settings 的「服务商接入」页填写（{cfg.display_name}）。"
+            )
+        return {
+            "api_key": api_key,
+            "base_url": None,
+            "extra": dict(extra),
+            "provider_code": provider_code,
+            "project": project,
+            "location": location,
+        }
 
     def _call(self, *, model, messages, response_format, temperature, max_output_tokens):
         # Keep text-only behavior aligned with the legacy translation path.
@@ -122,12 +143,12 @@ class GeminiVertexAdapter(LLMAdapter):
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
                              max_output_tokens=None):
-        # Reuse shared Gemini media/schema helpers, but avoid appcore.gemini.generate()
-        # because llm_client owns use-case routing and billing for provider adapters.
+        # Reuse shared Gemini media/schema helpers, but resolve creds via DAO
+        # so image flows can pick gemini_cloud_image when desired.
         from appcore import gemini as gemini_api
 
-        creds = self.resolve_credentials(user_id)
-        client = _get_client(creds["api_key"])
+        creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
+        client = _get_client(creds["api_key"], creds["project"], creds["location"])
         contents = gemini_api._build_contents(client, prompt, media)
         cfg = gemini_api._build_config(
             system=system,

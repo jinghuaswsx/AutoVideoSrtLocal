@@ -124,7 +124,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 {% endwith %}
 
 {# ═════════════════════════════════════════════════════════════
-   Tab 1 · 服务商接入（与主线保持一致，字段全部沿用）
+   Tab 1 · 服务商接入（2026-04-25 重构：DB 驱动，每功能独立 provider_code）
    ═════════════════════════════════════════════════════════════ #}
 {% if active_tab == 'providers' %}
 <form method="post">
@@ -136,11 +136,11 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     <button class="btn btn-primary" type="submit">保存配置</button>
   </div>
 
-  {# ── 全局配置 ── #}
+  {# ── 全局配置：图片翻译通道 + OpenAI Image 2 开关 ── #}
   <div class="settings-card">
     <h2>全局配置</h2>
-    <p class="step-desc">对所有用户生效，非管理员也可修改</p>
-    <label>图片翻译选通道</label>
+    <p class="step-desc">admin 全局设置；具体供应商凭据在下方分组里维护</p>
+    <label>图片翻译通道</label>
     <select id="imageTranslateChannel" name="image_translate_channel">
       {% for code, label in image_translate_channels %}
       <option value="{{ code }}" {{ 'selected' if image_translate_channel == code }}>{{ label }}</option>
@@ -153,10 +153,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       {% endfor %}
     </select>
     <p class="hint">
-      选择图片翻译走哪个供应商通道，并指定该通道下新建任务默认选中的图像模型。
-      AI Studio / Google Cloud 继续调用 Gemini 图像模型；
-      OpenRouter 调用 OpenRouter 的 Gemini 图像能力；
-      豆包 ARK 调用 Seedream 5.0，并复用下方豆包 ARK 的 Key，或环境变量 <code>DOUBAO_LLM_API_KEY</code>（未设置时继续回落 <code>VOLC_API_KEY</code>）。
+      AI Studio / Google Cloud / OpenRouter 通道分别走独立的 provider 行；
+      豆包 ARK 通道走独立的 <code>doubao_seedream</code>，不再复用 <code>doubao_llm</code>。
     </p>
 
     <div id="openrouterOpenaiImage2Controls" {% if image_translate_channel != 'openrouter' %}hidden{% endif %}>
@@ -177,10 +175,32 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
         <option value="high" {{ 'selected' if openrouter_openai_image2_default_quality == 'high' }}>High</option>
       </select>
       <p class="hint">
-        关闭时不在图片翻译模型备选中展示 OpenAI Image 2；开启后会在 OpenRouter 通道下追加 Low / Mid / High 三档，
-        并把默认质量用于新建任务的默认模型。历史任务不受关闭影响。
+        关闭时不在图片翻译模型备选中展示 OpenAI Image 2；开启后在 OpenRouter 通道追加 Low / Mid / High 三档，
+        并把默认质量用于新建任务。历史任务不受关闭影响。
       </p>
     </div>
+
+    <hr class="divider">
+    <label>Admin 偏好：翻译默认模型选择器</label>
+    <div style="display:flex;gap:8px">
+      <select id="translate_provider_group" style="flex:0 0 200px">
+        <option value="vertex">Vertex AI (Google Cloud)</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="doubao">火山引擎 (豆包)</option>
+      </select>
+      <select id="translate_pref_select" name="translate_pref" style="flex:1">
+        <option value="vertex_gemini_31_flash_lite" data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_flash_lite' }}>Gemini 3.1 Flash-Lite (默认)</option>
+        <option value="vertex_gemini_3_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_3_flash' }}>Gemini 3 Flash</option>
+        <option value="vertex_gemini_31_pro"         data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_pro' }}>Gemini 3.1 Pro</option>
+        <option value="gemini_31_flash" data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash-Lite</option>
+        <option value="gemini_3_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash</option>
+        <option value="gemini_31_pro"   data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro</option>
+        <option value="gpt_5_mini"      data-group="openrouter" {{ 'selected' if translate_pref == 'gpt_5_mini' }}>GPT 5-mini</option>
+        <option value="claude_sonnet"   data-group="openrouter" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6</option>
+        <option value="doubao" data-group="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
+      </select>
+    </div>
+    <p class="hint">更细粒度的「每模块选模型」见「模块模型分配」Tab。</p>
 
     <script id="imageTranslateModelOptions" type="application/json">
       {{ image_translate_models_by_channel | tojson }}
@@ -222,139 +242,61 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
           extraToggle.addEventListener('change', syncExtraVisibility);
         }
         syncExtraVisibility();
-      })();
-    </script>
-  </div>
 
-  {# ── 第一步：语音识别 ── #}
-  <div class="settings-card">
-    <h2>第一步：语音识别</h2>
-    <p class="step-desc">将视频中的中文语音转为文字</p>
-    <span class="service-tag blue">豆包 ASR</span>
-    <label>API Key</label>
-    <input type="text" name="doubao_asr_key" placeholder="API Key"
-           value="{{ keys.get('doubao_asr', {}).get('key_value', '') }}">
-    <label>App ID</label>
-    <input type="text" name="doubao_asr_app_id" placeholder="可选"
-           value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('app_id', '') }}">
-    <label>Cluster</label>
-    <input type="text" name="doubao_asr_cluster" placeholder="可选，默认 volc.seedasr.auc"
-           value="{{ keys.get('doubao_asr', {}).get('extra', {}).get('cluster', '') }}">
-  </div>
-
-  {# ── 第二步：翻译与本土化 ── #}
-  <div class="settings-card">
-    <h2>第二步：翻译与本土化</h2>
-    <p class="step-desc">将中文内容翻译为地道的英文</p>
-    <label>默认翻译模型</label>
-    <div style="display:flex;gap:8px">
-      <select id="translate_provider_group" style="flex:0 0 200px">
-        <option value="vertex">Vertex AI (Google Cloud)</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="doubao">火山引擎 (豆包)</option>
-      </select>
-      <select id="translate_pref_select" name="translate_pref" style="flex:1">
-        <option value="vertex_gemini_31_flash_lite" data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_flash_lite' }}>Gemini 3.1 Flash-Lite (默认)</option>
-        <option value="vertex_gemini_3_flash"        data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_3_flash' }}>Gemini 3 Flash</option>
-        <option value="vertex_gemini_31_pro"         data-group="vertex" {{ 'selected' if translate_pref == 'vertex_gemini_31_pro' }}>Gemini 3.1 Pro</option>
-        <option value="gemini_31_flash" data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_flash' }}>Gemini 3.1 Flash-Lite</option>
-        <option value="gemini_3_flash"  data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_3_flash' }}>Gemini 3 Flash</option>
-        <option value="gemini_31_pro"   data-group="openrouter" {{ 'selected' if translate_pref == 'gemini_31_pro' }}>Gemini 3.1 Pro</option>
-        <option value="gpt_5_mini"      data-group="openrouter" {{ 'selected' if translate_pref == 'gpt_5_mini' }}>GPT 5-mini</option>
-        <option value="claude_sonnet"   data-group="openrouter" {{ 'selected' if translate_pref in ('claude_sonnet', 'openrouter') }}>Claude Sonnet 4.6</option>
-        <option value="doubao" data-group="doubao" {{ 'selected' if translate_pref == 'doubao' }}>豆包 2.0 Pro</option>
-      </select>
-    </div>
-    <p class="hint">
-      Vertex AI 复用「图片翻译通道 · Google Cloud」的 <code>GEMINI_CLOUD_API_KEY</code>；
-      OpenRouter 复用下方 OpenRouter 的 Key；豆包走 ARK。
-      更细粒度的"每模块选模型"见「模块模型分配」Tab。
-    </p>
-    <script>
-      (function() {
-        var grp = document.getElementById('translate_provider_group');
-        var sel = document.getElementById('translate_pref_select');
-        function applyGroup(group) {
+        var tpSel = document.getElementById('translate_pref_select');
+        var tpGrp = document.getElementById('translate_provider_group');
+        function applyTpGroup(group) {
           var firstVisible = null;
-          Array.prototype.forEach.call(sel.options, function(opt) {
+          Array.prototype.forEach.call(tpSel.options, function(opt) {
             var match = opt.getAttribute('data-group') === group;
             opt.hidden = !match;
             opt.disabled = !match;
             if (match && firstVisible === null) firstVisible = opt;
           });
-          var current = sel.selectedOptions[0];
+          var current = tpSel.selectedOptions[0];
           if (!current || current.hidden) {
             if (firstVisible) firstVisible.selected = true;
           }
         }
-        var initial = sel.selectedOptions[0];
+        var initial = tpSel.selectedOptions[0];
         var initialGroup = initial ? (initial.getAttribute('data-group') || 'vertex') : 'vertex';
-        grp.value = initialGroup;
-        applyGroup(initialGroup);
-        grp.addEventListener('change', function() { applyGroup(grp.value); });
+        tpGrp.value = initialGroup;
+        applyTpGroup(initialGroup);
+        tpGrp.addEventListener('change', function() { applyTpGroup(tpGrp.value); });
       })();
     </script>
-
-    <hr class="divider">
-    <span class="service-tag blue">Claude Sonnet · via OpenRouter</span>
-    <label>API Key</label>
-    <input type="text" name="openrouter_key" placeholder="API Key"
-           value="{{ keys.get('openrouter', {}).get('key_value', '') }}">
-    <label>请求 URL</label>
-    <input type="text" name="openrouter_base_url" placeholder="https://openrouter.ai/api/v1"
-           value="{{ keys.get('openrouter', {}).get('extra', {}).get('base_url', '') }}">
-    <label>模型 ID</label>
-    <input type="text" name="openrouter_model_id" placeholder="anthropic/claude-sonnet-4-5"
-           value="{{ keys.get('openrouter', {}).get('extra', {}).get('model_id', '') }}">
-
-    <hr class="divider">
-    <span class="service-tag blue">Google Gemini · AI Studio</span>
-    <label>API Key</label>
-    <input type="text" name="gemini_key" placeholder="API Key"
-           value="{{ keys.get('gemini', {}).get('key_value', '') }}">
-    <label>模型 ID</label>
-    <input type="text" name="gemini_model_id" placeholder="gemini-3.1-flash-lite-preview"
-           value="{{ keys.get('gemini', {}).get('extra', {}).get('model_id', '') }}">
-
-    <hr class="divider">
-    <span class="service-tag blue">Gemini 视频分析（评分 + CSK）</span>
-    <p class="hint">用于视频合成后的 AI 评分与 CSK 深度分析。留空则回落到上方 Gemini 通用配置。</p>
-    <label>API Key</label>
-    <input type="text" name="gemini_video_analysis_key" placeholder="留空则使用上方 Gemini 通用 Key"
-           value="{{ keys.get('gemini_video_analysis', {}).get('key_value', '') }}">
-    <label>模型</label>
-    {% set gva_model = keys.get('gemini_video_analysis', {}).get('extra', {}).get('model_id', '') %}
-    <select name="gemini_video_analysis_model_id">
-      <option value="" {{ 'selected' if not gva_model }}>默认（gemini-3.1-pro-preview）</option>
-      {% for mid, mlabel in video_analysis_models %}
-      <option value="{{ mid }}" {{ 'selected' if gva_model == mid }}>{{ mlabel }}</option>
-      {% endfor %}
-    </select>
-    <p class="hint">仅列出 Gemini 2.x 及以上、支持视频输入的模型。</p>
-
-    <hr class="divider">
-    <span class="service-tag orange">豆包 ARK · 文本翻译 / Seedream 共用</span>
-    <p class="hint">这里配置的 Key 会同时用于豆包文本翻译，以及图片翻译通道中的 Seedream 5.0。</p>
-    <label>API Key</label>
-    <input type="text" name="doubao_llm_key" placeholder="API Key"
-           value="{{ keys.get('doubao_llm', {}).get('key_value', '') }}">
-    <label>请求 URL</label>
-    <input type="text" name="doubao_llm_base_url" placeholder="https://ark.cn-beijing.volces.com/api/v3"
-           value="{{ keys.get('doubao_llm', {}).get('extra', {}).get('base_url', '') }}">
-    <label>模型 ID</label>
-    <input type="text" name="doubao_llm_model_id" placeholder="doubao-seed-2-0-pro-260215"
-           value="{{ keys.get('doubao_llm', {}).get('extra', {}).get('model_id', '') }}">
   </div>
 
-  {# ── 第三步：配音合成 ── #}
+  {# ── 分组展示所有 provider，每行一个 provider_code ── #}
+  {% for group in provider_groups %}
   <div class="settings-card">
-    <h2>第三步：配音合成</h2>
-    <p class="step-desc">生成英文配音音频</p>
-    <span class="service-tag green">ElevenLabs</span>
+    <h2>{{ group.label }}</h2>
+    <p class="step-desc">共 {{ group.rows | length }} 项；每个功能入口保存独立 API Key，方便单独换 key。</p>
+    {% for row in group.rows %}
+    {% set prefix = 'provider_' ~ row.provider_code ~ '_' %}
+    {% if not loop.first %}<hr class="divider">{% endif %}
+    <span class="service-tag blue">{{ row.display_name }}</span>
+    <p class="hint" style="margin-top:2px;margin-bottom:8px;"><code>{{ row.provider_code }}</code></p>
+
     <label>API Key</label>
-    <input type="text" name="elevenlabs_key" placeholder="API Key"
-           value="{{ keys.get('elevenlabs', {}).get('key_value', '') }}">
+    <input type="text" name="{{ prefix }}api_key" placeholder="API Key"
+           value="{{ row.api_key }}" autocomplete="off">
+
+    <label>Base URL</label>
+    <input type="text" name="{{ prefix }}base_url" placeholder="https://..."
+           value="{{ row.base_url }}" autocomplete="off">
+
+    <label>Model ID</label>
+    <input type="text" name="{{ prefix }}model_id" placeholder="留空使用上游默认"
+           value="{{ row.model_id }}" autocomplete="off">
+
+    <label>extra_config（JSON 对象，可选）</label>
+    <textarea name="{{ prefix }}extra_config" rows="3"
+              placeholder='{"project": "my-gcp", "location": "us-central1"}'
+              style="width:100%;background:var(--settings-surface-muted);border:1.5px solid var(--settings-border);border-radius:10px;padding:10px 12px;font-size:13px;font-family:ui-monospace,Consolas,monospace;color:var(--settings-fg);">{{ row.extra_config_json }}</textarea>
+    {% endfor %}
   </div>
+  {% endfor %}
 
   <button class="btn btn-primary save-btn" type="submit">保存配置</button>
 </form>

@@ -886,7 +886,7 @@ def test_recovery_poll_resumes_existing_apimart_task_within_window():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(
              rt.gemini_image, "poll_apimart_task",
              return_value=(b"RESUMED", "image/png", {}),
@@ -916,7 +916,7 @@ def test_recovery_generates_when_no_apimart_snapshot_exists():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(rt.gemini_image, "poll_apimart_task") as m_poll, \
          patch.object(
              rt.gemini_image, "generate_image",
@@ -944,7 +944,7 @@ def test_recovery_polls_existing_apimart_task_even_when_snapshot_is_old():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(
              rt.gemini_image, "poll_apimart_task",
              return_value=(b"OLD-RESULT", "image/png", {}),
@@ -975,7 +975,7 @@ def test_recovery_regenerates_old_apimart_task_only_after_poll_timeout():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(
              rt.gemini_image, "poll_apimart_task",
              side_effect=rt.gemini_image.GeminiImageRetryable("still running"),
@@ -1007,7 +1007,7 @@ def test_recent_apimart_task_retryable_poll_does_not_regenerate_before_min_timeo
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(
              rt.gemini_image, "poll_apimart_task",
              side_effect=rt.gemini_image.GeminiImageRetryable("still running"),
@@ -1057,7 +1057,7 @@ def test_recovery_clears_task_id_and_regenerates_on_upstream_failure():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(
              rt.gemini_image, "poll_apimart_task",
              side_effect=rt.gemini_image.GeminiImageError("content policy violation"),
@@ -1099,7 +1099,7 @@ def test_recovery_normal_path_saves_task_id_via_callback():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(rt.gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(rt.gemini_image, "poll_apimart_task") as m_poll, \
          patch.object(rt.gemini_image, "generate_image", side_effect=fake_generate):
         out, _ = runtime._generate_with_apimart_recovery(

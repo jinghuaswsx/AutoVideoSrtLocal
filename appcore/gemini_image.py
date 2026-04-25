@@ -22,17 +22,16 @@ from PIL import Image
 import requests
 
 from appcore import ai_billing
-from appcore.gemini import resolve_config
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    get_provider_config,
+    require_provider_config,
+)
 from config import (
-    APIMART_IMAGE_API_KEY,
-    DOUBAO_LLM_API_KEY,
-    DOUBAO_LLM_BASE_URL,
-    GEMINI_AISTUDIO_API_KEY,
-    GEMINI_CLOUD_API_KEY,
-    OPENROUTER_API_KEY,
-    OPENROUTER_BASE_URL,
+    APIMART_BASE_URL_DEFAULT,
+    DOUBAO_LLM_BASE_URL_DEFAULT,
+    OPENROUTER_BASE_URL_DEFAULT,
     USD_TO_CNY,
-    VOLC_API_KEY,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,17 +179,32 @@ class GeminiImageRetryable(RuntimeError):
 _image_clients: dict[tuple[str, str], genai.Client] = {}
 
 
-def _get_image_client(api_key: str, *, backend: str = "aistudio") -> genai.Client:
+def _get_image_client(
+    api_key: str,
+    *,
+    backend: str = "aistudio",
+    project: str = "",
+    location: str = "",
+) -> genai.Client:
     """按 backend 创建/缓存 google-genai 客户端。
 
-    backend="cloud" 时走 Vertex AI Express Mode（vertexai=True）；
+    backend="cloud" 时走 Vertex AI（vertexai=True）；
+    - project 非空 → 走正式 Vertex（project+location）
+    - 否则 → 走 Express Mode（api_key）
     其他情况走 AI Studio（vertexai=False）。
     """
-    cache_key = (backend, api_key)
+    cache_key = (backend, api_key, project, location)
     client = _image_clients.get(cache_key)
     if client is None:
         if backend == "cloud":
-            client = genai.Client(vertexai=True, api_key=api_key)
+            if project:
+                client = genai.Client(
+                    vertexai=True,
+                    project=project,
+                    location=location or "global",
+                )
+            else:
+                client = genai.Client(vertexai=True, api_key=api_key)
         else:
             client = genai.Client(api_key=api_key)
         _image_clients[cache_key] = client
@@ -331,8 +345,10 @@ def _generate_via_genai(
     *,
     backend: str,
     api_key: str,
+    project: str = "",
+    location: str = "",
 ) -> tuple[bytes, str, Any]:
-    client = _get_image_client(api_key, backend=backend)
+    client = _get_image_client(api_key, backend=backend, project=project, location=location)
     contents = [
         genai_types.Part.from_bytes(data=source_image, mime_type=source_mime),
         genai_types.Part.from_text(text=prompt),
@@ -399,27 +415,58 @@ def _extract_openrouter_image(resp: Any) -> tuple[bytes, str] | None:
     return None
 
 
-def _resolve_doubao_credentials(user_id: int | None) -> tuple[str, str]:
-    from appcore.api_keys import get_key, resolve_extra
+def _resolve_seedream_credentials() -> tuple[str, str]:
+    """Seedream 走独立的 doubao_seedream provider_code；不复用 doubao_llm / volc。"""
+    try:
+        cfg = require_provider_config("doubao_seedream")
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+    try:
+        api_key = cfg.require_api_key()
+        base_url = cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT)
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+    return api_key, base_url.rstrip("/")
 
-    user_key = ""
-    extra: dict[str, Any] = {}
-    if user_id is not None:
-        try:
-            user_key = (get_key(user_id, "doubao_llm") or "").strip()
-        except Exception:
-            logger.debug("读取 doubao_llm 用户 key 失败", exc_info=True)
-        try:
-            extra = resolve_extra(user_id, "doubao_llm") or {}
-        except Exception:
-            logger.debug("读取 doubao_llm extra 失败", exc_info=True)
-    api_key = user_key or (DOUBAO_LLM_API_KEY or "").strip() or (VOLC_API_KEY or "").strip()
-    if not api_key:
+
+def _resolve_apimart_api_key() -> str:
+    try:
+        return require_provider_config("apimart_image").require_api_key()
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+
+
+def _resolve_openrouter_image_credentials() -> tuple[str, str]:
+    try:
+        cfg = require_provider_config("openrouter_image")
+        return cfg.require_api_key(), cfg.require_base_url(default=OPENROUTER_BASE_URL_DEFAULT)
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+
+
+def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str | None]:
+    """aistudio / cloud 通道的凭据。返回 (api_key, project, location, model_id)。
+
+    cloud 允许 api_key 或 extra_config.project 至少一项非空；aistudio 必须 api_key 非空。
+    """
+    provider_code = "gemini_cloud_image" if channel == "cloud" else "gemini_aistudio_image"
+    try:
+        cfg = require_provider_config(provider_code)
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+    api_key = (cfg.api_key or "").strip()
+    extra = cfg.extra_config or {}
+    project = (extra.get("project") or "").strip() if channel == "cloud" else ""
+    location = (extra.get("location") or "global").strip() if channel == "cloud" else ""
+    if channel == "cloud" and not (api_key or project):
         raise GeminiImageError(
-            "豆包 ARK API key 未配置（请在系统设置中配置 doubao_llm，或设置 DOUBAO_LLM_API_KEY / VOLC_API_KEY）"
+            f"缺少供应商配置 {provider_code}.api_key 或 extra_config.project，请在 /settings 填写。"
         )
-    base_url = (extra.get("base_url") or "").strip() or DOUBAO_LLM_BASE_URL
-    return api_key, (base_url or "").rstrip("/")
+    if channel != "cloud" and not api_key:
+        raise GeminiImageError(
+            f"缺少供应商配置 {provider_code}.api_key，请在 /settings 填写。"
+        )
+    return api_key, project, location, (cfg.model_id or None)
 
 
 def _resolve_seedream_size(source_image: bytes) -> str:
@@ -463,14 +510,15 @@ def _generate_via_openrouter(
     model_id: str,
     *,
     api_key: str,
+    base_url: str,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError(
-            "OpenRouter API key 未配置（请在系统设置中配置 OpenRouter 或设置 OPENROUTER_API_KEY 环境变量）"
+            "缺少供应商配置 openrouter_image.api_key，请在 /settings 的「服务商接入」页填写。"
         )
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+    client = OpenAI(api_key=api_key, base_url=base_url or OPENROUTER_BASE_URL_DEFAULT)
     parsed = parse_openrouter_openai_image2_model(model_id)
     if parsed is not None:
         or_model, image_quality = parsed
@@ -527,7 +575,7 @@ def _generate_via_seedream(
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError("豆包 ARK API key 未配置")
-    api_base = (base_url or DOUBAO_LLM_BASE_URL).rstrip("/")
+    api_base = (base_url or DOUBAO_LLM_BASE_URL_DEFAULT).rstrip("/")
     if not api_base:
         raise GeminiImageError("豆包 ARK Base URL 未配置")
     model = model_id or default_image_model("doubao")
@@ -603,7 +651,7 @@ def poll_apimart_task(
     """
     if not api_key:
         raise GeminiImageError(
-            "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
+            "缺少供应商配置 apimart_image.api_key，请在 /settings 的「服务商接入」页填写。"
         )
     if not task_id:
         raise GeminiImageError("APIMART task_id 为空")
@@ -676,7 +724,7 @@ def _generate_via_apimart(
 ) -> tuple[bytes, str, Any]:
     if not api_key:
         raise GeminiImageError(
-            "APIMART API key 未配置（请在 .env 中设置 APIMART_IMAGE_API_KEY）"
+            "缺少供应商配置 apimart_image.api_key，请在 /settings 的「服务商接入」页填写。"
         )
     mime = source_mime or "image/png"
     b64 = base64.b64encode(source_image).decode("ascii")
@@ -770,7 +818,7 @@ def generate_image(
 
     try:
         if channel == "doubao":
-            api_key, base_url = _resolve_doubao_credentials(user_id)
+            api_key, base_url = _resolve_seedream_credentials()
             image_bytes, mime, resp = _generate_via_seedream(
                 prompt=prompt,
                 source_image=source_image,
@@ -786,26 +834,24 @@ def generate_image(
                 prompt,
                 source_image,
                 source_mime,
-                api_key=APIMART_IMAGE_API_KEY,
+                api_key=_resolve_apimart_api_key(),
                 model_id=model_id,
                 on_submitted=on_apimart_submitted,
             )
             input_tokens = output_tokens = None
             response_cost_cny = None
         else:
-            api_key_from_gemini, resolved_model = resolve_config(
-                user_id, service=service, default_model=model,
-            )
-            # 同样保护 OpenAI Image 2 历史 model_id 不被 coerce 掉
-            candidate_model = model or resolved_model
+            # 保护 OpenAI Image 2 历史 model_id 不被 coerce 掉
+            candidate_model = (model or "").strip() or model_id
             if channel == "openrouter" and is_openrouter_openai_image2_model(candidate_model):
                 model_id = (candidate_model or "").strip()
             else:
                 model_id = coerce_image_model(candidate_model, channel=channel)
             if channel == "openrouter":
-                api_key = OPENROUTER_API_KEY
+                api_key, or_base_url = _resolve_openrouter_image_credentials()
                 image_bytes, mime, resp = _generate_via_openrouter(
-                    prompt, source_image, source_mime, model_id, api_key=api_key,
+                    prompt, source_image, source_mime, model_id,
+                    api_key=api_key, base_url=or_base_url,
                 )
                 input_tokens = output_tokens = None
                 response_cost_cny = _extract_openrouter_cost_cny(resp)
@@ -815,19 +861,14 @@ def generate_image(
                     output_tokens = getattr(usage, "completion_tokens", None)
             else:
                 response_cost_cny = None
-                if channel == "cloud":
-                    api_key = GEMINI_CLOUD_API_KEY
-                    if not api_key:
-                        raise GeminiImageError(
-                            "Google Cloud ????????? GEMINI_CLOUD_API_KEY ?????"
-                        )
-                else:
-                    api_key = api_key_from_gemini or GEMINI_AISTUDIO_API_KEY
-                    if not api_key:
-                        raise GeminiImageError("Gemini API key ???")
+                api_key, project, location, db_model = _resolve_gemini_image_credentials(channel)
+                # 若 DB 行上也配了 model，作为兜底（保留传入 model_id 优先级）
+                if db_model and not model_id:
+                    model_id = db_model
                 image_bytes, mime, resp = _generate_via_genai(
                     prompt, source_image, source_mime, model_id,
                     backend=channel, api_key=api_key,
+                    project=project, location=location,
                 )
                 meta = getattr(resp, "usage_metadata", None)
                 input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0) if meta else None

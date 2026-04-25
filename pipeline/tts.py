@@ -8,20 +8,35 @@ try:
 except ImportError:  # pragma: no cover - older SDK fallback
     VoiceSettings = None
 from elevenlabs.client import ElevenLabs
-from config import ELEVENLABS_API_KEY
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    require_provider_api_key,
+)
 from pipeline.voice_library import get_voice_library
 
 _client: ElevenLabs | None = None
 _client_lock = threading.Lock()
 
 
+def _resolve_elevenlabs_api_key() -> str:
+    try:
+        return require_provider_api_key("elevenlabs_tts")
+    except ProviderConfigError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
 def _get_client(api_key: str | None = None) -> ElevenLabs:
+    """每次 admin 改了 DB key 后要立即生效，所以当前实现总是新建 client。
+
+    如需复用 client，可改为在 key 变化时失效缓存；但本项目的调用频率很低，
+    重新 new 一个 ElevenLabs 客户端的成本可以忽略，换回的是"改完 DB 立即生效"。
+    """
     global _client
     if api_key:
         return ElevenLabs(api_key=api_key)
+    resolved_key = _resolve_elevenlabs_api_key()
     with _client_lock:
-        if _client is None:
-            _client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+        _client = ElevenLabs(api_key=resolved_key)
         return _client
 
 

@@ -1,13 +1,18 @@
-"""Google Gemini (AI Studio) 通用调用层。
+"""Google Gemini 通用调用层（AI Studio 与 Vertex AI 共用）。
 
-提供文本生成、结构化 JSON 输出、视频/图片多模态输入、流式输出。
-业务封装（翻译、提示词、视频评估等）请调用本模块，不要直接用 SDK。
+提供文本生成、结构化 JSON、视频/图片多模态、流式输出。
+
+凭据决策：
+  - service 为 use_case code（含 '.'）：先查 llm_use_case_bindings，按 provider
+    决定走 AI Studio 还是 Vertex 凭据；image 入口可在调用方传 service 改写
+  - service 为传统 service 名（"gemini"、"gemini_video_analysis" 等）：默认走
+    AI Studio 文本凭据（gemini_aistudio_text）
+  - 所有凭据均来自 appcore.llm_provider_configs，禁止读 .env / google_api_key
 """
 from __future__ import annotations
 
 import logging
 import mimetypes
-import os
 import time
 from pathlib import Path
 from typing import Any, Generator, Iterable
@@ -17,14 +22,9 @@ from google.genai import types as genai_types
 from google.genai import errors as genai_errors
 
 from appcore import ai_billing
-from appcore.api_keys import resolve_extra, resolve_key
-from config import (
-    GEMINI_API_KEY,
-    GEMINI_BACKEND,
-    GEMINI_CLOUD_API_KEY,
-    GEMINI_CLOUD_LOCATION,
-    GEMINI_CLOUD_PROJECT,
-    GEMINI_MODEL,
+from appcore.llm_provider_configs import (
+    ProviderConfigError,
+    get_provider_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,10 @@ _INLINE_MAX_BYTES = 20 * 1024 * 1024  # 小于 20MB 走 inline，避免 Files AP
 _FILE_ACTIVE_TIMEOUT = 900
 _FILE_POLL_INTERVAL = 2
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+_DEFAULT_AISTUDIO_PROVIDER = "gemini_aistudio_text"
+_DEFAULT_CLOUD_PROVIDER = "gemini_cloud_text"
+_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 class GeminiError(RuntimeError):
@@ -68,81 +72,94 @@ def _binding_lookup(service: str) -> dict | None:
         return None
 
 
+def _resolve_provider_code(service: str) -> tuple[str, str]:
+    """决定该 service 走哪个 llm_provider_configs 行。
+
+    返回 (provider_code, "aistudio" | "cloud")。
+    """
+    binding = _binding_lookup(service)
+    if binding:
+        provider = (binding.get("provider") or "").strip()
+        if provider == "gemini_vertex":
+            return _DEFAULT_CLOUD_PROVIDER, "cloud"
+        if provider == "gemini_aistudio":
+            return _DEFAULT_AISTUDIO_PROVIDER, "aistudio"
+    if service in {"gemini_cloud", "gemini_cloud_text", "gemini_cloud_image"}:
+        return _DEFAULT_CLOUD_PROVIDER, "cloud"
+    return _DEFAULT_AISTUDIO_PROVIDER, "aistudio"
+
+
 def resolve_config(user_id: int | None = None, service: str = "gemini",
                    default_model: str | None = None) -> tuple[str, str]:
     """返回 (api_key, model_id)。
 
-    service 支持两种入参：
-      1) 老风格服务名: "gemini" / "gemini_video_analysis" —— 读 api_keys 里该服务的配置
-      2) UseCase code（含 '.'）如 "video_score.run" —— 查 bindings 表；
-         仅当 binding.provider == "gemini_aistudio" 时覆盖 model，
-         key 仍走 gemini AI Studio 通道。
-
-    key 解析顺序：该 service 的用户配置 → 默认 "gemini" service 的用户配置
-                → 环境变量 → google_api_key 文件。
-    model 解析顺序：bindings 覆盖 → 该 service 配置的 model_id
-                  → default_model 参数 → GEMINI_MODEL。
+    api_key 与 model_id 全部来自 llm_provider_configs；不读 .env，不读 google_api_key 文件。
+    binding 命中时使用 binding 的 model_id，否则使用 DB 行 model_id 或调用方传入的 default。
     """
-    # 新路径：use_case code → bindings（仅 gemini_aistudio 在此分支覆盖 model）
+    provider_code, _ = _resolve_provider_code(service)
+    cfg = get_provider_config(provider_code)
+    api_key = (cfg.api_key if cfg else "") or ""
+
     binding = _binding_lookup(service)
-    if binding and binding.get("provider") == "gemini_aistudio":
-        key = ""
-        if user_id is not None:
-            key = (resolve_key(user_id, "gemini", "GEMINI_API_KEY") or "").strip()
-        if GEMINI_BACKEND == "cloud":
-            key = key or GEMINI_CLOUD_API_KEY
-        else:
-            key = key or GEMINI_API_KEY
-        chosen = (binding.get("model") or "").strip()
-        return key, chosen or (default_model or GEMINI_MODEL)
-
-    # ── 以下是完全保留的老代码 ──
-    key = ""
-    if user_id is not None:
-        key = (resolve_key(user_id, service, "GEMINI_API_KEY") or "").strip()
-        if not key and service != "gemini":
-            key = (resolve_key(user_id, "gemini", "GEMINI_API_KEY") or "").strip()
-    if GEMINI_BACKEND == "cloud":
-        key = key or GEMINI_CLOUD_API_KEY
-    else:
-        key = key or GEMINI_API_KEY
-
-    model = default_model or GEMINI_MODEL
-    if user_id is not None:
-        extra = resolve_extra(user_id, service) or {}
-        chosen = (extra.get("model_id") or "").strip()
-        if chosen:
-            model = chosen
-    return key, model
+    model_id = ""
+    if binding and binding.get("model"):
+        model_id = (binding["model"] or "").strip()
+    if not model_id and cfg and cfg.model_id:
+        model_id = cfg.model_id
+    if not model_id:
+        model_id = (default_model or "").strip() or _FALLBACK_MODEL
+    return api_key, model_id
 
 
-def _client_cache_key(api_key: str) -> str:
-    if GEMINI_BACKEND == "cloud":
-        if GEMINI_CLOUD_PROJECT:
-            return f"cloud:{GEMINI_CLOUD_PROJECT}:{GEMINI_CLOUD_LOCATION}"
-        return f"cloud-legacy:{api_key}"
-    return f"aistudio:{api_key}"
+def _client_cache_key(provider_code: str, api_key: str, project: str, location: str) -> str:
+    if provider_code in {"gemini_cloud_text", "gemini_cloud_image"}:
+        if project:
+            return f"cloud:{provider_code}:{project}:{location}"
+        return f"cloud-legacy:{provider_code}:{api_key}"
+    return f"aistudio:{provider_code}:{api_key}"
 
 
-def _get_client(api_key: str) -> genai.Client:
-    cache_key = _client_cache_key(api_key)
-    if cache_key not in _clients:
-        if GEMINI_BACKEND == "cloud":
-            if GEMINI_CLOUD_PROJECT:
-                _clients[cache_key] = genai.Client(
+def _get_client_for_service(service: str) -> tuple[genai.Client, str]:
+    """根据 service 解析出 (client, model_id)。"""
+    provider_code, backend = _resolve_provider_code(service)
+    cfg = get_provider_config(provider_code)
+    if cfg is None:
+        raise GeminiError(
+            f"未配置 Gemini provider {provider_code}，请在 /settings 的「服务商接入」页填写。"
+        )
+    api_key = (cfg.api_key or "").strip()
+    extra = cfg.extra_config or {}
+    project = (extra.get("project") or "").strip() if backend == "cloud" else ""
+    location = (extra.get("location") or "global").strip() if backend == "cloud" else ""
+
+    if backend == "cloud" and not (project or api_key):
+        raise GeminiError(
+            f"Gemini Cloud（{provider_code}）缺少 api_key 或 extra_config.project，"
+            "请在 /settings 填写。"
+        )
+    if backend != "cloud" and not api_key:
+        raise GeminiError(
+            f"Gemini AI Studio（{provider_code}）缺少 api_key，请在 /settings 填写。"
+        )
+
+    cache_key = _client_cache_key(provider_code, api_key, project, location)
+    client = _clients.get(cache_key)
+    if client is None:
+        if backend == "cloud":
+            if project:
+                client = genai.Client(
                     vertexai=True,
-                    project=GEMINI_CLOUD_PROJECT,
-                    location=GEMINI_CLOUD_LOCATION,
+                    project=project,
+                    location=location or "global",
                 )
-            elif api_key:
-                _clients[cache_key] = genai.Client(vertexai=True, api_key=api_key)
             else:
-                raise GeminiError(
-                    "GEMINI_CLOUD_PROJECT 和 legacy GEMINI_CLOUD_API_KEY 均未配置，无法使用 Vertex AI"
-                )
+                client = genai.Client(vertexai=True, api_key=api_key)
         else:
-            _clients[cache_key] = genai.Client(api_key=api_key)
-    return _clients[cache_key]
+            client = genai.Client(api_key=api_key)
+        _clients[cache_key] = client
+
+    model_id = cfg.model_id or _FALLBACK_MODEL
+    return client, model_id
 
 
 def _guess_mime(path: Path) -> str:
@@ -238,11 +255,9 @@ def _is_retryable(exc: Exception) -> bool:
 
 
 def _extract_gemini_tokens(resp: Any) -> tuple[int | None, int | None]:
-    """从 Gemini SDK 响应里取 prompt / output token 数，取不到就返回 (None, None)。"""
     meta = getattr(resp, "usage_metadata", None)
     if not meta:
         return None, None
-    # google-genai SDK 的字段名：prompt_token_count / candidates_token_count
     prompt = getattr(meta, "prompt_token_count", None)
     output = getattr(meta, "candidates_token_count", None)
     try:
@@ -276,7 +291,7 @@ def _resolve_billing_provider(use_case_code: str | None) -> str:
             return str(get_use_case(use_case_code)["default_provider"])
         except KeyError:
             pass
-    return "gemini_vertex" if GEMINI_BACKEND == "cloud" else "gemini_aistudio"
+    return "gemini_aistudio"
 
 
 def _log_gemini_usage(
@@ -330,23 +345,12 @@ def generate(
     default_model: str | None = None,
     return_payload: bool = False,
 ) -> str | Any:
-    """一次性生成。传 response_schema 时返回解析后的 JSON（dict/list）。
-
-    media: 视频或图片路径，可传单个或列表。视频或大文件会走 Files API。
-    user_id: 传入后优先读该用户在系统配置里保存的 key / model；同时用于 usage_log。
-    project_id: 传入后会记录到 usage_log（可选）。
-    service: 配置来源服务名（默认 "gemini"，视频分析可传 "gemini_video_analysis"）。
-    default_model: 该业务的默认模型（当 service 未配 model_id 时使用）。
-    """
-    api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
-    if GEMINI_BACKEND != "cloud" and not api_key:
-        raise GeminiError("GEMINI_API_KEY 未配置（可在系统配置页设置，或设环境变量，或写入 google_api_key 文件）")
-    if GEMINI_BACKEND == "cloud" and not (GEMINI_CLOUD_PROJECT or api_key):
-        raise GeminiError(
-            "GEMINI_CLOUD_PROJECT 和 legacy GEMINI_CLOUD_API_KEY 均未配置，无法使用 Vertex AI"
-        )
-    client = _get_client(api_key)
-    model_id = model or resolved_model
+    """一次性生成。传 response_schema 时返回解析后的 JSON。"""
+    try:
+        client, db_model = _get_client_for_service(service)
+    except ProviderConfigError as exc:
+        raise GeminiError(str(exc)) from exc
+    model_id = (model or "").strip() or db_model or default_model or _FALLBACK_MODEL
     media_list = [media] if isinstance(media, (str, Path)) else list(media) if media else None
     request_payload: dict[str, Any] = {
         "type": "generate",
@@ -390,12 +394,7 @@ def generate(
                         response_payload={"json": parsed, "usage": usage},
                     )
                     if return_payload:
-                        return {
-                            "text": None,
-                            "json": parsed,
-                            "raw": resp,
-                            "usage": usage,
-                        }
+                        return {"text": None, "json": parsed, "raw": resp, "usage": usage}
                     return parsed
                 import json
                 payload = json.loads(resp.text)
@@ -406,12 +405,7 @@ def generate(
                     response_payload={"json": payload, "usage": usage},
                 )
                 if return_payload:
-                    return {
-                        "text": None,
-                        "json": payload,
-                        "raw": resp,
-                        "usage": usage,
-                    }
+                    return {"text": None, "json": payload, "raw": resp, "usage": usage}
                 return payload
             text = resp.text or ""
             _log_gemini_usage(
@@ -421,12 +415,7 @@ def generate(
                 response_payload={"text": text, "usage": usage},
             )
             if return_payload:
-                return {
-                    "text": text,
-                    "json": None,
-                    "raw": resp,
-                    "usage": usage,
-                }
+                return {"text": text, "json": None, "raw": resp, "usage": usage}
             return text
         except Exception as e:
             last_err = e
@@ -460,15 +449,11 @@ def generate_stream(
     default_model: str | None = None,
 ) -> Generator[str, None, None]:
     """流式生成，yield 文本片段。不支持 response_schema。"""
-    api_key, resolved_model = resolve_config(user_id, service=service, default_model=default_model)
-    if GEMINI_BACKEND != "cloud" and not api_key:
-        raise GeminiError("GEMINI_API_KEY 未配置")
-    if GEMINI_BACKEND == "cloud" and not (GEMINI_CLOUD_PROJECT or api_key):
-        raise GeminiError(
-            "GEMINI_CLOUD_PROJECT 和 legacy GEMINI_CLOUD_API_KEY 均未配置，无法使用 Vertex AI"
-        )
-    client = _get_client(api_key)
-    model_id = model or resolved_model
+    try:
+        client, db_model = _get_client_for_service(service)
+    except ProviderConfigError as exc:
+        raise GeminiError(str(exc)) from exc
+    model_id = (model or "").strip() or db_model or default_model or _FALLBACK_MODEL
     media_list = [media] if isinstance(media, (str, Path)) else list(media) if media else None
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(
@@ -514,8 +499,6 @@ def generate_stream(
 
 
 def is_configured(user_id: int | None = None) -> bool:
-    if GEMINI_BACKEND == "cloud":
-        key, _ = resolve_config(user_id)
-        return bool(GEMINI_CLOUD_PROJECT or key)
-    key, _ = resolve_config(user_id)
-    return bool(key)
+    """admin 设置页用：判断默认 Gemini AI Studio 文本通道是否已配。"""
+    cfg = get_provider_config(_DEFAULT_AISTUDIO_PROVIDER)
+    return bool(cfg and cfg.api_key)
