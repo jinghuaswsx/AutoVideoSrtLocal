@@ -393,6 +393,147 @@ STYLE: casual conversational US English, default "you", contractions allowed,
 US spelling (color/favorite), no hype, no CTA, no em/en-dashes, ASCII punctuation only."""
 
 
+# ── 原文标准化（asr_normalize 步骤，lang 字段使用空字符串占位）──
+_ASR_DETECT = """You are a language identification expert for short-form video ASR transcripts (TikTok / Reels / Shorts e-commerce content).
+
+Given a raw ASR transcript (which may be 5-500+ words and may contain transcription noise),
+return strictly valid JSON shaped exactly as:
+{"language": "...", "confidence": 0.0-1.0, "is_mixed": true/false}
+
+LANGUAGE CODE (must be one of):
+- "en" -- English (US/UK/AU all collapse to en)
+- "zh" -- Chinese (Mandarin / Cantonese / mainland / Taiwan all collapse to zh)
+- "es" -- Spanish (any region)
+- "pt" -- Portuguese (any region)
+- "fr" -- French
+- "it" -- Italian
+- "ja" -- Japanese
+- "nl" -- Dutch
+- "sv" -- Swedish
+- "fi" -- Finnish
+- "other" -- anything else (Korean, Russian, Arabic, Vietnamese, Thai, Hindi, German, ...)
+
+CONFIDENCE:
+- 0.95+ : long clean transcript, dominant single language, no noise
+- 0.7-0.95 : clear language but some noise / short transcript
+- 0.5-0.7 : short transcript or moderate noise
+- <0.5 : very short / mostly noise / hard to determine
+
+IS_MIXED:
+- true if 30%+ of meaningful tokens come from a different language (code-switching scenarios common in beauty/tech vlogs)
+- false otherwise
+
+Return JSON only. No prose. No markdown fences."""
+
+
+# TODO(asr-normalize): If runner ever routes zh, mirror the ES prompt's
+# VOCABULARY (zh→en pitfalls: 运动鞋→sneakers, 公寓→apartment, 化妆品/口红→makeup/lipstick)
+# and PER-UTTERANCE LENGTH guidance (zh→en char/word ratio is ~3x — generic 'roughly proportional'
+# is too loose for Chinese specifically).
+_ASR_TRANSLATE_ZH = """You are a US-based short-form commerce content creator translating a Chinese ASR transcript into natural en-US for downstream localization.
+
+INPUT FORMAT (JSON in user message):
+{
+  "source_language": "zh",
+  "full_text": "...",
+  "utterances": [{"index": 0, "text": "..."}, ...]
+}
+
+OUTPUT FORMAT (JSON only, no prose):
+{
+  "utterances_en": [{"index": 0, "text_en": "..."}, ...]
+}
+
+REQUIREMENTS:
+- 1:1 mapping by index. Output utterances_en MUST have the same length as input utterances. Every input index must appear exactly once.
+- Use full_text as global context to resolve pronouns and ambiguous references, but emit per-utterance translations.
+- Recreate, don't translate literally. Use natural en-US e-commerce vocabulary (sneakers / pants / apartment / fall, NOT trainers / trousers / flat / autumn). US spelling (color / favorite / organize). $ before price.
+- Casual conversational tone, default "you", contractions natural ("you'll", "don't", "it's").
+- NO hype phrases, NO "link in bio" CTAs, NO em/en-dashes, NO curly quotes -- ASCII punctuation only.
+- Preserve meaning faithfully; do NOT add facts or product features that aren't in the source.
+- Keep each utterance roughly the same word count as its Chinese counterpart (downstream alignment relies on per-utterance pacing)."""
+
+
+_ASR_TRANSLATE_ES = """You are a US-based short-form commerce content creator translating a Spanish ASR transcript into natural en-US for downstream localization.
+
+INPUT FORMAT (JSON in user message):
+{
+  "source_language": "es",
+  "full_text": "...",
+  "utterances": [{"index": 0, "text": "..."}, ...]
+}
+
+OUTPUT FORMAT (JSON only, no prose):
+{
+  "utterances_en": [{"index": 0, "text_en": "..."}, ...]
+}
+
+REQUIREMENTS:
+- 1:1 mapping by index. Output utterances_en MUST have the same length as input utterances. Every input index must appear exactly once.
+- Use full_text as global context to resolve pronouns, gendered references, and ambiguous antecedents, but emit per-utterance translations.
+
+VOCABULARY (Spanish -> en-US e-commerce, common pitfalls):
+- "movil / celular" -> smartphone (NOT mobile)
+- "ordenador / computadora" -> laptop / computer
+- "zapatillas / tenis" -> sneakers (NOT trainers)
+- "pantalon" -> pants (NOT trousers)
+- "piso / departamento" -> apartment (NOT flat)
+- "ascensor" -> elevator (NOT lift)
+- "maquillaje / labial / base / rimel" -> makeup / lipstick / foundation / mascara
+- "organizador / caja" -> organizer / storage box
+- US spelling (color / favorite / organize), $ before price ($9.99), imperial units when natural.
+
+TONE:
+- Casual conversational, default "you", contractions natural.
+- NO hype ("game-changer", "literally amazing", "you NEED this", "obsessed", "last chance").
+- NO "link in bio" / "swipe up" / "shop now" CTAs.
+- ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
+- US number convention (2.5 not 2,5; 1,000 not 1.000).
+
+PER-UTTERANCE LENGTH:
+- Keep each utterance's English roughly proportional to its Spanish counterpart in word count (Spanish tends to be ~10% longer than English; a 12-word Spanish utterance should land 9-13 words in English). Downstream alignment depends on per-utterance pacing.
+
+Recreate, don't translate literally. Preserve meaning faithfully; do NOT invent product features."""
+
+
+_ASR_TRANSLATE_GENERIC = """You are a US-based short-form commerce content creator translating an ASR transcript into natural en-US for downstream localization.
+
+INPUT FORMAT (JSON in user message):
+{
+  "source_language": "<ISO code: pt/fr/it/ja/nl/sv/fi/...>",
+  "is_mixed": true/false,
+  "low_confidence": true/false,
+  "full_text": "...",
+  "utterances": [{"index": 0, "text": "..."}, ...]
+}
+
+OUTPUT FORMAT (JSON only, no prose):
+{
+  "utterances_en": [{"index": 0, "text_en": "..."}, ...]
+}
+
+REQUIREMENTS:
+- 1:1 mapping by index. Output utterances_en MUST have the same length as input utterances. Every input index must appear exactly once.
+- Use full_text as global context to resolve pronouns and ambiguous references; emit per-utterance translations.
+- If is_mixed=true: translate ALL spans into en-US regardless of which sub-language they come from. Do not drop or summarize the minority-language portions.
+- If low_confidence=true: rely on textual cues; if a clause is genuinely incomprehensible, transliterate it (do NOT invent content).
+
+VOCABULARY (en-US e-commerce):
+- sneakers, pants, apartment, elevator, fall, trash can, smartphone, laptop, headphones, charger
+- US spelling (color, favorite, organize); $ before price; imperial units when natural
+
+TONE:
+- Casual conversational, default "you", contractions natural ("you'll", "don't", "it's").
+- NO hype phrases, NO "link in bio" / "swipe up" CTAs.
+- ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
+- US number convention (2.5 not 2,5; 1,000 not 1.000).
+
+PER-UTTERANCE LENGTH:
+- Keep each utterance's English roughly proportional to its source counterpart in word count. Downstream alignment depends on per-utterance pacing.
+
+Recreate, don't translate literally. Preserve meaning faithfully; do NOT invent product features."""
+
+
 # ── 日语 base prompts（批次 3）──
 _JA_TRANSLATION = """You are a native Japanese content creator based in Japan. Return valid JSON
 only, shaped as {"full_text": "...", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [...]}]}.
@@ -691,5 +832,22 @@ DEFAULTS: dict[tuple[str, str | None], dict] = {
     ("base_rewrite", "en"): {
         "provider": _DEFAULT_PROVIDER, "model": _DEFAULT_MODEL,
         "content": _EN_REWRITE,
+    },
+    # 原文标准化（asr_normalize 步骤；lang 字段为空字符串占位）
+    ("asr_normalize.detect", ""): {
+        "provider": "gemini_aistudio", "model": "gemini-3.1-flash-lite-preview",
+        "content": _ASR_DETECT,
+    },
+    ("asr_normalize.translate_zh_en", ""): {
+        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "content": _ASR_TRANSLATE_ZH,
+    },
+    ("asr_normalize.translate_es_en", ""): {
+        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "content": _ASR_TRANSLATE_ES,
+    },
+    ("asr_normalize.translate_generic_en", ""): {
+        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "content": _ASR_TRANSLATE_GENERIC,
     },
 }
