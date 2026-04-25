@@ -89,3 +89,33 @@ def test_parent_claim_requires_capability(authed_user_client_no_db):
     """Non-admin user without can_process_raw_video gets 403."""
     rsp = authed_user_client_no_db.post("/tasks/api/parent/9999/claim")
     assert rsp.status_code == 403
+
+
+def test_child_action_routes_registered_admin(authed_client_no_db):
+    """All child endpoints reachable as admin."""
+    rsp = authed_client_no_db.post("/tasks/api/child/9999/submit")
+    assert rsp.status_code in (200, 400, 422, 500)
+
+    rsp = authed_client_no_db.post("/tasks/api/child/9999/approve")
+    assert rsp.status_code in (200, 400, 500)
+
+    rsp = authed_client_no_db.post("/tasks/api/child/9999/reject", json={"reason": "valid reject reason"})
+    assert rsp.status_code in (200, 400, 500)
+
+    rsp = authed_client_no_db.post("/tasks/api/child/9999/cancel", json={"reason": "valid cancel reason"})
+    assert rsp.status_code in (200, 400, 500)
+
+
+def test_child_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
+    """Non-admin user gets 403 on admin-only child endpoints."""
+    rsp = authed_user_client_no_db.post("/tasks/api/child/9999/approve")
+    assert rsp.status_code == 403
+    rsp = authed_user_client_no_db.post("/tasks/api/child/9999/reject", json={"reason": "x"})
+    assert rsp.status_code == 403
+    rsp = authed_user_client_no_db.post("/tasks/api/child/9999/cancel", json={"reason": "x"})
+    assert rsp.status_code == 403
+
+
+def test_events_endpoint_registered(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/api/9999/events")
+    assert rsp.status_code in (200, 500)

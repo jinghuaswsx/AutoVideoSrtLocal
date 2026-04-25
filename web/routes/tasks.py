@@ -270,3 +270,79 @@ def api_parent_bind_item(tid: int):
     execute("UPDATE tasks SET media_item_id=%s, updated_at=NOW() WHERE id=%s",
             (int(item_id), tid))
     return jsonify({"ok": True})
+
+
+@bp.route("/api/child/<int:tid>/submit", methods=["POST"])
+@login_required
+def api_child_submit(tid: int):
+    try:
+        tasks_svc.submit_child(task_id=tid, actor_user_id=int(current_user.id))
+    except tasks_svc.NotReadyError as e:
+        return jsonify({"error": "readiness_failed", "missing": e.missing}), 422
+    except tasks_svc.StateError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/child/<int:tid>/approve", methods=["POST"])
+@login_required
+@admin_required
+def api_child_approve(tid: int):
+    try:
+        tasks_svc.approve_child(task_id=tid, actor_user_id=int(current_user.id))
+    except tasks_svc.StateError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/child/<int:tid>/reject", methods=["POST"])
+@login_required
+@admin_required
+def api_child_reject(tid: int):
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "").strip()
+    try:
+        tasks_svc.reject_child(task_id=tid, actor_user_id=int(current_user.id),
+                               reason=reason)
+    except (ValueError, tasks_svc.StateError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/child/<int:tid>/cancel", methods=["POST"])
+@login_required
+@admin_required
+def api_child_cancel(tid: int):
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "").strip()
+    try:
+        tasks_svc.cancel_child(task_id=tid, actor_user_id=int(current_user.id),
+                               reason=reason)
+    except (ValueError, tasks_svc.StateError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/<int:tid>/events", methods=["GET"])
+@login_required
+def api_events(tid: int):
+    from appcore.db import query_all
+    rows = query_all(
+        "SELECT te.*, u.username AS actor_username "
+        "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
+        "WHERE te.task_id=%s ORDER BY te.id ASC",
+        (tid,),
+    )
+    events = [
+        {
+            "id": r["id"],
+            "task_id": r["task_id"],
+            "event_type": r["event_type"],
+            "actor_user_id": r["actor_user_id"],
+            "actor_username": r["actor_username"],
+            "payload_json": r["payload_json"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    return jsonify({"events": events})
