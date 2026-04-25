@@ -227,6 +227,27 @@ def _build_contents(client: genai.Client, prompt: str,
     return parts
 
 
+_GEMINI_UNSUPPORTED_SCHEMA_KEYS = frozenset({
+    "additionalProperties", "additional_properties",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "minLength", "maxLength", "pattern", "default",
+    "minItems", "maxItems", "uniqueItems",
+})
+
+
+def _sanitize_schema_for_gemini(schema: dict | list | Any) -> Any:
+    """递归清洗 JSON Schema，去掉 Gemini API 不支持的关键字。"""
+    if isinstance(schema, dict):
+        return {
+            k: _sanitize_schema_for_gemini(v)
+            for k, v in schema.items()
+            if k not in _GEMINI_UNSUPPORTED_SCHEMA_KEYS
+        }
+    if isinstance(schema, list):
+        return [_sanitize_schema_for_gemini(item) for item in schema]
+    return schema
+
+
 def _build_config(
     *,
     system: str | None,
@@ -243,7 +264,7 @@ def _build_config(
         kwargs["max_output_tokens"] = max_output_tokens
     if response_schema is not None:
         kwargs["response_mime_type"] = "application/json"
-        kwargs["response_schema"] = response_schema
+        kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
     return genai_types.GenerateContentConfig(**kwargs)
 
 
