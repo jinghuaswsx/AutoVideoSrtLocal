@@ -504,6 +504,14 @@ def resume(task_id):
     if start_step not in RESUMABLE_STEPS:
         return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
 
+    if start_step == "asr_normalize":
+        store.update(
+            task_id,
+            utterances_en=None,
+            source_language=None,
+            detected_source_language=None,
+        )
+
     started = False
     for s in RESUMABLE_STEPS:
         if s == start_step:

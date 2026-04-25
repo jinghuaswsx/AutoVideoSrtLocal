@@ -868,6 +868,39 @@ def test_resume_accepts_asr_normalize_as_start_step(
     assert resp.status_code == 200
 
 
+# ── Critic review: resume from asr_normalize clears stale state ─────────────
+
+def test_resume_from_asr_normalize_clears_stale_state(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    """resume start_step=asr_normalize 应清空 utterances_en / source_language /
+    detected_source_language，避免 _step_asr_normalize 的幂等守卫让 resume 成 no-op。"""
+    from web import store
+    from web.routes import multi_translate as mt_module
+
+    monkeypatch.setattr(mt_module.multi_pipeline_runner, "resume",
+                        lambda *a, **k: None)
+
+    task_id = "t-resume-clear"
+    store.create(task_id, "/tmp/v.mp4", str(tmp_path))
+    store.update(
+        task_id, _user_id=1, type="multi_translate", target_lang="de",
+        utterances_en=[{"index": 0, "text": "old"}],
+        source_language="en",
+        detected_source_language="es",
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/multi-translate/{task_id}/resume",
+        json={"start_step": "asr_normalize"},
+    )
+    assert resp.status_code == 200
+    task = store.get(task_id)
+    assert not task.get("utterances_en")
+    assert not task.get("source_language")
+    assert not task.get("detected_source_language")
+
+
 # ── Task 10: upload modal hint text ─────────────────────────────────────────
 
 def test_multi_translate_list_upload_modal_text_mentions_normalization():

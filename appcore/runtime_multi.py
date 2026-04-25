@@ -372,12 +372,12 @@ class MultiTranslateRunner(PipelineRunner):
             )
         except _AsnUnsupportedError as exc:
             self._set_step(task_id, "asr_normalize", "failed", str(exc))
-            task_state.update(task_id, error=str(exc))
+            task_state.update(task_id, error=str(exc), status="error")
             return
         except Exception as exc:
             err = f"原文标准化失败：{exc}"
             self._set_step(task_id, "asr_normalize", "failed", err)
-            task_state.update(task_id, error=err)
+            task_state.update(task_id, error=err, status="error")
             return
 
         # 拆 artifact：_utterances_en 单独写到 task["utterances_en"]，不进 artifact 落盘

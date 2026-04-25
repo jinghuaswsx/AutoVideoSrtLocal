@@ -1336,10 +1336,11 @@ class PipelineRunner:
         from pipeline.voice_library import get_voice_library
 
         scene_cuts = detect_scene_cuts(video_path)
-        alignment = compile_alignment(task.get("utterances", []), scene_cuts=scene_cuts)
+        utterances_for_alignment = task.get("utterances_en") or task.get("utterances", [])
+        alignment = compile_alignment(utterances_for_alignment, scene_cuts=scene_cuts)
         suggested_voice = get_voice_library().recommend_voice(
             self.user_id,
-            " ".join(item.get("text", "") for item in task.get("utterances", []))
+            " ".join(item.get("text", "") for item in utterances_for_alignment)
         )
         task_state.update(
             task_id,
