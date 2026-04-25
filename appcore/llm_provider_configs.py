@@ -51,7 +51,12 @@ _KNOWN_PROVIDERS: dict[str, tuple[str, str]] = {
     "seedance_video":        ("Seedance 视频生成",                  GROUP_VIDEO),
     "apimart_image":         ("APIMART / GPT Image 2",              GROUP_IMAGE),
     "elevenlabs_tts":        ("ElevenLabs 配音",                    GROUP_TTS),
-    "subtitle_removal":      ("字幕移除服务",                        GROUP_AUX),
+    # subtitle_removal：goodline.simplemokey.com 第三方接口的备用通道。
+    # 线上字幕移除一直走火山 VOD（appcore/subtitle_removal_runtime_vod.py，
+    # 凭据是 .env 的 VOD_ACCESS_KEY / VOD_SECRET_KEY），由 .env 的
+    # SUBTITLE_REMOVAL_PROVIDER=vod 路由。该 provider_code 仅在切回
+    # SUBTITLE_REMOVAL_PROVIDER=goodline 时才需要 token，目前 DB 行已 enabled=0。
+    "subtitle_removal":      ("字幕移除 · goodline 备用通道（已停用，线上走 vod）", GROUP_AUX),
     "openapi_materials":     ("素材 OpenAPI",                        GROUP_AUX),
 }
 
