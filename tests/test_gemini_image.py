@@ -9,10 +9,12 @@
   - _resolve_gemini_image_credentials
 """
 import base64
+from io import BytesIO
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PIL import Image
 
 
 def _fake_response(image_bytes: bytes, mime: str = "image/png"):
@@ -31,6 +33,12 @@ def _fake_response(image_bytes: bytes, mime: str = "image/png"):
     resp.candidates = [cand]
     resp.usage_metadata = MagicMock(prompt_token_count=10, candidates_token_count=0)
     return resp
+
+
+def _png_bytes(width, height):
+    buf = BytesIO()
+    Image.new("RGB", (width, height), "white").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def test_generate_image_returns_bytes_and_mime():
@@ -652,6 +660,25 @@ def test_generate_image_apimart_passes_requested_size():
         )
 
     assert submitted["size"] == "16:9"
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected_size", "expected_resolution"),
+    [
+        (800, 1200, "2:3", "1k"),
+        (1920, 1080, "16:9", "2k"),
+        (1080, 1600, "2:3", "2k"),
+    ],
+)
+def test_resolve_apimart_output_params_matches_source_need(
+    width, height, expected_size, expected_resolution,
+):
+    from appcore import gemini_image
+
+    assert gemini_image._resolve_apimart_output_params(_png_bytes(width, height)) == (
+        expected_size,
+        expected_resolution,
+    )
 
 
 def test_resolve_seedream_size_falls_back_to_2k():
