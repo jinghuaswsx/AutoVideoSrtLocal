@@ -1,22 +1,26 @@
 """API 设置页。
 
 4-tab 结构：
-  - providers: 服务商 Key、Base URL、图片翻译通道等全局 API 配置
-  - bindings:  模块模型分配（UseCase × Provider × Model，新增）
+  - providers: 服务商 Key / Base URL / model_id / extra_config，admin only，明文
+  - bindings:  模块模型分配（UseCase × Provider × Model）
   - pricing:   AI 定价
   - push:      推送配置
 
-演进式重写：所有主线已有字段（TRANSLATE_PROVIDERS / SERVICES / DEFAULT_TRANSLATE_PROVIDER）
-保持不变，以免破坏已有用户数据。只新增 Tab 2 Bindings 部分。
+2026-04-25 变更：providers Tab 完全由 llm_provider_configs 驱动。每个业务功能
+一条独立 provider_code，字段明文渲染 + 自动复制按钮。admin 保存后新请求立即
+读取最新 DB 行。历史 "translate_pref" 选择器保留（走老 api_keys 表）。
 """
+from __future__ import annotations
+
+import json
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import llm_bindings, pricing
-from appcore.api_keys import can_manage_api_config_user, get_all, set_key
+from appcore import llm_bindings, llm_provider_configs, pricing
+from appcore.api_keys import can_manage_api_config_user, set_key
 from appcore.db import execute, query
 from appcore.gemini import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
@@ -36,14 +40,20 @@ from appcore.llm_use_cases import MODULE_LABELS, USE_CASES
 
 bp = Blueprint("settings", __name__)
 
-SERVICES = [
-    ("doubao_asr", "豆包 ASR", ["key_value", "app_id", "cluster"]),
-    ("openrouter", "OpenRouter", ["key_value", "base_url", "model_id"]),
-    ("gemini", "Google Gemini", ["key_value", "model_id"]),
-    ("gemini_video_analysis", "Gemini 视频分析", ["key_value", "model_id"]),
-    ("doubao_llm", "豆包翻译", ["key_value", "base_url", "model_id"]),
-    ("elevenlabs", "ElevenLabs", ["key_value"]),
+
+# ---------------------------------------------------------------------------
+# Providers Tab：UI 分组显示顺序（group_code → 标题）
+# ---------------------------------------------------------------------------
+
+PROVIDER_GROUP_ORDER: list[tuple[str, str]] = [
+    ("text_llm", "文本 / 本土化 LLM"),
+    ("image",    "图片重绘 / 图片翻译"),
+    ("asr",      "语音识别"),
+    ("video",    "视频生成"),
+    ("tts",      "配音"),
+    ("aux",      "辅助 API"),
 ]
+
 
 TRANSLATE_PROVIDERS = [
     "vertex_gemini_31_flash_lite", "vertex_gemini_3_flash", "vertex_gemini_31_pro",
@@ -92,6 +102,45 @@ def admin_config_required(f):
     return decorated
 
 
+# ---------------------------------------------------------------------------
+# Providers Tab helpers
+# ---------------------------------------------------------------------------
+
+def _provider_rows_by_group() -> list[dict]:
+    """返回 [{group_code, group_label, rows: [...]}]。
+    group 顺序固定，rows 来自 llm_provider_configs 表。
+    """
+    rows = llm_provider_configs.list_provider_configs()
+    by_group: dict[str, list[llm_provider_configs.LlmProviderConfig]] = {}
+    for row in rows:
+        by_group.setdefault(row.group_code, []).append(row)
+    view: list[dict] = []
+    for group_code, group_label in PROVIDER_GROUP_ORDER:
+        group_rows = by_group.get(group_code, [])
+        if not group_rows:
+            continue
+        view.append({
+            "code": group_code,
+            "label": group_label,
+            "rows": [
+                {
+                    "provider_code": r.provider_code,
+                    "display_name": r.display_name,
+                    "api_key": r.api_key or "",
+                    "base_url": r.base_url or "",
+                    "model_id": r.model_id or "",
+                    "extra_config_json": (
+                        json.dumps(r.extra_config, ensure_ascii=False, indent=2)
+                        if r.extra_config else ""
+                    ),
+                    "enabled": bool(r.enabled),
+                }
+                for r in group_rows
+            ],
+        })
+    return view
+
+
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 @admin_config_required
@@ -103,12 +152,11 @@ def index():
         elif tab == "push":
             _handle_push_post()
         else:
-            _handle_providers_post()  # 兼容老表单（无 tab）和 tab=providers/general
+            _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
         return redirect(url_for("settings.index", tab=tab))
 
-    keys = get_all(current_user.id)
-    translate_pref = keys.get("translate_pref", {}).get("key_value", "") or DEFAULT_TRANSLATE_PROVIDER
+    translate_pref_value = _load_translate_pref()
     try:
         current_image_channel = get_image_translate_channel()
     except Exception:
@@ -175,9 +223,8 @@ def index():
 
     return render_template(
         "settings.html",
-        keys=keys,
-        services=SERVICES,
-        translate_pref=translate_pref,
+        provider_groups=_provider_rows_by_group(),
+        translate_pref=translate_pref_value,
         video_analysis_models=VIDEO_CAPABLE_MODELS,
         image_translate_channel=current_image_channel,
         image_translate_channels=[
@@ -199,25 +246,61 @@ def index():
     )
 
 
+def _load_translate_pref() -> str:
+    """translate_pref 存在 api_keys 表（admin user 的非供应商偏好行）。"""
+    from appcore.api_keys import get_all
+
+    stored = get_all(current_user.id).get("translate_pref", {}).get("key_value", "")
+    return stored or DEFAULT_TRANSLATE_PROVIDER
+
+
 def _handle_providers_post() -> None:
-    """兼容主线的"服务商 + translate_pref + image_channel"一页表单。"""
-    for service, _, fields in SERVICES:
-        posted_fields = [f"{service}_key", *[f"{service}_{field}" for field in fields[1:]]]
-        if not any(field_name in request.form for field_name in posted_fields):
+    """保存 providers Tab：每个 provider_code 独立保存，admin-only。"""
+    user_id = current_user.id
+    known_codes = set(llm_provider_configs.known_provider_codes())
+    for provider_code in known_codes:
+        prefix = f"provider_{provider_code}_"
+        touched = any(field.startswith(prefix) for field in request.form.keys())
+        if not touched:
             continue
-        key_value = request.form.get(f"{service}_key", "").strip()
-        extra = {}
-        for field in fields[1:]:
-            value = request.form.get(f"{service}_{field}", "").strip()
-            if value:
-                extra[field] = value
-        set_key(current_user.id, service, key_value, extra or None)
+        fields: dict[str, object] = {}
+        raw_api_key = request.form.get(f"{prefix}api_key")
+        if raw_api_key is not None:
+            fields["api_key"] = raw_api_key
+        raw_base_url = request.form.get(f"{prefix}base_url")
+        if raw_base_url is not None:
+            fields["base_url"] = raw_base_url
+        raw_model_id = request.form.get(f"{prefix}model_id")
+        if raw_model_id is not None:
+            fields["model_id"] = raw_model_id
+        raw_extra = request.form.get(f"{prefix}extra_config")
+        if raw_extra is not None:
+            text = (raw_extra or "").strip()
+            if not text:
+                fields["extra_config"] = {}
+            else:
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError:
+                    flash(
+                        f"{provider_code} 的 extra_config 不是合法 JSON，已跳过保存该字段",
+                        "error",
+                    )
+                    continue
+                if not isinstance(parsed, dict):
+                    flash(
+                        f"{provider_code} 的 extra_config 必须是 JSON 对象",
+                        "error",
+                    )
+                    continue
+                fields["extra_config"] = parsed
+        if not fields:
+            continue
+        llm_provider_configs.save_provider_config(
+            provider_code, fields, updated_by=user_id,
+        )
 
-    translate_pref = request.form.get("translate_pref", DEFAULT_TRANSLATE_PROVIDER).strip()
-    if translate_pref in TRANSLATE_PROVIDERS:
-        set_key(current_user.id, "translate_pref", translate_pref)
-
-    # OpenRouter OpenAI Image 2：先保存开关与默认质量，再让后续 coerce_image_model 感知最新开关状态
+    # 全局：图片翻译通道 + OpenAI Image 2 开关 / 默认质量
     image2_enabled_raw = (request.form.get("openrouter_openai_image2_enabled") or "").strip().lower()
     image2_enabled = image2_enabled_raw in {"1", "true", "on", "yes"}
     image2_quality = (request.form.get("openrouter_openai_image2_default_quality") or "mid").strip().lower()
@@ -228,18 +311,21 @@ def _handle_providers_post() -> None:
     try:
         set_openrouter_openai_image2_default_quality(image2_quality)
     except ValueError:
-        # 非法值：忽略保存，保持旧值
         pass
 
     image_translate_channel = request.form.get("image_translate_channel", "").strip().lower()
     if image_translate_channel in IMAGE_TRANSLATE_CHANNELS:
         set_image_translate_channel(image_translate_channel)
         image_translate_model = request.form.get("image_translate_default_model", "").strip()
-        # coerce 在开关关闭时会自动把 OpenAI Image 2 档位回退到普通默认
         set_image_translate_default_model(
             image_translate_channel,
             coerce_image_model(image_translate_model, channel=image_translate_channel),
         )
+
+    # Admin 个人偏好：翻译模型选择器（老路径，存 api_keys.translate_pref）
+    translate_pref = request.form.get("translate_pref", DEFAULT_TRANSLATE_PROVIDER).strip()
+    if translate_pref in TRANSLATE_PROVIDERS:
+        set_key(user_id, "translate_pref", translate_pref)
 
 
 def _handle_bindings_post() -> None:
