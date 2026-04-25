@@ -1,5 +1,5 @@
-def test_index_renders_for_admin(logged_in_client):
-    rsp = logged_in_client.get("/tasks/")
+def test_index_renders_for_admin(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
     assert rsp.status_code == 200
     assert b"\xe4\xbb\xbb\xe5\x8a\xa1\xe4\xb8\xad\xe5\xbf\x83" in rsp.data  # "任务中心" in UTF-8
 
