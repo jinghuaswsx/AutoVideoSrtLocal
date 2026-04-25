@@ -26,6 +26,148 @@ from tools.shopify_image_localizer.rpa import ez_cdp
 BODY_HTML_FIELD_PREFIX = "editable_Ym9keV9odG1s"
 SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
 IMG_SRC_RE = re.compile(r"<img\b[^>]*\bsrc\s*=\s*(['\"])(.*?)\1", re.I)
+INSERT_IMAGE_BUTTON_LABELS = ("Insert image", "插入图片")
+INSERT_IMAGE_DIALOG_LABELS = ("Insert image", "插入图片")
+SAVE_BUTTON_LABELS = ("Save", "保存")
+CANCEL_OR_CLOSE_BUTTON_LABELS = ("Cancel", "Close", "取消", "关闭")
+FILE_INPUT_SELECTOR = "input[type=file]#image-upload, input[type=file]"
+
+
+def _js_array(values: tuple[str, ...]) -> str:
+    return json.dumps(list(values), ensure_ascii=False)
+
+
+def build_insert_image_modal_script() -> str:
+    button_labels = _js_array(INSERT_IMAGE_BUTTON_LABELS)
+    dialog_labels = _js_array(INSERT_IMAGE_DIALOG_LABELS)
+    return f"""
+(async () => {{
+  const buttonLabels = {button_labels};
+  const dialogLabels = {dialog_labels};
+  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const labelMatches = (value, labels) => {{
+    const normalized = normalize(value);
+    return labels.some((label) => normalized === normalize(label) || normalized.includes(normalize(label)));
+  }};
+  const isEnabled = (button) => button && button.getAttribute('aria-disabled') !== 'true' && !button.disabled;
+  const dialogOpen = () => {{
+    const openDialog = document.querySelector('[role="dialog"], .Polaris-Modal-Dialog');
+    if (!openDialog) return false;
+    const text = openDialog.innerText || openDialog.textContent || '';
+    return dialogLabels.some((label) => text.includes(label));
+  }};
+  if (dialogOpen()) return {{ok:true, already:true}};
+
+  const findButton = () => {{
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const labelMatchesButton = (button) => labelMatches(
+      [
+        button.getAttribute('aria-label') || '',
+        button.getAttribute('title') || '',
+        button.innerText || button.textContent || '',
+      ].join(' '),
+      buttonLabels
+    );
+    const byLabel = buttons.filter((button) => isEnabled(button) && labelMatchesButton(button));
+    if (byLabel.length) return {{button: byLabel[0], strategy: 'label', total: byLabel.length}};
+
+    const byIcon = buttons.filter((button) => (
+      isEnabled(button)
+      && button.querySelector('s-internal-icon[type="image"]')
+    ));
+    if (byIcon.length) return {{button: byIcon[0], strategy: 'icon', total: byIcon.length}};
+    return {{button: null, strategy: 'missing', total: 0}};
+  }};
+
+  let found = findButton();
+  if (!found.button) {{
+    const overflow = Array.from(document.querySelectorAll('button')).find((button) => (
+      isEnabled(button)
+      && labelMatches(
+        [
+          button.getAttribute('aria-label') || '',
+          button.getAttribute('title') || '',
+          button.innerText || button.textContent || '',
+        ].join(' '),
+        ['More controls', 'Other controls', '其他控件', '更多控件']
+      )
+    ));
+    if (overflow) {{
+      overflow.scrollIntoView({{block:'center'}});
+      overflow.click();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      found = findButton();
+    }}
+  }}
+
+  if (!found.button) return {{ok:false, reason:'Insert image button missing'}};
+  found.button.scrollIntoView({{block:'center'}});
+  found.button.click();
+  return {{ok:true, strategy: found.strategy, total: found.total}};
+}})()
+"""
+
+
+def build_click_save_script() -> str:
+    labels = _js_array(SAVE_BUTTON_LABELS)
+    return f"""
+(() => {{
+  const labels = {labels};
+  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const isEnabled = (button) => button && button.getAttribute('aria-disabled') !== 'true' && !button.disabled;
+  const buttons = Array.from(document.querySelectorAll('button')).filter((node) => {{
+    const text = normalize(node.innerText || node.textContent || node.getAttribute('aria-label') || '');
+    return labels.some((label) => text === normalize(label));
+  }});
+  const button = buttons.find(isEnabled) || buttons[buttons.length - 1];
+  if (!button) return {{ok:false, reason:'Save button missing'}};
+  button.scrollIntoView({{block:'center'}});
+  button.click();
+  return {{ok:true, total: buttons.length, disabled:button.disabled, ariaDisabled:button.getAttribute('aria-disabled')}};
+}})()
+"""
+
+
+def build_close_modal_script() -> str:
+    labels = _js_array(CANCEL_OR_CLOSE_BUTTON_LABELS)
+    return f"""
+(() => {{
+  const labels = {labels};
+  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  for (const label of labels) {{
+    const wanted = normalize(label);
+    const button = Array.from(document.querySelectorAll('button')).find((node) => {{
+      return normalize(node.innerText || node.textContent || node.getAttribute('aria-label') || '') === wanted;
+    }});
+    if (button) {{
+      button.click();
+      return label;
+    }}
+  }}
+  return null;
+}})()
+"""
+
+
+def _query_file_input_node_id(cdp: Any) -> int | None:
+    root = cdp.call("DOM.getDocument", {"depth": -1, "pierce": True}).payload
+    root_id = root["result"]["root"]["nodeId"]
+    node = cdp.call(
+        "DOM.querySelector",
+        {"nodeId": root_id, "selector": FILE_INPUT_SELECTOR},
+    ).payload
+    node_id = node["result"].get("nodeId")
+    return int(node_id) if node_id else None
+
+
+def _wait_file_input_node_id(cdp: Any, *, timeout_s: float = 10, interval_s: float = 0.25) -> int:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        node_id = _query_file_input_node_id(cdp)
+        if node_id:
+            return node_id
+        time.sleep(interval_s)
+    raise RuntimeError("Insert image file input not found")
 
 
 @dataclass
@@ -208,15 +350,7 @@ class TaaSession:
 
     def click_save(self) -> list[dict[str, Any]]:
         result = self.evaluate(
-            r"""
-(() => {
-  const button = Array.from(document.querySelectorAll('button')).find((node) => (node.innerText || '').trim() === 'Save');
-  if (!button) return {ok:false, reason:'Save button missing'};
-  button.scrollIntoView({block:'center'});
-  button.click();
-  return {ok:true, disabled:button.disabled, ariaDisabled:button.getAttribute('aria-disabled')};
-})()
-""",
+            build_click_save_script(),
             timeout_s=20,
         )
         if not result or not result.get("ok"):
@@ -228,21 +362,7 @@ class TaaSession:
 
     def open_insert_image_modal(self) -> None:
         result = self.evaluate(
-            r"""
-(() => {
-  const openDialog = document.querySelector('[role="dialog"], .Polaris-Modal-Dialog');
-  if (openDialog && (openDialog.innerText || '').includes('Insert image')) {
-    return {ok:true, already:true};
-  }
-  const buttons = Array.from(document.querySelectorAll('button[aria-label="Insert image"]'));
-  const enabled = buttons.filter((button) => button.getAttribute('aria-disabled') !== 'true' && !button.disabled);
-  const button = enabled[0] || buttons[buttons.length - 1];
-  if (!button) return {ok:false, reason:'Insert image button missing'};
-  button.scrollIntoView({block:'center'});
-  button.click();
-  return {ok:true, total: buttons.length, enabled: enabled.length};
-})()
-""",
+            build_insert_image_modal_script(),
             timeout_s=20,
         )
         if not result or not result.get("ok"):
@@ -252,20 +372,7 @@ class TaaSession:
     def close_modal(self) -> None:
         try:
             self.evaluate(
-                r"""
-(() => {
-  for (const label of ['Cancel', 'Close']) {
-    const button = Array.from(document.querySelectorAll('button')).find((node) => {
-      return (node.innerText || node.getAttribute('aria-label') || '').trim() === label;
-    });
-    if (button) {
-      button.click();
-      return label;
-    }
-  }
-  return null;
-})()
-""",
+                build_close_modal_script(),
                 timeout_s=10,
             )
         except Exception:
@@ -274,15 +381,7 @@ class TaaSession:
     def _set_file_input(self, local_path: str) -> None:
         if self.cdp is None:
             raise RuntimeError("TAA CDP session is not open")
-        root = self.cdp.call("DOM.getDocument", {"depth": -1, "pierce": True}).payload
-        root_id = root["result"]["root"]["nodeId"]
-        node = self.cdp.call(
-            "DOM.querySelector",
-            {"nodeId": root_id, "selector": "input[type=file]#image-upload, input[type=file]"},
-        ).payload
-        node_id = node["result"].get("nodeId")
-        if not node_id:
-            raise RuntimeError("Insert image file input not found")
+        node_id = _wait_file_input_node_id(self.cdp)
         self.cdp.call("DOM.setFileInputFiles", {"nodeId": node_id, "files": [str(Path(local_path).resolve())]})
 
     def upload_image(self, local_path: str, *, timeout_s: int = 70) -> str:

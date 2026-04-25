@@ -91,6 +91,34 @@ def test_plan_body_html_replacements_treats_sanitized_shopify_upload_as_existing
     assert plan["skipped_existing"][0]["reason"] == "already localized"
 
 
+def test_taa_toolbar_detection_supports_chinese_shopify_admin_labels():
+    assert "插入图片" in taa_cdp.INSERT_IMAGE_BUTTON_LABELS
+    assert "保存" in taa_cdp.SAVE_BUTTON_LABELS
+    assert "s-internal-icon[type=\"image\"]" in taa_cdp.build_insert_image_modal_script()
+
+
+def test_wait_file_input_node_retries_until_modal_input_exists():
+    class FakeCdp:
+        def __init__(self):
+            self.query_count = 0
+
+        def call(self, method, params=None):
+            if method == "DOM.getDocument":
+                return taa_cdp.CdpResponse({"result": {"root": {"nodeId": 1}}}, [])
+            if method == "DOM.querySelector":
+                self.query_count += 1
+                node_id = 0 if self.query_count == 1 else 42
+                return taa_cdp.CdpResponse({"result": {"nodeId": node_id}}, [])
+            raise AssertionError(method)
+
+    cdp = FakeCdp()
+
+    node_id = taa_cdp._wait_file_input_node_id(cdp, timeout_s=1, interval_s=0)
+
+    assert node_id == 42
+    assert cdp.query_count == 2
+
+
 def test_fetch_bootstrap_sends_optional_shopify_product_id(monkeypatch):
     calls = []
 
