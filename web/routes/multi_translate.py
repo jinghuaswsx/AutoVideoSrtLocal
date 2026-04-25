@@ -349,7 +349,7 @@ def restart(task_id):
     """清上一轮产物，用新参数重跑多语种翻译流水线。"""
     recover_task_if_needed(task_id)
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -374,7 +374,7 @@ def restart(task_id):
 def start(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -497,7 +497,7 @@ RESUMABLE_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment"
 def resume(task_id):
     recover_task_if_needed(task_id)
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
     start_step = body.get("start_step", "")

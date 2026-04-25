@@ -367,9 +367,9 @@ USE_CASES: dict[str, UseCase] = {
         "video_translate",
         "原文语言识别",
         "ASR 完成后识别原视频语言以决定标准化路由",
-        "gemini_aistudio",
-        "gemini-3.1-flash-lite-preview",
-        "gemini",
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "openrouter",
         "tokens",
     ),
     "asr_normalize.translate_zh_to_en": _uc(
