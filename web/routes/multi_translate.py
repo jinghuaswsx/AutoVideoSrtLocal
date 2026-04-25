@@ -398,7 +398,7 @@ def start(task_id):
 @login_required
 def update_source_language(task_id):
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
     lang = body.get("source_language")
@@ -412,7 +412,7 @@ def update_source_language(task_id):
 @login_required
 def update_alignment(task_id):
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -452,7 +452,7 @@ def update_alignment(task_id):
 def update_segments(task_id):
     """用户确认/编辑多语种翻译结果。"""
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
@@ -483,7 +483,7 @@ def update_segments(task_id):
 @login_required
 def export(task_id):
     task = store.get(task_id)
-    if not task or task.get("_user_id") != current_user.id:
+    if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
     multi_pipeline_runner.resume(task_id, "compose", user_id=current_user.id)
     return jsonify({"status": "started"})
@@ -688,10 +688,7 @@ def set_user_default_voice_route():
 @bp.route("/api/multi-translate/<task_id>/voice", methods=["PUT"])
 @login_required
 def update_voice(task_id: str):
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json")
     if not row:
         abort(404)
     state = json.loads(row["state_json"] or "{}")
@@ -827,10 +824,7 @@ def rematch_voice(task_id: str):
 @login_required
 def confirm_voice(task_id: str):
     """Persist the shared-shell voice selection and resume from alignment."""
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json")
     if not row:
         abort(404)
 
