@@ -760,3 +760,119 @@ def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db
 
     assert resp.status_code == 200
     assert "🇺🇸 英语".encode("utf-8") in resp.data
+
+
+# ── Task 8: alignment utterances_en fallback ──────────────────────────────────
+
+def test_alignment_reads_utterances_en_when_present(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    """alignment 入口应优先用 task['utterances_en']（若存在）。"""
+    from web import store
+    from web.routes import multi_translate as mt_module
+
+    captured: dict = {}
+
+    def fake_build(utterances, break_after):
+        captured["utterances"] = utterances
+        return [{"index": 0, "text": "x"}]
+
+    monkeypatch.setattr(mt_module, "build_script_segments", fake_build)
+    import web.preview_artifacts as _pa
+    monkeypatch.setattr(_pa, "build_alignment_artifact", lambda *a, **k: {})
+    monkeypatch.setattr(mt_module.multi_pipeline_runner, "resume",
+                        lambda *a, **k: None)
+
+    task_id = "t-utt-en"
+    store.create(task_id, "/tmp/v.mp4", str(tmp_path))
+    store.update(
+        task_id,
+        _user_id=1, type="multi_translate", target_lang="de",
+        utterances=[{"index": 0, "start": 0, "end": 1, "text": "Hola"}],
+        utterances_en=[{"index": 0, "start": 0, "end": 1, "text": "Hi"}],
+        scene_cuts=[],
+    )
+
+    resp = authed_client_no_db.put(
+        f"/api/multi-translate/{task_id}/alignment",
+        json={"break_after": [0]},
+    )
+    assert resp.status_code == 200
+    assert captured["utterances"][0]["text"] == "Hi"
+
+
+def test_alignment_falls_back_to_utterances_when_en_missing(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    """alignment 在 utterances_en 缺失时应使用 task['utterances']。"""
+    from web import store
+    from web.routes import multi_translate as mt_module
+
+    captured: dict = {}
+
+    def fake_build(utterances, break_after):
+        captured["utterances"] = utterances
+        return [{"index": 0, "text": "x"}]
+
+    monkeypatch.setattr(mt_module, "build_script_segments", fake_build)
+    import web.preview_artifacts as _pa
+    monkeypatch.setattr(_pa, "build_alignment_artifact", lambda *a, **k: {})
+    monkeypatch.setattr(mt_module.multi_pipeline_runner, "resume",
+                        lambda *a, **k: None)
+
+    task_id = "t-utt-only"
+    store.create(task_id, "/tmp/v.mp4", str(tmp_path))
+    store.update(
+        task_id,
+        _user_id=1, type="multi_translate", target_lang="de",
+        utterances=[{"index": 0, "start": 0, "end": 1, "text": "你好"}],
+        scene_cuts=[],
+    )
+
+    resp = authed_client_no_db.put(
+        f"/api/multi-translate/{task_id}/alignment",
+        json={"break_after": [0]},
+    )
+    assert resp.status_code == 200
+    assert captured["utterances"][0]["text"] == "你好"
+
+
+# ── Task 9: RESUMABLE_STEPS includes asr_normalize ───────────────────────────
+
+def test_resumable_steps_includes_asr_normalize_between_asr_and_voice_match():
+    from web.routes.multi_translate import RESUMABLE_STEPS
+    assert "asr_normalize" in RESUMABLE_STEPS
+    asr_idx = RESUMABLE_STEPS.index("asr")
+    norm_idx = RESUMABLE_STEPS.index("asr_normalize")
+    voice_idx = RESUMABLE_STEPS.index("voice_match")
+    assert asr_idx < norm_idx < voice_idx
+
+
+def test_resume_accepts_asr_normalize_as_start_step(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    from web import store
+    from web.routes import multi_translate as mt_module
+
+    monkeypatch.setattr(mt_module.multi_pipeline_runner, "resume",
+                        lambda *a, **k: None)
+
+    task_id = "t-resume-norm"
+    store.create(task_id, "/tmp/v.mp4", str(tmp_path))
+    store.update(task_id, _user_id=1, type="multi_translate", target_lang="de")
+
+    resp = authed_client_no_db.post(
+        f"/api/multi-translate/{task_id}/resume",
+        json={"start_step": "asr_normalize"},
+    )
+    assert resp.status_code == 200
+
+
+# ── Task 10: upload modal hint text ─────────────────────────────────────────
+
+def test_multi_translate_list_upload_modal_text_mentions_normalization():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+    assert "自动识别原视频语言并标准化" in template
+    assert "中文/英文" not in template  # 老文案被移除

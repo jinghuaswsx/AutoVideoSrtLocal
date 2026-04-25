@@ -258,7 +258,12 @@ def subtitle_preview(task_id: str):
 @bp.route("/api/multi-translate/start", methods=["POST"])
 @login_required
 def upload_and_start():
-    """上传视频，创建多语种翻译任务。源语言将在 ASR 后自动检测。"""
+    """上传视频，创建多语种翻译任务。
+
+    源语言由 ASR 后置 step `asr_normalize` 自动识别（Gemini Flash），
+    任意非中英文素材会进一步走 Claude Sonnet 标准化为 en-US 后再进入下游。
+    任务创建时不写入 source_language——由 _step_asr_normalize 唯一负责写入。
+    """
     if "video" not in request.files:
         return jsonify({"error": "No video file"}), 400
     file = request.files["video"]
@@ -421,7 +426,8 @@ def update_alignment(task_id):
         store.update(task_id, source_language=source_language)
 
     from web.preview_artifacts import build_alignment_artifact
-    script_segments = build_script_segments(task.get("utterances", []), break_after)
+    source_utterances = task.get("utterances_en") or task.get("utterances", [])
+    script_segments = build_script_segments(source_utterances, break_after)
     store.confirm_alignment(task_id, break_after, script_segments)
     store.set_artifact(
         task_id, "alignment",
@@ -483,7 +489,7 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+RESUMABLE_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/api/multi-translate/<task_id>/resume", methods=["POST"])
