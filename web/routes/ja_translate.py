@@ -458,7 +458,7 @@ def start(task_id: str):
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
         target_lang="ja",
-        source_language=body.get("source_language") if body.get("source_language") in ("zh", "en") else task.get("source_language", "en"),
+        source_language=body.get("source_language") if body.get("source_language") in ("zh", "en", "es") else task.get("source_language", "en"),
     )
     ja_pipeline_runner.start(task_id, user_id=current_user.id)
     return jsonify({"status": "started", "task": store.get(task_id) or task})
@@ -499,8 +499,8 @@ def update_source_language(task_id: str):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
     lang = body.get("source_language")
-    if lang not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
+    if lang not in ("zh", "en", "es"):
+        return jsonify({"error": "source_language must be 'zh', 'en' or 'es'"}), 400
     store.update(task_id, source_language=lang)
     return jsonify({"status": "ok"})
 
@@ -518,7 +518,7 @@ def update_alignment(task_id: str):
         return jsonify({"error": "break_after required"}), 400
 
     source_language = body.get("source_language")
-    if source_language in ("zh", "en"):
+    if source_language in ("zh", "en", "es"):
         store.update(task_id, source_language=source_language)
 
     from web.preview_artifacts import build_alignment_artifact
