@@ -224,3 +224,32 @@ def approve_raw(*, task_id: int, actor_user_id: int) -> None:
             raise
     finally:
         conn.close()
+
+
+MIN_REASON_LEN = 10
+
+
+def reject_raw(*, task_id: int, actor_user_id: int, reason: str) -> None:
+    """管理员打回原始视频，状态回 raw_in_progress（同 assignee）。"""
+    if not reason or len(reason.strip()) < MIN_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_REASON_LEN} characters")
+    reason = reason.strip()
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=%s, updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
+                    (PARENT_RAW_IN_PROGRESS, reason, int(task_id), PARENT_RAW_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("parent not in raw_review")
+                _write_event(cur, task_id, "rejected", actor_user_id, {"reason": reason})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()

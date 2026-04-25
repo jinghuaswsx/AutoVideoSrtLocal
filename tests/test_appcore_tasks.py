@@ -255,3 +255,45 @@ def test_approve_raw_unblocks_children(
     assert types.count("unblocked") >= 2
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_reject_raw_returns_to_in_progress_with_same_assignee(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.reject_raw(task_id=parent_id, actor_user_id=db_user_admin,
+                     reason="字幕没去干净请重做")
+    row = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
+    assert row["status"] == tasks.PARENT_RAW_IN_PROGRESS
+    assert row["assignee_id"] == db_user_admin
+    assert "字幕没去干净" in row["last_reason"]
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_reject_raw_requires_min_reason(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    with pytest.raises(ValueError, match="reason"):
+        tasks.reject_raw(task_id=parent_id, actor_user_id=db_user_admin, reason="短")
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
