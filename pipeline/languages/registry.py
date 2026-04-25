@@ -7,7 +7,7 @@ from __future__ import annotations
 import importlib
 from types import ModuleType
 
-SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi")
+SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
 
 
 def get_rules(lang: str) -> ModuleType:
