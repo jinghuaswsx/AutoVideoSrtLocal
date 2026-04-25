@@ -23,6 +23,7 @@ from appcore.events import (
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
+    _compute_initial_target_words,
     _llm_request_payload,
     _llm_response_payload,
     _log_translate_billing,
@@ -85,11 +86,16 @@ class FrTranslateRunner(PipelineRunner):
         custom_prompt = task.get("custom_translate_prompt")
         system_prompt = custom_prompt or FR_PROMPT
 
+        from pipeline.extract import get_video_duration
+        video_duration = get_video_duration(task.get("video_path") or "") or 0.0
+        target_words = _compute_initial_target_words(video_duration, self.target_language_label)
         localized_translation = generate_localized_translation(
             source_full_text, script_segments, variant=variant,
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
             source_language=source_language,
+            target_words=target_words or None,
+            video_duration=video_duration or None,
         )
 
         initial_messages = localized_translation.pop("_messages", None)

@@ -326,6 +326,24 @@ def _tts_final_target_range(video_duration: float) -> tuple[float, float]:
     return max(0.0, video_duration - 1.0), video_duration + 2.0
 
 
+def _compute_initial_target_words(video_duration: float, target_language_label: str) -> int:
+    """First-round word target hint sized to fit video_duration at the target
+    language's default speaking rate.
+
+    Feeding this into the initial translation prompt lets round 1 land near the
+    right length on the first try, avoiding a 5-round rewrite cascade when
+    source-target length ratio differs from the historical zh→en assumption
+    (e.g., Spanish source × German target both expand vs. English baseline).
+
+    Returns 0 when video_duration is unknown — caller should treat 0 as
+    "no hint" and let the LLM choose freely (legacy behavior).
+    """
+    if not video_duration or video_duration <= 0:
+        return 0
+    wps = _DEFAULT_WPS.get(target_language_label, 2.5)
+    return max(3, round(video_duration * wps))
+
+
 def _compute_next_target(
     round_index: int,
     last_audio_duration: float,
@@ -1428,11 +1446,16 @@ class PipelineRunner:
         variant = "normal"
         custom_prompt = task.get("custom_translate_prompt")
         source_language = task.get("source_language", "zh")
+        from pipeline.extract import get_video_duration
+        video_duration = get_video_duration(task.get("video_path") or "") or 0.0
+        target_words = _compute_initial_target_words(video_duration, self.target_language_label)
         localized_translation = generate_localized_translation(
             source_full_text_zh, script_segments, variant=variant,
             custom_system_prompt=custom_prompt,
             provider=provider, user_id=self.user_id,
             source_language=source_language,
+            target_words=target_words or None,
+            video_duration=video_duration or None,
         )
 
         # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用

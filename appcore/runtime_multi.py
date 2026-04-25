@@ -23,6 +23,7 @@ from appcore.llm_prompt_configs import resolve_prompt_config
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
+    _compute_initial_target_words,
     _llm_request_payload,
     _llm_response_payload,
     _log_translate_billing,
@@ -185,11 +186,14 @@ class MultiTranslateRunner(PipelineRunner):
 
         system_prompt = self._build_system_prompt(lang)
 
+        target_words = _compute_initial_target_words(video_duration, lang)
         localized_translation = generate_localized_translation(
             source_full_text, script_segments, variant="normal",
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
             source_language=source_language,
+            target_words=target_words or None,
+            video_duration=video_duration or None,
         )
 
         initial_messages = localized_translation.pop("_messages", None)
