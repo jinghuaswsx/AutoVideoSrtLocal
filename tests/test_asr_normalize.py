@@ -1,6 +1,8 @@
 """pipeline.asr_normalize 单元测试。"""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 
@@ -102,3 +104,138 @@ def test_detect_language_handles_invalid_json_in_response(
     from pipeline.asr_normalize import detect_language, DetectLanguageFailedError
     with pytest.raises(DetectLanguageFailedError):
         detect_language("foo", task_id="t4", user_id=1)
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_preserves_timestamps_and_returns_usage(
+    mock_invoke, mock_resolve,
+):
+    mock_resolve.return_value = {"content": "ES_PROMPT_FAKE"}
+    mock_invoke.return_value = {
+        "text": json.dumps({
+            "utterances_en": [
+                {"index": 0, "text_en": "Hi there"},
+                {"index": 1, "text_en": "Check this out"},
+            ],
+        }),
+        "usage": {"input_tokens": 1850, "output_tokens": 1620},
+    }
+    from pipeline.asr_normalize import translate_to_en
+    utterances = [
+        {"index": 0, "start": 0.5, "end": 2.3, "text": "Hola, este..."},
+        {"index": 1, "start": 2.3, "end": 4.8, "text": "Mira esto"},
+    ]
+    out, usage = translate_to_en(
+        utterances, detected_language="es", route="es_specialized",
+        task_id="t10", user_id=1,
+    )
+    assert len(out) == 2
+    assert out[0] == {"index": 0, "start": 0.5, "end": 2.3, "text": "Hi there"}
+    assert out[1] == {"index": 1, "start": 2.3, "end": 4.8, "text": "Check this out"}
+    assert usage == {"input_tokens": 1850, "output_tokens": 1620}
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_raises_on_length_mismatch(mock_invoke, mock_resolve):
+    mock_resolve.return_value = {"content": "X"}
+    mock_invoke.return_value = {
+        "text": json.dumps({"utterances_en": [{"index": 0, "text_en": "Only one"}]}),
+        "usage": {},
+    }
+    from pipeline.asr_normalize import translate_to_en, TranslateOutputInvalidError
+    utterances = [
+        {"index": 0, "start": 0, "end": 1, "text": "a"},
+        {"index": 1, "start": 1, "end": 2, "text": "b"},
+    ]
+    with pytest.raises(TranslateOutputInvalidError) as exc:
+        translate_to_en(utterances, detected_language="fr",
+                         route="generic_fallback", task_id="t11", user_id=1)
+    assert "length mismatch" in str(exc.value).lower()
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_raises_on_index_gap(mock_invoke, mock_resolve):
+    mock_resolve.return_value = {"content": "X"}
+    mock_invoke.return_value = {
+        "text": json.dumps({"utterances_en": [
+            {"index": 0, "text_en": "a"},
+            {"index": 2, "text_en": "c"},  # missing index 1
+        ]}),
+        "usage": {},
+    }
+    from pipeline.asr_normalize import translate_to_en, TranslateOutputInvalidError
+    utterances = [
+        {"index": 0, "start": 0, "end": 1, "text": "x"},
+        {"index": 1, "start": 1, "end": 2, "text": "y"},
+    ]
+    with pytest.raises(TranslateOutputInvalidError) as exc:
+        translate_to_en(utterances, detected_language="fr",
+                         route="generic_fallback", task_id="t12", user_id=1)
+    assert "index" in str(exc.value).lower()
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_uses_es_use_case_for_es_specialized_route(
+    mock_invoke, mock_resolve,
+):
+    mock_resolve.return_value = {"content": "X"}
+    mock_invoke.return_value = {
+        "text": json.dumps({"utterances_en": [{"index": 0, "text_en": "foo"}]}),
+        "usage": {},
+    }
+    from pipeline.asr_normalize import translate_to_en
+    translate_to_en(
+        [{"index": 0, "start": 0, "end": 1, "text": "x"}],
+        detected_language="es", route="es_specialized",
+        task_id="t13", user_id=1,
+    )
+    # use_case 第一个位置参数
+    assert mock_invoke.call_args.args[0] == "asr_normalize.translate_es_to_en"
+    mock_resolve.assert_called_with("asr_normalize.translate_es_en", "")
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_uses_generic_use_case_for_fallback_routes(
+    mock_invoke, mock_resolve,
+):
+    mock_resolve.return_value = {"content": "X"}
+    mock_invoke.return_value = {
+        "text": json.dumps({"utterances_en": [{"index": 0, "text_en": "foo"}]}),
+        "usage": {},
+    }
+    from pipeline.asr_normalize import translate_to_en
+    for route in ("generic_fallback", "generic_fallback_low_confidence",
+                  "generic_fallback_mixed"):
+        translate_to_en(
+            [{"index": 0, "start": 0, "end": 1, "text": "x"}],
+            detected_language="pt", route=route, task_id="t", user_id=1,
+        )
+    for call in mock_invoke.call_args_list:
+        assert call.args[0] == "asr_normalize.translate_generic_to_en"
+
+
+@patch("pipeline.asr_normalize.resolve_prompt_config")
+@patch("pipeline.asr_normalize.llm_client.invoke_chat")
+def test_translate_to_en_passes_is_mixed_low_confidence_in_user_payload(
+    mock_invoke, mock_resolve,
+):
+    mock_resolve.return_value = {"content": "X"}
+    mock_invoke.return_value = {
+        "text": json.dumps({"utterances_en": [{"index": 0, "text_en": "foo"}]}),
+        "usage": {},
+    }
+    from pipeline.asr_normalize import translate_to_en
+    translate_to_en(
+        [{"index": 0, "start": 0, "end": 1, "text": "x"}],
+        detected_language="pt", route="generic_fallback_mixed",
+        task_id="t", user_id=1,
+    )
+    user_msg = mock_invoke.call_args.kwargs["messages"][1]["content"]
+    payload = json.loads(user_msg)
+    assert payload["is_mixed"] is True
+    assert payload["low_confidence"] is False

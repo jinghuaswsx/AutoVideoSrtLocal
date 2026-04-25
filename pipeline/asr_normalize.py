@@ -40,6 +40,20 @@ LANG_LABELS: dict[str, str] = {
     "fi": "芬兰语",
 }
 
+_USE_CASE_BY_ROUTE: dict[str, str] = {
+    "es_specialized": "asr_normalize.translate_es_to_en",
+    "generic_fallback": "asr_normalize.translate_generic_to_en",
+    "generic_fallback_low_confidence": "asr_normalize.translate_generic_to_en",
+    "generic_fallback_mixed": "asr_normalize.translate_generic_to_en",
+}
+
+_PROMPT_SLOT_BY_ROUTE: dict[str, str] = {
+    "es_specialized": "asr_normalize.translate_es_en",
+    "generic_fallback": "asr_normalize.translate_generic_en",
+    "generic_fallback_low_confidence": "asr_normalize.translate_generic_en",
+    "generic_fallback_mixed": "asr_normalize.translate_generic_en",
+}
+
 
 class DetectLanguageFailedError(RuntimeError):
     """detect API 重试耗尽仍失败。"""
@@ -136,8 +150,88 @@ def translate_to_en(
     task_id: str,
     user_id: int | None,
 ) -> tuple[list[dict], dict]:
-    """translate_to_en 占位 — Task 5 实现。"""
-    raise NotImplementedError
+    """把 utterances 整体翻译为 en-US 句级。返回 (utterances_en, usage_tokens)。
+
+    utterances_en 结构同 utterances（含 index/start/end/text），text 字段为英文。
+    """
+    if route not in _USE_CASE_BY_ROUTE:
+        raise ValueError(f"translate_to_en got unsupported route: {route!r}")
+
+    use_case_code = _USE_CASE_BY_ROUTE[route]
+    prompt_slot = _PROMPT_SLOT_BY_ROUTE[route]
+    system_prompt = resolve_prompt_config(prompt_slot, "")["content"]
+
+    full_text = " ".join(u["text"] for u in utterances)
+    user_payload = {
+        "source_language": detected_language,
+        "is_mixed": route == "generic_fallback_mixed",
+        "low_confidence": route == "generic_fallback_low_confidence",
+        "full_text": full_text,
+        "utterances": [{"index": i, "text": u["text"]} for i, u in enumerate(utterances)],
+    }
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "asr_normalize_translate_result",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "utterances_en": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "index": {"type": "integer", "minimum": 0},
+                                "text_en": {"type": "string", "minLength": 1},
+                            },
+                            "required": ["index", "text_en"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["utterances_en"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+    result = llm_client.invoke_chat(
+        use_case_code,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ],
+        user_id=user_id, project_id=task_id,
+        temperature=0.2,
+        response_format=response_format,
+    )
+
+    payload = json.loads(result["text"])
+    items = payload["utterances_en"]
+
+    if len(items) != len(utterances):
+        raise TranslateOutputInvalidError(
+            f"length mismatch: input={len(utterances)} output={len(items)}",
+        )
+    by_index = {item["index"]: item["text_en"] for item in items}
+    if set(by_index.keys()) != set(range(len(utterances))):
+        missing = set(range(len(utterances))) - set(by_index.keys())
+        raise TranslateOutputInvalidError(
+            f"index coverage mismatch: missing {missing}",
+        )
+
+    utterances_en = [
+        {
+            "index": i,
+            "start": utterances[i]["start"],
+            "end": utterances[i]["end"],
+            "text": by_index[i],
+        }
+        for i in range(len(utterances))
+    ]
+    usage = result.get("usage") or {"input_tokens": None, "output_tokens": None}
+    return utterances_en, usage
 
 
 def run_asr_normalize(
