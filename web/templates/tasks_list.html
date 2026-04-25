@@ -147,7 +147,19 @@ async function tcRenderTaskList(wrap, tab) {
     <th>产品</th><th>类型</th><th>国家</th><th>高层</th><th>子状态</th><th>负责人</th><th>操作</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
-async function tcRenderDispatchPool(wrap) { wrap.innerHTML = '<div class="tc-empty">待派单素材列表 — Task 25 实现</div>'; }
+async function tcRenderDispatchPool(wrap) {
+  const data = await tcFetchJson('/tasks/api/dispatch_pool');
+  if (!data.items.length) { wrap.innerHTML = '<div class="tc-empty">没有待派单的素材（所有产品都已有活跃任务）</div>'; return; }
+  const rows = data.items.map(it => `<tr>
+    <td>${tcEsc(it.product_name)}</td>
+    <td>${it.en_item_count}</td>
+    <td><button class="tc-btn tc-btn--primary" onclick="tcOpenCreateModal(${it.product_id}, '${tcEsc(it.product_name).replace(/'/g, "&#39;")}', ${it.owner_id || 'null'})">创建任务</button></td>
+  </tr>`).join('');
+  wrap.innerHTML = `<table class="tc-table"><thead><tr>
+    <th>产品名</th><th>已有英文 item 数</th><th>操作</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function tcOpenCreateModal(pid, pname, ownerId) { alert('创建任务弹窗 — Task 26 实现 (产品=' + pname + ')'); }
 function tcOpenDetail(id) { alert('详情抽屉 — Task 27 实现 (id=' + id + ')'); }
 tcRender();
 </script>
