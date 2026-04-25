@@ -1,9 +1,17 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_required
-from web.auth import admin_required
+from flask_login import login_required, current_user
+from web.auth import admin_required, superadmin_required
 from appcore import medias
 from appcore import voice_library_sync_task as vlst
-from appcore.users import list_users, create_user, set_active, get_by_username
+from appcore.users import (
+    list_users, create_user, set_active, get_by_username,
+    update_role, update_permissions, reset_permissions_to_role_default,
+)
+from appcore.permissions import (
+    ROLE_ADMIN, ROLE_USER, ROLE_SUPERADMIN,
+    ROLE_LABELS, ROLES, grouped_permissions, PERMISSION_META,
+    default_permissions_for_role, normalize_permissions,
+)
 from appcore.settings import (
     PROJECT_TYPE_LABELS,
     get_all_retention_settings,
@@ -19,7 +27,7 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 @bp.route("/users", methods=["GET", "POST"])
 @login_required
-@admin_required
+@superadmin_required
 def users():
     error = None
     if request.method == "POST":
@@ -33,8 +41,11 @@ def users():
             elif get_by_username(username):
                 error = f"用户名 '{username}' 已存在"
             else:
-                create_user(username, password, role=role)
-                flash(f"用户 '{username}' 创建成功")
+                try:
+                    create_user(username, password, role=role)
+                    flash(f"用户 '{username}' 创建成功")
+                except ValueError as exc:
+                    error = str(exc)
                 return redirect(url_for("admin.users"))
         elif action == "toggle_active":
             try:
@@ -46,8 +57,119 @@ def users():
             active = request.form.get("active") == "1"
             set_active(user_id, active)
             return redirect(url_for("admin.users"))
+        elif action == "update_role":
+            try:
+                user_id = int(request.form.get("user_id"))
+            except (TypeError, ValueError):
+                error = "无效的用户 ID"
+                all_users = list_users()
+                return render_template("admin_users.html", users=all_users, error=error), 400
+            new_role = request.form.get("new_role", "").strip()
+            if new_role not in (ROLE_ADMIN, ROLE_USER):
+                error = f"无效的角色: {new_role}"
+            else:
+                try:
+                    update_role(user_id, new_role)
+                    flash("角色已更新，权限已同步重置为新角色默认值")
+                except ValueError as exc:
+                    error = str(exc)
+            return redirect(url_for("admin.users"))
     all_users = list_users()
-    return render_template("admin_users.html", users=all_users, error=error)
+    # 为模板序列化 permissions JSON
+    import json as _json
+    for u in all_users:
+        raw = u.get("permissions")
+        if raw is None:
+            u["permissions_json"] = "{}"
+        elif isinstance(raw, dict):
+            u["permissions_json"] = _json.dumps(raw, ensure_ascii=False)
+        elif isinstance(raw, str):
+            u["permissions_json"] = raw
+        else:
+            u["permissions_json"] = _json.dumps(raw) if raw else "{}"
+    return render_template("admin_users.html", users=all_users, error=error,
+                           role_labels=ROLE_LABELS, current_user_id=current_user.id,
+                           perm_groups=grouped_permissions(),
+                           role_defaults={r: default_permissions_for_role(r) for r in ROLES})
+
+
+@bp.route("/api/users/<int:user_id>/permissions", methods=["GET"])
+@login_required
+@superadmin_required
+def get_user_permissions(user_id: int):
+    from appcore.users import get_by_id
+    from appcore.permissions import merge_with_defaults
+    user = get_by_id(user_id)
+    if not user:
+        return jsonify({"error": "用户不存在"}), 404
+    effective = merge_with_defaults(user["role"], _coerce_json(user.get("permissions")))
+    is_superadmin = user["role"] == ROLE_SUPERADMIN
+    return jsonify({
+        "user_id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "role_label": ROLE_LABELS.get(user["role"], user["role"]),
+        "is_superadmin": is_superadmin,
+        "permissions": effective,
+        "groups": [
+            {"code": g, "label": l, "items": items}
+            for g, l, items in grouped_permissions()
+        ],
+    })
+
+
+@bp.route("/api/users/<int:user_id>/role", methods=["PUT"])
+@login_required
+@superadmin_required
+def api_update_user_role(user_id: int):
+    from appcore.users import get_by_id
+    user = get_by_id(user_id)
+    if not user:
+        return jsonify({"error": "用户不存在"}), 404
+    if user["role"] == ROLE_SUPERADMIN:
+        return jsonify({"error": "不能修改超级管理员角色"}), 403
+    body = request.get_json(silent=True) or {}
+    new_role = (body.get("role") or "").strip()
+    if new_role not in (ROLE_ADMIN, ROLE_USER):
+        return jsonify({"error": f"无效的角色: {new_role}"}), 400
+    try:
+        update_role(user_id, new_role)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "role": new_role,
+                     "role_label": ROLE_LABELS.get(new_role, new_role)})
+
+
+@bp.route("/api/users/<int:user_id>/permissions", methods=["PUT"])
+@login_required
+@superadmin_required
+def set_user_permissions(user_id: int):
+    from appcore.users import get_by_id
+    user = get_by_id(user_id)
+    if not user:
+        return jsonify({"error": "用户不存在"}), 404
+    if user["role"] == ROLE_SUPERADMIN:
+        return jsonify({"error": "超级管理员权限不可修改"}), 403
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    if action == "reset":
+        cleaned = reset_permissions_to_role_default(user_id)
+    else:
+        cleaned = update_permissions(user_id, body.get("permissions"))
+    return jsonify({"ok": True, "permissions": cleaned})
+
+
+def _coerce_json(raw):
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    import json
+    try:
+        parsed = json.loads(raw) if isinstance(raw, (str, bytes)) else None
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -57,12 +179,10 @@ def settings():
     if request.method == "POST":
         from appcore.db import execute as db_execute
 
-        # ── 记住旧值，用于计算 delta ──
-        old_default = get_retention_hours("__nonexistent__")  # 纯全局默认
+        old_default = get_retention_hours("__nonexistent__")
         old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
         old_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
 
-        # 保存全局默认值
         default_days = request.form.get("retention_default_days", "").strip()
         if default_days:
             try:
@@ -73,7 +193,6 @@ def settings():
                 flash("全局默认值必须是正数")
                 return redirect(url_for("admin.settings"))
 
-        # 保存各模块覆盖值
         for ptype in PROJECT_TYPE_LABELS:
             field = f"retention_{ptype}_days"
             val = request.form.get(field, "").strip()
@@ -88,10 +207,8 @@ def settings():
                 except (ValueError, TypeError):
                     pass
             else:
-                # 留空 = 删除覆盖，回退到全局默认
                 db_execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
 
-        # ── 同步调整已有项目的 expires_at ──
         adjusted = 0
         new_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
         for ptype in PROJECT_TYPE_LABELS:
@@ -101,7 +218,6 @@ def settings():
             if new_hours != old_per_type[ptype]:
                 adjusted += adjust_expires_for_type(ptype, old_per_type[ptype], new_hours)
 
-        # 全局默认变更：调整没有模块覆盖的项目
         new_default = get_retention_hours("__nonexistent__")
         if new_default != old_default:
             adjusted += adjust_expires_for_default(

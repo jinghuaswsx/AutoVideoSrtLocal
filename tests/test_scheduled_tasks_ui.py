@@ -20,7 +20,7 @@ def test_layout_only_shows_scheduled_tasks_to_admin_single_user():
     source = _read("web/templates/layout.html")
 
     assert "url_for('scheduled_tasks.page')" in source
-    assert "current_user.is_superadmin" in source
+    assert "has_permission('scheduled_tasks')" in source
     assert "scheduled-failure-alert" in source
     assert "data-scheduled-alert-close" in source
     assert "scheduled-task-alert-dismissed:" in source

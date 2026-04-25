@@ -10,13 +10,51 @@ td { padding: 12px 16px; border-bottom: 1px solid var(--border-light, #f3f4f6); 
 tr:last-child td { border-bottom: none; }
 .create-card { background: var(--bg-card, #fff); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
 .create-card h2 { font-size: 15px; font-weight: 700; color: var(--text-main, #111827); margin-bottom: 16px; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr 120px 120px; gap: 12px; align-items: end; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr 140px 120px; gap: 12px; align-items: end; }
 label { display: block; color: var(--text-muted, #6b7280); font-size: 12px; font-weight: 600; margin-bottom: 6px; }
 input[type=text],input[type=password],select { width: 100%; background: var(--bg-input, #f9fafb); border: 1.5px solid var(--border-main, #e5e7eb); border-radius: 8px; color: var(--text-main, #111827); padding: 9px 10px; font-size: 14px; font-family: inherit; outline: none; }
-input:focus, select:focus { border-color: #7c6fe0; background: var(--bg-card, #fff); }
+input:focus, select:focus { border-color: var(--accent); background: var(--bg-card, #fff); }
 .error { background: #fef2f2; border: 1px solid #fecaca; color: #ef4444; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
 .success-msg { background: #f0fdf4; border: 1px solid #bbf7d0; color: #16a34a; font-size: 13px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+
+/* Role badge */
+.role-badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.role-superadmin { background: #fef3c7; color: #92400e; }
+.role-admin { background: #dbeafe; color: #1e40af; }
+.role-user { background: #f3f4f6; color: #374151; }
+
+/* Action buttons */
+.btn-perm { padding: 4px 12px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border-main, #e5e7eb); background: var(--bg-card, #fff); color: var(--text-main, #374151); cursor: pointer; }
+.btn-perm:hover { background: var(--bg-input, #f9fafb); }
+
+/* Permission modal */
+.perm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1000; align-items: center; justify-content: center; }
+.perm-overlay.open { display: flex; }
+.perm-modal { background: #fff; border-radius: 14px; width: 620px; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,0.15); }
+.perm-modal-header { padding: 20px 24px 12px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; }
+.perm-modal-header h2 { font-size: 16px; font-weight: 700; color: #111827; margin: 0; }
+.perm-modal-body { padding: 16px 24px; overflow-y: auto; flex: 1; }
+.perm-modal-footer { padding: 12px 24px 20px; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.perm-group { margin-bottom: 16px; }
+.perm-group-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 8px; }
+.perm-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.perm-item label { font-size: 13px; color: #374151; cursor: pointer; flex: 1; margin: 0; }
+.perm-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.perm-item input[type=checkbox]:disabled { opacity: 0.4; cursor: not-allowed; }
+.perm-role-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6; }
+.perm-role-row label { font-size: 13px; font-weight: 600; color: #374151; margin: 0; }
+.perm-role-row select { width: 160px; }
+.btn-reset-defaults { padding: 4px 10px; border-radius: 6px; font-size: 12px; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; cursor: pointer; }
+.btn-reset-defaults:hover { background: #f3f4f6; }
+.btn-save { padding: 8px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; background: var(--accent); color: #fff; border: none; cursor: pointer; }
+.btn-save:hover { background: var(--accent-hover); }
+.btn-cancel { padding: 8px 16px; border-radius: 8px; font-size: 13px; border: 1px solid #d1d5db; background: #fff; color: #374151; cursor: pointer; }
+.btn-cancel:hover { background: #f9fafb; }
+.close-btn { background: none; border: none; font-size: 20px; color: #9ca3af; cursor: pointer; padding: 0; }
+.close-btn:hover { color: #374151; }
+.perm-locked-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 {% endblock %}
+
 {% block content %}
 <div class="admin-header"><h1 style="font-size:20px;font-weight:700;color:var(--text-main, #111827)">用户管理</h1></div>
 
@@ -51,16 +89,21 @@ input:focus, select:focus { border-color: #7c6fe0; background: var(--bg-card, #f
     <tr>
       <td>{{ u.id }}</td>
       <td>{{ u.username }}</td>
-      <td>{{ u.role }}</td>
+      <td><span class="role-badge role-{{ u.role }}">{{ role_labels.get(u.role, u.role) }}</span></td>
       <td>{{ '正常' if u.is_active else '已禁用' }}</td>
       <td>{{ u.created_at }}</td>
-      <td>
+      <td style="display:flex;gap:6px;align-items:center;">
+        {% if u.role != 'superadmin' %}
+        <button class="btn-perm" onclick="openPermModal({{ u.id }}, '{{ u.username }}', '{{ u.role }}', {{ u.permissions_json | default('{}') }})">权限配置</button>
+        {% else %}
+        <button class="btn-perm" onclick="openPermModal({{ u.id }}, '{{ u.username }}', 'superadmin', {})" title="超管权限不可修改">权限配置</button>
+        {% endif %}
         <form method="post" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="toggle_active">
           <input type="hidden" name="user_id" value="{{ u.id }}">
           <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">
-          <button class="btn btn-ghost btn-sm" type="submit">{{ '禁用' if u.is_active else '启用' }}</button>
+          <button class="btn btn-ghost btn-sm" type="submit" {% if u.role == 'superadmin' %}disabled title="不能禁用超管"{% endif %}>{{ '禁用' if u.is_active else '启用' }}</button>
         </form>
       </td>
     </tr>
@@ -68,4 +111,127 @@ input:focus, select:focus { border-color: #7c6fe0; background: var(--bg-card, #f
   </tbody>
 </table>
 </div>
+
+<!-- Permission Modal -->
+<div class="perm-overlay" id="permOverlay" onclick="if(event.target===this)closePermModal()">
+  <div class="perm-modal">
+    <div class="perm-modal-header">
+      <h2 id="permModalTitle">权限配置</h2>
+      <button class="close-btn" onclick="closePermModal()">&times;</button>
+    </div>
+    <div class="perm-modal-body">
+      <div class="perm-role-row">
+        <label>角色</label>
+        <select id="permRole" onchange="onRoleChange()">
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
+          <option value="superadmin" id="optSuperadmin" style="display:none">超级管理员</option>
+        </select>
+        <button class="btn-reset-defaults" onclick="resetToDefaults()" type="button">应用角色默认权限</button>
+      </div>
+      <div id="permSuperadminHint" class="perm-locked-hint" style="display:none">超级管理员拥有全部权限，不可调整。</div>
+      <div id="permGroups"></div>
+    </div>
+    <div class="perm-modal-footer">
+      <button class="btn-cancel" onclick="closePermModal()">取消</button>
+      <button class="btn-save" onclick="savePermissions()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PERM_GROUPS = {{ perm_groups | tojson }};
+const ROLE_DEFAULTS = {{ role_defaults | tojson }};
+let currentUserId = null;
+let isSuperadmin = false;
+
+function openPermModal(userId, username, role, perms) {
+  currentUserId = userId;
+  isSuperadmin = (role === 'superadmin');
+  document.getElementById('permModalTitle').textContent = '权限配置 — ' + username;
+
+  const sel = document.getElementById('permRole');
+  const optSa = document.getElementById('optSuperadmin');
+  if (isSuperadmin) {
+    optSa.style.display = '';
+    sel.value = 'superadmin';
+    sel.disabled = true;
+  } else {
+    optSa.style.display = 'none';
+    sel.value = role;
+    sel.disabled = false;
+  }
+
+  document.getElementById('permSuperadminHint').style.display = isSuperadmin ? '' : 'none';
+  renderGroups(perms);
+  document.getElementById('permOverlay').classList.add('open');
+}
+
+function closePermModal() {
+  document.getElementById('permOverlay').classList.remove('open');
+  currentUserId = null;
+}
+
+function onRoleChange() {
+  resetToDefaults();
+}
+
+function resetToDefaults() {
+  const role = document.getElementById('permRole').value;
+  const defaults = ROLE_DEFAULTS[role] || {};
+  renderGroups(defaults);
+}
+
+function renderGroups(perms) {
+  const container = document.getElementById('permGroups');
+  container.innerHTML = '';
+  for (const [gCode, gLabel, items] of PERM_GROUPS) {
+    const div = document.createElement('div');
+    div.className = 'perm-group';
+    let html = '<div class="perm-group-title">' + gLabel + '</div>';
+    for (const item of items) {
+      const checked = perms[item.code] !== undefined ? perms[item.code] : (ROLE_DEFAULTS[document.getElementById('permRole').value] || {})[item.code] !== false;
+      const disabled = isSuperadmin ? 'disabled checked' : (checked ? 'checked' : '');
+      html += '<div class="perm-item">'
+        + '<input type="checkbox" id="perm_' + item.code + '" data-code="' + item.code + '" ' + disabled + '>'
+        + '<label for="perm_' + item.code + '">' + item.label + '</label>'
+        + '</div>';
+    }
+    div.innerHTML = html;
+    container.appendChild(div);
+  }
+}
+
+function collectPerms() {
+  const boxes = document.querySelectorAll('#permGroups input[type=checkbox]');
+  const result = {};
+  boxes.forEach(cb => { result[cb.dataset.code] = cb.checked; });
+  return result;
+}
+
+async function savePermissions() {
+  if (!currentUserId) return;
+  const role = document.getElementById('permRole').value;
+  const perms = collectPerms();
+
+  // 1) update role (if changed)
+  const resp1 = await fetch('/admin/api/users/' + currentUserId + '/role', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
+    body: JSON.stringify({role: role})
+  });
+  if (!resp1.ok) { const e = await resp1.json(); alert(e.error || '角色更新失败'); return; }
+
+  // 2) update permissions
+  const resp2 = await fetch('/admin/api/users/' + currentUserId + '/permissions', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
+    body: JSON.stringify({permissions: perms})
+  });
+  if (!resp2.ok) { const e = await resp2.json(); alert(e.error || '权限更新失败'); return; }
+
+  closePermModal();
+  location.reload();
+}
+</script>
 {% endblock %}

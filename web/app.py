@@ -195,6 +195,22 @@ def create_app() -> Flask:
     csrf.exempt(order_analytics_bp)
     app.register_blueprint(scheduled_tasks_bp)
 
+    # admin 蓝图的 JSON PUT API 豁免 CSRF（前端用 X-CSRFToken header）
+    # 这里不需要额外豁免，因为 admin 蓝图的 API 用 JS fetch + CSRFToken
+
+    # Jinja2 全局：has_permission / is_superadmin 供 layout.html 使用
+    @app.context_processor
+    def inject_permission_helpers():
+        from flask_login import current_user
+        def has_permission(code):
+            if not current_user.is_authenticated:
+                return False
+            return current_user.has_permission(code)
+        return {
+            "has_permission": has_permission,
+            "is_superadmin": lambda: getattr(current_user, "is_superadmin", False),
+        }
+
     @app.context_processor
     def inject_scheduled_task_failure_alert():
         from flask_login import current_user
