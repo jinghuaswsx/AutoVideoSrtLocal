@@ -688,3 +688,33 @@ def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_
     assert len(bg_calls) == 1
     assert callable(bg_calls[0][0])
     assert bg_calls[0][1] == "bulk-parent-1"
+
+
+def test_multi_translate_start_accepts_target_lang_en(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "en",
+            "video": (io.BytesIO(b"english-video"), "demo-en.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+
+    task = store.get(payload["task_id"])
+    assert task["type"] == "multi_translate"
+    assert task["target_lang"] == "en"
+    assert started["task_id"] == payload["task_id"]
