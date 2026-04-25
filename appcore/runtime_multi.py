@@ -39,6 +39,8 @@ from pipeline.localization import (
     validate_tts_script,
 )
 from pipeline.translate import generate_localized_translation, get_model_display_name
+from pipeline import asr_normalize as pipeline_asr_normalize
+from pipeline.asr_normalize import UnsupportedSourceLanguageError as _AsnUnsupportedError
 from web.preview_artifacts import (
     build_asr_artifact,
     build_subtitle_artifact,
@@ -334,6 +336,80 @@ class MultiTranslateRunner(PipelineRunner):
         self._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         self._set_step(task_id, "subtitle", "done", f"{lang.upper()} 字幕生成完成")
 
+    def _step_asr_normalize(self, task_id: str) -> None:
+        """ASR 后的原文 → en-US 标准化。
+
+        - 空 utterances → 短路 done
+        - utterances_en 已存在或 source_language ∈ {en, zh} → 短路 done（resume 幂等）
+        - 否则调 pipeline_asr_normalize.run_asr_normalize：
+          - 成功路径写 source_language / detected_source_language / utterances_en（若有）+
+            asr_normalize artifact
+          - UnsupportedSourceLanguageError / DetectLanguageFailedError /
+            TranslateOutputInvalidError 等任何异常 → step failed + task["error"]，artifact 不写入
+        """
+        task = task_state.get(task_id)
+        utterances = task.get("utterances") or []
+
+        if not utterances:
+            self._set_step(
+                task_id, "asr_normalize", "done", "无音频文本，跳过标准化",
+            )
+            return
+
+        if task.get("utterances_en") or task.get("source_language") in ("en", "zh"):
+            # resume 幂等：已经跑过或已是 zh/en skip 路径
+            self._set_step(
+                task_id, "asr_normalize", "done", "已标准化（resume 跳过）",
+            )
+            return
+
+        self._set_step(
+            task_id, "asr_normalize", "running", "正在识别原文语言…",
+        )
+        try:
+            artifact = pipeline_asr_normalize.run_asr_normalize(
+                task_id=task_id, user_id=self.user_id, utterances=utterances,
+            )
+        except _AsnUnsupportedError as exc:
+            self._set_step(task_id, "asr_normalize", "failed", str(exc))
+            task_state.update(task_id, error=str(exc))
+            return
+        except Exception as exc:
+            err = f"原文标准化失败：{exc}"
+            self._set_step(task_id, "asr_normalize", "failed", err)
+            task_state.update(task_id, error=err)
+            return
+
+        # 拆 artifact：_utterances_en 单独写到 task["utterances_en"]，不进 artifact 落盘
+        utterances_en = artifact.pop("_utterances_en", None)
+        updates = {
+            "detected_source_language": artifact["detected_source_language"],
+        }
+        if artifact["route"] == "en_skip":
+            updates["source_language"] = "en"
+        elif artifact["route"] == "zh_skip":
+            updates["source_language"] = "zh"
+        else:
+            updates["source_language"] = "en"
+            updates["utterances_en"] = utterances_en
+        task_state.update(task_id, **updates)
+
+        msg_map = {
+            "en_skip": "原文为英文，跳过标准化",
+            "zh_skip": "原文为中文，走中文路径",
+            "es_specialized": "西班牙语 → 英文标准化完成",
+            "generic_fallback":
+                f"{artifact['detected_source_language']} → 英文标准化完成（通用）",
+            "generic_fallback_low_confidence":
+                f"{artifact['detected_source_language']} → 英文标准化完成（低置信兜底）",
+            "generic_fallback_mixed": "混合语言 → 英文标准化完成（兜底）",
+        }
+        self._set_step(
+            task_id, "asr_normalize", "done",
+            msg_map.get(artifact["route"], "原文标准化完成"),
+        )
+        task_state.set_artifact(task_id, "asr_normalize", artifact)
+
     def _step_voice_match(self, task_id: str) -> None:
         """跑向量匹配写候选到 state，然后暂停 pipeline 等待用户在 UI 上选择音色。"""
         from appcore.events import EVT_VOICE_MATCH_READY
@@ -411,12 +487,12 @@ class MultiTranslateRunner(PipelineRunner):
         return super()._resolve_voice(task, loc_mod)
 
     def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
-        """覆盖基类：在 asr 后、alignment 前插入 voice_match。"""
+        """覆盖基类：在 asr 后插入 asr_normalize → voice_match。"""
         base_steps = super()._get_pipeline_steps(task_id, video_path, task_dir)
-        # 在 asr 之后插入 voice_match
         out = []
         for name, fn in base_steps:
             out.append((name, fn))
             if name == "asr":
+                out.append(("asr_normalize", lambda: self._step_asr_normalize(task_id)))
                 out.append(("voice_match", lambda: self._step_voice_match(task_id)))
         return out
