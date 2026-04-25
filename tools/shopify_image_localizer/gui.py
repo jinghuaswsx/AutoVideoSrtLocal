@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from tools.shopify_image_localizer import api_client, controller, settings
+from tools.shopify_image_localizer import api_client, cancellation, controller, settings
 
 
 FALLBACK_LANGUAGES = [
@@ -39,6 +39,7 @@ class ShopifyImageLocalizerApp:
         self.language_items: list[dict] = []
         self.language_label_to_code: dict[str, str] = {}
         self._workspace_root = ""
+        self._current_cancel_token: cancellation.CancellationToken | None = None
 
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -95,6 +96,18 @@ class ShopifyImageLocalizerApp:
             width=12,
         )
         self.start_button.pack(side="left")
+        self.stop_button = tk.Button(
+            self.action_frame,
+            text="停止",
+            command=self.request_stop,
+            width=10,
+            state="disabled",
+            bg="#c62828",
+            fg="white",
+            activebackground="#b71c1c",
+            activeforeground="white",
+        )
+        self.stop_button.pack(side="left", padx=(8, 0))
         self.open_workspace_button = tk.Button(
             self.action_frame,
             text="打开任务目录",
@@ -187,15 +200,24 @@ class ShopifyImageLocalizerApp:
         self.advanced_button.configure(text="隐藏高级设置")
         self.advanced_visible = True
 
-    def _set_running_state(self, running: bool) -> None:
+    def _set_running_state(self, running: bool, *, stoppable: bool = False) -> None:
         state = "disabled" if running else "normal"
         self.start_button.configure(state=state)
+        self.stop_button.configure(state="normal" if running and stoppable else "disabled")
         self.advanced_button.configure(state=state)
         self.open_ez_button.configure(state=state)
         self.open_detail_button.configure(state=state)
         self.product_code_entry.configure(state=state)
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
+
+    def request_stop(self) -> None:
+        if self._current_cancel_token is None or self._current_cancel_token.is_cancelled():
+            return
+        self._current_cancel_token.cancel()
+        self.stop_button.configure(state="disabled")
+        self.status_var.set("正在停止当前任务")
+        self._append_log("已请求停止，当前步骤结束后会退出")
 
     def _open_workspace(self) -> None:
         if not self._workspace_root:
@@ -297,7 +319,9 @@ class ShopifyImageLocalizerApp:
             messagebox.showerror("错误", "高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空")
             return
 
-        self._set_running_state(True)
+        cancel_token = cancellation.CancellationToken()
+        self._current_cancel_token = cancel_token
+        self._set_running_state(True, stoppable=True)
         self._clear_summary()
         self._workspace_root = ""
         self.open_workspace_button.configure(state="disabled")
@@ -308,7 +332,7 @@ class ShopifyImageLocalizerApp:
         )
         threading.Thread(
             target=self._run,
-            args=(base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id),
+            args=(base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id, cancel_token),
             daemon=True,
         ).start()
 
@@ -395,6 +419,7 @@ class ShopifyImageLocalizerApp:
         product_code: str,
         lang_code: str,
         shopify_product_id: str,
+        cancel_token: cancellation.CancellationToken,
     ) -> None:
         try:
             result = controller.run_shopify_localizer(
@@ -404,15 +429,24 @@ class ShopifyImageLocalizerApp:
                 product_code=product_code,
                 lang=lang_code,
                 shopify_product_id=shopify_product_id,
+                cancel_token=cancel_token,
                 status_cb=lambda message: self.root.after(0, self._handle_status, message),
             )
             self.root.after(0, self._render_result, result)
+        except cancellation.OperationCancelled:
+            self.root.after(0, self._render_cancelled)
         except Exception as exc:
             self.root.after(0, self.status_var.set, "执行失败")
             self.root.after(0, self._append_log, f"执行失败：{exc}")
             self.root.after(0, messagebox.showerror, "执行失败", str(exc))
         finally:
+            self._current_cancel_token = None
             self.root.after(0, self._set_running_state, False)
+
+    def _render_cancelled(self) -> None:
+        self.status_var.set("已停止")
+        self._append_log("任务已停止")
+        self._add_summary("任务状态", "已停止")
 
     def _render_result(self, result: dict) -> None:
         workspace = str(result.get("workspace_root") or result.get("workspace") or "")

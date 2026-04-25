@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
-from tools.shopify_image_localizer import api_client, downloader, settings, storage
+from tools.shopify_image_localizer import api_client, cancellation, downloader, settings, storage
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
@@ -170,12 +170,14 @@ def fetch_bootstrap_ready(
     lang: str,
     timeout_s: int,
     shopify_product_id: str = "",
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, Any]:
     cfg = settings.load_runtime_config()
     deadline = time.time() + timeout_s
     attempt = 0
     last_error: Exception | None = None
     while True:
+        cancellation.throw_if_cancelled(cancel_token)
         attempt += 1
         try:
             payload = api_client.fetch_bootstrap(
@@ -201,15 +203,26 @@ def fetch_bootstrap_ready(
             print(f"[bootstrap] attempt={attempt} failed: {exc}")
         if time.time() >= deadline:
             break
-        time.sleep(5)
+        cancellation.cancellable_sleep(cancel_token, 5)
     raise TimeoutError(f"bootstrap not ready for {product_code}/{lang}: {last_error}") from last_error
 
 
-def download_localized(product_code: str, lang: str, bootstrap: dict[str, Any]) -> tuple[storage.Workspace, list[dict]]:
+def download_localized(
+    product_code: str,
+    lang: str,
+    bootstrap: dict[str, Any],
+    *,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> tuple[storage.Workspace, list[dict]]:
     workspace = storage.create_workspace(product_code, lang)
     localized_images = bootstrap.get("localized_images") or []
     print(f"[download] {len(localized_images)} image(s) -> {workspace.source_localized_dir}")
-    downloaded = downloader.download_images(localized_images, workspace.source_localized_dir, retries=2)
+    downloaded = downloader.download_images(
+        localized_images,
+        workspace.source_localized_dir,
+        retries=2,
+        cancel_token=cancel_token,
+    )
     return workspace, downloaded
 
 
@@ -225,10 +238,12 @@ def add_original_detail_fallbacks(
     workspace: storage.Workspace,
     body_html: str,
     localized_images: list[dict],
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> list[dict]:
     candidates_by_token = _localized_by_token(localized_images)
     added: list[dict] = []
     for idx, src in enumerate(taa_cdp.extract_image_srcs(body_html)):
+        cancellation.throw_if_cancelled(cancel_token)
         token = ez_cdp.md5_token(src)
         if not token or token in candidates_by_token:
             continue
@@ -282,7 +297,9 @@ def fetch_storefront_image_display_sizes(
     store_domain: str,
     user_data_dir: str,
     port: int,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, dict[str, Any]]:
+    cancellation.throw_if_cancelled(cancel_token)
     normalized_locale = str(locale or "").strip().strip("/")
     prefix = f"/{normalized_locale}" if normalized_locale else ""
     url = f"https://{store_domain}{prefix}/products/{product_code}"
@@ -293,8 +310,11 @@ def fetch_storefront_image_display_sizes(
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
+            cancellation.throw_if_cancelled(cancel_token)
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            cancellation.throw_if_cancelled(cancel_token)
             page.wait_for_timeout(4000)
+            cancellation.throw_if_cancelled(cancel_token)
             rows = page.evaluate(
                 """() => Array.from(document.images).map((img) => {
                     const rect = img.getBoundingClientRect();
@@ -320,17 +340,25 @@ def fetch_storefront_image_display_sizes(
                 browser.close()
             except Exception:
                 pass
+    cancellation.throw_if_cancelled(cancel_token)
     return sizes
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
+def run(
+    args: argparse.Namespace,
+    *,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, Any]:
     cfg = settings.load_runtime_config()
+    cancellation.throw_if_cancelled(cancel_token)
     source_product = fetch_storefront_product(args.product_code, store_domain=args.store_domain)
+    cancellation.throw_if_cancelled(cancel_token)
     target_product = fetch_storefront_product(
         args.product_code,
         locale=args.shop_locale,
         store_domain=args.store_domain,
     )
+    cancellation.throw_if_cancelled(cancel_token)
     product_id = str(args.product_id or source_product.get("id") or target_product.get("id") or "").strip()
     if not product_id:
         raise RuntimeError("Shopify product id not found")
@@ -342,8 +370,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         lang=args.lang,
         timeout_s=args.bootstrap_timeout_s,
         shopify_product_id=product_id,
+        cancel_token=cancel_token,
     )
-    workspace, downloaded = download_localized(args.product_code, args.lang, bootstrap)
+    workspace, downloaded = download_localized(
+        args.product_code,
+        args.lang,
+        bootstrap,
+        cancel_token=cancel_token,
+    )
+    cancellation.throw_if_cancelled(cancel_token)
 
     result: dict[str, Any] = {
         "product_code": args.product_code,
@@ -358,6 +393,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     product_images = product_image_sources(source_product)
     if not args.skip_carousel:
+        cancellation.throw_if_cancelled(cancel_token)
         pairs = pair_carousel_images(downloaded, product_images)
         if not pairs:
             raise RuntimeError("no carousel image pairs found")
@@ -371,7 +407,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             replace_existing=not args.skip_existing_carousel,
             port=args.port,
             limit=args.carousel_limit if args.carousel_limit > 0 else None,
+            cancel_token=cancel_token,
         )
+        cancellation.throw_if_cancelled(cancel_token)
         selected_pairs = pairs[:args.carousel_limit] if args.carousel_limit > 0 else pairs
         carousel_verify = ez_cdp.verify_many_language_markers(
             ez_url=ez_url,
@@ -379,6 +417,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             expected_slots=[slot_idx for slot_idx, _path in selected_pairs],
             language=args.language,
             port=args.port,
+            cancel_token=cancel_token,
         )
         result["carousel"] = {
             "requested": len(pairs),
@@ -391,6 +430,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError(f"EZ language marker verification failed: {carousel_verify}")
 
     if not args.skip_detail:
+        cancellation.throw_if_cancelled(cancel_token)
         detail_html = str(target_product.get("description") or target_product.get("body_html") or "")
         fallback_images: list[dict] = []
         if not args.no_original_detail_fallback:
@@ -398,6 +438,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 workspace=workspace,
                 body_html=detail_html,
                 localized_images=downloaded,
+                cancel_token=cancel_token,
             )
         display_size_by_src: dict[str, dict[str, Any]] = {}
         if not args.no_preserve_detail_size:
@@ -407,6 +448,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 store_domain=args.store_domain,
                 user_data_dir=cfg["browser_user_data_dir"],
                 port=args.port,
+                cancel_token=cancel_token,
             )
             print(f"[detail] captured display sizes for {len(display_size_by_src)} image(s)")
         source_index_map = taa_cdp.parse_source_index_map(args.source_index_map)
@@ -427,7 +469,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             port=args.port,
             replace_shopify_cdn=args.replace_shopify_cdn,
             verify_reload=not args.no_detail_reload_verify,
+            cancel_token=cancel_token,
         )
+        cancellation.throw_if_cancelled(cancel_token)
         result["detail"] = {key: value for key, value in detail_result.items() if key != "verify"}
         result["detail"]["fallback_original_count"] = len(fallback_images)
         result["detail"]["fallback_originals"] = [
@@ -448,6 +492,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             expected_urls=expected_urls,
             store_domain=args.store_domain,
         )
+        cancellation.throw_if_cancelled(cancel_token)
 
     output_path = workspace.root / f"shopify_batch_{args.lang}_result.json"
     storage.write_json(output_path, result)

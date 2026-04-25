@@ -19,6 +19,7 @@ from typing import Any
 import websocket
 from playwright.sync_api import sync_playwright
 
+from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -160,13 +161,20 @@ def _query_file_input_node_id(cdp: Any) -> int | None:
     return int(node_id) if node_id else None
 
 
-def _wait_file_input_node_id(cdp: Any, *, timeout_s: float = 10, interval_s: float = 0.25) -> int:
+def _wait_file_input_node_id(
+    cdp: Any,
+    *,
+    timeout_s: float = 10,
+    interval_s: float = 0.25,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> int:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        cancellation.throw_if_cancelled(cancel_token)
         node_id = _query_file_input_node_id(cdp)
         if node_id:
             return node_id
-        time.sleep(interval_s)
+        cancellation.cancellable_sleep(cancel_token, interval_s)
     raise RuntimeError("Insert image file input not found")
 
 
@@ -242,11 +250,13 @@ class TaaSession:
         shop_locale: str,
         user_data_dir: str,
         port: int = ez_cdp.DEFAULT_CDP_PORT,
+        cancel_token: cancellation.CancellationToken | None = None,
     ) -> None:
         self.product_id = str(product_id).strip()
         self.shop_locale = str(shop_locale).strip().lower()
         self.user_data_dir = user_data_dir
         self.port = port
+        self.cancel_token = cancel_token
         self.outer_url = session.build_translate_url(self.product_id, self.shop_locale)
         self._playwright = None
         self._browser = None
@@ -254,13 +264,17 @@ class TaaSession:
         self.cdp: RawCdpClient | None = None
 
     def __enter__(self) -> "TaaSession":
-        ez_cdp.ensure_cdp_chrome(self.user_data_dir, self.outer_url, port=self.port)
+        cancellation.throw_if_cancelled(self.cancel_token)
+        ez_cdp.ensure_cdp_chrome(self.user_data_dir, self.outer_url, port=self.port, cancel_token=self.cancel_token)
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(self.port))
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
         self._page = context.new_page()
+        cancellation.throw_if_cancelled(self.cancel_token)
         self._page.goto(self.outer_url, wait_until="domcontentloaded", timeout=30000)
+        cancellation.throw_if_cancelled(self.cancel_token)
         self._page.wait_for_timeout(8000)
+        cancellation.throw_if_cancelled(self.cancel_token)
 
         page_cdp = context.new_cdp_session(self._page)
         page_target = page_cdp.send("Target.getTargetInfo").get("targetInfo", {})
@@ -294,6 +308,7 @@ class TaaSession:
     def _wait_taa_iframe_target(self, page_target_id: str | None, *, timeout_s: int = 40) -> dict[str, Any]:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
+            cancellation.throw_if_cancelled(self.cancel_token)
             targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/list"))
             matches = []
             for target in targets:
@@ -311,7 +326,7 @@ class TaaSession:
                 matches.append(target)
             if matches:
                 return matches[-1]
-            time.sleep(1)
+            cancellation.cancellable_sleep(self.cancel_token, 1)
         raise RuntimeError("Translate & Adapt iframe target not found")
 
     def evaluate(self, expression: str, *, timeout_s: int = 30) -> Any:
@@ -320,6 +335,7 @@ class TaaSession:
         return self.cdp.evaluate(expression, timeout_s=timeout_s)
 
     def current_body_html(self) -> str:
+        cancellation.throw_if_cancelled(self.cancel_token)
         selector = f'textarea[id^="{BODY_HTML_FIELD_PREFIX}"]'
         value = self.evaluate(
             f"document.querySelector({json.dumps(selector)})?.value || ''",
@@ -328,6 +344,7 @@ class TaaSession:
         return str(value or "")
 
     def set_body_html(self, html: str) -> dict[str, Any]:
+        cancellation.throw_if_cancelled(self.cancel_token)
         selector = f'textarea[id^="{BODY_HTML_FIELD_PREFIX}"]'
         payload = json.dumps(html)
         script = f"""
@@ -349,6 +366,7 @@ class TaaSession:
         return result
 
     def click_save(self) -> list[dict[str, Any]]:
+        cancellation.throw_if_cancelled(self.cancel_token)
         result = self.evaluate(
             build_click_save_script(),
             timeout_s=20,
@@ -358,16 +376,18 @@ class TaaSession:
         if self.cdp is None:
             return []
         events = self.cdp.collect_events(timeout_s=35)
+        cancellation.throw_if_cancelled(self.cancel_token)
         return summarize_store_localization_events(events)
 
     def open_insert_image_modal(self) -> None:
+        cancellation.throw_if_cancelled(self.cancel_token)
         result = self.evaluate(
             build_insert_image_modal_script(),
             timeout_s=20,
         )
         if not result or not result.get("ok"):
             raise RuntimeError(f"failed to open insert image modal: {json.dumps(result, ensure_ascii=False)}")
-        time.sleep(1)
+        cancellation.cancellable_sleep(self.cancel_token, 1)
 
     def close_modal(self) -> None:
         try:
@@ -381,7 +401,8 @@ class TaaSession:
     def _set_file_input(self, local_path: str) -> None:
         if self.cdp is None:
             raise RuntimeError("TAA CDP session is not open")
-        node_id = _wait_file_input_node_id(self.cdp)
+        cancellation.throw_if_cancelled(self.cancel_token)
+        node_id = _wait_file_input_node_id(self.cdp, cancel_token=self.cancel_token)
         self.cdp.call("DOM.setFileInputFiles", {"nodeId": node_id, "files": [str(Path(local_path).resolve())]})
 
     def upload_image(self, local_path: str, *, timeout_s: int = 70) -> str:
@@ -389,6 +410,7 @@ class TaaSession:
             raise RuntimeError("TAA CDP session is not open")
         path = Path(local_path)
         self.open_insert_image_modal()
+        cancellation.throw_if_cancelled(self.cancel_token)
         self._set_file_input(str(path))
 
         deadline = time.time() + timeout_s
@@ -398,6 +420,7 @@ class TaaSession:
         token = ez_cdp.md5_token(basename) or ez_cdp.md5_token(stem) or ""
         seen_cdn_urls: list[str] = []
         while time.time() < deadline:
+            cancellation.throw_if_cancelled(self.cancel_token)
             try:
                 self.cdp._ws.settimeout(max(0.5, min(5, deadline - time.time())))
                 data = json.loads(self.cdp._ws.recv())
@@ -719,13 +742,16 @@ def replace_detail_images(
     port: int = ez_cdp.DEFAULT_CDP_PORT,
     replace_shopify_cdn: bool = False,
     verify_reload: bool = True,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, Any]:
     with TaaSession(
         product_id=product_id,
         shop_locale=shop_locale,
         user_data_dir=user_data_dir,
         port=port,
+        cancel_token=cancel_token,
     ) as taa:
+        cancellation.throw_if_cancelled(cancel_token)
         html_before = taa.current_body_html()
         plan = plan_body_html_replacements(
             html_before,
@@ -735,6 +761,7 @@ def replace_detail_images(
         )
         uploaded_replacements: list[dict[str, Any]] = []
         for row in plan["replacements"]:
+            cancellation.throw_if_cancelled(cancel_token)
             cdn_url = taa.upload_image(str(row["candidate"]["local_path"]))
             uploaded_replacements.append({
                 "token": row["token"],
@@ -748,6 +775,7 @@ def replace_detail_images(
         save_events: list[dict[str, Any]] = []
         html_after = html_before
         if uploaded_replacements:
+            cancellation.throw_if_cancelled(cancel_token)
             html_after = apply_uploaded_replacements(
                 html_before,
                 uploaded_replacements,
@@ -761,11 +789,13 @@ def replace_detail_images(
 
     verify_html = readback_html
     if verify_reload:
+        cancellation.throw_if_cancelled(cancel_token)
         with TaaSession(
             product_id=product_id,
             shop_locale=shop_locale,
             user_data_dir=user_data_dir,
             port=port,
+            cancel_token=cancel_token,
         ) as taa:
             verify_html = taa.current_body_html()
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 import tkinter as tk
 
-from tools.shopify_image_localizer import gui
+from tools.shopify_image_localizer import cancellation, gui
 
 
 def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
@@ -16,9 +19,13 @@ def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
     return app
 
 
-def test_gui_advanced_layout_and_language_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest.MonkeyPatch) -> None:
     app = _make_app(monkeypatch)
     try:
+        assert app.stop_button["text"] == "停止"
+        assert app.stop_button["state"] == "disabled"
+        assert app.stop_button["bg"] == "#c62828"
+
         app.toggle_advanced()
 
         packed_widgets = app.main_frame.pack_slaves()
@@ -43,5 +50,32 @@ def test_gui_advanced_layout_and_language_filter(monkeypatch: pytest.MonkeyPatch
             errors.append(f"unexpected selected language: {app.language_var.get()!r}")
 
         assert errors == []
+
+        started = threading.Event()
+        stopped = threading.Event()
+        captured_token: list[cancellation.CancellationToken] = []
+
+        def fake_run_shopify_localizer(**kwargs):
+            token = kwargs["cancel_token"]
+            captured_token.append(token)
+            started.set()
+            while not token.is_cancelled():
+                time.sleep(0.01)
+            stopped.set()
+            raise cancellation.OperationCancelled()
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+        app.product_code_var.set("dual-auto-fuse-tester-puller-rjc")
+        app.language_var.set("意大利语 (it)")
+
+        app.start_run()
+        assert started.wait(2)
+        assert app.stop_button["state"] == "normal"
+
+        app.request_stop()
+
+        assert captured_token[0].is_cancelled()
+        assert stopped.wait(2)
+        assert app.stop_button["state"] == "disabled"
     finally:
         app.root.destroy()

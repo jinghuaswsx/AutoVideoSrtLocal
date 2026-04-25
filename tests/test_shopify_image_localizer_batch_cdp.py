@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.shopify_image_localizer import api_client
+from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer import controller
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
@@ -188,6 +189,29 @@ def test_fetch_bootstrap_ready_passes_shopify_product_id_override(monkeypatch):
     assert calls[0]["shopify_product_id"] == "8559391932589"
 
 
+def test_fetch_bootstrap_ready_honors_pre_cancelled_token(monkeypatch):
+    token = cancellation.CancellationToken()
+    token.cancel()
+    monkeypatch.setattr(
+        run_product_cdp.api_client,
+        "fetch_bootstrap",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("bootstrap should not be called")),
+    )
+
+    try:
+        run_product_cdp.fetch_bootstrap_ready(
+            product_code="sonic-lens-refresher-rjc",
+            lang="it",
+            timeout_s=1,
+            shopify_product_id="8559391932589",
+            cancel_token=token,
+        )
+    except cancellation.OperationCancelled:
+        pass
+    else:
+        raise AssertionError("expected OperationCancelled")
+
+
 def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
     saved_config = []
     captured_args = []
@@ -195,8 +219,11 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
 
     monkeypatch.setattr(controller.settings, "save_runtime_config", lambda **kwargs: saved_config.append(kwargs))
 
-    def fake_run(args):
+    token = cancellation.CancellationToken()
+
+    def fake_run(args, *, cancel_token=None):
         captured_args.append(args)
+        captured_args.append(cancel_token)
         return {
             "product_code": args.product_code,
             "lang": args.lang,
@@ -215,12 +242,14 @@ def test_controller_passes_gui_shopify_id_to_batch_runner(monkeypatch):
         product_code="sonic-lens-refresher-rjc",
         lang="it",
         shopify_product_id="8559391932589",
+        cancel_token=token,
         status_cb=statuses.append,
     )
 
     assert result["shopify_product_id"] == "8559391932589"
     assert result["workspace_root"] == "C:/work/demo/it"
     assert captured_args[0].product_id == "8559391932589"
+    assert captured_args[1] is token
     assert captured_args[0].replace_shopify_cdn is True
     assert captured_args[0].no_preserve_detail_size is False
     assert saved_config[0]["base_url"] == "http://172.30.254.14"
@@ -242,3 +271,25 @@ def test_verify_target_language_marks_all_expected_slots():
     assert result["ok"] is True
     assert result["expected"] == 2
     assert result["matched"] == 2
+
+
+def test_ez_filters_out_slots_that_already_have_language_marker():
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    class FakeFrame:
+        def evaluate(self, script, arg=None):
+            return [
+                {"slot": 0, "text": "Remove German", "languages": ["Remove German"]},
+                {"slot": 1, "text": "English", "languages": ["English"]},
+                {"slot": 2, "text": "German", "languages": []},
+            ]
+
+    skipped, missing_pairs = ez_cdp.filter_pairs_missing_language_markers(
+        FakeFrame(),
+        [(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg"), (2, "C:/tmp/c.jpg")],
+        "German",
+    )
+
+    assert [row["slot"] for row in skipped] == [0, 2]
+    assert [row["status"] for row in skipped] == ["skipped", "skipped"]
+    assert missing_pairs == [(1, "C:/tmp/b.jpg")]

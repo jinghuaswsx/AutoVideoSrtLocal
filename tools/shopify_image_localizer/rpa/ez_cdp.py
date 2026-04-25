@@ -20,6 +20,7 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer.browser import session
 
 
@@ -60,6 +61,7 @@ def ensure_cdp_chrome(
     port: int = DEFAULT_CDP_PORT,
     proxy_server: str | None = None,
     startup_timeout_s: int = 30,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> bool:
     """Start normal Chrome with a CDP port if needed.
 
@@ -94,9 +96,10 @@ def ensure_cdp_chrome(
     )
     deadline = time.time() + startup_timeout_s
     while time.time() < deadline:
+        cancellation.throw_if_cancelled(cancel_token)
         if _cdp_alive(port):
             return True
-        time.sleep(0.5)
+        cancellation.cancellable_sleep(cancel_token, 0.5)
     raise RuntimeError(f"Chrome CDP 127.0.0.1:{port} 未就绪")
 
 
@@ -112,9 +115,10 @@ def _find_plugin_frame(page):
     return None
 
 
-def _wait_plugin_frame(page, *, timeout_s: int = 30):
+def _wait_plugin_frame(page, *, timeout_s: int = 30, cancel_token: cancellation.CancellationToken | None = None):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        cancellation.throw_if_cancelled(cancel_token)
         frame = _find_plugin_frame(page)
         if frame is not None:
             try:
@@ -122,7 +126,7 @@ def _wait_plugin_frame(page, *, timeout_s: int = 30):
                     return frame
             except Exception:
                 pass
-        page.wait_for_timeout(500)
+        cancellation.cancellable_sleep(cancel_token, 0.5)
     raise RuntimeError("EZ freshify iframe 未加载或未出现图片按钮")
 
 
@@ -208,16 +212,19 @@ def verify_many_language_markers(
     expected_slots: list[int],
     language: str = "Italian",
     port: int = DEFAULT_CDP_PORT,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
-    ensure_cdp_chrome(user_data_dir, ez_url, port=port)
+    ensure_cdp_chrome(user_data_dir, ez_url, port=port, cancel_token=cancel_token)
     with sync_playwright() as playwright:
         browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         context.set_default_timeout(15000)
         page = context.new_page()
         try:
+            cancellation.throw_if_cancelled(cancel_token)
             page.goto(ez_url, wait_until="domcontentloaded", timeout=30000)
-            frame = _wait_plugin_frame(page)
+            frame = _wait_plugin_frame(page, cancel_token=cancel_token)
+            cancellation.throw_if_cancelled(cancel_token)
             return verify_target_language_markers(frame, expected_slots, language)
         finally:
             try:
@@ -254,6 +261,25 @@ def _select_language(frame, language: str) -> None:
     frame.locator("input[type=file]").wait_for(state="attached", timeout=10000)
 
 
+def filter_pairs_missing_language_markers(frame, pairs: list[tuple[int, str]], language: str) -> tuple[list[dict], list[tuple[int, str]]]:
+    expected_slots = [slot_idx for slot_idx, _path in pairs]
+    marker_result = verify_target_language_markers(frame, expected_slots, language)
+    missing_slots = {int(slot) for slot in marker_result.get("missing") or []}
+    skipped: list[dict] = []
+    missing_pairs: list[tuple[int, str]] = []
+    for slot_idx, path in pairs:
+        if int(slot_idx) in missing_slots:
+            missing_pairs.append((slot_idx, path))
+        else:
+            skipped.append({
+                "slot": slot_idx,
+                "status": "skipped",
+                "reason": f"{language} already exists",
+                "path": path,
+            })
+    return skipped, missing_pairs
+
+
 def replace_slot(
     frame,
     slot_idx: int,
@@ -261,23 +287,29 @@ def replace_slot(
     *,
     language: str = "Italian",
     replace_existing: bool = True,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
+    cancellation.throw_if_cancelled(cancel_token)
     local_hash = md5_token(Path(local_image_path).name)
     _open_slot(frame, slot_idx, local_hash)
     try:
+        cancellation.throw_if_cancelled(cancel_token)
         if _target_exists(frame, language):
             if not replace_existing:
                 _click_cancel(frame)
                 return {"slot": slot_idx, "status": "skipped", "reason": f"{language} already exists"}
             frame.locator(f'button[aria-label="Remove {language}"]').click(timeout=5000)
             _click_save_and_wait(frame)
-            frame.page.wait_for_timeout(1500)
-            frame = _wait_plugin_frame(frame.page, timeout_s=20)
+            cancellation.cancellable_sleep(cancel_token, 1.5)
+            frame = _wait_plugin_frame(frame.page, timeout_s=20, cancel_token=cancel_token)
             _open_slot(frame, slot_idx, local_hash)
 
+        cancellation.throw_if_cancelled(cancel_token)
         _select_language(frame, language)
+        cancellation.throw_if_cancelled(cancel_token)
         frame.locator("input[type=file]").set_input_files(local_image_path, timeout=10000)
-        frame.page.wait_for_timeout(2500)
+        cancellation.cancellable_sleep(cancel_token, 2.5)
+        cancellation.throw_if_cancelled(cancel_token)
         _click_save_and_wait(frame)
         return {"slot": slot_idx, "status": "ok", "path": local_image_path}
     except Exception:
@@ -294,8 +326,9 @@ def replace_many(
     replace_existing: bool = True,
     port: int = DEFAULT_CDP_PORT,
     limit: int | None = None,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> list[dict]:
-    ensure_cdp_chrome(user_data_dir, ez_url, port=port)
+    ensure_cdp_chrome(user_data_dir, ez_url, port=port, cancel_token=cancel_token)
     results: list[dict] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
@@ -303,12 +336,23 @@ def replace_many(
         context.set_default_timeout(15000)
         page = context.new_page()
         try:
+            cancellation.throw_if_cancelled(cancel_token)
             page.goto(ez_url, wait_until="domcontentloaded", timeout=30000)
-            frame = _wait_plugin_frame(page)
+            frame = _wait_plugin_frame(page, cancel_token=cancel_token)
             selected_pairs = pairs[:limit] if limit is not None else pairs
-            for slot_idx, path in selected_pairs:
+            skipped_results, pending_pairs = filter_pairs_missing_language_markers(frame, selected_pairs, language)
+            results.extend(skipped_results)
+            if skipped_results:
+                print(
+                    f"[carousel] {len(skipped_results)} slot(s) already have {language}; "
+                    f"pending {len(pending_pairs)}"
+                )
+            if not pending_pairs and selected_pairs:
+                print(f"[carousel] all {len(selected_pairs)} slot(s) already have {language}; skipping upload")
+            for slot_idx, path in pending_pairs:
+                cancellation.throw_if_cancelled(cancel_token)
                 try:
-                    frame = _wait_plugin_frame(page)
+                    frame = _wait_plugin_frame(page, cancel_token=cancel_token)
                     results.append(
                         replace_slot(
                             frame,
@@ -316,8 +360,11 @@ def replace_many(
                             path,
                             language=language,
                             replace_existing=replace_existing,
+                            cancel_token=cancel_token,
                         )
                     )
+                except cancellation.OperationCancelled:
+                    raise
                 except Exception as exc:
                     results.append({
                         "slot": slot_idx,

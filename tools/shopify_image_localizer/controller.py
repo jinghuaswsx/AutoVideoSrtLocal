@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from typing import Callable
 
-from tools.shopify_image_localizer import api_client, settings, storage
+from tools.shopify_image_localizer import api_client, cancellation, settings, storage
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
@@ -82,8 +82,10 @@ def run_shopify_localizer(
     lang: str,
     shopify_product_id: str = "",
     status_cb: StatusCallback | None = None,
+    cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
     reporter = status_cb or _noop
+    cancellation.throw_if_cancelled(cancel_token)
     workspace = storage.create_workspace(product_code, lang)
 
     def emit(message: str) -> None:
@@ -102,6 +104,7 @@ def run_shopify_localizer(
         lang=lang,
         shopify_product_id=shopify_product_id,
     )
+    cancellation.throw_if_cancelled(cancel_token)
     if args.product_id:
         emit(f"使用手动 Shopify ID: {args.product_id}")
     emit("开始连续替换流程：先替换轮播图，再替换详情图")
@@ -109,9 +112,10 @@ def run_shopify_localizer(
     writer = _StatusWriter(emit)
     try:
         with contextlib.redirect_stdout(writer):
-            result = run_product_cdp.run(args)
+            result = run_product_cdp.run(args, cancel_token=cancel_token)
     finally:
         writer.flush()
+    cancellation.throw_if_cancelled(cancel_token)
 
     output_path = Path(str(result.get("workspace") or workspace.root)) / f"shopify_batch_{args.lang}_result.json"
     emit(f"执行完成，结果文件：{output_path}")
