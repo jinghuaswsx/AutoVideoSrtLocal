@@ -493,6 +493,7 @@ class ImageTranslateRuntime:
                     _item["apimart_submitted_at"] = 0.0
                     store.update(_task_id, items=_task["items"])
 
+        apimart_size, apimart_resolution = gemini_image._resolve_apimart_output_params(src_bytes)
         return gemini_image.generate_image(
             prompt=task["prompt"],
             source_image=src_bytes,
@@ -501,7 +502,8 @@ class ImageTranslateRuntime:
             user_id=task.get("_user_id"),
             project_id=task_id,
             service="image_translate.generate",
-            apimart_resolution="2k" if (task.get("preset") or "").strip().lower() == "cover" else "1k",
+            apimart_size=apimart_size,
+            apimart_resolution=apimart_resolution,
             on_apimart_submitted=on_submitted,
         )
 

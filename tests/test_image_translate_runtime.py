@@ -1,5 +1,7 @@
 from unittest.mock import patch, MagicMock
+from io import BytesIO
 import pytest
+from PIL import Image
 
 
 class _LegacyTosClientShim:
@@ -63,6 +65,12 @@ def _item(idx, src=None, status="pending"):
         "src_tos_key": src or f"src/{idx}.jpg",
         "dst_tos_key": "", "status": status, "attempts": 0, "error": "",
     }
+
+
+def _png_bytes(width, height):
+    buf = BytesIO()
+    Image.new("RGB", (width, height), "white").save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def test_runtime_processes_all_items_successfully(tmp_path):
@@ -1125,10 +1133,35 @@ def test_recovery_cover_tasks_request_apimart_2k_resolution():
     with patch.object(store, "update"), \
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as m_gen:
         runtime._generate_with_apimart_recovery(
-            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+            task, "t-img-1", task["items"][0], 0, _png_bytes(1920, 1080), "image/png",
         )
 
     assert m_gen.call_args.kwargs["apimart_resolution"] == "2k"
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected_size"),
+    [
+        (1920, 1080, "16:9"),
+        (1080, 1600, "2:3"),
+    ],
+)
+def test_recovery_tasks_request_apimart_size_from_source_aspect(width, height, expected_size):
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["preset"] = "detail"
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as m_gen:
+        runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, _png_bytes(width, height), "image/png",
+        )
+
+    assert m_gen.call_args.kwargs["apimart_size"] == expected_size
 
 
 def test_recovery_non_apimart_channel_skips_recovery_logic():

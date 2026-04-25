@@ -39,6 +39,22 @@ logger = logging.getLogger(__name__)
 _SEEDREAM_MIN_PIXELS = 2560 * 1440
 _SEEDREAM_MAX_PIXELS = 10_404_496
 
+_APIMART_SIZE_DIMENSIONS: dict[str, dict[str, tuple[int, int]]] = {
+    "1:1": {"1k": (1024, 1024), "2k": (2048, 2048)},
+    "3:2": {"1k": (1536, 1024), "2k": (2048, 1360)},
+    "2:3": {"1k": (1024, 1536), "2k": (1360, 2048)},
+    "4:3": {"1k": (1024, 768), "2k": (2048, 1536)},
+    "3:4": {"1k": (768, 1024), "2k": (1536, 2048)},
+    "5:4": {"1k": (1280, 1024), "2k": (2560, 2048)},
+    "4:5": {"1k": (1024, 1280), "2k": (2048, 2560)},
+    "16:9": {"1k": (1536, 864), "2k": (2048, 1152), "4k": (3840, 2160)},
+    "9:16": {"1k": (864, 1536), "2k": (1152, 2048), "4k": (2160, 3840)},
+    "2:1": {"1k": (2048, 1024), "2k": (2688, 1344), "4k": (3840, 1920)},
+    "1:2": {"1k": (1024, 2048), "2k": (1344, 2688), "4k": (1920, 3840)},
+    "21:9": {"1k": (2016, 864), "2k": (2688, 1152), "4k": (3840, 1648)},
+    "9:21": {"1k": (864, 2016), "2k": (1152, 2688), "4k": (1648, 3840)},
+}
+
 
 # OpenRouter OpenAI Image 2 真实模型 + 三档质量虚拟 ID
 _OPENROUTER_OPENAI_IMAGE2_MODEL = "openai/gpt-5.4-image-2"
@@ -495,6 +511,29 @@ def _resolve_seedream_size(source_image: bytes) -> str:
     return "2K"
 
 
+def _resolve_apimart_output_params(source_image: bytes) -> tuple[str, str]:
+    """Return APIMART (size, resolution) nearest to the source image."""
+    try:
+        with Image.open(io.BytesIO(source_image)) as img:
+            width, height = img.size
+        if width <= 0 or height <= 0:
+            return "auto", "1k"
+        source_ratio = width / height
+        size = min(
+            _APIMART_SIZE_DIMENSIONS,
+            key=lambda key: abs(math.log(source_ratio / (_APIMART_SIZE_DIMENSIONS[key]["1k"][0] / _APIMART_SIZE_DIMENSIONS[key]["1k"][1]))),
+        )
+        for resolution in ("1k", "2k", "4k"):
+            dims = _APIMART_SIZE_DIMENSIONS[size].get(resolution)
+            if dims and dims[0] >= width and dims[1] >= height:
+                return size, resolution
+        available = _APIMART_SIZE_DIMENSIONS[size]
+        return size, "4k" if "4k" in available else "2k"
+    except Exception:
+        logger.debug("解析 APIMART 原图尺寸失败，回退 auto/1k", exc_info=True)
+        return "auto", "1k"
+
+
 def _openrouter_finish_reason(resp: Any) -> str:
     for choice in getattr(resp, "choices", None) or []:
         reason = getattr(choice, "finish_reason", None)
@@ -720,6 +759,7 @@ def _generate_via_apimart(
     *,
     api_key: str,
     model_id: str = "gpt-image-2",
+    size: str = "auto",
     resolution: str = "1k",
     on_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str, Any]:
@@ -734,7 +774,7 @@ def _generate_via_apimart(
         "model": (model_id or "gpt-image-2").strip(),
         "prompt": prompt,
         "n": 1,
-        "size": "auto",
+        "size": (size or "auto").strip().lower(),
         "resolution": (resolution or "1k").strip().lower(),
         "image_urls": [data_url],
     }
@@ -796,7 +836,8 @@ def generate_image(
     user_id: int | None = None,
     project_id: str | None = None,
     service: str = "image_translate.generate",
-    apimart_resolution: str = "1k",
+    apimart_size: str | None = None,
+    apimart_resolution: str | None = None,
     on_apimart_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
@@ -832,13 +873,15 @@ def generate_image(
             input_tokens = output_tokens = None
             response_cost_cny = None
         elif channel == "apimart":
+            resolved_size, resolved_resolution = _resolve_apimart_output_params(source_image)
             image_bytes, mime, resp = _generate_via_apimart(
                 prompt,
                 source_image,
                 source_mime,
                 api_key=_resolve_apimart_api_key(),
                 model_id=model_id,
-                resolution=apimart_resolution,
+                size=apimart_size or resolved_size,
+                resolution=apimart_resolution or resolved_resolution,
                 on_submitted=on_apimart_submitted,
             )
             input_tokens = output_tokens = None
