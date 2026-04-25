@@ -419,6 +419,7 @@ def list_by_module() -> dict[str, list[UseCase]]:
 
 
 MODULE_LABELS: dict[str, str] = {
+    "omni_translate": "全能翻译",
     "video_translate": "视频翻译",
     "ja_translate": "日语翻译",
     "translate_lab": "翻译实验室",
