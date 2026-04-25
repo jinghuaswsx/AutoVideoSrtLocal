@@ -128,3 +128,12 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert 'data-tab="mine"' in body
     assert 'data-tab="all"' in body
     assert "tcRender" in body  # JS bootstrapped
+
+
+def test_create_modal_supporting_endpoints_registered(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/api/translators")
+    assert rsp.status_code in (200, 500)
+    rsp = authed_client_no_db.get("/tasks/api/languages")
+    assert rsp.status_code in (200, 500)
+    rsp = authed_client_no_db.get("/tasks/api/product/9999/en_items")
+    assert rsp.status_code in (200, 500)

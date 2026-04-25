@@ -77,6 +77,17 @@
   </div>
 
   <div id="tcTableWrap"></div>
+
+  <div id="tcCreateModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000;">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:520px; max-width:90vw;">
+      <h3 style="margin:0 0 16px;">创建任务</h3>
+      <div id="tcCreateModalBody"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:20px;">
+        <button class="tc-btn" onclick="tcCloseCreateModal()">取消</button>
+        <button class="tc-btn tc-btn--primary" onclick="tcSubmitCreate()">创建并分配</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -159,7 +170,69 @@ async function tcRenderDispatchPool(wrap) {
     <th>产品名</th><th>已有英文 item 数</th><th>操作</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
-function tcOpenCreateModal(pid, pname, ownerId) { alert('创建任务弹窗 — Task 26 实现 (产品=' + pname + ')'); }
+let TC_CREATE_CTX = null;
+async function tcOpenCreateModal(pid, pname, ownerId) {
+  TC_CREATE_CTX = {product_id: pid, product_name: pname, owner_id: ownerId};
+  const body = document.getElementById('tcCreateModalBody');
+  body.innerHTML = '加载中...';
+  document.getElementById('tcCreateModal').style.display = 'block';
+  try {
+    const [itemsResp, transResp, langsResp] = await Promise.all([
+      tcFetchJson('/tasks/api/product/' + pid + '/en_items'),
+      tcFetchJson('/tasks/api/translators'),
+      tcFetchJson('/tasks/api/languages'),
+    ]);
+    const items = itemsResp.items || [];
+    const translators = transResp.translators || [];
+    const langs = langsResp.languages || [];
+    const itemOpts = items.map(i => `<option value="${i.id}">${tcEsc(i.filename)}</option>`).join('');
+    const isOldProduct = ownerId && translators.some(t => t.id === ownerId);
+    const transOpts = translators.map(t => `<option value="${t.id}" ${t.id === ownerId ? 'selected' : ''}>${tcEsc(t.username)}</option>`).join('');
+    const langChecks = langs.map(l => `<label style="display:inline-block; padding:4px 8px;"><input type="checkbox" value="${l.code}"> ${tcEsc(l.code)}</label>`).join('');
+    body.innerHTML = `
+      <div style="margin-bottom:12px;"><strong>${tcEsc(pname)}</strong></div>
+      <div style="margin-bottom:12px;">
+        <label>原始素材（英文 item）：</label>
+        <select id="tcCreateItem" class="tc-input" style="width:100%;">
+          ${items.length ? itemOpts : '<option value="">该产品下还没有英文 item</option>'}
+        </select>
+        ${items.length ? '' : '<div style="color:var(--tc-danger-fg); font-size:12px; margin-top:4px;"><a href="/medias/" target="_blank">先去素材管理上传英文原片</a></div>'}
+      </div>
+      <div style="margin-bottom:12px;">
+        <label>翻译员：${isOldProduct ? '<span style="color:var(--tc-fg-muted); font-size:12px;">(老品自动沿用产品负责人)</span>' : ''}</label>
+        <select id="tcCreateTranslator" class="tc-input" style="width:100%;" ${isOldProduct ? 'disabled' : ''}>
+          ${transOpts || '<option value="">没有可用的翻译员（请确保有用户拥有 can_translate 权限）</option>'}
+        </select>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label>目标国家（≥1）：</label>
+        <div id="tcCreateLangs">${langChecks || '<span style="color:var(--tc-fg-muted);">没有已启用的小语种</span>'}</div>
+      </div>
+    `;
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--tc-danger-fg);">加载失败：' + tcEsc(e.message) + '</div>';
+  }
+}
+function tcCloseCreateModal() { document.getElementById('tcCreateModal').style.display = 'none'; TC_CREATE_CTX = null; }
+async function tcSubmitCreate() {
+  if (!TC_CREATE_CTX) return;
+  const itemEl = document.getElementById('tcCreateItem');
+  const transEl = document.getElementById('tcCreateTranslator');
+  const item_id = itemEl && itemEl.value ? parseInt(itemEl.value) : null;
+  const translator_id = transEl && transEl.value ? parseInt(transEl.value) : null;
+  const countries = Array.from(document.querySelectorAll('#tcCreateLangs input:checked')).map(cb => cb.value);
+  if (!item_id) { alert('请选英文素材'); return; }
+  if (!translator_id) { alert('请选翻译员'); return; }
+  if (!countries.length) { alert('至少勾一个国家'); return; }
+  try {
+    await tcFetchJson('/tasks/api/parent', {
+      method: 'POST',
+      body: JSON.stringify({media_product_id: TC_CREATE_CTX.product_id, media_item_id: item_id, countries, translator_id}),
+    });
+    tcCloseCreateModal();
+    tcRender();
+  } catch (e) { alert('创建失败：' + e.message); }
+}
 function tcOpenDetail(id) { alert('详情抽屉 — Task 27 实现 (id=' + id + ')'); }
 tcRender();
 </script>

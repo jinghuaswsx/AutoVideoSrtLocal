@@ -346,3 +346,39 @@ def api_events(tid: int):
         for r in rows
     ]
     return jsonify({"events": events})
+
+
+@bp.route("/api/translators", methods=["GET"])
+@login_required
+def api_translators():
+    from appcore.db import query_all
+    rows = query_all(
+        "SELECT id, username FROM users "
+        "WHERE is_active=1 AND role <> 'superadmin' "
+        "AND JSON_EXTRACT(COALESCE(permissions, '{}'), '$.can_translate') = TRUE "
+        "ORDER BY username"
+    )
+    return jsonify({"translators": [{"id": r["id"], "username": r["username"]} for r in rows]})
+
+
+@bp.route("/api/languages", methods=["GET"])
+@login_required
+def api_languages():
+    from appcore.db import query_all
+    rows = query_all(
+        "SELECT code FROM media_languages "
+        "WHERE enabled=1 AND code <> 'en' ORDER BY code"
+    )
+    return jsonify({"languages": [{"code": r["code"].upper()} for r in rows]})
+
+
+@bp.route("/api/product/<int:pid>/en_items", methods=["GET"])
+@login_required
+def api_product_en_items(pid: int):
+    from appcore.db import query_all
+    rows = query_all(
+        "SELECT id, filename, object_key FROM media_items "
+        "WHERE product_id=%s AND lang='en' AND deleted_at IS NULL ORDER BY id DESC",
+        (pid,),
+    )
+    return jsonify({"items": [{"id": r["id"], "filename": r["filename"]} for r in rows]})
