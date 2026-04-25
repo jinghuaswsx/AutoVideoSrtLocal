@@ -210,3 +210,33 @@ def test_api_stats_passes_none_when_dates_omitted(authed_client_no_db, monkeypat
     assert resp.status_code == 200
     assert captured["from"] is None
     assert captured["to"] is None
+
+
+# ============================================================
+# Tab 头 partial（_pushes_tabs.html）
+# ============================================================
+
+
+def test_pushes_list_renders_tabs_with_list_active(authed_client_no_db):
+    resp = authed_client_no_db.get("/pushes/")
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "pushes-tabs" in text
+    assert "推送管理" in text
+    assert "任务统计" in text
+    assert 'data-tab-active="list"' in text
+
+
+def test_pushes_stats_renders_tabs_with_stats_active(authed_client_no_db):
+    resp = authed_client_no_db.get("/pushes/stats")
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "pushes-tabs" in text
+    assert 'data-tab-active="stats"' in text
+
+
+def test_pushes_list_hides_stats_tab_for_non_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/pushes/")
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "任务统计" not in text

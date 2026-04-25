@@ -33,6 +33,7 @@ def index():
     return render_template(
         "pushes_list.html",
         is_admin=_is_admin(),
+        active="list",
     )
 
 
@@ -378,6 +379,7 @@ def stats():
     return render_template(
         "pushes_stats.html",
         is_admin=True,
+        active="stats",
     )
 
 
