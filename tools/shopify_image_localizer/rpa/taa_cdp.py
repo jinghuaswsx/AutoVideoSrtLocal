@@ -581,15 +581,28 @@ def plan_body_html_replacements(
     srcs = extract_image_srcs(html)
     replacements: list[dict[str, Any]] = []
     skipped_existing: list[dict[str, Any]] = []
+    skipped_missing: list[dict[str, Any]] = []
     for src in srcs:
         token = ez_cdp.md5_token(src)
         if not token:
             continue
-        candidate = choose_localized_image(
-            src,
-            candidates_by_token,
-            source_index_by_token=source_index_by_token,
-        )
+        source_index = source_index_from_filename(src)
+        if source_index is None:
+            source_index = (source_index_by_token or {}).get(token)
+        try:
+            candidate = choose_localized_image(
+                src,
+                candidates_by_token,
+                source_index_by_token=source_index_by_token,
+            )
+        except ValueError as exc:
+            skipped_missing.append({
+                "token": token,
+                "src": src,
+                "source_index": source_index,
+                "reason": str(exc),
+            })
+            continue
         is_shopify_cdn = "cdn.shopify.com/s/files/" in src
         already_localized = is_already_localized_src(src, candidate)
         if already_localized or (is_shopify_cdn and not replace_shopify_cdn):
@@ -609,6 +622,7 @@ def plan_body_html_replacements(
         "image_count": len(srcs),
         "replacements": replacements,
         "skipped_existing": skipped_existing,
+        "skipped_missing": skipped_missing,
     }
 
 
@@ -805,6 +819,7 @@ def replace_detail_images(
         "image_count": plan["image_count"],
         "replacement_count": len(uploaded_replacements),
         "skipped_existing_count": len(plan["skipped_existing"]),
+        "skipped_missing_count": len(plan["skipped_missing"]),
         "replacements": uploaded_replacements,
         "skipped_existing": [
             {
@@ -815,6 +830,15 @@ def replace_detail_images(
                 "source_index": row["candidate"].get("source_index"),
             }
             for row in plan["skipped_existing"]
+        ],
+        "skipped_missing": [
+            {
+                "token": row["token"],
+                "src": row["src"],
+                "reason": row["reason"],
+                "source_index": row.get("source_index"),
+            }
+            for row in plan["skipped_missing"]
         ],
         "save_network": save_events,
         "verify": {

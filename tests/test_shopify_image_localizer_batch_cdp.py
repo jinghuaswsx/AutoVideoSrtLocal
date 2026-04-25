@@ -139,6 +139,49 @@ def test_plan_body_html_replacements_treats_sanitized_shopify_upload_as_existing
     assert plan["skipped_existing"][0]["reason"] == "already localized"
 
 
+def test_plan_body_html_replacements_skips_detail_image_without_server_candidate():
+    token = "e91c999470fd206bac418a40a6d21c2f"
+    src = f"https://cdn.example.com/from_url_en_19_{token}.png"
+    html = f'<p><img src="{src}"></p>'
+
+    plan = taa_cdp.plan_body_html_replacements(html, [])
+
+    assert plan["replacements"] == []
+    assert plan["skipped_existing"] == []
+    assert len(plan["skipped_missing"]) == 1
+    assert plan["skipped_missing"][0]["token"] == token
+    assert plan["skipped_missing"][0]["source_index"] == 19
+
+
+def test_plan_body_html_replacements_skips_detail_source_index_mismatch():
+    token = "e91c999470fd206bac418a40a6d21c2f"
+    src = f"https://cdn.example.com/from_url_en_19_{token}.png"
+    html = f'<p><img src="{src}"></p>'
+    localized_images = [
+        _localized(f"loc_from_url_en_18_{token}.png"),
+    ]
+
+    plan = taa_cdp.plan_body_html_replacements(html, localized_images)
+
+    assert plan["replacements"] == []
+    assert len(plan["skipped_missing"]) == 1
+    assert "source index 19" in plan["skipped_missing"][0]["reason"]
+
+
+def test_plan_body_html_replacements_ignores_extra_server_candidates_not_in_html():
+    token = "ffffffffffffffffffffffffffffffff"
+    html = "<p>No detail images here</p>"
+    localized_images = [
+        _localized(f"loc_from_url_en_22_{token}.png"),
+    ]
+
+    plan = taa_cdp.plan_body_html_replacements(html, localized_images)
+
+    assert plan["image_count"] == 0
+    assert plan["replacements"] == []
+    assert plan["skipped_missing"] == []
+
+
 def test_taa_toolbar_detection_supports_chinese_shopify_admin_labels():
     assert "插入图片" in taa_cdp.INSERT_IMAGE_BUTTON_LABELS
     assert "保存" in taa_cdp.SAVE_BUTTON_LABELS
