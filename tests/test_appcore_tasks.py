@@ -466,3 +466,63 @@ def test_approve_child_auto_all_done_when_last_child(
     assert parent["completed_at"] is not None
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_reject_child_returns_to_assigned(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    monkeypatch.setattr(tasks, "_find_target_lang_item", lambda *a, **k: {"id": 1})
+    monkeypatch.setattr("appcore.pushes.compute_readiness", lambda *a, **k: {"ok": True})
+    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+    de_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    tasks.submit_child(task_id=de_id, actor_user_id=db_user_translator)
+    tasks.reject_child(task_id=de_id, actor_user_id=db_user_admin,
+                       reason="DE 文案翻译有错请修改")
+    row = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
+    assert row["status"] == tasks.CHILD_ASSIGNED
+    assert row["assignee_id"] == db_user_translator
+    assert "DE 文案翻译有错" in row["last_reason"]
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_cancel_child_does_not_change_parent(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE", "FR"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    de_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    tasks.cancel_child(task_id=de_id, actor_user_id=db_user_admin,
+                       reason="DE 站点暂停上架")
+    de = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
+    assert de["status"] == tasks.CHILD_CANCELLED
+    parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_RAW_DONE
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))

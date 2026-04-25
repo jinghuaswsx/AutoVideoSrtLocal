@@ -413,3 +413,60 @@ def cancel_parent(*, task_id: int, actor_user_id: int, reason: str) -> None:
             raise
     finally:
         conn.close()
+
+
+def reject_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
+    """管理员打回翻译；状态回 assigned（同 assignee）。"""
+    if not reason or len(reason.strip()) < MIN_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_REASON_LEN} characters")
+    reason = reason.strip()
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=%s, updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
+                    (CHILD_ASSIGNED, reason, int(task_id), CHILD_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not in review")
+                _write_event(cur, task_id, "rejected", actor_user_id,
+                             {"reason": reason})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
+def cancel_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
+    """admin 取消单个子任务；父任务状态不变。"""
+    if not reason or len(reason.strip()) < MIN_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_REASON_LEN} characters")
+    reason = reason.strip()
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=%s, "
+                    "cancelled_at=NOW(), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NOT NULL "
+                    "AND status IN (%s,%s,%s)",
+                    (CHILD_CANCELLED, reason, int(task_id),
+                     CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not in cancellable state")
+                _write_event(cur, task_id, "cancelled", actor_user_id,
+                             {"reason": reason})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
