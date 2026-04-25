@@ -662,3 +662,103 @@ def list_items_for_push(
     else:
         rows = query(base_sql + " LIMIT %s OFFSET %s", tuple(args + [limit, offset]))
     return rows, total
+
+
+# ---------- 任务统计聚合（按产品负责人） ----------
+
+from datetime import date as _date, datetime as _datetime, timedelta as _timedelta
+
+
+def _normalize_date_range(date_from: str | None, date_to: str | None) -> tuple[_date, _date]:
+    today = _date.today()
+    df = (
+        _datetime.strptime(date_from, "%Y-%m-%d").date()
+        if date_from else today.replace(day=1)
+    )
+    dt = (
+        _datetime.strptime(date_to, "%Y-%m-%d").date()
+        if date_to else today
+    )
+    if df > dt:
+        raise ValueError(f"date_from {df} > date_to {dt}")
+    return df, dt
+
+
+def aggregate_stats_by_owner(
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """按产品负责人聚合「素材提交数 / 已推送 / 未推送 / 推送率」。
+
+    Args:
+        date_from: 'YYYY-MM-DD'，含；None → 当月 1 日。
+        date_to: 'YYYY-MM-DD'，含；None → 今天。
+
+    Returns:
+        {
+          "rows": [{user_id, name, submitted, pushed, unpushed, push_rate}, ...],
+          "totals": {submitted, pushed, unpushed, push_rate},
+          "date_from": "YYYY-MM-DD",
+          "date_to": "YYYY-MM-DD",
+        }
+
+    Raises:
+        ValueError: date_from > date_to。
+    """
+    df, dt = _normalize_date_range(date_from, date_to)
+    from_dt = _datetime.combine(df, _datetime.min.time())
+    to_dt = _datetime.combine(dt + _timedelta(days=1), _datetime.min.time())
+
+    owner_name_expr = medias._media_product_owner_name_expr()
+    sql = (
+        "SELECT "
+        "  u.id AS user_id, "
+        f" COALESCE({owner_name_expr}, '未指派') AS owner_name, "
+        "  COUNT(*) AS submitted, "
+        "  SUM(CASE WHEN i.pushed_at IS NOT NULL THEN 1 ELSE 0 END) AS pushed "
+        "FROM media_items i "
+        "JOIN media_products p ON p.id = i.product_id "
+        "LEFT JOIN users u ON u.id = p.user_id "
+        "WHERE i.deleted_at IS NULL "
+        "  AND p.deleted_at IS NULL "
+        "  AND i.lang <> 'en' "
+        "  AND i.created_at >= %s "
+        "  AND i.created_at <  %s "
+        "GROUP BY u.id, owner_name "
+        "ORDER BY submitted DESC, owner_name ASC"
+    )
+    rows = query(sql, (from_dt, to_dt))
+
+    out_rows = []
+    total_submitted = 0
+    total_pushed = 0
+    for r in rows or []:
+        sub = int(r.get("submitted") or 0)
+        push = int(r.get("pushed") or 0)
+        unp = sub - push
+        rate = (push / sub) if sub > 0 else None
+        out_rows.append({
+            "user_id": r.get("user_id"),
+            "name": r.get("owner_name") or "未指派",
+            "submitted": sub,
+            "pushed": push,
+            "unpushed": unp,
+            "push_rate": rate,
+        })
+        total_submitted += sub
+        total_pushed += push
+
+    total_unpushed = total_submitted - total_pushed
+    total_rate = (total_pushed / total_submitted) if total_submitted > 0 else None
+
+    return {
+        "rows": out_rows,
+        "totals": {
+            "submitted": total_submitted,
+            "pushed": total_pushed,
+            "unpushed": total_unpushed,
+            "push_rate": total_rate,
+        },
+        "date_from": df.strftime("%Y-%m-%d"),
+        "date_to": dt.strftime("%Y-%m-%d"),
+    }
