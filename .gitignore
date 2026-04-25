@@ -92,3 +92,6 @@ fonts/*.otf
 !fonts/Montserrat-Variable.ttf
 !fonts/Oswald-Variable.ttf
 !fonts/Poppins-Bold.ttf
+
+# Shopify Image Localizer batch test run artifacts
+dual-auto-fuse-tester-puller-rjc/
