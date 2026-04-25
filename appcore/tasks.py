@@ -126,6 +126,43 @@ class StateError(RuntimeError):
     """Invalid state transition / precondition violation."""
 
 
+def mark_uploaded(*, task_id: int, actor_user_id: int) -> None:
+    """处理人标"已上传"，转入待审核。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT status, assignee_id, media_item_id "
+                    "FROM tasks WHERE id=%s AND parent_task_id IS NULL FOR UPDATE",
+                    (int(task_id),),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise StateError("parent task not found")
+                if row["status"] != PARENT_RAW_IN_PROGRESS:
+                    raise StateError(
+                        f"expected status raw_in_progress, got {row['status']}"
+                    )
+                if row["assignee_id"] != int(actor_user_id):
+                    raise StateError("only assignee can mark uploaded")
+                if row["media_item_id"] is None:
+                    raise StateError("media_item not bound; upload first")
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+                    "WHERE id=%s",
+                    (PARENT_RAW_REVIEW, int(task_id)),
+                )
+                _write_event(cur, task_id, "raw_uploaded", actor_user_id, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
 def claim_parent(*, task_id: int, actor_user_id: int) -> None:
     """处理人认领父任务。乐观锁防并发。"""
     conn = get_conn()
