@@ -16,7 +16,7 @@ def login():
             # 标记 session 为持久化，使其遵循 PERMANENT_SESSION_LIFETIME（1 个月）
             session.permanent = True
             login_user(User(row), remember=True)
-            return redirect(url_for("projects.index"))
+            return redirect(url_for("medias.index"))
         flash("用户名或密码错误")
     return render_template("login.html")
 
