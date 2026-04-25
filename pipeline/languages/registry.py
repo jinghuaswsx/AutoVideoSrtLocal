@@ -1,4 +1,4 @@
-"""语言规则注册中心。Batch 1 = de/fr；Batch 2 = es/it/pt；Batch 3 = ja；Batch 4 = nl/sv/fi。
+"""语言规则注册中心。Batch 1 = de/fr；Batch 2 = es/it/pt；Batch 3 = ja；Batch 4 = nl/sv/fi；Batch 5 = en。
 
 扩展新语言：加一个 pipeline/languages/<lang>.py + 在 SUPPORTED_LANGS 加一项。
 """
