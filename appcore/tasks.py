@@ -186,3 +186,41 @@ def claim_parent(*, task_id: int, actor_user_id: int) -> None:
             raise
     finally:
         conn.close()
+
+
+def approve_raw(*, task_id: int, actor_user_id: int) -> None:
+    """管理员审核通过原始视频，自动 unblock 所有 blocked 子任务。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
+                    (PARENT_RAW_DONE, int(task_id), PARENT_RAW_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("parent not in raw_review")
+                _write_event(cur, task_id, "approved", actor_user_id, None)
+
+                cur.execute(
+                    "SELECT id FROM tasks WHERE parent_task_id=%s AND status=%s",
+                    (int(task_id), CHILD_BLOCKED),
+                )
+                child_ids = [r["id"] for r in cur.fetchall()]
+                if child_ids:
+                    fmt = ",".join(["%s"] * len(child_ids))
+                    cur.execute(
+                        f"UPDATE tasks SET status=%s, updated_at=NOW() "
+                        f"WHERE id IN ({fmt})",
+                        (CHILD_ASSIGNED, *child_ids),
+                    )
+                    for cid in child_ids:
+                        _write_event(cur, cid, "unblocked", None, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()

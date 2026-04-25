@@ -220,3 +220,38 @@ def test_mark_uploaded_requires_media_item(
         tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_approve_raw_unblocks_children(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE", "FR"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+
+    parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_RAW_DONE
+
+    children = query_all(
+        "SELECT * FROM tasks WHERE parent_task_id=%s", (parent_id,)
+    )
+    assert all(c["status"] == tasks.CHILD_ASSIGNED for c in children)
+
+    events = query_all(
+        "SELECT event_type FROM task_events "
+        "WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)",
+        (parent_id, parent_id),
+    )
+    types = [e["event_type"] for e in events]
+    assert "approved" in types
+    assert types.count("unblocked") >= 2
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
