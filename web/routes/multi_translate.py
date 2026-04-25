@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("multi_translate", __name__)
 
-SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi")
+SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
 
 
 def _list_enabled_target_langs() -> tuple[str, ...]:

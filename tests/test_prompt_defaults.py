@@ -47,3 +47,37 @@ def test_ja_tts_script_mentions_particle_rule():
     entry = DEFAULTS[("base_tts_script", "ja")]
     # 必须提到助词（は・が・を…）和行首约束
     assert "助詞" in entry["content"] or "particle" in entry["content"].lower()
+
+
+# ── Batch 5：英语（en-US）──────────────────────────────
+
+def test_defaults_cover_en():
+    for slot in ("base_translation", "base_tts_script", "base_rewrite"):
+        assert (slot, "en") in DEFAULTS, f"missing en {slot}"
+
+
+def test_en_translation_prompt_targets_en_us_market():
+    content = DEFAULTS[("base_translation", "en")]["content"]
+    assert "US" in content or "American" in content
+    # en-US specific vocabulary anchors
+    for token in ("sneakers", "apartment", "elevator"):
+        assert token in content
+    # forbidden patterns
+    assert "link in bio" in content.lower() or "no cta" in content.lower()
+    # JSON schema hint
+    assert "source_segment_indices" in content
+
+
+def test_en_tts_script_prompt_mentions_subtitle_chunks():
+    content = DEFAULTS[("base_tts_script", "en")]["content"]
+    assert "subtitle_chunks" in content
+    assert "blocks" in content
+
+
+def test_en_rewrite_prompt_has_word_count_constraint():
+    content = DEFAULTS[("base_rewrite", "en")]["content"]
+    assert "{target_words}" in content
+    assert "{direction}" in content
+    assert "source_segment_indices" in content
+    # en-US specific: contractions count as one word
+    assert "contractions" in content.lower() or "you'll" in content

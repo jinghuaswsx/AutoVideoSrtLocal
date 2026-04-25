@@ -308,3 +308,53 @@ def test_step_translate_rejects_sparse_source_for_long_video():
             runner._step_translate("t1")
 
     m_gen.assert_not_called()
+
+
+def test_step_translate_resolves_en_prompt_and_uses_eleven_multilingual():
+    """target_lang='en' 应当走 ('base_translation','en') resolver 并使用 eleven_multilingual_v2 TTS 模型。"""
+    runner = _make_runner()
+    task = {
+        "task_dir": "/tmp/x",
+        "target_lang": "en",
+        "source_language": "zh",
+        "script_segments": [{"index": 0, "text": "你好"}],
+        "interactive_review": False,
+        "variants": {},
+    }
+    with patch("appcore.task_state.get", return_value=task), \
+         patch("appcore.task_state.update"), \
+         patch("appcore.task_state.set_artifact"), \
+         patch("appcore.task_state.set_current_review_step"), \
+         patch("appcore.runtime_multi.resolve_prompt_config") as m_resolve, \
+         patch("appcore.runtime_multi.generate_localized_translation") as m_gen, \
+         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.runtime.ai_billing.log_request"), \
+         patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
+         patch("appcore.runtime._translate_billing_model", return_value="gpt"), \
+         patch("appcore.runtime_multi._resolve_translate_provider", return_value="openrouter"), \
+         patch("appcore.runtime_multi.get_model_display_name", return_value="gpt"), \
+         patch("pipeline.extract.get_video_duration", return_value=1.0), \
+         patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
+         patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
+        m_resolve.side_effect = [
+            {"provider": "openrouter", "model": "gpt", "content": "BASE_EN"},
+            {"provider": "openrouter", "model": "gpt", "content": "ECOM_PLUGIN"},
+        ]
+        m_gen.return_value = {"full_text": "hi", "sentences": [], "_usage": {}}
+        runner._step_translate("t1")
+
+    assert m_resolve.call_args_list[0].args == ("base_translation", "en")
+    assert m_resolve.call_args_list[1].args == ("ecommerce_plugin", None)
+    kwargs = m_gen.call_args.kwargs
+    assert "BASE_EN" in kwargs["custom_system_prompt"]
+
+
+def test_runner_lang_rules_for_en_use_multilingual_tts_and_en_code():
+    """_get_tts_model_id / _get_tts_language_code 对英语任务返回 multilingual_v2 + 'en'。"""
+    runner = _make_runner()
+    task = {"target_lang": "en"}
+    # 守住 lang-rules 模块真的命中 en，不走 _get_tts_model_id 的 getattr fallback
+    rules = runner._get_lang_rules("en")
+    assert rules.__name__ == "pipeline.languages.en"
+    assert runner._get_tts_model_id(task) == "eleven_multilingual_v2"
+    assert runner._get_tts_language_code(task) == "en"

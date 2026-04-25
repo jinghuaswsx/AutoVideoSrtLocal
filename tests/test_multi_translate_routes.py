@@ -688,3 +688,55 @@ def test_confirm_voice_resumes_parent_bulk_translate_scheduler(authed_client_no_
     assert len(bg_calls) == 1
     assert callable(bg_calls[0][0])
     assert bg_calls[0][1] == "bulk-parent-1"
+
+
+def test_multi_translate_start_accepts_target_lang_en(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "en",
+            "video": (io.BytesIO(b"english-video"), "demo-en.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+
+    task = store.get(payload["task_id"])
+    assert task["type"] == "multi_translate"
+    assert task["target_lang"] == "en"
+    assert started["task_id"] == payload["task_id"]
+
+
+def test_multi_translate_list_template_exposes_en_label_in_lang_label_map():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+
+    # 全局 lang_label_map 含 EN（统一驱动顶部筛选 pill 与模态目标语言 pill）
+    assert "'en':'🇬🇧 英语'" in template
+
+
+def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db):
+    with patch("web.routes.multi_translate.db_query", return_value=[]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("appcore.task_recovery.recover_all_interrupted_tasks"), \
+         patch("web.routes.multi_translate._list_filter_langs",
+               return_value=("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")), \
+         patch("web.routes.multi_translate._list_enabled_target_langs",
+               return_value=("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")):
+        resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    assert "🇬🇧 英语".encode("utf-8") in resp.data

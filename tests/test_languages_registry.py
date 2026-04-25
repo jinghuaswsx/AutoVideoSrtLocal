@@ -24,7 +24,7 @@ def test_get_rules_fr_has_post_process():
     assert callable(rules.post_process_srt)
     sample = "1\n00:00:00,000 --> 00:00:01,000\nBonjour ?\n"
     out = rules.post_process_srt(sample)
-    assert "Bonjour\u00A0?" in out
+    assert "Bonjour ?" in out
 
 
 def test_get_rules_unknown_raises():
@@ -90,3 +90,25 @@ def test_get_rules_ja_has_full_width_line_width_and_slower_cps():
     # 无特殊后处理
     sample = "1\n00:00:00,000 --> 00:00:01,000\n日本語のテスト\n"
     assert rules.post_process_srt(sample) == sample
+
+
+# ── Batch 5：英语 ──────────────────────────────────────
+
+def test_supported_langs_includes_en():
+    assert "en" in registry.SUPPORTED_LANGS
+
+
+def test_supported_langs_full_set_after_en():
+    assert set(registry.SUPPORTED_LANGS) == {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"}
+
+
+def test_get_rules_en_returns_module_with_required_attrs():
+    rules = registry.get_rules("en")
+    assert rules.TTS_MODEL_ID == "eleven_multilingual_v2"
+    assert rules.TTS_LANGUAGE_CODE == "en"
+    assert rules.MAX_CHARS_PER_LINE == 42
+    assert rules.MAX_CHARS_PER_SECOND == 17
+    assert rules.MAX_LINES == 2
+    assert "the" in rules.WEAK_STARTERS
+    assert rules.post_process_srt("foo\n") == "foo\n"
+    assert rules.pre_process("foo") == "foo"
