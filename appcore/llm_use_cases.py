@@ -350,6 +350,47 @@ USE_CASES: dict[str, UseCase] = {
         "doubao",
         "seconds",
     ),
+    # 原文标准化（ASR 后插入步骤）
+    "asr_normalize.detect_language": _uc(
+        "asr_normalize.detect_language",
+        "video_translate",
+        "原文语言识别",
+        "ASR 完成后识别原视频语言以决定标准化路由",
+        "gemini_aistudio",
+        "gemini-3.1-flash-lite-preview",
+        "gemini",
+        "tokens",
+    ),
+    "asr_normalize.translate_zh_to_en": _uc(
+        "asr_normalize.translate_zh_to_en",
+        "video_translate",
+        "中文 ASR → en-US 标准化",
+        "中文素材 ASR 文本翻译为 en-US（注册保留，runner 当前路由跳过）",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
+    "asr_normalize.translate_es_to_en": _uc(
+        "asr_normalize.translate_es_to_en",
+        "video_translate",
+        "西语 ASR → en-US 标准化",
+        "西班牙语素材 ASR 文本精修翻译为 en-US",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
+    "asr_normalize.translate_generic_to_en": _uc(
+        "asr_normalize.translate_generic_to_en",
+        "video_translate",
+        "任意源 → en-US 标准化（兜底）",
+        "白名单内非中英文素材 ASR 文本通用翻译为 en-US",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 

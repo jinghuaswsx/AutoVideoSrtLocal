@@ -56,7 +56,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 30
+    assert len(USE_CASES) == 34
     assert "ja_translate.localize" in USE_CASES
     assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
