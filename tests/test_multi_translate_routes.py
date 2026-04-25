@@ -718,3 +718,25 @@ def test_multi_translate_start_accepts_target_lang_en(tmp_path, authed_client_no
     assert task["type"] == "multi_translate"
     assert task["target_lang"] == "en"
     assert started["task_id"] == payload["task_id"]
+
+
+def test_multi_translate_list_template_exposes_en_label_in_lang_label_map():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+
+    # 全局 lang_label_map 含 EN（统一驱动顶部筛选 pill 与模态目标语言 pill）
+    assert "'en':'🇬🇧 英语'" in template
+
+
+def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db):
+    with patch("web.routes.multi_translate.db_query", return_value=[]), \
+         patch("appcore.settings.get_retention_hours", return_value=72), \
+         patch("appcore.task_recovery.recover_all_interrupted_tasks"), \
+         patch("web.routes.multi_translate._list_filter_langs",
+               return_value=("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")), \
+         patch("web.routes.multi_translate._list_enabled_target_langs",
+               return_value=("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")):
+        resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    assert "🇬🇧 英语".encode("utf-8") in resp.data
