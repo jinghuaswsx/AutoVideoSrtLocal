@@ -215,6 +215,7 @@ def download_localized(
         localized_images,
         workspace.source_localized_dir,
         retries=2,
+        status_cb=print,
         cancel_token=cancel_token,
     )
     return workspace, downloaded

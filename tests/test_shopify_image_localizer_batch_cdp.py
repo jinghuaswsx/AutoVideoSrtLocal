@@ -5,12 +5,58 @@ from pathlib import Path
 from tools.shopify_image_localizer import api_client
 from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer import controller
+from tools.shopify_image_localizer import downloader
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
 def _localized(filename: str) -> dict:
     return {"filename": filename, "local_path": str(Path("C:/tmp") / filename)}
+
+
+def test_downloader_shortens_long_shopify_filename_without_losing_match_keys():
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    filename = (
+        "20260425_0b9f7177_20260420_ed1b2369_"
+        f"from_url_en_10_{token}_"
+        "9af389e3-ed41-4433-8a5f-a1b16fb37c59.png"
+    )
+
+    safe = downloader._safe_filename(filename, "fallback.png")
+
+    assert len(safe) <= downloader.MAX_FILENAME_LENGTH
+    assert f"from_url_en_10_{token}" in safe
+    assert safe.endswith(".png")
+
+
+def test_downloader_writes_long_shopify_filename_to_safe_local_path(tmp_path, monkeypatch):
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    filename = (
+        "20260425_0b9f7177_20260420_ed1b2369_"
+        f"from_url_en_10_{token}_"
+        "9af389e3-ed41-4433-8a5f-a1b16fb37c59.png"
+    )
+
+    class DummyResponse:
+        content = b"image-bytes"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(downloader.requests, "get", lambda *_args, **_kwargs: DummyResponse())
+
+    downloaded = downloader.download_images(
+        [{"id": "image-10", "filename": filename, "url": "https://cdn.example.com/image.png"}],
+        tmp_path,
+    )
+
+    local_path = Path(downloaded[0]["local_path"])
+    assert local_path.parent == tmp_path
+    assert local_path.is_file()
+    assert local_path.read_bytes() == b"image-bytes"
+    assert len(local_path.name) <= downloader.MAX_FILENAME_LENGTH
+    assert f"from_url_en_10_{token}" in local_path.name
 
 
 def test_pair_carousel_images_prefers_matching_source_index_for_duplicate_tokens():
