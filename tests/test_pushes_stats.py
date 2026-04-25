@@ -127,3 +127,86 @@ def test_aggregate_stats_sql_filters_and_uses_owner_expr(monkeypatch):
     assert "p.deleted_at IS NULL" in captured["sql"]
     assert "i.created_at >= %s" in captured["sql"]
     assert "i.created_at <  %s" in captured["sql"]
+
+
+# ============================================================
+# 路由：/pushes/stats（页面） + /pushes/api/stats（JSON）
+# ============================================================
+
+
+def test_stats_page_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/pushes/stats")
+    assert resp.status_code == 403
+
+
+def test_stats_page_loads_for_admin(authed_client_no_db):
+    resp = authed_client_no_db.get("/pushes/stats")
+    assert resp.status_code == 200
+    assert "任务统计".encode("utf-8") in resp.data
+
+
+def test_api_stats_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/pushes/api/stats")
+    assert resp.status_code == 403
+
+
+def test_api_stats_returns_aggregate_payload(authed_client_no_db, monkeypatch):
+    fake = {
+        "rows": [{"user_id": 7, "name": "张三",
+                  "submitted": 12, "pushed": 8, "unpushed": 4, "push_rate": 0.667}],
+        "totals": {"submitted": 12, "pushed": 8, "unpushed": 4, "push_rate": 0.667},
+        "date_from": "2026-04-01",
+        "date_to": "2026-04-26",
+    }
+    captured = {}
+
+    def fake_agg(date_from=None, date_to=None):
+        captured["from"] = date_from
+        captured["to"] = date_to
+        return fake
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.aggregate_stats_by_owner", fake_agg,
+    )
+    resp = authed_client_no_db.get(
+        "/pushes/api/stats?date_from=2026-04-01&date_to=2026-04-26",
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == fake
+    assert captured["from"] == "2026-04-01"
+    assert captured["to"] == "2026-04-26"
+
+
+def test_api_stats_invalid_range_returns_400(authed_client_no_db, monkeypatch):
+    def boom(date_from=None, date_to=None):
+        raise ValueError("date_from > date_to")
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.aggregate_stats_by_owner", boom,
+    )
+    resp = authed_client_no_db.get(
+        "/pushes/api/stats?date_from=2026-04-26&date_to=2026-04-01",
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid_date_range"
+
+
+def test_api_stats_passes_none_when_dates_omitted(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_agg(date_from=None, date_to=None):
+        captured["from"] = date_from
+        captured["to"] = date_to
+        return {
+            "rows": [],
+            "totals": {"submitted": 0, "pushed": 0, "unpushed": 0, "push_rate": None},
+            "date_from": "2026-04-01",
+            "date_to": "2026-04-26",
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.aggregate_stats_by_owner", fake_agg,
+    )
+    resp = authed_client_no_db.get("/pushes/api/stats")
+    assert resp.status_code == 200
+    assert captured["from"] is None
+    assert captured["to"] is None

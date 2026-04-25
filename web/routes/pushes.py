@@ -366,6 +366,35 @@ def api_logs(item_id: int):
 
 
 # ================================================================
+# 任务统计 Tab：/pushes/stats（页面） + /pushes/api/stats（JSON）
+# 仅 admin。
+# ================================================================
+
+
+@bp.route("/stats")
+@login_required
+@admin_required
+def stats():
+    return render_template(
+        "pushes_stats.html",
+        is_admin=True,
+    )
+
+
+@bp.route("/api/stats", methods=["GET"])
+@login_required
+@admin_required
+def api_stats():
+    date_from = (request.args.get("date_from") or "").strip() or None
+    date_to = (request.args.get("date_to") or "").strip() or None
+    try:
+        result = pushes.aggregate_stats_by_owner(date_from, date_to)
+    except ValueError as exc:
+        return jsonify({"error": "invalid_date_range", "detail": str(exc)}), 400
+    return jsonify(result)
+
+
+# ================================================================
 # 小语种文案推送：进程内组装 → 一次 HTTP POST 到 wedev
 # ================================================================
 
