@@ -598,6 +598,35 @@ def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_
     assert created["extra_body"]["quality"] == "high"
 
 
+def test_generate_image_apimart_passes_requested_resolution():
+    from appcore import gemini_image
+
+    submitted: dict = {}
+    submit_resp = MagicMock()
+    submit_resp.status_code = 200
+    submit_resp.json.return_value = {"code": 200, "data": [{"task_id": "apimart-task-1"}]}
+
+    def fake_post(_url, *, json, **_kwargs):
+        submitted.update(json)
+        return submit_resp
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
+         patch.object(gemini_image, "_resolve_apimart_api_key", return_value="APIMART-KEY"), \
+         patch.object(gemini_image.requests, "post", side_effect=fake_post), \
+         patch.object(gemini_image, "poll_apimart_task", return_value=(b"PNG", "image/png", {})):
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"SRC",
+            source_mime="image/png",
+            model="gpt-image-2",
+            apimart_resolution="2k",
+        )
+
+    assert out == b"PNG"
+    assert mime == "image/png"
+    assert submitted["resolution"] == "2k"
+
+
 def test_resolve_seedream_size_falls_back_to_2k():
     from appcore import gemini_image
 

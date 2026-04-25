@@ -1113,6 +1113,24 @@ def test_recovery_normal_path_saves_task_id_via_callback():
     assert task["items"][0]["provider_task_submitted_at"] > 0
 
 
+def test_recovery_cover_tasks_request_apimart_2k_resolution():
+    from appcore import image_translate_runtime as rt
+    from web import store
+
+    task = _fake_task([_item(0)])
+    task["channel"] = "apimart"
+    task["preset"] = "cover"
+
+    runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+    with patch.object(store, "update"), \
+         patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")) as m_gen:
+        runtime._generate_with_apimart_recovery(
+            task, "t-img-1", task["items"][0], 0, b"SRC", "image/png",
+        )
+
+    assert m_gen.call_args.kwargs["apimart_resolution"] == "2k"
+
+
 def test_recovery_non_apimart_channel_skips_recovery_logic():
     """非 APIMART 通道不启用 task_id 快照机制。"""
     from appcore import image_translate_runtime as rt

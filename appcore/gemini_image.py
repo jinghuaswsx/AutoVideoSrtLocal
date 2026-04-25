@@ -720,6 +720,7 @@ def _generate_via_apimart(
     *,
     api_key: str,
     model_id: str = "gpt-image-2",
+    resolution: str = "1k",
     on_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str, Any]:
     if not api_key:
@@ -734,7 +735,7 @@ def _generate_via_apimart(
         "prompt": prompt,
         "n": 1,
         "size": "auto",
-        "resolution": "1k",
+        "resolution": (resolution or "1k").strip().lower(),
         "image_urls": [data_url],
     }
     headers = {
@@ -795,6 +796,7 @@ def generate_image(
     user_id: int | None = None,
     project_id: str | None = None,
     service: str = "image_translate.generate",
+    apimart_resolution: str = "1k",
     on_apimart_submitted: Callable[[str], None] | None = None,
 ) -> tuple[bytes, str]:
     """?? Gemini ??????? (?? bytes, mime)?"""
@@ -836,6 +838,7 @@ def generate_image(
                 source_mime,
                 api_key=_resolve_apimart_api_key(),
                 model_id=model_id,
+                resolution=apimart_resolution,
                 on_submitted=on_apimart_submitted,
             )
             input_tokens = output_tokens = None

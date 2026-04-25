@@ -501,6 +501,7 @@ class ImageTranslateRuntime:
             user_id=task.get("_user_id"),
             project_id=task_id,
             service="image_translate.generate",
+            apimart_resolution="2k" if (task.get("preset") or "").strip().lower() == "cover" else "1k",
             on_apimart_submitted=on_submitted,
         )
 
