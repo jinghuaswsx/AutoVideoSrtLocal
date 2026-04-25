@@ -15,7 +15,7 @@ import os
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_key
 from appcore.events import EVT_ENGLISH_ASR_RESULT, EVT_SUBTITLE_READY, EVT_TRANSLATE_RESULT
-from pipeline.asr import transcribe_local_audio
+from pipeline.asr import transcribe_local_audio_for_source
 from pipeline.subtitle import build_srt_from_chunks, save_srt
 from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 from pipeline.tts import _get_audio_duration
@@ -277,14 +277,21 @@ class MultiTranslateRunner(PipelineRunner):
                        f"正在根据 {lang.upper()} 音频校正字幕...")
 
         volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        elevenlabs_api_key = resolve_key(
+            self.user_id, "elevenlabs", "ELEVENLABS_API_KEY",
+        )
 
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get("normal", {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal",
+        # 多语言 TTS 二次 ASR：dispatcher 按目标语言路由（zh/en→豆包，其他→Scribe）。
+        target_lang = self._resolve_target_lang(task)
+        utterances = transcribe_local_audio_for_source(
+            tts_audio_path, target_lang,
+            prefix=f"tts-asr/{task_id}/normal",
             volc_api_key=volc_api_key,
+            elevenlabs_api_key=elevenlabs_api_key,
         )
         asr_result = {
             "full_text": " ".join(u.get("text", "").strip()

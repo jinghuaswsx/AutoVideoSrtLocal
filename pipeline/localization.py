@@ -357,6 +357,9 @@ def build_localized_translation_messages(
     variant: str = "normal",
     custom_system_prompt: str | None = None,
     source_language: str = "zh",
+    *,
+    target_words: int | None = None,
+    video_duration: float | None = None,
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
     if custom_system_prompt:
@@ -370,17 +373,21 @@ def build_localized_translation_messages(
     prompt = prompt.replace("{source_language_label}", en_label).replace(
         "{source_language_label_zh}", zh_label
     )
+    user_content = (
+        f"Source {en_label} full text:\n"
+        f"{source_full_text_zh}\n\n"
+        f"Source {en_label} segments:\n"
+        f"{json.dumps(items, ensure_ascii=False, indent=2)}"
+    )
+    if target_words and video_duration:
+        user_content += (
+            f"\n\nThe localized output will be dubbed over a {video_duration:.1f}s video. "
+            f"Aim for approximately {target_words} words in full_text to fit the duration. "
+            "Stay within ±10% of this target — overshooting forces a rewrite loop."
+        )
     return [
         {"role": "system", "content": prompt},
-        {
-            "role": "user",
-            "content": (
-                f"Source {en_label} full text:\n"
-                f"{source_full_text_zh}\n\n"
-                f"Source {en_label} segments:\n"
-                f"{json.dumps(items, ensure_ascii=False, indent=2)}"
-            ),
-        },
+        {"role": "user", "content": user_content},
     ]
 
 

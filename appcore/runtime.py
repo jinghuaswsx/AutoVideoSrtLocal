@@ -1251,23 +1251,50 @@ class PipelineRunner:
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
-        self._set_step(task_id, "asr", "running", "正在准备 ASR 公网音频...")
+        source_language = task.get("source_language", "zh")
+        self._set_step(task_id, "asr", "running", "正在准备 ASR 音频...")
         from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
-        from pipeline.asr import transcribe
-        from pipeline.storage import delete_file, upload_file
+        from pipeline.lang_labels import lang_label
 
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
-        tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
-        audio_url = upload_file(audio_path, tos_key)
-        self._set_step(task_id, "asr", "running", "正在识别中文语音...")
-        try:
-            utterances = transcribe(audio_url, volc_api_key=volc_api_key)
-        finally:
+        # 按源语言选 ASR 引擎：zh/en 走豆包 SeedASR（需先 upload TOS 拿 URL），
+        # 其他（es/pt/de/fr/...）走 ElevenLabs Scribe（直接本地文件多语种识别）。
+        if source_language in ("zh", "en"):
+            from pipeline.asr import transcribe
+            from pipeline.storage import delete_file, upload_file
+            volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+            tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
+            audio_url = upload_file(audio_path, tos_key)
+            self._set_step(
+                task_id, "asr", "running",
+                f"正在识别{lang_label(source_language, in_chinese=True)}语音（豆包 ASR）...",
+            )
             try:
-                delete_file(tos_key)
-            except Exception:
-                pass
+                utterances = transcribe(audio_url, volc_api_key=volc_api_key)
+            finally:
+                try:
+                    delete_file(tos_key)
+                except Exception:
+                    pass
+            asr_provider = "doubao_asr"
+            asr_model = "big-model"
+        else:
+            from pipeline.asr_scribe import transcribe_local_audio as scribe_transcribe
+            elevenlabs_api_key = resolve_key(
+                self.user_id, "elevenlabs", "ELEVENLABS_API_KEY",
+            )
+            self._set_step(
+                task_id, "asr", "running",
+                f"正在识别{lang_label(source_language, in_chinese=True)}语音（ElevenLabs Scribe）...",
+            )
+            utterances = scribe_transcribe(
+                audio_path,
+                language_code=source_language,
+                api_key=elevenlabs_api_key,
+            )
+            audio_url = ""  # Scribe 不上传 TOS
+            asr_provider = "elevenlabs_scribe"
+            asr_model = "scribe_v2"
 
         passthrough = _resolve_original_video_passthrough(utterances)
         source_full_text = passthrough["source_full_text"]
@@ -1285,15 +1312,15 @@ class PipelineRunner:
             use_case_code="video_translate.asr",
             user_id=self.user_id,
             project_id=task_id,
-            provider="doubao_asr",
-            model="big-model",
+            provider=asr_provider,
+            model=asr_model,
             request_units=_seconds_to_request_units(audio_duration_seconds),
             units_type="seconds",
             audio_duration_seconds=audio_duration_seconds,
             success=True,
             request_payload={
                 "type": "asr",
-                "provider": "doubao_asr",
+                "provider": asr_provider,
                 "audio_url": audio_url,
                 "audio_path": audio_path,
             },
@@ -1935,7 +1962,7 @@ class PipelineRunner:
             return
         self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
         from appcore.api_keys import resolve_key
-        from pipeline.asr import transcribe_local_audio
+        from pipeline.asr import transcribe_local_audio_for_source
 
         volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
         from pipeline.subtitle import build_srt_from_chunks, save_srt
@@ -1946,8 +1973,11 @@ class PipelineRunner:
         variant_state = dict(variants.get(variant, {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        english_utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal", volc_api_key=volc_api_key
+        # TTS 输出是 en，豆包路径即可；保留 dispatcher 调用让架构对齐。
+        english_utterances = transcribe_local_audio_for_source(
+            tts_audio_path, "en",
+            prefix=f"tts-asr/{task_id}/normal",
+            volc_api_key=volc_api_key,
         )
         english_asr_result = {
             "full_text": " ".join(

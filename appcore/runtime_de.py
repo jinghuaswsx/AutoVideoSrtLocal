@@ -23,6 +23,7 @@ from appcore.events import (
 from appcore.runtime import (
     PipelineRunner,
     _build_review_segments,
+    _compute_initial_target_words,
     _llm_request_payload,
     _llm_response_payload,
     _log_translate_billing,
@@ -85,11 +86,16 @@ class DeTranslateRunner(PipelineRunner):
         custom_prompt = task.get("custom_translate_prompt")
         system_prompt = custom_prompt or DE_PROMPT
 
+        from pipeline.extract import get_video_duration
+        video_duration = get_video_duration(task.get("video_path") or "") or 0.0
+        target_words = _compute_initial_target_words(video_duration, self.target_language_label)
         localized_translation = generate_localized_translation(
             source_full_text, script_segments, variant=variant,
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
             source_language=source_language,
+            target_words=target_words or None,
+            video_duration=video_duration or None,
         )
 
         initial_messages = localized_translation.pop("_messages", None)
@@ -159,20 +165,27 @@ class DeTranslateRunner(PipelineRunner):
         task = task_state.get(task_id)
         self._set_step(task_id, "subtitle", "running", "正在根据德语音频校正字幕...")
         from appcore.api_keys import resolve_key
-        from pipeline.asr import transcribe_local_audio
+        from pipeline.asr import transcribe_local_audio_for_source
         from pipeline.localization_de import WEAK_STARTERS_DE
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 
         volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        elevenlabs_api_key = resolve_key(
+            self.user_id, "elevenlabs", "ELEVENLABS_API_KEY",
+        )
 
         variant = "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        de_utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal", volc_api_key=volc_api_key
+        # 德语 TTS 音频走 Scribe（豆包不支持 de）；dispatcher 按 "de" 自动选 Scribe。
+        de_utterances = transcribe_local_audio_for_source(
+            tts_audio_path, "de",
+            prefix=f"tts-asr/{task_id}/normal",
+            volc_api_key=volc_api_key,
+            elevenlabs_api_key=elevenlabs_api_key,
         )
         de_asr_result = {
             "full_text": " ".join(

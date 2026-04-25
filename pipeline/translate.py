@@ -325,6 +325,8 @@ def generate_localized_translation(
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
     source_language: str = "zh",
+    target_words: int | None = None,
+    video_duration: float | None = None,
 ) -> dict:
     provider = _resolve_use_case_provider(provider)
     messages = build_localized_translation_messages(
@@ -333,6 +335,8 @@ def generate_localized_translation(
         variant=variant,
         custom_system_prompt=custom_system_prompt,
         source_language=source_language,
+        target_words=target_words,
+        video_duration=video_duration,
     )
 
     if provider.startswith("vertex_"):

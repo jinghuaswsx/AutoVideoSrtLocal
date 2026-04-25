@@ -159,20 +159,27 @@ class FrTranslateRunner(PipelineRunner):
         task = task_state.get(task_id)
         self._set_step(task_id, "subtitle", "running", "正在根据法语音频校正字幕...")
         from appcore.api_keys import resolve_key
-        from pipeline.asr import transcribe_local_audio
+        from pipeline.asr import transcribe_local_audio_for_source
         from pipeline.localization_fr import WEAK_STARTERS_FR
         from pipeline.subtitle import build_srt_from_chunks, save_srt, apply_french_punctuation
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
 
         volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        elevenlabs_api_key = resolve_key(
+            self.user_id, "elevenlabs", "ELEVENLABS_API_KEY",
+        )
 
         variant = "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        fr_utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal", volc_api_key=volc_api_key
+        # 法语 TTS 音频走 Scribe（豆包不支持 fr）；dispatcher 按 "fr" 自动选 Scribe。
+        fr_utterances = transcribe_local_audio_for_source(
+            tts_audio_path, "fr",
+            prefix=f"tts-asr/{task_id}/normal",
+            volc_api_key=volc_api_key,
+            elevenlabs_api_key=elevenlabs_api_key,
         )
         fr_asr_result = {
             "full_text": " ".join(
