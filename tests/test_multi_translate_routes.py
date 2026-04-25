@@ -395,6 +395,94 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     # 大号弹窗
     assert 'class="modal-box modal-box-wide"' in template
 
+    # 项目名输入框（视频下方，可选）
+    assert 'id="projectNameField"' in template
+    assert 'id="projectName"' in template
+    assert 'name="display_name"' in template
+    # 中文语言名映射
+    assert "LANG_ZH_NAMES" in template
+    assert "de: '德语'" in template
+    # 文件名解析正则：YYYY.MM.DD-产品名-...
+    assert "/^\\d{4}\\.\\d{1,2}\\.\\d{1,2}-([^-]+)-/" in template
+    # MMDD-HHmm 拼接
+    assert "_formatMMDDHHmm" in template
+    # 提交时附带 display_name
+    assert "formData.set('display_name'" in template
+
+
+def test_multi_translate_start_uses_user_display_name(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "display_name": "德语ABC-0425-1200",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+    task = store.get(payload["task_id"])
+    assert task["display_name"] == "德语ABC-0425-1200"
+
+
+def test_multi_translate_index_filters_pills_by_enabled_languages(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.db_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
+    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["de", "ja"],
+    )
+
+    resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    assert 'data-lang="de"' in body
+    assert 'data-lang="ja"' in body
+    # fi 被排除（未启用）
+    assert 'data-lang="fi"' not in body
+    assert 'data-lang="fr"' not in body
+
+
+def test_multi_translate_start_rejects_disabled_target_lang(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["de"],  # 仅启用德语
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "fi",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "target_lang" in response.get_json().get("error", "")
+
 
 def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     root = Path(__file__).resolve().parents[1]

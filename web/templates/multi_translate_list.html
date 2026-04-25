@@ -392,6 +392,11 @@
         <div id="videoPreviewName" class="video-preview-name" style="display:none"></div>
         <input type="file" id="videoFile" name="video" accept="video/*" hidden />
       </div>
+      <div class="modal-field" id="projectNameField" style="display:none">
+        <label for="projectName">项目名</label>
+        <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
+        <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
+      </div>
       <p class="modal-hint">上传后将自动识别视频源语言（中文/英文）</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
@@ -442,6 +447,59 @@ async function deleteTask(e, taskId) {
   else { var data = await res.json(); alert(data.error || '删除失败'); }
 }
 
+var LANG_ZH_NAMES = {
+  'de': '德语', 'fr': '法语', 'es': '西语', 'it': '意语',
+  'ja': '日语', 'pt': '葡语', 'nl': '荷兰语', 'sv': '瑞典语', 'fi': '芬兰语'
+};
+var _lastAutoProjectName = '';
+
+function _extractProductFromFilename(filename) {
+  if (!filename) return '';
+  var stem = filename.replace(/\.[^.]+$/, '');
+  // 匹配 YYYY.MM.DD-产品名-...
+  var m = stem.match(/^\d{4}\.\d{1,2}\.\d{1,2}-([^-]+)-/);
+  return m ? m[1].trim() : '';
+}
+
+function _formatMMDDHHmm(d) {
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  return pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
+}
+
+function _buildProjectName() {
+  var fileInput = document.getElementById('videoFile');
+  var file = fileInput && fileInput.files && fileInput.files[0];
+  if (!file) return '';
+  var lang = document.getElementById('targetLangSelect').value;
+  var langZh = LANG_ZH_NAMES[lang] || '';
+  var product = _extractProductFromFilename(file.name);
+  var stamp = _formatMMDDHHmm(new Date());
+  if (product) return langZh + product + '-' + stamp;
+  var stem = file.name.replace(/\.[^.]+$/, '');
+  return stem + '-' + stamp;
+}
+
+function _refreshProjectName() {
+  var input = document.getElementById('projectName');
+  var field = document.getElementById('projectNameField');
+  if (!input || !field) return;
+  var fileInput = document.getElementById('videoFile');
+  var hasFile = fileInput && fileInput.files && fileInput.files[0];
+  field.style.display = hasFile ? 'block' : 'none';
+  if (!hasFile) {
+    input.value = '';
+    _lastAutoProjectName = '';
+    return;
+  }
+  // 用户没改过（值为空或仍是上次自动值）才覆盖
+  var userTouched = input.value && input.value !== _lastAutoProjectName;
+  if (!userTouched) {
+    var name = _buildProjectName();
+    input.value = name;
+    _lastAutoProjectName = name;
+  }
+}
+
 function _resetUploadModal() {
   document.querySelectorAll('#modalLangPills .modal-lang-pill').forEach(function(b) {
     b.classList.remove('active');
@@ -467,6 +525,11 @@ function _clearVideoPreview() {
   if (wrap) wrap.style.display = 'none';
   if (name) { name.style.display = 'none'; name.textContent = ''; }
   if (dz) dz.style.display = 'flex';
+  var nameField = document.getElementById('projectNameField');
+  var nameInput = document.getElementById('projectName');
+  if (nameField) nameField.style.display = 'none';
+  if (nameInput) nameInput.value = '';
+  _lastAutoProjectName = '';
 }
 
 function _setVideoPreview(file) {
@@ -480,6 +543,7 @@ function _setVideoPreview(file) {
   name.textContent = file.name;
   name.style.display = 'block';
   dz.style.display = 'none';
+  _refreshProjectName();
 }
 
 function closeUpload() {
@@ -507,6 +571,7 @@ function openUpload() {
       btn.setAttribute('aria-checked', 'true');
       document.getElementById('targetLangSelect').value = btn.dataset.lang;
       document.getElementById('langWarning').classList.remove('shake');
+      _refreshProjectName();
     });
   });
 })();
@@ -592,6 +657,9 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   try {
     var formData = new FormData(uploadForm);
     formData.set('target_lang', targetLang);
+    var nameInput = document.getElementById('projectName');
+    var trimmedName = nameInput ? nameInput.value.trim() : '';
+    formData.set('display_name', trimmedName);
     var res = await fetch('/api/multi-translate/start', {
       method: 'POST',
       body: formData,

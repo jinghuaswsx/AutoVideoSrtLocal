@@ -33,6 +33,17 @@ bp = Blueprint("multi_translate", __name__)
 SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi")
 
 
+def _list_enabled_target_langs() -> tuple[str, ...]:
+    """SUPPORTED_LANGS 与 media_languages.enabled=1 的交集；查询失败或为空时退回 SUPPORTED_LANGS。"""
+    try:
+        enabled = set(medias.list_enabled_language_codes())
+    except Exception:
+        log.warning("[multi_translate] failed to load enabled languages, falling back", exc_info=True)
+        return SUPPORTED_LANGS
+    filtered = tuple(c for c in SUPPORTED_LANGS if c in enabled)
+    return filtered or SUPPORTED_LANGS
+
+
 def _default_display_name(original_filename: str) -> str:
     name = os.path.splitext(original_filename)[0] if original_filename else ""
     return name[:10] or "未命名"
@@ -173,7 +184,7 @@ def index():
         "multi_translate_list.html",
         projects=rows, now=datetime.now(),
         current_lang=lang,
-        supported_langs=SUPPORTED_LANGS,
+        supported_langs=_list_enabled_target_langs(),
         retention_hours=get_retention_hours("multi_translate"),
     )
 
@@ -232,8 +243,9 @@ def upload_and_start():
         return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
 
     target_lang = (request.form.get("target_lang") or "").strip()
-    if target_lang not in SUPPORTED_LANGS:
-        return jsonify({"error": f"target_lang must be one of {list(SUPPORTED_LANGS)}"}), 400
+    enabled_langs = _list_enabled_target_langs()
+    if target_lang not in enabled_langs:
+        return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
