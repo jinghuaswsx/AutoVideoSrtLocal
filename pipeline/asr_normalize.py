@@ -182,7 +182,7 @@ def translate_to_en(
                         "items": {
                             "type": "object",
                             "properties": {
-                                "index": {"type": "integer", "minimum": 0},
+                                "index": {"type": "integer"},
                                 "text_en": {"type": "string", "minLength": 1},
                             },
                             "required": ["index", "text_en"],
