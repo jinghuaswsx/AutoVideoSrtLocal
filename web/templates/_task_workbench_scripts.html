@@ -405,6 +405,26 @@
     const message = statuses[currentTask.status] || statusSummary(currentTask);
     document.getElementById("taskHeroTitle").textContent = title;
     document.getElementById("taskHeroStatus").textContent = message;
+    renderHeroSourceVideo();
+  }
+
+  function renderHeroSourceVideo() {
+    const wrap = document.getElementById("heroSourceVideo");
+    if (!wrap) return;
+    const mode = TASK_WORKBENCH_CONFIG.detailMode;
+    if (mode !== "multi" && mode !== "ja") return;
+    const url = `${TASK_WORKBENCH_CONFIG.apiBase}/${taskId}/artifact/source_video`;
+    const player = document.getElementById("heroSourceVideoPlayer");
+    if (player && player.dataset.src !== url) {
+      player.src = url;
+      player.dataset.src = url;
+    }
+    const dl = document.getElementById("heroSourceVideoDownload");
+    if (dl) {
+      dl.href = url;
+      dl.setAttribute("download", currentTask.original_filename || "source_video.mp4");
+    }
+    wrap.classList.remove("hidden");
   }
 
   function statusSummary(task) {
