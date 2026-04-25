@@ -294,7 +294,7 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
     item = _find_target_lang_item(row["media_product_id"], row["country_code"])
     if not item:
         raise NotReadyError(missing=["lang_item_missing"],
-                            detail=f"no media_item with lang={row['country_code']}")
+                            detail=f"missing: lang_item_missing (no media_item with lang={row['country_code']})")
     product = _find_product(row["media_product_id"])
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
