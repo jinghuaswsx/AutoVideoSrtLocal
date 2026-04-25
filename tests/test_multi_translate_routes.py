@@ -475,7 +475,7 @@ def test_multi_translate_top_filter_includes_enabled_languages_plus_english(auth
     assert 'href="/multi-translate?lang=fi"' not in body
     assert 'href="/multi-translate?lang=fr"' not in body
     # 英语标签
-    assert "🇬🇧 英语" in body
+    assert "🇺🇸 英语" in body
     # 弹窗胶囊也含英语（en 作为兜底目标语言强制追加到末尾）
     assert 'data-lang="en"' in body
 
@@ -745,7 +745,7 @@ def test_multi_translate_list_template_exposes_en_label_in_lang_label_map():
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
 
     # 全局 lang_label_map 含 EN（统一驱动顶部筛选 pill 与模态目标语言 pill）
-    assert "'en':'🇬🇧 英语'" in template
+    assert "'en':'🇺🇸 英语'" in template
 
 
 def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db):
@@ -759,4 +759,4 @@ def test_multi_translate_list_renders_en_pill_when_supported(authed_client_no_db
         resp = authed_client_no_db.get("/multi-translate")
 
     assert resp.status_code == 200
-    assert "🇬🇧 英语".encode("utf-8") in resp.data
+    assert "🇺🇸 英语".encode("utf-8") in resp.data
