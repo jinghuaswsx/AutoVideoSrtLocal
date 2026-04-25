@@ -519,7 +519,7 @@ def test_cancel_child_does_not_change_parent(
         (parent_id,),
     )["id"]
     tasks.cancel_child(task_id=de_id, actor_user_id=db_user_admin,
-                       reason="DE 站点暂停上架")
+                       reason="DE 站点暂停上架，取消")
     de = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
     assert de["status"] == tasks.CHILD_CANCELLED
     parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
