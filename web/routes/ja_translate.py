@@ -267,7 +267,10 @@ def subtitle_preview(task_id: str):
     row = _query_viewable_project(task_id, "id, user_id", include_deleted=False)
     if not row:
         return jsonify({"error": "Task not found"}), 404
-    return jsonify(build_multi_translate_preview_payload(task_id, row.get("user_id") or current_user.id))
+    return jsonify(build_multi_translate_preview_payload(
+        task_id, row.get("user_id") or current_user.id,
+        api_base="/api/ja-translate",
+    ))
 
 
 @bp.route("/api/ja-translate/<task_id>/voice-library", methods=["GET"])

@@ -20,11 +20,15 @@ def build_product_preview_payload(
     return _build_payload(video_url, video_params)
 
 
-def build_multi_translate_preview_payload(task_id: str, user_id: int) -> dict:
+def build_multi_translate_preview_payload(
+    task_id: str, user_id: int, *, api_base: str = "/api/multi-translate",
+) -> dict:
     from web import store
 
     task = store.get(task_id) or {}
     video_url = _pick_task_video_url(task)
+    if not video_url:
+        video_url = f"{api_base.rstrip('/')}/{task_id}/artifact/source_video"
     return _build_payload(video_url, task)
 
 
@@ -73,19 +77,29 @@ def _pick_task_video_url(task: Mapping[str, object]) -> str:
     if isinstance(preview_files, Mapping):
         for key in ("source_video", "video", "source", "original_video"):
             url = _coerce_str(preview_files.get(key), "")
-            if url:
+            if _is_browser_url(url):
                 return url
 
     for key in ("video_url", "source_video_url", "source_url"):
         url = _coerce_str(task.get(key), "")
-        if url:
+        if _is_browser_url(url):
             return url
 
     video_path = _coerce_str(task.get("video_path"), "")
-    if video_path.startswith(("http://", "https://", "/")):
+    if _is_browser_url(video_path):
         return video_path
 
     return ""
+
+
+def _is_browser_url(value: str) -> bool:
+    """Reject server filesystem paths (e.g. ``/opt/...``) that earlier code
+    incorrectly persisted into preview_files.source_video / video_path."""
+    if not value:
+        return False
+    if value.startswith(("http://", "https://")):
+        return True
+    return value.startswith(("/medias/", "/api/", "/static/"))
 
 
 def _is_english_video_item(item: Mapping[str, object]) -> bool:
