@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 
+from pipeline.lang_labels import lang_label
+
 
 VARIANT_KEYS = ("normal", "hook_cta")
 VARIANT_LABELS = {
@@ -13,7 +15,7 @@ VARIANT_LABELS = {
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video commerce copywriter.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
-Translate the Chinese source into natural, native, sales-capable American English.
+Translate the {source_language_label} source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
 Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
@@ -21,7 +23,7 @@ Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring 
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video e-commerce copywriter.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
-Translate the Chinese source into natural, native, sales-capable American English.
+Translate the {source_language_label} source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
 Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks.
@@ -354,6 +356,7 @@ def build_localized_translation_messages(
     script_segments: list[dict],
     variant: str = "normal",
     custom_system_prompt: str | None = None,
+    source_language: str = "zh",
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
     if custom_system_prompt:
@@ -362,14 +365,19 @@ def build_localized_translation_messages(
         prompt = HOOK_CTA_TRANSLATION_SYSTEM_PROMPT
     else:
         prompt = LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    en_label = lang_label(source_language)
+    zh_label = lang_label(source_language, in_chinese=True)
+    prompt = prompt.replace("{source_language_label}", en_label).replace(
+        "{source_language_label_zh}", zh_label
+    )
     return [
         {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": (
-                "Source Chinese full text:\n"
+                f"Source {en_label} full text:\n"
                 f"{source_full_text_zh}\n\n"
-                "Source Chinese segments:\n"
+                f"Source {en_label} segments:\n"
                 f"{json.dumps(items, ensure_ascii=False, indent=2)}"
             ),
         },
@@ -469,7 +477,7 @@ def validate_tts_script(payload, max_words: int = 10) -> dict:
 LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
 仅返回合法 JSON。返回格式必须是如下结构的 JSON 对象：
 {"full_text": "所有句子用空格拼接", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
-将中文原文翻译成自然、地道、具有销售力的美式英语。
+将{source_language_label_zh}原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
 不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。"""
@@ -477,7 +485,7 @@ LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
 仅返回合法 JSON。返回格式必须是如下结构的 JSON 对象：
 {"full_text": "所有句子用空格拼接", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
-将中文原文翻译成自然、地道、具有销售力的美式英语。
+将{source_language_label_zh}原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
 不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。
