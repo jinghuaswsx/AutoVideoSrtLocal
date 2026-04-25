@@ -62,3 +62,57 @@ def _write_event(
             json.dumps(payload, ensure_ascii=False) if payload else None,
         ),
     )
+
+
+def create_parent_task(
+    *,
+    media_product_id: int,
+    media_item_id: int | None,
+    countries: list[str],
+    translator_id: int,
+    created_by: int,
+) -> int:
+    """创建父任务 + 一并物化子任务 (status=blocked)。返回父任务 id。"""
+    if not countries:
+        raise ValueError("countries must be non-empty")
+    norm_countries = [c.strip().upper() for c in countries if c and c.strip()]
+    if not norm_countries:
+        raise ValueError("countries must be non-empty after normalization")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO tasks "
+                    "(parent_task_id, media_product_id, media_item_id, status, created_by) "
+                    "VALUES (NULL, %s, %s, %s, %s)",
+                    (int(media_product_id),
+                     int(media_item_id) if media_item_id is not None else None,
+                     PARENT_PENDING, int(created_by)),
+                )
+                parent_id = cur.lastrowid
+                _write_event(cur, parent_id, "created", created_by,
+                             {"countries": norm_countries,
+                              "translator_id": int(translator_id)})
+                for country in norm_countries:
+                    cur.execute(
+                        "INSERT INTO tasks "
+                        "(parent_task_id, media_product_id, media_item_id, "
+                        " country_code, assignee_id, status, created_by) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (parent_id, int(media_product_id),
+                         int(media_item_id) if media_item_id is not None else None,
+                         country, int(translator_id), CHILD_BLOCKED, int(created_by)),
+                    )
+                    child_id = cur.lastrowid
+                    _write_event(cur, child_id, "created", created_by,
+                                 {"country": country})
+            conn.commit()
+            return int(parent_id)
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
