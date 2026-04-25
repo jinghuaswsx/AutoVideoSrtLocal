@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from flask import Blueprint, render_template, abort
+from flask import Blueprint, render_template, abort, redirect, url_for
 from flask_login import login_required, current_user
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_OPTIONS,
@@ -15,6 +15,12 @@ bp = Blueprint("projects", __name__)
 
 
 @bp.route("/")
+@login_required
+def root():
+    return redirect(url_for("medias.index"))
+
+
+@bp.route("/projects")
 @login_required
 def index():
     recover_all_interrupted_tasks()
