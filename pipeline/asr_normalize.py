@@ -53,9 +53,79 @@ class TranslateOutputInvalidError(RuntimeError):
     """Claude 翻译输出 schema 不合法（长度对不上 / index 缺漏 / text_en 为空）。"""
 
 
-def detect_language(full_text: str, *, task_id: str, user_id: int | None) -> tuple[dict, dict]:
-    """detect_language 占位 — Task 4 实现。"""
-    raise NotImplementedError
+def _parse_detect_result(raw_text: str) -> dict:
+    """把 LLM 的 JSON 响应解析成 dict，做基本结构校验。"""
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        raise ValueError("detect response is not a JSON object")
+    for key in ("language", "confidence", "is_mixed"):
+        if key not in payload:
+            raise ValueError(f"detect response missing {key!r}")
+    if not isinstance(payload["language"], str):
+        raise ValueError("language must be string")
+    if not isinstance(payload["confidence"], (int, float)):
+        raise ValueError("confidence must be number")
+    if not isinstance(payload["is_mixed"], bool):
+        raise ValueError("is_mixed must be boolean")
+    return {
+        "language": payload["language"],
+        "confidence": float(payload["confidence"]),
+        "is_mixed": bool(payload["is_mixed"]),
+    }
+
+
+def detect_language(
+    full_text: str, *, task_id: str, user_id: int | None,
+) -> tuple[dict, dict]:
+    """检测原文语言。返回 (parsed_dict, usage_tokens)。
+
+    parsed_dict: {"language", "confidence", "is_mixed"}
+    usage_tokens: {"input_tokens", "output_tokens"} or {} on failure
+    """
+    system_prompt = resolve_prompt_config("asr_normalize.detect", "")["content"]
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "detect_language_result",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "language": {
+                        "type": "string",
+                        "enum": list(DETECT_SUPPORTED_LANGS) + ["other"],
+                    },
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "is_mixed": {"type": "boolean"},
+                },
+                "required": ["language", "confidence", "is_mixed"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            result = llm_client.invoke_chat(
+                "asr_normalize.detect_language",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": full_text[:4000]},
+                ],
+                user_id=user_id, project_id=task_id,
+                temperature=0.0,
+                response_format=response_format,
+            )
+            parsed = _parse_detect_result(result["text"])
+            usage = result.get("usage") or {"input_tokens": None, "output_tokens": None}
+            return parsed, usage
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                time.sleep(2)
+                continue
+    raise DetectLanguageFailedError(
+        f"detect_language failed after 2 attempts: {last_exc}"
+    )
 
 
 def translate_to_en(
