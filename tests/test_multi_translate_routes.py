@@ -208,16 +208,22 @@ def test_rematch_excludes_default_voice_from_top10(authed_client_no_db):
     ), patch(
         "pipeline.voice_match.match_candidates",
         return_value=[{"voice_id": "voice-b", "similarity": 0.91}],
-    ) as m_match:
+    ) as m_match, patch(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        return_value=[{"voice_id": "voice-b", "name": "B", "gender": "female"}],
+    ) as m_fetch:
         resp = authed_client_no_db.post(
             "/api/multi-translate/task-1/rematch",
             json={"gender": "female"},
         )
 
     assert resp.status_code == 200
-    assert resp.get_json()["candidates"][0]["voice_id"] == "voice-b"
+    payload = resp.get_json()
+    assert payload["candidates"][0]["voice_id"] == "voice-b"
+    assert payload["extra_items"][0]["voice_id"] == "voice-b"
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"default-voice-id"}
     assert m_match.call_args.kwargs["top_k"] == 10
+    assert m_fetch.call_args.kwargs["voice_ids"] == ["voice-b"]
 
 
 def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(tmp_path, authed_client_no_db, monkeypatch):

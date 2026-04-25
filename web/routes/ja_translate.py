@@ -335,6 +335,7 @@ def rematch_voice(task_id: str):
 
     import base64
     from appcore.video_translate_defaults import resolve_default_voice
+    from appcore.voice_library_browse import fetch_voices_by_ids
     from pipeline.voice_embedding import deserialize_embedding
     from pipeline.voice_match import match_candidates
 
@@ -354,13 +355,24 @@ def rematch_voice(task_id: str):
     for candidate in candidates:
         candidate["similarity"] = float(candidate.get("similarity", 0.0))
 
+    # 拉候选完整行返回给前端，让它合并进 allItems —— 否则按性别筛选后的
+    # 新候选可能不在前端持有的 list_voices 前 200 内，join 失败导致推荐为空。
+    candidate_ids = [c["voice_id"] for c in candidates if c.get("voice_id")]
+    extra_items = (
+        fetch_voices_by_ids(language="ja", voice_ids=candidate_ids)
+        if candidate_ids else []
+    )
+
     state["voice_match_candidates"] = candidates
     db_execute(
         "UPDATE projects SET state_json = %s WHERE id = %s",
         (json.dumps(state, ensure_ascii=False), task_id),
     )
     task_state.update(task_id, voice_match_candidates=candidates)
-    return jsonify({"ok": True, "gender": gender, "candidates": candidates})
+    return jsonify({
+        "ok": True, "gender": gender,
+        "candidates": candidates, "extra_items": extra_items,
+    })
 
 
 @bp.route("/api/ja-translate/<task_id>/confirm-voice", methods=["POST"])

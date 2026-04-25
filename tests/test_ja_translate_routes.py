@@ -192,13 +192,19 @@ def test_ja_rematch_route_reuses_saved_embedding(authed_client_no_db):
     ), patch(
         "pipeline.voice_match.match_candidates",
         return_value=[{"voice_id": "ja-voice-b", "similarity": 0.91}],
-    ) as m_match:
+    ) as m_match, patch(
+        "appcore.voice_library_browse.fetch_voices_by_ids",
+        return_value=[{"voice_id": "ja-voice-b", "name": "JaB", "gender": "female"}],
+    ) as m_fetch:
         resp = authed_client_no_db.post(
             "/api/ja-translate/task-ja/rematch",
             json={"gender": "female"},
         )
 
     assert resp.status_code == 200
-    assert resp.get_json()["candidates"][0]["voice_id"] == "ja-voice-b"
+    payload = resp.get_json()
+    assert payload["candidates"][0]["voice_id"] == "ja-voice-b"
+    assert payload["extra_items"][0]["voice_id"] == "ja-voice-b"
     assert m_match.call_args.kwargs["exclude_voice_ids"] == {"ja-default"}
     assert m_match.call_args.kwargs["top_k"] == 10
+    assert m_fetch.call_args.kwargs["voice_ids"] == ["ja-voice-b"]

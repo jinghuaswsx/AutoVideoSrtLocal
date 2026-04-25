@@ -672,6 +672,16 @@
         const data = await resp.json();
         candidatesMap.clear();
         (data.candidates || []).forEach(c => candidatesMap.set(c.voice_id, c));
+        // 把后端给的候选完整行 merge 进 allItems。
+        // 否则筛性别后的新候选不在初次 /voice-library 拿的前 200 里，
+        // 列表 join 失败 → 看不到推荐。
+        const existingIds = new Set(allItems.map(v => v.voice_id));
+        (data.extra_items || []).forEach(it => {
+          if (it && it.voice_id && !existingIds.has(it.voice_id)) {
+            allItems.push(it);
+            existingIds.add(it.voice_id);
+          }
+        });
         render();
       } else if (resp.status !== 409) {
         console.warn("rematch failed:", await resp.text());

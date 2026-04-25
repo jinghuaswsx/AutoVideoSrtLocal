@@ -250,7 +250,9 @@ def upload_and_start():
         user_id=user_id,
     )
 
-    display_name = _resolve_name_conflict(user_id, _default_display_name(original_filename))
+    desired_name = (request.form.get("display_name") or "").strip()[:200]
+    base_name = desired_name or _default_display_name(original_filename)
+    display_name = _resolve_name_conflict(user_id, base_name)
     store.update(
         task_id,
         display_name=display_name,
@@ -718,6 +720,7 @@ def rematch_voice(task_id: str):
 
     import base64
     from appcore.video_translate_defaults import resolve_default_voice
+    from appcore.voice_library_browse import fetch_voices_by_ids
     from pipeline.voice_embedding import deserialize_embedding
     from pipeline.voice_match import match_candidates
 
@@ -737,6 +740,15 @@ def rematch_voice(task_id: str):
     for c in candidates:
         c["similarity"] = float(c.get("similarity", 0.0))
 
+    # 拉这些候选音色的完整行返回给前端，让它合并进 allItems。
+    # 否则筛性别后的新候选可能不在前端 list_voices 拿到的前 200 里，
+    # join 失败 → 用户看到 0 个推荐。
+    candidate_ids = [c["voice_id"] for c in candidates if c.get("voice_id")]
+    extra_items = (
+        fetch_voices_by_ids(language=lang, voice_ids=candidate_ids)
+        if candidate_ids else []
+    )
+
     state["voice_match_candidates"] = candidates
     db_execute(
         "UPDATE projects SET state_json = %s WHERE id = %s",
@@ -749,7 +761,10 @@ def rematch_voice(task_id: str):
     except Exception:
         pass
 
-    return jsonify({"ok": True, "gender": gender, "candidates": candidates})
+    return jsonify({
+        "ok": True, "gender": gender,
+        "candidates": candidates, "extra_items": extra_items,
+    })
 
 
 @bp.route("/api/multi-translate/<task_id>/confirm-voice", methods=["POST"])
