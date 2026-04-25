@@ -240,3 +240,24 @@ def test_pushes_list_hides_stats_tab_for_non_admin(authed_user_client_no_db):
     assert resp.status_code == 200
     text = resp.get_data(as_text=True)
     assert "任务统计" not in text
+
+
+# ============================================================
+# UI assets：JS / CSS 文件存在且被引用
+# ============================================================
+
+
+def test_stats_page_references_js_and_css(authed_client_no_db):
+    resp = authed_client_no_db.get("/pushes/stats")
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "/static/pushes_stats.js" in text
+    assert "/static/pushes_stats.css" in text
+
+
+def test_stats_static_assets_available(authed_client_no_db):
+    """Flask test client 应能拿到静态资源 200。"""
+    js = authed_client_no_db.get("/static/pushes_stats.js")
+    css = authed_client_no_db.get("/static/pushes_stats.css")
+    assert js.status_code == 200
+    assert css.status_code == 200
