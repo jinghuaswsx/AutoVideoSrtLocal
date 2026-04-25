@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal, InvalidOperation
-from functools import wraps
 
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import llm_bindings, llm_provider_configs, pricing
-from appcore.api_keys import can_manage_api_config_user, get_all, set_key
+from appcore.api_keys import get_all, set_key
 from appcore.db import execute, query
+from web.auth import superadmin_required
 from appcore.gemini import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
     CHANNEL_LABELS as IMAGE_TRANSLATE_CHANNEL_LABELS,
@@ -93,15 +93,6 @@ def _image_translate_models_by_channel() -> dict[str, list[dict]]:
     }
 
 
-def admin_config_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not can_manage_api_config_user(current_user):
-            abort(403)
-        return f(*args, **kwargs)
-    return decorated
-
-
 # ---------------------------------------------------------------------------
 # Providers Tab helpers
 # ---------------------------------------------------------------------------
@@ -143,7 +134,7 @@ def _provider_rows_by_group() -> list[dict]:
 
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
-@admin_config_required
+@superadmin_required
 def index():
     if request.method == "POST":
         tab = (request.form.get("tab") or "providers").strip()
@@ -464,21 +455,21 @@ def _parse_ai_pricing_payload() -> dict:
 
 @bp.route("/admin/settings/ai-pricing", methods=["GET"])
 @login_required
-@admin_config_required
+@superadmin_required
 def ai_pricing_page():
     return redirect(url_for("settings.index", tab="pricing"))
 
 
 @bp.route("/admin/settings/ai-pricing/list", methods=["GET"])
 @login_required
-@admin_config_required
+@superadmin_required
 def ai_pricing_list():
     return jsonify({"items": _list_ai_pricing_rows()})
 
 
 @bp.route("/admin/settings/ai-pricing", methods=["POST"])
 @login_required
-@admin_config_required
+@superadmin_required
 def ai_pricing_create():
     try:
         payload = _parse_ai_pricing_payload()
@@ -510,7 +501,7 @@ def ai_pricing_create():
 
 @bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["PUT"])
 @login_required
-@admin_config_required
+@superadmin_required
 def ai_pricing_update(price_id: int):
     if _get_ai_pricing_row(price_id) is None:
         return jsonify({"error": "not found"}), 404
@@ -548,7 +539,7 @@ def ai_pricing_update(price_id: int):
 
 @bp.route("/admin/settings/ai-pricing/<int:price_id>", methods=["DELETE"])
 @login_required
-@admin_config_required
+@superadmin_required
 def ai_pricing_delete(price_id: int):
     deleted = execute("DELETE FROM ai_model_prices WHERE id = %s", (price_id,))
     if not deleted:

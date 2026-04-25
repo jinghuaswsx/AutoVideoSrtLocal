@@ -4,9 +4,8 @@
   - 所有供应商凭据迁到 llm_provider_configs；本模块不再读 .env、不再 fallback。
   - 历史 service 名（"openrouter"、"doubao_llm"、"doubao_asr"、"gemini" 等）
     通过 _LEGACY_SERVICE_MAP 路由到新 provider_code，供老调用点平滑过渡。
-  - jianying / translate_pref 这类用户级配置仍然存在 api_keys 表里，admin
-    设置页负责 set_key 写入；非用户级 service 写 api_keys 现在只允许 admin
-    保存（与之前一致）。
+  - jianying / translate_pref 这类用户级配置仍然存在 api_keys 表里。
+    非用户级 service 写 api_keys 现在只允许 superadmin 保存（与三级权限模型一致）。
 """
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ import json
 from appcore.db import execute, query, query_one
 
 DEFAULT_JIANYING_PROJECT_ROOT = r"C:\Users\admin\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft"
-ADMIN_CONFIG_USERNAME = "admin"
 USER_SCOPED_SERVICES = {"jianying"}
 
 # 非用户级、但仍由 api_keys 表承载的"管理员级偏好"配置。这些不是模型供应商
@@ -43,9 +41,9 @@ _LEGACY_SERVICE_MAP: dict[str, str] = {
 
 
 def _admin_config_user_id() -> int | None:
+    """返回当前唯一超级管理员的 user id（用于读取 admin 级别的非供应商偏好行）。"""
     row = query_one(
-        "SELECT id FROM users WHERE username = %s AND is_active = 1",
-        (ADMIN_CONFIG_USERNAME,),
+        "SELECT id FROM users WHERE role = 'superadmin' AND is_active = 1 LIMIT 1",
     )
     if not row:
         return None
@@ -59,16 +57,16 @@ def _is_admin_config_user(user_id: int | None) -> bool:
     if user_id is None:
         return False
     row = query_one(
-        "SELECT username FROM users WHERE id = %s AND is_active = 1",
+        "SELECT role FROM users WHERE id = %s AND is_active = 1",
         (user_id,),
     )
-    return bool(row and row.get("username") == ADMIN_CONFIG_USERNAME)
+    return bool(row and row.get("role") == "superadmin")
 
 
 def can_manage_api_config_user(user) -> bool:
     return bool(
         getattr(user, "is_authenticated", False)
-        and getattr(user, "username", None) == ADMIN_CONFIG_USERNAME
+        and getattr(user, "is_superadmin", False)
     )
 
 
@@ -88,7 +86,7 @@ def set_key(user_id: int, service: str, key_value: str, extra: dict | None = Non
         pass  # user-scoped 任何用户都可保存
     elif service in _NON_PROVIDER_ADMIN_SERVICES:
         if not _is_admin_config_user(user_id):
-            raise PermissionError("API 配置只能由 admin 用户修改")
+            raise PermissionError("API 配置只能由超级管理员修改")
     else:
         if service in _LEGACY_SERVICE_MAP:
             raise PermissionError(
@@ -96,7 +94,7 @@ def set_key(user_id: int, service: str, key_value: str, extra: dict | None = Non
                 "请改用 appcore.llm_provider_configs.save_provider_config"
             )
         if not _is_admin_config_user(user_id):
-            raise PermissionError("API 配置只能由 admin 用户修改")
+            raise PermissionError("API 配置只能由超级管理员修改")
     extra_json = json.dumps(extra) if extra else None
     execute(
         """INSERT INTO api_keys (user_id, service, key_value, extra_config)

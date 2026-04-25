@@ -673,7 +673,7 @@ def test_admin_can_view_other_users_image_translate_task(monkeypatch):
     }
 
     monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
-    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin", is_admin=True))
 
     assert r._get_viewable_task("foreign-img-task") is task
 
@@ -695,7 +695,7 @@ def test_admin_state_api_uses_viewable_task_access(monkeypatch):
     }
 
     monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
-    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin", is_admin=True))
     monkeypatch.setattr(r.image_translate_runner, "is_running", lambda task_id: False)
 
     app = Flask(__name__)
@@ -749,7 +749,7 @@ def test_admin_can_view_other_users_image_translate_task(monkeypatch):
     }
 
     monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
-    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin", is_admin=True))
 
     assert r._get_viewable_task("foreign-img-task") is task
 
@@ -771,7 +771,7 @@ def test_admin_state_api_uses_viewable_task_access(monkeypatch):
     }
 
     monkeypatch.setattr(r.store, "get", lambda task_id: task if task_id == task["id"] else None)
-    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin"))
+    monkeypatch.setattr(r, "current_user", SimpleNamespace(id=1, role="admin", is_admin=True))
     monkeypatch.setattr(r.image_translate_runner, "is_running", lambda task_id: False)
 
     app = Flask(__name__)

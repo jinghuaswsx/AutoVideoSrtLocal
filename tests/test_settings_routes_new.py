@@ -17,11 +17,17 @@ def _neutralize_db(monkeypatch):
     monkeypatch.setattr("appcore.db.query_one", lambda *a, **k: None)
     monkeypatch.setattr("appcore.db.execute", lambda *a, **k: 0)
 
+    fake_admin_row = {
+        "id": 1, "username": "admin", "role": "superadmin", "is_active": 1,
+    }
+
     def fake_api_key_query_one(sql, params=()):
+        if "role = 'superadmin'" in sql:
+            return fake_admin_row
         if "FROM users WHERE username = %s" in sql and params and params[0] == "admin":
-            return {"id": 1, "username": "admin", "is_active": 1}
+            return fake_admin_row
         if "FROM users WHERE id = %s" in sql and params and int(params[0]) == 1:
-            return {"id": 1, "username": "admin", "is_active": 1}
+            return fake_admin_row
         return None
 
     monkeypatch.setattr("appcore.api_keys.query", lambda *a, **k: [])
@@ -40,7 +46,7 @@ def admin_no_db_client(monkeypatch):
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     from web.app import create_app
 
-    fake_user = {"id": 1, "username": "admin", "role": "admin", "is_active": 1}
+    fake_user = {"id": 1, "username": "admin", "role": "superadmin", "is_active": 1}
     monkeypatch.setattr(
         "web.auth.get_by_id",
         lambda user_id: fake_user if int(user_id) == 1 else None,
