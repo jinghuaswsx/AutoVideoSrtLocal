@@ -116,3 +116,36 @@ def create_parent_task(
             raise
     finally:
         conn.close()
+
+
+class ConflictError(RuntimeError):
+    """Optimistic concurrency violation, e.g., already claimed."""
+
+
+class StateError(RuntimeError):
+    """Invalid state transition / precondition violation."""
+
+
+def claim_parent(*, task_id: int, actor_user_id: int) -> None:
+    """处理人认领父任务。乐观锁防并发。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET assignee_id=%s, status=%s, "
+                    "claimed_at=NOW(), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
+                    (int(actor_user_id), PARENT_RAW_IN_PROGRESS,
+                     int(task_id), PARENT_PENDING),
+                )
+                if cur.rowcount == 0:
+                    raise ConflictError("task not pending or already claimed")
+                _write_event(cur, task_id, "claimed", actor_user_id, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
