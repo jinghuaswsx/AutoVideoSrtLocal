@@ -50,8 +50,8 @@ def test_system_defaults_values_match_design():
 
 
 def test_video_supported_langs_match_multi_translate_languages():
-    """视频翻译支持集应覆盖当前多语种视频流水线。"""
-    assert VIDEO_SUPPORTED_LANGS == {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi"}
+    """视频翻译支持集应覆盖当前多语种视频流水线（含 en-US）。"""
+    assert VIDEO_SUPPORTED_LANGS == {"de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"}
 
 
 def test_tts_voice_defaults_has_de_and_fr():
