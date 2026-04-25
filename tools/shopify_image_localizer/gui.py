@@ -103,6 +103,20 @@ class ShopifyImageLocalizerApp:
             width=14,
         )
         self.open_workspace_button.pack(side="left", padx=(8, 0))
+        self.open_ez_button = tk.Button(
+            self.action_frame,
+            text="打开 EZ 页面",
+            command=lambda: self.open_shopify_target("ez"),
+            width=14,
+        )
+        self.open_ez_button.pack(side="left", padx=(8, 0))
+        self.open_detail_button = tk.Button(
+            self.action_frame,
+            text="打开详情页",
+            command=lambda: self.open_shopify_target("detail"),
+            width=14,
+        )
+        self.open_detail_button.pack(side="left", padx=(8, 0))
         self.advanced_button = tk.Button(
             self.action_frame,
             text="显示高级设置",
@@ -176,6 +190,8 @@ class ShopifyImageLocalizerApp:
         state = "disabled" if running else "normal"
         self.start_button.configure(state=state)
         self.advanced_button.configure(state=state)
+        self.open_ez_button.configure(state=state)
+        self.open_detail_button.configure(state=state)
         self.product_code_entry.configure(state=state)
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
@@ -281,6 +297,81 @@ class ShopifyImageLocalizerApp:
             args=(base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id),
             daemon=True,
         ).start()
+
+    def open_shopify_target(self, target: str) -> None:
+        product_code = self.product_code_var.get().strip().lower()
+        language_label = self.language_var.get().strip()
+        shopify_product_id = self.shopify_product_id_var.get().strip()
+        if not product_code:
+            messagebox.showerror("错误", "请先输入商品 ID")
+            return
+        if not language_label:
+            messagebox.showerror("错误", "请先选择语言")
+            return
+        if shopify_product_id and not shopify_product_id.isdigit():
+            messagebox.showerror("错误", "Shopify ID 只能填写数字；不确定时可以留空")
+            return
+
+        lang_code = self._selected_lang_code(language_label)
+        base_url = settings.DEFAULT_BASE_URL
+        self.base_url_var.set(base_url)
+        api_key = self.api_key_var.get().strip()
+        browser_dir = self.browser_user_data_dir_var.get().strip()
+        if not api_key or not browser_dir:
+            messagebox.showerror("错误", "高级设置里的 OpenAPI Key 和 Chrome 用户目录不能为空")
+            return
+
+        target_name = "EZ 页面" if target == "ez" else "详情页"
+        self._set_running_state(True)
+        self.status_var.set(f"正在打开 {target_name}")
+        self._append_log(
+            f"准备打开 {target_name}：product_code={product_code}, lang={lang_code}, "
+            f"shopify_id={shopify_product_id or '自动识别'}"
+        )
+        threading.Thread(
+            target=self._open_shopify_target_worker,
+            args=(target, base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id),
+            daemon=True,
+        ).start()
+
+    def _open_shopify_target_worker(
+        self,
+        target: str,
+        base_url: str,
+        api_key: str,
+        browser_dir: str,
+        product_code: str,
+        lang_code: str,
+        shopify_product_id: str,
+    ) -> None:
+        try:
+            result = controller.open_shopify_target(
+                target=target,
+                base_url=base_url,
+                api_key=api_key,
+                browser_user_data_dir=browser_dir,
+                product_code=product_code,
+                lang=lang_code,
+                shopify_product_id=shopify_product_id,
+            )
+            self.root.after(0, self._render_open_result, result, product_code)
+        except Exception as exc:
+            self.root.after(0, self.status_var.set, "打开页面失败")
+            self.root.after(0, self._append_log, f"打开页面失败：{exc}")
+            self.root.after(0, messagebox.showerror, "打开页面失败", str(exc))
+        finally:
+            self.root.after(0, self._set_running_state, False)
+
+    def _render_open_result(self, result: dict, product_code: str) -> None:
+        target_name = "EZ 页面" if result.get("target") == "ez" else "详情页"
+        self._clear_summary()
+        self._add_summary("商品 ID", product_code)
+        self._add_summary("语言", result.get("lang"))
+        self._add_summary("Shopify ID", result.get("shopify_product_id"))
+        self._add_summary("已打开页面", target_name)
+        self._add_summary("URL", result.get("url"))
+        self.status_var.set(f"已打开 {target_name}")
+        self._append_log(f"已打开 {target_name}：{result.get('url')}")
 
     def _run(
         self,

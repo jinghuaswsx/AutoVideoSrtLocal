@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from tools.shopify_image_localizer import api_client, settings, storage
+from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
 
@@ -172,3 +173,88 @@ def run_worker_once(
         result=result,
     )
     return {"status": "completed", "task": task, "result": result}
+
+
+def resolve_shopify_product_id(
+    *,
+    base_url: str,
+    api_key: str,
+    product_code: str,
+    lang: str,
+    shopify_product_id: str = "",
+) -> str:
+    manual_id = str(shopify_product_id or "").strip()
+    if manual_id:
+        return manual_id
+
+    normalized_product_code = str(product_code or "").strip().lower()
+    normalized_lang = str(lang or "").strip().lower()
+    resolved = ""
+    try:
+        payload = api_client.fetch_bootstrap(
+            base_url,
+            api_key,
+            normalized_product_code,
+            normalized_lang,
+        )
+        product = payload.get("product") or {}
+        resolved = str(product.get("shopify_product_id") or "").strip()
+    except api_client.ApiError as exc:
+        if exc.status_code != 409:
+            raise
+
+    if not resolved:
+        product = run_product_cdp.fetch_storefront_product(normalized_product_code)
+        resolved = str(product.get("id") or "").strip()
+    if not resolved:
+        raise RuntimeError("未能从服务端 bootstrap 返回中解析到 Shopify ID，请手动填写 Shopify ID 后再打开。")
+    return resolved
+
+
+def build_shopify_target_url(*, target: str, shopify_product_id: str, lang: str) -> str:
+    normalized_target = str(target or "").strip().lower()
+    product_id = str(shopify_product_id or "").strip()
+    if not product_id:
+        raise RuntimeError("Shopify ID 不能为空")
+    if normalized_target == "ez":
+        return session.build_ez_url(product_id)
+    if normalized_target == "detail":
+        return session.build_translate_url(product_id, str(lang or "").strip().lower())
+    raise ValueError(f"unsupported Shopify target: {target}")
+
+
+def open_shopify_target(
+    *,
+    target: str,
+    base_url: str,
+    api_key: str,
+    browser_user_data_dir: str,
+    product_code: str,
+    lang: str,
+    shopify_product_id: str = "",
+) -> dict:
+    settings.save_runtime_config(
+        base_url=base_url,
+        api_key=api_key,
+        browser_user_data_dir=browser_user_data_dir,
+    )
+    product_id = resolve_shopify_product_id(
+        base_url=base_url,
+        api_key=api_key,
+        product_code=product_code,
+        lang=lang,
+        shopify_product_id=shopify_product_id,
+    )
+    url = build_shopify_target_url(
+        target=target,
+        shopify_product_id=product_id,
+        lang=lang,
+    )
+    session.open_urls_in_chrome(browser_user_data_dir, [url])
+    return {
+        "status": "opened",
+        "target": str(target or "").strip().lower(),
+        "shopify_product_id": product_id,
+        "lang": str(lang or "").strip().lower(),
+        "url": url,
+    }
