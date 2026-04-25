@@ -53,6 +53,25 @@ class ShopifyImageLocalizerApp:
         _ = prompt_on_start
 
     def _build_form(self) -> None:
+        self.login_shopify_frame = tk.Frame(self.main_frame)
+        self.login_shopify_frame.pack(fill="x", pady=(0, 10))
+        self.login_shopify_button = tk.Button(
+            self.login_shopify_frame,
+            text="登录shopify店铺",
+            command=lambda: self.open_shopify_target("detail"),
+            width=24,
+            height=2,
+        )
+        self.login_shopify_button.pack(side="left")
+        self.login_shopify_tip_label = tk.Label(
+            self.login_shopify_frame,
+            text="第一次使用或者店铺登录状态掉线，先从这里登录店铺，再操作后续",
+            justify="left",
+            fg="red",
+            wraplength=620,
+        )
+        self.login_shopify_tip_label.pack(side="left", padx=(12, 0))
+
         tk.Label(self.main_frame, text="商品 ID").pack(anchor="w")
         self.product_code_entry = tk.Entry(self.main_frame, textvariable=self.product_code_var, width=80)
         self.product_code_entry.pack(fill="x", pady=(4, 10))
@@ -205,6 +224,7 @@ class ShopifyImageLocalizerApp:
         self.start_button.configure(state=state)
         self.stop_button.configure(state="normal" if running and stoppable else "disabled")
         self.advanced_button.configure(state=state)
+        self.login_shopify_button.configure(state=state)
         self.open_ez_button.configure(state=state)
         self.open_detail_button.configure(state=state)
         self.product_code_entry.configure(state=state)

@@ -79,3 +79,27 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
         assert app.stop_button["state"] == "disabled"
     finally:
         app.root.destroy()
+
+
+def test_gui_login_shopify_button_opens_detail_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        opened_targets: list[str] = []
+        monkeypatch.setattr(app, "open_shopify_target", lambda target: opened_targets.append(target))
+
+        assert app.login_shopify_button["text"] == "登录shopify店铺"
+        assert int(app.login_shopify_button["width"]) >= int(app.start_button["width"]) * 2
+        assert app.login_shopify_tip_label["fg"] == "red"
+        assert (
+            app.login_shopify_tip_label["text"]
+            == "第一次使用或者店铺登录状态掉线，先从这里登录店铺，再操作后续"
+        )
+
+        packed_widgets = app.main_frame.pack_slaves()
+        assert packed_widgets.index(app.login_shopify_frame) < packed_widgets.index(app.product_code_entry)
+
+        app.login_shopify_button.invoke()
+
+        assert opened_targets == ["detail"]
+    finally:
+        app.root.destroy()
