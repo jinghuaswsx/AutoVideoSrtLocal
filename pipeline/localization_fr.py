@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from pipeline.lang_labels import lang_label
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
@@ -73,7 +74,7 @@ CRITICAL LOCALIZATION RULES:
   * Keep widely adopted English loanwords that French people actually use: "design", "look", "tips", "lifestyle", "must-have", "top"
   * When unsure, think: what would a French person type into Amazon.fr or Google.fr to find this product?
 - Be consistent: pick ONE term for each product/concept and use it throughout the entire script. Never mix synonyms.
-- NEVER literally translate product category names from Chinese or English.
+- NEVER literally translate product category names from {source_language_label}.
 
 STYLE & TONE:
 - Tone: décontracté et informatif — like a friend casually recommending something useful they discovered. Not a salesperson, not a lecture.
@@ -130,16 +131,17 @@ def build_localized_translation_messages(
     custom_system_prompt: str | None = None,
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
-    prompt = custom_system_prompt or LOCALIZED_TRANSLATION_SYSTEM_PROMPT
-    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    base_prompt = custom_system_prompt or LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    source_label = lang_label(source_language)
+    prompt = base_prompt.replace("{source_language_label}", source_label)
     return [
         {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": (
-                f"Source {lang_label} full text:\n"
+                f"Source {source_label} full text:\n"
                 f"{source_full_text}\n\n"
-                f"Source {lang_label} segments:\n"
+                f"Source {source_label} segments:\n"
                 f"{json.dumps(items, ensure_ascii=False, indent=2)}"
             ),
         },

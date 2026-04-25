@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 
+from pipeline.lang_labels import lang_label
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
@@ -61,7 +62,7 @@ CRITICAL LOCALIZATION RULES:
 - You are NOT a translator. You are RECREATING the script as a German creator would naturally say it.
 - Use the product terms that GERMAN consumers actually use, not dictionary translations. For example: "Caps" or "Basecaps" (not "Hüte" or "Mützen" for baseball caps), "Organizer" (not "Ordnungssystem"), "Display" (not "Anzeige" for screens). When in doubt, use the English loanword that Germans commonly use.
 - Be consistent: pick ONE term for each product/concept and use it throughout the entire script. Never mix synonyms.
-- NEVER literally translate product category names from Chinese or English. Think about what a German person would actually call this product.
+- NEVER literally translate product category names from {source_language_label}. Think about what a German person would actually call this product.
 
 STYLE & TONE:
 - Write authentically and factually (sachlich und authentisch). No exaggerated claims or artificial urgency.
@@ -105,16 +106,17 @@ def build_localized_translation_messages(
     custom_system_prompt: str | None = None,
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
-    prompt = custom_system_prompt or LOCALIZED_TRANSLATION_SYSTEM_PROMPT
-    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    base_prompt = custom_system_prompt or LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    source_label = lang_label(source_language)
+    prompt = base_prompt.replace("{source_language_label}", source_label)
     return [
         {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": (
-                f"Source {lang_label} full text:\n"
+                f"Source {source_label} full text:\n"
                 f"{source_full_text}\n\n"
-                f"Source {lang_label} segments:\n"
+                f"Source {source_label} segments:\n"
                 f"{json.dumps(items, ensure_ascii=False, indent=2)}"
             ),
         },
