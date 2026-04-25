@@ -32,6 +32,7 @@ from appcore.runtime import (
 from appcore.video_translate_defaults import resolve_default_voice
 from pipeline.voice_embedding import embed_audio_file
 from pipeline.voice_match import extract_sample_from_utterances, match_candidates
+from pipeline.lang_labels import lang_label
 from pipeline.localization import (
     build_source_full_text_zh,
     build_tts_segments,
@@ -98,13 +99,13 @@ class _PromptLocalizationAdapter:
         prompt = config["content"].replace(
             "{target_words}", str(target_words)
         ).replace("{direction}", direction)
-        lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+        source_label = lang_label(source_language)
         return [
             {"role": "system", "content": prompt},
             {
                 "role": "user",
                 "content": (
-                    f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                    f"Source {source_label} full text (for reference, preserve meaning):\n"
                     f"{source_full_text}\n\n"
                     f"Previous localization (rewrite this to {direction} to ~{target_words} words):\n"
                     f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
@@ -126,8 +127,8 @@ class MultiTranslateRunner(PipelineRunner):
             raise ValueError("task.target_lang is required for multi_translate")
         return lang
 
-    # 注：不做源语言判别。LLM 自己读原文就能判断；zh/en label 对翻译质量无影响。
-    # 任何后续流程都不 depend on source_language 的具体值。
+    # 源语言由 task.source_language 提供（默认 "zh"），治本版后参与
+    # build_localized_translation_messages 的 lang_label 计算和 prompt 参数化。
 
     def _get_lang_rules(self, lang: str):
         from pipeline.languages.registry import get_rules
@@ -188,6 +189,7 @@ class MultiTranslateRunner(PipelineRunner):
             source_full_text, script_segments, variant="normal",
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
+            source_language=source_language,
         )
 
         initial_messages = localized_translation.pop("_messages", None)

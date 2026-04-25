@@ -89,6 +89,7 @@ class FrTranslateRunner(PipelineRunner):
             source_full_text, script_segments, variant=variant,
             custom_system_prompt=system_prompt,
             provider=provider, user_id=self.user_id,
+            source_language=source_language,
         )
 
         initial_messages = localized_translation.pop("_messages", None)

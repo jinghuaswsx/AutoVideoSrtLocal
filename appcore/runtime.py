@@ -1360,10 +1360,12 @@ class PipelineRunner:
 
         variant = "normal"
         custom_prompt = task.get("custom_translate_prompt")
+        source_language = task.get("source_language", "zh")
         localized_translation = generate_localized_translation(
             source_full_text_zh, script_segments, variant=variant,
             custom_system_prompt=custom_prompt,
             provider=provider, user_id=self.user_id,
+            source_language=source_language,
         )
 
         # 先把初始翻译的 Prompt 单独落盘，后续时长迭代 round 1 可以复用

@@ -211,7 +211,7 @@ def build_localized_rewrite_messages(
     direction: str,
     source_language: str = "zh",
 ) -> list[dict]:
-    lang_label = {"zh": "Chinese", "en": "English"}.get(source_language, source_language)
+    source_label = lang_label(source_language)
     prompt = LOCALIZED_REWRITE_SYSTEM_PROMPT.replace(
         "{target_words}", str(target_words)
     ).replace("{direction}", direction)
@@ -220,7 +220,7 @@ def build_localized_rewrite_messages(
         {
             "role": "user",
             "content": (
-                f"Source {lang_label} full text (for reference, preserve meaning):\n"
+                f"Source {source_label} full text (for reference, preserve meaning):\n"
                 f"{source_full_text}\n\n"
                 f"Previous French translation (rewrite this to {direction} to ~{target_words} words):\n"
                 f"{json.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}"
