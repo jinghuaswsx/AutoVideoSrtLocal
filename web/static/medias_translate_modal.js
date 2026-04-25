@@ -910,7 +910,7 @@
       event.stopImmediatePropagation();
       const pid = tasksButton.dataset.pid;
       if (pid) {
-        window.location.href = `/medias/products/${encodeURIComponent(pid)}/translation-tasks`;
+        window.open(`/medias/products/${encodeURIComponent(pid)}/translation-tasks`, '_blank', 'noopener,noreferrer');
       }
     }
   }, true);
