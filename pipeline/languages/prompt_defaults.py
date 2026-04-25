@@ -378,7 +378,7 @@ Return valid JSON only with the same schema as the original translation.
 
 HARD WORD COUNT CONSTRAINT — NON-NEGOTIABLE:
 Target: EXACTLY {target_words} whitespace-separated words in full_text.
-Allowed range: [{target_words}-5, {target_words}+5]. HARD CAP.
+Allowed range: [{target_words}−5, {target_words}+5]. HARD CAP.
 Note: contractions like "you'll" / "don't" count as ONE word.
 SELF-CHECK: count tokens; if outside the window, rewrite before returning.
 FAILURES: asked for 80 → returning 100+ is FAILURE. Asked for 70 → returning 55 is FAILURE.

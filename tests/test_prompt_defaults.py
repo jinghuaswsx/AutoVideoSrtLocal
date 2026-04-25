@@ -79,3 +79,5 @@ def test_en_rewrite_prompt_has_word_count_constraint():
     assert "{target_words}" in content
     assert "{direction}" in content
     assert "source_segment_indices" in content
+    # en-US specific: contractions count as one word
+    assert "contractions" in content.lower() or "you'll" in content
