@@ -34,6 +34,7 @@ _OPENROUTER_PREF_MODELS = {
     "gemini_31_pro":    "google/gemini-3.1-pro-preview",
     "gemini_3_flash":   "google/gemini-3-flash-preview",
     "gpt_5_mini":       "openai/gpt-5-mini",
+    "gpt_5_5":          "openai/gpt-5.5",
     "claude_sonnet":    "anthropic/claude-sonnet-4.6",
     "openrouter":       "anthropic/claude-sonnet-4.6",  # legacy 值回落 claude
 }

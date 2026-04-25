@@ -227,6 +227,7 @@ _VALID_TRANSLATE_PREFS = (
     "gemini_31_pro",                 # google/gemini-3.1-pro-preview via openrouter
     "gemini_3_flash",                # google/gemini-3-flash-preview via openrouter
     "gpt_5_mini",                    # openai/gpt-5-mini via openrouter
+    "gpt_5_5",                       # openai/gpt-5.5 via openrouter
     "claude_sonnet",                 # anthropic/claude-sonnet-4.6 via openrouter
     "openrouter",                    # legacy（= claude_sonnet）
     # 火山引擎

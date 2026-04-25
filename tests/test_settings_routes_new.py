@@ -163,6 +163,20 @@ def test_settings_get_renders_gpt_5_mini_translate_option(admin_no_db_client):
     assert "GPT 5-mini" in body
 
 
+def test_settings_get_renders_gpt_5_5_translate_option(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'value="gpt_5_5"' in body
+    assert "GPT-5.5" in body
+
+
 # ---------------------------------------------------------------------------
 # GET /settings?tab=providers —— 供应商凭据明文 + 复制按钮
 # ---------------------------------------------------------------------------

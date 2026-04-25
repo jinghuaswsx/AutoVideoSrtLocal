@@ -4,6 +4,7 @@
   - 老风格 provider 字符串（"openrouter" / "doubao" / "vertex_*" / "gemini_31_flash"）原样透传
   - UseCase code（含 '.'）查 bindings，映射为老式 provider 名，业务函数的 vertex_* 分流不变
 """
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pipeline import translate
@@ -11,6 +12,15 @@ from pipeline.translate import (
     _binding_lookup_for_use_case,
     _resolve_use_case_provider,
 )
+
+
+def _fake_openrouter_cfg():
+    return SimpleNamespace(
+        require_api_key=lambda: "test-openrouter-key",
+        require_base_url=lambda default=None: "https://openrouter.ai/api/v1",
+        model_id="",
+        extra_config={},
+    )
 
 
 def test_non_use_case_string_passthrough():
@@ -84,5 +94,10 @@ def test_resolves_doubao_binding_passthrough():
 
 
 def test_get_model_display_name_supports_openrouter_gpt_5_mini():
-    with patch.object(translate, "OPENROUTER_API_KEY", "test-openrouter-key"):
+    with patch("pipeline.translate.require_provider_config", return_value=_fake_openrouter_cfg()):
         assert translate.get_model_display_name("gpt_5_mini") == "openai/gpt-5-mini"
+
+
+def test_get_model_display_name_supports_openrouter_gpt_5_5():
+    with patch("pipeline.translate.require_provider_config", return_value=_fake_openrouter_cfg()):
+        assert translate.get_model_display_name("gpt_5_5") == "openai/gpt-5.5"

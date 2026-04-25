@@ -286,6 +286,14 @@ def test_resolve_translate_provider_accepts_gpt_5_mini(monkeypatch):
     assert _resolve_translate_provider(1) == "gpt_5_mini"
 
 
+def test_resolve_translate_provider_accepts_gpt_5_5(monkeypatch):
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "gpt_5_5")
+
+    from appcore.runtime import _resolve_translate_provider
+
+    assert _resolve_translate_provider(1) == "gpt_5_5"
+
+
 def test_step_translate_rejects_sparse_source_for_long_video():
     runner = _make_runner()
     task = {

@@ -25,6 +25,28 @@ def test_start_translate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monk
     assert resume_calls == [("task-start-gpt5-mini", "translate", 1)]
 
 
+def test_start_translate_accepts_openrouter_gpt_5_5(authed_client_no_db, monkeypatch, tmp_path):
+    task = store.create("task-start-gpt5-5", "video.mp4", str(tmp_path), user_id=1)
+    store.update("task-start-gpt5-5", _translate_pre_select=True)
+
+    resume_calls = []
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.resume",
+        lambda task_id, step, user_id=None: resume_calls.append((task_id, step, user_id)),
+    )
+
+    resp = authed_client_no_db.post(
+        "/api/tasks/task-start-gpt5-5/start-translate",
+        json={"prompt_text": "rewrite it", "model_provider": "gpt_5_5"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "started"
+    updated = store.get("task-start-gpt5-5")
+    assert updated["custom_translate_provider"] == "gpt_5_5"
+    assert resume_calls == [("task-start-gpt5-5", "translate", 1)]
+
+
 def test_retranslate_logs_ai_billing_on_success(authed_client_no_db, monkeypatch, tmp_path):
     task = store.create("task-retranslate-billing", "video.mp4", str(tmp_path), user_id=1)
     task["steps"]["translate"] = "done"
@@ -110,6 +132,47 @@ def test_retranslate_accepts_openrouter_gpt_5_mini(authed_client_no_db, monkeypa
     assert len(billing_calls) == 1
     assert billing_calls[0]["provider"] == "openrouter"
     assert billing_calls[0]["model"] == "openai/gpt-5-mini"
+
+
+def test_retranslate_accepts_openrouter_gpt_5_5(authed_client_no_db, monkeypatch, tmp_path):
+    task = store.create("task-retranslate-gpt5-5", "video.mp4", str(tmp_path), user_id=1)
+    task["steps"]["translate"] = "done"
+    task["script_segments"] = [
+        {"index": 0, "text": "part one", "start_time": 0.0, "end_time": 1.0},
+    ]
+
+    monkeypatch.setattr("pipeline.localization.build_source_full_text_zh", lambda segments: "part one")
+
+    captured = {}
+
+    def _fake_generate(source_full_text_zh, script_segments, variant="normal", **kwargs):
+        captured["provider"] = kwargs["provider"]
+        return {
+            "full_text": "Hook line.",
+            "sentences": [{"index": 0, "text": "Hook line.", "source_segment_indices": [0]}],
+            "_usage": {
+                "input_tokens": 11,
+                "output_tokens": 7,
+                "cost_cny": Decimal("0.123456"),
+            },
+        }
+
+    monkeypatch.setattr("pipeline.translate.generate_localized_translation", _fake_generate)
+    monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda provider, user_id: "openai/gpt-5.5")
+
+    billing_calls = []
+    monkeypatch.setattr("web.routes.task.ai_billing.log_request", lambda **kwargs: billing_calls.append(kwargs))
+
+    resp = authed_client_no_db.post(
+        "/api/tasks/task-retranslate-gpt5-5/retranslate",
+        json={"prompt_text": "rewrite it", "model_provider": "gpt_5_5"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["provider"] == "gpt_5_5"
+    assert len(billing_calls) == 1
+    assert billing_calls[0]["provider"] == "openrouter"
+    assert billing_calls[0]["model"] == "openai/gpt-5.5"
 
 
 def test_retranslate_logs_ai_billing_on_failure(authed_client_no_db, monkeypatch, tmp_path):
