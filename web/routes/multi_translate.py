@@ -276,6 +276,12 @@ def upload_and_start():
     if target_lang not in enabled_langs:
         return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
 
+    # 源语言可选；前端可在上传 modal 显式指定（zh/en/es），不指定时默认 "zh"，
+    # ASR 完成后由 LID 自动覆盖。zh/en 走豆包，es/其他走 ElevenLabs Scribe。
+    source_language = (request.form.get("source_language") or "zh").strip()
+    if source_language not in ("zh", "en", "es"):
+        return jsonify({"error": "source_language must be 'zh', 'en' or 'es'"}), 400
+
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
@@ -299,6 +305,7 @@ def upload_and_start():
         display_name=display_name,
         type="multi_translate",
         target_lang=target_lang,
+        source_language=source_language,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
