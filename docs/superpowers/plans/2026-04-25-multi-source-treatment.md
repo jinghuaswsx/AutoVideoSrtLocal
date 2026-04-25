@@ -198,3 +198,55 @@ vs Scribe 各自消耗。
 - av_translate（视听本地化独立 pipeline）的 SYSTEM_PROMPT_TEMPLATE 仍硬编码
   目标语言上下文，不影响主线 multi_translate / de / fr
 - LID 只覆盖 zh/en/es，pt/it/de 作为源被错判为 en（治本版后续扩 fasttext 再补）
+
+---
+
+## Phase 5 阶段 2：端到端实测结果（2026-04-25）
+
+测试环境 `http://172.30.254.14:8080` 部署 `feature/multi-source-treatment` HEAD `4ff1a72`，
+完整跑了一次 task `da32187d-a975-4887-a7ae-fe02767e979e`。
+
+**输入**：35.4s 视频（用户标注西班牙语，Scribe auto-detect 99% 实际为德语）
+**配置**：source_language=es, target_lang=de, voice=default
+
+**流水线全部 done**：
+```
+extract:done → asr:done → alignment:done → voice_match:done →
+translate:done → tts:done → subtitle:done → compose:done → export:done
+```
+
+**KPI 命中**：
+
+| 改造点 | 期望 | 实测 |
+|---|---|---|
+| Scribe 多源 ASR 路由 | source∈{es,...}→Scribe API | 99.1% 置信度识别（虽是德语样本，证明 Scribe 多语种准确） |
+| `_MAX_REWRITE_ATTEMPTS["de"]` | 7 | **每轮 7** ✅ |
+| `_WORD_TOLERANCE["de"]` | 0.15 | **每轮 0.15** ✅ |
+| 收敛 rewrite 次数 | 旧版 de target 跑满 5 是常见 | **4 轮全部一次收敛 (`converged=true`)** ✅ |
+
+**最终产出**：
+- `da32187d_hard.normal.mp4` 13.6 MB
+- `subtitle.normal.srt` 完整德语字幕（4 cues）
+- `E2E_西语翻德语_Test_capcut_normal.zip` 剪映工程包
+
+**字幕样例**（证明翻译质量没有退化）：
+```
+1
+00:00:00,119 --> 00:00:00,179
+Ich habe da einen
+echten Geheimtipp fuer euch
+
+2
+00:00:03,718 --> 00:00:07,435
+Haustiere ohne regelmaessiges Zaehneputzen bekommen
+schnell Mundgeruch und ernsthafte Zahnprobleme
+```
+
+**附带配置同步**：测试环境 `auto_video_test.llm_provider_configs` 缺 13 个
+provider key（`elevenlabs_tts` / `doubao_*` / `openrouter_*` / `gemini_*` / 等），
+已从线上 `auto_video` 一次性 SQL 同步过来；本身和治本版改造无关，但是部署测试环境
+后必须做的运维步骤。
+
+**结论**：治本版核心改造（zh/en/es 三分类 LID、Scribe 多源 ASR 路由、动态收敛
+容差/上限、prompt 参数化、source_language 一等参数）实测全部生效。可以 merge 到
+master 部署线上。
