@@ -1319,6 +1319,40 @@ class PipelineRunner:
         task_state.update(task_id, utterances=utterances, source_full_text=source_full_text)
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
+
+        # 治本版 LID：用 LLM 看 transcript 真实语种，覆盖用户上传时的猜测。
+        # 用户经常根据文件名误标（"西班牙语视频.mp4" 实际可能是德语），
+        # 仅在 LLM 置信度 >= 0.7 且 ≠ 当前 source_language 时覆盖；否则保留用户选择。
+        if source_full_text:
+            try:
+                from pipeline.language_detect_llm import detect_language_llm
+                lid = detect_language_llm(
+                    source_full_text,
+                    fallback=source_language,
+                    user_id=self.user_id,
+                    project_id=task_id,
+                )
+                detected = lid["language"]
+                conf = lid["confidence"]
+                if (
+                    lid["source"] == "llm"
+                    and conf >= 0.7
+                    and detected != source_language
+                ):
+                    log.info(
+                        "[lid-override] task=%s user_said=%s llm_says=%s (conf=%.2f) → overriding",
+                        task_id, source_language, detected, conf,
+                    )
+                    task_state.update(task_id, source_language=detected)
+                    source_language = detected
+                else:
+                    log.info(
+                        "[lid-keep] task=%s source_language=%s (llm=%s conf=%.2f source=%s)",
+                        task_id, source_language, detected, conf, lid["source"],
+                    )
+            except Exception:
+                log.warning("[lid] detect_language_llm threw, keeping user-supplied source_language", exc_info=True)
+
         try:
             audio_duration_seconds = get_video_duration(audio_path)
         except Exception:

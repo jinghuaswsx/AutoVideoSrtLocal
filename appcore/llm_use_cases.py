@@ -40,6 +40,16 @@ def _uc(
 
 USE_CASES: dict[str, UseCase] = {
     # 视频翻译 v1
+    "video_translate.lid": _uc(
+        "video_translate.lid",
+        "video_translate",
+        "源语言识别（LID）",
+        "ASR 后用 LLM 识别 transcript 真实语种，覆盖 task.source_language",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
     "video_translate.localize": _uc(
         "video_translate.localize",
         "video_translate",
