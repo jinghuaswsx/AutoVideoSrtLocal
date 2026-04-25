@@ -344,6 +344,7 @@ def test_step_translate_resolves_en_prompt_and_uses_eleven_multilingual():
         runner._step_translate("t1")
 
     assert m_resolve.call_args_list[0].args == ("base_translation", "en")
+    assert m_resolve.call_args_list[1].args == ("ecommerce_plugin", None)
     kwargs = m_gen.call_args.kwargs
     assert "BASE_EN" in kwargs["custom_system_prompt"]
 
@@ -352,5 +353,8 @@ def test_runner_lang_rules_for_en_use_multilingual_tts_and_en_code():
     """_get_tts_model_id / _get_tts_language_code 对英语任务返回 multilingual_v2 + 'en'。"""
     runner = _make_runner()
     task = {"target_lang": "en"}
+    # 守住 lang-rules 模块真的命中 en，不走 _get_tts_model_id 的 getattr fallback
+    rules = runner._get_lang_rules("en")
+    assert rules.__name__ == "pipeline.languages.en"
     assert runner._get_tts_model_id(task) == "eleven_multilingual_v2"
     assert runner._get_tts_language_code(task) == "en"
