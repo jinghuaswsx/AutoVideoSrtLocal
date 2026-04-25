@@ -7,5 +7,58 @@
 
 {% include "_pushes_tabs.html" with context %}
 
-<h2>任务统计</h2>
+<div class="stats-toolbar">
+  <div class="stats-filter-row">
+    <label class="stats-field">
+      <span>时间范围</span>
+      <input id="stats-from" type="date" aria-label="起始日期" />
+    </label>
+    <span class="range-sep">至</span>
+    <label class="stats-field">
+      <span>&nbsp;</span>
+      <input id="stats-to" type="date" aria-label="截止日期" />
+    </label>
+  </div>
+  <div class="stats-quick-row" role="group" aria-label="快捷时间范围">
+    <button type="button" data-range="today">今天</button>
+    <button type="button" data-range="yesterday">昨天</button>
+    <button type="button" data-range="this-week">本周</button>
+    <button type="button" data-range="last-week">上周</button>
+    <button type="button" data-range="this-month">本月</button>
+    <button type="button" data-range="last-month">上月</button>
+  </div>
+  <div class="stats-actions">
+    <button id="stats-apply" type="button" class="primary">筛选</button>
+    <button id="stats-reset" type="button">重置</button>
+  </div>
+</div>
+
+<div id="stats-error" class="stats-error" hidden></div>
+
+<table class="stats-table">
+  <thead>
+    <tr>
+      <th>员工</th>
+      <th class="num">提交数</th>
+      <th class="num">已推送</th>
+      <th class="num">未推送</th>
+      <th class="num">推送率</th>
+    </tr>
+  </thead>
+  <tbody id="stats-tbody">
+    <tr class="stats-row-loading"><td colspan="5">加载中…</td></tr>
+  </tbody>
+  <tfoot id="stats-tfoot" hidden>
+    <tr>
+      <th>合计</th>
+      <th class="num" id="stats-total-submitted">0</th>
+      <th class="num" id="stats-total-pushed">0</th>
+      <th class="num" id="stats-total-unpushed">0</th>
+      <th class="num" id="stats-total-rate">—</th>
+    </tr>
+  </tfoot>
+</table>
+
+<link rel="stylesheet" href="/static/pushes_stats.css">
+<script src="/static/pushes_stats.js"></script>
 {% endblock %}

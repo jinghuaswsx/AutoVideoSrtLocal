@@ -1,0 +1,157 @@
+/* ===== Tabs（被 pushes_list / pushes_stats 共用） ===== */
+.pushes-tabs {
+  display: flex;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  margin: var(--space-4) 0 var(--space-6);
+}
+.pushes-tab {
+  padding: var(--space-3) var(--space-4);
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: var(--text-base);
+  border-bottom: 2px solid transparent;
+  transition: color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              background-color var(--duration-fast) var(--ease);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pushes-tab:hover {
+  color: var(--fg);
+  background: var(--bg-muted);
+}
+.pushes-tab.is-active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+/* ===== Stats Toolbar ===== */
+.stats-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+}
+.stats-filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.stats-field {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  gap: var(--space-1);
+}
+.stats-field input[type="date"] {
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  background: var(--bg);
+}
+.stats-field input[type="date"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.stats-toolbar .range-sep {
+  align-self: center;
+  color: var(--fg-muted);
+  padding: 0 var(--space-1);
+}
+.stats-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.stats-quick-row button {
+  height: 28px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--fg-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.stats-quick-row button:hover {
+  background: var(--bg-muted);
+  color: var(--fg);
+}
+.stats-quick-row button.is-active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.stats-actions { display: flex; gap: var(--space-2); margin-left: auto; }
+.stats-actions button {
+  height: 32px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.stats-actions button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
+}
+.stats-actions button.primary:hover { background: var(--accent-hover); }
+.stats-actions button:not(.primary) {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+}
+.stats-actions button:not(.primary):hover { background: var(--bg-muted); }
+
+/* ===== Stats Error ===== */
+.stats-error {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border: 1px solid var(--danger);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+/* ===== Stats Table ===== */
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: var(--text-sm);
+}
+.stats-table th, .stats-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.stats-table th { color: var(--fg-muted); font-weight: 500; }
+.stats-table td { color: var(--fg); }
+.stats-table th.num, .stats-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.stats-table tbody tr:last-child td { border-bottom: 0; }
+.stats-table tfoot th {
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font-weight: 600;
+}
+.stats-row-loading td, .stats-row-empty td {
+  text-align: center;
+  color: var(--fg-muted);
+  padding: var(--space-7) var(--space-4);
+}
