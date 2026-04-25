@@ -385,6 +385,7 @@ class MultiTranslateRunner(PipelineRunner):
         utterances_en = artifact.pop("_utterances_en", None)
         updates = {
             "detected_source_language": artifact["detected_source_language"],
+            "asr_normalize_artifact": artifact,
         }
         if artifact["route"] == "en_skip":
             updates["source_language"] = "en"
