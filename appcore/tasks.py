@@ -253,3 +253,50 @@ def reject_raw(*, task_id: int, actor_user_id: int, reason: str) -> None:
             raise
     finally:
         conn.close()
+
+
+def cancel_parent(*, task_id: int, actor_user_id: int, reason: str) -> None:
+    """admin 取消父任务；级联取消所有非 done 子任务，已 done 保留。"""
+    if not reason or len(reason.strip()) < MIN_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_REASON_LEN} characters")
+    reason = reason.strip()
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=%s, "
+                    "cancelled_at=NOW(), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NULL "
+                    "AND status IN (%s,%s,%s,%s)",
+                    (PARENT_CANCELLED, reason, int(task_id),
+                     PARENT_PENDING, PARENT_RAW_IN_PROGRESS,
+                     PARENT_RAW_REVIEW, PARENT_RAW_DONE),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("parent not in cancellable state")
+                cur.execute(
+                    "SELECT id FROM tasks WHERE parent_task_id=%s "
+                    "AND status IN (%s,%s,%s)",
+                    (int(task_id), CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW),
+                )
+                cascaded = [r["id"] for r in cur.fetchall()]
+                if cascaded:
+                    fmt = ",".join(["%s"] * len(cascaded))
+                    cur.execute(
+                        f"UPDATE tasks SET status=%s, last_reason=%s, "
+                        f"cancelled_at=NOW(), updated_at=NOW() WHERE id IN ({fmt})",
+                        (CHILD_CANCELLED, "parent cancelled: " + reason, *cascaded),
+                    )
+                    for cid in cascaded:
+                        _write_event(cur, cid, "cancelled", actor_user_id,
+                                     {"cascaded_from": int(task_id)})
+                _write_event(cur, task_id, "cancelled", actor_user_id,
+                             {"reason": reason, "cascaded_child_count": len(cascaded)})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()

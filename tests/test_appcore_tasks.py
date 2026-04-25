@@ -297,3 +297,43 @@ def test_reject_raw_requires_min_reason(
         tasks.reject_raw(task_id=parent_id, actor_user_id=db_user_admin, reason="短")
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_cancel_parent_cascades_non_done_children(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE", "FR", "JA"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    # 走一遍，让 DE 子任务 done
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    de_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+        (parent_id,),
+    )["id"]
+    execute("UPDATE tasks SET status='done', completed_at=NOW() WHERE id=%s", (de_id,))
+
+    tasks.cancel_parent(task_id=parent_id, actor_user_id=db_user_admin,
+                        reason="商品已下架，整体取消")
+
+    parent = query_one("SELECT * FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_CANCELLED
+    assert parent["cancelled_at"] is not None
+
+    de = query_one("SELECT * FROM tasks WHERE id=%s", (de_id,))
+    assert de["status"] == tasks.CHILD_DONE     # 已 done 保留
+
+    others = query_all(
+        "SELECT * FROM tasks WHERE parent_task_id=%s AND id<>%s",
+        (parent_id, de_id),
+    )
+    assert all(c["status"] == tasks.CHILD_CANCELLED for c in others)
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
