@@ -9,4 +9,97 @@
 {% set default_source_language = 'en' %}
 {% endif %}
 {% set detail_mode = 'multi' %}
+{% set pipeline_kind = 'multi_translate' %}
 {% include "_translate_detail_shell.html" %}
+{% if state.asr_normalize_artifact %}
+{% set norm = state.asr_normalize_artifact %}
+<section class="card asr-normalize-card">
+  <header class="card-header">
+    <h3>原文标准化</h3>
+    <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
+  </header>
+  <div class="kv">
+    <div><span class="k">检测语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
+    <div><span class="k">置信度</span><span class="v">{{ '%.2f' % norm.confidence }}</span></div>
+    <div><span class="k">是否混合</span><span class="v">{{ '是' if norm.is_mixed else '否' }}</span></div>
+    <div><span class="k">耗时</span><span class="v">{{ (norm.elapsed_ms / 1000) | round(1) }}s</span></div>
+  </div>
+  {% if norm.input.full_text_preview %}
+  <details>
+    <summary>原文预览（前 200 字符）</summary>
+    <pre class="preview">{{ norm.input.full_text_preview }}</pre>
+  </details>
+  {% endif %}
+  {% if norm.output.full_text_preview and norm.route not in ['en_skip', 'zh_skip'] %}
+  <details>
+    <summary>英文标准化预览（前 200 字符）</summary>
+    <pre class="preview">{{ norm.output.full_text_preview }}</pre>
+  </details>
+  {% endif %}
+  <div class="tokens">
+    detect: {{ norm.tokens.detect.input_tokens or 0 }}↑/{{ norm.tokens.detect.output_tokens or 0 }}↓
+    {% if norm.tokens.translate.input_tokens %}
+      · translate: {{ norm.tokens.translate.input_tokens }}↑/{{ norm.tokens.translate.output_tokens or 0 }}↓
+    {% endif %}
+  </div>
+</section>
+
+<style>
+  .asr-normalize-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    margin: var(--space-5) 0;
+  }
+  .asr-normalize-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-3);
+  }
+  .asr-normalize-card h3 {
+    font-size: var(--text-md);
+    margin: 0;
+  }
+  .asr-normalize-card .badge {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-radius: var(--radius-md);
+    padding: 2px 8px;
+    font-size: var(--text-xs);
+    font-weight: 500;
+  }
+  .asr-normalize-card .kv {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-4) 0;
+  }
+  .asr-normalize-card .kv .k {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    display: block;
+  }
+  .asr-normalize-card .kv .v {
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .asr-normalize-card .preview {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: pre-wrap;
+    margin-top: var(--space-2);
+  }
+  .asr-normalize-card .tokens {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    margin-top: var(--space-3);
+    font-family: var(--font-mono);
+  }
+</style>
+{% endif %}

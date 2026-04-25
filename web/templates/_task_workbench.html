@@ -537,9 +537,24 @@
       </div>
       <div class="step-preview" id="preview-asr"></div>
     </div>
+    {% if pipeline_kind == 'multi_translate' %}
+    <div class="step" id="step-asr_normalize">
+      <div class="step-main">
+        <div class="step-icon" id="icon-asr_normalize">3</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">原文标准化</span>
+            <button class="resume-btn hidden" id="resume-asr_normalize" data-step="asr_normalize">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-asr_normalize">等待中...<span class="step-model-tag hidden" id="model-tag-asr_normalize"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-asr_normalize"></div>
+    </div>
+    {% endif %}
     <div class="step" id="step-alignment">
       <div class="step-main">
-        <div class="step-icon" id="icon-alignment">3</div>
+        <div class="step-icon" id="icon-alignment">{{ 4 if pipeline_kind == 'multi_translate' else 3 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">分段确认</span>
@@ -552,7 +567,7 @@
     </div>
     <div class="step" id="step-translate">
       <div class="step-main">
-        <div class="step-icon" id="icon-translate">4</div>
+        <div class="step-icon" id="icon-translate">{{ 5 if pipeline_kind == 'multi_translate' else 4 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">翻译本土化</span>
@@ -570,7 +585,7 @@
     </div>
     <div class="step" id="step-tts">
       <div class="step-main">
-        <div class="step-icon" id="icon-tts">5</div>
+        <div class="step-icon" id="icon-tts">{{ 6 if pipeline_kind == 'multi_translate' else 5 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">语音生成</span>
@@ -584,7 +599,7 @@
     </div>
     <div class="step" id="step-subtitle">
       <div class="step-main">
-        <div class="step-icon" id="icon-subtitle">6</div>
+        <div class="step-icon" id="icon-subtitle">{{ 7 if pipeline_kind == 'multi_translate' else 6 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">字幕生成</span>
@@ -597,7 +612,7 @@
     </div>
     <div class="step" id="step-compose">
       <div class="step-main">
-        <div class="step-icon" id="icon-compose">7</div>
+        <div class="step-icon" id="icon-compose">{{ 8 if pipeline_kind == 'multi_translate' else 7 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">视频合成</span>
@@ -610,7 +625,7 @@
     </div>
     <div class="step" id="step-export">
       <div class="step-main">
-        <div class="step-icon" id="icon-export">8</div>
+        <div class="step-icon" id="icon-export">{{ 9 if pipeline_kind == 'multi_translate' else 8 }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">CapCut 导出</span>

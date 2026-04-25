@@ -1,7 +1,12 @@
 ﻿<script>
   const socket = io();
+  {% if pipeline_kind == 'multi_translate' %}
+  const STEP_ORDER = ["extract", "asr", "asr_normalize", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  {% endif %}
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
   const TASK_WORKBENCH_CONFIG = {
     taskId: {{ task_id|tojson }},
