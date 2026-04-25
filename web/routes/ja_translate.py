@@ -316,14 +316,13 @@ def get_task(task_id: str):
 @bp.route("/api/ja-translate/<task_id>/rematch", methods=["POST"])
 @login_required
 def rematch_voice(task_id: str):
-    row = db_query_one(
-        "SELECT state_json FROM projects WHERE id = %s AND user_id = %s",
-        (task_id, current_user.id),
-    )
+    row = _query_viewable_project(task_id, "state_json, user_id")
     if not row:
         abort(404)
 
     state = json.loads(row["state_json"] or "{}")
+    owner_user_id = row.get("user_id") or current_user.id
+    is_owner = str(owner_user_id) == str(current_user.id)
     body = request.get_json(silent=True) or {}
     gender = (body.get("gender") or "").strip().lower() or None
     if gender and gender not in {"male", "female"}:
@@ -344,7 +343,8 @@ def rematch_voice(task_id: str):
     except Exception:
         return jsonify({"error": "query embedding 解码失败"}), 500
 
-    default_voice_id = resolve_default_voice("ja", user_id=current_user.id)
+    # 用 owner 的默认音色排除规则，保证 admin 浏览时与 owner 看到的一致
+    default_voice_id = resolve_default_voice("ja", user_id=owner_user_id)
     candidates = match_candidates(
         vec,
         language="ja",
@@ -363,12 +363,13 @@ def rematch_voice(task_id: str):
         if candidate_ids else []
     )
 
-    state["voice_match_candidates"] = candidates
-    db_execute(
-        "UPDATE projects SET state_json = %s WHERE id = %s",
-        (json.dumps(state, ensure_ascii=False), task_id),
-    )
-    task_state.update(task_id, voice_match_candidates=candidates)
+    if is_owner:
+        state["voice_match_candidates"] = candidates
+        db_execute(
+            "UPDATE projects SET state_json = %s WHERE id = %s",
+            (json.dumps(state, ensure_ascii=False), task_id),
+        )
+        task_state.update(task_id, voice_match_candidates=candidates)
     return jsonify({
         "ok": True, "gender": gender,
         "candidates": candidates, "extra_items": extra_items,
