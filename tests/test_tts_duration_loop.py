@@ -424,6 +424,110 @@ class TestDurationLoopMultiRound:
         assert (tmp_path / "tts_full.round_2.mp3").exists()
 
 
+class TestRewriteAttemptDiversity:
+    """复盘 880694eb…1058c8：5 次 rewrite attempt 必须打破"同一份输出"的死循环。
+
+    这个事故里 Gemini 在 5 次同 prompt + temperature=0.2 下给出字符级相同的德语译文，
+    重试机制等于 1 次。修复要求：① 第一次 0.6，第二次起 1.0；② attempt 2+ 必须把
+    "前几次给了多少词、目标多少"塞进 prompt（feedback_notes 非空）。
+    """
+
+    def _setup_unconverging_rewrite(self, monkeypatch, tmp_path, captured_calls):
+        """让 fake_gen_rewrite 永远返回字数远偏 target 的译文，强制内层跑满 5 次。"""
+        from appcore import task_state
+        task_state.create("tdl-attempts", "v.mp4", str(tmp_path),
+                          original_filename="v.mp4", user_id=1)
+
+        def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return {"full_audio_path": out,
+                    "segments": [{"index": 0, "tts_path": out, "tts_duration": 1.0}]}
+
+        # round 1 已超长触发 round 2，round 2 怎么写都收敛不了 → 我们只关心 round 2
+        # 的 5 次 attempt 行为
+        durations = iter([60.0, 60.0])
+
+        def fake_get_audio_duration(path):
+            return next(durations, 60.0)
+
+        def fake_gen_tts_script(loc, **kwargs):
+            return {"full_text": loc.get("full_text", ""), "blocks": [], "subtitle_chunks": []}
+
+        def fake_gen_rewrite(**kwargs):
+            captured_calls.append(kwargs)
+            # 永远返回 200 词，远离 target_words，让内层 5 次都打不进窗口
+            text = "word " * 200
+            return {
+                "full_text": text.strip(),
+                "sentences": [{"index": 0, "text": text.strip(),
+                               "source_segment_indices": [0]}],
+            }
+
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", fake_get_audio_duration)
+        monkeypatch.setattr("pipeline.translate.generate_tts_script", fake_gen_tts_script)
+        monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_gen_rewrite)
+        monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
+        monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        monkeypatch.setattr(loc_mod, "build_tts_segments", lambda s, sg: [])
+        monkeypatch.setattr(loc_mod, "build_localized_rewrite_messages",
+                            lambda **kw: [{"role": "system", "content": ""},
+                                          {"role": "user", "content": ""}],
+                            raising=False)
+
+        from appcore.events import EventBus
+        from appcore.runtime import PipelineRunner
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+        initial = {"full_text": "A" * 400,
+                   "sentences": [{"index": 0, "text": "A" * 400,
+                                  "source_segment_indices": [0]}]}
+        return runner, loc_mod, initial
+
+    def test_attempts_use_temperature_ladder_and_feedback(
+        self, tmp_path, monkeypatch,
+    ):
+        captured: list[dict] = []
+        runner, loc_mod, initial = self._setup_unconverging_rewrite(
+            monkeypatch, tmp_path, captured,
+        )
+
+        runner._run_tts_duration_loop(
+            task_id="tdl-attempts", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+
+        # round 1 不调 rewrite。后面每轮都跑满 5 次 attempt（永远不收敛）。
+        # 单测只校验前 5 次（第一轮 rewrite 的 5 次 attempt）。
+        assert len(captured) >= 5, f"expected ≥5 rewrite calls, got {len(captured)}"
+        first_round = captured[:5]
+
+        # ① 温度阶梯：第 1 次 0.6，后 4 次 1.0
+        temperatures = [c["temperature"] for c in first_round]
+        assert temperatures == [0.6, 1.0, 1.0, 1.0, 1.0], (
+            f"temperature ladder broken: {temperatures}"
+        )
+
+        # ② attempt 1 不带 feedback；attempt 2+ 带 feedback 且包含前几次的词数
+        assert first_round[0]["feedback_notes"] is None
+        for i in range(1, 5):
+            notes = first_round[i]["feedback_notes"]
+            assert notes is not None, f"attempt {i+1} missing feedback_notes"
+            # feedback 里必须列出前面 attempt 的 word counts
+            assert "200" in notes, f"attempt {i+1} feedback missing prior word count: {notes}"
+            assert f"attempt {i+1} of 5" in notes
+
+
 class TestPromoteFinalArtifacts:
     def test_promotes_round_n_to_normal(self, tmp_path):
         from appcore.runtime import PipelineRunner

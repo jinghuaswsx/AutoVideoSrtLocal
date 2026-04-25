@@ -573,12 +573,44 @@ class PipelineRunner:
                 # LLM 对 target_words 经常不听话。先确认文案字数在 ±10% 窗口内
                 # 再去跑 TTS，避免浪费 TTS 调用。
                 # 每次 attempt 的完整译文 JSON 单独落盘，UI 可逐一查看。
+                #
+                # 不收敛事故复盘（2026-04-25 880694eb…1058c8 任务）：5 次 attempt
+                # 用完全相同的 prompt + 默认 temperature=0.2，导致 Gemini Vertex 在
+                # round 3 / round 5 的 5 次输出**字符级一致**，重试机制等于 1 次。
+                # 修复：① 第一次低温稳一下，第二次起拉到 1.0 让分布发散；② attempt
+                # 2+ 把"上次给了多少词、目标多少"塞进 prompt，迫使 LLM 跳出固定模板。
+                # 这两条同时上才有意义——单独打温度，LLM 仍可能落到同一 basin（85
+                # 词长版本 / 54 词短版本）；单独加反馈但保持低温也不会真的换文案。
                 MAX_REWRITE_ATTEMPTS = 5
                 WORD_TOLERANCE = 0.10
                 candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
                 localized_translation = None
                 chosen_attempt_idx = None
+                tolerance_abs = max(1, int(target_words * WORD_TOLERANCE))
+                prior_word_counts: list[int] = []
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
+                    attempt_temperature = 0.6 if attempt == 1 else 1.0
+                    feedback_notes = None
+                    if prior_word_counts:
+                        feedback_notes = (
+                            "RETRY CONTEXT (attempt {n} of {m}):\n"
+                            "  · Earlier attempts in this round produced these word counts: "
+                            "{prior} (target {target}, allowed window [{lo}, {hi}], direction {dir}).\n"
+                            "  · ALL were rejected as outside the window.\n"
+                            "  · DO NOT repeat the same translation. Generate a SUBSTANTIVELY "
+                            "DIFFERENT version: vary sentence count, sentence boundaries, "
+                            "vocabulary, and openings.\n"
+                            "  · Push {dir} more aggressively this time. Land inside [{lo}, {hi}]."
+                        ).format(
+                            n=attempt,
+                            m=MAX_REWRITE_ATTEMPTS,
+                            prior=prior_word_counts,
+                            target=target_words,
+                            lo=target_words - tolerance_abs,
+                            hi=target_words + tolerance_abs,
+                            dir=direction,
+                        )
+
                     candidate = generate_localized_rewrite(
                         source_full_text=source_full_text,
                         prev_localized_translation=initial_localized_translation,
@@ -588,11 +620,13 @@ class PipelineRunner:
                         messages_builder=loc_mod.build_localized_rewrite_messages,
                         provider=provider,
                         user_id=self.user_id,
+                        temperature=attempt_temperature,
+                        feedback_notes=feedback_notes,
                     )
                     cand_words = _count_words(candidate.get("full_text", ""))
                     diff = abs(cand_words - target_words)
-                    tolerance_abs = max(1, int(target_words * WORD_TOLERANCE))
                     candidates.append((diff, candidate))
+                    prior_word_counts.append(cand_words)
 
                     # 每次 attempt 的完整译文都落盘，UI 可点链接查看
                     attempt_filename = (
@@ -601,14 +635,17 @@ class PipelineRunner:
                     _save_json(task_dir, attempt_filename, candidate)
 
                     log.info(
-                        "rewrite attempt %d/%d: got %d words (target %d, tol ±%d)",
-                        attempt, MAX_REWRITE_ATTEMPTS, cand_words, target_words, tolerance_abs,
+                        "rewrite attempt %d/%d: got %d words (target %d, tol ±%d, T=%.2f)",
+                        attempt, MAX_REWRITE_ATTEMPTS, cand_words, target_words,
+                        tolerance_abs, attempt_temperature,
                     )
                     round_record.setdefault("rewrite_attempts", []).append({
                         "attempt": attempt,
                         "words": cand_words,
                         "diff": diff,
                         "accepted": diff <= tolerance_abs,
+                        "temperature": attempt_temperature,
+                        "had_feedback": feedback_notes is not None,
                         "artifact_path": attempt_filename,
                         # 取 full_text 前 200 字符作为快速预览，避免 UI 默认加载大 JSON
                         "preview_text": (candidate.get("full_text") or "")[:200],

@@ -406,35 +406,48 @@ def generate_localized_rewrite(
     provider: str = "openrouter",
     user_id: int | None = None,
     openrouter_api_key: str | None = None,
+    temperature: float = 0.2,
+    feedback_notes: str | None = None,
 ) -> dict:
     """Rewrite an existing localized_translation to a target word count.
 
     provider 可以是 openrouter 派生值、vertex_* 或 doubao；所有路径都把实际发给
     LLM 的 messages 放在 result["_messages"] 里，供 UI/审计。
+
+    temperature 让上层（duration loop 内部 5 次 retry）逐次升温，避免 LLM 对同一
+    prompt 输出字符级一致的同一份译文。feedback_notes 让上层把"前几次 attempt
+    给出了多少词、目标多少"这种闭环反馈塞进 prompt，迫使 LLM 跳出固定模板。
     """
     provider = _resolve_use_case_provider(provider)
-    messages = messages_builder(
+    builder_kwargs = dict(
         source_full_text=source_full_text,
         prev_localized_translation=prev_localized_translation,
         target_words=target_words,
         direction=direction,
         source_language=source_language,
     )
+    if feedback_notes:
+        builder_kwargs["feedback_notes"] = feedback_notes
+    messages = messages_builder(**builder_kwargs)
 
     if provider.startswith("vertex_"):
         payload, usage, _ = _call_vertex_json(
             messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            temperature=temperature,
         )
     else:
         payload, usage, _, _ = _call_openai_compat(
             messages, provider=provider, user_id=user_id,
             api_key_override=openrouter_api_key,
             response_format=LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            temperature=temperature,
         )
 
     log.info(
-        "localized_rewrite parsed (provider=%s, direction=%s, target_words=%d)",
-        provider, direction, target_words,
+        "localized_rewrite parsed (provider=%s, direction=%s, target_words=%d, "
+        "temperature=%.2f, feedback=%s)",
+        provider, direction, target_words, temperature,
+        "yes" if feedback_notes else "no",
     )
     result = validate_localized_translation(payload)
     if usage:
