@@ -142,7 +142,8 @@ class ShopifyImageLocalizerApp:
             width=80,
         ).pack(fill="x", pady=(4, 8))
 
-        tk.Label(self.main_frame, textvariable=self.status_var, justify="left").pack(anchor="w", pady=(4, 8))
+        self.status_label = tk.Label(self.main_frame, textvariable=self.status_var, justify="left")
+        self.status_label.pack(anchor="w", pady=(4, 8))
 
     def _build_summary(self) -> None:
         tk.Label(self.main_frame, text="运行摘要", anchor="w").pack(anchor="w")
@@ -182,7 +183,7 @@ class ShopifyImageLocalizerApp:
             self.advanced_visible = False
             return
 
-        self.advanced_frame.pack(fill="x", pady=(4, 8))
+        self.advanced_frame.pack(fill="x", pady=(4, 8), before=self.status_label)
         self.advanced_button.configure(text="隐藏高级设置")
         self.advanced_visible = True
 
@@ -214,22 +215,35 @@ class ShopifyImageLocalizerApp:
             return f"{label} ({code})"
         return label or code
 
+    def _is_english_language_item(self, item: dict) -> bool:
+        code = str(item.get("code") or "").strip().lower().replace("_", "-").replace("/", "-")
+        label = str(item.get("label") or item.get("name_zh") or "").strip().lower()
+        if code == "en" or code.startswith("en-"):
+            return True
+        return label in {"english", "英语", "英文"}
+
     def _set_language_items(self, items: list[dict], fallback: bool = False) -> None:
         mapping: dict[str, str] = {}
         labels: list[str] = []
+        filtered_items: list[dict] = []
         for item in items:
+            if self._is_english_language_item(item):
+                continue
             code = str(item.get("code") or "").strip().lower()
             if not code:
                 continue
             label = self._language_label(item)
             mapping[label] = code
             labels.append(label)
+            filtered_items.append(item)
 
-        self.language_items = items
+        self.language_items = filtered_items
         self.language_label_to_code = mapping
         self.language_box.configure(values=labels)
         if labels:
             self.language_box.current(0)
+        else:
+            self.language_var.set("")
         if fallback:
             self.status_var.set("线上语言列表加载失败，已使用内置常用语言")
             self._append_log("线上语言列表加载失败，已使用内置常用语言")
