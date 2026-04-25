@@ -1,6 +1,6 @@
 """素材信息开放接口。
 
-- 使用 ``X-API-Key`` 校验请求，密钥从 ``config.OPENAPI_MEDIA_API_KEY`` 读取
+- 使用 ``X-API-Key`` 校验请求，密钥从 ``llm_provider_configs.openapi_materials`` 读取
 - 按 ``product_code`` 聚合返回产品基础信息、主图、文案和视频素材
 - 主图 / 视频 / 视频封面的下载地址均为本地素材服务地址
 """
@@ -12,10 +12,10 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from flask import Blueprint, jsonify, request
 
-import config
 from appcore import medias, pushes
 from appcore.link_check_locale import detect_target_language_from_url
 from appcore.db import query, query_one
+from appcore.llm_provider_configs import get_provider_config
 
 bp = Blueprint("openapi_materials", __name__, url_prefix="/openapi/materials")
 push_bp = Blueprint("openapi_push_items", __name__, url_prefix="/openapi/push-items")
@@ -36,7 +36,8 @@ def _media_download_url(object_key: str | None) -> str | None:
 _LIST_PAGE_SIZE_MAX = 100
 _OPENAPI_OPERATOR_USER_ID = 0  # 外部 OpenAPI 调用方无用户上下文，用 0 代表 system
 def _api_key_valid() -> bool:
-    expected = (config.OPENAPI_MEDIA_API_KEY or "").strip()
+    cfg = get_provider_config("openapi_materials")
+    expected = ((cfg.api_key if cfg else "") or "").strip()
     provided = (request.headers.get("X-API-Key") or "").strip()
     return bool(expected) and provided == expected
 
