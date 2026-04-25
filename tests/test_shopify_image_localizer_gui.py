@@ -141,6 +141,56 @@ def test_gui_open_download_dir_button_targets_localized_source(monkeypatch: pyte
         app.root.destroy()
 
 
+def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        captured = {}
+        done = threading.Event()
+
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+            ),
+        )
+
+        def fake_run_shopify_localizer(**kwargs):
+            captured.update(kwargs)
+            done.set()
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": r"C:\work\demo\nl",
+                "download_dir": r"C:\work\demo\nl\source\localized",
+                "manifest_path": r"C:\work\demo\nl\shopify_batch_nl_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+
+        app._set_language_items(
+            [
+                {
+                    "code": "nl",
+                    "label": "Dutch (NL/nl)",
+                    "shopify_language_name": "Dutch",
+                }
+            ]
+        )
+        app.product_code_var.set("sonic-lens-refresher-rjc")
+        app.shopify_product_id_var.set("8559391932589")
+
+        app.start_run()
+
+        assert done.wait(2)
+        assert captured["lang"] == "nl"
+        assert captured["shopify_language_name"] == "Dutch"
+    finally:
+        app.root.destroy()
+
+
 def test_controller_opens_products_page_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     killed_profiles: list[str] = []
     started_urls: list[tuple] = []

@@ -81,6 +81,42 @@ def test_list_languages_for_admin_includes_disabled_and_usage(monkeypatch):
     assert langs[1]["in_use"] is True
 
 
+def test_list_shopify_localizer_languages_exposes_shopify_language_name(monkeypatch):
+    monkeypatch.setattr(
+        medias,
+        "list_languages",
+        lambda: [
+            {
+                "code": "nl",
+                "name_zh": "Dutch",
+                "shopify_language_name": "Dutch",
+                "sort_order": 8,
+                "enabled": 1,
+            }
+        ],
+    )
+
+    items = medias.list_shopify_localizer_languages()
+
+    assert items[0]["code"] == "nl"
+    assert items[0]["shopify_language_name"] == "Dutch"
+
+
+def test_create_and_update_language_persist_shopify_language_name(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(medias, "get_language", lambda code: None)
+    monkeypatch.setattr(medias, "execute", lambda sql, args=(): calls.append((sql, args)) or 1)
+
+    medias.create_language("NL", "Dutch", 8, True, shopify_language_name="Dutch")
+    medias.update_language("nl", "Dutch", 8, True, shopify_language_name="Dutch")
+
+    assert "shopify_language_name" in calls[0][0]
+    assert calls[0][1] == ("nl", "Dutch", "Dutch", 8, 1)
+    assert "shopify_language_name=%s" in calls[1][0]
+    assert calls[1][1] == ("Dutch", "Dutch", 8, 1, "nl")
+
+
 def test_normalize_language_code_lowercases_and_validates():
     assert medias.normalize_language_code(" PT-BR ") == "pt-br"
     with pytest.raises(ValueError, match="格式不合法"):

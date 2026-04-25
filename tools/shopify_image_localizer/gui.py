@@ -10,11 +10,11 @@ from tools.shopify_image_localizer import api_client, cancellation, controller, 
 
 
 FALLBACK_LANGUAGES = [
-    {"code": "it", "label": "意大利语"},
-    {"code": "es", "label": "西班牙语"},
-    {"code": "ja", "label": "日语"},
-    {"code": "de", "label": "德语"},
-    {"code": "fr", "label": "法语"},
+    {"code": "it", "label": "意大利语", "shopify_language_name": "Italian"},
+    {"code": "es", "label": "西班牙语", "shopify_language_name": "Spanish"},
+    {"code": "ja", "label": "日语", "shopify_language_name": "Japanese"},
+    {"code": "de", "label": "德语", "shopify_language_name": "German"},
+    {"code": "fr", "label": "法语", "shopify_language_name": "French"},
 ]
 
 
@@ -38,6 +38,7 @@ class ShopifyImageLocalizerApp:
         self.advanced_visible = False
         self.language_items: list[dict] = []
         self.language_label_to_code: dict[str, str] = {}
+        self.language_label_to_shopify_name: dict[str, str] = {}
         self._workspace_root = ""
         self._download_dir = ""
         self._current_cancel_token: cancellation.CancellationToken | None = None
@@ -283,6 +284,7 @@ class ShopifyImageLocalizerApp:
 
     def _set_language_items(self, items: list[dict], fallback: bool = False) -> None:
         mapping: dict[str, str] = {}
+        shopify_name_mapping: dict[str, str] = {}
         labels: list[str] = []
         filtered_items: list[dict] = []
         for item in items:
@@ -293,11 +295,13 @@ class ShopifyImageLocalizerApp:
                 continue
             label = self._language_label(item)
             mapping[label] = code
+            shopify_name_mapping[label] = str(item.get("shopify_language_name") or "").strip()
             labels.append(label)
             filtered_items.append(item)
 
         self.language_items = filtered_items
         self.language_label_to_code = mapping
+        self.language_label_to_shopify_name = shopify_name_mapping
         self.language_box.configure(values=labels)
         if labels:
             self.language_box.current(0)
@@ -333,6 +337,9 @@ class ShopifyImageLocalizerApp:
             return language_label.rsplit("(", 1)[-1].rstrip(")").strip().lower()
         return language_label.strip().lower()
 
+    def _selected_shopify_language_name(self, language_label: str) -> str:
+        return self.language_label_to_shopify_name.get(language_label, "")
+
     def start_run(self) -> None:
         product_code = self.product_code_var.get().strip().lower()
         language_label = self.language_var.get().strip()
@@ -348,6 +355,7 @@ class ShopifyImageLocalizerApp:
             return
 
         lang_code = self._selected_lang_code(language_label)
+        shopify_language_name = self._selected_shopify_language_name(language_label)
         base_url = settings.DEFAULT_BASE_URL
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
@@ -372,7 +380,16 @@ class ShopifyImageLocalizerApp:
         )
         threading.Thread(
             target=self._run,
-            args=(base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id, cancel_token),
+            args=(
+                base_url,
+                api_key,
+                browser_dir,
+                product_code,
+                lang_code,
+                shopify_product_id,
+                shopify_language_name,
+                cancel_token,
+            ),
             daemon=True,
         ).start()
 
@@ -505,6 +522,7 @@ class ShopifyImageLocalizerApp:
         product_code: str,
         lang_code: str,
         shopify_product_id: str,
+        shopify_language_name: str,
         cancel_token: cancellation.CancellationToken,
     ) -> None:
         try:
@@ -515,6 +533,7 @@ class ShopifyImageLocalizerApp:
                 product_code=product_code,
                 lang=lang_code,
                 shopify_product_id=shopify_product_id,
+                shopify_language_name=shopify_language_name,
                 cancel_token=cancel_token,
                 status_cb=lambda message: self.root.after(0, self._handle_status, message),
                 shopify_product_id_cb=lambda product_id: self.root.after(

@@ -282,6 +282,31 @@ def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeyp
     assert payload["localized_images"][0]["url"] == "http://local.test/it.jpg"
 
 
+def test_shopify_localizer_languages_include_shopify_language_name(client, monkeypatch):
+    monkeypatch.setattr("web.routes.openapi_materials._api_key_valid", lambda: True)
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.list_shopify_localizer_languages",
+        lambda: [
+            {
+                "code": "nl",
+                "name_zh": "Dutch",
+                "shop_locale": "nl",
+                "folder_code": "nl",
+                "label": "Dutch (NL/nl)",
+                "shopify_language_name": "Dutch",
+            }
+        ],
+    )
+
+    response = client.get(
+        "/openapi/medias/shopify-image-localizer/languages",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["items"][0]["shopify_language_name"] == "Dutch"
+
+
 # ================================================================
 # /openapi/push-items 路由测试
 # ================================================================

@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from typing import Callable
 
-from tools.shopify_image_localizer import api_client, cancellation, settings, storage
+from tools.shopify_image_localizer import api_client, cancellation, locales, settings, storage
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import run_product_cdp
 
@@ -51,13 +51,15 @@ def _build_batch_args(
     product_code: str,
     lang: str,
     shopify_product_id: str,
+    shopify_language_name: str = "",
 ) -> argparse.Namespace:
     normalized_lang = str(lang or "").strip().lower()
+    language_name = str(shopify_language_name or "").strip() or locales.english_name_for(normalized_lang)
     return argparse.Namespace(
         product_code=str(product_code or "").strip().lower(),
         lang=normalized_lang,
         shop_locale=normalized_lang,
-        language=run_product_cdp.LANGUAGE_LABELS.get(normalized_lang, normalized_lang),
+        language=language_name,
         product_id=str(shopify_product_id or "").strip(),
         store_domain=run_product_cdp.DEFAULT_STORE_DOMAIN,
         bootstrap_timeout_s=120,
@@ -82,6 +84,7 @@ def run_shopify_localizer(
     product_code: str,
     lang: str,
     shopify_product_id: str = "",
+    shopify_language_name: str = "",
     status_cb: StatusCallback | None = None,
     shopify_product_id_cb: ShopifyProductIdCallback | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
@@ -107,6 +110,7 @@ def run_shopify_localizer(
         product_code=product_code,
         lang=lang,
         shopify_product_id=shopify_product_id,
+        shopify_language_name=shopify_language_name,
     )
     cancellation.throw_if_cancelled(cancel_token)
     resolved_product_id = resolve_shopify_product_id(

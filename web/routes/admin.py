@@ -143,6 +143,7 @@ def api_create_media_language():
             body.get("name_zh", ""),
             body.get("sort_order", 0),
             bool(body.get("enabled", True)),
+            body.get("shopify_language_name", ""),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -160,6 +161,7 @@ def api_update_media_language(code: str):
             body.get("name_zh", ""),
             body.get("sort_order", 0),
             bool(body.get("enabled", True)),
+            body.get("shopify_language_name", ""),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

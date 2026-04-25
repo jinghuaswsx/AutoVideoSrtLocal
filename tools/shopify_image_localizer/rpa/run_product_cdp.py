@@ -19,19 +19,13 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
-from tools.shopify_image_localizer import api_client, cancellation, downloader, settings, storage
+from tools.shopify_image_localizer import api_client, cancellation, downloader, locales, settings, storage
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 
 DEFAULT_STORE_DOMAIN = "newjoyloo.com"
-LANGUAGE_LABELS = {
-    "de": "German",
-    "es": "Spanish",
-    "fr": "French",
-    "it": "Italian",
-    "ja": "Japanese",
-}
+LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
 
 
 def _normalize_src(src: str) -> str:
@@ -517,7 +511,7 @@ def main() -> None:
     args = parser.parse_args()
     args.lang = str(args.lang or "").strip().lower()
     args.shop_locale = str(args.shop_locale or args.lang).strip().lower()
-    args.language = str(args.language or LANGUAGE_LABELS.get(args.lang) or args.lang).strip()
+    args.language = str(args.language or locales.english_name_for(args.lang)).strip()
     try:
         run(args)
     except api_client.ApiError as exc:

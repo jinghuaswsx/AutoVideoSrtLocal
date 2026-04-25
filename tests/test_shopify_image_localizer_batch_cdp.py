@@ -303,6 +303,27 @@ def test_controller_backfills_resolved_shopify_id_before_batch_runner(monkeypatc
     assert result["shopify_product_id"] == "8559445180589"
 
 
+def test_controller_maps_locale_code_to_ez_language_label():
+    args = controller._build_batch_args(
+        product_code="sonic-lens-refresher-rjc",
+        lang="nl",
+        shopify_product_id="8559391932589",
+    )
+
+    assert args.language == "Dutch"
+
+
+def test_controller_prefers_api_shopify_language_name_over_static_fallback():
+    args = controller._build_batch_args(
+        product_code="sonic-lens-refresher-rjc",
+        lang="nl",
+        shopify_product_id="8559391932589",
+        shopify_language_name="Nederlands",
+    )
+
+    assert args.language == "Nederlands"
+
+
 def test_verify_target_language_marks_all_expected_slots():
     from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -342,7 +363,7 @@ def test_ez_filters_out_slots_that_already_have_language_marker():
     assert missing_pairs == [(1, "C:/tmp/b.jpg")]
 
 
-def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypatch):
+def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypatch, capsys):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
     calls = []
@@ -418,6 +439,10 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     ]
     assert ("replace_slot", 0, "C:/tmp/a.jpg", "German") not in calls
     assert ("replace_slot", 1, "C:/tmp/b.jpg", "German") in calls
+    output = capsys.readouterr().out
+    assert "[carousel] START open EZ page" in output
+    assert "[carousel] END scan existing language markers: ok skipped=1 pending=1" in output
+    assert "[carousel] RESULT done requested=2 ok=1 skipped=1 failed=0" in output
 
 
 def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
@@ -462,6 +487,70 @@ def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
 
     assert result == {"slot": 0, "status": "skipped", "reason": "German already exists"}
     assert ("click", 'button[aria-label="Remove German"]') not in calls
+
+
+def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch, capsys):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeLocator:
+        def __init__(self, selector: str):
+            self.selector = selector
+
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            calls.append(("nth", self.selector, index))
+            return self
+
+        def click(self, timeout=None):
+            calls.append(("click", self.selector, timeout))
+
+        def wait_for(self, state=None, timeout=None):
+            calls.append(("wait_for", self.selector, state, timeout))
+
+        def inner_text(self, timeout=None):
+            return "translation for: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+
+        def set_input_files(self, path, timeout=None):
+            calls.append(("set_input_files", path, timeout))
+
+    class FakeFrame:
+        page = FakePage()
+
+        def locator(self, selector):
+            calls.append(("locator", selector))
+            return FakeLocator(selector)
+
+        def evaluate(self, script, arg=None):
+            if "const wanted" in script:
+                return {"ok": True, "value": "de"}
+            if "input.files" in script:
+                return {"ok": True, "count": 1, "names": ["loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"]}
+            raise AssertionError(script)
+
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda frame, language: False)
+
+    result = ez_cdp.replace_slot(
+        FakeFrame(),
+        0,
+        "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+        language="German",
+    )
+
+    output = capsys.readouterr().out
+    assert result["status"] == "ok"
+    assert "[carousel][slot 0] START open translation dialog" in output
+    assert "[carousel][slot 0] END set upload file: ok" in output
+    assert "selected_files=loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg" in output
+    assert "[carousel][slot 0] RESULT ok" in output
+    assert ("wait_for_timeout", 1000) in calls
 
 
 def test_ensure_cdp_chrome_clears_profile_browser_before_starting_port(monkeypatch):

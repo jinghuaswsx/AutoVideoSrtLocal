@@ -38,14 +38,14 @@ def normalize_language_code(code: str) -> str:
 
 def get_language(code: str) -> dict | None:
     return query_one(
-        "SELECT code, name_zh, sort_order, enabled FROM media_languages WHERE code=%s",
+        "SELECT code, name_zh, shopify_language_name, sort_order, enabled FROM media_languages WHERE code=%s",
         (code,),
     )
 
 
 def list_languages() -> list[dict]:
     return query(
-        "SELECT code, name_zh, sort_order, enabled FROM media_languages "
+        "SELECT code, name_zh, shopify_language_name, sort_order, enabled FROM media_languages "
         "WHERE enabled=1 ORDER BY sort_order ASC, code ASC"
     )
 
@@ -75,9 +75,11 @@ def list_shopify_localizer_languages() -> list[dict]:
         if not code:
             continue
         name_zh = str(row.get("name_zh") or code).strip() or code
+        shopify_language_name = str(row.get("shopify_language_name") or "").strip()
         items.append({
             "code": code,
             "name_zh": name_zh,
+            "shopify_language_name": shopify_language_name,
             "shop_locale": code,
             "folder_code": code,
             "label": f"{name_zh}（{code.upper()}/{code}）",
@@ -116,7 +118,7 @@ def get_language_usage(code: str) -> dict:
 
 def list_languages_for_admin() -> list[dict]:
     rows = query(
-        "SELECT code, name_zh, sort_order, enabled FROM media_languages "
+        "SELECT code, name_zh, shopify_language_name, sort_order, enabled FROM media_languages "
         "ORDER BY sort_order ASC, code ASC"
     )
     return [{**row, **get_language_usage(row["code"])} for row in rows]
@@ -132,17 +134,24 @@ def is_valid_language(code: str) -> bool:
     return bool(row)
 
 
-def create_language(code: str, name_zh: str, sort_order: int, enabled: bool) -> None:
+def create_language(
+    code: str,
+    name_zh: str,
+    sort_order: int,
+    enabled: bool,
+    shopify_language_name: str = "",
+) -> None:
     normalized = normalize_language_code(code)
     if get_language(normalized):
         raise ValueError("语言编码已存在")
     display_name = (name_zh or "").strip()
     if not display_name:
         raise ValueError("语言名称不能为空")
+    shopify_name = str(shopify_language_name or "").strip()
     execute(
-        "INSERT INTO media_languages (code, name_zh, sort_order, enabled) "
-        "VALUES (%s,%s,%s,%s)",
-        (normalized, display_name, int(sort_order), 1 if enabled else 0),
+        "INSERT INTO media_languages (code, name_zh, shopify_language_name, sort_order, enabled) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (normalized, display_name, shopify_name, int(sort_order), 1 if enabled else 0),
     )
 
 
@@ -152,15 +161,22 @@ def validate_language_update(code: str, enabled: bool | None = None) -> None:
         raise ValueError("默认语种 en 不能停用")
 
 
-def update_language(code: str, name_zh: str, sort_order: int, enabled: bool) -> None:
+def update_language(
+    code: str,
+    name_zh: str,
+    sort_order: int,
+    enabled: bool,
+    shopify_language_name: str = "",
+) -> None:
     normalized = normalize_language_code(code)
     validate_language_update(normalized, enabled=enabled)
     display_name = (name_zh or "").strip()
     if not display_name:
         raise ValueError("语言名称不能为空")
+    shopify_name = str(shopify_language_name or "").strip()
     execute(
-        "UPDATE media_languages SET name_zh=%s, sort_order=%s, enabled=%s WHERE code=%s",
-        (display_name, int(sort_order), 1 if enabled else 0, normalized),
+        "UPDATE media_languages SET name_zh=%s, shopify_language_name=%s, sort_order=%s, enabled=%s WHERE code=%s",
+        (display_name, shopify_name, int(sort_order), 1 if enabled else 0, normalized),
     )
 
 

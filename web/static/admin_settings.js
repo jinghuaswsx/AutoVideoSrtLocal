@@ -15,6 +15,7 @@
     return rows.map((row) => ({
       code: row.code || "",
       name_zh: row.name_zh || "",
+      shopify_language_name: row.shopify_language_name || "",
       sort_order: Number(row.sort_order || 0),
       enabled: row.enabled === true || row.enabled === 1,
       items_count: Number(row.items_count || 0),
@@ -90,6 +91,9 @@
           <input type="text" data-field="name_zh" value="${escapeHtml(row.name_zh)}" placeholder="例如 葡萄牙语" autocomplete="off">
           ${row.__error ? `<div class="media-language-row-error">${escapeHtml(row.__error)}</div>` : ""}
         </td>
+        <td class="media-language-shopify-cell">
+          <input type="text" data-field="shopify_language_name" value="${escapeHtml(row.shopify_language_name)}" placeholder="German / Dutch" autocomplete="off">
+        </td>
         <td class="media-language-sort-cell">
           <input type="number" data-field="sort_order" value="${escapeHtml(row.sort_order)}" step="1">
         </td>
@@ -112,7 +116,7 @@
 
   function render() {
     if (!state.rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="media-language-muted" style="padding:16px;">暂无语种配置</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="media-language-muted" style="padding:16px;">暂无语种配置</td></tr>';
       return;
     }
     tbody.innerHTML = state.rows.map(renderRow).join("");
@@ -130,12 +134,14 @@
     }
     const codeInput = rowEl.querySelector('[data-field="code"]');
     const nameInput = rowEl.querySelector('[data-field="name_zh"]');
+    const shopifyNameInput = rowEl.querySelector('[data-field="shopify_language_name"]');
     const sortInput = rowEl.querySelector('[data-field="sort_order"]');
     const enabledInput = rowEl.querySelector('[data-field="enabled"]');
     return {
       ...current,
       code: current.__draft ? (codeInput ? codeInput.value.trim().toLowerCase() : "") : current.code,
       name_zh: nameInput ? nameInput.value.trim() : current.name_zh,
+      shopify_language_name: shopifyNameInput ? shopifyNameInput.value.trim() : current.shopify_language_name,
       sort_order: sortInput ? Number(sortInput.value || 0) : current.sort_order,
       enabled: enabledInput ? enabledInput.checked : current.enabled,
       __error: "",
@@ -178,6 +184,7 @@
 
     const payload = {
       name_zh: row.name_zh,
+      shopify_language_name: row.shopify_language_name,
       sort_order: row.sort_order,
       enabled: row.code === "en" ? true : row.enabled,
     };
@@ -245,6 +252,7 @@
     state.rows.push({
       code: "",
       name_zh: "",
+      shopify_language_name: "",
       sort_order: state.rows.length + 1,
       enabled: true,
       items_count: 0,

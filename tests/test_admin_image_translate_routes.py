@@ -75,6 +75,58 @@ def test_admin_settings_script_moves_voice_library_sync_to_top():
     assert "stack.prepend(section)" in script
 
 
+def test_admin_media_language_routes_forward_shopify_language_name(authed_client_no_db, monkeypatch):
+    from web.routes import admin as r
+
+    calls = []
+
+    def fake_create_language(code, name_zh, sort_order, enabled, shopify_language_name):
+        calls.append(("create", code, name_zh, sort_order, enabled, shopify_language_name))
+
+    def fake_update_language(code, name_zh, sort_order, enabled, shopify_language_name):
+        calls.append(("update", code, name_zh, sort_order, enabled, shopify_language_name))
+
+    monkeypatch.setattr(r.medias, "create_language", fake_create_language)
+    monkeypatch.setattr(r.medias, "update_language", fake_update_language)
+
+    create_resp = authed_client_no_db.post(
+        "/admin/api/media-languages",
+        json={
+            "code": "nl",
+            "name_zh": "Dutch",
+            "sort_order": 8,
+            "enabled": True,
+            "shopify_language_name": "Dutch",
+        },
+    )
+    update_resp = authed_client_no_db.put(
+        "/admin/api/media-languages/nl",
+        json={
+            "name_zh": "Dutch",
+            "sort_order": 8,
+            "enabled": True,
+            "shopify_language_name": "Dutch",
+        },
+    )
+
+    assert create_resp.status_code == 201
+    assert update_resp.status_code == 200
+    assert calls == [
+        ("create", "nl", "Dutch", 8, True, "Dutch"),
+        ("update", "nl", "Dutch", 8, True, "Dutch"),
+    ]
+
+
+def test_admin_settings_language_table_has_shopify_language_name_column():
+    from pathlib import Path
+
+    template = Path("web/templates/admin_settings.html").read_text(encoding="utf-8")
+    script = Path("web/static/admin_settings.js").read_text(encoding="utf-8")
+
+    assert "Shopify language name" in template
+    assert "shopify_language_name" in script
+
+
 def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
     authed_client_no_db, monkeypatch
 ):
