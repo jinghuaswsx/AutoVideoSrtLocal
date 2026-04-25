@@ -144,6 +144,23 @@ def list_voices(
     }
 
 
+def fetch_voices_by_ids(*, language: str, voice_ids: list[str]) -> list[dict]:
+    """按 voice_id 列表从对应表里拉完整音色行（用于把推荐补齐到 items 列表）。"""
+    if not language or not voice_ids:
+        return []
+    cleaned = [str(v).strip() for v in voice_ids if str(v or "").strip()]
+    if not cleaned:
+        return []
+    table = _table_for_language(language)
+    placeholders = ",".join(["%s"] * len(cleaned))
+    rows = query(
+        f"SELECT {_SELECT_FIELDS} FROM {table} "
+        f"WHERE language = %s AND voice_id IN ({placeholders})",
+        (language, *cleaned),
+    )
+    return [_row_to_dict(r) for r in rows]
+
+
 def list_filter_options(*, language: str) -> dict:
     """返回某语种下所有声音的 label 枚举（去重 + 升序）。"""
     if not language:

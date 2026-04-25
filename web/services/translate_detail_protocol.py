@@ -13,16 +13,43 @@ def build_voice_library_payload(*, state: dict, owner_user_id: int | None, items
         "asr": steps.get("asr", "pending"),
         "voice_match": steps.get("voice_match", "pending"),
     }
+    candidates = state.get("voice_match_candidates", []) or []
+    # list_voices 受 page_size <= 200 限制，候选 voice_id 可能不在 items 里，
+    # 前端用 voice_id 反查 candidatesMap 时会丢推荐。这里把缺失的 candidate
+    # 行从同一张表补齐进 items，确保 10 条推荐都能渲染。
+    items = _ensure_candidates_in_items(items, candidates, state.get("target_lang"))
     return {
         "items": items,
         "total": total,
-        "candidates": state.get("voice_match_candidates", []),
+        "candidates": candidates,
         "fallback_voice_id": state.get("voice_match_fallback_voice_id"),
         "selected_voice_id": state.get("selected_voice_id"),
         "pipeline": pipeline,
         "voice_match_ready": pipeline["voice_match"] in ("waiting", "done"),
         "default_voice": default_voice,
     }
+
+
+def _ensure_candidates_in_items(items: list, candidates: list, language: str | None) -> list:
+    if not candidates or not language:
+        return items
+    existing = {
+        str(it.get("voice_id") or "").strip()
+        for it in items
+        if str(it.get("voice_id") or "").strip()
+    }
+    missing_ids = [
+        str(c.get("voice_id") or "").strip()
+        for c in candidates
+        if str(c.get("voice_id") or "").strip()
+        and str(c.get("voice_id") or "").strip() not in existing
+    ]
+    if not missing_ids:
+        return items
+    from appcore.voice_library_browse import fetch_voices_by_ids
+
+    extra = fetch_voices_by_ids(language=language, voice_ids=missing_ids)
+    return list(items) + extra
 
 
 def normalize_confirm_voice_payload(
