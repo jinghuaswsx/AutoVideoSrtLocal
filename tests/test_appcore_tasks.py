@@ -428,3 +428,41 @@ def test_submit_child_fails_when_target_lang_item_missing(
         tasks.submit_child(task_id=child_id, actor_user_id=db_user_translator)
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_approve_child_auto_all_done_when_last_child(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE", "FR"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    monkeypatch.setattr(tasks, "_find_target_lang_item",
+                        lambda product_id, lang: {"id": 1})
+    monkeypatch.setattr("appcore.pushes.compute_readiness",
+                        lambda i, p: {"ok": True})
+    monkeypatch.setattr("appcore.pushes.is_ready", lambda r: True)
+
+    de_id, fr_id = (
+        query_one("SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='DE'", (parent_id,))["id"],
+        query_one("SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='FR'", (parent_id,))["id"],
+    )
+    tasks.submit_child(task_id=de_id, actor_user_id=db_user_translator)
+    tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin)
+    parent = query_one("SELECT status FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_RAW_DONE   # 还没全部完成
+
+    tasks.submit_child(task_id=fr_id, actor_user_id=db_user_translator)
+    tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin)
+    parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
+    assert parent["status"] == tasks.PARENT_ALL_DONE
+    assert parent["completed_at"] is not None
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))

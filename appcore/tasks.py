@@ -323,6 +323,51 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
         conn.close()
 
 
+def approve_child(*, task_id: int, actor_user_id: int) -> None:
+    """管理员审核通过翻译；若该父任务下所有子都 done/cancelled 且至少一条 done，
+    则父任务自动 all_done。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE tasks SET status=%s, last_reason=NULL, "
+                    "completed_at=NOW(), updated_at=NOW() "
+                    "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
+                    (CHILD_DONE, int(task_id), CHILD_REVIEW),
+                )
+                if cur.rowcount == 0:
+                    raise StateError("child not in review")
+                _write_event(cur, task_id, "approved", actor_user_id, None)
+
+                cur.execute(
+                    "SELECT parent_task_id FROM tasks WHERE id=%s",
+                    (int(task_id),),
+                )
+                parent_id = cur.fetchone()["parent_task_id"]
+                cur.execute(
+                    "SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,)
+                )
+                statuses = [r["status"] for r in cur.fetchall()]
+                terminal = all(s in (CHILD_DONE, CHILD_CANCELLED) for s in statuses)
+                any_done = any(s == CHILD_DONE for s in statuses)
+                if terminal and any_done:
+                    cur.execute(
+                        "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() "
+                        "WHERE id=%s AND status=%s",
+                        (PARENT_ALL_DONE, int(parent_id), PARENT_RAW_DONE),
+                    )
+                    if cur.rowcount:
+                        _write_event(cur, parent_id, "completed", None, None)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+
 def cancel_parent(*, task_id: int, actor_user_id: int, reason: str) -> None:
     """admin 取消父任务；级联取消所有非 done 子任务，已 done 保留。"""
     if not reason or len(reason.strip()) < MIN_REASON_LEN:
