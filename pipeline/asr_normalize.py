@@ -240,5 +240,75 @@ def run_asr_normalize(
     user_id: int | None,
     utterances: list[dict],
 ) -> dict:
-    """run_asr_normalize 占位 — Task 6 实现。"""
-    raise NotImplementedError
+    """主入口。封装 detect → 路由 → translate → artifact 构建。
+
+    成功路径返回 artifact dict（含内部字段 _utterances_en，由 runner 拿走后写到
+    task["utterances_en"]，然后从 artifact 删掉再 set_artifact）。
+    失败路径直接抛异常（DetectLanguageFailedError / UnsupportedSourceLanguageError /
+    TranslateOutputInvalidError 或 translate_to_en 内的 LLM 异常）。
+    """
+    t0 = time.monotonic()
+    full_text = " ".join(u["text"] for u in utterances)
+
+    detect_result, detect_tokens = detect_language(
+        full_text, task_id=task_id, user_id=user_id,
+    )
+    lang = detect_result["language"]
+    conf = detect_result["confidence"]
+    is_mixed = detect_result["is_mixed"]
+
+    if lang == "other":
+        raise UnsupportedSourceLanguageError(
+            f"原视频语言检测为「other」（confidence={conf:.2f}），"
+            f"当前流水线仅支持中文/英文/西班牙语/葡萄牙语/法语/意大利语/日语/荷兰语/瑞典语/芬兰语。"
+            f"请使用支持的语言素材重建项目。"
+        )
+
+    if lang == "en":
+        route = "en_skip"
+    elif lang == "zh":
+        route = "zh_skip"
+    elif is_mixed:
+        route = "generic_fallback_mixed"
+    elif conf < LOW_CONFIDENCE_THRESHOLD:
+        route = "generic_fallback_low_confidence"
+    elif lang == "es":
+        route = "es_specialized"
+    else:
+        route = "generic_fallback"
+
+    utterances_en: list[dict] | None = None
+    translate_tokens: dict = {}
+    if route not in ("en_skip", "zh_skip"):
+        utterances_en, translate_tokens = translate_to_en(
+            utterances, detected_language=lang, route=route,
+            task_id=task_id, user_id=user_id,
+        )
+
+    artifact: dict[str, Any] = {
+        "detected_source_language": lang,
+        "confidence": conf,
+        "is_mixed": is_mixed,
+        "route": route,
+        "input": {
+            "language_label": LANG_LABELS.get(lang, lang),
+            "full_text_preview": full_text[:200],
+            "utterance_count": len(utterances),
+        },
+        "output": {
+            "full_text_preview": (
+                " ".join(u["text"] for u in utterances_en)[:200]
+                if utterances_en else full_text[:200]
+            ),
+            "utterance_count": len(utterances_en) if utterances_en else len(utterances),
+        },
+        "tokens": {"detect": detect_tokens, "translate": translate_tokens},
+        "elapsed_ms": int((time.monotonic() - t0) * 1000),
+        "model": {
+            "detect": "gemini-3.1-flash-lite-preview",
+            "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
+        },
+    }
+    if utterances_en:
+        artifact["_utterances_en"] = utterances_en
+    return artifact

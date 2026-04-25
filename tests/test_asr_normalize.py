@@ -239,3 +239,137 @@ def test_translate_to_en_passes_is_mixed_low_confidence_in_user_payload(
     payload = json.loads(user_msg)
     assert payload["is_mixed"] is True
     assert payload["low_confidence"] is False
+
+
+def _make_utterances():
+    return [
+        {"index": 0, "start": 0.5, "end": 2.3, "text": "Hola, este es un producto"},
+        {"index": 1, "start": 2.3, "end": 4.8, "text": "Mira esto"},
+    ]
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_en_to_en_skip(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "en", "confidence": 0.99, "is_mixed": False},
+                                 {"input_tokens": 100, "output_tokens": 30})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(task_id="t", user_id=1, utterances=_make_utterances())
+    assert artifact["route"] == "en_skip"
+    assert artifact["detected_source_language"] == "en"
+    assert "_utterances_en" not in artifact
+    mock_translate.assert_not_called()
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_zh_to_zh_skip(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "zh", "confidence": 0.98, "is_mixed": False},
+                                 {"input_tokens": 90, "output_tokens": 30})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(task_id="t", user_id=1, utterances=_make_utterances())
+    assert artifact["route"] == "zh_skip"
+    assert artifact["detected_source_language"] == "zh"
+    assert "_utterances_en" not in artifact
+    mock_translate.assert_not_called()
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_es_to_specialized(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "es", "confidence": 0.97, "is_mixed": False},
+                                 {"input_tokens": 320, "output_tokens": 40})
+    fake_en = [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
+               {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}]
+    mock_translate.return_value = (fake_en, {"input_tokens": 1850, "output_tokens": 1620})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(task_id="t", user_id=1, utterances=_make_utterances())
+    assert artifact["route"] == "es_specialized"
+    assert artifact["_utterances_en"] == fake_en
+    assert artifact["detected_source_language"] == "es"
+    assert artifact["confidence"] == 0.97
+    mock_translate.assert_called_once_with(
+        _make_utterances(), detected_language="es",
+        route="es_specialized", task_id="t", user_id=1,
+    )
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_pt_to_generic_fallback(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "pt", "confidence": 0.92, "is_mixed": False},
+                                 {})
+    mock_translate.return_value = ([{"index": 0, "start": 0, "end": 1, "text": "Hi"}], {})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(
+        task_id="t", user_id=1,
+        utterances=[{"index": 0, "start": 0, "end": 1, "text": "Olá"}],
+    )
+    assert artifact["route"] == "generic_fallback"
+    assert artifact["detected_source_language"] == "pt"
+    mock_translate.assert_called_once()
+    assert mock_translate.call_args.kwargs["route"] == "generic_fallback"
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_low_confidence_to_fallback(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "fr", "confidence": 0.45, "is_mixed": False},
+                                 {})
+    mock_translate.return_value = ([{"index": 0, "start": 0, "end": 1, "text": "Hi"}], {})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(
+        task_id="t", user_id=1,
+        utterances=[{"index": 0, "start": 0, "end": 1, "text": "Bonjour"}],
+    )
+    assert artifact["route"] == "generic_fallback_low_confidence"
+    assert mock_translate.call_args.kwargs["route"] == "generic_fallback_low_confidence"
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_routes_mixed_to_fallback(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "es", "confidence": 0.85, "is_mixed": True},
+                                 {})
+    mock_translate.return_value = ([{"index": 0, "start": 0, "end": 1, "text": "Hi"}], {})
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(
+        task_id="t", user_id=1,
+        utterances=[{"index": 0, "start": 0, "end": 1, "text": "Hola hello"}],
+    )
+    assert artifact["route"] == "generic_fallback_mixed"
+    assert mock_translate.call_args.kwargs["route"] == "generic_fallback_mixed"
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_raises_unsupported_on_other(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "other", "confidence": 0.88, "is_mixed": False},
+                                 {})
+    from pipeline.asr_normalize import run_asr_normalize, UnsupportedSourceLanguageError
+    with pytest.raises(UnsupportedSourceLanguageError) as exc:
+        run_asr_normalize(task_id="t", user_id=1, utterances=_make_utterances())
+    assert "other" in str(exc.value)
+    mock_translate.assert_not_called()
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_asr_normalize_artifact_includes_token_metadata(mock_detect, mock_translate):
+    mock_detect.return_value = ({"language": "es", "confidence": 0.97, "is_mixed": False},
+                                 {"input_tokens": 320, "output_tokens": 40})
+    mock_translate.return_value = (
+        [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
+         {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}],
+        {"input_tokens": 1850, "output_tokens": 1620},
+    )
+    from pipeline.asr_normalize import run_asr_normalize
+    artifact = run_asr_normalize(task_id="t", user_id=1, utterances=_make_utterances())
+    assert artifact["tokens"]["detect"] == {"input_tokens": 320, "output_tokens": 40}
+    assert artifact["tokens"]["translate"] == {"input_tokens": 1850, "output_tokens": 1620}
+    assert "elapsed_ms" in artifact and artifact["elapsed_ms"] >= 0
+    assert artifact["model"]["detect"] == "gemini-3.1-flash-lite-preview"
+    assert artifact["model"]["translate"] == "anthropic/claude-sonnet-4.6"
+    assert artifact["input"]["language_label"] == "西班牙语"
+    assert artifact["input"]["utterance_count"] == 2
+    assert artifact["output"]["utterance_count"] == 2
