@@ -39,6 +39,17 @@ def _uc(
 
 
 USE_CASES: dict[str, UseCase] = {
+    # 全能视频翻译（多源语种实验模块，独立于 video_translate）
+    "omni_translate.lid": _uc(
+        "omni_translate.lid",
+        "omni_translate",
+        "源语言识别（LID）",
+        "ASR 后用 LLM 识别 transcript 真实语种，覆盖 task.source_language",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
     # 视频翻译 v1
     "video_translate.localize": _uc(
         "video_translate.localize",
