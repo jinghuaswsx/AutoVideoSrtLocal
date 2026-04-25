@@ -288,6 +288,38 @@ _DEFAULT_WPS = {
     "fi": 2.1,
 }
 
+# Word-count tolerance for the rewrite convergence inner loop. Slow / long-word
+# target languages (de, ja, fi) get looser tolerance because the LLM struggles
+# to compress them tightly; fast / short-word targets (en) stay tight. Without
+# this, non-English source × slow target combos burn all 5×5=25 attempts.
+_WORD_TOLERANCE_BY_TARGET = {
+    "en": 0.10,
+    "de": 0.15,
+    "fr": 0.12,
+    "es": 0.12,
+    "it": 0.12,
+    "pt": 0.12,
+    "ja": 0.18,
+    "nl": 0.12,
+    "sv": 0.12,
+    "fi": 0.15,
+}
+
+# Max rewrite attempts inside one outer round. Languages where the LLM is more
+# likely to drift on word counts (de, ja, fi) get a couple more shots.
+_MAX_REWRITE_ATTEMPTS_BY_TARGET = {
+    "en": 5,
+    "de": 7,
+    "fr": 5,
+    "es": 5,
+    "it": 5,
+    "pt": 5,
+    "ja": 7,
+    "nl": 5,
+    "sv": 5,
+    "fi": 7,
+}
+
 
 def _tts_final_target_range(video_duration: float) -> tuple[float, float]:
     """Return the accepted final TTS duration range: [video-1s, video+2s]."""
@@ -568,12 +600,20 @@ class PipelineRunner:
                 )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
-                # ========= 字数收敛内循环（最多 5 次 rewrite）=========
-                # LLM 对 target_words 经常不听话。先确认文案字数在 ±10% 窗口内
-                # 再去跑 TTS，避免浪费 TTS 调用。
+                # ========= 字数收敛内循环 =========
+                # LLM 对 target_words 经常不听话。先确认文案字数在 ±tolerance 窗口
+                # 内再去跑 TTS，避免浪费 TTS 调用。
                 # 每次 attempt 的完整译文 JSON 单独落盘，UI 可逐一查看。
-                MAX_REWRITE_ATTEMPTS = 5
-                WORD_TOLERANCE = 0.10
+                # 上限和容差按目标语言查表：慢语种（de/ja/fi）更宽松，避免外层
+                # 5×5=25 次跑满。
+                MAX_REWRITE_ATTEMPTS = _MAX_REWRITE_ATTEMPTS_BY_TARGET.get(
+                    target_language_label, 5
+                )
+                WORD_TOLERANCE = _WORD_TOLERANCE_BY_TARGET.get(
+                    target_language_label, 0.10
+                )
+                round_record["max_rewrite_attempts"] = MAX_REWRITE_ATTEMPTS
+                round_record["word_tolerance"] = WORD_TOLERANCE
                 candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
                 localized_translation = None
                 chosen_attempt_idx = None
