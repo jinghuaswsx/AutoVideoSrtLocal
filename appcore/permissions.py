@@ -3,7 +3,7 @@
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
 - 三级角色：superadmin / admin / user
-- 权限项粒度：菜单/页面级，共 17 项，分 3 组（业务 / 管理 / 系统）
+- 权限项粒度：菜单/页面级 + 任务能力位，共 20 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
