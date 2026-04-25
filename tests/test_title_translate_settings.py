@@ -11,9 +11,11 @@ def _assert_structured_prompt(prompt):
     assert "标题:" in prompt
     assert "文案:" in prompt
     assert "描述:" in prompt
-    assert "标题:[...]" in prompt
-    assert "文案:[...]" in prompt
-    assert "描述:[...]" in prompt
+    assert "标题:[...]" not in prompt
+    assert "文案:[...]" not in prompt
+    assert "描述:[...]" not in prompt
+    assert "方括号" in prompt
+    assert "不允许" in prompt and "保留" in prompt and "英文" in prompt
     assert "- 标题最多 100 个字符。" in prompt
     assert "- 文案最多 200 个字符。" in prompt
     assert "- 描述最多 50 个字符。" in prompt
