@@ -156,3 +156,29 @@ def api_dispatch_pool():
     )
     rows = query_all(sql)
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/parent", methods=["POST"])
+@login_required
+@admin_required
+def api_create_parent():
+    payload = request.get_json(silent=True) or {}
+    try:
+        product_id = int(payload["media_product_id"])
+        item_id = payload.get("media_item_id")
+        item_id = int(item_id) if item_id is not None else None
+        countries = payload.get("countries") or []
+        translator_id = int(payload["translator_id"])
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({"error": f"参数错误: {e}"}), 400
+    try:
+        parent_id = tasks_svc.create_parent_task(
+            media_product_id=product_id,
+            media_item_id=item_id,
+            countries=countries,
+            translator_id=translator_id,
+            created_by=int(current_user.id),
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"parent_task_id": parent_id})
