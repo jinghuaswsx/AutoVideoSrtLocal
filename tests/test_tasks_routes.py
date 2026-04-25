@@ -119,3 +119,12 @@ def test_child_admin_endpoints_forbid_non_admin(authed_user_client_no_db):
 def test_events_endpoint_registered(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/api/9999/events")
     assert rsp.status_code in (200, 500)
+
+
+def test_index_html_contains_tab_buttons(authed_client_no_db):
+    """Verify the rendered tasks_list.html bootstraps the tab UI + JS."""
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+    assert 'data-tab="mine"' in body
+    assert 'data-tab="all"' in body
+    assert "tcRender" in body  # JS bootstrapped
