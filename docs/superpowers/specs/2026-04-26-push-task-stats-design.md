@@ -33,10 +33,12 @@ URL 形态：`/pushes/stats?date_from=2026-04-01&date_to=2026-04-26`。query 缺
 
 新增 `appcore/pushes.py::aggregate_stats_by_owner(date_from, date_to) -> dict`。
 
-```sql
+```python
+owner_name_expr = medias._media_product_owner_name_expr()
+sql = f"""
 SELECT
   u.id  AS user_id,
-  COALESCE(NULLIF(u.real_name,''), u.username, '未指派') AS owner_name,
+  COALESCE({owner_name_expr}, '未指派') AS owner_name,
   COUNT(*) AS submitted,
   SUM(CASE WHEN i.pushed_at IS NOT NULL THEN 1 ELSE 0 END) AS pushed
 FROM media_items i
@@ -49,13 +51,14 @@ WHERE i.deleted_at IS NULL
   AND i.created_at <  %s
 GROUP BY u.id, owner_name
 ORDER BY submitted DESC, owner_name ASC
+"""
 ```
 
 要点：
 
 - 与列表页一致：排除 `lang='en'`、排除 `deleted_at` 不为空的素材/产品。
 - 时间用半开右开区间 `[from_dt, to_dt)`，避免 `23:59:59` 边界 bug。
-- `owner_name` 取法对齐现有 `medias._media_product_owner_name_expr()`；产品负责人为空时归到「未指派」一行（保留可见，便于发现脏数据）。
+- `owner_name` 取法**直接复用** `medias._media_product_owner_name_expr()`（DB 有 `xingming` 列时返回 `COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)`，否则 `u.username`）。外层再 `COALESCE(..., '未指派')` 兜住 LEFT JOIN 失败的行。
 - `LEFT JOIN users`：用户被删除/为空时仍计入「未指派」，不静默丢数据。
 
 ### 时间归一化
