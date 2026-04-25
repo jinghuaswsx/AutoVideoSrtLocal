@@ -173,6 +173,77 @@
 .modal-field select:focus, .modal-field input[type="file"]:focus { border-color: var(--primary-color); background: var(--bg-card); }
 .modal-hint { font-size: 12px; color: #9ca3af; margin: -8px 0 16px; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ── 大号弹窗 ── */
+.modal-box.modal-box-wide { width: 560px; max-width: 92vw; }
+
+/* ── 红字粗体提示 ── */
+.modal-warning {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; margin-bottom: 16px;
+  background: #fee2e2; border: 1px solid #fecaca; border-radius: 10px;
+  color: #dc2626; font-weight: 700; font-size: 14px;
+}
+.modal-warning .warning-icon { font-size: 16px; }
+.modal-warning.shake { animation: modalShake .45s; }
+@keyframes modalShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* ── 弹窗内胶囊按钮：比页头更大一号 ── */
+.modal-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+.modal-lang-pill {
+  padding: 10px 18px; border-radius: 9999px; font-size: 14px; line-height: 1.2;
+  background: var(--bg-card); border: 1.5px solid var(--border-main);
+  color: var(--text-main); cursor: pointer; font-family: inherit;
+  transition: all .15s;
+}
+.modal-lang-pill:hover { border-color: oklch(56% 0.16 230); color: oklch(56% 0.16 230); }
+.modal-lang-pill.active {
+  background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
+}
+
+/* ── 视频拖拽区与预览（270x480） ── */
+.video-dropzone {
+  width: 270px; height: 480px; margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 24px; text-align: center;
+  border: 1.5px dashed var(--border-main); border-radius: 12px;
+  background: var(--bg-body); color: #9ca3af; cursor: pointer;
+  transition: all .2s;
+}
+.video-dropzone:hover, .video-dropzone.drag {
+  border-color: var(--primary-color);
+  background: oklch(94% 0.04 225);
+  color: var(--primary-color);
+}
+.video-dropzone .dz-icon { font-size: 36px; line-height: 1; }
+.video-dropzone .dz-title { font-size: 14px; font-weight: 600; color: var(--text-main); }
+.video-dropzone .dz-hint { font-size: 12px; color: #9ca3af; }
+.video-preview-wrap {
+  width: 270px; height: 480px; margin: 0 auto; position: relative;
+  border-radius: 12px; overflow: hidden; background: #000;
+}
+.video-preview-wrap video {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.video-preview-wrap .preview-clear {
+  position: absolute; top: 8px; right: 8px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); color: #fff;
+  border: none; cursor: pointer; font-size: 18px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit; transition: all .15s;
+}
+.video-preview-wrap .preview-clear:hover { background: rgba(0,0,0,0.85); }
+.video-preview-name {
+  text-align: center; font-size: 12px; color: #6b7280;
+  margin: 8px auto 0; max-width: 270px; word-break: break-all;
+}
 {% endblock %}
 {% block content %}
 <div class="page-header">
@@ -290,21 +361,36 @@
 
 <!-- 上传弹窗 -->
 <div class="modal-overlay" id="uploadOverlay">
-  <div class="modal-box">
+  <div class="modal-box modal-box-wide">
     <h3>新建多语种翻译项目</h3>
     <form id="uploadForm" enctype="multipart/form-data">
-      <div class="modal-field">
-        <label for="videoFile">选择视频</label>
-        <input type="file" id="videoFile" name="video" accept="video/*" required />
+      <div class="modal-warning" id="langWarning">
+        <span class="warning-icon">⚠️</span>
+        <span>先选择目标语言</span>
       </div>
       <div class="modal-field">
-        <label for="targetLangSelect">目标语言</label>
-        <select id="targetLangSelect" name="target_lang" required>
+        <label>目标语言</label>
+        <div class="modal-lang-pills" id="modalLangPills" role="radiogroup" aria-label="目标语言">
           {% for lang in supported_langs %}
-            {% set label = {'de':'DE 德语','fr':'FR 法语','es':'ES 西语','it':'IT 意语','ja':'JP 日语','pt':'PT 葡语','nl':'NL 荷兰语','sv':'SE 瑞典语','fi':'FI 芬兰语'}[lang] %}
-            <option value="{{ lang }}" {{ 'selected' if (current_lang or 'de') == lang else '' }}>{{ label }}</option>
+            {% set label = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语','nl':'🇳🇱 荷兰语','sv':'🇸🇪 瑞典语','fi':'🇫🇮 芬兰语'}[lang] %}
+            <button type="button" class="modal-lang-pill" data-lang="{{ lang }}" role="radio" aria-checked="false">{{ label }}</button>
           {% endfor %}
-        </select>
+        </div>
+        <input type="hidden" id="targetLangSelect" name="target_lang" value="">
+      </div>
+      <div class="modal-field">
+        <label>选择视频</label>
+        <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
+          <div class="dz-icon">📹</div>
+          <div class="dz-title">拖拽视频到这里</div>
+          <div class="dz-hint">或点击选择文件 · 270×480 预览</div>
+        </div>
+        <div id="videoPreviewWrap" class="video-preview-wrap" style="display:none">
+          <video id="videoPreview" controls preload="metadata" playsinline></video>
+          <button type="button" class="preview-clear" id="previewClear" title="移除并重新选择" aria-label="移除视频">×</button>
+        </div>
+        <div id="videoPreviewName" class="video-preview-name" style="display:none"></div>
+        <input type="file" id="videoFile" name="video" accept="video/*" hidden />
       </div>
       <p class="modal-hint">上传后将自动识别视频源语言（中文/英文）</p>
       <div class="modal-actions">
@@ -356,24 +442,120 @@ async function deleteTask(e, taskId) {
   else { var data = await res.json(); alert(data.error || '删除失败'); }
 }
 
-function closeUpload() { document.getElementById('uploadOverlay').classList.remove('open'); }
+function _resetUploadModal() {
+  document.querySelectorAll('#modalLangPills .modal-lang-pill').forEach(function(b) {
+    b.classList.remove('active');
+    b.setAttribute('aria-checked', 'false');
+  });
+  document.getElementById('targetLangSelect').value = '';
+  document.getElementById('videoFile').value = '';
+  _clearVideoPreview();
+  var warning = document.getElementById('langWarning');
+  if (warning) warning.classList.remove('shake');
+}
+
+function _clearVideoPreview() {
+  var preview = document.getElementById('videoPreview');
+  var wrap = document.getElementById('videoPreviewWrap');
+  var name = document.getElementById('videoPreviewName');
+  var dz = document.getElementById('videoDropzone');
+  if (preview && preview.src) {
+    try { URL.revokeObjectURL(preview.src); } catch (_) {}
+    preview.removeAttribute('src');
+    try { preview.load(); } catch (_) {}
+  }
+  if (wrap) wrap.style.display = 'none';
+  if (name) { name.style.display = 'none'; name.textContent = ''; }
+  if (dz) dz.style.display = 'flex';
+}
+
+function _setVideoPreview(file) {
+  var preview = document.getElementById('videoPreview');
+  var wrap = document.getElementById('videoPreviewWrap');
+  var name = document.getElementById('videoPreviewName');
+  var dz = document.getElementById('videoDropzone');
+  if (preview.src) { try { URL.revokeObjectURL(preview.src); } catch (_) {} }
+  preview.src = URL.createObjectURL(file);
+  wrap.style.display = 'block';
+  name.textContent = file.name;
+  name.style.display = 'block';
+  dz.style.display = 'none';
+}
+
+function closeUpload() {
+  document.getElementById('uploadOverlay').classList.remove('open');
+  _resetUploadModal();
+}
 document.getElementById('uploadOverlay').addEventListener('click', function(e) {
   if (e.target === this) closeUpload();
 });
 
-// 从 URL 查询串拿当前筛选语言，用作打开弹窗时的默认目标语言。
-function _getInitialTargetLang() {
-  var params = new URLSearchParams(window.location.search);
-  var lang = (params.get('lang') || '').trim();
-  var supported = ['de', 'fr', 'es', 'it', 'pt', 'ja', 'nl', 'sv', 'fi'];
-  return supported.indexOf(lang) >= 0 ? lang : 'de';
-}
-
 function openUpload() {
-  var select = document.getElementById('targetLangSelect');
-  if (select) select.value = _getInitialTargetLang();
+  _resetUploadModal();
   document.getElementById('uploadOverlay').classList.add('open');
 }
+
+(function initLangPills() {
+  var pills = document.querySelectorAll('#modalLangPills .modal-lang-pill');
+  pills.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      pills.forEach(function(b) {
+        b.classList.remove('active');
+        b.setAttribute('aria-checked', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-checked', 'true');
+      document.getElementById('targetLangSelect').value = btn.dataset.lang;
+      document.getElementById('langWarning').classList.remove('shake');
+    });
+  });
+})();
+
+(function initDropzone() {
+  var dz = document.getElementById('videoDropzone');
+  var fileInput = document.getElementById('videoFile');
+  if (!dz || !fileInput) return;
+
+  dz.addEventListener('click', function() { fileInput.click(); });
+  dz.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener('change', function() {
+    if (fileInput.files && fileInput.files[0]) _setVideoPreview(fileInput.files[0]);
+  });
+
+  ['dragenter', 'dragover'].forEach(function(ev) {
+    dz.addEventListener(ev, function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dz.classList.add('drag');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function(ev) {
+    dz.addEventListener(ev, function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dz.classList.remove('drag');
+    });
+  });
+  dz.addEventListener('drop', function(e) {
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    var file = [].slice.call(files).find(function(f) { return (f.type || '').indexOf('video/') === 0; });
+    if (!file) { alert('请拖入视频文件'); return; }
+    try {
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+    } catch (_) {
+      // 个别浏览器不支持 DataTransfer 写入，仅用预览，提交时再校验
+    }
+    _setVideoPreview(file);
+  });
+
+  document.getElementById('previewClear').addEventListener('click', function() {
+    _clearVideoPreview();
+    fileInput.value = '';
+  });
+})();
 
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
   e.preventDefault();
@@ -381,15 +563,29 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   var btn = document.getElementById('uploadBtn');
   var fileInput = document.getElementById('videoFile');
   var langSelect = document.getElementById('targetLangSelect');
-  if (!fileInput.files[0]) return;
-  if (!langSelect || !langSelect.value) {
-    alert('请选择目标语言');
+  var warning = document.getElementById('langWarning');
+  var pillsBox = document.getElementById('modalLangPills');
+  var targetLang = langSelect.value;
+
+  if (!targetLang) {
+    alert('没有选择语言');
+    if (warning) {
+      warning.classList.remove('shake');
+      void warning.offsetWidth;
+      warning.classList.add('shake');
+    }
+    if (pillsBox && pillsBox.scrollIntoView) {
+      pillsBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    var firstPill = pillsBox && pillsBox.querySelector('.modal-lang-pill');
+    if (firstPill) firstPill.focus();
+    return;
+  }
+  if (!fileInput.files[0]) {
+    alert('请选择视频文件');
     return;
   }
 
-  var file = fileInput.files[0];
-  var sizeMB = (file.size / 1024 / 1024).toFixed(1);
-  var targetLang = langSelect.value;
   btn.disabled = true;
   btn.textContent = '准备中...';
 
@@ -401,7 +597,7 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
       body: formData,
     });
     var data = await res.json();
-    if (!res.ok) throw new Error(data.error || '鍒涘缓浠诲姟澶辫触');
+    if (!res.ok) throw new Error(data.error || '创建任务失败');
     window.location.href = data.redirect_url || ('/multi-translate/' + data.task_id);
   } catch (err) {
     alert(err.message);

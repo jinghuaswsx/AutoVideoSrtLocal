@@ -350,6 +350,46 @@ def test_multi_translate_create_modal_uses_visible_target_language_select():
     assert "var targetLang = _getTargetLang();" not in template
 
 
+def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
+
+    # 红字粗体提示
+    assert 'id="langWarning"' in template
+    assert "先选择目标语言" in template
+
+    # 胶囊按钮代替 select
+    assert 'id="modalLangPills"' in template
+    assert 'class="modal-lang-pill"' in template
+    assert 'data-lang="{{ lang }}"' in template
+    # 不再有 <select> 元素
+    assert "<select id=\"targetLangSelect\"" not in template
+    # 没有默认选中（不再用 current_lang or 'de'）
+    assert "(current_lang or 'de')" not in template
+    # 隐藏 input 保留接口名称
+    assert 'type="hidden" id="targetLangSelect" name="target_lang" value=""' in template
+
+    # 拖拽区与 270x480 预览
+    assert 'id="videoDropzone"' in template
+    assert "拖拽视频到这里" in template
+    assert 'id="videoPreviewWrap"' in template
+    assert 'id="videoPreview"' in template
+    assert "width: 270px; height: 480px" in template
+
+    # 拖放 + 预览 JS
+    assert "URL.createObjectURL" in template
+    assert "URL.revokeObjectURL" in template
+    assert "addEventListener('drop'" in template
+    assert "new DataTransfer()" in template
+
+    # 校验：未选语言时弹窗 + 抖动
+    assert "没有选择语言" in template
+    assert "warning.classList.add('shake')" in template
+
+    # 大号弹窗
+    assert 'class="modal-box modal-box-wide"' in template
+
+
 def test_voice_selector_multi_exposes_single_frame_subtitle_preview():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_voice_selector_multi.html").read_text(encoding="utf-8")
