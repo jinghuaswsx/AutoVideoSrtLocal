@@ -401,13 +401,14 @@
       <div class="modal-field" id="sourceLanguageField">
         <label for="sourceLanguageSelect">源语言</label>
         <select id="sourceLanguageSelect" name="source_language" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
-          <option value="zh" selected>中文（豆包 ASR）</option>
+          <option value="" selected>自动检测（推荐）</option>
+          <option value="zh">中文（豆包 ASR）</option>
           <option value="en">英文（豆包 ASR）</option>
           <option value="es">西班牙语（ElevenLabs Scribe）</option>
+          <option value="pt">葡萄牙语（ElevenLabs Scribe）</option>
         </select>
-        <div class="modal-hint" style="margin:6px 0 0;">影响 ASR 引擎选择；上传后 LID 会自动校验真实语种</div>
+        <div class="modal-hint" style="margin:6px 0 0;">选具体语言可跳过 LLM 自动检测，直接走对应路径；不填则由 LLM 识别 ASR 文本判断</div>
       </div>
-      <p class="modal-hint">上传后将自动识别视频源语言（中文/英文/西班牙语）</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
         <button type="submit" class="btn btn-primary btn-sm" id="uploadBtn">上传并创建</button>

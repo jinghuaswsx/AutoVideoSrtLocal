@@ -247,3 +247,168 @@ def test_step_asr_normalize_failure_sets_status_error_to_stop_pipeline(
     update_kwargs = mock_state.update.call_args.kwargs
     assert update_kwargs.get("status") == "error"
     assert "error" in update_kwargs
+
+
+# ---------------------------------------------------------------------------
+# user_specified_source_language 路径：跳过 detect_language，直接路由
+# ---------------------------------------------------------------------------
+
+@patch("appcore.runtime_multi.task_state")
+@patch("appcore.runtime_multi.pipeline_asr_normalize")
+def test_step_asr_normalize_user_specified_es_calls_run_user_specified(
+    mock_asr_norm, mock_state,
+):
+    """user_specified=True + es → 走 run_user_specified（不调 run_asr_normalize）。"""
+    mock_state.get.return_value = {
+        "utterances": _utterances(), "_user_id": 1,
+        "source_language": "es",
+        "user_specified_source_language": True,
+    }
+    fake_en = [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
+               {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}]
+    mock_asr_norm.run_user_specified.return_value = {
+        "detected_source_language": "es",
+        "confidence": 1.0,
+        "is_mixed": False,
+        "route": "es_specialized",
+        "detection_source": "user_specified",
+        "input": {"language_label": "西班牙语",
+                   "full_text_preview": "Hola este...",
+                   "utterance_count": 2},
+        "output": {"full_text_preview": "Hi Look", "utterance_count": 2},
+        "tokens": {"detect": {}, "translate": {}},
+        "elapsed_ms": 80,
+        "model": {"detect": None, "translate": "anthropic/claude-sonnet-4.6"},
+        "_utterances_en": fake_en,
+    }
+    runner = _make_runner()
+    runner._step_asr_normalize("t-es-user")
+
+    mock_asr_norm.run_user_specified.assert_called_once()
+    mock_asr_norm.run_asr_normalize.assert_not_called()
+    update_kwargs = mock_state.update.call_args.kwargs
+    assert update_kwargs["source_language"] == "en"
+    assert update_kwargs["detected_source_language"] == "es"
+    assert update_kwargs["utterances_en"] == fake_en
+    artifact_arg = mock_state.set_artifact.call_args.args[2]
+    assert artifact_arg["detection_source"] == "user_specified"
+
+
+@patch("appcore.runtime_multi.task_state")
+@patch("appcore.runtime_multi.pipeline_asr_normalize")
+def test_step_asr_normalize_user_specified_pt_uses_generic_fallback(
+    mock_asr_norm, mock_state,
+):
+    """user_specified=True + pt → run_user_specified 返回 generic_fallback route。"""
+    mock_state.get.return_value = {
+        "utterances": _utterances(), "_user_id": 1,
+        "source_language": "pt",
+        "user_specified_source_language": True,
+    }
+    mock_asr_norm.run_user_specified.return_value = {
+        "detected_source_language": "pt",
+        "confidence": 1.0, "is_mixed": False,
+        "route": "generic_fallback",
+        "detection_source": "user_specified",
+        "input": {"language_label": "葡萄牙语",
+                   "full_text_preview": "Olá", "utterance_count": 2},
+        "output": {"full_text_preview": "Hello", "utterance_count": 2},
+        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 80,
+        "model": {"detect": None, "translate": "anthropic/claude-sonnet-4.6"},
+        "_utterances_en": [{"index": 0, "start": 0, "end": 1, "text": "Hello"},
+                           {"index": 1, "start": 1, "end": 2, "text": "."}],
+    }
+    runner = _make_runner()
+    runner._step_asr_normalize("t-pt")
+    mock_asr_norm.run_user_specified.assert_called_once_with(
+        task_id="t-pt", user_id=1, utterances=_utterances(), source_language="pt",
+    )
+    mock_asr_norm.run_asr_normalize.assert_not_called()
+
+
+@patch("appcore.runtime_multi.task_state")
+@patch("appcore.runtime_multi.pipeline_asr_normalize")
+def test_step_asr_normalize_user_specified_zh_writes_artifact(
+    mock_asr_norm, mock_state,
+):
+    """user_specified=True + zh → run_user_specified 返回 zh_skip，仍写 artifact。
+
+    与自动检测 zh_skip 路径（不写 artifact）不同：用户指定时一定会有 artifact，
+    让详情页能展示「用户指定语言」卡片。
+    """
+    mock_state.get.return_value = {
+        "utterances": _utterances(), "_user_id": 1,
+        "source_language": "zh",
+        "user_specified_source_language": True,
+    }
+    mock_asr_norm.run_user_specified.return_value = {
+        "detected_source_language": "zh",
+        "confidence": 1.0, "is_mixed": False,
+        "route": "zh_skip",
+        "detection_source": "user_specified",
+        "input": {"language_label": "中文", "full_text_preview": "你好",
+                   "utterance_count": 2},
+        "output": {"full_text_preview": "你好", "utterance_count": 2},
+        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 5,
+        "model": {"detect": None, "translate": None},
+    }
+    runner = _make_runner()
+    runner._step_asr_normalize("t-zh-user")
+
+    mock_asr_norm.run_user_specified.assert_called_once()
+    mock_asr_norm.run_asr_normalize.assert_not_called()
+    # zh_skip 路径不写 utterances_en
+    update_kwargs = mock_state.update.call_args.kwargs
+    assert update_kwargs["source_language"] == "zh"
+    assert "utterances_en" not in update_kwargs
+    # 但 artifact 一定写
+    mock_state.set_artifact.assert_called_once()
+
+
+@patch("appcore.runtime_multi.task_state")
+@patch("appcore.runtime_multi.pipeline_asr_normalize")
+def test_step_asr_normalize_user_specified_invalid_lang_marks_failed(
+    mock_asr_norm, mock_state,
+):
+    """user_specified=True 但 source_language 不在支持范围 → step failed。"""
+    mock_state.get.return_value = {
+        "utterances": _utterances(), "_user_id": 1,
+        "source_language": "ru",  # 不在 zh/en/es/pt
+        "user_specified_source_language": True,
+    }
+    runner = _make_runner()
+    runner._step_asr_normalize("t-bad")
+    mock_asr_norm.run_user_specified.assert_not_called()
+    mock_asr_norm.run_asr_normalize.assert_not_called()
+    update_kwargs = mock_state.update.call_args.kwargs
+    assert update_kwargs.get("status") == "error"
+
+
+@patch("appcore.runtime_multi.task_state")
+@patch("appcore.runtime_multi.pipeline_asr_normalize")
+def test_step_asr_normalize_auto_detect_unaffected_when_user_specified_false(
+    mock_asr_norm, mock_state,
+):
+    """user_specified=False（默认）：仍走 run_asr_normalize 完整 detect 路径。"""
+    mock_state.get.return_value = {
+        "utterances": _utterances(), "_user_id": 1,
+        "source_language": "es",
+        "user_specified_source_language": False,
+    }
+    mock_asr_norm.run_asr_normalize.return_value = {
+        "detected_source_language": "es",
+        "confidence": 0.9, "is_mixed": False,
+        "route": "es_specialized",
+        "detection_source": "llm",
+        "input": {"language_label": "西班牙语",
+                   "full_text_preview": "Hola", "utterance_count": 2},
+        "output": {"full_text_preview": "Hi", "utterance_count": 2},
+        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 100,
+        "model": {"detect": "g", "translate": "c"},
+        "_utterances_en": [{"index": 0, "start": 0, "end": 1, "text": "Hi"},
+                           {"index": 1, "start": 1, "end": 2, "text": "Look"}],
+    }
+    runner = _make_runner()
+    runner._step_asr_normalize("t-auto")
+    mock_asr_norm.run_asr_normalize.assert_called_once()
+    mock_asr_norm.run_user_specified.assert_not_called()

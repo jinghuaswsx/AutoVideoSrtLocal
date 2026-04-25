@@ -12,14 +12,21 @@
 {% include "_translate_detail_shell.html" %}
 {% if state.asr_normalize_artifact %}
 {% set norm = state.asr_normalize_artifact %}
+{% set is_user_specified = norm.detection_source == 'user_specified' %}
 <section class="card asr-normalize-card">
   <header class="card-header">
     <h3>原文标准化</h3>
-    <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
+    <div class="card-header-right">
+      <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
+      <button type="button" class="btn-relang" id="btnReselectLang">重选语言</button>
+    </div>
   </header>
   <div class="kv">
-    <div><span class="k">检测语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
-    <div><span class="k">置信度</span><span class="v">{{ '%.2f' % norm.confidence }}</span></div>
+    <div>
+      <span class="k">{{ '用户指定语言' if is_user_specified else '检测语言' }}</span>
+      <span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span>
+    </div>
+    <div><span class="k">置信度</span><span class="v">{{ '100%' if is_user_specified else ('%.2f' % norm.confidence) }}</span></div>
     <div><span class="k">是否混合</span><span class="v">{{ '是' if norm.is_mixed else '否' }}</span></div>
     <div><span class="k">耗时</span><span class="v">{{ (norm.elapsed_ms / 1000) | round(1) }}s</span></div>
   </div>
@@ -41,7 +48,67 @@
       · translate: {{ norm.tokens.translate.input_tokens }}↑/{{ norm.tokens.translate.output_tokens or 0 }}↓
     {% endif %}
   </div>
+
+  <div class="relang-panel hidden" id="relangPanel">
+    <label for="relangSelect">改选源语言</label>
+    <select id="relangSelect">
+      <option value="">自动检测（推荐）</option>
+      <option value="zh">中文（豆包 ASR）</option>
+      <option value="en">英文（豆包 ASR）</option>
+      <option value="es">西班牙语（ElevenLabs Scribe）</option>
+      <option value="pt">葡萄牙语（ElevenLabs Scribe）</option>
+    </select>
+    <div class="relang-hint">保存后会从「原文标准化」步骤开始重跑，并丢弃当前的翻译/TTS/字幕/合成产物</div>
+    <div class="relang-actions">
+      <button type="button" class="btn-cancel" id="btnRelangCancel">取消</button>
+      <button type="button" class="btn-save" id="btnRelangSave">保存并重跑</button>
+    </div>
+  </div>
 </section>
+
+<script>
+(function() {
+  var current = {{ (state.user_specified_source_language and state.source_language or '') | tojson }};
+  var sel = document.getElementById('relangSelect');
+  if (sel && current) sel.value = current;
+
+  var panel = document.getElementById('relangPanel');
+  var btnOpen = document.getElementById('btnReselectLang');
+  var btnCancel = document.getElementById('btnRelangCancel');
+  var btnSave = document.getElementById('btnRelangSave');
+
+  if (btnOpen) btnOpen.addEventListener('click', function() {
+    panel.classList.remove('hidden');
+    sel.focus();
+  });
+  if (btnCancel) btnCancel.addEventListener('click', function() {
+    panel.classList.add('hidden');
+  });
+  if (btnSave) btnSave.addEventListener('click', async function() {
+    var newLang = sel.value;
+    var label = sel.options[sel.selectedIndex].text;
+    if (!confirm('改语言为「' + label + '」会丢弃当前的翻译/TTS/字幕/合成产物，并从「原文标准化」步骤开始重跑。\n\n确认继续吗？')) {
+      return;
+    }
+    btnSave.disabled = true;
+    btnSave.textContent = '提交中...';
+    try {
+      var res = await fetch('{{ api_base or "/api/omni-translate" }}/{{ task_id }}/source-language', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({source_language: newLang}),
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || '改语言失败');
+      window.location.reload();
+    } catch (err) {
+      alert(err.message);
+      btnSave.disabled = false;
+      btnSave.textContent = '保存并重跑';
+    }
+  });
+})();
+</script>
 
 <style>
   .asr-normalize-card {
@@ -99,6 +166,80 @@
     font-size: var(--text-xs);
     margin-top: var(--space-3);
     font-family: var(--font-mono);
+  }
+  .asr-normalize-card .card-header-right {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+  }
+  .asr-normalize-card .btn-relang {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 4px 10px;
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease);
+  }
+  .asr-normalize-card .btn-relang:hover {
+    background: var(--accent-subtle);
+  }
+  .asr-normalize-card .relang-panel {
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .asr-normalize-card .relang-panel.hidden {
+    display: none;
+  }
+  .asr-normalize-card .relang-panel label {
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+  .asr-normalize-card .relang-panel select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    background: #fff;
+  }
+  .asr-normalize-card .relang-hint {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .asr-normalize-card .relang-actions {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
+  }
+  .asr-normalize-card .relang-actions button {
+    padding: 6px 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    cursor: pointer;
+    border: 1px solid var(--border-strong);
+  }
+  .asr-normalize-card .relang-actions .btn-cancel {
+    background: #fff;
+    color: var(--fg);
+  }
+  .asr-normalize-card .relang-actions .btn-save {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+  }
+  .asr-normalize-card .relang-actions .btn-save:hover {
+    background: var(--accent-hover);
+  }
+  .asr-normalize-card .relang-actions .btn-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>
 {% endif %}

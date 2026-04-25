@@ -373,3 +373,93 @@ def test_run_asr_normalize_artifact_includes_token_metadata(mock_detect, mock_tr
     assert artifact["input"]["language_label"] == "西班牙语"
     assert artifact["input"]["utterance_count"] == 2
     assert artifact["output"]["utterance_count"] == 2
+    assert artifact["detection_source"] == "llm"
+
+
+# ---------------------------------------------------------------------------
+# run_user_specified：用户明确指定语言时跳过 detect_language 直接路由
+# ---------------------------------------------------------------------------
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_user_specified_es_routes_to_es_specialized_translates(
+    mock_detect, mock_translate,
+):
+    mock_translate.return_value = (
+        [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
+         {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}],
+        {"input_tokens": 100, "output_tokens": 80},
+    )
+    from pipeline.asr_normalize import run_user_specified
+    artifact = run_user_specified(
+        task_id="t", user_id=1, utterances=_make_utterances(), source_language="es",
+    )
+    mock_detect.assert_not_called()
+    mock_translate.assert_called_once()
+    assert mock_translate.call_args.kwargs["route"] == "es_specialized"
+    assert artifact["route"] == "es_specialized"
+    assert artifact["detected_source_language"] == "es"
+    assert artifact["confidence"] == 1.0
+    assert artifact["is_mixed"] is False
+    assert artifact["detection_source"] == "user_specified"
+    assert artifact["model"]["detect"] is None
+    assert artifact["model"]["translate"] == "anthropic/claude-sonnet-4.6"
+    assert "_utterances_en" in artifact
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_user_specified_pt_uses_generic_fallback_translates(
+    mock_detect, mock_translate,
+):
+    mock_translate.return_value = (
+        [{"index": 0, "start": 0, "end": 1, "text": "Hello"},
+         {"index": 1, "start": 1, "end": 2, "text": "Look"}],
+        {"input_tokens": 100, "output_tokens": 80},
+    )
+    from pipeline.asr_normalize import run_user_specified
+    artifact = run_user_specified(
+        task_id="t", user_id=1, utterances=_make_utterances(), source_language="pt",
+    )
+    mock_detect.assert_not_called()
+    mock_translate.assert_called_once()
+    assert mock_translate.call_args.kwargs["route"] == "generic_fallback"
+    assert artifact["route"] == "generic_fallback"
+    assert artifact["detected_source_language"] == "pt"
+    assert artifact["detection_source"] == "user_specified"
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_user_specified_zh_skips_translate(mock_detect, mock_translate):
+    from pipeline.asr_normalize import run_user_specified
+    artifact = run_user_specified(
+        task_id="t", user_id=1, utterances=_make_utterances(), source_language="zh",
+    )
+    mock_detect.assert_not_called()
+    mock_translate.assert_not_called()
+    assert artifact["route"] == "zh_skip"
+    assert "_utterances_en" not in artifact
+    assert artifact["model"]["translate"] is None
+
+
+@patch("pipeline.asr_normalize.translate_to_en")
+@patch("pipeline.asr_normalize.detect_language")
+def test_run_user_specified_en_skips_translate(mock_detect, mock_translate):
+    from pipeline.asr_normalize import run_user_specified
+    artifact = run_user_specified(
+        task_id="t", user_id=1, utterances=_make_utterances(), source_language="en",
+    )
+    mock_detect.assert_not_called()
+    mock_translate.assert_not_called()
+    assert artifact["route"] == "en_skip"
+    assert "_utterances_en" not in artifact
+
+
+def test_run_user_specified_rejects_unsupported_lang():
+    from pipeline.asr_normalize import run_user_specified
+    with pytest.raises(ValueError) as exc:
+        run_user_specified(
+            task_id="t", user_id=1, utterances=_make_utterances(), source_language="ru",
+        )
+    assert "ru" in str(exc.value)

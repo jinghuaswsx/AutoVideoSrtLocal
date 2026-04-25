@@ -340,13 +340,15 @@ class MultiTranslateRunner(PipelineRunner):
     def _step_asr_normalize(self, task_id: str) -> None:
         """ASR 后的原文 → en-US 标准化。
 
-        - 空 utterances → 短路 done
-        - utterances_en 已存在或 source_language ∈ {en, zh} → 短路 done（resume 幂等）
-        - 否则调 pipeline_asr_normalize.run_asr_normalize：
-          - 成功路径写 source_language / detected_source_language / utterances_en（若有）+
-            asr_normalize artifact
-          - UnsupportedSourceLanguageError / DetectLanguageFailedError /
-            TranslateOutputInvalidError 等任何异常 → step failed + task["error"]，artifact 不写入
+        分两条路径：
+        - user_specified=True：跳过 detect_language，按用户选定语言直接路由
+          （zh/en/es/pt → run_user_specified），artifact.detection_source="user_specified"
+        - user_specified=False：当前完整逻辑，先 detect 再路由
+
+        其它短路：
+        - 空 utterances → done
+        - asr_normalize_artifact / utterances_en 已存在 → done（resume 幂等）
+        - 自动检测路径下 source_language ∈ {en, zh} → done 不写 artifact（LLM 没跑）
         """
         task = task_state.get(task_id)
         utterances = task.get("utterances") or []
@@ -357,29 +359,63 @@ class MultiTranslateRunner(PipelineRunner):
             )
             return
 
-        if task.get("utterances_en") or task.get("source_language") in ("en", "zh"):
-            # resume 幂等：已经跑过或已是 zh/en skip 路径
+        # resume 幂等：artifact 或 utterances_en 已经在了
+        if task.get("asr_normalize_artifact") or task.get("utterances_en"):
             self._set_step(
                 task_id, "asr_normalize", "done", "已标准化（resume 跳过）",
             )
             return
 
-        self._set_step(
-            task_id, "asr_normalize", "running", "正在识别原文语言…",
-        )
-        try:
-            artifact = pipeline_asr_normalize.run_asr_normalize(
-                task_id=task_id, user_id=self.user_id, utterances=utterances,
+        user_specified = bool(task.get("user_specified_source_language"))
+        src_lang = (task.get("source_language") or "").strip()
+
+        if user_specified:
+            if src_lang not in ("zh", "en", "es", "pt"):
+                err = (
+                    f"user_specified=True 但 source_language={src_lang!r} "
+                    f"不在支持范围（zh/en/es/pt）"
+                )
+                self._set_step(task_id, "asr_normalize", "failed", err)
+                task_state.update(task_id, error=err, status="error")
+                return
+            self._set_step(
+                task_id, "asr_normalize", "running",
+                f"用户指定 {src_lang}，跳过 LLM 语言检测…",
             )
-        except _AsnUnsupportedError as exc:
-            self._set_step(task_id, "asr_normalize", "failed", str(exc))
-            task_state.update(task_id, error=str(exc), status="error")
-            return
-        except Exception as exc:
-            err = f"原文标准化失败：{exc}"
-            self._set_step(task_id, "asr_normalize", "failed", err)
-            task_state.update(task_id, error=err, status="error")
-            return
+            try:
+                artifact = pipeline_asr_normalize.run_user_specified(
+                    task_id=task_id, user_id=self.user_id,
+                    utterances=utterances, source_language=src_lang,
+                )
+            except Exception as exc:
+                err = f"按用户指定语言标准化失败：{exc}"
+                self._set_step(task_id, "asr_normalize", "failed", err)
+                task_state.update(task_id, error=err, status="error")
+                return
+        else:
+            # 自动检测路径下，LID 已把 zh/en 写回 source_language 时跳过 detect
+            if src_lang in ("en", "zh"):
+                self._set_step(
+                    task_id, "asr_normalize", "done",
+                    "原文为英文/中文，跳过标准化",
+                )
+                return
+            self._set_step(
+                task_id, "asr_normalize", "running", "正在识别原文语言…",
+            )
+            try:
+                artifact = pipeline_asr_normalize.run_asr_normalize(
+                    task_id=task_id, user_id=self.user_id, utterances=utterances,
+                )
+            except _AsnUnsupportedError as exc:
+                self._set_step(task_id, "asr_normalize", "failed", str(exc))
+                task_state.update(task_id, error=str(exc), status="error")
+                return
+            except Exception as exc:
+                err = f"原文标准化失败：{exc}"
+                self._set_step(task_id, "asr_normalize", "failed", err)
+                task_state.update(task_id, error=err, status="error")
+                return
 
         # 拆 artifact：_utterances_en 单独写到 task["utterances_en"]，不进 artifact 落盘
         utterances_en = artifact.pop("_utterances_en", None)
@@ -406,10 +442,10 @@ class MultiTranslateRunner(PipelineRunner):
                 f"{artifact['detected_source_language']} → 英文标准化完成（低置信兜底）",
             "generic_fallback_mixed": "混合语言 → 英文标准化完成（兜底）",
         }
-        self._set_step(
-            task_id, "asr_normalize", "done",
-            msg_map.get(artifact["route"], "原文标准化完成"),
-        )
+        base_msg = msg_map.get(artifact["route"], "原文标准化完成")
+        if artifact.get("detection_source") == "user_specified":
+            base_msg = f"{base_msg}（用户指定）"
+        self._set_step(task_id, "asr_normalize", "done", base_msg)
         task_state.set_artifact(task_id, "asr_normalize", artifact)
 
     def _step_voice_match(self, task_id: str) -> None:

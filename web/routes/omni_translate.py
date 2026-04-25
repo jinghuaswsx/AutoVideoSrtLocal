@@ -279,10 +279,13 @@ def upload_and_start():
     if target_lang not in enabled_langs:
         return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
 
-    # 全能视频翻译支持手动指定源语言（zh/en/es），ASR 后 LID 还会复核
-    source_language = (request.form.get("source_language") or "zh").strip()
-    if source_language not in ("zh", "en", "es"):
-        return jsonify({"error": "source_language must be 'zh', 'en' or 'es'"}), 400
+    # 源语言：""=自动检测（默认按 zh 选 ASR 引擎，LID 复检覆盖）；
+    # zh/en/es/pt=用户明确指定，跳过两层 LLM 检测，直接走对应路径
+    raw_source_language = (request.form.get("source_language") or "").strip()
+    if raw_source_language not in ("", "zh", "en", "es", "pt"):
+        return jsonify({"error": "source_language must be one of '', 'zh', 'en', 'es', 'pt'"}), 400
+    user_specified_source_language = bool(raw_source_language)
+    source_language = raw_source_language or "zh"
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -308,6 +311,7 @@ def upload_and_start():
         type="omni_translate",
         target_lang=target_lang,
         source_language=source_language,
+        user_specified_source_language=user_specified_source_language,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -401,15 +405,51 @@ def start(task_id):
 @bp.route("/api/omni-translate/<task_id>/source-language", methods=["PUT"])
 @login_required
 def update_source_language(task_id):
+    """改写源语言并从 asr_normalize 步骤重跑。
+
+    body: {source_language: "" | "zh" | "en" | "es" | "pt"}
+    - "" = 自动检测：source_language 落 "zh"，user_specified=False，重跑时 LID 复检
+    - 其他 = 用户明确指定：跳过两层 LLM 检测，直接走对应路径
+
+    清 utterances_en / asr_normalize_artifact / detected_source_language，
+    并把 asr_normalize 及其后所有步骤标 pending；下游 step 的 artifact
+    会被 pipeline 重跑时自然覆盖，不在此处显式清理。
+    """
     task = store.get(task_id)
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
-    lang = body.get("source_language")
-    if lang not in ("zh", "en", "es"):
-        return jsonify({"error": "source_language must be 'zh', 'en' or 'es'"}), 400
-    store.update(task_id, source_language=lang)
-    return jsonify({"status": "ok"})
+    raw_lang = (body.get("source_language") or "").strip()
+    if raw_lang not in ("", "zh", "en", "es", "pt"):
+        return jsonify({"error": "source_language must be one of '', 'zh', 'en', 'es', 'pt'"}), 400
+    user_specified = bool(raw_lang)
+    new_lang = raw_lang or "zh"
+
+    store.update(
+        task_id,
+        source_language=new_lang,
+        user_specified_source_language=user_specified,
+        utterances_en=None,
+        asr_normalize_artifact=None,
+        detected_source_language=None,
+        status="running",
+        current_review_step="",
+    )
+
+    started = False
+    for s in RESUMABLE_STEPS:
+        if s == "asr_normalize":
+            started = True
+        if started:
+            store.set_step(task_id, s, "pending")
+            store.set_step_message(task_id, s, "等待中...")
+
+    omni_pipeline_runner.resume(task_id, "asr_normalize", user_id=current_user.id)
+    return jsonify({
+        "status": "started",
+        "source_language": new_lang,
+        "user_specified_source_language": user_specified,
+    })
 
 
 @bp.route("/api/omni-translate/<task_id>/alignment", methods=["PUT"])

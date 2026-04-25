@@ -290,6 +290,7 @@ def run_asr_normalize(
         "confidence": conf,
         "is_mixed": is_mixed,
         "route": route,
+        "detection_source": "llm",
         "input": {
             "language_label": LANG_LABELS.get(lang, lang),
             "full_text_preview": full_text[:200],
@@ -306,6 +307,79 @@ def run_asr_normalize(
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "model": {
             "detect": "gemini-3.1-flash-lite-preview",
+            "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
+        },
+    }
+    if utterances_en:
+        artifact["_utterances_en"] = utterances_en
+    return artifact
+
+
+_USER_SPECIFIED_ROUTES: dict[str, str] = {
+    "zh": "zh_skip",
+    "en": "en_skip",
+    "es": "es_specialized",
+    "pt": "generic_fallback",
+}
+
+
+def run_user_specified(
+    *,
+    task_id: str,
+    user_id: int | None,
+    utterances: list[dict],
+    source_language: str,
+) -> dict:
+    """用户在 UI 明确指定了源语言，跳过 detect_language 直接路由 + translate。
+
+    与 run_asr_normalize 同 artifact 形状，区别：
+    - confidence 固定 1.0、is_mixed 固定 False
+    - detection_source="user_specified"
+    - tokens.detect 为空
+    - model.detect 为 None
+
+    支持 source_language ∈ {zh, en, es, pt}；其余抛 ValueError。
+    """
+    if source_language not in _USER_SPECIFIED_ROUTES:
+        raise ValueError(
+            f"run_user_specified: source_language must be one of "
+            f"{list(_USER_SPECIFIED_ROUTES)}, got {source_language!r}",
+        )
+
+    t0 = time.monotonic()
+    full_text = " ".join(u["text"] for u in utterances)
+    route = _USER_SPECIFIED_ROUTES[source_language]
+
+    utterances_en: list[dict] | None = None
+    translate_tokens: dict = {}
+    if route not in ("en_skip", "zh_skip"):
+        utterances_en, translate_tokens = translate_to_en(
+            utterances, detected_language=source_language, route=route,
+            task_id=task_id, user_id=user_id,
+        )
+
+    artifact: dict[str, Any] = {
+        "detected_source_language": source_language,
+        "confidence": 1.0,
+        "is_mixed": False,
+        "route": route,
+        "detection_source": "user_specified",
+        "input": {
+            "language_label": LANG_LABELS.get(source_language, source_language),
+            "full_text_preview": full_text[:200],
+            "utterance_count": len(utterances),
+        },
+        "output": {
+            "full_text_preview": (
+                " ".join(u["text"] for u in utterances_en)[:200]
+                if utterances_en else full_text[:200]
+            ),
+            "utterance_count": len(utterances_en) if utterances_en else len(utterances),
+        },
+        "tokens": {"detect": {}, "translate": translate_tokens},
+        "elapsed_ms": int((time.monotonic() - t0) * 1000),
+        "model": {
+            "detect": None,
             "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
         },
     }

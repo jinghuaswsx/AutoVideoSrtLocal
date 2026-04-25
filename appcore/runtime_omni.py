@@ -123,10 +123,10 @@ class OmniTranslateRunner(MultiTranslateRunner):
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
 
         # === LLM-based LID auto-override ===
-        # Even after engine dispatch, the user's selection may be wrong (e.g.
-        # filename "西班牙语视频.mp4" is actually German). LLM looks at the
-        # transcript and corrects task.source_language when it's confident.
-        if source_full_text:
+        # 用户没明确选源语言时，让 LLM 看 ASR 文本判定语言并自动改写
+        # task.source_language。用户明确指定（user_specified_source_language=True）
+        # 时彻底跳过这层 LID，不调 LLM、不覆盖。
+        if source_full_text and not task.get("user_specified_source_language"):
             try:
                 from pipeline.language_detect_llm import detect_language_llm
                 lid = detect_language_llm(
@@ -155,6 +155,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
                     )
             except Exception:
                 log.warning("[omni-lid] LID failed, keeping user-supplied source_language", exc_info=True)
+        elif source_full_text:
+            log.info(
+                "[omni-lid-skip] task=%s source_language=%s (user_specified=True, skipping LID)",
+                task_id, source_language,
+            )
 
         # === audio duration + billing ===
         try:
