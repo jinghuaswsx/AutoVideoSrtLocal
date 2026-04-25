@@ -58,6 +58,7 @@ def _serialize_row(row: dict) -> dict:
         "product_code": row.get("product_code"),
         "localized_links_json": row.get("localized_links_json"),
         "ad_supported_langs": row.get("ad_supported_langs"),
+        "shopify_image_status_json": row.get("shopify_image_status_json"),
         "selling_points": row.get("selling_points"),
         "importance": row.get("importance"),
         "remark": row.get("remark"),

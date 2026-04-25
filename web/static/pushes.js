@@ -11,6 +11,7 @@
     has_copywriting: '文案',
     lang_supported: '链接',
     has_push_texts: '英文文案格式正确',
+    shopify_image_confirmed: '图片/链接确认',
   };
 
   const PUSH_MODAL_MODES = {

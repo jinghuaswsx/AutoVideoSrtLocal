@@ -216,6 +216,78 @@ def test_pushes_api_items_includes_product_owner_name(
     assert resp.get_json()["items"][0]["product_owner_name"] == "张三"
 
 
+def test_pushes_api_items_passes_shopify_image_confirmation_to_status(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 104,
+        "product_id": 15,
+        "product_name": "图片确认测试产品",
+        "product_code": "image-confirm-test-rjc",
+        "owner_name": "张三",
+        "mk_id": 998880,
+        "localized_links_json": {},
+        "lang": "it",
+        "filename": "it-demo.mp4",
+        "display_name": "it-demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "pushed_at": None,
+        "cover_object_key": "covers/it-demo.jpg",
+        "ad_supported_langs": "it",
+        "selling_points": "",
+        "importance": 3,
+        "shopify_image_status_json": {
+            "it": {
+                "replace_status": "confirmed",
+                "link_status": "normal",
+            },
+        },
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+
+    def fake_readiness(item, product):
+        return {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": (
+                product.get("shopify_image_status_json", {})
+                .get("it", {})
+                .get("replace_status")
+                == "confirmed"
+            ),
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        fake_readiness,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status",
+        lambda item, product: (
+            "pending"
+            if product.get("shopify_image_status_json", {}).get("it", {}).get("link_status") == "normal"
+            else "not_ready"
+        ),
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?status=pending&page=1")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["items"][0]["status"] == "pending"
+    assert data["items"][0]["readiness"]["shopify_image_confirmed"] is True
+
+
 import pytest
 
 
