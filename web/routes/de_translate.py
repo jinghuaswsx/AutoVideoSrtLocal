@@ -217,8 +217,8 @@ def update_source_language(task_id):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
     lang = body.get("source_language")
-    if lang not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
+    if lang not in ("zh", "en", "es"):
+        return jsonify({"error": "source_language must be 'zh', 'en' or 'es'"}), 400
     store.update(task_id, source_language=lang)
     return jsonify({"status": "ok"})
 
@@ -237,7 +237,7 @@ def update_alignment(task_id):
 
     # Save source_language if provided (user may override auto-detection)
     source_language = body.get("source_language")
-    if source_language in ("zh", "en"):
+    if source_language in ("zh", "en", "es"):
         store.update(task_id, source_language=source_language)
 
     from web.preview_artifacts import build_alignment_artifact
