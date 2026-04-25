@@ -78,6 +78,11 @@
 
   <div id="tcTableWrap"></div>
 
+  <div id="tcDetailDrawer" style="display:none; position:fixed; top:0; right:0; bottom:0; width:540px; max-width:90vw; background:#fff; border-left:1px solid var(--tc-border); box-shadow:-4px 0 12px rgba(0,0,0,0.08); z-index:999; overflow-y:auto; padding:24px;">
+    <button class="tc-btn" style="position:absolute; top:12px; right:12px;" onclick="tcCloseDetail()">关闭</button>
+    <div id="tcDetailBody"></div>
+  </div>
+
   <div id="tcCreateModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1000;">
     <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:520px; max-width:90vw;">
       <h3 style="margin:0 0 16px;">创建任务</h3>
@@ -233,7 +238,133 @@ async function tcSubmitCreate() {
     tcRender();
   } catch (e) { alert('创建失败：' + e.message); }
 }
-function tcOpenDetail(id) { alert('详情抽屉 — Task 27 实现 (id=' + id + ')'); }
+let TC_DETAIL_TASK_ID = null;
+async function tcOpenDetail(id) {
+  TC_DETAIL_TASK_ID = id;
+  const drawer = document.getElementById('tcDetailDrawer');
+  const body = document.getElementById('tcDetailBody');
+  body.innerHTML = '加载中...';
+  drawer.style.display = 'block';
+  try {
+    const [taskResp, eventsResp] = await Promise.all([
+      tcFetchJson('/tasks/api/list?tab=' + (TC_IS_ADMIN ? 'all' : 'mine') + '&page_size=100'),
+      tcFetchJson('/tasks/api/' + id + '/events'),
+    ]);
+    const task = (taskResp.items || []).find(t => t.id === id);
+    if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
+    body.innerHTML = tcRenderDetail(task, eventsResp.events || []);
+  } catch (e) {
+    body.innerHTML = '加载失败：' + tcEsc(e.message);
+  }
+}
+function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; }
+
+function tcRenderDetail(task, events) {
+  const isParent = !task.parent_task_id;
+  const buttons = tcDetailButtons(task, isParent);
+  const evRows = events.map(e => `<div style="padding:6px 0; border-bottom:1px dashed var(--tc-border); font-size:12px;">
+    <div><strong>${tcEsc(e.event_type)}</strong> by ${tcEsc(e.actor_username || '系统')}</div>
+    <div style="color:var(--tc-fg-muted);">${tcEsc(e.created_at)}</div>
+    ${e.payload_json ? `<pre style="margin:4px 0; font-size:11px; color:var(--tc-fg-muted); white-space:pre-wrap;">${tcEsc(JSON.stringify(e.payload_json))}</pre>` : ''}
+  </div>`).join('');
+  return `
+    <h3 style="margin:0 0 8px;">${tcEsc(task.product_name)}</h3>
+    <div style="margin-bottom:8px;"><span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(task.high_level)}</span> · ${tcEsc(task.status)}</div>
+    <div style="font-size:13px; color:var(--tc-fg-muted); margin-bottom:16px;">
+      ${isParent ? '父任务（原始视频段）' : '子任务（' + tcEsc(task.country_code) + ' 翻译段）'} ·
+      负责人：${tcEsc(task.assignee_username || '—')}
+    </div>
+    ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
+    <h4 style="margin:0 0 8px; font-size:13px;">审计流</h4>
+    <div>${evRows || '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无事件</div>'}</div>
+  `;
+}
+
+function tcDetailButtons(task, isParent) {
+  const id = task.id;
+  const status = task.status;
+  const btns = [];
+  if (isParent) {
+    if (status === 'pending' && TC_CAPS.can_process_raw_video) btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'claim')">认领</button>`);
+    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">已上传</button>`);
+    if (status === 'raw_review' && TC_IS_ADMIN) {
+      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'approve')">通过</button>`);
+      btns.push(`<button class="tc-btn" onclick="tcOpenReason('parent', ${id}, 'reject')">打回</button>`);
+    }
+    if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
+      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
+    }
+  } else {
+    if (status === 'assigned') {
+      btns.push(`<button class="tc-btn" onclick="tcChildJumpTranslate(${id}, '${tcEsc(task.country_code)}', ${task.media_product_id})">翻译</button>`);
+      btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${tcEsc(task.country_code)}', ${task.media_product_id})">翻译任务记录</button>`);
+      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'submit')">提交完成</button>`);
+    }
+    if (status === 'review' && TC_IS_ADMIN) {
+      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'approve')">通过</button>`);
+      btns.push(`<button class="tc-btn" onclick="tcOpenReason('child', ${id}, 'reject')">打回</button>`);
+    }
+    if (TC_IS_ADMIN && ['blocked','assigned','review'].includes(status)) {
+      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('child', ${id}, 'cancel')">取消</button>`);
+    }
+  }
+  return btns.join('');
+}
+
+async function tcAction(kind, id, action) {
+  try {
+    await tcFetchJson(`/tasks/api/${kind}/${id}/${action}`, {method:'POST', body:'{}'});
+    tcRender();
+    if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
+  } catch (e) {
+    if (e.message === 'readiness_failed') {
+      alert('未通过产物齐全检查，请去素材管理补齐封面/视频/文案后再提交');
+    } else {
+      alert(action + ' 失败：' + e.message);
+    }
+  }
+}
+
+function tcChildJumpTranslate(taskId, country, productId) {
+  const url = `/medias/?from_task=${taskId}&product=${productId}&lang=${country.toLowerCase()}&action=translate`;
+  window.open(url, '_blank');
+}
+function tcChildJumpHistory(taskId, country, productId) {
+  const url = `/medias/?from_task=${taskId}&product=${productId}&lang=${country.toLowerCase()}&action=history`;
+  window.open(url, '_blank');
+}
+async function tcParentUploadDone(id, productId) {
+  // Try to mark uploaded directly. If the backend reports media_item not bound,
+  // prompt for the item id (manual fallback for Task 29).
+  try {
+    await tcFetchJson(`/tasks/api/parent/${id}/upload_done`, {method:'POST', body:'{}'});
+    tcRender();
+    if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
+  } catch (e) {
+    if (e.message && e.message.includes('media_item')) {
+      const itemIdStr = prompt('该任务尚未绑定原始素材。请输入您在素材管理刚上传的英文 item ID：');
+      if (!itemIdStr) return;
+      const itemId = parseInt(itemIdStr);
+      if (!itemId) { alert('无效 ID'); return; }
+      try {
+        await tcFetchJson(`/tasks/api/parent/${id}/bind_item`, {
+          method: 'PATCH',
+          body: JSON.stringify({media_item_id: itemId}),
+        });
+        await tcFetchJson(`/tasks/api/parent/${id}/upload_done`, {method:'POST', body:'{}'});
+        tcRender();
+        if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
+      } catch (err) { alert('绑定/标记失败：' + err.message); }
+    } else {
+      alert(e.message);
+    }
+  }
+}
+// Stub for Task 28 — opens reason modal
+function tcOpenReason(kind, id, action) {
+  alert('打回/取消 modal — Task 28 实现 (kind=' + kind + ' id=' + id + ' action=' + action + ')');
+}
 tcRender();
 </script>
 {% endblock %}
