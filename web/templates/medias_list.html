@@ -638,6 +638,25 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table td.wrap { white-space:normal; line-height:1.4; vertical-align:middle; }
 .oc-table td.name.wrap { word-break:break-word; }
 .oc-table td.mono.wrap { word-break:break-all; }
+.oc-table td.ai-result { vertical-align:middle; }
+.ai-result-text { margin-bottom:var(--oc-sp-2); }
+.ai-detail-btn { width:max-content; max-width:100%; }
+.oc-ai-detail-modal { width:min(860px, calc(100vw - 48px)); }
+.oc-ai-detail-json {
+  margin:0;
+  max-height:62vh;
+  overflow:auto;
+  padding:var(--oc-sp-3);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg);
+  font-family:var(--font-mono, "JetBrains Mono", ui-monospace, Consolas, monospace);
+  font-size:12px;
+  line-height:1.55;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
 .oc-table-fixed { table-layout:fixed; }
 .oc-table-fixed td, .oc-table-fixed th { overflow:hidden; word-break:break-word; }
 .oc-thumb-sm img { width:100%; height:100%; object-fit:cover; display:block; }

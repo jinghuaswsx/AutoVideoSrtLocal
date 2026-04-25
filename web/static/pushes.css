@@ -392,8 +392,24 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+.audit-detail-btn {
+  width: max-content;
+  margin-top: var(--oc-sp-1);
+}
 .audit-modal-section .audit-status {
   vertical-align: middle;
+}
+.audit-detail-modal {
+  width: min(860px, 100%);
+}
+.audit-detail-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--oc-fg);
+}
+.audit-detail-json {
+  min-height: 180px;
 }
 .audit-detail-pre {
   margin: 0;

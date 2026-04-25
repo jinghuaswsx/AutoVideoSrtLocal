@@ -382,6 +382,55 @@
     return text ? escapeHtml(text) : '<span class="muted">—</span>';
   }
 
+  function formatAiEvaluationDetail(detail) {
+    if (detail && typeof detail === 'object') {
+      return JSON.stringify(detail, null, 2);
+    }
+    const text = String(detail || '').trim();
+    if (!text) return '暂无评估详情';
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  function openAiEvaluationDetail(product) {
+    const old = document.getElementById('aiEvalDetailMask');
+    if (old) old.remove();
+    const mask = document.createElement('div');
+    mask.id = 'aiEvalDetailMask';
+    mask.className = 'oc-modal-mask oc';
+    mask.innerHTML = `
+      <div class="oc-modal oc-ai-detail-modal" role="dialog" aria-modal="true" aria-labelledby="aiEvalDetailTitle">
+        <div class="oc-modal-head">
+          <h3 id="aiEvalDetailTitle">AI 评估详情</h3>
+          <button type="button" class="oc-icon-btn" data-ai-detail-close aria-label="关闭">
+            ${icon('close', 16)}
+          </button>
+        </div>
+        <div class="oc-modal-body">
+          <pre class="oc-ai-detail-json">${escapeHtml(formatAiEvaluationDetail(product && product.ai_evaluation_detail))}</pre>
+        </div>
+        <div class="oc-modal-foot">
+          <button type="button" class="oc-btn ghost" data-ai-detail-close>关闭</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+
+    function close() {
+      mask.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') close();
+    }
+    document.addEventListener('keydown', onKey);
+    mask.addEventListener('click', (e) => {
+      if (e.target === mask || e.target.closest('[data-ai-detail-close]')) close();
+    });
+  }
+
   function listingStatus(product) {
     return product && product.listing_status === '下架' ? '下架' : '上架';
   }
@@ -764,6 +813,12 @@
       b.addEventListener('click', (e) => { e.stopPropagation(); deleteProduct(+b.dataset.del); }));
     grid.querySelectorAll('[data-ai-evaluate]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); triggerAiEvaluate(+b.dataset.aiEvaluate, b); }));
+    grid.querySelectorAll('[data-ai-detail]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.aiDetail));
+        openAiEvaluationDetail(product || null);
+      }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
@@ -799,7 +854,10 @@
         <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
-        <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">${compactCellText(p.ai_evaluation_result)}</td>
+        <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">
+          <div class="ai-result-text">${compactCellText(p.ai_evaluation_result)}</div>
+          <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}">评估详情</button>
+        </td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
