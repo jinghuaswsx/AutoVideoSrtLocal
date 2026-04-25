@@ -470,3 +470,41 @@ def cancel_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
             raise
     finally:
         conn.close()
+
+
+def on_product_owner_changed(
+    *, product_id: int, new_user_id: int, actor_user_id: int | None = None,
+) -> int:
+    """素材产品负责人变更时被调用。把状态非 done/cancelled 的子任务的
+    assignee_id 同步到 new_user_id。返回受影响的子任务数。"""
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, assignee_id FROM tasks "
+                    "WHERE media_product_id=%s AND parent_task_id IS NOT NULL "
+                    "AND status NOT IN (%s, %s)",
+                    (int(product_id), CHILD_DONE, CHILD_CANCELLED),
+                )
+                rows = cur.fetchall()
+                affected = 0
+                for r in rows:
+                    if r["assignee_id"] == int(new_user_id):
+                        continue
+                    cur.execute(
+                        "UPDATE tasks SET assignee_id=%s, updated_at=NOW() "
+                        "WHERE id=%s",
+                        (int(new_user_id), r["id"]),
+                    )
+                    _write_event(cur, r["id"], "assignee_changed", actor_user_id,
+                                 {"old": r["assignee_id"], "new": int(new_user_id)})
+                    affected += 1
+            conn.commit()
+            return affected
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()

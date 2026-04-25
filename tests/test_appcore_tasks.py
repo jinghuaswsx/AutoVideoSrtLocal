@@ -526,3 +526,64 @@ def test_cancel_child_does_not_change_parent(
     assert parent["status"] == tasks.PARENT_RAW_DONE
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+
+
+def test_owner_change_cascades_to_non_terminal_children(
+    db_user_admin, db_user_translator, db_product
+):
+    from appcore import tasks
+    from appcore.users import create_user, get_by_username
+    execute("DELETE FROM users WHERE username=%s", ("_t_tc_tr2",))
+    create_user("_t_tc_tr2", "x", role="user")
+    new_translator = get_by_username("_t_tc_tr2")["id"]
+
+    parent_id = tasks.create_parent_task(
+        media_product_id=db_product["product_id"],
+        media_item_id=db_product["item_id"],
+        countries=["DE", "FR"],
+        translator_id=db_user_translator,
+        created_by=db_user_admin,
+    )
+    tasks.claim_parent(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.mark_uploaded(task_id=parent_id, actor_user_id=db_user_admin)
+    tasks.approve_raw(task_id=parent_id, actor_user_id=db_user_admin)
+    fr_id = query_one(
+        "SELECT id FROM tasks WHERE parent_task_id=%s AND country_code='FR'",
+        (parent_id,),
+    )["id"]
+    execute("UPDATE tasks SET status='done', completed_at=NOW(), assignee_id=%s WHERE id=%s",
+            (db_user_translator, fr_id))
+
+    tasks.on_product_owner_changed(
+        product_id=db_product["product_id"],
+        new_user_id=new_translator,
+        actor_user_id=db_user_admin,
+    )
+
+    de = query_one("SELECT assignee_id FROM tasks WHERE parent_task_id=%s AND country_code='DE'",
+                   (parent_id,))
+    fr = query_one("SELECT assignee_id FROM tasks WHERE id=%s", (fr_id,))
+    assert de["assignee_id"] == new_translator     # 未完成跟换
+    assert fr["assignee_id"] == db_user_translator # 已 done 不变
+
+    events = query_all(
+        "SELECT * FROM task_events WHERE event_type='assignee_changed'"
+    )
+    assert len(events) >= 1
+    execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
+    execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
+    execute("DELETE FROM users WHERE username=%s", ("_t_tc_tr2",))
+
+
+def test_update_product_owner_invokes_task_cascade(
+    monkeypatch, db_user_admin, db_user_translator, db_product
+):
+    """Verify appcore.medias.update_product_owner triggers tasks.on_product_owner_changed."""
+    from appcore import medias, tasks
+    called = []
+    monkeypatch.setattr(tasks, "on_product_owner_changed",
+                        lambda **kw: called.append(kw))
+    medias.update_product_owner(db_product["product_id"], db_user_translator)
+    assert len(called) == 1
+    assert called[0]["product_id"] == db_product["product_id"]
+    assert called[0]["new_user_id"] == db_user_translator
