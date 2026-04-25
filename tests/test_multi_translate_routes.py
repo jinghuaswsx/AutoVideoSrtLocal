@@ -457,6 +457,42 @@ def test_multi_translate_index_filters_pills_by_enabled_languages(authed_client_
     assert 'data-lang="fr"' not in body
 
 
+def test_multi_translate_top_filter_includes_enabled_languages_plus_english(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.db_query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
+    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["de", "ja"])
+
+    resp = authed_client_no_db.get("/multi-translate")
+
+    assert resp.status_code == 200
+    body = resp.data.decode("utf-8")
+    # 顶部 lang-pills 链接：启用语言 + 英语
+    assert 'href="/multi-translate?lang=de"' in body
+    assert 'href="/multi-translate?lang=ja"' in body
+    assert 'href="/multi-translate?lang=en"' in body
+    # 未启用的 fi/fr 不在顶部
+    assert 'href="/multi-translate?lang=fi"' not in body
+    assert 'href="/multi-translate?lang=fr"' not in body
+    # 英语标签
+    assert "🇬🇧 英语" in body
+    # 弹窗胶囊不含英语（SUPPORTED_LANGS 不含 en）
+    assert 'data-lang="en"' not in body
+
+
+def test_multi_translate_index_accepts_english_lang_filter(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("appcore.task_recovery.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("appcore.settings.get_retention_hours", lambda *_args, **_kw: 72)
+    monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["de"])
+    with patch("web.routes.multi_translate.db_query") as m_q:
+        m_q.return_value = []
+        resp = authed_client_no_db.get("/multi-translate?lang=en")
+
+    assert resp.status_code == 200
+    args = m_q.call_args.args[1]
+    assert "en" in args
+
+
 def test_multi_translate_start_rejects_disabled_target_lang(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))

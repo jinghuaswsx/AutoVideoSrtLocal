@@ -44,6 +44,24 @@ def _list_enabled_target_langs() -> tuple[str, ...]:
     return filtered or SUPPORTED_LANGS
 
 
+def _list_filter_langs() -> tuple[str, ...]:
+    """顶部筛选胶囊用：media_languages.enabled 集合，并强制加上英语 en。失败时退回 SUPPORTED_LANGS + en。"""
+    try:
+        enabled = list(medias.list_enabled_language_codes())
+    except Exception:
+        log.warning("[multi_translate] failed to load enabled languages for filter, falling back", exc_info=True)
+        enabled = list(SUPPORTED_LANGS)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for code in enabled:
+        if code and code not in seen:
+            seen.add(code)
+            ordered.append(code)
+    if "en" not in seen:
+        ordered.append("en")
+    return tuple(ordered)
+
+
 def _default_display_name(original_filename: str) -> str:
     name = os.path.splitext(original_filename)[0] if original_filename else ""
     return name[:10] or "未命名"
@@ -147,8 +165,9 @@ def _multi_translate_creator_name_expr() -> str:
 def index():
     recover_all_interrupted_tasks()
 
+    filter_langs = _list_filter_langs()
     lang = request.args.get("lang", "").strip()
-    if lang and lang not in SUPPORTED_LANGS:
+    if lang and lang not in filter_langs:
         lang = ""
 
     owner_name_expr = _multi_translate_creator_name_expr()
@@ -184,6 +203,7 @@ def index():
         "multi_translate_list.html",
         projects=rows, now=datetime.now(),
         current_lang=lang,
+        filter_langs=filter_langs,
         supported_langs=_list_enabled_target_langs(),
         retention_hours=get_retention_hours("multi_translate"),
     )
