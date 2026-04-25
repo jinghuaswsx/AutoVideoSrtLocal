@@ -476,8 +476,28 @@ def test_multi_translate_top_filter_includes_enabled_languages_plus_english(auth
     assert 'href="/multi-translate?lang=fr"' not in body
     # 英语标签
     assert "🇬🇧 英语" in body
-    # 弹窗胶囊不含英语（SUPPORTED_LANGS 不含 en）
-    assert 'data-lang="en"' not in body
+    # 弹窗胶囊也含英语（en 作为兜底目标语言强制追加到末尾）
+    assert 'data-lang="en"' in body
+
+
+def test_list_enabled_target_langs_forces_en_at_tail(monkeypatch):
+    """无论 media_languages 启用何种集合，创建模态语言列表都必须以 en 收尾。"""
+    from web.routes import multi_translate as r
+
+    # 启用 de/ja：交集 = [de, ja]，强制追加 en 到末尾
+    monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: ["de", "ja"])
+    assert r._list_enabled_target_langs() == ("de", "ja", "en")
+
+    # 启用集合已含 en：先剥离再放末尾，不重复
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["en", "de", "fr"],
+    )
+    assert r._list_enabled_target_langs() == ("de", "fr", "en")
+
+    # 启用集合为空：退回 SUPPORTED_LANGS（最后一项已是 en）
+    monkeypatch.setattr("appcore.medias.list_enabled_language_codes", lambda: [])
+    assert r._list_enabled_target_langs()[-1] == "en"
 
 
 def test_multi_translate_index_accepts_english_lang_filter(authed_client_no_db, monkeypatch):

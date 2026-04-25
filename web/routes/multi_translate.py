@@ -34,14 +34,23 @@ SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
 
 
 def _list_enabled_target_langs() -> tuple[str, ...]:
-    """SUPPORTED_LANGS 与 media_languages.enabled=1 的交集；查询失败或为空时退回 SUPPORTED_LANGS。"""
+    """创建模态用：SUPPORTED_LANGS ∩ media_languages.enabled=1，并把英语 en 强制追加到末尾。
+
+    en 不论是否在 media_languages 的 enabled 集合里，都作为兜底目标语言保留在创建模态末位，
+    保证用户始终能新建英语本土化项目。查询失败或交集为空时，退回 SUPPORTED_LANGS（已含 en）。
+    """
     try:
         enabled = set(medias.list_enabled_language_codes())
     except Exception:
         log.warning("[multi_translate] failed to load enabled languages, falling back", exc_info=True)
         return SUPPORTED_LANGS
-    filtered = tuple(c for c in SUPPORTED_LANGS if c in enabled)
-    return filtered or SUPPORTED_LANGS
+    filtered = [c for c in SUPPORTED_LANGS if c in enabled]
+    if not filtered:
+        return SUPPORTED_LANGS
+    # 强制 en 出现且置于末尾
+    filtered = [c for c in filtered if c != "en"]
+    filtered.append("en")
+    return tuple(filtered)
 
 
 def _list_filter_langs() -> tuple[str, ...]:
