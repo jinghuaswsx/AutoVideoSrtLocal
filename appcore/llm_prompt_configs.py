@@ -12,7 +12,11 @@ from typing import Optional
 from appcore.db import query, query_one, execute
 
 
-VALID_SLOTS = {"base_translation", "base_tts_script", "base_rewrite", "ecommerce_plugin"}
+VALID_SLOTS = {
+    "base_translation", "base_tts_script", "base_rewrite", "ecommerce_plugin",
+    "asr_normalize.detect", "asr_normalize.translate_zh_en",
+    "asr_normalize.translate_es_en", "asr_normalize.translate_generic_en",
+}
 
 
 def _get_default(slot: str, lang: Optional[str]) -> Optional[dict]:
