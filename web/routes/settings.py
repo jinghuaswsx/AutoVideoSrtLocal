@@ -20,7 +20,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 from flask_login import current_user, login_required
 
 from appcore import llm_bindings, llm_provider_configs, pricing
-from appcore.api_keys import can_manage_api_config_user, set_key
+from appcore.api_keys import can_manage_api_config_user, get_all, set_key
 from appcore.db import execute, query
 from appcore.gemini import VIDEO_CAPABLE_MODELS
 from appcore.image_translate_settings import (
@@ -248,8 +248,6 @@ def index():
 
 def _load_translate_pref() -> str:
     """translate_pref 存在 api_keys 表（admin user 的非供应商偏好行）。"""
-    from appcore.api_keys import get_all
-
     stored = get_all(current_user.id).get("translate_pref", {}).get("key_value", "")
     return stored or DEFAULT_TRANSLATE_PROVIDER
 

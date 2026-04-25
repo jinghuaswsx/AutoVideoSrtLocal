@@ -1,3 +1,13 @@
+"""gemini_image 凭据解析现在全部走 llm_provider_configs DAO。
+
+旧测试 mock 了 `resolve_config` / `OPENROUTER_API_KEY` / `APIMART_IMAGE_API_KEY` /
+`GEMINI_CLOUD_API_KEY` / `_resolve_doubao_credentials` 等已删除的 attribute；
+新测试改为 patch 新引入的 helper：
+  - _resolve_seedream_credentials
+  - _resolve_apimart_api_key
+  - _resolve_openrouter_image_credentials
+  - _resolve_gemini_image_credentials
+"""
 import base64
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -29,7 +39,8 @@ def test_generate_image_returns_bytes_and_mime():
     client = MagicMock()
     client.models.generate_content.return_value = _fake_response(b"PNG-BYTES", "image/png")
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
-         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_gemini_image_credentials",
+                      return_value=("KEY", "", "", "gemini-3-pro-image-preview")), \
          patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
          patch.object(gemini_image.ai_billing, "log_request") as m_log:
         out, mime = gemini_image.generate_image(
@@ -58,15 +69,18 @@ def test_generate_image_cloud_channel_uses_vertex_backend():
     client.models.generate_content.return_value = _fake_response(b"PNG", "image/png")
     recorded = {}
 
-    def fake_get(api_key, *, backend="aistudio"):
+    def fake_get(api_key, *, backend="aistudio", project="", location=""):
         recorded["api_key"] = api_key
         recorded["backend"] = backend
+        recorded["project"] = project
+        recorded["location"] = location
         return client
 
     with patch.object(gemini_image, "_get_image_client", side_effect=fake_get), \
-         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
-         patch.object(gemini_image, "_resolve_channel", return_value="cloud"), \
-         patch.object(gemini_image, "GEMINI_CLOUD_API_KEY", "CLOUD-KEY"):
+         patch.object(gemini_image, "_resolve_gemini_image_credentials",
+                      return_value=("CLOUD-KEY", "my-gcp", "us-central1",
+                                    "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_channel", return_value="cloud"):
         out, mime = gemini_image.generate_image(
             prompt="翻译",
             source_image=b"RAW",
@@ -75,15 +89,24 @@ def test_generate_image_cloud_channel_uses_vertex_backend():
         )
     assert out == b"PNG"
     assert mime == "image/png"
-    assert recorded == {"api_key": "CLOUD-KEY", "backend": "cloud"}
+    assert recorded == {
+        "api_key": "CLOUD-KEY",
+        "backend": "cloud",
+        "project": "my-gcp",
+        "location": "us-central1",
+    }
 
 
 def test_generate_image_cloud_channel_errors_without_key():
     from appcore import gemini_image
 
-    with patch.object(gemini_image, "resolve_config", return_value=("", "gemini-3-pro-image-preview")), \
-         patch.object(gemini_image, "_resolve_channel", return_value="cloud"), \
-         patch.object(gemini_image, "GEMINI_CLOUD_API_KEY", ""):
+    with patch.object(gemini_image, "_resolve_channel", return_value="cloud"), \
+         patch.object(
+             gemini_image, "_resolve_gemini_image_credentials",
+             side_effect=gemini_image.GeminiImageError(
+                 "缺少供应商配置 gemini_cloud_image.api_key 或 extra_config.project"
+             ),
+         ):
         with pytest.raises(gemini_image.GeminiImageError) as exc:
             gemini_image.generate_image(
                 prompt="x",
@@ -91,7 +114,7 @@ def test_generate_image_cloud_channel_errors_without_key():
                 source_mime="image/jpeg",
                 model="gemini-3-pro-image-preview",
             )
-        assert "Cloud" in str(exc.value)
+        assert "gemini_cloud_image" in str(exc.value)
 
 
 def test_generate_image_openrouter_channel_returns_decoded_image():
@@ -119,9 +142,9 @@ def test_generate_image_openrouter_channel_returns_decoded_image():
             self.chat.completions.create = MagicMock(return_value=or_resp)
 
     with patch("openai.OpenAI", _FakeOpenAI), \
-         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
          patch.object(gemini_image.ai_billing, "log_request") as m_log:
         out, mime = gemini_image.generate_image(
             prompt="翻译",
@@ -144,9 +167,13 @@ def test_generate_image_openrouter_channel_returns_decoded_image():
 def test_generate_image_openrouter_channel_errors_without_key():
     from appcore import gemini_image
 
-    with patch.object(gemini_image, "resolve_config", return_value=("", "gemini-3-pro-image-preview")), \
-         patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", ""):
+    with patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
+         patch.object(
+             gemini_image, "_resolve_openrouter_image_credentials",
+             side_effect=gemini_image.GeminiImageError(
+                 "缺少供应商配置 openrouter_image.api_key"
+             ),
+         ):
         with pytest.raises(gemini_image.GeminiImageError) as exc:
             gemini_image.generate_image(
                 prompt="x",
@@ -154,7 +181,7 @@ def test_generate_image_openrouter_channel_errors_without_key():
                 source_mime="image/jpeg",
                 model="gemini-3-pro-image-preview",
             )
-        assert "OpenRouter" in str(exc.value)
+        assert "openrouter_image" in str(exc.value)
 
 
 def test_to_openrouter_model_adds_google_prefix():
@@ -182,7 +209,8 @@ def test_generate_image_raises_when_no_image_part():
     client = MagicMock()
     client.models.generate_content.return_value = resp
     with patch.object(gemini_image, "_get_image_client", return_value=client), \
-         patch.object(gemini_image, "resolve_config", return_value=("KEY", "gemini-3-pro-image-preview")), \
+         patch.object(gemini_image, "_resolve_gemini_image_credentials",
+                      return_value=("KEY", "", "", "gemini-3-pro-image-preview")), \
          patch.object(gemini_image, "_resolve_channel", return_value="aistudio"), \
          patch.object(gemini_image.ai_billing, "log_request") as m_log:
         with pytest.raises(gemini_image.GeminiImageError) as exc:
@@ -227,24 +255,22 @@ def test_long_running_image_timeouts_are_tripled():
     assert gemini_image._APIMART_POLL_TIMEOUT == 900
 
 
-def test_generate_image_doubao_channel_uses_seedream_without_resolve_config():
+def test_generate_image_doubao_channel_uses_seedream_without_reusing_doubao_llm():
+    """独立 provider_code：Seedream 必须走 doubao_seedream，不沾 doubao_llm 或 gemini_aistudio。"""
     from appcore import gemini_image
 
     with patch.object(gemini_image, "_resolve_channel", return_value="doubao"), \
-         patch.object(gemini_image, "resolve_config", side_effect=AssertionError("should not resolve gemini config")), \
          patch.object(
-             gemini_image,
-             "_resolve_doubao_credentials",
-             return_value=("DB-KEY", "https://ark.example.com"),
+             gemini_image, "_resolve_seedream_credentials",
+             return_value=("SEEDREAM-KEY", "https://ark.example.com"),
          ) as resolve_creds, \
          patch.object(
-             gemini_image,
-             "_generate_via_seedream",
+             gemini_image, "_generate_via_seedream",
              return_value=(b"PNG-SEEDREAM", "image/png", {"data": [{"b64_json": "x"}]}),
          ) as generate_seedream, \
          patch.object(gemini_image.ai_billing, "log_request") as m_log:
         out, mime = gemini_image.generate_image(
-            prompt="缈昏瘧",
+            prompt="翻译",
             source_image=b"RAW",
             source_mime="image/jpeg",
             model="doubao-seedream-5-0-260128",
@@ -254,10 +280,10 @@ def test_generate_image_doubao_channel_uses_seedream_without_resolve_config():
 
     assert out == b"PNG-SEEDREAM"
     assert mime == "image/png"
-    resolve_creds.assert_called_once_with(9)
+    resolve_creds.assert_called_once_with()
     generate_seedream.assert_called_once()
     kwargs = generate_seedream.call_args.kwargs
-    assert kwargs["api_key"] == "DB-KEY"
+    assert kwargs["api_key"] == "SEEDREAM-KEY"
     assert kwargs["base_url"] == "https://ark.example.com"
     assert kwargs["model_id"] == "doubao-seedream-5-0-260128"
     assert m_log.call_args.kwargs["provider"] == "doubao"
@@ -274,7 +300,7 @@ def test_generate_via_seedream_maps_429_to_retryable():
     with patch("appcore.gemini_image.requests.post", return_value=response):
         with pytest.raises(gemini_image.GeminiImageRetryable):
             gemini_image._generate_via_seedream(
-                "缈昏瘧",
+                "翻译",
                 b"RAW",
                 "image/jpeg",
                 "doubao-seedream-5-0-260128",
@@ -294,7 +320,7 @@ def test_generate_via_seedream_maps_401_to_error():
     with patch("appcore.gemini_image.requests.post", return_value=response):
         with pytest.raises(gemini_image.GeminiImageError):
             gemini_image._generate_via_seedream(
-                "缈昏瘧",
+                "翻译",
                 b"RAW",
                 "image/jpeg",
                 "doubao-seedream-5-0-260128",
@@ -360,7 +386,6 @@ def test_list_image_models_openrouter_appends_openai_image2_when_enabled():
     assert "openai/gpt-5.4-image-2:low" in ids
     assert "openai/gpt-5.4-image-2:mid" in ids
     assert "openai/gpt-5.4-image-2:high" in ids
-    # 原有 Gemini 模型不应被移除
     assert "gemini-3.1-flash-image-preview" in ids
     assert "gemini-3-pro-image-preview" in ids
 
@@ -465,9 +490,9 @@ def test_generate_image_openrouter_image2_passes_quality_to_openrouter():
             self.chat.completions.create = _create
 
     with patch("openai.OpenAI", _FakeOpenAI), \
-         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "openai/gpt-5.4-image-2:mid")), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
          patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=True):
         out, mime = gemini_image.generate_image(
             prompt="翻译",
@@ -513,9 +538,9 @@ def test_generate_image_openrouter_non_image2_does_not_set_quality():
             self.chat.completions.create = _create
 
     with patch("openai.OpenAI", _FakeOpenAI), \
-         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "gemini-3-pro-image-preview")), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"):
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")):
         gemini_image.generate_image(
             prompt="x",
             source_image=b"S",
@@ -557,9 +582,9 @@ def test_generate_image_openrouter_image2_historical_task_runs_even_when_switch_
             self.chat.completions.create = _create
 
     with patch("openai.OpenAI", _FakeOpenAI), \
-         patch.object(gemini_image, "resolve_config", return_value=("IGNORED", "openai/gpt-5.4-image-2:high")), \
          patch.object(gemini_image, "_resolve_channel", return_value="openrouter"), \
-         patch.object(gemini_image, "OPENROUTER_API_KEY", "OR-KEY"), \
+         patch.object(gemini_image, "_resolve_openrouter_image_credentials",
+                      return_value=("OR-KEY", "https://openrouter.ai/api/v1")), \
          patch("appcore.image_translate_settings.is_openrouter_openai_image2_enabled", return_value=False):
         out, _mime = gemini_image.generate_image(
             prompt="翻译",
@@ -601,7 +626,6 @@ def test_all_channels_expose_gemini_2_5_flash_preview():
 
 def test_generate_via_apimart_uses_dynamic_model_id():
     """APIMART payload 的 model 字段应跟随 model_id 参数变化。"""
-    from unittest.mock import patch, MagicMock
     from appcore import gemini_image
 
     submit_mock = MagicMock()
@@ -644,7 +668,6 @@ def test_apimart_channel_provider():
 
 
 def test_generate_via_apimart_success():
-    from unittest.mock import patch, MagicMock
     from appcore import gemini_image
 
     submit_mock = MagicMock()
@@ -689,8 +712,6 @@ def test_generate_via_apimart_success():
 
 
 def test_generate_via_apimart_task_failed():
-    from unittest.mock import patch, MagicMock
-    import pytest
     from appcore import gemini_image
 
     submit_mock = MagicMock()
@@ -723,14 +744,13 @@ def test_generate_via_apimart_task_failed():
 
 
 def test_generate_image_apimart_channel_dispatches_correctly():
-    from unittest.mock import patch, MagicMock
     from appcore import gemini_image
 
     fake_img_bytes = b"APIMART-PNG"
     fake_raw = {"data": {"status": "completed"}}
 
     with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
-         patch.object(gemini_image, "APIMART_IMAGE_API_KEY", "test-key"), \
+         patch.object(gemini_image, "_resolve_apimart_api_key", return_value="test-key"), \
          patch.object(
              gemini_image, "_generate_via_apimart",
              return_value=(fake_img_bytes, "image/png", fake_raw),
@@ -758,7 +778,6 @@ def test_generate_image_apimart_channel_dispatches_correctly():
 
 
 def test_poll_apimart_task_returns_result_for_completed():
-    from unittest.mock import patch, MagicMock
     from appcore import gemini_image
 
     poll_mock = MagicMock()
@@ -785,14 +804,11 @@ def test_poll_apimart_task_returns_result_for_completed():
 
     assert out == b"RESUMED-BYTES"
     assert mime == "image/png"
-    # initial_wait=False 不应调用 _APIMART_INITIAL_WAIT 的 sleep
     for call in m_sleep.call_args_list:
         assert call.args[0] != gemini_image._APIMART_INITIAL_WAIT
 
 
 def test_poll_apimart_task_raises_on_failed_status():
-    from unittest.mock import patch, MagicMock
-    import pytest
     from appcore import gemini_image
 
     poll_mock = MagicMock()
@@ -811,14 +827,12 @@ def test_poll_apimart_task_raises_on_failed_status():
 
 
 def test_poll_apimart_task_rejects_empty_task_id():
-    import pytest
     from appcore import gemini_image
     with pytest.raises(gemini_image.GeminiImageError, match="task_id"):
         gemini_image.poll_apimart_task("", api_key="key", initial_wait=False)
 
 
 def test_generate_via_apimart_invokes_on_submitted_callback():
-    from unittest.mock import patch, MagicMock
     from appcore import gemini_image
 
     submit_mock = MagicMock()
@@ -857,7 +871,6 @@ def test_generate_via_apimart_invokes_on_submitted_callback():
 
 
 def test_generate_image_forwards_on_apimart_submitted_callback():
-    from unittest.mock import patch
     from appcore import gemini_image
 
     def fake_gen_via(*args, on_submitted=None, **kwargs):
@@ -867,7 +880,7 @@ def test_generate_image_forwards_on_apimart_submitted_callback():
 
     received = []
     with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
-         patch.object(gemini_image, "APIMART_IMAGE_API_KEY", "key"), \
+         patch.object(gemini_image, "_resolve_apimart_api_key", return_value="key"), \
          patch.object(gemini_image, "_generate_via_apimart", side_effect=fake_gen_via), \
          patch.object(gemini_image.ai_billing, "log_request"):
         gemini_image.generate_image(
@@ -877,3 +890,35 @@ def test_generate_image_forwards_on_apimart_submitted_callback():
         )
 
     assert received == ["task_from_gen_image"]
+
+
+def test_independence_of_doubao_rows():
+    """doubao_llm / doubao_seedream / doubao_asr 凭据必须互相独立。"""
+    from appcore import llm_provider_configs as lpc
+    from unittest.mock import patch as mp
+
+    rows = {}
+
+    def seed(code, **kwargs):
+        base = {
+            "provider_code": code, "display_name": code, "group_code": "llm",
+            "api_key": None, "base_url": None, "model_id": None,
+            "extra_config": None, "enabled": 1, "updated_by": None,
+        }
+        base.update(kwargs)
+        rows[code] = base
+
+    def query_one(sql, args=()):
+        if "where provider_code = %s" in sql.lower():
+            r = rows.get(args[0])
+            return dict(r) if r else None
+        return None
+
+    with mp.object(lpc, "query_one", query_one), mp.object(lpc, "query", lambda *a, **kw: []):
+        seed("doubao_llm", api_key="llm-key")
+        # doubao_seedream 未配：require_provider_api_key 必须抛错，绝不能回落 doubao_llm
+        with pytest.raises(lpc.ProviderConfigError, match="doubao_seedream"):
+            lpc.require_provider_api_key("doubao_seedream")
+        # doubao_asr 同理
+        with pytest.raises(lpc.ProviderConfigError, match="doubao_asr"):
+            lpc.require_provider_api_key("doubao_asr")

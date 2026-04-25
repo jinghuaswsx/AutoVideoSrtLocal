@@ -453,7 +453,7 @@ class ImageTranslateRuntime:
                 try:
                     out_bytes, out_mime, _ = gemini_image.poll_apimart_task(
                         existing_task_id,
-                        api_key=gemini_image.APIMART_IMAGE_API_KEY,
+                        api_key=gemini_image._resolve_apimart_api_key(),
                         initial_wait=False,
                     )
                     return out_bytes, out_mime

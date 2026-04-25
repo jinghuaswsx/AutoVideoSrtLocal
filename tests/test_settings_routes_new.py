@@ -1,4 +1,11 @@
-"""Task 16: /settings 路由增补 Bindings Tab。"""
+"""/settings 路由测试（2026-04-25 DB-driven providers tab）。
+
+关键变化：
+  - providers Tab 模板改用 provider_groups 迭代，每个 provider_code 一行
+    独立 api_key / base_url / model_id / extra_config 输入，明文 + 复制按钮。
+  - 保存 POST 走 `provider_<code>_*` 字段，经 DAO.save_provider_config 落 DB。
+  - 旧 SERVICES 硬编码字段（openrouter_key / doubao_llm_key 等）已移除。
+"""
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -6,26 +13,29 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _neutralize_db(monkeypatch):
-    """无本地 DB 环境：所有 appcore.db 出口返回空，不真正连 MySQL。"""
     monkeypatch.setattr("appcore.db.query", lambda *a, **k: [])
     monkeypatch.setattr("appcore.db.query_one", lambda *a, **k: None)
     monkeypatch.setattr("appcore.db.execute", lambda *a, **k: 0)
+
     def fake_api_key_query_one(sql, params=()):
         if "FROM users WHERE username = %s" in sql and params and params[0] == "admin":
             return {"id": 1, "username": "admin", "is_active": 1}
         if "FROM users WHERE id = %s" in sql and params and int(params[0]) == 1:
             return {"id": 1, "username": "admin", "is_active": 1}
         return None
+
     monkeypatch.setattr("appcore.api_keys.query", lambda *a, **k: [])
     monkeypatch.setattr("appcore.api_keys.query_one", fake_api_key_query_one)
     monkeypatch.setattr("appcore.api_keys.execute", lambda *a, **k: 0)
-    # _get_pool 被任何地方触发都返回 MagicMock，避免初始化连接
     monkeypatch.setattr("appcore.db._get_pool", lambda: MagicMock())
+    # DAO 默认返回空：无 provider 时 providers Tab 仍能渲染
+    monkeypatch.setattr("appcore.llm_provider_configs.query", lambda *a, **k: [])
+    monkeypatch.setattr("appcore.llm_provider_configs.query_one", lambda *a, **k: None)
+    monkeypatch.setattr("appcore.llm_provider_configs.execute", lambda *a, **k: 0)
 
 
 @pytest.fixture
 def admin_no_db_client(monkeypatch):
-    """Admin Flask client with app-startup DB touches neutralized."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     from web.app import create_app
@@ -46,7 +56,6 @@ def admin_no_db_client(monkeypatch):
 
 @pytest.fixture
 def non_owner_clients(monkeypatch):
-    """Clients for users who are not username=admin."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
@@ -71,15 +80,53 @@ def non_owner_clients(monkeypatch):
     return manager, normal
 
 
+# ---------------------------------------------------------------------------
+# 工具：构造 provider_groups fixture 数据
+# ---------------------------------------------------------------------------
+
+def _fake_provider_groups(rows: list[dict] | None = None) -> list[dict]:
+    rows = rows or [
+        {
+            "provider_code": "openrouter_text",
+            "display_name": "OpenRouter 文本",
+            "api_key": "sk-openrouter-visible",
+            "base_url": "https://openrouter.example/api",
+            "model_id": "model-visible",
+            "extra_config_json": "",
+            "enabled": True,
+        },
+        {
+            "provider_code": "doubao_llm",
+            "display_name": "豆包 ARK 文本",
+            "api_key": "ark-visible",
+            "base_url": "https://ark.example/api",
+            "model_id": "doubao-visible",
+            "extra_config_json": "",
+            "enabled": True,
+        },
+    ]
+    return [{"code": "text_llm", "label": "文本 / 本土化 LLM", "rows": rows}]
+
+
+# ---------------------------------------------------------------------------
+# 权限
+# ---------------------------------------------------------------------------
+
 def test_settings_requires_exact_admin_username(non_owner_clients):
-    manager_no_db_client, normal_no_db_client = non_owner_clients
-    assert manager_no_db_client.get("/settings").status_code == 403
-    assert normal_no_db_client.get("/settings").status_code == 403
-    assert manager_no_db_client.get("/admin/settings/ai-pricing/list").status_code == 403
+    manager_client, normal_client = non_owner_clients
+    assert manager_client.get("/settings").status_code == 403
+    assert normal_client.get("/settings").status_code == 403
+    assert manager_client.get("/admin/settings/ai-pricing/list").status_code == 403
 
 
-def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):
+# ---------------------------------------------------------------------------
+# GET /settings —— 基础渲染
+# ---------------------------------------------------------------------------
+
+def test_settings_get_renders_bindings_rows(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all",
                return_value=[{
                    "code": "video_score.run", "module": "video_analysis",
@@ -93,12 +140,13 @@ def test_settings_get_renders_tabs_and_bindings(admin_no_db_client):
         resp = admin_no_db_client.get("/settings")
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    # 不硬断言具体文案（模板演进后可能变），只确认 binding 数据被渲染
     assert "video_score.run" in body or "视频评分" in body
 
 
 def test_settings_get_renders_gpt_5_mini_translate_option(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"):
         resp = admin_no_db_client.get("/settings?tab=providers")
@@ -109,17 +157,14 @@ def test_settings_get_renders_gpt_5_mini_translate_option(admin_no_db_client):
     assert "GPT 5-mini" in body
 
 
+# ---------------------------------------------------------------------------
+# GET /settings?tab=providers —— 供应商凭据明文 + 复制按钮
+# ---------------------------------------------------------------------------
+
 def test_settings_provider_secrets_render_as_plain_text(admin_no_db_client):
-    with patch("web.routes.settings.get_all", return_value={
-        "openrouter": {
-            "key_value": "sk-openrouter-visible",
-            "extra": {"base_url": "https://openrouter.example/api", "model_id": "model-visible"},
-        },
-        "doubao_llm": {
-            "key_value": "ark-visible",
-            "extra": {"base_url": "https://ark.example/api", "model_id": "doubao-visible"},
-        },
-    }), \
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups()), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
          patch("web.routes.settings.get_image_translate_default_model",
@@ -128,15 +173,47 @@ def test_settings_provider_secrets_render_as_plain_text(admin_no_db_client):
 
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
-    assert 'type="password"' not in body
+    assert 'type="password"' not in body, "密码框不应出现，供应商字段必须明文"
     assert 'value="sk-openrouter-visible"' in body
     assert 'value="https://openrouter.example/api"' in body
     assert 'value="ark-visible"' in body
-    assert "data-settings-copy" in body
+    # 新输入名约定：provider_<code>_(api_key|base_url|model_id|extra_config)
+    assert 'name="provider_openrouter_text_api_key"' in body
+    assert 'name="provider_doubao_llm_api_key"' in body
+    # 复制按钮由 JS 自动增强——检查辅助 data attribute 会被挂上
+    assert 'data-settings-copy' in body or 'enhanceField' in body
 
+
+def test_settings_provider_rows_show_provider_code_and_extra_config(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([{
+                   "provider_code": "gemini_cloud_text",
+                   "display_name": "Google Cloud Vertex 文本",
+                   "api_key": "cloud-visible",
+                   "base_url": "",
+                   "model_id": "",
+                   "extra_config_json": '{"project": "demo-gcp", "location": "us-central1"}',
+                   "enabled": True,
+               }])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "gemini_cloud_text" in body
+    assert "demo-gcp" in body
+    assert 'name="provider_gemini_cloud_text_extra_config"' in body
+
+
+# ---------------------------------------------------------------------------
+# Push / 其他 Tab
+# ---------------------------------------------------------------------------
 
 def test_settings_push_secrets_render_values(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
          patch("web.routes.settings.get_image_translate_default_model",
@@ -155,6 +232,8 @@ def test_settings_push_secrets_render_values(admin_no_db_client):
 
 def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="doubao"), \
          patch("web.routes.settings.get_image_translate_default_model",
@@ -164,12 +243,15 @@ def test_settings_get_renders_seedream_channel_label(admin_no_db_client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "豆包 ARK（Seedream）" in body
-    assert "DOUBAO_LLM_API_KEY" in body
-    assert "VOLC_API_KEY" in body
+    # 页面里不应再出现 DOUBAO_LLM_API_KEY / VOLC_API_KEY 这种 env 变量名
+    assert "DOUBAO_LLM_API_KEY" not in body
+    assert "VOLC_API_KEY" not in body
 
 
 def test_settings_get_renders_global_image_translate_model_select(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
          patch("web.routes.settings.get_image_translate_default_model",
@@ -178,7 +260,7 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    assert "选通道" in body
+    assert "图片翻译通道" in body
     assert 'name="image_translate_default_model"' in body
     assert 'value="gemini-3-pro-image-preview" selected' in body
     assert '"openrouter"' in body
@@ -187,12 +269,15 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
 
 def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="openrouter"), \
          patch("web.routes.settings.get_image_translate_default_model",
                return_value="gemini-3-pro-image-preview"), \
          patch("web.routes.settings.is_openrouter_openai_image2_enabled", return_value=True), \
-         patch("web.routes.settings.get_openrouter_openai_image2_default_quality", return_value="high"):
+         patch("web.routes.settings.get_openrouter_openai_image2_default_quality",
+               return_value="high"):
         resp = admin_no_db_client.get("/settings?tab=providers")
 
     body = resp.get_data(as_text=True)
@@ -201,37 +286,46 @@ def test_settings_get_renders_openai_image2_controls_for_openrouter(admin_no_db_
     assert 'name="openrouter_openai_image2_enabled"' in body
     assert 'name="openrouter_openai_image2_default_quality"' in body
     assert 'value="high"' in body and 'selected' in body
-    # 开启状态下 checkbox 应该有 checked
     assert 'id="openrouterOpenaiImage2Enabled"' in body
     assert "checked" in body
 
 
 def test_settings_get_hides_openai_image2_controls_for_non_openrouter(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
          patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
          patch("web.routes.settings.get_image_translate_default_model",
                return_value="gemini-3.1-flash-image-preview"), \
          patch("web.routes.settings.is_openrouter_openai_image2_enabled", return_value=False), \
-         patch("web.routes.settings.get_openrouter_openai_image2_default_quality", return_value="mid"):
+         patch("web.routes.settings.get_openrouter_openai_image2_default_quality",
+               return_value="mid"):
         resp = admin_no_db_client.get("/settings?tab=providers")
 
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
-    # 控件存在但 hidden
     assert 'id="openrouterOpenaiImage2Controls"' in body
     assert "hidden" in body
 
 
-def test_settings_post_providers_saves_openai_image2_controls(admin_no_db_client):
+# ---------------------------------------------------------------------------
+# POST providers Tab —— 新的 provider_<code>_* 字段路由
+# ---------------------------------------------------------------------------
+
+def test_settings_post_providers_saves_provider_api_key_via_dao(admin_no_db_client):
     with patch("web.routes.settings.set_image_translate_channel"), \
          patch("web.routes.settings.set_image_translate_default_model"), \
-         patch("web.routes.settings.set_openrouter_openai_image2_enabled") as m_enabled, \
-         patch("web.routes.settings.set_openrouter_openai_image2_default_quality") as m_quality:
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
             "translate_pref": "vertex_gemini_31_flash_lite",
-            "jianying_project_root": "/custom/path",
+            "provider_openrouter_text_api_key": "sk-fresh",
+            "provider_openrouter_text_base_url": "https://openrouter.example/api",
+            "provider_openrouter_text_model_id": "anthropic/claude-sonnet-4.6",
+            "provider_openrouter_text_extra_config": "",
             "image_translate_channel": "openrouter",
             "image_translate_default_model": "gemini-3-pro-image-preview",
             "openrouter_openai_image2_enabled": "1",
@@ -239,11 +333,58 @@ def test_settings_post_providers_saves_openai_image2_controls(admin_no_db_client
         })
 
     assert resp.status_code in (302, 303)
-    m_enabled.assert_called_once_with(True)
-    m_quality.assert_called_once_with("high")
+    save_calls = [c for c in m_save.call_args_list if c.args[0] == "openrouter_text"]
+    assert save_calls, "openrouter_text 保存未触发"
+    fields = save_calls[0].args[1]
+    assert fields["api_key"] == "sk-fresh"
+    assert fields["base_url"] == "https://openrouter.example/api"
+    assert fields["model_id"] == "anthropic/claude-sonnet-4.6"
+    # 空 extra_config 传为 {}
+    assert fields["extra_config"] == {}
 
 
-def test_settings_post_providers_persists_false_when_checkbox_absent(admin_no_db_client):
+def test_settings_post_providers_parses_json_extra_config(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
+        admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "provider_gemini_cloud_text_api_key": "cloud-key",
+            "provider_gemini_cloud_text_base_url": "",
+            "provider_gemini_cloud_text_model_id": "gemini-3.1-pro-preview",
+            "provider_gemini_cloud_text_extra_config": '{"project": "demo-gcp", "location": "us-central1"}',
+            "image_translate_channel": "cloud",
+            "image_translate_default_model": "gemini-3-pro-image-preview",
+        })
+
+    cloud_call = next(c for c in m_save.call_args_list if c.args[0] == "gemini_cloud_text")
+    fields = cloud_call.args[1]
+    assert fields["extra_config"] == {"project": "demo-gcp", "location": "us-central1"}
+
+
+def test_settings_post_providers_skips_invalid_json_extra_config(admin_no_db_client):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("web.routes.settings.set_image_translate_default_model"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
+         patch("web.routes.settings.set_openrouter_openai_image2_default_quality"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
+        admin_no_db_client.post("/settings", data={
+            "tab": "providers",
+            "translate_pref": "vertex_gemini_31_flash_lite",
+            "provider_doubao_asr_api_key": "asr-key",
+            "provider_doubao_asr_extra_config": "{not json",
+            "image_translate_channel": "aistudio",
+            "image_translate_default_model": "gemini-3.1-flash-image-preview",
+        })
+    # 非法 JSON 不应触发保存该 provider 行
+    for call in m_save.call_args_list:
+        assert call.args[0] != "doubao_asr"
+
+
+def test_settings_post_providers_persists_image2_off_when_checkbox_absent(admin_no_db_client):
     with patch("web.routes.settings.set_image_translate_channel"), \
          patch("web.routes.settings.set_image_translate_default_model"), \
          patch("web.routes.settings.set_openrouter_openai_image2_enabled") as m_enabled, \
@@ -251,10 +392,8 @@ def test_settings_post_providers_persists_false_when_checkbox_absent(admin_no_db
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
             "translate_pref": "vertex_gemini_31_flash_lite",
-            "jianying_project_root": "/custom/path",
             "image_translate_channel": "openrouter",
             "image_translate_default_model": "gemini-3-pro-image-preview",
-            # checkbox 未勾选 → 浏览器不会提交该字段
             "openrouter_openai_image2_default_quality": "mid",
         })
 
@@ -268,7 +407,6 @@ def test_settings_post_providers_saves_global_image_translate_channel_and_model(
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
             "translate_pref": "vertex_gemini_31_flash_lite",
-            "jianying_project_root": "/custom/path",
             "image_translate_channel": "openrouter",
             "image_translate_default_model": "gemini-3-pro-image-preview",
         })
@@ -278,8 +416,14 @@ def test_settings_post_providers_saves_global_image_translate_channel_and_model(
     m_set_model.assert_called_once_with("openrouter", "gemini-3-pro-image-preview")
 
 
+# ---------------------------------------------------------------------------
+# Bindings Tab
+# ---------------------------------------------------------------------------
+
 def test_settings_bindings_hides_image_translate_generate(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
          patch("web.routes.settings.llm_bindings.list_all",
                return_value=[
                    {
@@ -376,13 +520,11 @@ def test_settings_post_bindings_ignores_incomplete_rows(admin_no_db_client):
 
 def test_settings_post_without_tab_still_handles_providers(admin_no_db_client):
     """向后兼容：老表单不带 tab，当作 providers Tab 处理。"""
-    with patch("web.routes.settings.set_key") as m_set_key, \
-         patch("web.routes.settings.set_image_translate_channel"):
+    with patch("web.routes.settings.set_image_translate_channel"), \
+         patch("appcore.llm_provider_configs.save_provider_config") as m_save:
         resp = admin_no_db_client.post("/settings", data={
-            "openrouter_key": "new-key",
+            "provider_openrouter_text_api_key": "legacy-submit",
             "translate_pref": "vertex_gemini_31_flash_lite",
-            "jianying_project_root": "/custom/path",
         })
     assert resp.status_code in (302, 303)
-    # openrouter_key 应被保存
-    assert any(call.args[1] == "openrouter" for call in m_set_key.call_args_list)
+    assert any(call.args[0] == "openrouter_text" for call in m_save.call_args_list)
