@@ -364,6 +364,10 @@
 <div class="modal-overlay" id="uploadOverlay">
   <div class="modal-box modal-box-wide">
     <h3>新建全能视频翻译项目</h3>
+    <div class="modal-banner experimental" style="display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:16px;background:oklch(96% 0.05 85);border:1px solid oklch(84% 0.08 80);border-radius:8px;color:oklch(42% 0.10 60);font-size:13px;line-height:1.5;">
+      <span style="flex-shrink:0;">⚠️</span>
+      <span>实验通道：源语言直翻链路。问题反馈 → @owner。线上业务请用「多语视频翻译」。</span>
+    </div>
     <form id="uploadForm" enctype="multipart/form-data">
       <div class="modal-warning" id="langWarning">
         <span class="warning-icon">⚠️</span>
@@ -400,14 +404,21 @@
       </div>
       <div class="modal-field" id="sourceLanguageField">
         <label for="sourceLanguageSelect">源语言</label>
-        <select id="sourceLanguageSelect" name="source_language" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
-          <option value="" selected>自动检测（推荐）</option>
-          <option value="zh">中文（豆包 ASR）</option>
-          <option value="en">英文（豆包 ASR）</option>
-          <option value="es">西班牙语（ElevenLabs Scribe）</option>
-          <option value="pt">葡萄牙语（ElevenLabs Scribe）</option>
+        <select id="sourceLanguageSelect" name="source_language">
+          <option value="" selected>自动检测</option>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="pt">Português</option>
+          <option value="fr">Français</option>
+          <option value="it">Italiano</option>
+          <option value="de">Deutsch</option>
+          <option value="ja">日本語</option>
+          <option value="nl">Nederlands</option>
+          <option value="sv">Svenska</option>
+          <option value="fi">Suomi</option>
         </select>
-        <div class="modal-hint" style="margin:6px 0 0;">选具体语言可跳过 LLM 自动检测，直接走对应路径；不填则由 LLM 识别 ASR 文本判断</div>
+        <div class="modal-hint" style="margin:6px 0 0;">不确定时选「自动检测」即可。明确选择会跳过两层 LLM 检测，路由更精准。</div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
