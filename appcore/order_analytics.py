@@ -1026,3 +1026,20 @@ def _aggregate_ads_by_product(start: date, end: date) -> dict[int, dict]:
             "purchase_value": float(r.get("purchase_value") or 0),
         }
     return out
+
+
+def _count_media_items_by_product() -> dict[int, dict[str, int]]:
+    """SELECT product_id, lang, COUNT(*) FROM media_items WHERE deleted_at IS NULL
+       GROUP BY product_id, lang"""
+    rows = query(
+        "SELECT product_id, lang, COUNT(*) AS n FROM media_items "
+        "WHERE deleted_at IS NULL "
+        "GROUP BY product_id, lang"
+    )
+    out: dict[int, dict[str, int]] = {}
+    for r in rows:
+        pid = r.get("product_id")
+        if pid is None:
+            continue
+        out.setdefault(int(pid), {})[r.get("lang") or ""] = int(r.get("n") or 0)
+    return out

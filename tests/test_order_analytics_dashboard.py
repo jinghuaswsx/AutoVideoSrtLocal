@@ -209,3 +209,24 @@ def test_aggregate_ads_by_product_decimals_to_floats(monkeypatch):
     assert result[42]["spend"] == 1200.5
     assert isinstance(result[42]["spend"], float)
     assert result[42]["purchases"] == 130
+
+
+def test_count_media_items_by_product_groups_by_lang(monkeypatch):
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"product_id": 42, "lang": "en", "n": 1},
+        {"product_id": 42, "lang": "de", "n": 2},
+        {"product_id": 99, "lang": "en", "n": 1},
+    ])
+    result = oa._count_media_items_by_product()
+    assert result[42] == {"en": 1, "de": 2}
+    assert result[99] == {"en": 1}
+
+
+def test_count_media_items_by_product_filters_deleted(monkeypatch):
+    captured = {}
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        return []
+    monkeypatch.setattr(oa, "query", fake_query)
+    oa._count_media_items_by_product()
+    assert "deleted_at IS NULL" in captured["sql"]
