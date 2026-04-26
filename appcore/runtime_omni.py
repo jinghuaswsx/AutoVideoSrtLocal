@@ -61,7 +61,6 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
     # Override the base ASR step to dispatch by source_language.
     def _step_asr(self, task_id: str, task_dir: str) -> None:
-        from appcore.api_keys import resolve_key
         from pipeline.extract import get_video_duration
         from pipeline.lang_labels import lang_label
         from web.preview_artifacts import build_asr_artifact
@@ -70,51 +69,24 @@ class OmniTranslateRunner(MultiTranslateRunner):
             _save_json,
             _seconds_to_request_units,
         )
-        from appcore import ai_billing
+        from appcore import ai_billing, asr_router
         from appcore.events import EVT_ASR_RESULT
 
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
         source_language = task.get("source_language", "zh")
-        self._set_step(task_id, "asr", "running", "正在准备 ASR 音频...")
+        self._set_step(
+            task_id, "asr", "running",
+            f"正在识别{lang_label(source_language, in_chinese=True)}语音...",
+        )
 
-        # === ASR engine dispatch ===
-        if source_language in ("zh", "en"):
-            from pipeline.asr import transcribe
-            from pipeline.storage import delete_file, upload_file
-            volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
-            tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
-            audio_url = upload_file(audio_path, tos_key)
-            self._set_step(
-                task_id, "asr", "running",
-                f"正在识别{lang_label(source_language, in_chinese=True)}语音（豆包 ASR）...",
-            )
-            try:
-                utterances = transcribe(audio_url, volc_api_key=volc_api_key)
-            finally:
-                try:
-                    delete_file(tos_key)
-                except Exception:
-                    pass
-            asr_provider = "doubao_asr"
-            asr_model = "big-model"
-        else:
-            from pipeline.asr_scribe import transcribe_local_audio as scribe_transcribe
-            elevenlabs_api_key = resolve_key(
-                self.user_id, "elevenlabs", "ELEVENLABS_API_KEY",
-            )
-            self._set_step(
-                task_id, "asr", "running",
-                f"正在识别{lang_label(source_language, in_chinese=True)}语音（ElevenLabs Scribe）...",
-            )
-            utterances = scribe_transcribe(
-                audio_path,
-                language_code=source_language,
-                api_key=elevenlabs_api_key,
-            )
-            audio_url = ""
-            asr_provider = "elevenlabs_scribe"
-            asr_model = "scribe_v2"
+        # === Unified ASR call via router (zh→豆包，其他→Scribe v2 强制语言) ===
+        # 路由器内部已做语言污染清理（fast-langdetect 删除非主语言段 + 时间合并）。
+        result = asr_router.transcribe(audio_path, source_language=source_language)
+        utterances = result["utterances"]
+        asr_provider = result["provider_code"]
+        asr_model = result["model_id"]
+        audio_url = ""
 
         passthrough = _resolve_original_video_passthrough(utterances)
         source_full_text = passthrough["source_full_text"]
