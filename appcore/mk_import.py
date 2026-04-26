@@ -36,3 +36,34 @@ def _normalize_product_code(code: str | None) -> str:
     if not code:
         return ""
     return _RJC_SUFFIX_RE.sub("", code.strip()).lower()
+
+
+from appcore.db import query_one
+
+
+def _find_existing_product(normalized_code: str) -> dict | None:
+    """Find media_product whose product_code, after stripping -RJC, equals normalized_code.
+
+    Note: media_products.product_code is already stored lowercase per existing
+    _validate_product_code logic, but may or may not have -RJC suffix.
+    """
+    if not normalized_code:
+        return None
+    return query_one(
+        "SELECT * FROM media_products "
+        "WHERE deleted_at IS NULL "
+        "AND LOWER(REGEXP_REPLACE(COALESCE(product_code, ''), '-rjc$', '')) = %s "
+        "LIMIT 1",
+        (normalized_code,),
+    )
+
+
+def _is_video_already_imported(filename: str) -> bool:
+    """True if a media_item with this filename already exists (and not soft-deleted)."""
+    if not filename:
+        return False
+    row = query_one(
+        "SELECT 1 AS ok FROM media_items WHERE filename=%s AND deleted_at IS NULL LIMIT 1",
+        (filename,),
+    )
+    return bool(row)
