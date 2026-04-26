@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from appcore import order_analytics as oa
@@ -165,3 +166,46 @@ def test_aggregate_orders_by_product_skips_null_product_id(monkeypatch):
     ])
     result = oa._aggregate_orders_by_product(date(2026, 4, 1), date(2026, 4, 25), country=None)
     assert list(result.keys()) == [42]
+
+
+def test_aggregate_ads_by_product_full_coverage_only(monkeypatch):
+    """决策 #7：只纳入完全被 [start, end] 覆盖的广告报表。"""
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {"product_id": 42, "spend": 1200.5, "purchases": 130, "purchase_value": 4500.0},
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    result = oa._aggregate_ads_by_product(date(2026, 4, 1), date(2026, 4, 30))
+
+    # SQL 必须用 'report_start_date >= start AND report_end_date <= end'（完全覆盖语义）
+    assert "report_start_date >= %s" in captured["sql"]
+    assert "report_end_date <= %s" in captured["sql"]
+    assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 30))
+    assert result[42]["spend"] == 1200.5
+    assert result[42]["purchases"] == 130
+    assert result[42]["purchase_value"] == 4500.0
+
+
+def test_aggregate_ads_by_product_skips_null_product_id(monkeypatch):
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"product_id": None, "spend": 100.0, "purchases": 5, "purchase_value": 0.0},
+        {"product_id": 42, "spend": 200.0, "purchases": 10, "purchase_value": 600.0},
+    ])
+    result = oa._aggregate_ads_by_product(date(2026, 4, 1), date(2026, 4, 30))
+    assert list(result.keys()) == [42]
+
+
+def test_aggregate_ads_by_product_decimals_to_floats(monkeypatch):
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"product_id": 42, "spend": Decimal("1200.50"), "purchases": Decimal("130"),
+         "purchase_value": Decimal("4500.00")},
+    ])
+    result = oa._aggregate_ads_by_product(date(2026, 4, 1), date(2026, 4, 30))
+    assert result[42]["spend"] == 1200.5
+    assert isinstance(result[42]["spend"], float)
+    assert result[42]["purchases"] == 130

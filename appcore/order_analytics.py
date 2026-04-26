@@ -999,3 +999,30 @@ def _aggregate_orders_by_product(
             "revenue": float(r.get("revenue") or 0),
         }
     return out
+
+
+def _aggregate_ads_by_product(start: date, end: date) -> dict[int, dict]:
+    """按产品聚合广告。仅纳入 [report_start_date, report_end_date] 完全
+    被 [start, end] 覆盖的报表（决策 #7）。
+    返回 {product_id: {spend, purchases, purchase_value}}。"""
+    sql = (
+        "SELECT product_id, "
+        "SUM(spend_usd) AS spend, "
+        "SUM(result_count) AS purchases, "
+        "SUM(purchase_value_usd) AS purchase_value "
+        "FROM meta_ad_campaign_metrics "
+        "WHERE report_start_date >= %s AND report_end_date <= %s "
+        "GROUP BY product_id"
+    )
+    rows = query(sql, (start, end))
+    out: dict[int, dict] = {}
+    for r in rows:
+        pid = r.get("product_id")
+        if pid is None:
+            continue
+        out[int(pid)] = {
+            "spend": float(r.get("spend") or 0),
+            "purchases": int(r.get("purchases") or 0),
+            "purchase_value": float(r.get("purchase_value") or 0),
+        }
+    return out
