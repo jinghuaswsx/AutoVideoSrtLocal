@@ -1249,23 +1249,16 @@ class PipelineRunner:
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
-        self._set_step(task_id, "asr", "running", "正在准备 ASR 公网音频...")
-        from appcore.api_keys import resolve_key
-        from pipeline.extract import get_video_duration
-        from pipeline.asr import transcribe
-        from pipeline.storage import delete_file, upload_file
-
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
-        tos_key = f"asr-audio/{task_id}_{uuid.uuid4().hex[:8]}.wav"
-        audio_url = upload_file(audio_path, tos_key)
         self._set_step(task_id, "asr", "running", "正在识别中文语音...")
-        try:
-            utterances = transcribe(audio_url, volc_api_key=volc_api_key)
-        finally:
-            try:
-                delete_file(tos_key)
-            except Exception:
-                pass
+        from pipeline.extract import get_video_duration
+        from appcore import asr_router
+
+        # 默认 base 流水线为中文 → 路由器走豆包；并跑语言污染清理。
+        source_language = task.get("source_language") or "zh"
+        result = asr_router.transcribe(audio_path, source_language=source_language)
+        utterances = result["utterances"]
+        asr_provider = result["provider_code"]
+        asr_model = result["model_id"]
 
         passthrough = _resolve_original_video_passthrough(utterances)
         source_full_text = passthrough["source_full_text"]
@@ -1283,16 +1276,16 @@ class PipelineRunner:
             use_case_code="video_translate.asr",
             user_id=self.user_id,
             project_id=task_id,
-            provider="doubao_asr",
-            model="big-model",
+            provider=asr_provider,
+            model=asr_model,
             request_units=_seconds_to_request_units(audio_duration_seconds),
             units_type="seconds",
             audio_duration_seconds=audio_duration_seconds,
             success=True,
             request_payload={
                 "type": "asr",
-                "provider": "doubao_asr",
-                "audio_url": audio_url,
+                "provider": asr_provider,
+                "audio_url": "",
                 "audio_path": audio_path,
             },
             response_payload={
