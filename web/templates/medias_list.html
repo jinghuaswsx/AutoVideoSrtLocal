@@ -1886,4 +1886,107 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>
+
+<!-- E task-medias-bridge Task 3: deep-link from task center -->
+<script>
+(function mbridgeFromTask() {
+  var params = new URLSearchParams(window.location.search);
+  var fromTask = params.get('from_task');
+  if (!fromTask) return;
+
+  var productId = parseInt(params.get('product') || '0', 10);
+  var lang      = (params.get('lang') || '').toLowerCase().trim();
+  var action    = params.get('action') || '';
+
+  /* ── 1. Banner ── */
+  var banner = document.createElement('div');
+  banner.id = 'mbridgeBanner';
+  banner.style.cssText = [
+    'background:oklch(94% 0.04 225)',
+    'border-left:4px solid oklch(56% 0.16 230)',
+    'padding:12px 16px',
+    'margin-bottom:12px',
+    'border-radius:6px',
+    'font-size:14px',
+    'line-height:1.5',
+  ].join(';');
+  banner.innerHTML =
+    '<strong>&#x1F4CB; 来自任务中心 — 任务 #' + fromTask + '</strong>' +
+    (productId ? ' &middot; 产品 #' + productId : '') +
+    (lang      ? ' &middot; 语种 <code>' + lang.toUpperCase() + '</code>' : '') +
+    (action    ? ' &middot; 动作 <code>' + action + '</code>' : '') +
+    '<a href="/tasks/" target="_blank" rel="noopener" ' +
+      'style="float:right;color:oklch(56% 0.16 230);text-decoration:none;">返回任务中心 &rarr;</a>';
+
+  /* Insert banner at top of the main content area (.oc-page, .oc, or body fallback) */
+  function insertBanner() {
+    var host = document.querySelector('.oc-page') ||
+               document.querySelector('.oc')      ||
+               document.querySelector('main')     ||
+               document.body;
+    if (!host) return;
+    if (host.firstElementChild) host.insertBefore(banner, host.firstElementChild);
+    else host.appendChild(banner);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', insertBanner);
+  } else {
+    insertBanner();
+  }
+
+  /* ── 2. Auto-locate product row (async list) ── */
+  if (!productId) return;
+
+  var tried = 0;
+  var interval = setInterval(function tryLocate() {
+    tried++;
+
+    /* Product rows are rendered as  tr[data-pid="…"]  by medias.js rowHTML() */
+    var row = document.querySelector('tr[data-pid="' + productId + '"]');
+    if (!row) {
+      if (tried > 30) clearInterval(interval); /* give up after ~12 s */
+      return;
+    }
+
+    clearInterval(interval);
+
+    /* Scroll + flash highlight */
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.style.transition = 'background 600ms';
+    row.style.background = 'oklch(96% 0.05 85)';
+    setTimeout(function() { row.style.background = ''; }, 2500);
+
+    /* ── 3. Open edit modal via the edit button (data-edit="pid") ──
+       medias.js wires:  b.addEventListener('click', () => openEdit(+b.dataset.edit))
+       so clicking the button is the correct entry point.              */
+    var editBtn = document.querySelector('button[data-edit="' + productId + '"]');
+    if (!editBtn) return; /* row visible but no edit button — stop here */
+
+    editBtn.click();
+
+    /* ── 4. Switch lang tab after modal opens (async fetch inside openEdit) ── */
+    if (!lang) return;
+
+    var langTried = 0;
+    var langInterval = setInterval(function tryLang() {
+      langTried++;
+      /* Lang tabs render inside #edMask as  button.oc-lang-tab[data-lang="xx"] */
+      var edMask = document.getElementById('edMask');
+      if (!edMask || edMask.hidden) {
+        if (langTried > 25) clearInterval(langInterval); /* ~10 s */
+        return;
+      }
+      var tab = edMask.querySelector('.oc-lang-tab[data-lang="' + lang + '"]');
+      if (!tab) {
+        if (langTried > 25) clearInterval(langInterval);
+        return;
+      }
+      clearInterval(langInterval);
+      tab.click();
+    }, 400);
+
+  }, 400);
+})();
+</script>
 {% endblock %}

@@ -264,6 +264,36 @@ async function tcOpenDetail(id) {
     const task = (taskResp.items || []).find(t => t.id === id);
     if (!task) { body.innerHTML = '任务未找到（可能不在当前可见范围）'; return; }
     body.innerHTML = tcRenderDetail(task, eventsResp.events || []);
+    if (task.parent_task_id) {
+      // child task — fetch readiness
+      fetch('/tasks/api/child/' + id + '/readiness')
+        .then(r => r.json())
+        .then(data => {
+          const wrap = document.getElementById('tcReadinessRows');
+          if (!wrap) return;
+          if (data.error) { wrap.textContent = data.error; return; }
+          const labels = {
+            has_video: '视频', has_cover: '封面',
+            has_copywriting: '文案', has_push_texts: '推送文案',
+            is_listed: '商品在架',
+          };
+          const entries = Object.entries(data.readiness || {});
+          if (!entries.length) {
+            wrap.innerHTML = '<span style="color:var(--tc-warning-fg);">未找到该语种 media_item，请先用素材管理为 ' + tcEsc(data.country_code) + ' 添加视频</span>';
+            return;
+          }
+          wrap.innerHTML = entries.map(([k, v]) => {
+            const label = labels[k] || k;
+            const icon = v ? '✓' : '✗';
+            const color = v ? 'oklch(38% 0.09 165)' : 'oklch(58% 0.18 25)';
+            return `<span style="margin-right:14px; color:${color};"><strong>${icon}</strong> ${tcEsc(label)}</span>`;
+          }).join('');
+        })
+        .catch(e => {
+          const wrap = document.getElementById('tcReadinessRows');
+          if (wrap) wrap.textContent = '加载失败：' + (e.message || 'unknown');
+        });
+    }
   } catch (e) {
     body.innerHTML = '加载失败：' + tcEsc(e.message);
   }
@@ -286,6 +316,10 @@ function tcRenderDetail(task, events) {
       负责人：${tcEsc(task.assignee_username || '—')}
     </div>
     ${task.last_reason ? `<div style="background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">最近备注：${tcEsc(task.last_reason)}</div>` : ''}
+    ${!isParent ? `<div id="tcReadinessPanel" style="background:var(--tc-bg-subtle); padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">
+  <div style="font-weight:600; color:var(--tc-fg-muted); margin-bottom:6px;">翻译产物状态 (${tcEsc(task.country_code)})</div>
+  <div id="tcReadinessRows">加载中...</div>
+</div>` : ''}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">${buttons}</div>
     <h4 style="margin:0 0 8px; font-size:13px;">审计流</h4>
     <div>${evRows || '<div style="color:var(--tc-fg-muted); font-size:12px;">暂无事件</div>'}</div>
