@@ -86,6 +86,25 @@
   .mk-video-card { width:auto; }
   .mk-video-frame { width:100%; height:auto; aspect-ratio:9 / 16; }
 }
+/* mk-import: A 子系统按钮 */
+.mki-btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r); background: var(--oc-accent); color: #fff;
+  font-size: 12px; cursor: pointer; transition: background 120ms;
+  font-family: inherit;
+}
+.mki-btn:hover:not(:disabled) { background: var(--oc-accent-hover); }
+.mki-btn:disabled, .mki-btn--disabled {
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+  cursor: not-allowed; border-color: var(--oc-border);
+}
+.mki-toast {
+  position: fixed; bottom: 24px; right: 24px; padding: 12px 16px;
+  border-radius: var(--oc-r-md); font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 2000; max-width: 400px;
+}
+.mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
 {% endblock %}
 
 {% block content %}
@@ -332,6 +351,19 @@ async function openDetail(mkId, mkName) {
           <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
           <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
         </div>
+        <button class="mki-btn mki-btn--add"
+            data-mki-filename="${escapeHtml(v.name || '')}"
+            data-mki-mp4-url="${safeVideoUrl}"
+            data-mki-duration="${v.duration_seconds || v.duration || 0}"
+            data-mki-cover-url="${safeCoverUrl}"
+            data-mki-product-name="${escapeHtml(item.product_name || '')}"
+            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
+            data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-mk-id="${item.id || ''}"
+            onclick="mkiHandleClick(this)">
+          加入素材库
+        </button>
       </div>`;
     });
     html += `</div>`;
@@ -387,5 +419,10 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 
 // 初始加载
 loadData(1);
+
+// mk-import: stub — Tasks 9-11 fill in real handlers
+function mkiHandleClick(btn) {
+  alert('mk-import 点击 — handler 在 Task 11 实现 (filename=' + btn.dataset.mkiFilename + ')');
+}
 </script>
 {% endblock %}
