@@ -398,6 +398,24 @@
         <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
         <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
       </div>
+      <div class="modal-field" id="sourceLanguageField">
+        <label for="sourceLanguageSelect">源语言</label>
+        <select id="sourceLanguageSelect" name="source_language">
+          <option value="" selected>自动检测</option>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="pt">Português</option>
+          <option value="fr">Français</option>
+          <option value="it">Italiano</option>
+          <option value="de">Deutsch</option>
+          <option value="ja">日本語</option>
+          <option value="nl">Nederlands</option>
+          <option value="sv">Svenska</option>
+          <option value="fi">Suomi</option>
+        </select>
+        <div class="modal-hint" style="margin:6px 0 0;">不确定时选「自动检测」即可。明确选择会跳过两层 LLM 检测，路由更精准。</div>
+      </div>
       <p class="modal-hint">上传后将自动识别原视频语言并标准化为英文输入</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>

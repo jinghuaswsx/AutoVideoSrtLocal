@@ -6,6 +6,28 @@ import json
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _stub_purify_utterances(monkeypatch):
+    """Default no-op stub so tests that don't care about purify don't hit LLMs.
+
+    Tests that need to assert on purify behaviour can override by patching
+    `pipeline.asr_clean.purify_utterances` themselves (the explicit patch
+    wins because monkeypatch is applied first per-test).
+    """
+    def _fake_purify(utterances, *, language, task_id, user_id):
+        return {
+            "utterances": utterances,
+            "cleaned": False,
+            "fallback_used": False,
+            "model_used": "stub",
+            "validation_errors": [],
+            "raw_response_primary": "",
+            "raw_response_fallback": None,
+            "usage": {"primary": {}, "fallback": {}},
+        }
+    monkeypatch.setattr("pipeline.asr_clean.purify_utterances", _fake_purify)
+
+
 def test_module_exports_required_symbols():
     from pipeline import asr_normalize
     assert hasattr(asr_normalize, "DETECT_SUPPORTED_LANGS")
@@ -463,3 +485,46 @@ def test_run_user_specified_rejects_unsupported_lang():
             task_id="t", user_id=1, utterances=_make_utterances(), source_language="ru",
         )
     assert "ru" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Task 12: ASR same-language purification injected before translate_to_en
+# ---------------------------------------------------------------------------
+
+
+def test_run_user_specified_calls_purify():
+    from pipeline import asr_normalize
+    utts = [{"index": 0, "start": 0, "end": 1, "text": "Hola"}]
+    with patch("pipeline.asr_clean.purify_utterances",
+               return_value={"utterances": utts, "cleaned": True,
+                             "fallback_used": False, "model_used": "test",
+                             "validation_errors": [], "raw_response_primary": "",
+                             "raw_response_fallback": None,
+                             "usage": {"primary": {}, "fallback": {}}}) as p, \
+         patch("pipeline.asr_normalize.translate_to_en",
+               return_value=([{"index": 0, "start": 0, "end": 1, "text": "Hello"}], {})):
+        artifact = asr_normalize.run_user_specified(
+            task_id="t-1", user_id=1, utterances=utts, source_language="es",
+        )
+    p.assert_called_once()
+    assert artifact["asr_clean"]["performed"] is True
+    assert artifact["asr_clean"]["cleaned"] is True
+
+
+def test_run_user_specified_skips_purify_for_zh_skip_route():
+    """zh_skip route still purifies the input (zh in the supported list)."""
+    from pipeline import asr_normalize
+    utts = [{"index": 0, "start": 0, "end": 1, "text": "你好"}]
+    with patch("pipeline.asr_clean.purify_utterances",
+               return_value={"utterances": utts, "cleaned": True,
+                             "fallback_used": False, "model_used": "test",
+                             "validation_errors": [], "raw_response_primary": "",
+                             "raw_response_fallback": None,
+                             "usage": {"primary": {}, "fallback": {}}}) as p:
+        artifact = asr_normalize.run_user_specified(
+            task_id="t-2", user_id=1, utterances=utts, source_language="zh",
+        )
+    # zh_skip route: purify still runs but translate_to_en doesn't
+    p.assert_called_once()
+    assert artifact["asr_clean"]["performed"] is True
+    assert artifact["route"] == "zh_skip"

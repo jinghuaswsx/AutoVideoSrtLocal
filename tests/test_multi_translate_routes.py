@@ -909,3 +909,100 @@ def test_multi_translate_list_upload_modal_text_mentions_normalization():
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
     assert "自动识别原视频语言并标准化" in template
     assert "中文/英文" not in template  # 老文案被移除
+
+
+# ── Task 13: source_language form field ──────────────────────────────────────
+
+def test_multi_translate_allowed_source_languages_constant():
+    """ALLOWED_SOURCE_LANGUAGES 必须包含空串 + 11 种语言代码（与 omni 对齐）。"""
+    from web.routes.multi_translate import ALLOWED_SOURCE_LANGUAGES
+    assert ALLOWED_SOURCE_LANGUAGES == (
+        "", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
+    )
+
+
+@pytest.mark.parametrize("lang", ["es", "fr", "ja", "de", "pt", "it", "nl", "sv", "fi", "en", "zh"])
+def test_multi_translate_start_accepts_source_language(
+    tmp_path, authed_client_no_db, monkeypatch, lang,
+):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "source_language": lang,
+            "video": (io.BytesIO(b"multi-video"), f"demo-{lang}.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201, response.get_json()
+    payload = response.get_json()
+    from web import store
+    task = store.get(payload["task_id"])
+    assert task["source_language"] == lang
+    assert task["user_specified_source_language"] is True
+
+
+def test_multi_translate_start_defaults_source_language_to_zh_when_blank(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    """空值 = 自动检测：source_language 落 zh，user_specified=False。"""
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    from web import store
+    task = store.get(payload["task_id"])
+    assert task["source_language"] == "zh"
+    assert task["user_specified_source_language"] is False
+
+
+def test_multi_translate_start_rejects_unsupported_source_language(
+    tmp_path, authed_client_no_db, monkeypatch,
+):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: None,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "source_language": "ru",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "source_language" in response.get_json().get("error", "")

@@ -54,6 +54,61 @@ _MAX_REWRITE_ATTEMPTS_BY_TARGET = {
 }
 
 
+import json as _json_anchor
+from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
+from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
+
+
+class OmniLocalizationAdapter(_BaseAdapter):
+    """omni-flavored adapter: rewrite messages carry the original ASR transcript."""
+
+    _SOURCE_LANG_LABEL: dict[str, str] = {
+        "zh": "Chinese", "en": "English", "es": "Spanish", "pt": "Portuguese",
+        "fr": "French", "it": "Italian", "ja": "Japanese", "de": "German",
+        "nl": "Dutch", "sv": "Swedish", "fi": "Finnish",
+    }
+
+    def __init__(self, lang: str, source_language: str, original_asr_text: str):
+        super().__init__(lang)
+        self.source_language = source_language
+        self.original_asr_text = original_asr_text
+        self.__name__ = f"omni_translate.localization.{lang}"
+
+    def build_localized_rewrite_messages(
+        self,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_words: int,
+        direction: str,
+        source_language: str = "zh",
+        feedback_notes: str | None = None,
+    ) -> list[dict]:
+        config = _resolve_prompt_anchor("base_rewrite", self.lang)
+        prompt = config["content"].replace(
+            "{target_words}", str(target_words)
+        ).replace("{direction}", direction)
+
+        src_label = self._SOURCE_LANG_LABEL.get(self.source_language, self.source_language)
+
+        user_content = (
+            f"ORIGINAL VIDEO TRANSCRIPT ({src_label}, ground truth — what the video actually says):\n"
+            f"{self.original_asr_text}\n\n"
+            f"INITIAL LOCALIZATION (target language, written from the transcript above):\n"
+            f"{_json_anchor.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}\n\n"
+            f"REWRITE TASK:\n"
+            f"Rewrite the initial localization to {direction} to ~{target_words} words. "
+            f"STAY ANCHORED in the original transcript. Do NOT fabricate details that "
+            f"are not in the transcript above."
+        )
+        if feedback_notes:
+            user_content += f"\n\n{feedback_notes}"
+
+        return [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+
 class OmniTranslateRunner(MultiTranslateRunner):
     """Multi-source-language video translation runner."""
 
@@ -189,3 +244,215 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
         self._set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
         self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
+
+    def _step_asr_clean(self, task_id: str) -> None:
+        """Same-language ASR purification (replaces asr_normalize for omni).
+
+        Detect if needed, then purify utterances in their own language. Does
+        NOT translate to English — downstream omni runs alignment / translate
+        on source-language utterances directly.
+        """
+        from pipeline import asr_clean as _asr_clean
+
+        task = task_state.get(task_id)
+        utterances = task.get("utterances") or []
+        if not utterances:
+            self._set_step(task_id, "asr_clean", "done", "无音频文本，跳过纯净化")
+            return
+
+        # Resume idempotency: skip if already cleaned
+        if task.get("utterances_raw"):  # set only after successful purify
+            self._set_step(task_id, "asr_clean", "done", "已纯净化（resume 跳过）")
+            return
+
+        source_language = task.get("source_language", "zh")
+        user_specified = bool(task.get("user_specified_source_language"))
+        self._set_step(task_id, "asr_clean", "running",
+                       f"正在纯净化 {source_language.upper()} ASR 文本…")
+
+        result = _asr_clean.purify_utterances(
+            utterances, language=source_language,
+            task_id=task_id, user_id=self.user_id,
+        )
+
+        artifact = {
+            "language": source_language,
+            "user_specified": user_specified,
+            "cleaned": result["cleaned"],
+            "fallback_used": result["fallback_used"],
+            "model_used": result["model_used"],
+            "validation_errors": result["validation_errors"],
+            "input_preview": " ".join(u.get("text", "") for u in utterances)[:200],
+            "output_preview": " ".join(u.get("text", "") for u in result["utterances"])[:200],
+        }
+        task_state.set_artifact(task_id, "asr_clean", artifact)
+
+        if result["cleaned"]:
+            task_state.update(
+                task_id,
+                utterances=result["utterances"],
+                utterances_raw=utterances,  # keep original for audit
+            )
+            msg = "ASR 同语言纯净化完成"
+            if result["fallback_used"]:
+                msg += "（兜底）"
+            self._set_step(task_id, "asr_clean", "done", msg)
+        else:
+            log.warning("[asr_clean] task=%s purify failed: %s", task_id, result["validation_errors"])
+            self._set_step(
+                task_id, "asr_clean", "done",
+                "ASR 纯净化未通过校验，保留原文本继续",
+            )
+
+    def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
+        """Replace parent's asr_normalize step with asr_clean (omni-specific)."""
+        from appcore.runtime import PipelineRunner
+        base_steps = PipelineRunner._get_pipeline_steps(self, task_id, video_path, task_dir)
+        out = []
+        for name, fn in base_steps:
+            out.append((name, fn))
+            if name == "asr":
+                out.append(("asr_clean", lambda: self._step_asr_clean(task_id)))
+                out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        return out
+
+    def _step_translate(self, task_id: str) -> None:
+        """omni: translate directly from source-language transcript to target language.
+
+        Differs from MultiTranslateRunner._step_translate in two ways:
+        1. source_full_text is built from the source-language utterances/script_segments
+           (multi reads utterances_en which omni no longer produces).
+        2. The base_translation system prompt is augmented with INPUT NOTICE explaining
+           that input may be ASR-noisy, to suppress fabrication.
+        """
+        from appcore.events import EVT_TRANSLATE_RESULT
+        from appcore.runtime import (
+            _build_review_segments,
+            _llm_request_payload,
+            _llm_response_payload,
+            _log_translate_billing,
+            _save_json,
+            _resolve_translate_provider,
+        )
+        from pipeline.localization import build_source_full_text_zh
+        from pipeline.translate import generate_localized_translation, get_model_display_name
+        from web.preview_artifacts import build_asr_artifact, build_translate_artifact
+
+        task = task_state.get(task_id)
+        task_dir = task["task_dir"]
+        if self._complete_original_video_passthrough(
+            task_id, task.get("video_path") or "", task_dir,
+        ):
+            return
+        lang = self._resolve_target_lang(task)
+        source_language = task.get("source_language") or "zh"
+
+        provider = _resolve_translate_provider(self.user_id)
+        _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
+        self._set_step(task_id, "translate", "running",
+                       f"正在从 {source_language.upper()} 直译为 {lang.upper()}...",
+                       model_tag=_model_tag)
+
+        script_segments = task.get("script_segments", []) or []
+        # build_source_full_text_zh just joins script_segments[*].text — language-agnostic
+        source_full_text = build_source_full_text_zh(script_segments)
+        task_state.update(task_id, source_full_text_zh=source_full_text)
+        _save_json(task_dir, "source_full_text.json",
+                   {"full_text": source_full_text, "language": source_language})
+
+        # Source-anchored system prompt: vanilla base_translation + INPUT NOTICE
+        base_prompt = self._build_system_prompt(lang)
+        notice = (
+            f"\n\nINPUT NOTICE: The source script provided below is in "
+            f"{source_language.upper()}. It came from automatic speech recognition "
+            f"of the original video and may contain transcription artifacts. "
+            f"Treat it as the source of truth for content; do NOT invent details "
+            f"that are not implied by it. If a segment is unintelligible, keep "
+            f"your version brief instead of fabricating context."
+        )
+        system_prompt = base_prompt + notice
+
+        localized_translation = generate_localized_translation(
+            source_full_text, script_segments, variant="normal",
+            custom_system_prompt=system_prompt,
+            provider=provider, user_id=self.user_id,
+        )
+        initial_messages = localized_translation.pop("_messages", None)
+        if initial_messages:
+            _save_json(task_dir, "localized_translate_messages.json", {
+                "phase": "initial_translate",
+                "source_language": source_language,
+                "target_language": lang,
+                "messages": initial_messages,
+            })
+
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get("normal", {}))
+        variant_state["localized_translation"] = localized_translation
+        variants["normal"] = variant_state
+        _save_json(task_dir, "localized_translation.normal.json", localized_translation)
+
+        review_segments = _build_review_segments(script_segments, localized_translation)
+        requires_confirmation = bool(task.get("interactive_review"))
+        task_state.update(
+            task_id,
+            source_full_text_zh=source_full_text,
+            localized_translation=localized_translation,
+            variants=variants,
+            segments=review_segments,
+            _segments_confirmed=not requires_confirmation,
+        )
+        task_state.set_artifact(task_id, "asr",
+                                 build_asr_artifact(task.get("utterances", []),
+                                                    source_full_text,
+                                                    source_language=source_language))
+        task_state.set_artifact(task_id, "translate",
+                                 build_translate_artifact(source_full_text,
+                                                          localized_translation,
+                                                          source_language=source_language,
+                                                          target_language=lang))
+        _save_json(task_dir, "localized_translation.json", localized_translation)
+
+        usage = localized_translation.get("_usage") or {}
+        _log_translate_billing(
+            user_id=self.user_id, project_id=task_id,
+            use_case_code="video_translate.localize",
+            provider=provider,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            success=True,
+            request_payload=_llm_request_payload(
+                localized_translation, provider, "video_translate.localize",
+                messages=initial_messages,
+            ),
+            response_payload=_llm_response_payload(localized_translation),
+        )
+
+        if requires_confirmation:
+            task_state.set_current_review_step(task_id, "translate")
+            self._set_step(task_id, "translate", "waiting",
+                           f"{lang.upper()} 翻译已生成，等待人工确认")
+        else:
+            task_state.set_current_review_step(task_id, "")
+            self._set_step(task_id, "translate", "done",
+                           f"{source_language.upper()} → {lang.upper()} 直译完成")
+
+        self._emit(task_id, EVT_TRANSLATE_RESULT, {
+            "source_full_text_zh": source_full_text,
+            "localized_translation": localized_translation,
+            "segments": review_segments,
+            "requires_confirmation": requires_confirmation,
+        })
+
+    def _get_localization_module(self, task: dict):
+        lang = self._resolve_target_lang(task)
+        source_language = task.get("source_language") or "zh"
+        utterances = task.get("utterances") or []
+        original_asr_text = " ".join(
+            (u.get("text") or "").strip() for u in utterances if u.get("text")
+        ).strip()
+        return OmniLocalizationAdapter(
+            lang=lang,
+            source_language=source_language,
+            original_asr_text=original_asr_text,
+        )

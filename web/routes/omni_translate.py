@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 bp = Blueprint("omni_translate", __name__)
 
 SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
+ALLOWED_SOURCE_LANGUAGES = ("", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
 
 
 def _list_enabled_target_langs() -> tuple[str, ...]:
@@ -282,8 +283,8 @@ def upload_and_start():
     # 源语言：""=自动检测（默认按 zh 选 ASR 引擎，LID 复检覆盖）；
     # zh/en/es/pt=用户明确指定，跳过两层 LLM 检测，直接走对应路径
     raw_source_language = (request.form.get("source_language") or "").strip()
-    if raw_source_language not in ("", "zh", "en", "es", "pt"):
-        return jsonify({"error": "source_language must be one of '', 'zh', 'en', 'es', 'pt'"}), 400
+    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
     user_specified_source_language = bool(raw_source_language)
     source_language = raw_source_language or "zh"
 
@@ -420,8 +421,8 @@ def update_source_language(task_id):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
     raw_lang = (body.get("source_language") or "").strip()
-    if raw_lang not in ("", "zh", "en", "es", "pt"):
-        return jsonify({"error": "source_language must be one of '', 'zh', 'en', 'es', 'pt'"}), 400
+    if raw_lang not in ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
     user_specified = bool(raw_lang)
     new_lang = raw_lang or "zh"
 
@@ -438,13 +439,13 @@ def update_source_language(task_id):
 
     started = False
     for s in RESUMABLE_STEPS:
-        if s == "asr_normalize":
+        if s == "asr_clean":
             started = True
         if started:
             store.set_step(task_id, s, "pending")
             store.set_step_message(task_id, s, "等待中...")
 
-    omni_pipeline_runner.resume(task_id, "asr_normalize", user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, "asr_clean", user_id=current_user.id)
     return jsonify({
         "status": "started",
         "source_language": new_lang,
@@ -532,7 +533,10 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+# Resumable step list. Includes both 'asr_clean' (new) and 'asr_normalize' (legacy)
+# so historical tasks can still resume from their old artifacts.
+RESUMABLE_STEPS = ["extract", "asr", "asr_clean", "asr_normalize", "voice_match",
+                   "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/api/omni-translate/<task_id>/resume", methods=["POST"])

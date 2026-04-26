@@ -77,6 +77,26 @@ def authed_client_no_db(monkeypatch):
 
 
 @pytest.fixture
+def db_clean():
+    """DB-touching helper for tests that need a clean translation_quality_assessments table.
+
+    Imports happen lazily inside the fixture to avoid module-level side effects
+    on test collection.
+    """
+    from appcore import db as _db
+
+    class _DBHelper:
+        def query(self, sql, args=None): return _db.query(sql, args)
+        def query_one(self, sql, args=None): return _db.query_one(sql, args)
+        def execute(self, sql, args=None): return _db.execute(sql, args)
+
+    helper = _DBHelper()
+    helper.execute("DELETE FROM translation_quality_assessments WHERE task_id LIKE 'task-%'")
+    yield helper
+    helper.execute("DELETE FROM translation_quality_assessments WHERE task_id LIKE 'task-%'")
+
+
+@pytest.fixture
 def authed_user_client_no_db(monkeypatch):
     """Flask client for a normal user with app startup recovery disabled."""
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
