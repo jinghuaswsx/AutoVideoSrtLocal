@@ -439,13 +439,13 @@ def update_source_language(task_id):
 
     started = False
     for s in RESUMABLE_STEPS:
-        if s == "asr_normalize":
+        if s == "asr_clean":
             started = True
         if started:
             store.set_step(task_id, s, "pending")
             store.set_step_message(task_id, s, "等待中...")
 
-    omni_pipeline_runner.resume(task_id, "asr_normalize", user_id=current_user.id)
+    omni_pipeline_runner.resume(task_id, "asr_clean", user_id=current_user.id)
     return jsonify({
         "status": "started",
         "source_language": new_lang,
@@ -533,7 +533,10 @@ def export(task_id):
     return jsonify({"status": "started"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+# Resumable step list. Includes both 'asr_clean' (new) and 'asr_normalize' (legacy)
+# so historical tasks can still resume from their old artifacts.
+RESUMABLE_STEPS = ["extract", "asr", "asr_clean", "asr_normalize", "voice_match",
+                   "alignment", "translate", "tts", "subtitle", "compose", "export"]
 
 
 @bp.route("/api/omni-translate/<task_id>/resume", methods=["POST"])

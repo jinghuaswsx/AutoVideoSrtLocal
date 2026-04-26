@@ -337,6 +337,17 @@ class MultiTranslateRunner(PipelineRunner):
         self._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         self._set_step(task_id, "subtitle", "done", f"{lang.upper()} 字幕生成完成")
 
+        # Fire-and-forget translation-quality assessment. Failures don't block compose.
+        try:
+            from web.services import quality_assessment as _qa
+            _qa.trigger_assessment(
+                task_id=task_id, project_type=self.project_type,
+                triggered_by="auto", user_id=self.user_id,
+            )
+        except Exception:  # noqa: BLE001 — assessment failures must not break pipeline
+            log.warning("[%s] failed to trigger quality assessment for task %s",
+                        self.project_type, task_id, exc_info=True)
+
     def _step_asr_normalize(self, task_id: str) -> None:
         """ASR 后的原文 → en-US 标准化。
 

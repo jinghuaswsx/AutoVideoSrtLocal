@@ -189,3 +189,74 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
         self._set_step(task_id, "asr", "done", f"识别完成，共 {len(utterances)} 段")
         self._emit(task_id, EVT_ASR_RESULT, {"segments": utterances})
+
+    def _step_asr_clean(self, task_id: str) -> None:
+        """Same-language ASR purification (replaces asr_normalize for omni).
+
+        Detect if needed, then purify utterances in their own language. Does
+        NOT translate to English — downstream omni runs alignment / translate
+        on source-language utterances directly.
+        """
+        from pipeline import asr_clean as _asr_clean
+
+        task = task_state.get(task_id)
+        utterances = task.get("utterances") or []
+        if not utterances:
+            self._set_step(task_id, "asr_clean", "done", "无音频文本，跳过纯净化")
+            return
+
+        # Resume idempotency: skip if already cleaned
+        if task.get("utterances_raw"):  # set only after successful purify
+            self._set_step(task_id, "asr_clean", "done", "已纯净化（resume 跳过）")
+            return
+
+        source_language = task.get("source_language", "zh")
+        user_specified = bool(task.get("user_specified_source_language"))
+        self._set_step(task_id, "asr_clean", "running",
+                       f"正在纯净化 {source_language.upper()} ASR 文本…")
+
+        result = _asr_clean.purify_utterances(
+            utterances, language=source_language,
+            task_id=task_id, user_id=self.user_id,
+        )
+
+        artifact = {
+            "language": source_language,
+            "user_specified": user_specified,
+            "cleaned": result["cleaned"],
+            "fallback_used": result["fallback_used"],
+            "model_used": result["model_used"],
+            "validation_errors": result["validation_errors"],
+            "input_preview": " ".join(u.get("text", "") for u in utterances)[:200],
+            "output_preview": " ".join(u.get("text", "") for u in result["utterances"])[:200],
+        }
+        task_state.set_artifact(task_id, "asr_clean", artifact)
+
+        if result["cleaned"]:
+            task_state.update(
+                task_id,
+                utterances=result["utterances"],
+                utterances_raw=utterances,  # keep original for audit
+            )
+            msg = "ASR 同语言纯净化完成"
+            if result["fallback_used"]:
+                msg += "（兜底）"
+            self._set_step(task_id, "asr_clean", "done", msg)
+        else:
+            log.warning("[asr_clean] task=%s purify failed: %s", task_id, result["validation_errors"])
+            self._set_step(
+                task_id, "asr_clean", "done",
+                "ASR 纯净化未通过校验，保留原文本继续",
+            )
+
+    def _get_pipeline_steps(self, task_id: str, video_path: str, task_dir: str) -> list:
+        """Replace parent's asr_normalize step with asr_clean (omni-specific)."""
+        from appcore.runtime import PipelineRunner
+        base_steps = PipelineRunner._get_pipeline_steps(self, task_id, video_path, task_dir)
+        out = []
+        for name, fn in base_steps:
+            out.append((name, fn))
+            if name == "asr":
+                out.append(("asr_clean", lambda: self._step_asr_clean(task_id)))
+                out.append(("voice_match", lambda: self._step_voice_match(task_id)))
+        return out

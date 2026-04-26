@@ -1979,6 +1979,17 @@ class PipelineRunner:
         self._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         self._set_step(task_id, "subtitle", "done", "英文字幕生成完成")
 
+        # Fire-and-forget translation-quality assessment. Failures don't block compose.
+        try:
+            from web.services import quality_assessment as _qa
+            _qa.trigger_assessment(
+                task_id=task_id, project_type=self.project_type,
+                triggered_by="auto", user_id=self.user_id,
+            )
+        except Exception:  # noqa: BLE001 — assessment failures must not break pipeline
+            log.warning("[%s] failed to trigger quality assessment for task %s",
+                        self.project_type, task_id, exc_info=True)
+
     def _step_compose(self, task_id: str, video_path: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         if _is_original_video_passthrough(task):
@@ -2500,6 +2511,17 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         )
         runner._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         runner._set_step(task_id, "subtitle", "done", f"{target_language_name}字幕生成完成")
+
+        # Fire-and-forget translation-quality assessment. Failures don't block compose.
+        try:
+            from web.services import quality_assessment as _qa
+            _qa.trigger_assessment(
+                task_id=task_id, project_type=runner.project_type,
+                triggered_by="auto", user_id=runner.user_id,
+            )
+        except Exception:  # noqa: BLE001 — assessment failures must not break pipeline
+            log.warning("[%s] failed to trigger quality assessment for task %s",
+                        runner.project_type, task_id, exc_info=True)
     except Exception as exc:
         _fail_localize(task_id, runner, current_step, str(exc))
 
