@@ -977,9 +977,9 @@ def _aggregate_orders_by_product(
         "SELECT product_id, "
         "COUNT(DISTINCT shopify_order_id) AS orders, "
         "SUM(lineitem_quantity) AS units, "
-        "SUM(lineitem_quantity * lineitem_price) AS revenue "
+        "SUM(COALESCE(lineitem_price, 0) * lineitem_quantity) AS revenue "
         "FROM shopify_orders "
-        "WHERE DATE(created_at_order) BETWEEN %s AND %s "
+        "WHERE created_at_order >= %s AND created_at_order < DATE_ADD(%s, INTERVAL 1 DAY) "
     )
     args: tuple = (start, end)
     if country:

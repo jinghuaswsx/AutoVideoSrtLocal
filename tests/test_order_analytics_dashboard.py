@@ -136,7 +136,9 @@ def test_aggregate_orders_by_product_returns_dict_keyed_by_product_id(monkeypatc
     assert result[42]["orders"] == 10
     assert result[42]["units"] == 12
     assert result[42]["revenue"] == 240.5
-    assert "DATE(created_at_order)" in captured["sql"]
+    assert "created_at_order >= %s" in captured["sql"]
+    assert "created_at_order < DATE_ADD(" in captured["sql"]
+    assert "COALESCE(lineitem_price" in captured["sql"]
     assert "billing_country" not in captured["sql"]  # 无国家筛选时不带
     assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 25))
 
