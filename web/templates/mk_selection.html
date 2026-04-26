@@ -369,6 +369,7 @@ async function openDetail(mkId, mkName) {
     html += `</div>`;
 
     document.getElementById('detailContent').innerHTML = html;
+    mkiCheckRenderedButtons();  // mk-import: Task 9 — check after render
   } catch (e) {
     document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${e.message}</p>`;
   }
@@ -420,9 +421,146 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 // 初始加载
 loadData(1);
 
-// mk-import: stub — Tasks 9-11 fill in real handlers
-function mkiHandleClick(btn) {
-  alert('mk-import 点击 — handler 在 Task 11 实现 (filename=' + btn.dataset.mkiFilename + ')');
+// mk-import: Task 9 — page-load + post-render batch check
+let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names
+
+async function mkiCheckRenderedButtons() {
+  const allBtns = Array.from(document.querySelectorAll('.mki-btn--add'));
+  if (!allBtns.length) return;
+  // Skip already-disabled buttons (already known imported) AND already-checked names
+  const newFilenames = [];
+  const seen = new Set();
+  for (const btn of allBtns) {
+    const fn = btn.dataset.mkiFilename;
+    if (!fn) continue;
+    if (btn.disabled) continue;
+    if (MKI_CHECKED_FILENAMES.has(fn)) continue;
+    if (seen.has(fn)) continue;
+    seen.add(fn);
+    newFilenames.push(fn);
+  }
+  if (!newFilenames.length) return;
+
+  // Chunk 100 per request
+  const imported = new Set();
+  for (let i = 0; i < newFilenames.length; i += 100) {
+    const chunk = newFilenames.slice(i, i + 100);
+    try {
+      const r = await fetch('/mk-import/check?filenames=' + encodeURIComponent(chunk.join(',')));
+      if (!r.ok) continue;
+      const data = await r.json();
+      (data.imported || []).forEach(f => imported.add(f));
+    } catch (e) { console.warn('mki check failed', e); }
+  }
+
+  // Mark all checked names as cached
+  newFilenames.forEach(fn => MKI_CHECKED_FILENAMES.add(fn));
+
+  // Apply disabled state
+  allBtns.forEach(btn => {
+    const fn = btn.dataset.mkiFilename;
+    if (imported.has(fn)) {
+      btn.textContent = '已入库';
+      btn.disabled = true;
+      btn.classList.add('mki-btn--disabled');
+    }
+  });
+}
+
+// mk-import: Task 10 翻译员选择 modal
+let mkiTranslatorResolve = null;
+let mkiTranslatorsCache = null;
+
+async function mkiOpenTranslatorModal() {
+  if (!mkiTranslatorsCache) {
+    try {
+      const r = await fetch('/tasks/api/translators');
+      const data = await r.json();
+      mkiTranslatorsCache = data.translators || [];
+    } catch (e) {
+      mkiTranslatorsCache = [];
+    }
+  }
+  if (!mkiTranslatorsCache.length) {
+    alert('没有可用翻译员（请确保有用户开启 can_translate 权限）');
+    return null;
+  }
+  const sel = document.getElementById('mkiTranslatorSel');
+  sel.innerHTML = mkiTranslatorsCache.map(t => `<option value="${t.id}">${t.username}</option>`).join('');
+  document.getElementById('mkiTranslatorModal').style.display = 'block';
+  return new Promise(resolve => { mkiTranslatorResolve = resolve; });
+}
+function mkiTranslatorOK() {
+  const id = parseInt(document.getElementById('mkiTranslatorSel').value);
+  document.getElementById('mkiTranslatorModal').style.display = 'none';
+  if (mkiTranslatorResolve) { mkiTranslatorResolve(id); mkiTranslatorResolve = null; }
+}
+function mkiTranslatorCancel() {
+  document.getElementById('mkiTranslatorModal').style.display = 'none';
+  if (mkiTranslatorResolve) { mkiTranslatorResolve(null); mkiTranslatorResolve = null; }
+}
+
+// mk-import: Task 11 — toast + real handler
+function mkiToast(kind, msg) {
+  const t = document.createElement('div');
+  t.className = 'mki-toast mki-toast--' + kind;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function mkiHandleClick(btn) {
+  const translatorId = await mkiOpenTranslatorModal();
+  if (translatorId === null) return;
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '入库中...';
+  try {
+    const meta = {
+      mp4_url: btn.dataset.mkiMp4Url,
+      filename: btn.dataset.mkiFilename,
+      duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
+      cover_url: btn.dataset.mkiCoverUrl || null,
+      product_name: btn.dataset.mkiProductName,
+      product_link: btn.dataset.mkiProductLink || null,
+      main_image: btn.dataset.mkiMainImage || null,
+      product_code: btn.dataset.mkiProductCode,
+      mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
+    };
+    const rsp = await fetch('/mk-import/video', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mk_video_metadata: meta, translator_id: translatorId}),
+    });
+    if (!rsp.ok) {
+      const err = await rsp.json().catch(() => ({error: rsp.statusText}));
+      throw new Error(err.detail || err.error || rsp.statusText);
+    }
+    const data = await rsp.json();
+    btn.textContent = '已入库';
+    btn.classList.add('mki-btn--disabled');
+    MKI_CHECKED_FILENAMES.add(btn.dataset.mkiFilename);  // dedup cache update
+    const tag = data.is_new_product ? '（新建产品）' : '（老品 append）';
+    mkiToast('success', `素材已入库 ${tag}`);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiToast('error', '入库失败：' + e.message);
+  }
 }
 </script>
+
+<!-- mk-import: Task 10 翻译员选择 modal -->
+<div id="mkiTranslatorModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:380px; max-width:90vw;">
+    <h3 style="margin:0 0 12px;">指定翻译员</h3>
+    <p style="font-size:13px; color:var(--oc-fg-muted); margin:0 0 12px;">老品自动沿用现有翻译员，本次选择仅在新品时生效。</p>
+    <select id="mkiTranslatorSel" class="oc-input" style="width:100%; height:32px;"></select>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="oc-btn oc-btn--ghost" onclick="mkiTranslatorCancel()">取消</button>
+      <button class="oc-btn oc-btn--primary" onclick="mkiTranslatorOK()">确认</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
