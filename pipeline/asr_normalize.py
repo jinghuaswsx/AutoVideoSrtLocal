@@ -320,6 +320,13 @@ _USER_SPECIFIED_ROUTES: dict[str, str] = {
     "en": "en_skip",
     "es": "es_specialized",
     "pt": "generic_fallback",
+    "fr": "generic_fallback",
+    "it": "generic_fallback",
+    "ja": "generic_fallback",
+    "de": "generic_fallback",
+    "nl": "generic_fallback",
+    "sv": "generic_fallback",
+    "fi": "generic_fallback",
 }
 
 

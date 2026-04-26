@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 
 def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db):
     """body.source_language='es' → 改写 task + resume from asr_normalize。"""
@@ -137,3 +139,42 @@ def test_update_source_language_pendings_all_steps_from_asr_normalize(authed_cli
     # ASR 之前的步骤不应该 pending
     assert "extract" not in pending_steps
     assert "asr" not in pending_steps
+
+
+# ---------------------------------------------------------------------------
+# 扩展 source_language 允许列表（11 个 code）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("lang", ["fr", "it", "ja", "de", "nl", "sv", "fi"])
+def test_update_source_language_accepts_extended_codes(authed_client_no_db, lang):
+    """新增 fr/it/ja/de/nl/sv/fi 7 个 code 都应被接受（200 + user_specified=True）。"""
+    fake_task = {"_user_id": 1, "source_language": "zh"}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/source-language",
+            json={"source_language": lang},
+        )
+    assert resp.status_code == 200, resp.get_json()
+    update_kwargs = mock_store.update.call_args.kwargs
+    assert update_kwargs["source_language"] == lang
+    assert update_kwargs["user_specified_source_language"] is True
+    mock_runner.resume.assert_called_once_with("t-1", "asr_normalize", user_id=1)
+
+
+def test_update_source_language_rejects_unsupported_extended(authed_client_no_db):
+    """不在 11 选项里的 code（如 ru）依然被拒。"""
+    fake_task = {"_user_id": 1}
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
+        mock_store.get.return_value = fake_task
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/source-language",
+            json={"source_language": "ru"},
+        )
+    assert resp.status_code == 400
+    assert "source_language" in resp.get_json()["error"]
+    mock_store.update.assert_not_called()
+    mock_runner.resume.assert_not_called()
