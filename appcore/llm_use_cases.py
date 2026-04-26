@@ -50,6 +50,38 @@ USE_CASES: dict[str, UseCase] = {
         "gemini_vertex",
         "tokens",
     ),
+    # ASR 同语言纯净化（omni 用于 _step_asr_clean，multi 用于 asr_normalize 前置）
+    "asr_clean.purify_primary": _uc(
+        "asr_clean.purify_primary",
+        "asr_clean",
+        "ASR 同语言纯净化（主路）",
+        "Gemini Flash 主路：把 ASR 结果纯净化为同语言纯净文本，保留时间戳",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
+    "asr_clean.purify_fallback": _uc(
+        "asr_clean.purify_fallback",
+        "asr_clean",
+        "ASR 同语言纯净化（兜底）",
+        "Claude Sonnet 兜底：主路校验失败时重跑同样 prompt",
+        "openrouter",
+        "anthropic/claude-sonnet-4.6",
+        "openrouter",
+        "tokens",
+    ),
+    # 翻译质量评估（subtitle 完成后异步触发，omni / multi 共用）
+    "translation_quality.assess": _uc(
+        "translation_quality.assess",
+        "translation_quality",
+        "翻译质量评估",
+        "对比原始 ASR / 翻译文案 / 二次 ASR 字幕，给出翻译质量分 + TTS 还原度分",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite-preview",
+        "gemini_vertex",
+        "tokens",
+    ),
     # 视频翻译 v1
     "video_translate.localize": _uc(
         "video_translate.localize",
