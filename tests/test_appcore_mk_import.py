@@ -77,3 +77,41 @@ def test_is_video_already_imported_yes_no(db_test_user, db_test_product):
     assert mk_import._is_video_already_imported("_t_mki.mp4") is True
     assert mk_import._is_video_already_imported("non-existent.mp4") is False
     execute("DELETE FROM media_items WHERE product_id=%s", (db_test_product["id"],))
+
+
+def test_download_mp4_streams_to_path(tmp_path, monkeypatch):
+    from appcore import mk_import
+
+    class FakeResponse:
+        status_code = 200
+        def iter_content(self, chunk_size):
+            yield b"abcdefghij"
+            yield b"klmnop"
+        def raise_for_status(self): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+
+    monkeypatch.setattr("requests.get", lambda url, stream, timeout: FakeResponse())
+
+    dest = tmp_path / "out.mp4"
+    n = mk_import._download_mp4("http://fake/x.mp4", str(dest))
+    assert n == 16
+    assert dest.read_bytes() == b"abcdefghijklmnop"
+
+
+def test_download_mp4_404_raises(tmp_path, monkeypatch):
+    from appcore import mk_import
+    import requests
+
+    class FakeResponse:
+        status_code = 404
+        def iter_content(self, chunk_size): return []
+        def raise_for_status(self):
+            raise requests.HTTPError("404 Not Found")
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+
+    monkeypatch.setattr("requests.get", lambda url, stream, timeout: FakeResponse())
+
+    with pytest.raises(mk_import.DownloadError, match="404"):
+        mk_import._download_mp4("http://fake/x.mp4", str(tmp_path / "x.mp4"))

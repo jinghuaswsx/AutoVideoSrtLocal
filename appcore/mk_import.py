@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Any
 
+import requests
+
 log = logging.getLogger(__name__)
 
 # ---- 异常 ----
@@ -67,3 +69,36 @@ def _is_video_already_imported(filename: str) -> bool:
         (filename,),
     )
     return bool(row)
+
+
+def _download_mp4(url: str, dest_path: str, timeout: int = 120) -> int:
+    """Stream MP4 to dest_path. Returns bytes written. Raises DownloadError."""
+    try:
+        with requests.get(url, stream=True, timeout=timeout) as resp:
+            resp.raise_for_status()
+            total = 0
+            with open(dest_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        total += len(chunk)
+            return total
+    except requests.RequestException as e:
+        raise DownloadError(f"download failed: {e}") from e
+
+
+def _download_cover(url: str | None, dest_path: str, timeout: int = 30) -> str | None:
+    """Download cover image. Returns dest_path if downloaded, None if no URL provided."""
+    if not url:
+        return None
+    try:
+        with requests.get(url, stream=True, timeout=timeout) as resp:
+            resp.raise_for_status()
+            with open(dest_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=16 * 1024):
+                    if chunk:
+                        f.write(chunk)
+        return dest_path
+    except requests.RequestException as e:
+        log.warning("cover download failed url=%s: %s", url, e)
+        return None  # cover 下载失败不阻塞，只记日志
