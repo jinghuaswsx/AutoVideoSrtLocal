@@ -86,6 +86,25 @@
   .mk-video-card { width:auto; }
   .mk-video-frame { width:100%; height:auto; aspect-ratio:9 / 16; }
 }
+/* mk-import: A 子系统按钮 */
+.mki-btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r); background: var(--oc-accent); color: #fff;
+  font-size: 12px; cursor: pointer; transition: background 120ms;
+  font-family: inherit;
+}
+.mki-btn:hover:not(:disabled) { background: var(--oc-accent-hover); }
+.mki-btn:disabled, .mki-btn--disabled {
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+  cursor: not-allowed; border-color: var(--oc-border);
+}
+.mki-toast {
+  position: fixed; bottom: 24px; right: 24px; padding: 12px 16px;
+  border-radius: var(--oc-r-md); font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 2000; max-width: 400px;
+}
+.mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
 {% endblock %}
 
 {% block content %}
@@ -332,11 +351,25 @@ async function openDetail(mkId, mkName) {
           <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
           <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadDate}</span></div>
         </div>
+        <button class="mki-btn mki-btn--add"
+            data-mki-filename="${escapeHtml(v.name || '')}"
+            data-mki-mp4-url="${safeVideoUrl}"
+            data-mki-duration="${v.duration_seconds || v.duration || 0}"
+            data-mki-cover-url="${safeCoverUrl}"
+            data-mki-product-name="${escapeHtml(item.product_name || '')}"
+            data-mki-product-link="${escapeHtml((item.product_links && item.product_links[0]) || '')}"
+            data-mki-main-image="${escapeHtml(item.main_image || item.image || '')}"
+            data-mki-product-code="${escapeHtml(item.product_code || item.code || '')}"
+            data-mki-mk-id="${item.id || ''}"
+            onclick="mkiHandleClick(this)">
+          加入素材库
+        </button>
       </div>`;
     });
     html += `</div>`;
 
     document.getElementById('detailContent').innerHTML = html;
+    mkiCheckRenderedButtons();  // mk-import: Task 9 — check after render
   } catch (e) {
     document.getElementById('detailContent').innerHTML = `<p style="color:red; font-size:16px;">加载失败: ${e.message}</p>`;
   }
@@ -387,5 +420,147 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 
 // 初始加载
 loadData(1);
+
+// mk-import: Task 9 — page-load + post-render batch check
+let MKI_CHECKED_FILENAMES = new Set();  // dedup, don't re-query already-checked names
+
+async function mkiCheckRenderedButtons() {
+  const allBtns = Array.from(document.querySelectorAll('.mki-btn--add'));
+  if (!allBtns.length) return;
+  // Skip already-disabled buttons (already known imported) AND already-checked names
+  const newFilenames = [];
+  const seen = new Set();
+  for (const btn of allBtns) {
+    const fn = btn.dataset.mkiFilename;
+    if (!fn) continue;
+    if (btn.disabled) continue;
+    if (MKI_CHECKED_FILENAMES.has(fn)) continue;
+    if (seen.has(fn)) continue;
+    seen.add(fn);
+    newFilenames.push(fn);
+  }
+  if (!newFilenames.length) return;
+
+  // Chunk 100 per request
+  const imported = new Set();
+  for (let i = 0; i < newFilenames.length; i += 100) {
+    const chunk = newFilenames.slice(i, i + 100);
+    try {
+      const r = await fetch('/mk-import/check?filenames=' + encodeURIComponent(chunk.join(',')));
+      if (!r.ok) continue;
+      const data = await r.json();
+      (data.imported || []).forEach(f => imported.add(f));
+    } catch (e) { console.warn('mki check failed', e); }
+  }
+
+  // Mark all checked names as cached
+  newFilenames.forEach(fn => MKI_CHECKED_FILENAMES.add(fn));
+
+  // Apply disabled state
+  allBtns.forEach(btn => {
+    const fn = btn.dataset.mkiFilename;
+    if (imported.has(fn)) {
+      btn.textContent = '已入库';
+      btn.disabled = true;
+      btn.classList.add('mki-btn--disabled');
+    }
+  });
+}
+
+// mk-import: Task 10 翻译员选择 modal
+let mkiTranslatorResolve = null;
+let mkiTranslatorsCache = null;
+
+async function mkiOpenTranslatorModal() {
+  if (!mkiTranslatorsCache) {
+    try {
+      const r = await fetch('/tasks/api/translators');
+      const data = await r.json();
+      mkiTranslatorsCache = data.translators || [];
+    } catch (e) {
+      mkiTranslatorsCache = [];
+    }
+  }
+  if (!mkiTranslatorsCache.length) {
+    alert('没有可用翻译员（请确保有用户开启 can_translate 权限）');
+    return null;
+  }
+  const sel = document.getElementById('mkiTranslatorSel');
+  sel.innerHTML = mkiTranslatorsCache.map(t => `<option value="${t.id}">${t.username}</option>`).join('');
+  document.getElementById('mkiTranslatorModal').style.display = 'block';
+  return new Promise(resolve => { mkiTranslatorResolve = resolve; });
+}
+function mkiTranslatorOK() {
+  const id = parseInt(document.getElementById('mkiTranslatorSel').value);
+  document.getElementById('mkiTranslatorModal').style.display = 'none';
+  if (mkiTranslatorResolve) { mkiTranslatorResolve(id); mkiTranslatorResolve = null; }
+}
+function mkiTranslatorCancel() {
+  document.getElementById('mkiTranslatorModal').style.display = 'none';
+  if (mkiTranslatorResolve) { mkiTranslatorResolve(null); mkiTranslatorResolve = null; }
+}
+
+// mk-import: Task 11 — toast + real handler
+function mkiToast(kind, msg) {
+  const t = document.createElement('div');
+  t.className = 'mki-toast mki-toast--' + kind;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function mkiHandleClick(btn) {
+  const translatorId = await mkiOpenTranslatorModal();
+  if (translatorId === null) return;
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '入库中...';
+  try {
+    const meta = {
+      mp4_url: btn.dataset.mkiMp4Url,
+      filename: btn.dataset.mkiFilename,
+      duration_seconds: parseFloat(btn.dataset.mkiDuration) || 0,
+      cover_url: btn.dataset.mkiCoverUrl || null,
+      product_name: btn.dataset.mkiProductName,
+      product_link: btn.dataset.mkiProductLink || null,
+      main_image: btn.dataset.mkiMainImage || null,
+      product_code: btn.dataset.mkiProductCode,
+      mk_id: btn.dataset.mkiMkId ? parseInt(btn.dataset.mkiMkId) : null,
+    };
+    const rsp = await fetch('/mk-import/video', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mk_video_metadata: meta, translator_id: translatorId}),
+    });
+    if (!rsp.ok) {
+      const err = await rsp.json().catch(() => ({error: rsp.statusText}));
+      throw new Error(err.detail || err.error || rsp.statusText);
+    }
+    const data = await rsp.json();
+    btn.textContent = '已入库';
+    btn.classList.add('mki-btn--disabled');
+    MKI_CHECKED_FILENAMES.add(btn.dataset.mkiFilename);  // dedup cache update
+    const tag = data.is_new_product ? '（新建产品）' : '（老品 append）';
+    mkiToast('success', `素材已入库 ${tag}`);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiToast('error', '入库失败：' + e.message);
+  }
+}
 </script>
+
+<!-- mk-import: Task 10 翻译员选择 modal -->
+<div id="mkiTranslatorModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:380px; max-width:90vw;">
+    <h3 style="margin:0 0 12px;">指定翻译员</h3>
+    <p style="font-size:13px; color:var(--oc-fg-muted); margin:0 0 12px;">老品自动沿用现有翻译员，本次选择仅在新品时生效。</p>
+    <select id="mkiTranslatorSel" class="oc-input" style="width:100%; height:32px;"></select>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="oc-btn oc-btn--ghost" onclick="mkiTranslatorCancel()">取消</button>
+      <button class="oc-btn oc-btn--primary" onclick="mkiTranslatorOK()">确认</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
