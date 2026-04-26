@@ -80,6 +80,7 @@ from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 from web.routes.mk_import import bp as mk_import_bp
 from web.routes.raw_video_pool import bp as raw_video_pool_bp
 from web.routes.new_product_review import new_product_review_bp
+from web.routes.productivity_stats import bp as productivity_stats_bp
 
 log = logging.getLogger(__name__)
 
@@ -211,6 +212,7 @@ def create_app() -> Flask:
     app.register_blueprint(new_product_review_bp)
     # new-product-review 蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(new_product_review_bp)
+    app.register_blueprint(productivity_stats_bp)
 
     # admin 蓝图的 JSON PUT API 豁免 CSRF（前端用 X-CSRFToken header）
     # 这里不需要额外豁免，因为 admin 蓝图的 API 用 JS fetch + CSRFToken

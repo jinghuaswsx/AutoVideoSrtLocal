@@ -1,0 +1,157 @@
+{% extends "layout.html" %}
+{% block title %}员工产能报表 - AutoVideoSrt{% endblock %}
+{% block page_title %}员工产能报表{% endblock %}
+{% block extra_style %}
+:root {
+  --ps-bg: oklch(99% 0.004 230); --ps-bg-subtle: oklch(97% 0.006 230);
+  --ps-bg-muted: oklch(94% 0.010 230); --ps-border: oklch(91% 0.012 230);
+  --ps-border-strong: oklch(84% 0.015 230); --ps-fg: oklch(22% 0.020 235);
+  --ps-fg-muted: oklch(48% 0.018 230); --ps-accent: oklch(56% 0.16 230);
+  --ps-accent-hover: oklch(50% 0.17 230); --ps-success-fg: oklch(38% 0.09 165);
+  --ps-warning-fg: oklch(42% 0.10 60); --ps-danger-fg: oklch(42% 0.14 25);
+  --ps-r: 6px; --ps-r-md: 8px; --ps-sp-2: 8px; --ps-sp-3: 12px;
+  --ps-sp-4: 16px; --ps-sp-5: 20px;
+}
+.ps { font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--ps-fg); }
+.ps * { box-sizing: border-box; }
+.ps h1 { font-size: 22px; font-weight: 600; margin: 0; }
+.ps h2 { font-size: 15px; font-weight: 600; margin: 0 0 var(--ps-sp-3); color: var(--ps-fg-muted); }
+.ps-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--ps-sp-5); flex-wrap:wrap; gap:var(--ps-sp-3); }
+.ps-filters { display:flex; gap:var(--ps-sp-2); align-items:center; flex-wrap:wrap; }
+.ps-btn { height:32px; padding:0 14px; border:1px solid var(--ps-border-strong); border-radius:var(--ps-r); background:var(--ps-bg); cursor:pointer; font-size:13px; font-family:inherit; }
+.ps-btn:hover:not(.active) { background:var(--ps-bg-muted); }
+.ps-btn.active { background:var(--ps-accent); color:#fff; border:none; }
+.ps-card { background:var(--ps-bg); border:1px solid var(--ps-border); border-radius:var(--ps-r-md); padding:var(--ps-sp-4); margin-bottom:var(--ps-sp-4); }
+.ps-table { width:100%; border-collapse:collapse; font-size:13px; }
+.ps-table th { text-align:left; padding:8px 10px; background:var(--ps-bg-subtle); border-bottom:2px solid var(--ps-border); font-weight:600; color:var(--ps-fg-muted); }
+.ps-table td { padding:8px 10px; border-bottom:1px solid var(--ps-border); }
+.ps-table tr:hover td { background:var(--ps-bg-subtle); }
+.ps-empty { padding:20px; text-align:center; color:var(--ps-fg-muted); font-size:13px; }
+.ps-rate--good { color: var(--ps-success-fg); font-weight: 600; }
+.ps-rate--med { color: var(--ps-warning-fg); font-weight: 600; }
+.ps-rate--bad { color: var(--ps-danger-fg); font-weight: 600; }
+.ps-table-scroll { overflow-x:auto; }
+{% endblock %}
+{% block content %}
+<div id="psRoot" class="ps">
+  <div class="ps-header">
+    <div>
+      <h1>员工产能报表</h1>
+      <p style="margin:4px 0 0; font-size:13px; color:var(--ps-fg-muted);">基于任务中心审计事件 (task_events)</p>
+    </div>
+    <div class="ps-filters">
+      <button class="ps-btn" data-days="7" onclick="psSetDays(7)">7 天</button>
+      <button class="ps-btn active" data-days="30" onclick="psSetDays(30)">30 天</button>
+      <button class="ps-btn" data-days="60" onclick="psSetDays(60)">60 天</button>
+      <button class="ps-btn" data-days="90" onclick="psSetDays(90)">90 天</button>
+      <button class="ps-btn" onclick="psRender()">刷新</button>
+    </div>
+  </div>
+
+  <div class="ps-card">
+    <h2>日产汇总（行=员工，列=日期，每格 = approved + completed 数）</h2>
+    <div id="psThroughput" class="ps-empty">加载中...</div>
+  </div>
+
+  <div class="ps-card">
+    <h2>通过率排行（approved / (approved + rejected)）</h2>
+    <div id="psPassRate" class="ps-empty">加载中...</div>
+  </div>
+
+  <div class="ps-card">
+    <h2>返工率排行（rejected / submitted）</h2>
+    <div id="psReworkRate" class="ps-empty">加载中...</div>
+  </div>
+</div>
+
+<script>
+let PS_DAYS = 30;
+function psSetDays(d) {
+  PS_DAYS = d;
+  document.querySelectorAll('.ps-btn[data-days]').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.days) === d);
+  });
+  psRender();
+}
+function psEsc(s) { const x = document.createElement('div'); x.textContent = s ?? ''; return x.innerHTML; }
+function psRateClass(r, good, bad) {
+  if (r >= good) return 'ps-rate--good';
+  if (r >= bad) return 'ps-rate--med';
+  return 'ps-rate--bad';
+}
+
+async function psRender() {
+  ['psThroughput','psPassRate','psReworkRate'].forEach(id => document.getElementById(id).innerHTML = '<div class="ps-empty">加载中...</div>');
+  try {
+    const r = await fetch('/productivity-stats/api/summary?days=' + PS_DAYS);
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.detail || body.error || r.statusText);
+    }
+    const data = await r.json();
+    psRenderThroughput(data.daily_throughput || []);
+    psRenderPassRate(data.pass_rate || []);
+    psRenderReworkRate(data.rework_rate || []);
+  } catch (e) {
+    ['psThroughput','psPassRate','psReworkRate'].forEach(id => document.getElementById(id).innerHTML = '<div class="ps-empty">加载失败：' + psEsc(e.message) + '</div>');
+  }
+}
+
+function psRenderThroughput(rows) {
+  if (!rows.length) { document.getElementById('psThroughput').innerHTML = '<div class="ps-empty">无数据</div>'; return; }
+  const userMap = new Map();
+  const daySet = new Set();
+  rows.forEach(r => {
+    daySet.add(r.day);
+    if (!userMap.has(r.user_id)) userMap.set(r.user_id, {username: r.username, days: {}, total: 0});
+    userMap.get(r.user_id).days[r.day] = r.count;
+    userMap.get(r.user_id).total += r.count;
+  });
+  const days = Array.from(daySet).sort();
+  const headers = ['<th>员工</th>'].concat(days.map(d => `<th>${psEsc(d)}</th>`)).concat(['<th>合计</th>']);
+  const body = Array.from(userMap.values())
+    .sort((a, b) => b.total - a.total)
+    .map(u => {
+      const cells = days.map(d => `<td>${u.days[d] || 0}</td>`).join('');
+      return `<tr><td><strong>${psEsc(u.username)}</strong></td>${cells}<td><strong>${u.total}</strong></td></tr>`;
+    }).join('');
+  document.getElementById('psThroughput').innerHTML = `<div class="ps-table-scroll"><table class="ps-table"><thead><tr>${headers.join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function psRenderPassRate(rows) {
+  if (!rows.length) { document.getElementById('psPassRate').innerHTML = '<div class="ps-empty">无数据</div>'; return; }
+  const body = rows.map(r => {
+    const rate = r.pass_rate;
+    return `<tr>
+      <td><strong>${psEsc(r.username)}</strong></td>
+      <td>${r.approved}</td>
+      <td>${r.rejected}</td>
+      <td class="${psRateClass(rate, 0.8, 0.5)}">${(rate * 100).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('psPassRate').innerHTML = `<table class="ps-table"><thead><tr>
+    <th>员工（审核员）</th><th>通过</th><th>打回</th><th>通过率</th>
+  </tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function psRenderReworkRate(rows) {
+  if (!rows.length) { document.getElementById('psReworkRate').innerHTML = '<div class="ps-empty">无数据</div>'; return; }
+  const body = rows.map(r => {
+    const rate = r.rework_rate;
+    // For rework rate: low is good, high is bad (inverse)
+    const cls = rate <= 0.1 ? 'ps-rate--good' : rate <= 0.3 ? 'ps-rate--med' : 'ps-rate--bad';
+    return `<tr>
+      <td><strong>${psEsc(r.username)}</strong></td>
+      <td>${r.submitted}</td>
+      <td>${r.rejected}</td>
+      <td class="${cls}">${(rate * 100).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('psReworkRate').innerHTML = `<table class="ps-table"><thead><tr>
+    <th>员工（提交人）</th><th>提交数</th><th>被打回数</th><th>返工率</th>
+  </tr></thead><tbody>${body}</tbody></table>`;
+}
+
+psRender();
+</script>
+{% endblock %}
