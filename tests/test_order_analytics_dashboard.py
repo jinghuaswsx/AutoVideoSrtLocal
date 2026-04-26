@@ -116,3 +116,50 @@ def test_resolve_compare_range_month_clamps_start_day():
     start, end = oa._resolve_compare_range(date(2026, 5, 31), date(2026, 5, 31), "month")
     assert start == date(2026, 4, 30)
     assert end == date(2026, 4, 30)
+
+
+def test_aggregate_orders_by_product_returns_dict_keyed_by_product_id(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {"product_id": 42, "orders": 10, "units": 12, "revenue": 240.5},
+            {"product_id": 99, "orders": 3, "units": 3, "revenue": 60.0},
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    result = oa._aggregate_orders_by_product(date(2026, 4, 1), date(2026, 4, 25), country=None)
+
+    assert 42 in result and 99 in result
+    assert result[42]["orders"] == 10
+    assert result[42]["units"] == 12
+    assert result[42]["revenue"] == 240.5
+    assert "DATE(created_at_order)" in captured["sql"]
+    assert "billing_country" not in captured["sql"]  # 无国家筛选时不带
+    assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 25))
+
+
+def test_aggregate_orders_by_product_with_country_filter(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    oa._aggregate_orders_by_product(date(2026, 4, 1), date(2026, 4, 25), country="DE")
+
+    assert "billing_country" in captured["sql"]
+    assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 25), "DE")
+
+
+def test_aggregate_orders_by_product_skips_null_product_id(monkeypatch):
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"product_id": None, "orders": 5, "units": 5, "revenue": 100.0},
+        {"product_id": 42, "orders": 2, "units": 2, "revenue": 40.0},
+    ])
+    result = oa._aggregate_orders_by_product(date(2026, 4, 1), date(2026, 4, 25), country=None)
+    assert list(result.keys()) == [42]

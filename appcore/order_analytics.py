@@ -967,3 +967,35 @@ def _resolve_compare_range(start: date, end: date, period: str) -> tuple[date, d
         return prev, prev
 
     raise ValueError(f"invalid period: {period}")
+
+
+def _aggregate_orders_by_product(
+    start: date, end: date, *, country: str | None = None
+) -> dict[int, dict]:
+    """按产品聚合订单。返回 {product_id: {orders, units, revenue}}。"""
+    sql = (
+        "SELECT product_id, "
+        "COUNT(DISTINCT shopify_order_id) AS orders, "
+        "SUM(lineitem_quantity) AS units, "
+        "SUM(lineitem_quantity * lineitem_price) AS revenue "
+        "FROM shopify_orders "
+        "WHERE DATE(created_at_order) BETWEEN %s AND %s "
+    )
+    args: tuple = (start, end)
+    if country:
+        sql += "AND billing_country = %s "
+        args = (start, end, country)
+    sql += "GROUP BY product_id"
+
+    rows = query(sql, args)
+    out: dict[int, dict] = {}
+    for r in rows:
+        pid = r.get("product_id")
+        if pid is None:
+            continue
+        out[int(pid)] = {
+            "orders": int(r.get("orders") or 0),
+            "units": int(r.get("units") or 0),
+            "revenue": float(r.get("revenue") or 0),
+        }
+    return out
