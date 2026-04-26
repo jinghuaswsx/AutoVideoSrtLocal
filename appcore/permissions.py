@@ -3,7 +3,7 @@
 权限模型设计（见 docs/superpowers/specs/2026-04-25-permission-system-design.md）：
 
 - 三级角色：superadmin / admin / user
-- 权限项粒度：菜单/页面级，共 17 项，分 3 组（业务 / 管理 / 系统）
+- 权限项粒度：菜单/页面级 + 任务能力位，共 20 项，分 4 组（业务 / 管理 / 任务能力 / 系统）
 - 角色决定「页面里能做什么」（看自己 vs 看全局 vs 改别人）
 - permissions（菜单级）决定「能否进入某个菜单/页面」
 - superadmin 唯一（绑定 username='admin'），永远视为全部权限开启
@@ -24,11 +24,13 @@ ROLE_LABELS = {
 
 GROUP_BUSINESS = "business"
 GROUP_MANAGEMENT = "management"
+GROUP_CAPABILITY = "capability"
 GROUP_SYSTEM = "system"
 
 GROUPS = (
     (GROUP_BUSINESS, "业务功能"),
     (GROUP_MANAGEMENT, "管理功能"),
+    (GROUP_CAPABILITY, "任务能力"),
     (GROUP_SYSTEM, "系统 / 超管"),
 )
 
@@ -42,6 +44,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("image_translate",       GROUP_BUSINESS,   "图片翻译",         True,  True),
     ("subtitle_removal",      GROUP_BUSINESS,   "字幕移除",         True,  True),
     ("pushes",                GROUP_BUSINESS,   "推送管理",         True,  True),
+    ("task_center",           GROUP_BUSINESS,   "任务中心",         True,  True),
     ("projects",              GROUP_BUSINESS,   "视频翻译",         True,  True),
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
     # B. 管理类
@@ -50,7 +53,10 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
     ("lab",                   GROUP_MANAGEMENT, "实验室",           True,  False),
     ("ai_billing",            GROUP_MANAGEMENT, "API 账单",         True,  False),
-    # C. 超管 / 系统类
+    # C. 任务能力
+    ("can_process_raw_video", GROUP_CAPABILITY, "原始视频处理人",   True,  False),
+    ("can_translate",         GROUP_CAPABILITY, "翻译员",           True,  False),
+    # D. 超管 / 系统类
     ("user_management",       GROUP_SYSTEM,     "用户管理",         False, False),
     ("system_settings",       GROUP_SYSTEM,     "系统设置",         False, False),
     ("api_config",            GROUP_SYSTEM,     "API 配置",         False, False),
