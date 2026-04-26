@@ -54,6 +54,61 @@ _MAX_REWRITE_ATTEMPTS_BY_TARGET = {
 }
 
 
+import json as _json_anchor
+from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
+from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
+
+
+class OmniLocalizationAdapter(_BaseAdapter):
+    """omni-flavored adapter: rewrite messages carry the original ASR transcript."""
+
+    _SOURCE_LANG_LABEL: dict[str, str] = {
+        "zh": "Chinese", "en": "English", "es": "Spanish", "pt": "Portuguese",
+        "fr": "French", "it": "Italian", "ja": "Japanese", "de": "German",
+        "nl": "Dutch", "sv": "Swedish", "fi": "Finnish",
+    }
+
+    def __init__(self, lang: str, source_language: str, original_asr_text: str):
+        super().__init__(lang)
+        self.source_language = source_language
+        self.original_asr_text = original_asr_text
+        self.__name__ = f"omni_translate.localization.{lang}"
+
+    def build_localized_rewrite_messages(
+        self,
+        source_full_text: str,
+        prev_localized_translation: dict,
+        target_words: int,
+        direction: str,
+        source_language: str = "zh",
+        feedback_notes: str | None = None,
+    ) -> list[dict]:
+        config = _resolve_prompt_anchor("base_rewrite", self.lang)
+        prompt = config["content"].replace(
+            "{target_words}", str(target_words)
+        ).replace("{direction}", direction)
+
+        src_label = self._SOURCE_LANG_LABEL.get(self.source_language, self.source_language)
+
+        user_content = (
+            f"ORIGINAL VIDEO TRANSCRIPT ({src_label}, ground truth — what the video actually says):\n"
+            f"{self.original_asr_text}\n\n"
+            f"INITIAL LOCALIZATION (target language, written from the transcript above):\n"
+            f"{_json_anchor.dumps(prev_localized_translation, ensure_ascii=False, indent=2)}\n\n"
+            f"REWRITE TASK:\n"
+            f"Rewrite the initial localization to {direction} to ~{target_words} words. "
+            f"STAY ANCHORED in the original transcript. Do NOT fabricate details that "
+            f"are not in the transcript above."
+        )
+        if feedback_notes:
+            user_content += f"\n\n{feedback_notes}"
+
+        return [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+
 class OmniTranslateRunner(MultiTranslateRunner):
     """Multi-source-language video translation runner."""
 
@@ -388,3 +443,16 @@ class OmniTranslateRunner(MultiTranslateRunner):
             "segments": review_segments,
             "requires_confirmation": requires_confirmation,
         })
+
+    def _get_localization_module(self, task: dict):
+        lang = self._resolve_target_lang(task)
+        source_language = task.get("source_language") or "zh"
+        utterances = task.get("utterances") or []
+        original_asr_text = " ".join(
+            (u.get("text") or "").strip() for u in utterances if u.get("text")
+        ).strip()
+        return OmniLocalizationAdapter(
+            lang=lang,
+            source_language=source_language,
+            original_asr_text=original_asr_text,
+        )
