@@ -28,9 +28,12 @@ _LANG_LABEL: dict[str, str] = {
     "nl": "Nederlands", "sv": "svenska", "fi": "suomi",
 }
 
-_CJK_RE = re.compile(r"[一-鿿]")
-_KANA_RE = re.compile(r"[぀-ヿ]")
-_LATIN_RE = re.compile(r"[A-Za-zÀ-ſ]")
+# CJK Ext A (U+3400-U+4DBF) + Unified (U+4E00-U+9FFF) + Compat Ideographs (U+F900-U+FAFF)
+_CJK_RE = re.compile("[㐀-鿿豈-﫿]")
+# Hiragana (U+3040-U+309F) + Katakana (U+30A0-U+30FF) + Halfwidth Katakana (U+FF66-U+FF9F)
+_KANA_RE = re.compile("[぀-ヿｦ-ﾟ]")
+# ASCII A-Z, a-z (U+0041-U+007A) + Latin Extended (U+00C0-U+017F)
+_LATIN_RE = re.compile("[A-Za-zÀ-ſ]")
 
 
 def _system_prompt(language: str) -> str:
@@ -112,6 +115,11 @@ def _validate_against_input(
                 errors.append(f"{language} text has CJK at index={it.get('index')}: {text[:40]!r}")
             if not has_latin:
                 errors.append(f"{language} text has no latin chars at index={it.get('index')}: {text[:40]!r}")
+        else:
+            log.warning(
+                "[asr_clean] no validator for language=%r, accepting without char-set check",
+                language,
+            )
     return errors
 
 

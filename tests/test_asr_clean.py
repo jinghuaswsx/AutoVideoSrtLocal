@@ -111,3 +111,36 @@ def test_purify_returns_uncleaned_when_both_fail():
     assert result["fallback_used"] is True
     assert result["utterances"] == SAMPLE_ES_UTTS  # original returned untouched
     assert result["validation_errors"]
+
+
+def test_validator_accepts_cjk_extension_a():
+    """Ext A character (㐀, U+3400) should be recognized as CJK in zh validation."""
+    items = [
+        {"index": 0, "text": "㐀普通中文测试"},
+        {"index": 1, "text": "另一段中文文本"},
+    ]
+    errors = asr_clean._validate_against_input(items, SAMPLE_ES_UTTS, language="zh")
+    assert errors == []
+
+
+def test_validator_accepts_halfwidth_katakana():
+    """Halfwidth katakana (ｱｲｳ, U+FF66+) should be recognized in ja validation."""
+    items = [
+        {"index": 0, "text": "ｱｲｳｴｵこんにちは"},
+        {"index": 1, "text": "テストです"},
+    ]
+    errors = asr_clean._validate_against_input(items, SAMPLE_ES_UTTS, language="ja")
+    assert errors == []
+
+
+def test_validator_passes_unlisted_language_with_warning(caplog):
+    """Unknown language should accept (no errors) but log a warning."""
+    items = [
+        {"index": 0, "text": "Some unknown text"},
+        {"index": 1, "text": "ASR output"},
+    ]
+    import logging
+    with caplog.at_level(logging.WARNING, logger="pipeline.asr_clean"):
+        errors = asr_clean._validate_against_input(items, SAMPLE_ES_UTTS, language="ko")
+    assert errors == []  # No errors but warning logged
+    assert any("no validator" in rec.message for rec in caplog.records)
