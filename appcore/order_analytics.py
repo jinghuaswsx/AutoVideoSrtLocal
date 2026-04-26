@@ -918,7 +918,7 @@ def _resolve_period_range(
     yesterday = today - timedelta(days=1)
 
     if period == "month":
-        if not year or not month:
+        if year is None or month is None:
             raise ValueError("year and month required for period=month")
         start = date(year, month, 1)
         last_day = calendar.monthrange(year, month)[1]
@@ -928,7 +928,7 @@ def _resolve_period_range(
         return start, end
 
     if period == "week":
-        if not year or not week:
+        if year is None or week is None:
             raise ValueError("year and week required for period=week")
         # ISO week: %G-%V-%u; %u=1 = Monday
         start = datetime.strptime(f"{year}-{week:02d}-1", "%G-%V-%u").date()

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+
+import pytest
 from appcore import order_analytics as oa
 
 
@@ -25,9 +28,6 @@ def test_compute_pct_change_handles_none_inputs():
     assert oa._compute_pct_change(None, 100) == -100.0
     assert oa._compute_pct_change(100, None) is None
     assert oa._compute_pct_change(None, None) == 0.0
-
-
-from datetime import date
 
 
 def test_resolve_period_range_full_past_month():
@@ -62,6 +62,5 @@ def test_resolve_period_range_day():
 
 
 def test_resolve_period_range_invalid_period_raises():
-    import pytest
     with pytest.raises(ValueError, match="invalid period"):
         oa._resolve_period_range("year", year=2026, today=date(2026, 4, 26))
