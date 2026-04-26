@@ -115,3 +115,93 @@ def test_download_mp4_404_raises(tmp_path, monkeypatch):
 
     with pytest.raises(mk_import.DownloadError, match="404"):
         mk_import._download_mp4("http://fake/x.mp4", str(tmp_path / "x.mp4"))
+
+
+def test_import_mk_video_new_product(db_test_user, monkeypatch, tmp_path):
+    from appcore import mk_import
+
+    def fake_download_mp4(url, path, **kw):
+        with open(path, "wb") as f:
+            f.write(b"x" * 100)
+        return 100
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(mk_import, "_download_cover", lambda url, path, **kw: None)
+
+    meta = {
+        "mp4_url": "http://fake/_t_mki_new.mp4",
+        "filename": "_t_mki_new.mp4",
+        "duration_seconds": 30,
+        "cover_url": None,
+        "product_name": "_t_mki_NewProd",
+        "product_link": "https://fake.shop/p/x",
+        "main_image": None,
+        "product_code": "TEST-NEWMK-RJC",
+        "mk_id": 99999,
+    }
+    result = mk_import.import_mk_video(
+        mk_video_metadata=meta,
+        translator_id=db_test_user,
+        actor_user_id=db_test_user,
+    )
+    assert result["is_new_product"] is True
+    assert result["media_item_id"] > 0
+    assert result["media_product_id"] > 0
+    pid = result["media_product_id"]
+    iid = result["media_item_id"]
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+
+
+def test_import_mk_video_old_product_ignores_translator(db_test_user, db_test_product, monkeypatch):
+    from appcore import mk_import
+
+    def fake_download_mp4(url, path, **kw):
+        with open(path, "wb") as f:
+            f.write(b"x" * 100)
+        return 100
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(mk_import, "_download_cover", lambda url, path, **kw: None)
+
+    other_uid = db_test_user + 999
+    meta = {
+        "mp4_url": "http://fake/_t_mki_old.mp4",
+        "filename": "_t_mki_old.mp4",
+        "duration_seconds": 30, "cover_url": None,
+        "product_name": "ignored", "product_link": None, "main_image": None,
+        "product_code": "TEST-CODE-RJC", "mk_id": None,
+    }
+    result = mk_import.import_mk_video(
+        mk_video_metadata=meta, translator_id=other_uid,
+        actor_user_id=db_test_user,
+    )
+    assert result["is_new_product"] is False
+    assert result["media_product_id"] == db_test_product["id"]
+    p = query_one("SELECT user_id FROM media_products WHERE id=%s", (db_test_product["id"],))
+    assert p["user_id"] == db_test_user
+
+    iid = result["media_item_id"]
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+
+
+def test_import_mk_video_dedupes_by_filename(db_test_user, db_test_product, monkeypatch):
+    from appcore import mk_import
+
+    execute(
+        "INSERT INTO media_items (product_id, user_id, filename, object_key, lang) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (db_test_product["id"], db_test_user, "_t_mki_dup.mp4", "k/dup.mp4", "en"),
+    )
+
+    meta = {
+        "mp4_url": "http://fake/_t_mki_dup.mp4", "filename": "_t_mki_dup.mp4",
+        "duration_seconds": 30, "cover_url": None,
+        "product_name": "x", "product_link": None, "main_image": None,
+        "product_code": "test-code", "mk_id": None,
+    }
+    with pytest.raises(mk_import.DuplicateError):
+        mk_import.import_mk_video(
+            mk_video_metadata=meta, translator_id=db_test_user, actor_user_id=db_test_user,
+        )
+
+    execute("DELETE FROM media_items WHERE product_id=%s AND filename='_t_mki_dup.mp4'", (db_test_product["id"],))

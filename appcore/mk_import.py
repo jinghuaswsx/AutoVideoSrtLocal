@@ -102,3 +102,134 @@ def _download_cover(url: str | None, dest_path: str, timeout: int = 30) -> str |
     except requests.RequestException as e:
         log.warning("cover download failed url=%s: %s", url, e)
         return None  # cover 下载失败不阻塞，只记日志
+
+
+# ---- main entry ----
+
+import os
+import shutil
+import tempfile
+import time
+
+from appcore.db import execute
+from appcore.medias import create_item as _medias_create_item
+
+
+def _build_create_product_payload(meta: dict, translator_id: int) -> dict:
+    return {
+        "name": (meta.get("product_name") or "").strip()[:255],
+        "product_code": _normalize_product_code(meta.get("product_code")),
+        "product_link": meta.get("product_link"),
+        "main_image": meta.get("main_image"),
+        "mk_id": meta.get("mk_id"),
+    }
+
+
+def import_mk_video(
+    *,
+    mk_video_metadata: dict,
+    translator_id: int,
+    actor_user_id: int,
+) -> dict:
+    """入库一条明空视频。
+
+    Returns:
+        {
+            "media_item_id": int,
+            "media_product_id": int,
+            "is_new_product": bool,
+            "duration_ms": int,
+        }
+
+    Raises:
+        DuplicateError  — filename 已存在
+        DownloadError   — MP4 下载失败
+        StorageError    — 写盘 / DB insert 失败
+        DBError         — product insert 失败
+    """
+    started = time.monotonic()
+    meta = mk_video_metadata
+    filename = meta.get("filename")
+    if not filename:
+        raise StorageError("filename missing in mk_video_metadata")
+
+    # 1. Dedup by filename
+    if _is_video_already_imported(filename):
+        raise DuplicateError(f"video filename already imported: {filename}")
+
+    # 2. Find or create product
+    raw_code = meta.get("product_code") or ""
+    normalized = _normalize_product_code(raw_code)
+    existing = _find_existing_product(normalized)
+    is_new = existing is None
+
+    if is_new:
+        payload = _build_create_product_payload(meta, translator_id)
+        try:
+            product_id = execute(
+                "INSERT INTO media_products "
+                "(user_id, name, product_code, product_link, main_image, mk_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (
+                    int(translator_id),
+                    payload["name"],
+                    payload["product_code"],
+                    payload.get("product_link"),
+                    payload.get("main_image"),
+                    payload.get("mk_id"),
+                ),
+            )
+        except Exception as e:
+            raise DBError(f"create product failed: {e}") from e
+    else:
+        product_id = existing["id"]
+
+    # 3. Download MP4 to local temp
+    tmp_dir = tempfile.mkdtemp(prefix="mki_")
+    mp4_dest = os.path.join(tmp_dir, filename)
+    try:
+        _download_mp4(meta["mp4_url"], mp4_dest, timeout=120)
+    except DownloadError:
+        if is_new:
+            try:
+                execute("DELETE FROM media_products WHERE id=%s", (product_id,))
+            except Exception:
+                pass
+        raise
+
+    # 4. Optional cover
+    cover_dest = os.path.join(tmp_dir, f"cover_{filename}.jpg")
+    _download_cover(meta.get("cover_url"), cover_dest)
+
+    # 5. Insert media_items row via medias.create_item
+    object_key = f"mk-import/{int(product_id)}/{filename}"
+    owner_uid = int(translator_id) if is_new else int(existing["user_id"])
+    try:
+        item_id = _medias_create_item(
+            product_id=int(product_id),
+            user_id=owner_uid,
+            filename=filename,
+            object_key=object_key,
+            display_name=(meta.get("product_name") or "")[:255] or None,
+            duration_seconds=meta.get("duration_seconds"),
+            lang="en",
+        )
+    except Exception as e:
+        raise StorageError(f"insert media_item failed: {e}") from e
+
+    # 6. Move local mp4 to final storage location (mirrors object_key)
+    upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
+    final_path = os.path.join(upload_dir, object_key)
+    os.makedirs(os.path.dirname(final_path), exist_ok=True)
+    try:
+        shutil.move(mp4_dest, final_path)
+    except Exception as e:
+        log.error("move mp4 failed: %s → %s: %s", mp4_dest, final_path, e)
+
+    duration_ms = int((time.monotonic() - started) * 1000)
+    return {
+        "media_item_id": int(item_id),
+        "media_product_id": int(product_id),
+        "is_new_product": is_new,
+        "duration_ms": duration_ms,
+    }
