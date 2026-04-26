@@ -641,7 +641,8 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table td.ai-result { vertical-align:middle; }
 .ai-result-text { margin-bottom:var(--oc-sp-2); }
 .ai-detail-btn { width:max-content; max-width:100%; }
-.oc-ai-detail-modal { width:min(860px, calc(100vw - 48px)); }
+.oc-ai-detail-modal { width:min(1280px, calc(100vw - 48px)); }
+.oc-ai-detail-modal .oc-modal-body { max-height:78vh; overflow:auto; }
 .oc-ai-detail-json {
   margin:0;
   max-height:62vh;
@@ -1883,6 +1884,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 <script>
   window.MEDIAS_UPLOAD_READY = true;
 </script>
+<script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script src="{{ url_for('static', filename='medias.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translation_tasks.js') }}"></script>
 <script src="{{ url_for('static', filename='medias_translate_modal.js') }}"></script>

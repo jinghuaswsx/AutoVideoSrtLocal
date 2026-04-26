@@ -400,7 +400,11 @@
   vertical-align: middle;
 }
 .audit-detail-modal {
-  width: min(860px, 100%);
+  width: min(1280px, calc(100vw - 48px));
+}
+.audit-detail-modal .pm-body {
+  max-height: 78vh;
+  overflow-y: auto;
 }
 .audit-detail-title {
   margin: 0;

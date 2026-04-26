@@ -401,6 +401,12 @@
     const mask = document.createElement('div');
     mask.id = 'aiEvalDetailMask';
     mask.className = 'oc-modal-mask oc';
+    const detailRaw = product && product.ai_evaluation_detail;
+    const parsed = window.EvalCountryTable && window.EvalCountryTable.parse(detailRaw);
+    const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
+    const bodyHtml = hasTable
+      ? window.EvalCountryTable.render(detailRaw)
+      : `<pre class="oc-ai-detail-json">${escapeHtml(formatAiEvaluationDetail(detailRaw))}</pre>`;
     mask.innerHTML = `
       <div class="oc-modal oc-ai-detail-modal" role="dialog" aria-modal="true" aria-labelledby="aiEvalDetailTitle">
         <div class="oc-modal-head">
@@ -409,9 +415,7 @@
             ${icon('close', 16)}
           </button>
         </div>
-        <div class="oc-modal-body">
-          <pre class="oc-ai-detail-json">${escapeHtml(formatAiEvaluationDetail(product && product.ai_evaluation_detail))}</pre>
-        </div>
+        <div class="oc-modal-body">${bodyHtml}</div>
         <div class="oc-modal-foot">
           <button type="button" class="oc-btn ghost" data-ai-detail-close>关闭</button>
         </div>
