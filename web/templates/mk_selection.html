@@ -105,10 +105,18 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+.oc-page-tabs { display:flex; gap:4px; margin-bottom:var(--oc-sp-5); border-bottom:2px solid var(--oc-border); padding-bottom:0; }
+.oc-page-tab { display:inline-flex; align-items:center; padding:8px 16px; font-size:14px; font-weight:500; color:var(--oc-fg-muted); text-decoration:none; border-radius:var(--oc-r-md) var(--oc-r-md) 0 0; border:1px solid transparent; border-bottom:none; transition:color 120ms,background 120ms; margin-bottom:-2px; }
+.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg-muted); }
+.oc-page-tab.active { color:var(--oc-accent); background:var(--oc-bg); border-color:var(--oc-border); border-bottom-color:var(--oc-bg); font-weight:600; }
 {% endblock %}
 
 {% block content %}
 <div class="oc">
+  <div class="oc-page-tabs">
+    <a class="oc-page-tab active" href="/medias/mk-selection">明控选品</a>
+    <a class="oc-page-tab" href="/new-product-review/">新品审核</a>
+  </div>
   <div class="oc-header">
     <div>
       <h1 class="title">明空选品</h1>

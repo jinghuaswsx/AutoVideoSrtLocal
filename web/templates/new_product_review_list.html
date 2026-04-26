@@ -1,0 +1,640 @@
+{% extends "layout.html" %}
+{% block title %}新品审核 - AutoVideoSrt{% endblock %}
+{% block page_title %}新品审核{% endblock %}
+{% block extra_style %}
+:root {
+  --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+  --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+  --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+  --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+  --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+  --oc-accent-subtle: oklch(94% 0.04 225); --oc-accent-ring: oklch(56% 0.16 230 / 0.22);
+  --oc-danger: oklch(58% 0.18 25); --oc-danger-bg: oklch(96% 0.04 25); --oc-danger-fg: oklch(42% 0.14 25);
+  --oc-success: oklch(62% 0.13 165); --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+  --oc-warning: oklch(72% 0.14 80); --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+  --oc-cyan: oklch(62% 0.13 215);
+  --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
+  --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px; --oc-sp-6: 24px;
+}
+.oc { font-family: "Inter Tight","PingFang SC","Microsoft YaHei",sans-serif; color:var(--oc-fg); }
+.oc * { box-sizing:border-box; }
+
+/* Page Tabs */
+.oc-page-tabs { display:flex; gap:4px; margin-bottom:var(--oc-sp-5); border-bottom:2px solid var(--oc-border); padding-bottom:0; }
+.oc-page-tab { display:inline-flex; align-items:center; padding:8px 16px; font-size:14px; font-weight:500; color:var(--oc-fg-muted); text-decoration:none; border-radius:var(--oc-r-md) var(--oc-r-md) 0 0; border:1px solid transparent; border-bottom:none; transition:color 120ms,background 120ms; margin-bottom:-2px; }
+.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg-muted); }
+.oc-page-tab.active { color:var(--oc-accent); background:var(--oc-bg); border-color:var(--oc-border); border-bottom-color:var(--oc-bg); font-weight:600; }
+
+/* Header */
+.oc-header { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-header .title { font-size:22px; font-weight:600; margin:0; }
+.oc-header .subtitle { font-size:13px; color:var(--oc-fg-muted); }
+.oc-count { display:inline-flex; padding:2px 10px; border-radius:9999px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; }
+
+/* Table */
+.oc-table-wrap { overflow-x:auto; border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); background:#fff; }
+.oc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.oc-table th { text-align:center; padding:10px 12px; background:var(--oc-bg-subtle); border-bottom:2px solid var(--oc-border); font-weight:600; font-size:12px; color:var(--oc-fg-muted); white-space:nowrap; position:sticky; top:0; z-index:1; }
+.oc-table td { padding:10px 12px; border-bottom:1px solid var(--oc-border); vertical-align:middle; text-align:center; }
+.oc-table tr:last-child td { border-bottom:none; }
+.oc-table tr:hover td { background:var(--oc-bg-subtle); }
+.oc-table td.text-left { text-align:left; }
+
+/* Matrix cell */
+.npr-cell { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; width:48px; min-height:36px; border-radius:var(--oc-r-md); font-size:11px; cursor:pointer; transition:box-shadow 120ms,background 120ms; position:relative; }
+.npr-cell:hover { box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.npr-cell--empty { color:var(--oc-fg-subtle); background:var(--oc-bg-muted); }
+.npr-cell--suitable { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.npr-cell--unsuitable { background:var(--oc-bg-muted); color:var(--oc-fg-subtle); }
+.npr-cell--failed { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+.npr-cell .cell-score { font-size:10px; font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* Status badge */
+.oc-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; height:20px; }
+.oc-badge--pending { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }
+.oc-badge--approved { background:var(--oc-success-bg); color:var(--oc-success-fg); }
+.oc-badge--rejected { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+.oc-badge--none { background:var(--oc-bg-muted); color:var(--oc-fg-subtle); }
+
+/* Buttons */
+.oc-btn { height:30px; padding:0 12px; border:none; border-radius:var(--oc-r); font-size:13px; font-weight:500; cursor:pointer; transition:background 120ms; display:inline-flex; align-items:center; gap:4px; }
+.oc-btn--primary { background:var(--oc-accent); color:#fff; }
+.oc-btn--primary:hover { background:var(--oc-accent-hover); }
+.oc-btn--ghost { background:var(--oc-bg); border:1px solid var(--oc-border-strong); color:var(--oc-fg); }
+.oc-btn--ghost:hover { background:var(--oc-bg-muted); }
+.oc-btn--danger { background:var(--oc-danger); color:#fff; }
+.oc-btn--danger:hover { opacity:0.9; }
+.oc-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+/* Tooltip */
+.npr-tooltip { position:fixed; z-index:9000; max-width:280px; background:oklch(22% 0.020 235); color:#fff; padding:8px 12px; border-radius:var(--oc-r-md); font-size:12px; line-height:1.5; pointer-events:none; display:none; }
+.npr-tooltip.visible { display:block; }
+
+/* Modal overlay */
+.npr-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:8000; display:none; align-items:center; justify-content:center; }
+.npr-modal-overlay.open { display:flex; }
+.npr-modal { background:#fff; border-radius:var(--oc-r-lg); box-shadow:0 12px 24px -4px oklch(22% 0.02 235 / 0.12); width:480px; max-width:calc(100vw - 32px); max-height:85vh; overflow-y:auto; padding:var(--oc-sp-6); }
+.npr-modal h3 { margin:0 0 var(--oc-sp-4); font-size:17px; font-weight:600; color:var(--oc-fg); }
+.npr-modal-footer { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); margin-top:var(--oc-sp-5); }
+
+/* Country checkboxes */
+.npr-country-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--oc-sp-2); margin-bottom:var(--oc-sp-4); }
+.npr-country-item { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--oc-border); border-radius:var(--oc-r-md); font-size:12px; cursor:pointer; transition:border-color 120ms,background 120ms; }
+.npr-country-item:hover { border-color:var(--oc-accent); background:var(--oc-accent-subtle); }
+.npr-country-item input[type=checkbox] { accent-color:var(--oc-accent); }
+.npr-country-item .score-hint { color:var(--oc-fg-subtle); font-size:10px; font-variant-numeric:tabular-nums; }
+
+/* Translator select */
+.oc-select { height:32px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:13px; background:#fff; color:var(--oc-fg); outline:none; width:100%; }
+.oc-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+
+/* Textarea */
+.oc-textarea { padding:8px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); font-size:13px; width:100%; resize:vertical; min-height:80px; outline:none; }
+.oc-textarea:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
+
+/* Toast */
+.npr-toast-wrap { position:fixed; bottom:24px; right:24px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
+.npr-toast { padding:10px 16px; border-radius:var(--oc-r-md); font-size:13px; font-weight:500; box-shadow:0 4px 12px rgba(0,0,0,0.12); animation:npr-fadein 180ms ease; }
+.npr-toast--success { background:var(--oc-success-bg); color:var(--oc-success-fg); border:1px solid oklch(62% 0.13 165 / 0.3); }
+.npr-toast--error { background:var(--oc-danger-bg); color:var(--oc-danger-fg); border:1px solid oklch(58% 0.18 25 / 0.3); }
+@keyframes npr-fadein { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+
+/* Form label */
+.oc-label { display:block; font-size:12px; font-weight:600; color:var(--oc-fg-muted); margin-bottom:4px; }
+.oc-char-count { font-size:11px; color:var(--oc-fg-subtle); margin-top:4px; }
+
+/* Product image */
+.npr-cover { width:40px; height:40px; object-fit:cover; border-radius:var(--oc-r); border:1px solid var(--oc-border); }
+.npr-cover-ph { width:40px; height:40px; border-radius:var(--oc-r); background:var(--oc-bg-muted); border:1px solid var(--oc-border); }
+
+/* Empty state */
+.npr-empty { text-align:center; padding:var(--oc-sp-9) var(--oc-sp-6); color:var(--oc-fg-muted); }
+.npr-empty svg { display:block; margin:0 auto var(--oc-sp-4); color:oklch(62% 0.13 215); }
+.npr-empty-title { font-size:16px; font-weight:600; color:var(--oc-fg); margin-bottom:var(--oc-sp-2); }
+
+/* Loading spinner */
+.npr-spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:npr-spin 0.6s linear infinite; }
+@keyframes npr-spin { to { transform:rotate(360deg); } }
+{% endblock %}
+{% block content %}
+<div class="oc">
+
+  {# Page Tab 切换栏 #}
+  <div class="oc-page-tabs">
+    <a class="oc-page-tab" href="/medias/mk-selection">明控选品</a>
+    <a class="oc-page-tab active" href="/new-product-review/">新品审核</a>
+  </div>
+
+  <div class="oc-header">
+    <div>
+      <h1 class="title">新品审核</h1>
+      <div class="subtitle">
+        明空入库新品 AI 评估矩阵 &mdash; 决策上架国家 + 建翻译任务
+        <span class="oc-count" id="nprCount">--</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="oc-btn oc-btn--ghost" onclick="nprLoadData()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+        刷新
+      </button>
+    </div>
+  </div>
+
+  {# 主表格 #}
+  <div class="oc-table-wrap">
+    <table class="oc-table" id="nprTable">
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th style="width:48px">封面</th>
+          <th style="min-width:160px;text-align:left">产品名称</th>
+          <th style="width:70px">AI 综合</th>
+          {% for lang in languages %}
+          <th style="width:54px" title="{{ lang.name_zh }}">{{ lang.code_upper }}</th>
+          {% endfor %}
+          <th style="min-width:110px">翻译员</th>
+          <th style="width:80px">状态</th>
+          <th style="min-width:160px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="nprTbody">
+        {% for p in products %}
+        {% set detail = p.ai_evaluation_detail %}
+        {% set countries_map = {} %}
+        {% if detail and detail.countries %}
+          {% for c in detail.countries %}
+            {% if countries_map.update({c.lang: c}) %}{% endif %}
+          {% endfor %}
+        {% endif %}
+        <tr data-id="{{ p.id }}"
+            data-name="{{ p.name|e }}"
+            data-status="{{ p.npr_decision_status or '' }}"
+            data-translator-id="{{ p.translator_id or '' }}"
+            data-eval='{{ detail|tojson if detail else "null" }}'>
+          <td style="color:var(--oc-fg-subtle);font-size:11px">{{ loop.index }}</td>
+          <td>
+            {% if p.main_image %}
+            <img class="npr-cover" src="{{ p.main_image }}" alt="" loading="lazy">
+            {% else %}
+            <div class="npr-cover-ph"></div>
+            {% endif %}
+          </td>
+          <td class="text-left">
+            <div style="font-weight:500;font-size:13px;line-height:1.3">{{ p.name or '—' }}</div>
+            {% if p.product_code %}<div style="font-size:11px;color:var(--oc-fg-subtle)">{{ p.product_code }}</div>{% endif %}
+          </td>
+          <td>
+            {% if p.ai_score is not none %}
+            <span style="font-weight:600;font-size:14px;color:var(--oc-accent);font-variant-numeric:tabular-nums">{{ "%.0f"|format(p.ai_score) }}</span>
+            {% elif p.ai_evaluation_result == '评估失败' %}
+            <span style="color:var(--oc-danger-fg);font-size:11px">评估失败</span>
+            {% else %}
+            <span style="color:var(--oc-fg-subtle)">—</span>
+            {% endif %}
+          </td>
+          {% for lang in languages %}
+          {% set c = countries_map.get(lang.code) %}
+          {% if c %}
+            {% if c.is_suitable %}
+            <td>
+              <div class="npr-cell npr-cell--suitable"
+                   onclick="nprOpenCellDetail(this)"
+                   data-lang="{{ lang.code }}"
+                   data-score="{{ c.score }}"
+                   data-reason="{{ c.reason|e }}"
+                   data-suggestions='{{ c.suggestions|tojson }}'>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="cell-score">{{ "%.0f"|format(c.score) }}</span>
+              </div>
+            </td>
+            {% else %}
+            <td>
+              <div class="npr-cell npr-cell--unsuitable"
+                   onclick="nprOpenCellDetail(this)"
+                   data-lang="{{ lang.code }}"
+                   data-score="{{ c.score }}"
+                   data-reason="{{ c.reason|e }}"
+                   data-suggestions='{{ c.suggestions|tojson }}'>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <span class="cell-score">{{ "%.0f"|format(c.score) }}</span>
+              </div>
+            </td>
+            {% endif %}
+          {% else %}
+          <td>
+            <div class="npr-cell npr-cell--empty">—</div>
+          </td>
+          {% endif %}
+          {% endfor %}
+          <td style="font-size:12px">{{ p.translator_name or '—' }}</td>
+          <td>
+            {% if p.npr_decision_status == 'approved' %}
+            <span class="oc-badge oc-badge--approved">已上架</span>
+            {% elif p.npr_decision_status == 'rejected' %}
+            <span class="oc-badge oc-badge--rejected">已拒绝</span>
+            {% elif p.npr_decision_status == 'pending' %}
+            <span class="oc-badge oc-badge--pending">待决策</span>
+            {% else %}
+            <span class="oc-badge oc-badge--none">待评估</span>
+            {% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">
+              {% if p.npr_decision_status not in ('approved', 'rejected') %}
+              <button class="oc-btn oc-btn--ghost" style="height:26px;font-size:12px"
+                      onclick="nprTriggerEval({{ p.id }}, this)">AI 评估</button>
+              {% endif %}
+              {% if p.npr_decision_status not in ('approved', 'rejected') and p.ai_score is not none %}
+              <button class="oc-btn oc-btn--primary" style="height:26px;font-size:12px"
+                      onclick="nprOpenApprove({{ p.id }})">上架</button>
+              <button class="oc-btn oc-btn--danger" style="height:26px;font-size:12px"
+                      onclick="nprOpenReject({{ p.id }})">拒绝</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="{{ 8 + languages|length }}">
+            <div class="npr-empty">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <div class="npr-empty-title">暂无待审核新品</div>
+              <div style="font-size:13px">所有明空入库新品已全部决策完成。</div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Tooltip #}
+  <div class="npr-tooltip" id="nprTooltip"></div>
+
+  {# Toast container #}
+  <div class="npr-toast-wrap" id="nprToastWrap"></div>
+
+  {# Modal: 单元格详情 #}
+  <div class="npr-modal-overlay" id="nprCellModal">
+    <div class="npr-modal" style="width:400px">
+      <h3 id="nprCellModalTitle">评估详情</h3>
+      <div id="nprCellModalBody" style="font-size:13px;line-height:1.6;color:var(--oc-fg-muted)"></div>
+      <div class="npr-modal-footer">
+        <button class="oc-btn oc-btn--ghost" onclick="nprCloseModal('nprCellModal')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  {# Modal: 上架 (Approve) #}
+  <div class="npr-modal-overlay" id="nprApproveModal">
+    <div class="npr-modal">
+      <h3>确认上架 — 选择目标国家</h3>
+      <p style="font-size:12px;color:var(--oc-fg-muted);margin:0 0 var(--oc-sp-3)">选择需要翻译的目标市场（至少选一个），并指定翻译员。</p>
+      <div class="npr-country-grid" id="nprCountryGrid"></div>
+      <div style="margin-bottom:var(--oc-sp-4)">
+        <label class="oc-label">指定翻译员</label>
+        <select class="oc-select" id="nprTranslatorSelect">
+          {% for t in translators %}
+          <option value="{{ t.id }}">{{ t.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="npr-modal-footer">
+        <button class="oc-btn oc-btn--ghost" onclick="nprCloseModal('nprApproveModal')">取消</button>
+        <button class="oc-btn oc-btn--primary" id="nprApproveConfirmBtn" onclick="nprConfirmApprove()">确认上架并建任务</button>
+      </div>
+    </div>
+  </div>
+
+  {# Modal: 拒绝 (Reject) #}
+  <div class="npr-modal-overlay" id="nprRejectModal">
+    <div class="npr-modal" style="width:420px">
+      <h3>确认拒绝</h3>
+      <p style="font-size:12px;color:var(--oc-fg-muted);margin:0 0 var(--oc-sp-3)">请填写拒绝理由（至少 10 个字）。</p>
+      <label class="oc-label">拒绝理由</label>
+      <textarea class="oc-textarea" id="nprRejectReason" placeholder="例如：产品与目标市场需求不符，质量不达标…" oninput="nprUpdateRejectBtn()" rows="4"></textarea>
+      <div class="oc-char-count"><span id="nprRejectCharCount">0</span> 字（至少 10 字）</div>
+      <div class="npr-modal-footer">
+        <button class="oc-btn oc-btn--ghost" onclick="nprCloseModal('nprRejectModal')">取消</button>
+        <button class="oc-btn oc-btn--danger" id="nprRejectConfirmBtn" onclick="nprConfirmReject()" disabled>确认拒绝</button>
+      </div>
+    </div>
+  </div>
+
+</div>{# /.oc #}
+{% endblock %}
+{% block extra_script %}
+<script>
+(function() {
+  // Data passed from server
+  const LANGUAGES = {{ languages|tojson }};
+  const TRANSLATORS = {{ translators|tojson }};
+
+  // State
+  let _currentProductId = null;
+
+  // =============================================
+  // Utils
+  // =============================================
+  function nprToast(msg, type = 'success') {
+    const wrap = document.getElementById('nprToastWrap');
+    const el = document.createElement('div');
+    el.className = 'npr-toast npr-toast--' + type;
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  window.nprOpenModal = function(id) {
+    document.getElementById(id).classList.add('open');
+  };
+  window.nprCloseModal = function(id) {
+    document.getElementById(id).classList.remove('open');
+  };
+
+  // Close on overlay click
+  document.querySelectorAll('.npr-modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) nprCloseModal(this.id);
+    });
+  });
+
+  // =============================================
+  // Cell detail modal (Task 27)
+  // =============================================
+  window.nprOpenCellDetail = function(cell) {
+    const lang = cell.dataset.lang;
+    const score = cell.dataset.score;
+    const reason = cell.dataset.reason;
+    let suggestions = [];
+    try { suggestions = JSON.parse(cell.dataset.suggestions || '[]'); } catch(e) {}
+
+    const langObj = LANGUAGES.find(l => l.code === lang) || { name_zh: lang };
+    document.getElementById('nprCellModalTitle').textContent = langObj.name_zh + ' — 评估详情';
+
+    let html = '<div style="margin-bottom:8px"><b>综合评分：</b><span style="color:var(--oc-accent);font-weight:600">' + score + '</span></div>';
+    html += '<div style="margin-bottom:8px"><b>评估理由：</b>' + (reason || '—') + '</div>';
+    if (suggestions && suggestions.length) {
+      html += '<div><b>建议：</b><ul style="margin:4px 0 0 16px;padding:0">';
+      suggestions.forEach(s => { html += '<li>' + s + '</li>'; });
+      html += '</ul></div>';
+    }
+    document.getElementById('nprCellModalBody').innerHTML = html;
+    nprOpenModal('nprCellModal');
+  };
+
+  // =============================================
+  // AI 评估 (Task 28)
+  // =============================================
+  window.nprTriggerEval = function(productId, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="npr-spinner"></span> 评估中…';
+
+    fetch('/new-product-review/api/' + productId + '/evaluate', {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
+    .then(({ ok, data }) => {
+      if (ok) {
+        nprToast('AI 评估完成，综合分：' + (data.ai_score || '--'), 'success');
+        nprLoadData();
+      } else {
+        nprToast('评估失败：' + (data.detail || data.error), 'error');
+        btn.disabled = false;
+        btn.textContent = 'AI 评估';
+      }
+    })
+    .catch(e => {
+      nprToast('网络错误：' + e.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'AI 评估';
+    });
+  };
+
+  // =============================================
+  // Approve modal (Task 28)
+  // =============================================
+  window.nprOpenApprove = function(productId) {
+    _currentProductId = productId;
+    const row = document.querySelector('tr[data-id="' + productId + '"]');
+    let evalData = null;
+    try { evalData = JSON.parse(row.dataset.eval || 'null'); } catch(e) {}
+
+    const countriesMap = {};
+    if (evalData && evalData.countries) {
+      evalData.countries.forEach(c => { countriesMap[c.lang] = c; });
+    }
+
+    const grid = document.getElementById('nprCountryGrid');
+    grid.innerHTML = '';
+    LANGUAGES.forEach(lang => {
+      const c = countriesMap[lang.code];
+      const checked = c && c.is_suitable ? 'checked' : '';
+      const score = c ? c.score.toFixed(0) : '';
+      grid.innerHTML += `<label class="npr-country-item">
+        <input type="checkbox" value="${lang.code_upper}" ${checked}>
+        <span>${lang.name_zh}</span>
+        ${score ? '<span class="score-hint">' + score + '</span>' : ''}
+      </label>`;
+    });
+
+    // Pre-select translator
+    const currentTranslatorId = (row.dataset.translatorId || '').trim();
+    const sel = document.getElementById('nprTranslatorSelect');
+    if (currentTranslatorId && sel) {
+      sel.value = currentTranslatorId;
+    }
+
+    nprOpenModal('nprApproveModal');
+  };
+
+  window.nprConfirmApprove = function() {
+    const countries = Array.from(
+      document.querySelectorAll('#nprCountryGrid input[type=checkbox]:checked')
+    ).map(el => el.value);
+
+    if (!countries.length) {
+      nprToast('请至少选择一个目标国家', 'error');
+      return;
+    }
+
+    const translatorId = document.getElementById('nprTranslatorSelect').value;
+    if (!translatorId) {
+      nprToast('请选择翻译员', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('nprApproveConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="npr-spinner"></span> 处理中…';
+
+    fetch('/new-product-review/api/' + _currentProductId + '/decide', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ countries: countries, translator_id: parseInt(translatorId) }),
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      btn.disabled = false;
+      btn.textContent = '确认上架并建任务';
+      if (ok) {
+        nprCloseModal('nprApproveModal');
+        nprToast('已上架，任务 #' + data.task_id + ' 已创建', 'success');
+        nprLoadData();
+      } else {
+        nprToast('操作失败：' + (data.detail || data.error), 'error');
+      }
+    })
+    .catch(e => {
+      btn.disabled = false;
+      btn.textContent = '确认上架并建任务';
+      nprToast('网络错误：' + e.message, 'error');
+    });
+  };
+
+  // =============================================
+  // Reject modal (Task 28)
+  // =============================================
+  window.nprOpenReject = function(productId) {
+    _currentProductId = productId;
+    document.getElementById('nprRejectReason').value = '';
+    document.getElementById('nprRejectCharCount').textContent = '0';
+    document.getElementById('nprRejectConfirmBtn').disabled = true;
+    nprOpenModal('nprRejectModal');
+  };
+
+  window.nprUpdateRejectBtn = function() {
+    const val = document.getElementById('nprRejectReason').value.trim();
+    document.getElementById('nprRejectCharCount').textContent = val.length;
+    document.getElementById('nprRejectConfirmBtn').disabled = val.length < 10;
+  };
+
+  window.nprConfirmReject = function() {
+    const reason = document.getElementById('nprRejectReason').value.trim();
+    if (reason.length < 10) { nprToast('理由至少 10 个字', 'error'); return; }
+
+    const btn = document.getElementById('nprRejectConfirmBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="npr-spinner"></span> 处理中…';
+
+    fetch('/new-product-review/api/' + _currentProductId + '/reject', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason }),
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      btn.disabled = false;
+      btn.textContent = '确认拒绝';
+      if (ok) {
+        nprCloseModal('nprRejectModal');
+        nprToast('已标记为拒绝', 'success');
+        nprLoadData();
+      } else {
+        nprToast('操作失败：' + (data.detail || data.error), 'error');
+      }
+    })
+    .catch(e => {
+      btn.disabled = false;
+      btn.textContent = '确认拒绝';
+      nprToast('网络错误：' + e.message, 'error');
+    });
+  };
+
+  // =============================================
+  // Load & re-render table (Task 28)
+  // =============================================
+  window.nprLoadData = function() {
+    fetch('/new-product-review/api/list', { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(data => {
+      renderTable(data.products, data.languages);
+      document.getElementById('nprCount').textContent = data.products.length;
+    })
+    .catch(e => nprToast('刷新失败：' + e.message, 'error'));
+  };
+
+  function renderTable(products, languages) {
+    const tbody = document.getElementById('nprTbody');
+    if (!products.length) {
+      tbody.innerHTML = '<tr><td colspan="' + (8 + languages.length) + '" style="text-align:center;padding:48px;color:var(--oc-fg-muted)">暂无待审核新品</td></tr>';
+      return;
+    }
+    tbody.innerHTML = products.map((p, idx) => {
+      const detail = p.ai_evaluation_detail;
+      const countriesMap = {};
+      if (detail && detail.countries) {
+        detail.countries.forEach(c => { countriesMap[c.lang] = c; });
+      }
+
+      const statusBadge = p.npr_decision_status === 'approved'
+        ? '<span class="oc-badge oc-badge--approved">已上架</span>'
+        : p.npr_decision_status === 'rejected'
+        ? '<span class="oc-badge oc-badge--rejected">已拒绝</span>'
+        : p.npr_decision_status === 'pending'
+        ? '<span class="oc-badge oc-badge--pending">待决策</span>'
+        : '<span class="oc-badge oc-badge--none">待评估</span>';
+
+      const matrixCells = languages.map(lang => {
+        const c = countriesMap[lang.code];
+        if (!c) return '<td><div class="npr-cell npr-cell--empty">—</div></td>';
+        const sugg = JSON.stringify(c.suggestions || []).replace(/'/g, '&#39;');
+        if (c.is_suitable) {
+          return `<td><div class="npr-cell npr-cell--suitable" onclick="nprOpenCellDetail(this)"
+            data-lang="${lang.code}" data-score="${c.score}" data-reason="${(c.reason||'').replace(/"/g,'&quot;')}" data-suggestions='${sugg}'>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="cell-score">${Math.round(c.score)}</span></div></td>`;
+        } else {
+          return `<td><div class="npr-cell npr-cell--unsuitable" onclick="nprOpenCellDetail(this)"
+            data-lang="${lang.code}" data-score="${c.score}" data-reason="${(c.reason||'').replace(/"/g,'&quot;')}" data-suggestions='${sugg}'>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span class="cell-score">${Math.round(c.score)}</span></div></td>`;
+        }
+      }).join('');
+
+      const evalStr = JSON.stringify(detail || null).replace(/'/g,'&#39;');
+      const actionBtns = (p.npr_decision_status !== 'approved' && p.npr_decision_status !== 'rejected')
+        ? `<button class="oc-btn oc-btn--ghost" style="height:26px;font-size:12px" onclick="nprTriggerEval(${p.id},this)">AI 评估</button>`
+          + (p.ai_score != null
+            ? `<button class="oc-btn oc-btn--primary" style="height:26px;font-size:12px" onclick="nprOpenApprove(${p.id})">上架</button>
+               <button class="oc-btn oc-btn--danger" style="height:26px;font-size:12px" onclick="nprOpenReject(${p.id})">拒绝</button>`
+            : '')
+        : '';
+
+      const coverHtml = p.main_image
+        ? `<img class="npr-cover" src="${p.main_image}" alt="" loading="lazy">`
+        : '<div class="npr-cover-ph"></div>';
+
+      const scoreHtml = p.ai_score != null
+        ? `<span style="font-weight:600;font-size:14px;color:var(--oc-accent);font-variant-numeric:tabular-nums">${Math.round(p.ai_score)}</span>`
+        : p.ai_evaluation_result === '评估失败'
+        ? '<span style="color:var(--oc-danger-fg);font-size:11px">评估失败</span>'
+        : '<span style="color:var(--oc-fg-subtle)">—</span>';
+
+      return `<tr data-id="${p.id}" data-name="${(p.name||'').replace(/"/g,'&quot;')}"
+                  data-status="${p.npr_decision_status||''}" data-translator-id="${p.translator_id||''}"
+                  data-eval='${evalStr}'>
+        <td style="color:var(--oc-fg-subtle);font-size:11px">${idx+1}</td>
+        <td>${coverHtml}</td>
+        <td class="text-left"><div style="font-weight:500;font-size:13px">${p.name||'—'}</div>${p.product_code?`<div style="font-size:11px;color:var(--oc-fg-subtle)">${p.product_code}</div>`:''}</td>
+        <td>${scoreHtml}</td>
+        ${matrixCells}
+        <td style="font-size:12px">${p.translator_name||'—'}</td>
+        <td>${statusBadge}</td>
+        <td><div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">${actionBtns}</div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Update count on load
+  document.getElementById('nprCount').textContent = {{ products|length }};
+
+})();
+</script>
+{% endblock %}

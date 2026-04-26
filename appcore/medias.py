@@ -412,7 +412,10 @@ def update_product(product_id: int, **fields) -> int:
                "mk_id",
                "shopifyid",
                "remark", "ai_score", "ai_evaluation_result",
-               "ai_evaluation_detail", "listing_status"}
+               "ai_evaluation_detail", "listing_status",
+               "npr_decision_status", "npr_decided_countries",
+               "npr_decided_at", "npr_decided_by",
+               "npr_rejected_reason", "npr_eval_clip_path"}
     # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
     if "mk_id" in fields:
         v = fields["mk_id"]
@@ -450,9 +453,12 @@ def update_product(product_id: int, **fields) -> int:
     if not keys:
         return 0
     # localized_links_json：支持 dict 输入，自动序列化为 JSON 字符串
+    # npr_decided_countries：支持 list 输入，自动序列化为 JSON 字符串
     def _val(k):
         v = fields[k]
         if k in {"localized_links_json", "link_check_tasks_json", "shopify_image_status_json"} and isinstance(v, dict):
+            return _json.dumps(v, ensure_ascii=False)
+        if k == "npr_decided_countries" and isinstance(v, (list, dict)):
             return _json.dumps(v, ensure_ascii=False)
         return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)
