@@ -55,6 +55,10 @@ def query_one(sql: str, args: tuple = ()) -> dict | None:
     return rows[0] if rows else None
 
 
+# Alias for code that prefers the more descriptive name.
+query_all = query
+
+
 def execute(sql: str, args: tuple = ()) -> int:
     """Returns lastrowid for INSERT, rowcount for UPDATE/DELETE."""
     conn = get_conn()

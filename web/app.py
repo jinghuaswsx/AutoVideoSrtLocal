@@ -71,6 +71,7 @@ from web.routes.openapi_materials import push_bp as openapi_push_items_bp
 from web.routes.openapi_materials import link_check_bp as openapi_link_check_bp
 from web.routes.openapi_materials import shopify_localizer_bp as openapi_shopify_localizer_bp
 from web.routes.pushes import bp as pushes_bp
+from web.routes.tasks import bp as tasks_bp
 from web.routes.image_translate import bp as image_translate_bp
 from web.routes.link_check import bp as link_check_bp
 from web.routes.voice_library import bp as voice_library_bp
@@ -190,6 +191,7 @@ def create_app() -> Flask:
     # 推送管理蓝图的 mark-pushed / mark-failed / reset 是纯 JSON POST API，
     # 前端走 cookie session 认证，不需要 CSRF 表单 token；整蓝图豁免。
     csrf.exempt(pushes_bp)
+    app.register_blueprint(tasks_bp)
     app.register_blueprint(image_translate_bp)
     # 图片翻译蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(image_translate_bp)
