@@ -89,3 +89,55 @@ def test_list_visible_tasks_processor_sees_pool_and_own(db_user_admin, db_user_p
     execute("DELETE FROM tasks WHERE id IN (%s,%s,%s)", (tid_a, tid_b, tid_c))
     execute("DELETE FROM media_items WHERE product_id IN (%s,%s,%s)", (pid_a, pid_b, pid_c))
     execute("DELETE FROM media_products WHERE id IN (%s,%s,%s)", (pid_a, pid_b, pid_c))
+
+
+def test_stream_original_video_admin_ok(monkeypatch, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p5", "_t_rvp_v5.mp4")
+    monkeypatch.setattr(
+        raw_video_pool, "_resolve_local_path",
+        lambda object_key: "/tmp/_t_rvp_v5.mp4",
+    )
+    path, suggested = raw_video_pool.stream_original_video(tid, db_user_admin)
+    assert path == "/tmp/_t_rvp_v5.mp4"
+    assert suggested == "_t_rvp_v5.mp4"
+
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+
+
+def test_stream_original_video_assignee_ok(monkeypatch, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p_assi", "_t_rvp_v_assi.mp4")
+    execute("UPDATE tasks SET assignee_id=%s, status='raw_in_progress' WHERE id=%s",
+            (db_user_processor, tid))
+    monkeypatch.setattr(raw_video_pool, "_resolve_local_path",
+                        lambda ok: "/tmp/_t_rvp_v_assi.mp4")
+    path, suggested = raw_video_pool.stream_original_video(tid, db_user_processor)
+    assert path == "/tmp/_t_rvp_v_assi.mp4"
+
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+
+
+def test_stream_original_video_non_assignee_denied(monkeypatch, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p6", "_t_rvp_v6.mp4")
+    # Create a third user as the actual assignee
+    from appcore.users import create_user, get_by_username
+    execute("DELETE FROM users WHERE username=%s", ("_t_rvp_other_assi",))
+    create_user("_t_rvp_other_assi", "x", role="user")
+    other_assi = get_by_username("_t_rvp_other_assi")["id"]
+    execute("UPDATE tasks SET assignee_id=%s, status='raw_in_progress' WHERE id=%s",
+            (other_assi, tid))
+
+    # processor is NOT assignee, NOT admin
+    with pytest.raises(raw_video_pool.PermissionDenied):
+        raw_video_pool.stream_original_video(tid, db_user_processor)
+
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+    execute("DELETE FROM users WHERE username=%s", ("_t_rvp_other_assi",))

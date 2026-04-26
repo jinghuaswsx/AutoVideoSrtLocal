@@ -91,3 +91,44 @@ def list_visible_tasks(*, viewer_user_id: int, viewer_role: str) -> dict:
         "in_progress": _shape(in_progress),
         "review": _shape(review),
     }
+
+
+def _resolve_local_path(object_key: str) -> str | None:
+    """媒体文件本地路径解析。
+
+    复用 UPLOAD_DIR + object_key 惯例。如果素材管理 (appcore/medias.py) 有
+    专门的路径解析 helper（实施时 grep 一下），优先用那个。
+    """
+    upload_dir = os.environ.get("UPLOAD_DIR") or "/data/autovideosrt-test/uploads"
+    return os.path.join(upload_dir, object_key)
+
+
+def _check_view_permission(task_id: int, viewer_user_id: int) -> dict:
+    """Load task row + check viewer is admin or assignee.
+    Returns the task row dict (joined with viewer's role) for downstream use.
+    Raises PermissionDenied."""
+    row = query_one(
+        "SELECT t.*, u.role AS viewer_role FROM tasks t, users u "
+        "WHERE t.id=%s AND u.id=%s AND t.parent_task_id IS NULL",
+        (int(task_id), int(viewer_user_id)),
+    )
+    if not row:
+        raise PermissionDenied("task not found or viewer not found")
+    is_admin = row.get("viewer_role") in ("admin", "superadmin")
+    if not is_admin and row.get("assignee_id") != int(viewer_user_id):
+        raise PermissionDenied("not assignee")
+    return row
+
+
+def stream_original_video(task_id: int, viewer_user_id: int) -> tuple[str, str]:
+    """Returns (local_path, suggested_filename). Raises PermissionDenied / StateError."""
+    row = _check_view_permission(task_id, viewer_user_id)
+    if not row.get("media_item_id"):
+        raise StateError("task has no media_item bound")
+    item = query_one("SELECT * FROM media_items WHERE id=%s", (row["media_item_id"],))
+    if not item:
+        raise StateError("media_item not found")
+    local_path = _resolve_local_path(item["object_key"])
+    if not local_path:
+        raise StateError("cannot resolve local path")
+    return local_path, item["filename"]
