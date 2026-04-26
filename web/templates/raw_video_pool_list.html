@@ -1,5 +1,237 @@
 {% extends "layout.html" %}
 {% block title %}原始素材任务库 - AutoVideoSrt{% endblock %}
+{% block page_title %}原始素材任务库{% endblock %}
+{% block extra_style %}
+:root {
+  --rvp-bg: oklch(99% 0.004 230);
+  --rvp-bg-subtle: oklch(97% 0.006 230);
+  --rvp-bg-muted: oklch(94% 0.010 230);
+  --rvp-border: oklch(91% 0.012 230);
+  --rvp-border-strong: oklch(84% 0.015 230);
+  --rvp-fg: oklch(22% 0.020 235);
+  --rvp-fg-muted: oklch(48% 0.018 230);
+  --rvp-accent: oklch(56% 0.16 230);
+  --rvp-accent-hover: oklch(50% 0.17 230);
+  --rvp-accent-subtle: oklch(94% 0.04 225);
+  --rvp-success-bg: oklch(95% 0.04 165);
+  --rvp-success-fg: oklch(38% 0.09 165);
+  --rvp-warning-bg: oklch(96% 0.05 85);
+  --rvp-warning-fg: oklch(42% 0.10 60);
+  --rvp-danger-fg: oklch(42% 0.14 25);
+  --rvp-r: 6px;
+  --rvp-r-md: 8px;
+  --rvp-sp-2: 8px;
+  --rvp-sp-3: 12px;
+  --rvp-sp-4: 16px;
+  --rvp-sp-5: 20px;
+}
+.rvp { font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--rvp-fg); }
+.rvp * { box-sizing: border-box; }
+.rvp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--rvp-sp-5); }
+.rvp-header h1 { font-size:22px; font-weight:600; margin:0; }
+.rvp-header p { font-size:13px; color:var(--rvp-fg-muted); margin:4px 0 0; }
+.rvp-section { margin-bottom:var(--rvp-sp-5); }
+.rvp-section h2 { font-size:15px; font-weight:600; margin:0 0 var(--rvp-sp-2); color:var(--rvp-fg-muted); }
+.rvp-table { width:100%; border-collapse:collapse; font-size:13px; }
+.rvp-table th { text-align:left; padding:8px 10px; background:var(--rvp-bg-subtle); border-bottom:2px solid var(--rvp-border); font-weight:600; color:var(--rvp-fg-muted); }
+.rvp-table td { padding:8px 10px; border-bottom:1px solid var(--rvp-border); vertical-align:middle; }
+.rvp-table tr:hover td { background:var(--rvp-bg-subtle); }
+.rvp-btn { height:28px; padding:0 12px; border:1px solid var(--rvp-border-strong); border-radius:var(--rvp-r); background:var(--rvp-bg); cursor:pointer; font-size:12px; font-family:inherit; transition:background 120ms; }
+.rvp-btn:hover:not(:disabled) { background:var(--rvp-bg-muted); }
+.rvp-btn--primary { background:var(--rvp-accent); color:#fff; border:none; }
+.rvp-btn--primary:hover:not(:disabled) { background:var(--rvp-accent-hover); }
+.rvp-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.rvp-empty { padding:20px; text-align:center; color:var(--rvp-fg-muted); font-size:13px; }
+.rvp-action-group { display:flex; gap:6px; flex-wrap:wrap; }
+{% endblock %}
 {% block content %}
-<div id="rvpRoot"><h1>原始素材任务库</h1><p>骨架占位 — Task 9 完成 UI</p></div>
+<div id="rvpRoot" class="rvp">
+  <div class="rvp-header">
+    <div>
+      <h1>原始素材任务库</h1>
+      <p>处理人在这里认领任务、下载原始视频、上传处理后版本</p>
+    </div>
+    <button class="rvp-btn" onclick="rvpRender()">刷新</button>
+  </div>
+
+  <div class="rvp-section">
+    <h2>📋 待认领 (<span id="rvpPendingCount">0</span>)</h2>
+    <div id="rvpPending"></div>
+  </div>
+
+  <div class="rvp-section">
+    <h2>⏳ 我已认领 (<span id="rvpInProgressCount">0</span>)</h2>
+    <div id="rvpInProgress"></div>
+  </div>
+
+  <div class="rvp-section">
+    <h2>📤 已上传待审 (<span id="rvpReviewCount">0</span>)</h2>
+    <div id="rvpReview"></div>
+  </div>
+</div>
+
+<!-- Upload modal -->
+<div id="rvpUploadModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1500;">
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:480px; max-width:90vw;">
+    <h3 style="margin:0 0 12px;">上传处理后视频</h3>
+    <p style="font-size:13px; color:var(--rvp-fg-muted); margin:0 0 12px;" id="rvpUploadHint"></p>
+    <input type="file" id="rvpUploadFile" accept="video/mp4,video/webm,video/quicktime,video/x-matroska" style="margin-bottom:8px;" />
+    <div style="font-size:11px; color:var(--rvp-fg-muted);">将覆盖原始视频（不可恢复）；最大 500MB</div>
+    <div id="rvpUploadProgress" style="margin-top:12px; display:none;">
+      <div style="font-size:12px; color:var(--rvp-fg-muted);">上传中... <span id="rvpUploadPct">0%</span></div>
+      <div style="height:6px; background:var(--rvp-bg-muted); border-radius:3px; overflow:hidden; margin-top:4px;">
+        <div id="rvpUploadBar" style="height:100%; width:0; background:var(--rvp-accent); transition:width 200ms;"></div>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="rvp-btn" onclick="rvpUploadCancel()">取消</button>
+      <button class="rvp-btn rvp-btn--primary" id="rvpUploadOK" onclick="rvpUploadOK()">上传</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const RVP_IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+
+function rvpEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function rvpFmtSize(b) {
+  if (!b) return '?';
+  if (b < 1024 * 1024) return Math.round(b / 1024) + 'KB';
+  return (b / 1024 / 1024).toFixed(1) + 'MB';
+}
+function rvpFmtTime(s) {
+  if (!s) return '—';
+  return s.replace('T', ' ').slice(0, 19);
+}
+
+async function rvpRender() {
+  const sections = ['rvpPending', 'rvpInProgress', 'rvpReview'];
+  sections.forEach(id => document.getElementById(id).innerHTML = '<div class="rvp-empty">加载中...</div>');
+  try {
+    const r = await fetch('/raw-video-pool/api/list');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    rvpRenderSection('rvpPending', 'rvpPendingCount', data.pending, 'pending');
+    rvpRenderSection('rvpInProgress', 'rvpInProgressCount', data.in_progress, 'in_progress');
+    rvpRenderSection('rvpReview', 'rvpReviewCount', data.review, 'review');
+  } catch (e) {
+    sections.forEach(id => document.getElementById(id).innerHTML = '<div class="rvp-empty">加载失败：' + rvpEsc(e.message) + '</div>');
+  }
+}
+
+function rvpRenderSection(elId, countId, items, kind) {
+  document.getElementById(countId).textContent = items.length;
+  const wrap = document.getElementById(elId);
+  if (!items.length) {
+    wrap.innerHTML = '<div class="rvp-empty">暂无任务</div>';
+    return;
+  }
+  const rows = items.map(t => {
+    let actions = '';
+    if (kind === 'pending') {
+      actions = `<button class="rvp-btn rvp-btn--primary" onclick="rvpClaim(${t.task_id}, this)">认领</button>`;
+    } else if (kind === 'in_progress') {
+      actions = `<div class="rvp-action-group">
+        <button class="rvp-btn" onclick="rvpDownload(${t.task_id})">下载原始</button>
+        <button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${t.task_id}, '${rvpEsc(t.mp4_filename || '').replace(/'/g, '&#39;')}')">上传处理后</button>
+      </div>`;
+    } else if (kind === 'review') {
+      actions = `<button class="rvp-btn" disabled>等管理员审核</button>`;
+    }
+    return `<tr>
+      <td>${rvpEsc(t.product_name)}</td>
+      <td>${rvpEsc(t.country_codes || '—')}</td>
+      <td title="${rvpEsc(t.mp4_filename || '')}" style="max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${rvpEsc(t.mp4_filename || '—')}</td>
+      <td>${rvpFmtSize(t.mp4_size)}</td>
+      <td>${rvpFmtTime(t.created_at)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="rvp-table"><thead><tr>
+    <th>产品</th><th>国家</th><th>文件名</th><th>大小</th><th>创建时间</th><th>操作</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function rvpClaim(tid, btn) {
+  btn.disabled = true;
+  btn.textContent = '认领中...';
+  try {
+    const r = await fetch(`/tasks/api/parent/${tid}/claim`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({error: r.statusText}));
+      throw new Error(e.error || r.statusText);
+    }
+    rvpRender();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '认领';
+    alert('认领失败：' + e.message);
+  }
+}
+
+function rvpDownload(tid) {
+  // Browser GET with auth cookie — server triggers download via send_file
+  window.location.href = `/raw-video-pool/api/task/${tid}/download`;
+}
+
+let _rvpUploadCtx = null;
+function rvpOpenUpload(tid, fname) {
+  _rvpUploadCtx = {tid, fname};
+  document.getElementById('rvpUploadHint').textContent = `任务 #${tid} — ${fname}`;
+  document.getElementById('rvpUploadFile').value = '';
+  document.getElementById('rvpUploadProgress').style.display = 'none';
+  document.getElementById('rvpUploadPct').textContent = '0%';
+  document.getElementById('rvpUploadBar').style.width = '0';
+  document.getElementById('rvpUploadOK').disabled = false;
+  document.getElementById('rvpUploadModal').style.display = 'block';
+}
+function rvpUploadCancel() {
+  document.getElementById('rvpUploadModal').style.display = 'none';
+  _rvpUploadCtx = null;
+}
+function rvpUploadOK() {
+  if (!_rvpUploadCtx) return;
+  const f = document.getElementById('rvpUploadFile').files[0];
+  if (!f) { alert('请选择文件'); return; }
+  if (f.size > 500 * 1024 * 1024) { alert('文件超过 500MB 限制'); return; }
+  const okBtn = document.getElementById('rvpUploadOK');
+  okBtn.disabled = true;
+  document.getElementById('rvpUploadProgress').style.display = 'block';
+
+  const xhr = new XMLHttpRequest();
+  xhr.upload.onprogress = (ev) => {
+    if (!ev.lengthComputable) return;
+    const pct = Math.round(ev.loaded / ev.total * 100);
+    document.getElementById('rvpUploadPct').textContent = pct + '%';
+    document.getElementById('rvpUploadBar').style.width = pct + '%';
+  };
+  xhr.onload = () => {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      rvpUploadCancel();
+      rvpRender();
+      alert('上传成功，状态已转为待审核');
+    } else {
+      let msg = xhr.statusText;
+      try {
+        const body = JSON.parse(xhr.responseText);
+        msg = body.detail || body.error || msg;
+      } catch (e) {}
+      okBtn.disabled = false;
+      alert('上传失败：' + msg);
+    }
+  };
+  xhr.onerror = () => {
+    okBtn.disabled = false;
+    alert('网络错误');
+  };
+  xhr.open('POST', `/raw-video-pool/api/task/${_rvpUploadCtx.tid}/upload`);
+  const fd = new FormData();
+  fd.append('file', f);
+  xhr.send(fd);
+}
+
+rvpRender();
+</script>
 {% endblock %}
