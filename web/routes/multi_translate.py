@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 bp = Blueprint("multi_translate", __name__)
 
 SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
+ALLOWED_SOURCE_LANGUAGES = ("", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
 
 
 def _list_enabled_target_langs() -> tuple[str, ...]:
@@ -281,6 +282,14 @@ def upload_and_start():
     if target_lang not in enabled_langs:
         return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
 
+    # 源语言：""=自动检测（默认按 zh 选 ASR 引擎，LID 复检覆盖）；
+    # 其他=用户明确指定，跳过两层 LLM 检测，直接走对应路径
+    raw_source_language = (request.form.get("source_language") or "").strip()
+    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
+    user_specified_source_language = bool(raw_source_language)
+    source_language = raw_source_language or "zh"
+
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
@@ -304,6 +313,8 @@ def upload_and_start():
         display_name=display_name,
         type="multi_translate",
         target_lang=target_lang,
+        source_language=source_language,
+        user_specified_source_language=user_specified_source_language,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
