@@ -234,8 +234,15 @@
     header.appendChild(btnClose);
     modal.appendChild(header);
 
-    const body = el('div', { class: 'pm-body' });
-    body.appendChild(el('pre', { class: 'pm-json audit-detail-json' }, formatAuditDetail(item.ai_evaluation_detail)));
+    const body = el('div', { class: 'pm-body audit-detail-body' });
+    const detailRaw = item.ai_evaluation_detail;
+    const parsed = window.EvalCountryTable && window.EvalCountryTable.parse(detailRaw);
+    const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
+    if (hasTable) {
+      body.innerHTML = window.EvalCountryTable.render(detailRaw);
+    } else {
+      body.appendChild(el('pre', { class: 'pm-json audit-detail-json' }, formatAuditDetail(detailRaw)));
+    }
     modal.appendChild(body);
 
     const footer = el('div', { class: 'pm-footer' });
