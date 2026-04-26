@@ -44,11 +44,10 @@ def db_test_user():
 
 @pytest.fixture
 def db_test_product(db_test_user):
-    execute(
+    pid = execute(
         "INSERT INTO media_products (user_id, name, product_code) VALUES (%s, %s, %s)",
         (db_test_user, "_t_mki_prod", "test-code"),
     )
-    pid = query_one("SELECT LAST_INSERT_ID() AS id")["id"]
     yield {"id": pid, "user_id": db_test_user}
     execute("DELETE FROM media_products WHERE id=%s", (pid,))
 
