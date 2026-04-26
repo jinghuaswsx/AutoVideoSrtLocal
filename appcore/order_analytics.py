@@ -1043,3 +1043,78 @@ def _count_media_items_by_product() -> dict[int, dict[str, int]]:
             continue
         out.setdefault(int(pid), {})[r.get("lang") or ""] = int(r.get("n") or 0)
     return out
+
+
+def _join_and_compute_dashboard_rows(
+    *,
+    products: dict[int, dict],
+    orders_now: dict[int, dict],
+    orders_prev: dict[int, dict],
+    ads_now: dict[int, dict],
+    ads_prev: dict[int, dict],
+    items: dict[int, dict[str, int]],
+    ad_data_available: bool,
+) -> list[dict]:
+    """合并 4 个数据源 + 媒体素材数 + 计算 ROAS / 环比百分比。
+    决策 #12 剔除两边都 0 的产品。"""
+    rows: list[dict] = []
+    candidate_ids = set(orders_now.keys()) | set(ads_now.keys())
+    for pid in candidate_ids:
+        if pid not in products:
+            # 产品已被删除/归档，跳过
+            continue
+        prod = products[pid]
+        o_now = orders_now.get(pid, {})
+        o_prev = orders_prev.get(pid, {})
+        a_now = ads_now.get(pid, {})
+        a_prev = ads_prev.get(pid, {})
+
+        orders = int(o_now.get("orders") or 0)
+        spend = float(a_now.get("spend") or 0)
+        if orders == 0 and spend == 0:
+            continue  # 决策 #12
+
+        revenue = float(o_now.get("revenue") or 0)
+        revenue_prev = float(o_prev.get("revenue") or 0)
+        spend_prev = float(a_prev.get("spend") or 0)
+        roas = (revenue / spend) if spend > 0 else None
+        roas_prev = (revenue_prev / spend_prev) if spend_prev > 0 else None
+
+        row = {
+            "product_id": pid,
+            "product_code": prod.get("product_code"),
+            "product_name": prod.get("name"),
+            "orders": orders,
+            "orders_prev": int(o_prev.get("orders") or 0),
+            "orders_pct": _compute_pct_change(orders, o_prev.get("orders")),
+            "units": int(o_now.get("units") or 0),
+            "units_prev": int(o_prev.get("units") or 0),
+            "units_pct": _compute_pct_change(o_now.get("units"), o_prev.get("units")),
+            "revenue": round(revenue, 2),
+            "revenue_prev": round(revenue_prev, 2),
+            "revenue_pct": _compute_pct_change(revenue, revenue_prev),
+            "media_items_by_lang": items.get(pid, {}),
+            "ad_data_available": ad_data_available,
+        }
+        if ad_data_available:
+            row.update({
+                "spend": round(spend, 2),
+                "spend_prev": round(spend_prev, 2),
+                "spend_pct": _compute_pct_change(spend, spend_prev),
+                "meta_purchases": int(a_now.get("purchases") or 0),
+                "meta_purchases_prev": int(a_prev.get("purchases") or 0),
+                "meta_purchases_pct": _compute_pct_change(
+                    a_now.get("purchases"), a_prev.get("purchases")
+                ),
+                "roas": round(roas, 2) if roas is not None else None,
+                "roas_prev": round(roas_prev, 2) if roas_prev is not None else None,
+                "roas_pct": _compute_pct_change(roas, roas_prev),
+            })
+        else:
+            row.update({
+                "spend": None, "spend_prev": None, "spend_pct": None,
+                "meta_purchases": None, "meta_purchases_prev": None, "meta_purchases_pct": None,
+                "roas": None, "roas_prev": None, "roas_pct": None,
+            })
+        rows.append(row)
+    return rows

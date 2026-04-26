@@ -230,3 +230,59 @@ def test_count_media_items_by_product_filters_deleted(monkeypatch):
     monkeypatch.setattr(oa, "query", fake_query)
     oa._count_media_items_by_product()
     assert "deleted_at IS NULL" in captured["sql"]
+
+
+def test_join_and_compute_filters_zero_zero_products():
+    """决策 #12: orders=0 + spend=0 的产品被剔除。"""
+    products = {
+        42: {"id": 42, "name": "Glow", "product_code": "glow-rjc"},
+        99: {"id": 99, "name": "Other", "product_code": "other-rjc"},
+        7:  {"id": 7,  "name": "Zero", "product_code": "zero"},
+    }
+    orders_now  = {42: {"orders": 10, "units": 12, "revenue": 200.0}}
+    orders_prev = {42: {"orders": 8,  "units": 10, "revenue": 150.0}}
+    ads_now     = {99: {"spend": 100.0, "purchases": 5, "purchase_value": 250.0}}
+    ads_prev    = {99: {"spend": 80.0,  "purchases": 4, "purchase_value": 200.0}}
+    items       = {42: {"en": 1}, 99: {"en": 1}}
+
+    rows = oa._join_and_compute_dashboard_rows(
+        products=products,
+        orders_now=orders_now, orders_prev=orders_prev,
+        ads_now=ads_now, ads_prev=ads_prev,
+        items=items,
+        ad_data_available=True,
+    )
+
+    pids = {r["product_id"] for r in rows}
+    assert pids == {42, 99}  # 7 被剔除
+
+
+def test_join_and_compute_roas_uses_shopify_revenue_over_spend():
+    """决策 #13: ROAS = Shopify 收入 / Meta 花费。"""
+    products = {42: {"id": 42, "name": "X", "product_code": "x"}}
+    rows = oa._join_and_compute_dashboard_rows(
+        products=products,
+        orders_now={42: {"orders": 5, "units": 5, "revenue": 500.0}},
+        orders_prev={42: {"orders": 3, "units": 3, "revenue": 300.0}},
+        ads_now={42: {"spend": 100.0, "purchases": 10, "purchase_value": 999.0}},
+        ads_prev={42: {"spend": 80.0,  "purchases": 8,  "purchase_value": 800.0}},
+        items={42: {"en": 1}},
+        ad_data_available=True,
+    )
+    assert rows[0]["roas"] == 5.0          # 500 / 100，不是 999 / 100
+    assert rows[0]["roas_prev"] == 3.75    # 300 / 80
+
+
+def test_join_and_compute_ad_unavailable_drops_ad_columns():
+    products = {42: {"id": 42, "name": "X", "product_code": "x"}}
+    rows = oa._join_and_compute_dashboard_rows(
+        products=products,
+        orders_now={42: {"orders": 5, "units": 5, "revenue": 500.0}},
+        orders_prev={},
+        ads_now={}, ads_prev={},
+        items={42: {"en": 1}},
+        ad_data_available=False,
+    )
+    assert rows[0]["ad_data_available"] is False
+    assert rows[0]["spend"] is None
+    assert rows[0]["roas"] is None
