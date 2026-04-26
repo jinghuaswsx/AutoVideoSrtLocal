@@ -14,18 +14,25 @@ from .base import (
     Utterance,
     WordTimestamp,
 )
+from .doubao import DoubaoAdapter
+from .scribe import ScribeAdapter
 
 __all__ = [
     "ASRCapabilities",
     "BaseASRAdapter",
+    "DoubaoAdapter",
     "REGISTRY",
+    "ScribeAdapter",
     "Utterance",
     "WordTimestamp",
     "build_adapter",
 ]
 
 
-REGISTRY: dict[str, type[BaseASRAdapter]] = {}
+REGISTRY: dict[str, type[BaseASRAdapter]] = {
+    "doubao_asr": DoubaoAdapter,
+    "elevenlabs_tts": ScribeAdapter,
+}
 
 
 def build_adapter(provider_code: str, model_id: str | None = None) -> BaseASRAdapter:
