@@ -4,6 +4,23 @@
 - 设计文档：[`docs/superpowers/specs/2026-04-26-multilingual-asr-refactor-design.md`](../specs/2026-04-26-multilingual-asr-refactor-design.md)
 - 分支：`feature/multilingual-asr-refactor`
 
+## 修订记录（2026-04-26）
+
+砍掉 Cohere（不输出时间戳，无法用）。简化方案：zh→豆包，其他→Scribe v2 强制 language。语言污染兜底改为「删除 + 时间合并」。/settings UI 延后。
+
+**已完成（保留）**：Task 1（包骨架）/ Task 2（Doubao）/ Task 3（Scribe）。
+
+**取消的 task**：Task 4（Cohere）、Task 9（settings UI）、Task 11（Cohere 集成）。
+
+**剩余实施**：
+- Task 5（极简版 REGISTRY，只注册 doubao + scribe）
+- Task 6（purify：检测 + 删除 + 时间合并；无 fallback 重转）
+- Task 7（Router 极简：硬编码路由表，无 settings 覆盖）
+- Task 8（pipeline 接入）
+- Task 10（全量回归）
+
+下方旧任务划分 §Task 4 / §Task 9 / §Task 11 不再执行。
+
 ## 任务划分
 
 每个任务原则上是一个独立 commit，文件级显式列出。

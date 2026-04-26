@@ -2,7 +2,27 @@
 
 - 日期：2026-04-26
 - 分支：`feature/multilingual-asr-refactor`
-- 状态：草案，待实施
+- 状态：实施中
+
+## 修订记录
+
+### 2026-04-26 修订 — 砍掉 Cohere
+
+调研 Cohere Transcribe 官方文档发现关键 blocker：
+> "The model does not feature either timestamps or speaker diarization."
+
+Cohere Transcribe **不输出时间戳**，无法用作主 ASR（视频翻译 pipeline 必须有 utterance 级时间戳做字幕对齐）；当 fallback 重转单段时也仅能给单段时间戳，价值有限。
+
+**新方案**（彻底简化）：
+- `zh` → 豆包 SeedASR
+- 其他所有语言 → ElevenLabs Scribe v2（强制 `language_code`）
+- **不接 Cohere Transcribe**
+- 语言污染清理保留检测；兜底从「fallback 重转」改为「**删除 + 时间合并**」（前 spec 的方案 B）
+- `/settings` ASR 路由 UI **延后**：只有两家 ASR 且按语言分死，硬编码足够
+
+下文 §3.4 / §3.5 / §4 / §5 / §11 等章节按此修订理解：与 Cohere、fallback 重转、UI 相关的设计细节均**不再实施**。
+
+---
 
 ## 1. 背景与目标
 
