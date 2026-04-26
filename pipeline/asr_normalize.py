@@ -257,6 +257,25 @@ def run_asr_normalize(
     conf = detect_result["confidence"]
     is_mixed = detect_result["is_mixed"]
 
+    # === Same-language ASR purification (multi keeps utterances_en mid-step) ===
+    purify_artifact: dict[str, Any] = {"performed": False}
+    if lang in {"zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi"}:
+        from pipeline import asr_clean as _asr_clean
+        purify_result = _asr_clean.purify_utterances(
+            utterances, language=lang, task_id=task_id, user_id=user_id,
+        )
+        purify_artifact = {
+            "performed": True,
+            "language": lang,
+            "cleaned": purify_result["cleaned"],
+            "fallback_used": purify_result["fallback_used"],
+            "model_used": purify_result["model_used"],
+            "validation_errors": purify_result["validation_errors"],
+        }
+        if purify_result["cleaned"]:
+            utterances = purify_result["utterances"]
+    # ===========================================================================
+
     if lang == "other":
         raise UnsupportedSourceLanguageError(
             f"原视频语言检测为「other」（confidence={conf:.2f}），"
@@ -309,6 +328,7 @@ def run_asr_normalize(
             "detect": "gemini-3.1-flash-lite-preview",
             "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
         },
+        "asr_clean": purify_artifact,
     }
     if utterances_en:
         artifact["_utterances_en"] = utterances_en
@@ -357,6 +377,25 @@ def run_user_specified(
     full_text = " ".join(u["text"] for u in utterances)
     route = _USER_SPECIFIED_ROUTES[source_language]
 
+    # === Same-language ASR purification ===
+    purify_artifact: dict[str, Any] = {"performed": False}
+    if source_language in {"zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi"}:
+        from pipeline import asr_clean as _asr_clean
+        purify_result = _asr_clean.purify_utterances(
+            utterances, language=source_language, task_id=task_id, user_id=user_id,
+        )
+        purify_artifact = {
+            "performed": True,
+            "language": source_language,
+            "cleaned": purify_result["cleaned"],
+            "fallback_used": purify_result["fallback_used"],
+            "model_used": purify_result["model_used"],
+            "validation_errors": purify_result["validation_errors"],
+        }
+        if purify_result["cleaned"]:
+            utterances = purify_result["utterances"]
+    # ======================================
+
     utterances_en: list[dict] | None = None
     translate_tokens: dict = {}
     if route not in ("en_skip", "zh_skip"):
@@ -389,6 +428,7 @@ def run_user_specified(
             "detect": None,
             "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
         },
+        "asr_clean": purify_artifact,
     }
     if utterances_en:
         artifact["_utterances_en"] = utterances_en
