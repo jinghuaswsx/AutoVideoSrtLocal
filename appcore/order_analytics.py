@@ -1118,3 +1118,136 @@ def _join_and_compute_dashboard_rows(
             })
         rows.append(row)
     return rows
+
+
+_DASHBOARD_SORT_FIELDS = {
+    "spend": "spend", "revenue": "revenue", "orders": "orders",
+    "units": "units", "roas": "roas",
+}
+
+
+def get_dashboard(
+    *,
+    period: str,
+    year: int | None = None,
+    month: int | None = None,
+    week: int | None = None,
+    date_str: str | None = None,
+    country: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str = "desc",
+    compare: bool = True,
+    search: str | None = None,
+    today: date | None = None,
+) -> dict:
+    """产品看板查询主入口。详见 spec。"""
+    today = today or date.today()
+    start, end = _resolve_period_range(
+        period, year=year, month=month, week=week, date_str=date_str, today=today
+    )
+
+    # 周/月支持广告；日视图不查广告（决策 #3）
+    # 国家筛选启用时广告整列降级（meta_ad 表无 country 字段）
+    ad_data_available = period in ("week", "month") and not country
+
+    orders_now = _aggregate_orders_by_product(start, end, country=country)
+    ads_now = _aggregate_ads_by_product(start, end) if ad_data_available else {}
+
+    orders_prev: dict[int, dict] = {}
+    ads_prev: dict[int, dict] = {}
+    compare_period = None
+    if compare:
+        prev_start, prev_end = _resolve_compare_range(start, end, period)
+        orders_prev = _aggregate_orders_by_product(prev_start, prev_end, country=country)
+        ads_prev = _aggregate_ads_by_product(prev_start, prev_end) if ad_data_available else {}
+        compare_period = {
+            "start": prev_start.isoformat(),
+            "end": prev_end.isoformat(),
+            "label": _format_period_label(prev_start, prev_end, period),
+        }
+
+    items = _count_media_items_by_product()
+
+    candidate_ids = set(orders_now.keys()) | set(ads_now.keys())
+    products = _load_products(candidate_ids, search=search)
+
+    rows = _join_and_compute_dashboard_rows(
+        products=products,
+        orders_now=orders_now, orders_prev=orders_prev,
+        ads_now=ads_now, ads_prev=ads_prev,
+        items=items,
+        ad_data_available=ad_data_available,
+    )
+
+    # 排序
+    sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else (
+        "spend" if ad_data_available else "revenue"
+    )
+    reverse = (sort_dir == "desc")
+    rows.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0), reverse=reverse)
+
+    summary = _summarize_dashboard(rows, ad_data_available)
+
+    return {
+        "period": {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "label": _format_period_label(start, end, period),
+        },
+        "compare_period": compare_period,
+        "country": country,
+        "products": rows,
+        "summary": summary,
+    }
+
+
+def _format_period_label(start: date, end: date, period: str) -> str:
+    if period == "month":
+        if start.day == 1 and end.day == calendar.monthrange(start.year, start.month)[1]:
+            return f"{start.year} 年 {start.month} 月"
+        return f"{start.year} 年 {start.month} 月（{start.day}-{end.day} 日）"
+    if period == "week":
+        return f"{start.isoformat()} ~ {end.isoformat()}"
+    return start.isoformat()
+
+
+def _load_products(ids: set[int], *, search: str | None = None) -> dict[int, dict]:
+    """查询产品基础信息。search 启用时按 name / product_code LIKE 过滤；
+    不启用 search 时按 ids IN 限制（性能优化）。"""
+    if search:
+        like = f"%{search}%"
+        rows = query(
+            "SELECT id, name, product_code FROM media_products "
+            "WHERE (archived = 0 OR archived IS NULL) AND deleted_at IS NULL "
+            "AND (name LIKE %s OR product_code LIKE %s)",
+            (like, like),
+        )
+    elif ids:
+        placeholders = ", ".join(["%s"] * len(ids))
+        rows = query(
+            f"SELECT id, name, product_code FROM media_products "
+            f"WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+    else:
+        rows = []
+    return {int(r["id"]): r for r in rows}
+
+
+def _summarize_dashboard(rows: list[dict], ad_data_available: bool) -> dict:
+    total_orders = sum(r.get("orders") or 0 for r in rows)
+    total_revenue = round(sum(r.get("revenue") or 0 for r in rows), 2)
+    summary = {
+        "total_orders": total_orders,
+        "total_revenue": total_revenue,
+    }
+    if ad_data_available:
+        total_spend = round(sum(r.get("spend") or 0 for r in rows), 2)
+        summary["total_spend"] = total_spend
+        summary["total_meta_purchases"] = sum(r.get("meta_purchases") or 0 for r in rows)
+        summary["total_roas"] = round(total_revenue / total_spend, 2) if total_spend > 0 else None
+    else:
+        summary["total_spend"] = None
+        summary["total_meta_purchases"] = None
+        summary["total_roas"] = None
+    return summary

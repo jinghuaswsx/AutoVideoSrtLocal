@@ -286,3 +286,115 @@ def test_join_and_compute_ad_unavailable_drops_ad_columns():
     assert rows[0]["ad_data_available"] is False
     assert rows[0]["spend"] is None
     assert rows[0]["roas"] is None
+
+
+def test_get_dashboard_month_view_happy_path(monkeypatch):
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 10, "units": 12, "revenue": 500.0}
+    } if s == date(2026, 4, 1) else {
+        42: {"orders": 8, "units": 10, "revenue": 400.0}
+    })
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: {
+        42: {"spend": 100.0, "purchases": 10, "purchase_value": 500.0}
+    } if s == date(2026, 4, 1) else {
+        42: {"spend": 80.0, "purchases": 8, "purchase_value": 400.0}
+    })
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1, "de": 2}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "Glow Set", "product_code": "glow-rjc"}
+    ])
+
+    result = oa.get_dashboard(
+        period="month", year=2026, month=4,
+        today=date(2026, 4, 26), compare=True,
+    )
+
+    assert result["period"]["start"] == "2026-04-01"
+    assert result["period"]["end"] == "2026-04-25"
+    assert result["compare_period"]["start"] == "2026-03-01"
+    assert result["compare_period"]["end"] == "2026-03-25"
+    assert len(result["products"]) == 1
+    assert result["products"][0]["product_id"] == 42
+    assert result["products"][0]["roas"] == 5.0
+    assert result["country"] is None
+    assert result["summary"]["total_orders"] == 10
+    assert result["summary"]["total_revenue"] == 500.0
+    assert result["summary"]["total_spend"] == 100.0
+
+
+def test_get_dashboard_day_view_no_ads_data(monkeypatch):
+    """决策 #3: 日视图不显示广告。"""
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 3, "units": 3, "revenue": 90.0}
+    })
+    # _aggregate_ads_by_product 不该被调用
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: pytest.fail("should not be called"))
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "Glow", "product_code": "glow-rjc"}
+    ])
+
+    result = oa.get_dashboard(period="day", date_str="2026-04-25", today=date(2026, 4, 26))
+    assert result["products"][0]["ad_data_available"] is False
+    assert result["products"][0]["spend"] is None
+
+
+def test_get_dashboard_country_filter_drops_ads(monkeypatch):
+    """决策 #8 + meta_ad 表无 country 字段：国家筛选启用时广告整列降级。"""
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 5, "units": 5, "revenue": 100.0}
+    })
+    ad_called = []
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: ad_called.append(1) or {})
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "Glow", "product_code": "glow-rjc"}
+    ])
+
+    result = oa.get_dashboard(
+        period="month", year=2026, month=4, country="DE",
+        today=date(2026, 4, 26),
+    )
+    assert ad_called == []
+    assert result["products"][0]["ad_data_available"] is False
+    assert result["country"] == "DE"
+
+
+def test_get_dashboard_search_filter(monkeypatch):
+    """搜索按 product_code / name 过滤，仅传给 SQL，service 端不再做 in-memory filter。"""
+    captured = {}
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [{"id": 42, "name": "Glow", "product_code": "glow-rjc"}]
+
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 5, "units": 5, "revenue": 100.0}
+    })
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: {})
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}})
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    oa.get_dashboard(period="month", year=2026, month=4, search="glow", today=date(2026, 4, 26))
+    assert "name LIKE" in captured["sql"] or "product_code LIKE" in captured["sql"]
+    assert "%glow%" in captured["args"]
+
+
+def test_get_dashboard_default_sort_spend_desc_for_month(monkeypatch):
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 10, "units": 10, "revenue": 200.0},
+        99: {"orders": 5, "units": 5, "revenue": 100.0},
+    })
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: {
+        42: {"spend": 50.0, "purchases": 5, "purchase_value": 100.0},
+        99: {"spend": 200.0, "purchases": 10, "purchase_value": 500.0},
+    })
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en":1}, 99: {"en":1}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "A", "product_code": "a"},
+        {"id": 99, "name": "B", "product_code": "b"},
+    ])
+
+    result = oa.get_dashboard(period="month", year=2026, month=4, today=date(2026, 4, 26))
+    # 默认按花费降序 → 99 在前
+    assert [p["product_id"] for p in result["products"]] == [99, 42]
