@@ -137,3 +137,8 @@ def test_create_modal_supporting_endpoints_registered(authed_client_no_db):
     assert rsp.status_code in (200, 500)
     rsp = authed_client_no_db.get("/tasks/api/product/9999/en_items")
     assert rsp.status_code in (200, 500)
+
+
+def test_child_readiness_endpoint_smoke(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/api/child/9999/readiness")
+    assert rsp.status_code in (200, 404, 500)
