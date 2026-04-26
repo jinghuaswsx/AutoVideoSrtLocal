@@ -1,0 +1,164 @@
+"""Async translation-quality assessment service.
+
+Triggered at the end of `_step_subtitle`. Inserts a `pending` row, then either
+runs the LLM call inline (tests) or in a background thread (production).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from typing import Any
+
+from appcore import task_state
+from appcore.db import execute as db_execute, query_one as db_query_one
+from pipeline import translation_quality
+
+log = logging.getLogger(__name__)
+
+_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+
+
+class AssessmentInProgressError(RuntimeError):
+    def __init__(self, run_id: int):
+        super().__init__(f"assessment in progress (run_id={run_id})")
+        self.run_id = run_id
+
+
+def _build_inputs(task: dict) -> dict:
+    """Extract the three texts the assessor needs."""
+    utterances = task.get("utterances") or []
+    original_asr = " ".join(
+        (u.get("text") or "").strip() for u in utterances if u.get("text")
+    ).strip()
+
+    loc = task.get("localized_translation") or {}
+    translation = (loc.get("full_text") or "").strip()
+    if not translation:
+        sentences = loc.get("sentences") or []
+        translation = " ".join(
+            (s.get("text") or "").strip() for s in sentences if s.get("text")
+        ).strip()
+
+    asr2 = task.get("english_asr_result") or {}
+    tts_recognition = (asr2.get("full_text") or "").strip()
+    if not tts_recognition:
+        utts = asr2.get("utterances") or []
+        tts_recognition = " ".join(
+            (u.get("text") or "").strip() for u in utts if u.get("text")
+        ).strip()
+
+    return {
+        "original_asr": original_asr,
+        "translation": translation,
+        "tts_recognition": tts_recognition,
+        "source_language": task.get("source_language") or "",
+        "target_language": task.get("target_lang") or "",
+    }
+
+
+def _next_run_id(task_id: str) -> int:
+    row = db_query_one(
+        "SELECT MAX(run_id) AS max_run FROM translation_quality_assessments WHERE task_id=%s",
+        (task_id,),
+    )
+    return (row["max_run"] or 0) + 1 if row else 1
+
+
+def trigger_assessment(
+    *,
+    task_id: str,
+    project_type: str,
+    triggered_by: str = "auto",
+    user_id: int | None,
+    run_in_thread: bool = True,
+) -> int:
+    """Insert a pending row + spawn worker. Returns the run_id."""
+    existing = db_query_one(
+        "SELECT run_id FROM translation_quality_assessments "
+        "WHERE task_id=%s AND status IN ('pending', 'running')",
+        (task_id,),
+    )
+    if existing:
+        raise AssessmentInProgressError(existing["run_id"])
+
+    run_id = _next_run_id(task_id)
+    db_execute(
+        "INSERT INTO translation_quality_assessments "
+        "(task_id, project_type, run_id, model, status, triggered_by, triggered_by_user_id) "
+        "VALUES (%s, %s, %s, %s, 'pending', %s, %s)",
+        (task_id, project_type, run_id, _DEFAULT_MODEL, triggered_by, user_id),
+    )
+
+    if run_in_thread:
+        threading.Thread(
+            target=_run_assessment_job,
+            kwargs={
+                "task_id": task_id, "project_type": project_type,
+                "run_id": run_id, "user_id": user_id,
+            },
+            daemon=True,
+        ).start()
+    return run_id
+
+
+def _run_assessment_job(
+    *, task_id: str, project_type: str, run_id: int, user_id: int | None,
+) -> None:
+    """Background worker: pull task state, call assessor, write result."""
+    db_execute(
+        "UPDATE translation_quality_assessments SET status='running' "
+        "WHERE task_id=%s AND run_id=%s",
+        (task_id, run_id),
+    )
+    try:
+        task = task_state.get(task_id)
+        if not task:
+            raise RuntimeError(f"task {task_id} not found")
+        inputs = _build_inputs(task)
+        if not inputs["original_asr"] or not inputs["translation"]:
+            raise RuntimeError("missing original_asr or translation")
+        result = translation_quality.assess(
+            original_asr=inputs["original_asr"],
+            translation=inputs["translation"],
+            tts_recognition=inputs["tts_recognition"],
+            source_language=inputs["source_language"],
+            target_language=inputs["target_language"],
+            task_id=task_id, user_id=user_id,
+        )
+        db_execute(
+            "UPDATE translation_quality_assessments SET "
+            "  status='done', "
+            "  translation_score=%s, tts_score=%s, "
+            "  translation_dimensions=%s, tts_dimensions=%s, "
+            "  verdict=%s, verdict_reason=%s, "
+            "  translation_issues=%s, translation_highlights=%s, "
+            "  tts_issues=%s, tts_highlights=%s, "
+            "  prompt_input=%s, raw_response=%s, "
+            "  elapsed_ms=%s, completed_at=NOW() "
+            "WHERE task_id=%s AND run_id=%s",
+            (
+                result["translation_score"], result["tts_score"],
+                json.dumps(result["translation_dimensions"]),
+                json.dumps(result["tts_dimensions"]),
+                result["verdict"], result["verdict_reason"],
+                json.dumps(result["translation_issues"], ensure_ascii=False),
+                json.dumps(result["translation_highlights"], ensure_ascii=False),
+                json.dumps(result["tts_issues"], ensure_ascii=False),
+                json.dumps(result["tts_highlights"], ensure_ascii=False),
+                json.dumps(inputs, ensure_ascii=False),
+                json.dumps(result["raw_response"], ensure_ascii=False),
+                result["elapsed_ms"],
+                task_id, run_id,
+            ),
+        )
+        log.info("[quality-assessment] task=%s run=%d done verdict=%s",
+                 task_id, run_id, result["verdict"])
+    except Exception as exc:
+        log.exception("[quality-assessment] task=%s run=%d failed", task_id, run_id)
+        db_execute(
+            "UPDATE translation_quality_assessments SET "
+            "  status='failed', error_text=%s, completed_at=NOW() "
+            "WHERE task_id=%s AND run_id=%s",
+            (str(exc), task_id, run_id),
+        )
