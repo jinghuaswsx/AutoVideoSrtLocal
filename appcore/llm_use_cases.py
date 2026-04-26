@@ -462,4 +462,6 @@ MODULE_LABELS: dict[str, str] = {
     "text_translate": "文本翻译",
     "prompt_library": "提示词库",
     "video_creation": "视频创作",
+    "asr_clean": "ASR 同语言纯净化",
+    "translation_quality": "翻译质量评估",
 }
