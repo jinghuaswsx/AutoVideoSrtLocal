@@ -44,6 +44,8 @@ def db_test_user():
 
 @pytest.fixture
 def db_test_product(db_test_user):
+    # pre-cleanup in case a prior run left a stale row
+    execute("DELETE FROM media_products WHERE product_code=%s", ("test-code",))
     pid = execute(
         "INSERT INTO media_products (user_id, name, product_code) VALUES (%s, %s, %s)",
         (db_test_user, "_t_mki_prod", "test-code"),
