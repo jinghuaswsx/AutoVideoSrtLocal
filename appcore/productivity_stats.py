@@ -52,7 +52,7 @@ def get_pass_rate(*, from_dt: datetime, to_dt: datetime) -> list[dict]:
         total = approved + rejected
         r["approved"] = int(approved)
         r["rejected"] = int(rejected)
-        r["pass_rate"] = round(approved / total, 3) if total else 0
+        r["pass_rate"] = round(float(approved) / float(total), 3) if total else 0
     rows.sort(key=lambda r: -r["pass_rate"])
     return rows
 
