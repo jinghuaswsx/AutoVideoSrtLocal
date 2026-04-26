@@ -298,7 +298,7 @@ function tcDetailButtons(task, isParent) {
   const btns = [];
   if (isParent) {
     if (status === 'pending' && TC_CAPS.can_process_raw_video) btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'claim')">认领</button>`);
-    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">已上传</button>`);
+    if (status === 'raw_in_progress') btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcParentUploadDone(${id}, ${task.media_product_id})">去原始素材任务库处理</button>`);
     if (status === 'raw_review' && TC_IS_ADMIN) {
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('parent', ${id}, 'approve')">通过</button>`);
       btns.push(`<button class="tc-btn" onclick="tcOpenReason('parent', ${id}, 'reject')">打回</button>`);
@@ -345,32 +345,10 @@ function tcChildJumpHistory(taskId, country, productId) {
   const url = `/medias/?from_task=${taskId}&product=${productId}&lang=${country.toLowerCase()}&action=history`;
   window.open(url, '_blank');
 }
-async function tcParentUploadDone(id, productId) {
-  // Try to mark uploaded directly. If the backend reports media_item not bound,
-  // prompt for the item id (manual fallback for Task 29).
-  try {
-    await tcFetchJson(`/tasks/api/parent/${id}/upload_done`, {method:'POST', body:'{}'});
-    tcRender();
-    if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
-  } catch (e) {
-    if (e.message && e.message.includes('media_item')) {
-      const itemIdStr = prompt('该任务尚未绑定原始素材。请输入您在素材管理刚上传的英文 item ID：');
-      if (!itemIdStr) return;
-      const itemId = parseInt(itemIdStr);
-      if (!itemId) { alert('无效 ID'); return; }
-      try {
-        await tcFetchJson(`/tasks/api/parent/${id}/bind_item`, {
-          method: 'PATCH',
-          body: JSON.stringify({media_item_id: itemId}),
-        });
-        await tcFetchJson(`/tasks/api/parent/${id}/upload_done`, {method:'POST', body:'{}'});
-        tcRender();
-        if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
-      } catch (err) { alert('绑定/标记失败：' + err.message); }
-    } else {
-      alert(e.message);
-    }
-  }
+function tcParentUploadDone(id, productId) {
+  // D 子系统上线后，处理人在"原始素材任务库"完成下载/上传/自动 mark_uploaded 全流程。
+  // 这里只做跳转，不再保留 prompt fallback。
+  window.open('/raw-video-pool/', '_blank');
 }
 let TC_REASON_CTX = null;
 function tcOpenReason(kind, id, action) {
