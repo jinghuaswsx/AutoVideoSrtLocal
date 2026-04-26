@@ -104,3 +104,15 @@ def test_resolve_compare_range_day_to_prev_day():
     start, end = oa._resolve_compare_range(date(2026, 4, 25), date(2026, 4, 25), "day")
     assert start == date(2026, 4, 24)
     assert end == date(2026, 4, 24)
+
+
+def test_resolve_compare_range_month_clamps_start_day():
+    """决策回归：start.day=31 → 上月若只有 28/30 天必须 clamp，不能 ValueError。"""
+    # 3-31 → 2 月只有 28 天 → start clamp 到 2-28
+    start, end = oa._resolve_compare_range(date(2026, 3, 31), date(2026, 3, 31), "month")
+    assert start == date(2026, 2, 28)
+    assert end == date(2026, 2, 28)
+    # 5-31 → 4 月只有 30 天 → start clamp 到 4-30
+    start, end = oa._resolve_compare_range(date(2026, 5, 31), date(2026, 5, 31), "month")
+    assert start == date(2026, 4, 30)
+    assert end == date(2026, 4, 30)

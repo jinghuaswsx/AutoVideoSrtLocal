@@ -947,16 +947,15 @@ def _resolve_period_range(
 
 
 def _resolve_compare_range(start: date, end: date, period: str) -> tuple[date, date]:
-    """返回上一个同长度切片。"""
+    """返回上一个同长度切片。月模式下，若上月天数较少则将日期 clamp 到上月末日。"""
     if period == "month":
         # 减一个月：直接调整 month 字段
         prev_year = start.year - (1 if start.month == 1 else 0)
         prev_month = 12 if start.month == 1 else start.month - 1
-        prev_start = date(prev_year, prev_month, start.day)
-        # end 取上月同一天（截断到上月末尾）
         prev_month_last = calendar.monthrange(prev_year, prev_month)[1]
-        prev_end_day = min(end.day, prev_month_last)
-        prev_end = date(prev_year, prev_month, prev_end_day)
+        prev_start = date(prev_year, prev_month, min(start.day, prev_month_last))
+        # end 取上月同一天（截断到上月末尾）
+        prev_end = date(prev_year, prev_month, min(end.day, prev_month_last))
         return prev_start, prev_end
 
     if period == "week":
