@@ -398,3 +398,22 @@ def test_get_dashboard_default_sort_spend_desc_for_month(monkeypatch):
     result = oa.get_dashboard(period="month", year=2026, month=4, today=date(2026, 4, 26))
     # 默认按花费降序 → 99 在前
     assert [p["product_id"] for p in result["products"]] == [99, 42]
+
+
+def test_get_dashboard_load_products_filters_archived_and_deleted(monkeypatch):
+    """回归：_load_products 始终过滤 archived/deleted_at。"""
+    captured = {}
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        return [{"id": 42, "name": "Glow", "product_code": "glow-rjc"}]
+
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 5, "units": 5, "revenue": 100.0}
+    })
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: {})
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}})
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    oa.get_dashboard(period="month", year=2026, month=4, today=date(2026, 4, 26))
+    assert "archived = 0 OR archived IS NULL" in captured["sql"]
+    assert "deleted_at IS NULL" in captured["sql"]

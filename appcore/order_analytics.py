@@ -1120,10 +1120,7 @@ def _join_and_compute_dashboard_rows(
     return rows
 
 
-_DASHBOARD_SORT_FIELDS = {
-    "spend": "spend", "revenue": "revenue", "orders": "orders",
-    "units": "units", "roas": "roas",
-}
+_DASHBOARD_SORT_FIELDS = frozenset({"spend", "revenue", "orders", "units", "roas"})
 
 
 def get_dashboard(
@@ -1183,7 +1180,7 @@ def get_dashboard(
     sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else (
         "spend" if ad_data_available else "revenue"
     )
-    reverse = (sort_dir == "desc")
+    reverse = (sort_dir.lower() == "desc")
     rows.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0), reverse=reverse)
 
     summary = _summarize_dashboard(rows, ad_data_available)
@@ -1212,25 +1209,23 @@ def _format_period_label(start: date, end: date, period: str) -> str:
 
 
 def _load_products(ids: set[int], *, search: str | None = None) -> dict[int, dict]:
-    """查询产品基础信息。search 启用时按 name / product_code LIKE 过滤；
-    不启用 search 时按 ids IN 限制（性能优化）。"""
+    """查询产品基础信息。
+    始终过滤 archived/deleted；search 启用时附加 name/product_code LIKE 过滤；
+    始终用 ids IN 限制为本期有数据的产品（避免无活动产品出现在看板上）。"""
+    if not ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(ids))
+    sql = (
+        f"SELECT id, name, product_code FROM media_products "
+        f"WHERE id IN ({placeholders}) "
+        f"AND (archived = 0 OR archived IS NULL) AND deleted_at IS NULL"
+    )
+    args: tuple = tuple(ids)
     if search:
         like = f"%{search}%"
-        rows = query(
-            "SELECT id, name, product_code FROM media_products "
-            "WHERE (archived = 0 OR archived IS NULL) AND deleted_at IS NULL "
-            "AND (name LIKE %s OR product_code LIKE %s)",
-            (like, like),
-        )
-    elif ids:
-        placeholders = ", ".join(["%s"] * len(ids))
-        rows = query(
-            f"SELECT id, name, product_code FROM media_products "
-            f"WHERE id IN ({placeholders})",
-            tuple(ids),
-        )
-    else:
-        rows = []
+        sql += " AND (name LIKE %s OR product_code LIKE %s)"
+        args = args + (like, like)
+    rows = query(sql, args)
     return {int(r["id"]): r for r in rows}
 
 
