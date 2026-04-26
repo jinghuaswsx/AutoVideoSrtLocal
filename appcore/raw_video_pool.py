@@ -132,3 +132,39 @@ def stream_original_video(task_id: int, viewer_user_id: int) -> tuple[str, str]:
     if not local_path:
         raise StateError("cannot resolve local path")
     return local_path, item["filename"]
+
+
+def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) -> int:
+    """Save uploaded file to original location, then call C's mark_uploaded.
+
+    Returns new file size. Raises PermissionDenied / StateError.
+    `uploaded_file` is a Werkzeug FileStorage (or anything with .save(path) + .filename).
+    """
+    row = _check_view_permission(task_id, actor_user_id)
+    if row.get("assignee_id") != int(actor_user_id):
+        raise PermissionDenied("only assignee can upload processed")
+    if row.get("status") != "raw_in_progress":
+        raise StateError(f"expected raw_in_progress, got {row.get('status')}")
+    if not row.get("media_item_id"):
+        raise StateError("task has no media_item")
+    item = query_one("SELECT * FROM media_items WHERE id=%s", (row["media_item_id"],))
+    if not item:
+        raise StateError("media_item not found")
+    local_path = _resolve_local_path(item["object_key"])
+    if not local_path:
+        raise StateError("cannot resolve local path")
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    uploaded_file.save(local_path)
+    new_size = os.path.getsize(local_path)
+
+    execute(
+        "UPDATE media_items SET file_size=%s, updated_at=NOW() WHERE id=%s",
+        (new_size, row["media_item_id"]),
+    )
+
+    # Auto-trigger C's mark_uploaded (translates state to raw_review)
+    from appcore import tasks as tasks_svc
+    tasks_svc.mark_uploaded(task_id=task_id, actor_user_id=actor_user_id)
+
+    return new_size

@@ -141,3 +141,84 @@ def test_stream_original_video_non_assignee_denied(monkeypatch, db_user_admin, d
     execute("DELETE FROM media_items WHERE id=%s", (iid,))
     execute("DELETE FROM media_products WHERE id=%s", (pid,))
     execute("DELETE FROM users WHERE username=%s", ("_t_rvp_other_assi",))
+
+
+def test_replace_processed_video_full_path(monkeypatch, tmp_path, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p7", "_t_rvp_v7.mp4")
+    execute(
+        "UPDATE tasks SET assignee_id=%s, status='raw_in_progress', claimed_at=NOW() WHERE id=%s",
+        (db_user_processor, tid),
+    )
+
+    target = tmp_path / "_t_rvp_v7.mp4"
+    target.write_bytes(b"original")
+    monkeypatch.setattr(raw_video_pool, "_resolve_local_path", lambda ok: str(target))
+
+    class FakeFile:
+        def __init__(self, content):
+            self.content = content
+            self.filename = "processed.mp4"
+        def save(self, path):
+            with open(path, "wb") as f:
+                f.write(self.content)
+
+    new_size = raw_video_pool.replace_processed_video(
+        task_id=tid, actor_user_id=db_user_processor,
+        uploaded_file=FakeFile(b"processed_content_50_bytes_filler"),
+    )
+    assert new_size > 0
+    assert target.read_bytes().startswith(b"processed_content")
+    row = query_one("SELECT status FROM tasks WHERE id=%s", (tid,))
+    assert row["status"] == "raw_review"
+
+    execute("DELETE FROM task_events WHERE task_id=%s", (tid,))
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+
+
+def test_replace_processed_video_non_assignee_denied(monkeypatch, tmp_path, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p8", "_t_rvp_v8.mp4")
+    # raw_in_progress with admin as assignee
+    execute(
+        "UPDATE tasks SET assignee_id=%s, status='raw_in_progress' WHERE id=%s",
+        (db_user_admin, tid),
+    )
+    monkeypatch.setattr(raw_video_pool, "_resolve_local_path", lambda ok: str(tmp_path / "x.mp4"))
+
+    class FakeFile:
+        filename = "x.mp4"
+        def save(self, path): pass
+
+    # processor is NOT assignee, NOT admin -> PermissionDenied
+    with pytest.raises(raw_video_pool.PermissionDenied):
+        raw_video_pool.replace_processed_video(
+            task_id=tid, actor_user_id=db_user_processor, uploaded_file=FakeFile(),
+        )
+
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
+
+
+def test_replace_processed_video_wrong_status_denied(monkeypatch, tmp_path, db_user_admin, db_user_processor):
+    from appcore import raw_video_pool
+    tid, pid, iid = _insert_pending_parent_task(db_user_admin, "_t_rvp_p9", "_t_rvp_v9.mp4")
+    # status is still pending — must be raw_in_progress
+    execute("UPDATE tasks SET assignee_id=%s WHERE id=%s", (db_user_processor, tid))
+    monkeypatch.setattr(raw_video_pool, "_resolve_local_path", lambda ok: str(tmp_path / "x.mp4"))
+
+    class FakeFile:
+        filename = "x.mp4"
+        def save(self, path): pass
+
+    with pytest.raises(raw_video_pool.StateError, match="raw_in_progress"):
+        raw_video_pool.replace_processed_video(
+            task_id=tid, actor_user_id=db_user_processor, uploaded_file=FakeFile(),
+        )
+
+    execute("DELETE FROM tasks WHERE id=%s", (tid,))
+    execute("DELETE FROM media_items WHERE id=%s", (iid,))
+    execute("DELETE FROM media_products WHERE id=%s", (pid,))
