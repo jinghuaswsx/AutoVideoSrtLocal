@@ -440,6 +440,11 @@
         <span class="nav-icon">📋</span> 任务中心
       </a>
       {% endif %}
+      {% if has_permission('raw_video_pool') %}
+      <a href="/raw-video-pool/" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/raw-video-pool/') %}class="active"{% endif %}>
+        <span class="nav-icon">🎬</span> 原始素材任务库
+      </a>
+      {% endif %}
       {% if has_permission('bulk_translate_admin') %}
       <a href="{{ url_for('bulk_translate_pages.admin_tasks_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'bulk_translate_pages.admin_tasks_page' %}class="active"{% endif %}>
         <span class="nav-icon">🗂️</span> 批量翻译任务管理
