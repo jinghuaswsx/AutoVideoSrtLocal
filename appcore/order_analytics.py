@@ -1,6 +1,7 @@
 """订单分析 DAO 层：Shopify 订单导入、产品匹配、数据分析查询。"""
 from __future__ import annotations
 
+import calendar
 import csv
 import hashlib
 import io
@@ -896,3 +897,50 @@ def _compute_pct_change(now, prev) -> float | None:
     if prev_v == 0:
         return None
     return round((now_v - prev_v) / prev_v * 100, 2)
+
+
+def _resolve_period_range(
+    period: str,
+    *,
+    year: int | None = None,
+    month: int | None = None,
+    week: int | None = None,
+    date_str: str | None = None,
+    today: date | None = None,
+) -> tuple[date, date]:
+    """返回 (start, end) 闭区间。
+
+    - month: 该月 1 日 ~ 月末；若为当月，end = 昨日（不含今天）
+    - week: ISO 周一 ~ 周日；若为当周，end = 昨日
+    - day: date_str ~ date_str
+    """
+    today = today or date.today()
+    yesterday = today - timedelta(days=1)
+
+    if period == "month":
+        if not year or not month:
+            raise ValueError("year and month required for period=month")
+        start = date(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end = date(year, month, last_day)
+        if start <= today <= end:
+            end = yesterday if yesterday >= start else start
+        return start, end
+
+    if period == "week":
+        if not year or not week:
+            raise ValueError("year and week required for period=week")
+        # ISO week: %G-%V-%u; %u=1 = Monday
+        start = datetime.strptime(f"{year}-{week:02d}-1", "%G-%V-%u").date()
+        end = start + timedelta(days=6)
+        if start <= today <= end:
+            end = yesterday if yesterday >= start else start
+        return start, end
+
+    if period == "day":
+        if not date_str:
+            raise ValueError("date required for period=day")
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d, d
+
+    raise ValueError(f"invalid period: {period}")
