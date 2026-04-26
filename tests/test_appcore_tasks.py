@@ -59,18 +59,20 @@ def db_user_translator():
 @pytest.fixture
 def db_product(db_user_admin):
     """Make a media product owned by db_user_admin."""
-    execute(
+    # Pre-clean any leftover rows from prior failed runs (no UNIQUE on name but be safe)
+    execute("DELETE FROM media_products WHERE name=%s", ("_t_tc_product",))
+    # Use execute()'s return value (lastrowid) instead of LAST_INSERT_ID() —
+    # the latter is per-connection and unreliable with the connection pool.
+    pid = execute(
         "INSERT INTO media_products (user_id, name) VALUES (%s, %s)",
         (db_user_admin, "_t_tc_product"),
     )
-    pid = query_one("SELECT LAST_INSERT_ID() AS id")["id"]
     # 加一条 en item
-    execute(
+    iid = execute(
         "INSERT INTO media_items (product_id, user_id, filename, object_key, lang) "
         "VALUES (%s, %s, %s, %s, %s)",
         (pid, db_user_admin, "x.mp4", "k/x.mp4", "en"),
     )
-    iid = query_one("SELECT LAST_INSERT_ID() AS id")["id"]
     yield {"product_id": pid, "item_id": iid}
     execute("DELETE FROM media_items WHERE product_id=%s", (pid,))
     execute("DELETE FROM media_products WHERE id=%s", (pid,))
