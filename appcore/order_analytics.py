@@ -883,3 +883,16 @@ def get_available_months() -> list[dict]:
         "GROUP BY YEAR(created_at_order), MONTH(created_at_order) "
         "ORDER BY y DESC, m DESC"
     )
+
+
+# ── 产品看板 V1 ───────────────────────────────────────────
+
+def _compute_pct_change(now, prev) -> float | None:
+    """环比百分比。返回 None 表示无法计算（prev=0 且 now>0）。"""
+    now_v = float(now or 0)
+    prev_v = float(prev or 0)
+    if prev_v == 0 and now_v == 0:
+        return 0.0
+    if prev_v == 0:
+        return None
+    return round((now_v - prev_v) / prev_v * 100, 2)
