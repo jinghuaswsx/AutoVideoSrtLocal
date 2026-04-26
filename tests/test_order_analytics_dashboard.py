@@ -64,3 +64,43 @@ def test_resolve_period_range_day():
 def test_resolve_period_range_invalid_period_raises():
     with pytest.raises(ValueError, match="invalid period"):
         oa._resolve_period_range("year", year=2026, today=date(2026, 4, 26))
+
+
+def test_resolve_compare_range_full_month_to_prev_full_month():
+    start, end = oa._resolve_compare_range(
+        date(2026, 3, 1), date(2026, 3, 31), "month"
+    )
+    assert start == date(2026, 2, 1)
+    assert end == date(2026, 2, 28)
+
+
+def test_resolve_compare_range_partial_month_to_prev_same_day():
+    # 当月 4-1 ~ 4-25（截至昨日）→ 上月 3-1 ~ 3-25
+    start, end = oa._resolve_compare_range(
+        date(2026, 4, 1), date(2026, 4, 25), "month"
+    )
+    assert start == date(2026, 3, 1)
+    assert end == date(2026, 3, 25)
+
+
+def test_resolve_compare_range_week_to_prev_week():
+    start, end = oa._resolve_compare_range(
+        date(2026, 4, 20), date(2026, 4, 26), "week"
+    )
+    assert start == date(2026, 4, 13)
+    assert end == date(2026, 4, 19)
+
+
+def test_resolve_compare_range_partial_week_to_same_length_prev_week():
+    # 当周 4-20 ~ 4-22（截至周三）→ 上周 4-13 ~ 4-15
+    start, end = oa._resolve_compare_range(
+        date(2026, 4, 20), date(2026, 4, 22), "week"
+    )
+    assert start == date(2026, 4, 13)
+    assert end == date(2026, 4, 15)
+
+
+def test_resolve_compare_range_day_to_prev_day():
+    start, end = oa._resolve_compare_range(date(2026, 4, 25), date(2026, 4, 25), "day")
+    assert start == date(2026, 4, 24)
+    assert end == date(2026, 4, 24)

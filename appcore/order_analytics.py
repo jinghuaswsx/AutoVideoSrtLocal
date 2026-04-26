@@ -944,3 +944,27 @@ def _resolve_period_range(
         return d, d
 
     raise ValueError(f"invalid period: {period}")
+
+
+def _resolve_compare_range(start: date, end: date, period: str) -> tuple[date, date]:
+    """返回上一个同长度切片。"""
+    if period == "month":
+        # 减一个月：直接调整 month 字段
+        prev_year = start.year - (1 if start.month == 1 else 0)
+        prev_month = 12 if start.month == 1 else start.month - 1
+        prev_start = date(prev_year, prev_month, start.day)
+        # end 取上月同一天（截断到上月末尾）
+        prev_month_last = calendar.monthrange(prev_year, prev_month)[1]
+        prev_end_day = min(end.day, prev_month_last)
+        prev_end = date(prev_year, prev_month, prev_end_day)
+        return prev_start, prev_end
+
+    if period == "week":
+        prev_start = start - timedelta(days=7)
+        return prev_start, prev_start + (end - start)
+
+    if period == "day":
+        prev = start - timedelta(days=1)
+        return prev, prev
+
+    raise ValueError(f"invalid period: {period}")
