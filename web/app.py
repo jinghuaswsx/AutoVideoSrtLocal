@@ -78,6 +78,7 @@ from web.routes.voice_library import bp as voice_library_bp
 from web.routes.order_analytics import bp as order_analytics_bp
 from web.routes.scheduled_tasks import bp as scheduled_tasks_bp
 from web.routes.mk_import import bp as mk_import_bp
+from web.routes.raw_video_pool import bp as raw_video_pool_bp
 
 log = logging.getLogger(__name__)
 
@@ -203,6 +204,9 @@ def create_app() -> Flask:
     app.register_blueprint(mk_import_bp)
     # mk-import 蓝图：前端 fetch JSON + cookie session 认证，不使用 CSRF 表单 token
     csrf.exempt(mk_import_bp)
+    app.register_blueprint(raw_video_pool_bp)
+    # raw-video-pool 上传接口接收 multipart/form-data，豁免 CSRF
+    csrf.exempt(raw_video_pool_bp)
 
     # admin 蓝图的 JSON PUT API 豁免 CSRF（前端用 X-CSRFToken header）
     # 这里不需要额外豁免，因为 admin 蓝图的 API 用 JS fetch + CSRFToken
