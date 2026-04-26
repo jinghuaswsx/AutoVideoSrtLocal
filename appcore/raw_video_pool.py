@@ -159,7 +159,7 @@ def replace_processed_video(*, task_id: int, actor_user_id: int, uploaded_file) 
     new_size = os.path.getsize(local_path)
 
     execute(
-        "UPDATE media_items SET file_size=%s, updated_at=NOW() WHERE id=%s",
+        "UPDATE media_items SET file_size=%s WHERE id=%s",
         (new_size, row["media_item_id"]),
     )
 
