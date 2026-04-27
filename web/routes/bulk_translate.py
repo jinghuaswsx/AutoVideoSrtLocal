@@ -15,6 +15,8 @@ Phase 5 会追加:
 """
 from __future__ import annotations
 
+import logging
+
 from flask import Blueprint, jsonify, render_template, request
 from flask_login import current_user, login_required
 
@@ -41,6 +43,8 @@ from appcore.video_translate_defaults import (
 )
 from web.auth import admin_required
 from web.background import start_background_task
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("bulk_translate", __name__, url_prefix="/api/bulk-translate")
 profile_bp = Blueprint("video_translate_profile", __name__,
@@ -194,8 +198,10 @@ def _spawn_scheduler(task_id: str) -> None:
     try:
         run_scheduler(task_id, bus=bus)
     except Exception:
-        # 父任务出错状态由 runtime 内部已写;吞异常避免 greenthread 刷屏。
-        pass
+        # 调度器 greenthread 死掉时绝大多数 pending 项会永远 stuck，必须留下
+        # traceback 才能事后定位。原先 silent pass 让 2026-04-27 的事故彻底
+        # 无日志：scheduler 在某次循环里抛异常 → pass → pending 永远不派发。
+        log.exception("bulk_translate scheduler crashed task_id=%s", task_id)
 
 
 def _load_and_check_ownership(task_id: str):

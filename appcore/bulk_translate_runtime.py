@@ -468,19 +468,22 @@ def sync_task_with_children_once(
             if parent_status in {"failed", "error"}:
                 break
 
-    final_status = None
-    if plan and all(_normalized_status(item.get("status")) in {"done", "skipped"} for item in plan):
-        final_status = "done"
-        if "finish_parent" not in actions:
-            actions.append("finish_parent")
-    elif any(_normalized_status(item.get("status")) == "failed" for item in plan):
-        final_status = "failed"
-    elif any(_normalized_status(item.get("status")) == "awaiting_voice" for item in plan):
-        final_status = "waiting_manual"
-    elif actions:
-        final_status = "running"
+    # 与 _derive_parent_status 保持单一事实来源：同样不能在还有 pending/active
+    # 时把父级写成 failed —— 否则 scheduler 下一轮直接退出，pending 永远 stuck。
+    # 例外：interrupted 父任务需要用户显式 resume / retry；sync 不自动改写它，
+    # 除非 plan 已全 done（背景里跑完）。
+    final_status: str | None = None
+    if plan:
+        derived = _derive_parent_status(plan, "")
+        current_parent_status = _normalized_status(task.get("status"))
+        if current_parent_status == "interrupted" and derived != "done":
+            final_status = None
+        else:
+            final_status = derived
+            if final_status == "done" and "finish_parent" not in actions:
+                actions.append("finish_parent")
 
-    if final_status is not None:
+    if final_status:
         _save_state(task_id, state, status=final_status)
     else:
         _save_state(task_id, state)
@@ -704,16 +707,20 @@ def _derive_parent_status(plan: list[dict], fallback_status: str) -> str:
     statuses = [_normalized_status(item.get("status")) for item in plan]
     if not statuses:
         return fallback_status or "done"
-    if any(status in _RETRYABLE_ITEM_STATUSES for status in statuses):
-        return "failed"
+    # 还有未完成的工作时父任务必须保持调度态，让 scheduler 继续派发或等待。
+    # 旧逻辑 retryable 优先，会让"1 项失败 + 多项 pending"被立刻标 failed，
+    # scheduler 下一轮读到 status='failed' 直接退出，pending 永远不再被派发。
     if any(status == "awaiting_voice" for status in statuses):
         return "waiting_manual"
     if any(status in _ACTIVE_ITEM_STATUSES for status in statuses):
         return "running"
-    if all(status in {"done", "skipped"} for status in statuses):
-        return "done"
     if any(status == "pending" for status in statuses):
         return "running"
+    # 至此 plan 只剩 terminal 状态：done / skipped (+ 可能含 retryable)
+    if any(status in _RETRYABLE_ITEM_STATUSES for status in statuses):
+        return "failed"
+    if all(status in {"done", "skipped"} for status in statuses):
+        return "done"
     return fallback_status or "running"
 
 
