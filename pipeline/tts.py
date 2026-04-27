@@ -94,6 +94,7 @@ def generate_full_audio(
     segments: List[Dict],
     voice_id: str,
     output_dir: str,
+    *,
     variant: str | None = None,
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",

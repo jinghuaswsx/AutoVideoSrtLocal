@@ -135,6 +135,7 @@ def test_generate_full_audio_invokes_on_segment_done_per_segment(tmp_path, monke
     assert all(c[1] == 3 for c in calls)
     assert calls[0][2]["segment_index"] == 0
     assert calls[0][2]["tts_duration"] == 1.5
+    assert calls[0][2]["tts_text_preview"] == "a"
 
 
 def test_generate_full_audio_swallows_callback_exceptions(tmp_path, monkeypatch):
