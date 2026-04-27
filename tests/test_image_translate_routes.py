@@ -882,6 +882,29 @@ def test_retry_failed_item_resets_and_triggers_runner(authed_client_no_db, monke
     assert called.get("ok") is True
 
 
+def test_admin_can_retry_viewable_task_for_original_owner(authed_client_no_db, monkeypatch):
+    from web.routes import image_translate as r
+    from web.services import image_translate_runner
+    tid = _prep_task(authed_client_no_db, monkeypatch, with_done=False)
+    from web import store
+
+    task = store.get(tid)
+    task["_user_id"] = 2
+    task["items"][0]["status"] = "failed"
+    task["items"][0]["attempts"] = 3
+    task["items"][0]["error"] = "timeout"
+    started: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(image_translate_runner, "is_running", lambda t: False)
+    monkeypatch.setattr(r, "_start_runner", lambda tid_, uid: started.append((tid_, uid)) or True)
+
+    resp = authed_client_no_db.post(f"/api/image-translate/{tid}/retry/0")
+
+    assert resp.status_code == 202
+    assert task["items"][0]["status"] == "pending"
+    assert started == [(tid, 2)]
+
+
 def test_retry_rejects_non_failed_item_when_runner_active(authed_client_no_db, monkeypatch):
     """runner 活跃时任何状态都 409；runner 不活跃时放开（见 test_retry_item_allows_*）。"""
     from web.services import image_translate_runner
