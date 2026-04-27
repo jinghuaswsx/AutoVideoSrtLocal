@@ -1249,13 +1249,19 @@ class PipelineRunner:
     def _step_asr(self, task_id: str, task_dir: str) -> None:
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
-        self._set_step(task_id, "asr", "running", "正在识别中文语音...")
         from pipeline.extract import get_video_duration
         from appcore import asr_router
 
-        # 默认 base 流水线为中文 → 路由器走豆包；并跑语言污染清理。
         source_language = task.get("source_language") or "zh"
-        result = asr_router.transcribe(audio_path, source_language=source_language)
+        # 先解析 adapter 拿元数据生成 model_tag，让 step 卡片在 running 状态就能
+        # 显示当前用的是哪个 ASR provider；transcribe 内部会再次解析（廉价，instance 级）。
+        _adapter, _ = asr_router.resolve_adapter("asr_main", source_language)
+        _asr_model_tag = f"{_adapter.display_name} · {_adapter.model_id}"
+        self._set_step(task_id, "asr", "running", "正在识别中文语音...", model_tag=_asr_model_tag)
+
+        result = asr_router.transcribe(
+            audio_path, source_language=source_language, stage="asr_main",
+        )
         utterances = result["utterances"]
         asr_provider = result["provider_code"]
         asr_model = result["model_id"]
@@ -1923,22 +1929,28 @@ class PipelineRunner:
             return
         if self._skip_original_video_passthrough_step(task_id, "subtitle", task=task):
             return
-        self._set_step(task_id, "subtitle", "running", "正在根据英文音频校正字幕...")
-        from appcore.api_keys import resolve_key
-        from pipeline.asr import transcribe_local_audio
-
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        from appcore import asr_router
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.subtitle_alignment import align_subtitle_chunks_to_asr
+
+        # 字幕用 ASR：在 TTS 合成的英语音频上跑一次，拿词级时间戳给字幕对齐。
+        # 先解析 adapter 给 step 卡片显示当前 provider。
+        _sub_adapter, _ = asr_router.resolve_adapter("subtitle_asr", "en")
+        _sub_model_tag = f"{_sub_adapter.display_name} · {_sub_adapter.model_id}"
+        self._set_step(
+            task_id, "subtitle", "running",
+            "正在根据英文音频校正字幕...", model_tag=_sub_model_tag,
+        )
 
         variant = "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        english_utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal", volc_api_key=volc_api_key
+        _sub_result = asr_router.transcribe(
+            tts_audio_path, source_language="en", stage="subtitle_asr",
         )
+        english_utterances = _sub_result["utterances"]
         english_asr_result = {
             "full_text": " ".join(
                 u.get("text", "").strip() for u in english_utterances if u.get("text")

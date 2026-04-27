@@ -130,14 +130,22 @@ class OmniTranslateRunner(MultiTranslateRunner):
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
         source_language = task.get("source_language", "zh")
+
+        # 先解析 adapter 拿元数据生成 model_tag，让前端在 running 状态就能看到
+        # 当前用的是哪个 ASR provider（豆包 / Scribe）。
+        _adapter, _ = asr_router.resolve_adapter("asr_main", source_language)
+        _asr_model_tag = f"{_adapter.display_name} · {_adapter.model_id}"
         self._set_step(
             task_id, "asr", "running",
             f"正在识别{lang_label(source_language, in_chinese=True)}语音...",
+            model_tag=_asr_model_tag,
         )
 
-        # === Unified ASR call via router (zh→豆包，其他→Scribe v2 强制语言) ===
+        # === Unified ASR call via router ===
         # 路由器内部已做语言污染清理（fast-langdetect 删除非主语言段 + 时间合并）。
-        result = asr_router.transcribe(audio_path, source_language=source_language)
+        result = asr_router.transcribe(
+            audio_path, source_language=source_language, stage="asr_main",
+        )
         utterances = result["utterances"]
         asr_provider = result["provider_code"]
         asr_model = result["model_id"]
