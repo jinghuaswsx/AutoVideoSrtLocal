@@ -541,6 +541,7 @@ class ShopifyImageLocalizerApp:
                     self._handle_shopify_product_id,
                     product_id,
                 ),
+                visual_pair_confirm_cb=self._confirm_visual_pairs_threadsafe,
             )
             self.root.after(0, self._render_result, result)
         except cancellation.OperationCancelled:
@@ -624,3 +625,123 @@ class ShopifyImageLocalizerApp:
         value = str(product_id or "").strip()
         if value:
             self.shopify_product_id_var.set(value)
+
+    def _confirm_visual_pairs_threadsafe(self, pairs: list[dict]) -> bool:
+        done = threading.Event()
+        result = {"ok": False}
+
+        def ask() -> None:
+            try:
+                result["ok"] = self._show_visual_pairs_dialog(pairs)
+            except Exception as exc:
+                self._append_log(f"视觉兜底确认弹窗失败：{exc}")
+                result["ok"] = False
+            finally:
+                done.set()
+
+        self.root.after(0, ask)
+        while not done.wait(0.1):
+            token = self._current_cancel_token
+            if token is not None and token.is_cancelled():
+                return False
+        return bool(result["ok"])
+
+    def _pair_thumbnail(self, parent: tk.Misc, path: str, *, max_size: tuple[int, int] = (180, 130)) -> object | None:
+        try:
+            from PIL import Image, ImageTk
+
+            image = Image.open(path)
+            image.thumbnail(max_size)
+            return ImageTk.PhotoImage(image, master=parent)
+        except Exception:
+            return None
+
+    def _show_visual_pairs_dialog(self, pairs: list[dict]) -> bool:
+        dialog = tk.Toplevel(self.root)
+        dialog.title("确认视觉兜底配对")
+        dialog.geometry("920x620")
+        dialog.minsize(760, 520)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog._pair_photos = []  # type: ignore[attr-defined]
+
+        accepted = {"value": False}
+        header = tk.Label(
+            dialog,
+            text=(
+                "文件名 token 匹配失效，系统已使用视觉兜底生成配对。"
+                "请确认每一行都是“左图替换为右图”，确认后才会继续自动替换。"
+            ),
+            anchor="w",
+            justify="left",
+            fg="#b71c1c",
+            wraplength=860,
+        )
+        header.pack(fill="x", padx=16, pady=(14, 8))
+
+        canvas = tk.Canvas(dialog, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+        body = tk.Frame(canvas)
+        body.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=(0, 12))
+        scrollbar.pack(side="right", fill="y", padx=(0, 16), pady=(0, 12))
+
+        for index, pair in enumerate(pairs, start=1):
+            row = tk.Frame(body, bd=1, relief="solid", padx=10, pady=8)
+            row.pack(fill="x", pady=(0, 10))
+            slot_index = int(pair.get("slot_index") or 0)
+            target_label = "详情图" if pair.get("target_kind") == "detail" else "轮播图"
+            slot_score = float(pair.get("slot_score") or 0.0)
+            localized_score = float(pair.get("localized_score") or 0.0)
+            confidence_label = "需复核" if pair.get("confidence") == "needs_review" else "高可信"
+            title = (
+                f"{index}. {target_label}位置 {slot_index + 1}  "
+                f"{confidence_label}  "
+                f"参考图：{pair.get('reference_filename') or '-'}  "
+                f"slot={slot_score:.3f}  "
+                f"localized={localized_score:.3f}  "
+                f"binary={pair.get('binary_similarity', '-')}  "
+                f"foreground={pair.get('foreground_overlap', '-')}"
+            )
+            tk.Label(row, text=title, anchor="w", justify="left").pack(fill="x")
+
+            images = tk.Frame(row)
+            images.pack(fill="x", pady=(8, 0))
+            current_photo = self._pair_thumbnail(dialog, str(pair.get("current_local_path") or ""))
+            replacement_photo = self._pair_thumbnail(dialog, str(pair.get("replacement_local_path") or ""))
+            if current_photo is not None:
+                dialog._pair_photos.append(current_photo)  # type: ignore[attr-defined]
+                tk.Label(images, image=current_photo).grid(row=0, column=0, padx=(0, 12))
+            else:
+                tk.Label(images, text="当前图预览失败", width=24, height=7).grid(row=0, column=0, padx=(0, 12))
+            tk.Label(images, text="→", font=("Arial", 18, "bold")).grid(row=0, column=1, padx=(0, 12))
+            if replacement_photo is not None:
+                dialog._pair_photos.append(replacement_photo)  # type: ignore[attr-defined]
+                tk.Label(images, image=replacement_photo).grid(row=0, column=2, padx=(0, 12))
+            else:
+                tk.Label(images, text="替换图预览失败", width=24, height=7).grid(row=0, column=2, padx=(0, 12))
+
+            detail_text = (
+                f"当前图：{pair.get('current_src') or pair.get('current_local_path')}\n"
+                f"替换图：{pair.get('replacement_filename') or pair.get('replacement_local_path')}"
+            )
+            tk.Label(images, text=detail_text, anchor="w", justify="left", wraplength=420).grid(row=0, column=3, sticky="w")
+
+        footer = tk.Frame(dialog)
+        footer.pack(fill="x", padx=16, pady=(0, 14))
+
+        def accept() -> None:
+            accepted["value"] = True
+            dialog.destroy()
+
+        def reject() -> None:
+            accepted["value"] = False
+            dialog.destroy()
+
+        tk.Button(footer, text="取消，手动处理", command=reject, width=16).pack(side="right")
+        tk.Button(footer, text="确认并继续替换", command=accept, width=18, bg="#1976d2", fg="white").pack(side="right", padx=(0, 10))
+        dialog.protocol("WM_DELETE_WINDOW", reject)
+        self.root.wait_window(dialog)
+        return bool(accepted["value"])

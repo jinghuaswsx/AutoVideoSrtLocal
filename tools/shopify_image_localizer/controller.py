@@ -13,6 +13,7 @@ from tools.shopify_image_localizer.rpa import run_product_cdp
 
 StatusCallback = Callable[[str], None]
 ShopifyProductIdCallback = Callable[[str], None]
+VisualPairConfirmCallback = Callable[[list[dict]], bool]
 
 
 def _noop(_message: str) -> None:
@@ -87,6 +88,7 @@ def run_shopify_localizer(
     shopify_language_name: str = "",
     status_cb: StatusCallback | None = None,
     shopify_product_id_cb: ShopifyProductIdCallback | None = None,
+    visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
     reporter = status_cb or _noop
@@ -130,7 +132,10 @@ def run_shopify_localizer(
     writer = _StatusWriter(emit)
     try:
         with contextlib.redirect_stdout(writer):
-            result = run_product_cdp.run(args, cancel_token=cancel_token)
+            run_kwargs = {"cancel_token": cancel_token}
+            if visual_pair_confirm_cb is not None:
+                run_kwargs["visual_pair_confirm_cb"] = visual_pair_confirm_cb
+            result = run_product_cdp.run(args, **run_kwargs)
     finally:
         writer.flush()
     cancellation.throw_if_cancelled(cancel_token)

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
+
+import pytest
+from PIL import Image, ImageDraw
 
 from tools.shopify_image_localizer import api_client
 from tools.shopify_image_localizer import cancellation
@@ -13,6 +17,18 @@ from tools.shopify_image_localizer.rpa import run_product_cdp
 
 def _localized(filename: str) -> dict:
     return {"filename": filename, "local_path": str(Path("C:/tmp") / filename)}
+
+
+def _write_shape_image(path: Path, *, shape: str, fill: str = "black") -> None:
+    image = Image.new("RGB", (160, 120), "white")
+    draw = ImageDraw.Draw(image)
+    if shape == "circle":
+        draw.ellipse((44, 24, 116, 96), fill=fill)
+    elif shape == "bar":
+        draw.rectangle((36, 48, 124, 72), fill=fill)
+    else:
+        draw.rectangle((40, 28, 120, 92), fill=fill)
+    image.save(path)
 
 
 def test_downloader_shortens_long_shopify_filename_without_losing_match_keys():
@@ -100,6 +116,331 @@ def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_
     ]
 
 
+def test_visual_carousel_pair_plan_matches_unkeyed_slot_to_localized_candidate(tmp_path):
+    slot_path = tmp_path / "shopify-slot-a.png"
+    reference_path = tmp_path / "server-reference-a.png"
+    other_reference_path = tmp_path / "server-reference-b.png"
+    localized_path = tmp_path / "translated-a.png"
+    other_localized_path = tmp_path / "translated-b.png"
+    _write_shape_image(slot_path, shape="circle")
+    _write_shape_image(reference_path, shape="circle")
+    _write_shape_image(other_reference_path, shape="bar")
+    _write_shape_image(localized_path, shape="circle")
+    _write_shape_image(other_localized_path, shape="bar")
+
+    plan = run_product_cdp.build_visual_carousel_pair_plan(
+        slot_images=[
+            {
+                "slot_id": "carousel-00",
+                "slot_index": 0,
+                "src": "https://cdn.shopify.com/files/non-token-a.jpg",
+                "local_path": str(slot_path),
+            }
+        ],
+        reference_images=[
+            {"id": "ref-a", "filename": "server-reference-a.png", "local_path": str(reference_path)},
+            {"id": "ref-b", "filename": "server-reference-b.png", "local_path": str(other_reference_path)},
+        ],
+        localized_images=[
+            {"id": "loc-a", "filename": "translated-a.png", "local_path": str(localized_path)},
+            {"id": "loc-b", "filename": "translated-b.png", "local_path": str(other_localized_path)},
+        ],
+    )
+
+    assert plan["pairs"] == [(0, str(localized_path))]
+    assert plan["confirmation_pairs"][0]["current_local_path"] == str(slot_path)
+    assert plan["confirmation_pairs"][0]["replacement_local_path"] == str(localized_path)
+    assert plan["confirmation_pairs"][0]["reference_filename"] == "server-reference-a.png"
+    assert plan["confirmation_pairs"][0]["match_method"] == "visual"
+    assert plan["review"] == []
+
+
+def test_visual_pair_plan_keeps_compare_match_when_binary_check_warns(monkeypatch, tmp_path):
+    slot_path = tmp_path / "slot.png"
+    reference_path = tmp_path / "reference.png"
+    localized_path = tmp_path / "localized.png"
+    for path in (slot_path, reference_path, localized_path):
+        path.write_bytes(b"image-placeholder")
+
+    monkeypatch.setattr(
+        run_product_cdp,
+        "find_best_reference",
+        lambda _image_path, _reference_paths: {
+            "status": "matched",
+            "score": 0.91,
+            "phash_distance": 4,
+            "dhash_distance": 5,
+            "ssim": 0.88,
+            "ratio_delta": 0.0,
+            "reference_path": str(reference_path),
+        },
+    )
+    monkeypatch.setattr(
+        run_product_cdp,
+        "run_binary_quick_check",
+        lambda _image_path, _reference_path: {
+            "status": "fail",
+            "binary_similarity": 0.82,
+            "foreground_overlap": 0.76,
+            "threshold": 0.90,
+        },
+    )
+
+    plan = run_product_cdp.build_visual_carousel_pair_plan(
+        slot_images=[{"slot_id": "carousel-00", "slot_index": 0, "src": "https://cdn/slot.jpg", "local_path": str(slot_path)}],
+        reference_images=[{"id": "ref", "filename": "reference.png", "local_path": str(reference_path)}],
+        localized_images=[{"id": "loc", "filename": "localized.png", "local_path": str(localized_path)}],
+    )
+
+    assert plan["pairs"] == [(0, str(localized_path))]
+    assert plan["confirmation_pairs"][0]["binary_status"] == "fail"
+    assert plan["confirmation_pairs"][0]["confidence"] == "needs_review"
+    assert plan["review"] == []
+
+
+def test_visual_carousel_confirmation_reject_cancels_replacement():
+    with pytest.raises(cancellation.OperationCancelled):
+        run_product_cdp.confirm_visual_carousel_pairs(
+            [{"slot_index": 0, "replacement_local_path": "C:/tmp/a.png"}],
+            confirm_cb=lambda _pairs: False,
+        )
+
+
+def test_visual_detail_replacement_plan_matches_unkeyed_detail_src(tmp_path):
+    detail_path = tmp_path / "detail-slot.png"
+    reference_path = tmp_path / "reference-detail.png"
+    localized_path = tmp_path / "localized-detail.png"
+    for path in (detail_path, reference_path, localized_path):
+        _write_shape_image(path, shape="bar")
+
+    src = "https://cdn.shopify.com/files/plain-detail.jpg?v=1"
+    plan = run_product_cdp.build_visual_detail_replacement_plan(
+        slot_images=[
+            {
+                "slot_id": "detail-00",
+                "slot_index": 0,
+                "src": src,
+                "local_path": str(detail_path),
+            }
+        ],
+        reference_images=[
+            {"id": "ref-detail", "filename": "reference-detail.png", "local_path": str(reference_path)}
+        ],
+        localized_images=[
+            {"id": "loc-detail", "filename": "localized-detail.png", "local_path": str(localized_path)}
+        ],
+    )
+
+    assert plan["forced_replacements_by_src"][src]["local_path"] == str(localized_path)
+    assert plan["confirmation_pairs"][0]["target_kind"] == "detail"
+    assert plan["confirmation_pairs"][0]["replacement_local_path"] == str(localized_path)
+
+
+def test_run_uses_confirmed_visual_carousel_fallback_when_deterministic_pairing_misses(monkeypatch, tmp_path):
+    localized_path = tmp_path / "translated-a.png"
+    reference_path = tmp_path / "reference-a.png"
+    slot_path = tmp_path / "slot-a.png"
+    for path in (localized_path, reference_path, slot_path):
+        _write_shape_image(path, shape="circle")
+
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    downloaded = [{"id": "loc-a", "filename": "translated-a.png", "local_path": str(localized_path)}]
+    bootstrap = {
+        "reference_images": [{"id": "ref-a", "filename": "reference-a.png", "url": "https://server/ref-a.png"}],
+        "localized_images": [{"id": "loc-a", "filename": "translated-a.png", "url": "https://server/loc-a.png"}],
+    }
+    product = {
+        "id": "8560000000000",
+        "images": [{"src": "https://cdn.shopify.com/files/plain-name.jpg"}],
+        "description": "",
+    }
+    replaced_pairs: list[tuple[int, str]] = []
+    confirmed_pairs: list[dict] = []
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, downloaded))
+    monkeypatch.setattr(run_product_cdp, "pair_carousel_images", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        run_product_cdp,
+        "download_visual_carousel_sources",
+        lambda **_kwargs: {
+            "slot_images": [
+                {
+                    "slot_id": "carousel-00",
+                    "slot_index": 0,
+                    "src": "https://cdn.shopify.com/files/plain-name.jpg",
+                    "local_path": str(slot_path),
+                }
+            ],
+            "reference_images": [
+                {"id": "ref-a", "filename": "reference-a.png", "local_path": str(reference_path)}
+            ],
+        },
+    )
+    monkeypatch.setattr(run_product_cdp.session, "build_ez_url", lambda product_id: f"https://ez/{product_id}")
+
+    def fake_replace_many(**kwargs):
+        replaced_pairs.extend(kwargs["pairs"])
+        return [{"slot_index": 0, "status": "ok"}]
+
+    monkeypatch.setattr(run_product_cdp.ez_cdp, "replace_many", fake_replace_many)
+
+    args = argparse.Namespace(
+        product_code="plain-name-product-rjc",
+        lang="de",
+        shop_locale="de",
+        language="German",
+        product_id="",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=False,
+        skip_detail=True,
+        skip_existing_carousel=False,
+    )
+
+    result = run_product_cdp.run(
+        args,
+        visual_pair_confirm_cb=lambda pairs: confirmed_pairs.extend(pairs) or True,
+    )
+
+    assert replaced_pairs == [(0, str(localized_path))]
+    assert confirmed_pairs[0]["match_method"] == "visual"
+    assert result["carousel"]["visual_fallback_count"] == 1
+
+
+def test_run_uses_confirmed_visual_detail_fallback_when_plan_has_missing_src(monkeypatch, tmp_path):
+    localized_path = tmp_path / "localized-detail.png"
+    reference_path = tmp_path / "reference-detail.png"
+    detail_path = tmp_path / "detail-slot.png"
+    for path in (localized_path, reference_path, detail_path):
+        _write_shape_image(path, shape="bar")
+
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    src = "https://cdn.shopify.com/files/plain-detail.jpg?v=1"
+    html = f'<p><img src="{src}"></p>'
+    product = {"id": "8560000000000", "images": [], "description": html}
+    downloaded = [{"id": "loc-detail", "filename": "localized-detail.png", "local_path": str(localized_path)}]
+    bootstrap = {
+        "reference_images": [{"id": "ref-detail", "filename": "reference-detail.png", "url": "https://server/ref.png"}],
+        "localized_images": [{"id": "loc-detail", "filename": "localized-detail.png", "url": "https://server/loc.png"}],
+    }
+    confirmed_pairs: list[dict] = []
+    captured_forced: list[dict] = []
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, downloaded))
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_image_display_sizes", lambda **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        run_product_cdp,
+        "download_visual_detail_sources",
+        lambda **_kwargs: {
+            "slot_images": [
+                {
+                    "slot_id": "detail-00",
+                    "slot_index": 0,
+                    "src": src,
+                    "local_path": str(detail_path),
+                }
+            ],
+            "reference_images": [
+                {"id": "ref-detail", "filename": "reference-detail.png", "local_path": str(reference_path)}
+            ],
+        },
+    )
+
+    def fake_replace_detail_images(**kwargs):
+        captured_forced.append(kwargs["forced_replacements_by_src"])
+        return {
+            "status": "done",
+            "image_count": 1,
+            "replacement_count": 1,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 0,
+            "replacements": [{"old": src, "new": "https://cdn.shopify.com/new.png"}],
+            "verify": {"expected_new_urls_present": 1, "expected_total": 1, "old_non_shopify_count": 0},
+        }
+
+    monkeypatch.setattr(run_product_cdp.taa_cdp, "replace_detail_images", fake_replace_detail_images)
+    monkeypatch.setattr(run_product_cdp, "verify_storefront_body", lambda *_args, **_kwargs: {"expected_present": 1})
+
+    args = argparse.Namespace(
+        product_code="plain-detail-product-rjc",
+        lang="de",
+        shop_locale="de",
+        language="German",
+        product_id="",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=True,
+        no_preserve_detail_size=True,
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    result = run_product_cdp.run(
+        args,
+        visual_pair_confirm_cb=lambda pairs: confirmed_pairs.extend(pairs) or True,
+    )
+
+    assert captured_forced[0][src]["local_path"] == str(localized_path)
+    assert confirmed_pairs[0]["target_kind"] == "detail"
+    assert result["detail"]["visual_fallback_count"] == 1
+
+
 def test_build_detail_source_index_map_prefers_detail_side_indices():
     token = "cccccccccccccccccccccccccccccccc"
     html = f'<section><img src="https://cdn.example.com/{token}.jpg"></section>'
@@ -141,6 +482,24 @@ def test_detail_replacements_fall_back_to_reference_filename_when_src_has_no_has
     assert mapping == {"name:pic1_480x480": 7}
     assert len(plan["replacements"]) == 1
     assert plan["replacements"][0]["candidate"]["local_path"] == str(Path("C:/tmp") / "loc_from_url_en_07_pic1_480x480.png")
+
+
+def test_detail_replacements_accept_visual_forced_candidate_when_src_has_no_match_key():
+    src = "https://cdn.shopify.com/files/plain-detail-image.jpg?v=1"
+    html = f'<section><img src="{src}"></section>'
+    candidate = _localized("translated-plain-detail.png")
+
+    plan = taa_cdp.plan_body_html_replacements(
+        html,
+        localized_images=[],
+        forced_replacements_by_src={src: candidate},
+        replace_shopify_cdn=True,
+    )
+
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["old"] == src
+    assert plan["replacements"][0]["candidate"]["local_path"] == candidate["local_path"]
+    assert plan["replacements"][0]["match_method"] == "visual"
 
 
 def test_apply_uploaded_replacements_preserves_display_width():

@@ -14,9 +14,10 @@ import json
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
+from link_check_desktop.image_compare import find_best_reference, run_binary_quick_check
 from playwright.sync_api import sync_playwright
 
 from tools.shopify_image_localizer import api_client, cancellation, downloader, locales, settings, storage
@@ -26,6 +27,8 @@ from tools.shopify_image_localizer.rpa import ez_cdp, taa_cdp
 
 DEFAULT_STORE_DOMAIN = "newjoyloo.com"
 LANGUAGE_LABELS = locales.ISO_TO_ENGLISH_NAME
+VISUAL_MATCH_MIN_SCORE = 0.80
+VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
 
 
 def _normalize_src(src: str) -> str:
@@ -136,6 +139,360 @@ def pair_carousel_images(localized_images: list[dict], product_images: list[dict
             continue
         pairs.append((idx, str(candidate["local_path"])))
     return pairs
+
+
+def _image_row_id(row: dict[str, Any], fallback: str) -> str:
+    return str(row.get("id") or row.get("filename") or row.get("local_path") or fallback)
+
+
+def _local_image_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for row in rows or []:
+        local_path = str(row.get("local_path") or "")
+        if local_path and Path(local_path).is_file():
+            result.append(row)
+    return result
+
+
+def _best_reference_for_image(
+    image_path: str,
+    reference_rows: list[dict[str, Any]],
+    *,
+    min_score: float,
+) -> dict[str, Any] | None:
+    reference_paths = [str(row.get("local_path") or "") for row in reference_rows if row.get("local_path")]
+    if not reference_paths:
+        return None
+    best = find_best_reference(image_path, reference_paths)
+    score = float(best.get("score") or 0.0)
+    if best.get("status") != "matched" or score < min_score:
+        return {
+            "accepted": False,
+            "compare": best,
+            "reason": "visual score below threshold",
+        }
+    reference_by_path = {str(row.get("local_path") or ""): row for row in reference_rows}
+    reference = reference_by_path.get(str(best.get("reference_path") or ""))
+    if reference is None:
+        return {
+            "accepted": False,
+            "compare": best,
+            "reason": "matched reference row missing",
+        }
+    binary = run_binary_quick_check(image_path, str(reference.get("local_path") or ""))
+    return {
+        "accepted": True,
+        "compare": best,
+        "binary": binary,
+        "reference": reference,
+        "confidence": "high" if binary.get("status") == "pass" else "needs_review",
+    }
+
+
+def build_visual_carousel_pair_plan(
+    *,
+    slot_images: list[dict[str, Any]],
+    reference_images: list[dict[str, Any]],
+    localized_images: list[dict[str, Any]],
+    min_score: float = VISUAL_MATCH_MIN_SCORE,
+    reserved_localized_paths: set[str] | None = None,
+) -> dict[str, Any]:
+    reference_rows = _local_image_rows(reference_images)
+    localized_rows = _local_image_rows(localized_images)
+    reserved_paths = {str(path) for path in (reserved_localized_paths or set()) if path}
+    review: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
+    pairs: list[tuple[int, str]] = []
+    confirmation_pairs: list[dict[str, Any]] = []
+    used_localized_paths: set[str] = set()
+
+    if not reference_rows:
+        return {
+            "pairs": [],
+            "confirmation_pairs": [],
+            "review": [{"reason": "missing reference images"}],
+            "conflicts": [],
+        }
+
+    localized_by_reference: dict[str, list[dict[str, Any]]] = {}
+    for idx, row in enumerate(localized_rows):
+        local_path = str(row.get("local_path") or "")
+        if local_path in reserved_paths:
+            continue
+        match = _best_reference_for_image(local_path, reference_rows, min_score=min_score)
+        if not match or not match.get("accepted"):
+            review.append({
+                "kind": "localized",
+                "localized_id": _image_row_id(row, f"localized-{idx}"),
+                "filename": row.get("filename"),
+                "reason": (match or {}).get("reason") or "no reference matched",
+                "compare": (match or {}).get("compare"),
+                "binary": (match or {}).get("binary"),
+            })
+            continue
+        reference = match["reference"]
+        reference_id = _image_row_id(reference, str(match["compare"].get("reference_path") or "reference"))
+        localized_by_reference.setdefault(reference_id, []).append({
+            **row,
+            "reference": reference,
+            "visual_compare": match["compare"],
+            "binary_check": match["binary"],
+            "visual_score": float(match["compare"].get("score") or 0.0),
+            "confidence": match.get("confidence") or "needs_review",
+        })
+
+    for idx, slot in enumerate(slot_images):
+        local_path = str(slot.get("local_path") or "")
+        slot_index = int(slot.get("slot_index") if slot.get("slot_index") is not None else idx)
+        if not local_path or not Path(local_path).is_file():
+            review.append({"kind": "slot", "slot_index": slot_index, "reason": "missing slot local image"})
+            continue
+        match = _best_reference_for_image(local_path, reference_rows, min_score=min_score)
+        if not match or not match.get("accepted"):
+            review.append({
+                "kind": "slot",
+                "slot_index": slot_index,
+                "src": slot.get("src"),
+                "reason": (match or {}).get("reason") or "no reference matched",
+                "compare": (match or {}).get("compare"),
+                "binary": (match or {}).get("binary"),
+            })
+            continue
+        reference = match["reference"]
+        reference_id = _image_row_id(reference, str(match["compare"].get("reference_path") or "reference"))
+        candidates = sorted(
+            localized_by_reference.get(reference_id) or [],
+            key=lambda item: float(item.get("visual_score") or 0.0),
+            reverse=True,
+        )
+        candidates = [item for item in candidates if str(item.get("local_path") or "") not in used_localized_paths]
+        if not candidates:
+            review.append({
+                "kind": "slot",
+                "slot_index": slot_index,
+                "src": slot.get("src"),
+                "reference_filename": reference.get("filename"),
+                "reason": "no localized candidate for visual reference",
+            })
+            continue
+        chosen = candidates[0]
+        replacement_path = str(chosen.get("local_path") or "")
+        if not replacement_path:
+            review.append({"kind": "slot", "slot_index": slot_index, "reason": "chosen localized path missing"})
+            continue
+        pairs.append((slot_index, replacement_path))
+        used_localized_paths.add(replacement_path)
+        confirmation_pairs.append({
+            "match_method": "visual",
+            "target_kind": "carousel",
+            "slot_index": slot_index,
+            "current_src": slot.get("src"),
+            "current_local_path": local_path,
+            "reference_id": reference_id,
+            "reference_filename": reference.get("filename"),
+            "reference_local_path": reference.get("local_path"),
+            "replacement_filename": chosen.get("filename"),
+            "replacement_local_path": replacement_path,
+            "slot_score": float(match["compare"].get("score") or 0.0),
+            "localized_score": float(chosen.get("visual_score") or 0.0),
+            "binary_status": match["binary"].get("status"),
+            "binary_similarity": match["binary"].get("binary_similarity"),
+            "foreground_overlap": match["binary"].get("foreground_overlap"),
+            "confidence": (
+                "high"
+                if match.get("confidence") == "high" and chosen.get("confidence") == "high"
+                else "needs_review"
+            ),
+        })
+        for extra in candidates[1:]:
+            conflicts.append({
+                "slot_index": slot_index,
+                "localized_id": _image_row_id(extra, "localized"),
+                "reason": "duplicate localized visual candidate",
+            })
+
+    return {
+        "pairs": pairs,
+        "confirmation_pairs": confirmation_pairs,
+        "review": review,
+        "conflicts": conflicts,
+    }
+
+
+def build_visual_detail_replacement_plan(
+    *,
+    slot_images: list[dict[str, Any]],
+    reference_images: list[dict[str, Any]],
+    localized_images: list[dict[str, Any]],
+    min_score: float = VISUAL_MATCH_MIN_SCORE,
+) -> dict[str, Any]:
+    plan = build_visual_carousel_pair_plan(
+        slot_images=slot_images,
+        reference_images=reference_images,
+        localized_images=localized_images,
+        min_score=min_score,
+    )
+    localized_by_path = {
+        str(row.get("local_path") or ""): row
+        for row in localized_images or []
+        if row.get("local_path")
+    }
+    forced_replacements_by_src: dict[str, dict[str, Any]] = {}
+    for row in plan.get("confirmation_pairs") or []:
+        row["target_kind"] = "detail"
+        src = str(row.get("current_src") or "")
+        replacement_path = str(row.get("replacement_local_path") or "")
+        if not src or not replacement_path:
+            continue
+        candidate = dict(localized_by_path.get(replacement_path) or {})
+        candidate["local_path"] = replacement_path
+        if row.get("replacement_filename") and not candidate.get("filename"):
+            candidate["filename"] = row.get("replacement_filename")
+        candidate["match_method"] = "visual"
+        forced_replacements_by_src[src] = candidate
+    return {
+        **plan,
+        "forced_replacements_by_src": forced_replacements_by_src,
+    }
+
+
+def confirm_visual_carousel_pairs(
+    confirmation_pairs: list[dict[str, Any]],
+    *,
+    confirm_cb: VisualPairConfirmCallback | None,
+) -> None:
+    if not confirmation_pairs:
+        return
+    if confirm_cb is None:
+        raise RuntimeError("visual carousel fallback requires user confirmation")
+    if not confirm_cb(confirmation_pairs):
+        raise cancellation.OperationCancelled("用户取消视觉兜底配对确认")
+
+
+def _image_url(row: dict[str, Any]) -> str:
+    return str(row.get("url") or row.get("download_url") or row.get("src") or "").strip()
+
+
+def _filename_from_url(url: str, fallback: str) -> str:
+    name = Path(urlparse(str(url or "")).path).name
+    return name or fallback
+
+
+def _download_visual_rows(
+    items: list[dict[str, Any]],
+    output_dir: Path,
+    *,
+    prefix: str,
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for idx, item in enumerate(items):
+        url = _image_url(item)
+        if not url or url.lower().split("?", 1)[0].endswith(".gif"):
+            continue
+        original_filename = str(item.get("filename") or _filename_from_url(url, f"image-{idx:02d}.jpg"))
+        rows.append({
+            **item,
+            "url": url,
+            "original_filename": original_filename,
+            "filename": f"{prefix}_{idx:02d}_{original_filename}",
+        })
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return downloader.download_images(rows, output_dir, retries=1, status_cb=print, cancel_token=cancel_token)
+
+
+def download_visual_carousel_sources(
+    *,
+    workspace: storage.Workspace,
+    product_images: list[dict] | list[str],
+    reference_images: list[dict],
+    unmatched_slot_indices: list[int],
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    unmatched = set(unmatched_slot_indices)
+    slot_rows: list[dict[str, Any]] = []
+    for idx, image in enumerate(product_images):
+        if idx not in unmatched:
+            continue
+        if isinstance(image, str):
+            src = image
+        else:
+            src = str(image.get("src") or image.get("url") or "")
+        src = _normalize_src(src)
+        if not src or src.lower().split("?", 1)[0].endswith(".gif"):
+            continue
+        slot_rows.append({
+            "id": f"carousel-slot-{idx:02d}",
+            "slot_id": f"carousel-{idx:02d}",
+            "slot_index": idx,
+            "src": src,
+            "url": src,
+            "filename": _filename_from_url(src, f"carousel-slot-{idx:02d}.jpg"),
+        })
+
+    current_dir = workspace.source_en_dir / "shopify_current"
+    reference_dir = workspace.source_en_dir / "server_reference"
+    downloaded_slots = _download_visual_rows(
+        slot_rows,
+        current_dir,
+        prefix="slot",
+        cancel_token=cancel_token,
+    )
+    downloaded_references = _download_visual_rows(
+        list(reference_images or []),
+        reference_dir,
+        prefix="reference",
+        cancel_token=cancel_token,
+    )
+    return {
+        "slot_images": downloaded_slots,
+        "reference_images": downloaded_references,
+    }
+
+
+def download_visual_detail_sources(
+    *,
+    workspace: storage.Workspace,
+    detail_html: str,
+    reference_images: list[dict],
+    candidate_srcs: list[str],
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    candidate_set = set(candidate_srcs)
+    slot_rows: list[dict[str, Any]] = []
+    for idx, src in enumerate(taa_cdp.extract_image_srcs(detail_html)):
+        src = _normalize_src(src)
+        if src not in candidate_set:
+            continue
+        if not src or src.lower().split("?", 1)[0].endswith(".gif"):
+            continue
+        slot_rows.append({
+            "id": f"detail-slot-{idx:02d}",
+            "slot_id": f"detail-{idx:02d}",
+            "slot_index": idx,
+            "src": src,
+            "url": src,
+            "filename": _filename_from_url(src, f"detail-slot-{idx:02d}.jpg"),
+        })
+
+    current_dir = workspace.source_en_dir / "shopify_detail_current"
+    reference_dir = workspace.source_en_dir / "server_reference"
+    downloaded_slots = _download_visual_rows(
+        slot_rows,
+        current_dir,
+        prefix="detail",
+        cancel_token=cancel_token,
+    )
+    downloaded_references = _download_visual_rows(
+        list(reference_images or []),
+        reference_dir,
+        prefix="reference",
+        cancel_token=cancel_token,
+    )
+    return {
+        "slot_images": downloaded_slots,
+        "reference_images": downloaded_references,
+    }
 
 
 def build_detail_source_index_map(
@@ -365,6 +722,7 @@ def run(
     args: argparse.Namespace,
     *,
     cancel_token: cancellation.CancellationToken | None = None,
+    visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
 ) -> dict[str, Any]:
     cfg = settings.load_runtime_config()
     cancellation.throw_if_cancelled(cancel_token)
@@ -413,27 +771,80 @@ def run(
     if not args.skip_carousel:
         cancellation.throw_if_cancelled(cancel_token)
         pairs = pair_carousel_images(downloaded, product_images)
+        eligible_indices = [
+            idx
+            for idx, src in enumerate(product_images)
+            if src and not str(src).lower().split("?", 1)[0].endswith(".gif")
+        ]
+        paired_indices = {slot_idx for slot_idx, _path in pairs}
+        unmatched_indices = [idx for idx in eligible_indices if idx not in paired_indices]
+        visual_fallback_plan: dict[str, Any] = {"pairs": [], "confirmation_pairs": [], "review": [], "conflicts": []}
+        if unmatched_indices and bootstrap.get("reference_images"):
+            try:
+                print(f"[carousel] deterministic matched={len(pairs)}, visual fallback slots={unmatched_indices}")
+                visual_sources = download_visual_carousel_sources(
+                    workspace=workspace,
+                    product_images=product_images,
+                    reference_images=bootstrap.get("reference_images") or [],
+                    unmatched_slot_indices=unmatched_indices,
+                    cancel_token=cancel_token,
+                )
+                visual_fallback_plan = build_visual_carousel_pair_plan(
+                    slot_images=visual_sources.get("slot_images") or [],
+                    reference_images=visual_sources.get("reference_images") or [],
+                    localized_images=downloaded,
+                    reserved_localized_paths={path for _slot_idx, path in pairs},
+                )
+                visual_pairs = list(visual_fallback_plan.get("pairs") or [])
+                if visual_pairs:
+                    confirm_visual_carousel_pairs(
+                        list(visual_fallback_plan.get("confirmation_pairs") or []),
+                        confirm_cb=visual_pair_confirm_cb,
+                    )
+                    pairs.extend(visual_pairs)
+                    pairs.sort(key=lambda row: row[0])
+                    print(f"[carousel] visual fallback confirmed={len(visual_pairs)}")
+                else:
+                    print(f"[carousel] visual fallback produced no pairs: {visual_fallback_plan.get('review')}")
+            except cancellation.OperationCancelled:
+                raise
+            except Exception as exc:
+                print(f"[carousel] visual fallback unavailable: {exc}")
         if not pairs:
-            raise RuntimeError("no carousel image pairs found")
-        print(f"[carousel] replacing {len(pairs)} slot(s)")
-        ez_url = session.build_ez_url(product_id)
-        carousel_results = ez_cdp.replace_many(
-            ez_url=ez_url,
-            user_data_dir=cfg["browser_user_data_dir"],
-            pairs=pairs,
-            language=args.language,
-            replace_existing=not args.skip_existing_carousel,
-            port=args.port,
-            limit=args.carousel_limit if args.carousel_limit > 0 else None,
-            cancel_token=cancel_token,
-        )
-        cancellation.throw_if_cancelled(cancel_token)
-        result["carousel"] = {
-            "requested": len(pairs),
-            "results": carousel_results,
-            "ok": sum(1 for row in carousel_results if row.get("status") == "ok"),
-            "skipped": sum(1 for row in carousel_results if row.get("status") == "skipped"),
-        }
+            print("[carousel] no matched image pairs; skipped carousel")
+            result["carousel"] = {
+                "requested": 0,
+                "results": [],
+                "ok": 0,
+                "skipped": 0,
+                "visual_fallback_count": 0,
+                "skipped_reason": "no matched image pairs",
+                "visual_review": visual_fallback_plan.get("review") or [],
+            }
+        else:
+            print(f"[carousel] replacing {len(pairs)} slot(s)")
+            ez_url = session.build_ez_url(product_id)
+            carousel_results = ez_cdp.replace_many(
+                ez_url=ez_url,
+                user_data_dir=cfg["browser_user_data_dir"],
+                pairs=pairs,
+                language=args.language,
+                replace_existing=not args.skip_existing_carousel,
+                port=args.port,
+                limit=args.carousel_limit if args.carousel_limit > 0 else None,
+                cancel_token=cancel_token,
+            )
+            cancellation.throw_if_cancelled(cancel_token)
+            result["carousel"] = {
+                "requested": len(pairs),
+                "results": carousel_results,
+                "ok": sum(1 for row in carousel_results if row.get("status") == "ok"),
+                "skipped": sum(1 for row in carousel_results if row.get("status") == "skipped"),
+                "visual_fallback_count": len(visual_fallback_plan.get("pairs") or []),
+                "visual_confirmation_pairs": visual_fallback_plan.get("confirmation_pairs") or [],
+                "visual_review": visual_fallback_plan.get("review") or [],
+                "visual_conflicts": visual_fallback_plan.get("conflicts") or [],
+            }
 
     if not args.skip_detail:
         cancellation.throw_if_cancelled(cancel_token)
@@ -465,12 +876,55 @@ def run(
                 carousel_image_count=len(product_images),
             )
         print(f"[detail] source-index map={source_index_map}")
+        detail_visual_plan: dict[str, Any] = {
+            "forced_replacements_by_src": {},
+            "confirmation_pairs": [],
+            "review": [],
+            "conflicts": [],
+        }
+        try:
+            preliminary_detail_plan = taa_cdp.plan_body_html_replacements(
+                detail_html,
+                downloaded,
+                source_index_by_token=source_index_map,
+                replace_shopify_cdn=args.replace_shopify_cdn,
+            )
+            missing_detail_srcs = [
+                str(row.get("src") or "")
+                for row in preliminary_detail_plan.get("skipped_missing") or []
+                if row.get("src")
+            ]
+            if missing_detail_srcs and bootstrap.get("reference_images"):
+                print(f"[detail] visual fallback srcs={len(missing_detail_srcs)}")
+                detail_visual_sources = download_visual_detail_sources(
+                    workspace=workspace,
+                    detail_html=detail_html,
+                    reference_images=bootstrap.get("reference_images") or [],
+                    candidate_srcs=missing_detail_srcs,
+                    cancel_token=cancel_token,
+                )
+                detail_visual_plan = build_visual_detail_replacement_plan(
+                    slot_images=detail_visual_sources.get("slot_images") or [],
+                    reference_images=detail_visual_sources.get("reference_images") or [],
+                    localized_images=downloaded,
+                )
+                detail_confirmations = list(detail_visual_plan.get("confirmation_pairs") or [])
+                if detail_confirmations:
+                    confirm_visual_carousel_pairs(detail_confirmations, confirm_cb=visual_pair_confirm_cb)
+                    print(f"[detail] visual fallback confirmed={len(detail_confirmations)}")
+                else:
+                    print(f"[detail] visual fallback produced no pairs: {detail_visual_plan.get('review')}")
+        except cancellation.OperationCancelled:
+            raise
+        except Exception as exc:
+            print(f"[detail] visual fallback unavailable: {exc}")
         detail_result = taa_cdp.replace_detail_images(
             product_id=product_id,
             shop_locale=args.shop_locale,
             user_data_dir=cfg["browser_user_data_dir"],
             localized_images=downloaded,
             source_index_by_token=source_index_map,
+            forced_replacements_by_src=detail_visual_plan.get("forced_replacements_by_src") or {},
             display_size_by_src=display_size_by_src,
             port=args.port,
             replace_shopify_cdn=args.replace_shopify_cdn,
@@ -479,6 +933,10 @@ def run(
         )
         cancellation.throw_if_cancelled(cancel_token)
         result["detail"] = {key: value for key, value in detail_result.items() if key != "verify"}
+        result["detail"]["visual_fallback_count"] = len(detail_visual_plan.get("forced_replacements_by_src") or {})
+        result["detail"]["visual_confirmation_pairs"] = detail_visual_plan.get("confirmation_pairs") or []
+        result["detail"]["visual_review"] = detail_visual_plan.get("review") or []
+        result["detail"]["visual_conflicts"] = detail_visual_plan.get("conflicts") or []
         result["detail"]["fallback_original_count"] = len(fallback_images)
         result["detail"]["fallback_originals"] = [
             {

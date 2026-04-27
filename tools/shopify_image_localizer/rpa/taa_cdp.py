@@ -632,10 +632,12 @@ def plan_body_html_replacements(
     localized_images: list[dict],
     *,
     source_index_by_token: dict[str, int] | None = None,
+    forced_replacements_by_src: dict[str, dict[str, Any]] | None = None,
     replace_shopify_cdn: bool = False,
 ) -> dict[str, Any]:
     candidates_by_token = build_localized_candidates(localized_images)
     candidates_by_source_index = build_localized_candidates_by_source_index(localized_images)
+    forced_replacements = forced_replacements_by_src or {}
     srcs = extract_image_srcs(html)
     replacements: list[dict[str, Any]] = []
     skipped_existing: list[dict[str, Any]] = []
@@ -643,27 +645,40 @@ def plan_body_html_replacements(
     for src in srcs:
         token = ez_cdp.md5_token(src)
         source_index = source_index_from_filename(src)
-        if source_index is None:
-            if token:
-                source_index = (source_index_by_token or {}).get(token)
-            if source_index is None:
-                key = source_name_key(src)
-                source_index = (source_index_by_token or {}).get(key or "")
+        match_method = "token"
         try:
-            if token:
-                candidate = choose_localized_image(
-                    src,
-                    candidates_by_token,
-                    source_index_by_token=source_index_by_token,
-                )
-            elif source_index is not None:
-                candidate = choose_localized_image_by_source_index(
-                    src,
-                    candidates_by_source_index,
-                    source_index,
-                )
+            forced_candidate = forced_replacements.get(src)
+            if forced_candidate:
+                candidate = {
+                    **forced_candidate,
+                    "local_path": str(forced_candidate.get("local_path") or ""),
+                    "filename": str(forced_candidate.get("filename") or Path(str(forced_candidate.get("local_path") or "")).name),
+                }
+                if not candidate.get("local_path"):
+                    raise ValueError(f"visual candidate missing local_path for src: {src}")
+                match_method = "visual"
             else:
-                raise ValueError(f"image src has no source token or source index mapping: {src}")
+                if source_index is None:
+                    if token:
+                        source_index = (source_index_by_token or {}).get(token)
+                    if source_index is None:
+                        key = source_name_key(src)
+                        source_index = (source_index_by_token or {}).get(key or "")
+                if token:
+                    candidate = choose_localized_image(
+                        src,
+                        candidates_by_token,
+                        source_index_by_token=source_index_by_token,
+                    )
+                elif source_index is not None:
+                    candidate = choose_localized_image_by_source_index(
+                        src,
+                        candidates_by_source_index,
+                        source_index,
+                    )
+                    match_method = "source_index"
+                else:
+                    raise ValueError(f"image src has no source token or source index mapping: {src}")
         except ValueError as exc:
             skipped_missing.append({
                 "token": token,
@@ -686,6 +701,7 @@ def plan_body_html_replacements(
             "token": token,
             "old": src,
             "candidate": candidate,
+            "match_method": match_method,
         })
     return {
         "image_count": len(srcs),
@@ -821,6 +837,7 @@ def replace_detail_images(
     user_data_dir: str,
     localized_images: list[dict],
     source_index_by_token: dict[str, int] | None = None,
+    forced_replacements_by_src: dict[str, dict[str, Any]] | None = None,
     display_size_by_src: dict[str, dict[str, Any]] | None = None,
     port: int = ez_cdp.DEFAULT_CDP_PORT,
     replace_shopify_cdn: bool = False,
@@ -840,6 +857,7 @@ def replace_detail_images(
             html_before,
             localized_images,
             source_index_by_token=source_index_by_token,
+            forced_replacements_by_src=forced_replacements_by_src,
             replace_shopify_cdn=replace_shopify_cdn,
         )
         uploaded_replacements: list[dict[str, Any]] = []
@@ -852,6 +870,7 @@ def replace_detail_images(
                 "new": cdn_url,
                 "local_path": row["candidate"]["local_path"],
                 "source_index": row["candidate"].get("source_index"),
+                "match_method": row.get("match_method"),
             })
         taa.close_modal()
 
