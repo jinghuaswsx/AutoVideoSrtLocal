@@ -97,7 +97,9 @@ def test_transcribe_passes_force_language_for_es(
     audio.write_bytes(b"x")
     out = asr_router.transcribe(audio, source_language="es")
     assert fake.last_language == "es"
-    assert len(out) == 1
+    assert len(out["utterances"]) == 1
+    assert out["provider_code"] == "fake_asr"
+    assert out["model_id"] == "fake-1"
 
 
 def test_transcribe_purifies_chinese_pollution_in_es_video(
@@ -116,11 +118,12 @@ def test_transcribe_purifies_chinese_pollution_in_es_video(
     audio = tmp_path / "audio.mp3"
     audio.write_bytes(b"x")
     out = asr_router.transcribe(audio, source_language="es")
-    assert len(out) == 2
-    assert all("你好" not in u["text"] for u in out)
+    utterances = out["utterances"]
+    assert len(utterances) == 2
+    assert all("你好" not in u["text"] for u in utterances)
     # 时间合并验证
-    assert out[0]["end_time"] == pytest.approx(5.0)
-    assert out[1]["start_time"] == pytest.approx(5.0)
+    assert utterances[0]["end_time"] == pytest.approx(5.0)
+    assert utterances[1]["start_time"] == pytest.approx(5.0)
 
 
 def test_transcribe_skips_purify_when_source_auto(
@@ -139,4 +142,4 @@ def test_transcribe_skips_purify_when_source_auto(
     audio = tmp_path / "audio.mp3"
     audio.write_bytes(b"x")
     out = asr_router.transcribe(audio, source_language="auto")
-    assert len(out) == 2
+    assert len(out["utterances"]) == 2

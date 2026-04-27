@@ -13,11 +13,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List
+from typing import TypedDict
 
 from appcore.asr_providers import BaseASRAdapter, build_adapter
 from appcore.asr_providers.base import Utterance
 from appcore.asr_purify import _normalize_lang_code, purify_language
+
+
+class TranscribeResult(TypedDict):
+    utterances: list[Utterance]
+    provider_code: str
+    model_id: str
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +68,7 @@ def resolve_adapter(source_language: str | None) -> tuple[BaseASRAdapter, str | 
 def transcribe(
     local_audio_path: Path | str,
     source_language: str | None,
-) -> List[Utterance]:
+) -> TranscribeResult:
     """主入口：路由 + ASR 调用 + 语言污染清理。
 
     Args:
@@ -71,8 +77,16 @@ def transcribe(
                          不强制。
 
     Returns:
-        清理后的 utterance 列表。
+        ``{"utterances": [...], "provider_code": ..., "model_id": ...}``。
+        ``utterances`` 为清理后的 utterance 列表；``provider_code`` /
+        ``model_id`` 是实际命中的 adapter 元数据，调用方用于
+        ``ai_billing.log_request``。
     """
     adapter, force = resolve_adapter(source_language)
     utterances = adapter.transcribe(Path(local_audio_path), language=force)
-    return purify_language(utterances, source_language=source_language)
+    purified = purify_language(utterances, source_language=source_language)
+    return {
+        "utterances": purified,
+        "provider_code": adapter.provider_code,
+        "model_id": adapter.model_id,
+    }
