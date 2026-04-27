@@ -508,28 +508,26 @@
     const doneCount = MAIN_STEPS.filter(s => currentTask.steps?.[s] === "done").length;
     const pct = totalMain > 0 ? Math.round((doneCount / totalMain) * 100) : 0;
 
-    // 4. 找当前阶段 + 中断态
+    // 4. 当前阶段 + 状态类（驱动 card 颜色/图标/进度条渐变）
     const failedStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "failed");
     const waitingStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "waiting");
     const runningStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "running");
     const taskStatus = currentTask.status;
 
-    let badgeClass = "status-badge--idle";
+    let cardState = "";
     let badgeText = "等待启动";
     let stepText = "等待启动";
+    let iconHtml = "·";
     let interruptAt = null;
-    let fillVariant = "";
 
     if (failedStep) {
-      badgeClass = "status-badge--error";
+      cardState = "is-error"; iconHtml = "×";
       badgeText = "已中断";
       stepText = `中断于：${stepLabel(failedStep)}（${MAIN_STEPS.indexOf(failedStep) + 1}/${totalMain}）`;
       interruptAt = failedStep;
-      fillVariant = "status-progress-fill--error";
     } else if (taskStatus === "error") {
-      badgeClass = "status-badge--error";
+      cardState = "is-error"; iconHtml = "×";
       badgeText = "已中断";
-      // 服务异常但没明确 failed step：取 running 或第一个 pending 作为推荐起点
       const recoverFrom = runningStep
         || MAIN_STEPS.find(s => (currentTask.steps?.[s] || "pending") === "pending");
       if (recoverFrom) {
@@ -538,43 +536,33 @@
       } else {
         stepText = "任务已中断";
       }
-      fillVariant = "status-progress-fill--error";
     } else if (waitingStep) {
-      badgeClass = "status-badge--waiting";
+      cardState = "is-waiting"; iconHtml = "!";
       badgeText = "等待人工确认";
       stepText = `等待确认：${stepLabel(waitingStep)}（${MAIN_STEPS.indexOf(waitingStep) + 1}/${totalMain}）`;
     } else if (runningStep) {
-      badgeClass = "status-badge--running";
+      cardState = "is-running"; iconHtml = '<span class="spinner"></span>';
       badgeText = "处理中";
       stepText = `正在执行：${stepLabel(runningStep)}（${MAIN_STEPS.indexOf(runningStep) + 1}/${totalMain}）`;
-    } else if (doneCount === totalMain) {
-      badgeClass = "status-badge--done";
+    } else if (doneCount === totalMain || taskStatus === "done") {
+      cardState = "is-done"; iconHtml = "✓";
       badgeText = "已完成";
-      stepText = `全部 ${totalMain} 个步骤已完成`;
-      fillVariant = "status-progress-fill--done";
-    } else if (taskStatus === "done") {
-      badgeClass = "status-badge--done";
-      badgeText = "已完成";
-      stepText = "处理完成";
-      fillVariant = "status-progress-fill--done";
+      stepText = doneCount === totalMain ? `全部 ${totalMain} 个步骤已完成` : "处理完成";
     } else if (taskStatus === "uploaded") {
-      badgeText = "等待启动";
       stepText = "上传完成，可以开始处理";
     }
 
+    card.className = `task-status-card ${cardState}`.trim();
+
+    const iconEl = document.getElementById("statusIcon");
+    if (iconEl) iconEl.innerHTML = iconHtml;
     const badgeEl = document.getElementById("statusBadge");
-    if (badgeEl) {
-      badgeEl.className = `status-badge ${badgeClass}`;
-      badgeEl.textContent = badgeText;
-    }
+    if (badgeEl) badgeEl.textContent = badgeText;
     const stepLineEl = document.getElementById("statusStepLine");
     if (stepLineEl) stepLineEl.textContent = stepText;
 
     const fillEl = document.getElementById("statusProgressFill");
-    if (fillEl) {
-      fillEl.className = `status-progress-fill ${fillVariant}`.trim();
-      fillEl.style.width = `${pct}%`;
-    }
+    if (fillEl) fillEl.style.width = `${pct}%`;
     const pctEl = document.getElementById("statusProgressPct");
     if (pctEl) pctEl.textContent = `${pct}%`;
 
