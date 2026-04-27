@@ -290,8 +290,12 @@ def test_step_asr_normalize_user_specified_es_calls_run_user_specified(
     assert update_kwargs["source_language"] == "en"
     assert update_kwargs["detected_source_language"] == "es"
     assert update_kwargs["utterances_en"] == fake_en
+    # 原始 artifact 通过 update 写入 task["asr_normalize_artifact"]
+    assert update_kwargs["asr_normalize_artifact"]["detection_source"] == "user_specified"
+    # set_artifact 写入的是 UI 投影：左右对照视图
     artifact_arg = mock_state.set_artifact.call_args.args[2]
-    assert artifact_arg["detection_source"] == "user_specified"
+    assert artifact_arg["title"] == "原文标准化"
+    assert artifact_arg["items"][0]["type"] == "side_by_side"
 
 
 @patch("appcore.runtime_multi.task_state")

@@ -60,6 +60,31 @@ def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "", so
     return {"title": "语音识别", "items": [left]}
 
 
+def build_asr_normalize_artifact(raw_artifact: dict | None) -> dict:
+    """把 _step_asr_normalize 的原始 artifact 投影成左右对照的步骤预览。
+
+    左侧：原文（小语种），右侧：英文标准化文本。
+    """
+    if not raw_artifact:
+        return {"title": "原文标准化", "items": []}
+    src_label = (raw_artifact.get("input") or {}).get("language_label") or "原文"
+    src_text = (raw_artifact.get("input") or {}).get("full_text_preview") or ""
+    out_text = (raw_artifact.get("output") or {}).get("full_text_preview") or ""
+    route = raw_artifact.get("route") or ""
+    if route in ("en_skip", "zh_skip"):
+        right_label = "无需标准化（已为目标语言）"
+    else:
+        right_label = "英文标准化"
+    return {
+        "title": "原文标准化",
+        "items": [{
+            "type": "side_by_side",
+            "left": text_item(f"原文（{src_label}）", src_text),
+            "right": text_item(right_label, out_text),
+        }],
+    }
+
+
 def build_alignment_artifact(
     scene_cuts: list[float],
     script_segments: list[dict],
