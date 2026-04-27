@@ -1173,7 +1173,11 @@
     return `${base}/${taskId}/round-file/${roundIndex}/${kind}`;
   }
 
-  function _phaseLabel(phase) {
+  function _phaseLabel(phase, round) {
+    if (phase === 'audio_gen' && round && round.audio_segments_total) {
+      const done = round.audio_segments_done || 0;
+      return `正在生成 TTS 音频 ${done}/${round.audio_segments_total}`;
+    }
     return ({
       translate_rewrite: '正在重写译文',
       tts_script_regen:  '正在切分朗读块',
@@ -1546,7 +1550,7 @@
       const isLast = idx === rounds.length - 1;
       const isFinal = finalRound === round.round;
       const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
-      const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase) : '';
+      const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase, round) : '';
 
       const targetWords = round.target_words != null ? round.target_words : round.target_chars;
       const dirLabel = ({ shrink: '缩写', expand: '扩写' })[round.direction] || round.direction || '';
