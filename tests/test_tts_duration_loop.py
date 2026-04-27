@@ -343,6 +343,68 @@ class TestDurationLoopRound1Only:
         assert last["audio_segments_total"] == 3
         assert last["audio_segments_done"] == 3
 
+    def test_round2_emits_substep_per_rewrite_attempt(self, tmp_path, monkeypatch):
+        """Round 2+ 的每次 rewrite attempt 应当各发一条 substep，
+        让用户能看到"attempt 1/5（目标 75 词）"这种实时刷新。"""
+        runner = self._make_runner()
+        from appcore import task_state
+        from appcore.events import EVT_STEP_UPDATE
+
+        captured = []
+        runner.bus.subscribe(lambda e: captured.append(e))
+
+        # round1 → 25s（短，触发 expand），round2 attempt1 → 30s（命中区间）
+        durations = iter([25.0, 30.0])
+
+        def fake_gen_full_audio(tts_segments, voice_id, task_dir, *, variant=None,
+                                 on_segment_done=None, **kw):
+            out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+            with open(out, "wb") as f:
+                f.write(b"fake")
+            return {"full_audio_path": out, "segments": [
+                {"index": 0, "tts_path": out, "tts_duration": 1.0}]}
+
+        monkeypatch.setattr("pipeline.tts.generate_full_audio", fake_gen_full_audio)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda p: next(durations))
+        monkeypatch.setattr(
+            "pipeline.translate.generate_tts_script",
+            lambda loc, **kw: {
+                "full_text": "x.",
+                "blocks": [{"index": 0, "text": "x", "sentence_indices": [0],
+                             "source_segment_indices": [0]}],
+                "subtitle_chunks": []},
+        )
+
+        rewrite_calls = {"n": 0}
+        def fake_rewrite(**kwargs):
+            rewrite_calls["n"] += 1
+            return {
+                "full_text": " ".join(["w"] * kwargs["target_words"]),
+                "sentences": [{"text": " ".join(["w"] * kwargs["target_words"])}],
+            }
+        monkeypatch.setattr("pipeline.translate.generate_localized_rewrite", fake_rewrite)
+        monkeypatch.setattr("pipeline.speech_rate_model.get_rate", lambda v, l: 15.0)
+        monkeypatch.setattr("pipeline.speech_rate_model.update_rate", lambda *a, **kw: None)
+
+        task_state.create("rewrite-substep-task", "v.mp4", str(tmp_path),
+                          original_filename="v.mp4", user_id=1)
+
+        import importlib
+        loc_mod = importlib.import_module("pipeline.localization")
+        runner._run_tts_duration_loop(
+            task_id="rewrite-substep-task", task_dir=str(tmp_path),
+            loc_mod=loc_mod, provider="openrouter",
+            video_duration=30.0, voice={"elevenlabs_voice_id": "v1"},
+            initial_localized_translation={"full_text": "hi.", "sentences": [{"text": "hi."}]},
+            source_full_text="hi.", source_language="en",
+            elevenlabs_api_key="fake-key",
+            script_segments=[{"index": 0, "text": "hi", "start_time": 0.0, "end_time": 1.0}],
+            variant="normal", target_language_label="en",
+        )
+
+        msgs = [e.payload["message"] for e in captured if e.type == EVT_STEP_UPDATE]
+        assert any("重写译文 attempt 1" in m for m in msgs), f"got: {msgs}"
+
 
 class TestDurationLoopMultiRound:
     def _setup(self, monkeypatch, tmp_path, audio_durations):

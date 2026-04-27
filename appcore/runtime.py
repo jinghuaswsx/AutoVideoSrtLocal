@@ -611,6 +611,10 @@ class PipelineRunner:
                 prior_word_counts: list[int] = []
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
+                    _substep(
+                        f"重写译文 attempt {attempt}/{MAX_REWRITE_ATTEMPTS}"
+                        f"（目标 {target_words} 词，{direction}）"
+                    )
                     feedback_notes = None
                     if prior_word_counts:
                         feedback_notes = (
