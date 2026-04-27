@@ -370,3 +370,16 @@ def test_dashboard_endpoint_passes_country_filter(authed_client_no_db, monkeypat
     assert response.status_code == 200
     assert captured["country"] == "DE"
     assert captured["period"] == "month"
+
+
+def test_dashboard_tab_is_default(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-tab="dashboard"' in body
+    assert 'id="panelDashboard"' in body
+
+
+def test_dashboard_tab_label_chinese(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert "产品看板" in response.get_data(as_text=True)
