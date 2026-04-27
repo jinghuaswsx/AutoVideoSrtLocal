@@ -9,8 +9,8 @@ from pipeline import asr_clean
 
 
 SAMPLE_ES_UTTS = [
-    {"index": 0, "start": 0.0, "end": 2.0, "text": "Hola amigos, today vamos a hablar de"},
-    {"index": 1, "start": 2.0, "end": 4.0, "text": "este producto que es 太棒了 increíble"},
+    {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Hola amigos, today vamos a hablar de"},
+    {"index": 1, "start_time": 2.0, "end_time": 4.0, "text": "este producto que es 太棒了 increíble"},
 ]
 
 
@@ -82,8 +82,8 @@ def test_purify_primary_success_returns_cleaned():
     assert result["cleaned"] is True
     assert result["fallback_used"] is False
     assert result["utterances"][0]["text"] == "Hola amigos, hoy vamos a hablar de"
-    assert result["utterances"][0]["start"] == 0.0  # timestamps preserved
-    assert result["utterances"][0]["end"] == 2.0
+    assert result["utterances"][0]["start_time"] == 0.0  # timestamps preserved
+    assert result["utterances"][0]["end_time"] == 2.0
 
 
 def test_purify_falls_back_when_primary_invalid():

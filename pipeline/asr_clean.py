@@ -248,8 +248,8 @@ def _attach_timestamps(items: list[dict], original: list[dict]) -> list[dict]:
         idx = int(u.get("index", i))
         out.append({
             "index": idx,
-            "start": u.get("start", u.get("start_time")),
-            "end": u.get("end", u.get("end_time")),
+            "start_time": u.get("start_time", u.get("start")),
+            "end_time": u.get("end_time", u.get("end")),
             "text": by_index.get(idx, u.get("text", "")),
         })
     return out
