@@ -14,7 +14,8 @@ def test_pyinstaller_spec_bundles_visual_fallback_dependencies() -> None:
     )
     spec = spec_path.read_text(encoding="utf-8")
 
-    assert 'collect_submodules("link_check_desktop")' in spec
+    assert '"link_check_desktop.image_compare"' in spec
+    assert 'collect_submodules("link_check_desktop")' not in spec
     excludes_match = re.search(r"excludes=\[(.*?)\]", spec, re.S)
     assert excludes_match is not None
     excludes = excludes_match.group(1)
