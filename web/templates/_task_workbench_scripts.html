@@ -2,12 +2,23 @@
   const socket = io();
   {% if pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
-  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "alignment", "translate", "tts", "subtitle", "compose", "export"];
+  // voice_match 没有渲染到流水线 step DOM 里（独立的音色选择卡），但属于阻塞主步骤，
+  // 进入 MAIN_STEPS 让顶部状态卡能反映「等待用户确认音色」并计入 10/10 进度。
+  const MAIN_STEPS = ["extract", "asr", "asr_normalize", "voice_match", "alignment", "translate", "tts", "subtitle", "compose", "export"];
   {% else %}
   const STEP_ORDER = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export", "analysis"];
   const MAIN_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"];
   {% endif %}
   const stepIcons = { pending: "·", waiting: "!", done: "✓", error: "×" };
+  const LANG_LABELS = {
+    zh: "中文", en: "英文", es: "西班牙语", pt: "葡萄牙语",
+    fr: "法语", it: "意大利语", ja: "日语", de: "德语",
+    nl: "荷兰语", sv: "瑞典语", fi: "芬兰语",
+  };
+  function langLabel(code, fallback = "") {
+    if (!code) return fallback;
+    return LANG_LABELS[code] || String(code).toUpperCase();
+  }
   const TASK_WORKBENCH_CONFIG = {
     taskId: {{ task_id|tojson }},
     initialTask: {{ initial_task|tojson }},
@@ -71,6 +82,12 @@
   bootSharedSubtitlePreview();
   renderStepPreviews({});
   bootInitialTask();
+
+  // QA 评估卡片有自己的 8s 轮询；任务跑完后 activeRefreshLoop 会停，
+  // 顶部状态卡的 QA 镜像就跟不上了，这里独立 6s 重渲染状态卡保证 QA 状态实时。
+  if (document.getElementById("taskStatusCard")) {
+    setInterval(() => { try { renderStatusCard(); } catch (_) {} }, 6000);
+  }
 
   // Source language toggle — save to backend when user clicks
   (function() {
@@ -445,6 +462,8 @@
     return {
       extract: "音频提取",
       asr: "语音识别",
+      asr_normalize: "原文标准化",
+      voice_match: "音色选择",
       alignment: "分段确认",
       translate: "翻译本土化",
       tts: "语音生成",
@@ -453,6 +472,154 @@
       analysis: "AI 视频分析",
       export: "CapCut 导出",
     }[step] || step;
+  }
+
+  // 顶部实时状态卡：源/目标语言、当前阶段、主进度百分比、中断推荐起点、附加项状态
+  function renderStatusCard() {
+    const card = document.getElementById("taskStatusCard");
+    if (!card || !currentTask) return;
+
+    // 1. 源语言：user_specified 优先，其次 detected，其次「识别中」
+    const srcEl = document.getElementById("statusLangSource");
+    if (srcEl) {
+      const userSpec = currentTask.user_specified_source_language;
+      const srcLang = currentTask.source_language || "";
+      const detected = currentTask.detected_source_language || "";
+      let label;
+      if (userSpec && srcLang) {
+        label = langLabel(srcLang, srcLang);
+      } else if (detected) {
+        label = `${langLabel(detected, detected)}（自动识别）`;
+      } else {
+        label = "原始语言识别中";
+      }
+      srcEl.textContent = label;
+    }
+
+    // 2. 目标语言
+    const tgtEl = document.getElementById("statusLangTarget");
+    if (tgtEl) {
+      const tgt = currentTask.target_lang || TASK_WORKBENCH_CONFIG.voiceLanguage || "";
+      tgtEl.textContent = langLabel(tgt, (tgt || "").toUpperCase());
+    }
+
+    // 3. 主进度：MAIN_STEPS 中 done 计数
+    const totalMain = MAIN_STEPS.length;
+    const doneCount = MAIN_STEPS.filter(s => currentTask.steps?.[s] === "done").length;
+    const pct = totalMain > 0 ? Math.round((doneCount / totalMain) * 100) : 0;
+
+    // 4. 找当前阶段 + 中断态
+    const failedStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "failed");
+    const waitingStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "waiting");
+    const runningStep = MAIN_STEPS.find(s => currentTask.steps?.[s] === "running");
+    const taskStatus = currentTask.status;
+
+    let badgeClass = "status-badge--idle";
+    let badgeText = "等待启动";
+    let stepText = "等待启动";
+    let interruptAt = null;
+    let fillVariant = "";
+
+    if (failedStep) {
+      badgeClass = "status-badge--error";
+      badgeText = "已中断";
+      stepText = `中断于：${stepLabel(failedStep)}（${MAIN_STEPS.indexOf(failedStep) + 1}/${totalMain}）`;
+      interruptAt = failedStep;
+      fillVariant = "status-progress-fill--error";
+    } else if (taskStatus === "error") {
+      badgeClass = "status-badge--error";
+      badgeText = "已中断";
+      // 服务异常但没明确 failed step：取 running 或第一个 pending 作为推荐起点
+      const recoverFrom = runningStep
+        || MAIN_STEPS.find(s => (currentTask.steps?.[s] || "pending") === "pending");
+      if (recoverFrom) {
+        stepText = `因服务异常中断，建议从「${stepLabel(recoverFrom)}」（${MAIN_STEPS.indexOf(recoverFrom) + 1}/${totalMain}）继续`;
+        interruptAt = recoverFrom;
+      } else {
+        stepText = "任务已中断";
+      }
+      fillVariant = "status-progress-fill--error";
+    } else if (waitingStep) {
+      badgeClass = "status-badge--waiting";
+      badgeText = "等待人工确认";
+      stepText = `等待确认：${stepLabel(waitingStep)}（${MAIN_STEPS.indexOf(waitingStep) + 1}/${totalMain}）`;
+    } else if (runningStep) {
+      badgeClass = "status-badge--running";
+      badgeText = "处理中";
+      stepText = `正在执行：${stepLabel(runningStep)}（${MAIN_STEPS.indexOf(runningStep) + 1}/${totalMain}）`;
+    } else if (doneCount === totalMain) {
+      badgeClass = "status-badge--done";
+      badgeText = "已完成";
+      stepText = `全部 ${totalMain} 个步骤已完成`;
+      fillVariant = "status-progress-fill--done";
+    } else if (taskStatus === "done") {
+      badgeClass = "status-badge--done";
+      badgeText = "已完成";
+      stepText = "处理完成";
+      fillVariant = "status-progress-fill--done";
+    } else if (taskStatus === "uploaded") {
+      badgeText = "等待启动";
+      stepText = "上传完成，可以开始处理";
+    }
+
+    const badgeEl = document.getElementById("statusBadge");
+    if (badgeEl) {
+      badgeEl.className = `status-badge ${badgeClass}`;
+      badgeEl.textContent = badgeText;
+    }
+    const stepLineEl = document.getElementById("statusStepLine");
+    if (stepLineEl) stepLineEl.textContent = stepText;
+
+    const fillEl = document.getElementById("statusProgressFill");
+    if (fillEl) {
+      fillEl.className = `status-progress-fill ${fillVariant}`.trim();
+      fillEl.style.width = `${pct}%`;
+    }
+    const pctEl = document.getElementById("statusProgressPct");
+    if (pctEl) pctEl.textContent = `${pct}%`;
+
+    // 5. 中断推荐起点 + 复用 .resume-btn 的事件委托去发 /resume
+    const resumeEl = document.getElementById("statusResume");
+    const resumeMsgEl = document.getElementById("statusResumeMsg");
+    const resumeBtn = document.getElementById("statusResumeBtn");
+    if (resumeEl && resumeMsgEl && resumeBtn) {
+      if (interruptAt) {
+        resumeEl.hidden = false;
+        resumeMsgEl.textContent = `建议从「${stepLabel(interruptAt)}」步重新开始`;
+        resumeBtn.dataset.step = interruptAt;
+        // 不在这里改 disabled / textContent —— .resume-btn 委托会按需切换
+      } else {
+        resumeEl.hidden = true;
+        resumeBtn.dataset.step = "";
+      }
+    }
+
+    // 6. 可选项：AI 视频分析
+    const optAEl = document.getElementById("optAnalysisState");
+    if (optAEl) {
+      const a = currentTask.steps?.analysis || "idle";
+      let cls = "opt-state--idle", txt = "未运行";
+      if (a === "running") { cls = "opt-state--running"; txt = "运行中"; }
+      else if (a === "done") { cls = "opt-state--done"; txt = "已完成"; }
+      else if (a === "failed" || a === "error") { cls = "opt-state--error"; txt = "失败"; }
+      optAEl.className = `opt-state ${cls}`;
+      optAEl.textContent = txt;
+    }
+
+    // 7. 可选项：翻译质量评估（mirror QualityAssessmentCard 渲染后的 DOM 状态）
+    const optQEl = document.getElementById("optQaState");
+    const qaCard = document.getElementById("quality-assessment-card");
+    if (optQEl) {
+      let cls = "opt-state--idle", txt = "未运行";
+      const body = qaCard ? qaCard.querySelector(".qa-body") : null;
+      if (body) {
+        if (body.querySelector(".qa-loading")) { cls = "opt-state--running"; txt = "评估中"; }
+        else if (body.querySelector(".qa-failed")) { cls = "opt-state--error"; txt = "失败"; }
+        else if (body.querySelector(".qa-summary-row, .qa-score-grid")) { cls = "opt-state--done"; txt = "已完成"; }
+      }
+      optQEl.className = `opt-state ${cls}`;
+      optQEl.textContent = txt;
+    }
   }
 
   function handleFile(file) {
@@ -660,6 +827,7 @@
     updateResumeButtons(currentTask);
     syncActiveRefreshLoop(currentTask);
     renderTtsDurationLog();
+    renderStatusCard();
   }
 
   function renderStepMessages() {
