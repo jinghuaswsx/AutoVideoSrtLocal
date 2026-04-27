@@ -780,13 +780,21 @@ def _create_child_task(parent_id: str, item: dict, parent_state: dict) -> tuple[
     child_task_id = _ensure_child_identity(parent_id, item)
     existing_child = _load_existing_child_project(child_task_id)
     if existing_child:
-        child_task_type = (
-            existing_child.get("type")
-            or item.get("child_task_type")
-            or _child_type_for_kind(item.get("kind"))
-        )
-        item["child_task_type"] = child_task_type
-        return child_task_id, child_task_type, existing_child.get("status") or "running"
+        existing_status = _normalized_status(existing_child.get("status"))
+        # terminal-failed 的 existing child 不能复用：直接 return existing 会让 retry
+        # 看似派发成功但实际不重启 runner，sync 立刻把 item 标回 failed —— 死循环。
+        # 删除 row 让下方分支跑一遍真正的 _create_*_child（INSERT 同 stable id 的新行
+        # + 启动 runner）。task_dir 上的旧文件保留给新 runner 自然覆盖即可。
+        if existing_status in _FAILURE_CHILD_STATUSES:
+            execute("DELETE FROM projects WHERE id = %s", (child_task_id,))
+        else:
+            child_task_type = (
+                existing_child.get("type")
+                or item.get("child_task_type")
+                or _child_type_for_kind(item.get("kind"))
+            )
+            item["child_task_type"] = child_task_type
+            return child_task_id, child_task_type, existing_child.get("status") or "running"
 
     kind = item.get("kind")
     try:
