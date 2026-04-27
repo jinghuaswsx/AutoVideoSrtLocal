@@ -439,6 +439,20 @@ class PipelineRunner:
             payload["model_tag"] = existing_tag
         self._emit(task_id, EVT_STEP_UPDATE, payload)
 
+    def _emit_substep_msg(self, task_id: str, step: str, sub_msg: str) -> None:
+        """Emit EVT_STEP_UPDATE with a refreshed message but DO NOT persist.
+
+        Use for high-frequency sub-step progress (per ElevenLabs segment, etc.)
+        where persisting every event would thrash task_state.
+        """
+        task = task_state.get(task_id) or {}
+        status = (task.get("steps") or {}).get(step, "running")
+        payload = {"step": step, "status": status, "message": sub_msg}
+        existing_tag = (task.get("step_model_tags") or {}).get(step, "")
+        if existing_tag:
+            payload["model_tag"] = existing_tag
+        self._emit(task_id, EVT_STEP_UPDATE, payload)
+
     def _get_localization_module(self, task: dict):
         del task
         import importlib

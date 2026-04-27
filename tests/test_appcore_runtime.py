@@ -35,6 +35,30 @@ def test_set_step_publishes_step_update_event():
     assert task_state.get(task_id)["steps"]["asr"] == "running"
 
 
+def test_emit_substep_msg_publishes_event_without_persisting(monkeypatch):
+    """_emit_substep_msg should publish EVT_STEP_UPDATE but not call
+    task_state.set_step_message / set_step (avoid per-segment disk writes)."""
+    task_id = "substep-task"
+    _make_task(task_id)
+    runner, events = _make_runner()
+
+    set_step_calls = []
+    set_msg_calls = []
+    monkeypatch.setattr(task_state, "set_step",
+                        lambda *a, **kw: set_step_calls.append((a, kw)))
+    monkeypatch.setattr(task_state, "set_step_message",
+                        lambda *a, **kw: set_msg_calls.append((a, kw)))
+
+    runner._emit_substep_msg(task_id, "tts", "正在生成英语配音 · 第 1 轮 · 切分朗读文案中")
+
+    step_events = [e for e in events if e.type == EVT_STEP_UPDATE]
+    assert len(step_events) == 1
+    assert step_events[0].payload["step"] == "tts"
+    assert step_events[0].payload["message"] == "正在生成英语配音 · 第 1 轮 · 切分朗读文案中"
+    assert set_step_calls == []
+    assert set_msg_calls == []
+
+
 def test_run_calls_all_steps_in_order():
     task_id = "test_run_order"
     _make_task(task_id)
