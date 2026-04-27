@@ -119,3 +119,27 @@ window.QualityAssessmentCard = (function () {
 
   return { init };
 })();
+
+// 自动初始化：把 #quality-assessment-card 的 data-* 属性映射到 init() 参数。
+// 由模板（_task_workbench.html 等）渲染好 div 即可生效；外部仍可用
+// window.QualityAssessmentCard.init() 显式初始化（向后兼容）。
+(function () {
+  function autoInit() {
+    var card = document.getElementById("quality-assessment-card");
+    if (!card) return;
+    if (card.dataset.qaInitialized === "1") return;
+    var taskId = card.dataset.taskId;
+    if (!taskId) return;
+    window.QualityAssessmentCard.init({
+      taskId: taskId,
+      projectType: card.dataset.projectType || "omni_translate",
+      isAdmin: card.dataset.isAdmin === "1",
+    });
+    card.dataset.qaInitialized = "1";
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoInit);
+  } else {
+    autoInit();
+  }
+})();

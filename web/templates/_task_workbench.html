@@ -610,6 +610,22 @@
       </div>
       <div class="step-preview" id="preview-subtitle"></div>
     </div>
+    {# 翻译质量评估：异步评估，不阻塞主流水线，呈现在「字幕生成」之后、「视频合成」之前 #}
+    {% if not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/quality_assessment_card.css') }}">
+    <div id="quality-assessment-card" class="qa-card"
+         data-task-id="{{ project.id }}"
+         data-project-type="{{ 'omni_translate' if request.path.startswith('/omni-translate') else 'multi_translate' }}"
+         data-is-admin="{{ '1' if current_user.is_admin else '0' }}">
+      <div class="qa-card-header">
+        <div class="qa-card-title">翻译质量评估</div>
+        {% if current_user.is_admin %}
+        <button type="button" class="qa-rerun-btn" data-action="rerun">重跑评估</button>
+        {% endif %}
+      </div>
+      <div class="qa-body"></div>
+    </div>
+    {% endif %}
     <div class="step" id="step-compose">
       <div class="step-main">
         <div class="step-icon" id="icon-compose">{{ 8 if pipeline_kind == 'multi_translate' else 7 }}</div>

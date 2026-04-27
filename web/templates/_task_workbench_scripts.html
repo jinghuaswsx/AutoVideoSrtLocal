@@ -2354,4 +2354,9 @@
   });
 </script>
 
+{# 翻译质量评估卡片脚本：脚本自带 DOMContentLoaded 自动初始化（按 #quality-assessment-card 上的 data-* 读取参数）。 #}
+{% if not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
+<script src="{{ url_for('static', filename='js/quality_assessment_card.js') }}"></script>
+{% endif %}
+
 

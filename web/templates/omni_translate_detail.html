@@ -244,23 +244,4 @@
 </style>
 {% endif %}
 
-{% if not project.deleted_at %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/quality_assessment_card.css') }}">
-<div id="quality-assessment-card" class="qa-card">
-  <div class="qa-card-header">
-    <div class="qa-card-title">翻译质量评估</div>
-    {% if current_user.is_admin %}
-    <button type="button" class="qa-rerun-btn" data-action="rerun">重跑评估</button>
-    {% endif %}
-  </div>
-  <div class="qa-body"></div>
-</div>
-<script src="{{ url_for('static', filename='js/quality_assessment_card.js') }}"></script>
-<script>
-  QualityAssessmentCard.init({
-    taskId: {{ project.id | tojson }},
-    projectType: "omni_translate",
-    isAdmin: {{ (current_user.is_admin | default(false)) | tojson }},
-  });
-</script>
-{% endif %}
+{# 翻译质量评估卡片已迁移至 _task_workbench.html，渲染在「字幕生成」与「视频合成」之间 #}
