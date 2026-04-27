@@ -40,7 +40,7 @@ install -d -m 755 "$PLAYWRIGHT_BROWSERS_PATH"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   cat >"$ENV_FILE" <<'EOF'
-BROWSER_DISPLAY=:99
+BROWSER_DISPLAY=:20
 BROWSER_SCREEN_SIZE=1600x1000x24
 BROWSER_PROFILE_DIR=/data/autovideosrt/browser/profiles/shared
 BROWSER_RUNTIME_DIR=/data/autovideosrt/browser/runtime

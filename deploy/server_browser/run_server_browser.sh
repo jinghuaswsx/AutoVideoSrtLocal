@@ -4,7 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/autovideosrt}"
 VENV_DIR="${VENV_DIR:-$APP_DIR/venv}"
 PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$APP_DIR/.playwright-browsers}"
-DISPLAY_NUM="${BROWSER_DISPLAY:-:99}"
+DISPLAY_NUM="${BROWSER_DISPLAY:-:20}"
 SCREEN_SIZE="${BROWSER_SCREEN_SIZE:-1600x1000x24}"
 PROFILE_DIR="${BROWSER_PROFILE_DIR:-/data/autovideosrt/browser/profiles/shared}"
 RUNTIME_DIR="${BROWSER_RUNTIME_DIR:-/data/autovideosrt/browser/runtime}"
