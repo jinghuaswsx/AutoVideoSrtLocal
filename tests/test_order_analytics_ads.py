@@ -321,3 +321,65 @@ def test_ad_upload_route_imports_meta_report(authed_client_no_db, monkeypatch):
     assert payload["imported"] == 1
     assert payload["matched"] == 1
     assert payload["total_rows"] == 1
+
+
+def test_dashboard_endpoint_admin_only_redirects_when_anonymous():
+    from web.app import create_app
+    app = create_app()
+    client = app.test_client()
+    response = client.get("/order-analytics/dashboard")
+    # 未登录 → 302 重定向到登录
+    assert response.status_code in (302, 401)
+
+
+def test_dashboard_endpoint_default_returns_json(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.order_analytics.oa.get_dashboard",
+        lambda **kwargs: {
+            "period": {"start": "2026-04-01", "end": "2026-04-25", "label": "2026 年 4 月（1-25 日）"},
+            "compare_period": {"start": "2026-03-01", "end": "2026-03-25", "label": "..."},
+            "country": None,
+            "products": [],
+            "summary": {"total_orders": 0, "total_revenue": 0, "total_spend": 0, "total_roas": None},
+        },
+    )
+    response = authed_client_no_db.get("/order-analytics/dashboard?period=month&year=2026&month=4")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["period"]["start"] == "2026-04-01"
+    assert payload["products"] == []
+
+
+def test_dashboard_endpoint_invalid_period_returns_400(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/dashboard?period=year")
+    assert response.status_code == 400
+    assert "invalid_period" in response.get_data(as_text=True)
+
+
+def test_dashboard_endpoint_passes_country_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+    def fake_dashboard(**kwargs):
+        captured.update(kwargs)
+        return {"period": {"start": "2026-04-01", "end": "2026-04-25", "label": "x"},
+                "compare_period": None, "country": "DE", "products": [], "summary": {}}
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dashboard", fake_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dashboard?period=month&year=2026&month=4&country=DE"
+    )
+    assert response.status_code == 200
+    assert captured["country"] == "DE"
+    assert captured["period"] == "month"
+
+
+def test_dashboard_tab_is_default(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-tab="dashboard"' in body
+    assert 'id="panelDashboard"' in body
+
+
+def test_dashboard_tab_label_chinese(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert "产品看板" in response.get_data(as_text=True)
