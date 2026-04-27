@@ -15,6 +15,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import websocket
 from playwright.sync_api import sync_playwright
@@ -475,6 +476,21 @@ def source_index_from_filename(filename: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def source_name_key(value: str) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = urlparse(raw).path if "://" in raw or raw.startswith("//") else raw.split("?", 1)[0]
+    name = Path(unquote(path)).name
+    if not name:
+        return None
+    match = SOURCE_INDEX_RE.search(name)
+    if match:
+        name = name[match.end():]
+    stem = Path(name).stem.strip().lower()
+    return f"name:{stem}" if stem else None
+
+
 def _shopify_safe_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", (value or "").lower()).strip("_")
 
@@ -517,6 +533,28 @@ def build_localized_candidates(localized_images: list[dict]) -> dict[str, list[d
         candidates.setdefault(token, []).append(row)
     for rows in candidates.values():
         rows.sort(key=lambda row: (row.get("source_index") is None, row.get("source_index") or 9999, row.get("filename") or ""))
+    return candidates
+
+
+def build_localized_candidates_by_source_index(localized_images: list[dict]) -> dict[int, list[dict[str, Any]]]:
+    candidates: dict[int, list[dict[str, Any]]] = {}
+    for item in localized_images or []:
+        filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
+        local_path = str(item.get("local_path") or "")
+        source_index = source_index_from_filename(filename)
+        if source_index is None or not local_path:
+            continue
+        row = {
+            **item,
+            "token": ez_cdp.md5_token(filename),
+            "source_index": source_index,
+            "source_name_key": source_name_key(filename),
+            "local_path": local_path,
+            "filename": filename,
+        }
+        candidates.setdefault(source_index, []).append(row)
+    for rows in candidates.values():
+        rows.sort(key=lambda row: (row.get("filename") or ""))
     return candidates
 
 
@@ -570,6 +608,25 @@ def choose_localized_image(
     )
 
 
+def choose_localized_image_by_source_index(
+    src: str,
+    candidates_by_source_index: dict[int, list[dict[str, Any]]],
+    source_index: int,
+) -> dict[str, Any]:
+    candidates = candidates_by_source_index.get(source_index) or []
+    if not candidates:
+        raise ValueError(f"no localized candidate for source index {source_index:02d}")
+    key = source_name_key(src)
+    if key:
+        exact_name = [row for row in candidates if row.get("source_name_key") == key]
+        if exact_name:
+            return exact_name[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    options = [str(row.get("filename") or "") for row in candidates]
+    raise ValueError(f"ambiguous localized candidates for source index {source_index:02d}: {options}")
+
+
 def plan_body_html_replacements(
     html: str,
     localized_images: list[dict],
@@ -578,23 +635,35 @@ def plan_body_html_replacements(
     replace_shopify_cdn: bool = False,
 ) -> dict[str, Any]:
     candidates_by_token = build_localized_candidates(localized_images)
+    candidates_by_source_index = build_localized_candidates_by_source_index(localized_images)
     srcs = extract_image_srcs(html)
     replacements: list[dict[str, Any]] = []
     skipped_existing: list[dict[str, Any]] = []
     skipped_missing: list[dict[str, Any]] = []
     for src in srcs:
         token = ez_cdp.md5_token(src)
-        if not token:
-            continue
         source_index = source_index_from_filename(src)
         if source_index is None:
-            source_index = (source_index_by_token or {}).get(token)
+            if token:
+                source_index = (source_index_by_token or {}).get(token)
+            if source_index is None:
+                key = source_name_key(src)
+                source_index = (source_index_by_token or {}).get(key or "")
         try:
-            candidate = choose_localized_image(
-                src,
-                candidates_by_token,
-                source_index_by_token=source_index_by_token,
-            )
+            if token:
+                candidate = choose_localized_image(
+                    src,
+                    candidates_by_token,
+                    source_index_by_token=source_index_by_token,
+                )
+            elif source_index is not None:
+                candidate = choose_localized_image_by_source_index(
+                    src,
+                    candidates_by_source_index,
+                    source_index,
+                )
+            else:
+                raise ValueError(f"image src has no source token or source index mapping: {src}")
         except ValueError as exc:
             skipped_missing.append({
                 "token": token,

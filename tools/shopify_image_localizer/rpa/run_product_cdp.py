@@ -81,31 +81,47 @@ def _localized_by_token(localized_images: list[dict]) -> dict[str, list[dict[str
     return taa_cdp.build_localized_candidates(localized_images)
 
 
+def _localized_by_source_index(localized_images: list[dict]) -> dict[int, list[dict[str, Any]]]:
+    return taa_cdp.build_localized_candidates_by_source_index(localized_images)
+
+
 def _choose_carousel_candidate(
     slot_idx: int,
     src: str,
     candidates_by_token: dict[str, list[dict[str, Any]]],
+    candidates_by_source_index: dict[int, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any] | None:
     token = ez_cdp.md5_token(src)
-    if not token:
+    if token:
+        candidates = candidates_by_token.get(token) or []
+        if candidates:
+            exact = [row for row in candidates if row.get("source_index") == slot_idx]
+            if exact:
+                return exact[0]
+            if len(candidates) == 1:
+                return candidates[0]
+            no_index = [row for row in candidates if row.get("source_index") is None]
+            if len(no_index) == 1:
+                return no_index[0]
+            options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
+            raise ValueError(f"ambiguous carousel source for slot {slot_idx} token {token}: {options}")
+    source_index_candidates = (candidates_by_source_index or {}).get(slot_idx) or []
+    if not source_index_candidates:
         return None
-    candidates = candidates_by_token.get(token) or []
-    if not candidates:
-        return None
-    exact = [row for row in candidates if row.get("source_index") == slot_idx]
-    if exact:
-        return exact[0]
-    if len(candidates) == 1:
-        return candidates[0]
-    no_index = [row for row in candidates if row.get("source_index") is None]
-    if len(no_index) == 1:
-        return no_index[0]
-    options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
-    raise ValueError(f"ambiguous carousel source for slot {slot_idx} token {token}: {options}")
+    src_key = taa_cdp.source_name_key(src)
+    if src_key:
+        exact_name = [row for row in source_index_candidates if row.get("source_name_key") == src_key]
+        if exact_name:
+            return exact_name[0]
+    if len(source_index_candidates) == 1:
+        return source_index_candidates[0]
+    options = [str(row.get("filename") or "") for row in source_index_candidates]
+    raise ValueError(f"ambiguous carousel source for slot {slot_idx}: {options}")
 
 
 def pair_carousel_images(localized_images: list[dict], product_images: list[dict] | list[str]) -> list[tuple[int, str]]:
     candidates_by_token = _localized_by_token(localized_images)
+    candidates_by_source_index = _localized_by_source_index(localized_images)
     pairs: list[tuple[int, str]] = []
     for idx, image in enumerate(product_images):
         if isinstance(image, str):
@@ -115,7 +131,7 @@ def pair_carousel_images(localized_images: list[dict], product_images: list[dict
         src = _normalize_src(src)
         if not src or src.lower().split("?", 1)[0].endswith(".gif"):
             continue
-        candidate = _choose_carousel_candidate(idx, src, candidates_by_token)
+        candidate = _choose_carousel_candidate(idx, src, candidates_by_token, candidates_by_source_index)
         if candidate is None:
             continue
         pairs.append((idx, str(candidate["local_path"])))
@@ -129,20 +145,26 @@ def build_detail_source_index_map(
     carousel_image_count: int,
 ) -> dict[str, int]:
     reference_by_token: dict[str, list[int]] = {}
+    reference_by_name: dict[str, list[int]] = {}
     for item in reference_images:
         filename = str(item.get("filename") or "")
         token = ez_cdp.md5_token(filename)
         source_index = taa_cdp.source_index_from_filename(filename)
         if token and source_index is not None:
             reference_by_token.setdefault(token, []).append(source_index)
+        name_key = taa_cdp.source_name_key(filename)
+        if name_key and source_index is not None:
+            reference_by_name.setdefault(name_key, []).append(source_index)
 
     mapping: dict[str, int] = {}
     used_indices: set[int] = set()
     for src in taa_cdp.extract_image_srcs(body_html):
         token = ez_cdp.md5_token(src)
-        if not token or token in mapping:
+        name_key = taa_cdp.source_name_key(src)
+        key = token or name_key
+        if not key or key in mapping:
             continue
-        candidates = sorted(set(reference_by_token.get(token) or []))
+        candidates = sorted(set((reference_by_token.get(token or "") if token else None) or reference_by_name.get(name_key or "") or []))
         if not candidates:
             continue
         detail_side = [idx for idx in candidates if idx >= carousel_image_count and idx not in used_indices]
@@ -153,7 +175,7 @@ def build_detail_source_index_map(
             if len(unused) != 1:
                 continue
             source_index = unused[0]
-        mapping[token] = source_index
+        mapping[key] = source_index
         used_indices.add(source_index)
     return mapping
 

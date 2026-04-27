@@ -82,6 +82,24 @@ def test_pair_carousel_images_prefers_matching_source_index_for_duplicate_tokens
     ]
 
 
+def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_token():
+    product_images = [
+        {"src": "https://cdn.shopify.com/files/nano6_8ec008c6-5d50-41f9-9f75-f54df04cbf0f.jpg?v=1"},
+        {"src": "https://cdn.shopify.com/files/nano3_688f4398-4308-4953-b792-f64f0e21c504.jpg?v=1"},
+    ]
+    localized_images = [
+        _localized("loc_from_url_en_00_nano6_8ec008c6-5d50-41f9-9f75-f54df04cbf0f.png"),
+        _localized("loc_from_url_en_01_nano3_688f4398-4308-4953-b792-f64f0e21c504.png"),
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [
+        (0, str(Path("C:/tmp") / "loc_from_url_en_00_nano6_8ec008c6-5d50-41f9-9f75-f54df04cbf0f.png")),
+        (1, str(Path("C:/tmp") / "loc_from_url_en_01_nano3_688f4398-4308-4953-b792-f64f0e21c504.png")),
+    ]
+
+
 def test_build_detail_source_index_map_prefers_detail_side_indices():
     token = "cccccccccccccccccccccccccccccccc"
     html = f'<section><img src="https://cdn.example.com/{token}.jpg"></section>'
@@ -97,6 +115,32 @@ def test_build_detail_source_index_map_prefers_detail_side_indices():
     )
 
     assert mapping == {token: 12}
+
+
+def test_detail_replacements_fall_back_to_reference_filename_when_src_has_no_hash_token():
+    html = '<section><img src="https://cdn.shopify.com/files/pic1_480x480.jpg?v=1658166836"></section>'
+    reference_images = [
+        {"filename": "ref_from_url_en_07_pic1_480x480.jpg"},
+    ]
+    localized_images = [
+        _localized("loc_from_url_en_07_pic1_480x480.png"),
+    ]
+
+    mapping = run_product_cdp.build_detail_source_index_map(
+        html,
+        reference_images,
+        carousel_image_count=7,
+    )
+    plan = taa_cdp.plan_body_html_replacements(
+        html,
+        localized_images,
+        source_index_by_token=mapping,
+        replace_shopify_cdn=True,
+    )
+
+    assert mapping == {"name:pic1_480x480": 7}
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["candidate"]["local_path"] == str(Path("C:/tmp") / "loc_from_url_en_07_pic1_480x480.png")
 
 
 def test_apply_uploaded_replacements_preserves_display_width():
