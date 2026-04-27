@@ -238,6 +238,7 @@ class JapaneseTranslateRunner(PipelineRunner):
             raise ValueError("No ElevenLabs voice_id available for Japanese TTS")
 
         self._set_step(task_id, "tts", "running", "正在生成日语配音并执行时长收敛...", model_tag="ElevenLabs · ja")
+        self._emit_substep_msg(task_id, "tts", "正在生成日语配音 · 加载配音模板")
         elevenlabs_api_key = resolve_key(self.user_id, "elevenlabs", "ELEVENLABS_API_KEY")
 
         try:
@@ -283,8 +284,19 @@ class JapaneseTranslateRunner(PipelineRunner):
                 artifact_paths["localized_rewrite_messages"] = translation_message_paths[round_index]
 
             tts_script = ja_translate.build_ja_tts_script(current_localized)
+            self._emit_substep_msg(task_id, "tts",
+                f"正在生成日语配音 · 第 {round_index} 轮 · 切分朗读文案完成")
             tts_segments = ja_translate.build_ja_tts_segments(tts_script, task.get("script_segments", []))
             round_variant = f"ja_round_{round_index}"
+
+            def _on_seg_done(done, total, info, _round=round_index):
+                self._emit_substep_msg(
+                    task_id, "tts",
+                    f"正在生成日语配音 · 第 {_round} 轮 · 生成 ElevenLabs 音频 {done}/{total}",
+                )
+
+            self._emit_substep_msg(task_id, "tts",
+                f"正在生成日语配音 · 第 {round_index} 轮 · 生成 ElevenLabs 音频 0/{len(tts_segments)}")
             tts_output = generate_full_audio(
                 tts_segments,
                 voice_id=voice_id,
@@ -293,6 +305,7 @@ class JapaneseTranslateRunner(PipelineRunner):
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=self.tts_model_id,
                 language_code=self.tts_language_code,
+                on_segment_done=_on_seg_done,
             )
             round_audio_path = tts_output["full_audio_path"]
             round_segments = tts_output["segments"]
