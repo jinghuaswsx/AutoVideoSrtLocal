@@ -60,27 +60,43 @@ def build_asr_artifact(utterances: list[dict], source_full_text_zh: str = "", so
     return {"title": "语音识别", "items": [left]}
 
 
-def build_asr_normalize_artifact(raw_artifact: dict | None) -> dict:
+def build_asr_normalize_artifact(
+    raw_artifact: dict | None,
+    source_utterances: list[dict] | None = None,
+    en_utterances: list[dict] | None = None,
+) -> dict:
     """把 _step_asr_normalize 的原始 artifact 投影成左右对照的步骤预览。
 
-    左侧：原文（小语种），右侧：英文标准化文本。
+    左侧：原文 utterances（小语种，带时间戳）；
+    右侧：英文标准化 utterances（同时间戳，逐段对应）。
+
+    展示完整 utterances 而非 200 字符截断，方便人工确认标准化未丢段。
+    en_skip / zh_skip 路由没有翻译，右侧仅给一行说明。
     """
     if not raw_artifact:
         return {"title": "原文标准化", "items": []}
     src_label = (raw_artifact.get("input") or {}).get("language_label") or "原文"
-    src_text = (raw_artifact.get("input") or {}).get("full_text_preview") or ""
-    out_text = (raw_artifact.get("output") or {}).get("full_text_preview") or ""
     route = raw_artifact.get("route") or ""
-    if route in ("en_skip", "zh_skip"):
-        right_label = "无需标准化（已为目标语言）"
+    src_list = source_utterances or []
+    left = {
+        "type": "utterances",
+        "label": f"原文（{src_label}）· {len(src_list)} 段",
+        "utterances": src_list,
+    }
+    if route in ("en_skip", "zh_skip") or not en_utterances:
+        right = text_item("英文标准化", "无需标准化（已为目标语言）")
     else:
-        right_label = "英文标准化"
+        right = {
+            "type": "utterances",
+            "label": f"英文标准化 · {len(en_utterances)} 段",
+            "utterances": en_utterances,
+        }
     return {
         "title": "原文标准化",
         "items": [{
             "type": "side_by_side",
-            "left": text_item(f"原文（{src_label}）", src_text),
-            "right": text_item(right_label, out_text),
+            "left": left,
+            "right": right,
         }],
     }
 

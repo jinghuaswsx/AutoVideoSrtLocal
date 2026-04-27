@@ -464,7 +464,11 @@ class MultiTranslateRunner(PipelineRunner):
         if artifact.get("detection_source") == "user_specified":
             base_msg = f"{base_msg}（用户指定）"
         self._set_step(task_id, "asr_normalize", "done", base_msg)
-        task_state.set_artifact(task_id, "asr_normalize", build_asr_normalize_artifact(artifact))
+        task_state.set_artifact(task_id, "asr_normalize", build_asr_normalize_artifact(
+            artifact,
+            source_utterances=utterances,
+            en_utterances=utterances_en,
+        ))
 
     def _step_voice_match(self, task_id: str) -> None:
         """跑向量匹配写候选到 state，然后暂停 pipeline 等待用户在 UI 上选择音色。"""
