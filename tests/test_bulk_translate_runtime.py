@@ -41,6 +41,15 @@ class _FakeProjectsDB:
             payload, task_id = args
             self.rows[task_id]["state_json"] = payload
             return 1
+        if "DELETE FROM PROJECTS WHERE ID = %S" in s:
+            (task_id,) = args
+            self.rows.pop(task_id, None)
+            return 1
+        if "UPDATE PROJECTS SET TYPE = %S WHERE ID = %S" in s:
+            new_type, task_id = args
+            if task_id in self.rows:
+                self.rows[task_id]["type"] = new_type
+            return 1
         raise AssertionError(f"unexpected execute: {sql}")
 
     def query_one(self, sql, args=None):
@@ -520,6 +529,59 @@ def test_create_child_task_reuses_existing_deterministic_child(runtime_env, monk
     assert child_status == "running"
     assert item["child_task_id"] == expected_child_id
     assert item["sub_task_id"] == expected_child_id
+
+
+@pytest.mark.parametrize("failed_status", ["error", "failed", "interrupted", "cancelled"])
+def test_create_child_task_rebuilds_terminal_failed_existing_child(
+    runtime_env, monkeypatch, failed_status,
+):
+    """事故场景（2026-04-27 product 537 idx 12/13）：retry 之后 stable child id
+    复用旧 row（status=interrupted/error）→ 旧逻辑直接 return existing 不启动 runner，
+    sync 立刻把 item 标回 failed，无限死循环。新逻辑必须删旧 row + 走真实创建分支。
+    """
+    mod, fake_db = runtime_env
+    item = _item(0, kind="videos", ref={"source_raw_id": 301})
+    expected_child_id = uuid.uuid5(uuid.NAMESPACE_URL, "bulk_translate:parent-1:0").hex
+    fake_db.rows[expected_child_id] = {
+        "id": expected_child_id,
+        "user_id": 1,
+        "type": "multi_translate",
+        "status": failed_status,
+        "state_json": "{}",
+        "created_at": None,
+    }
+
+    create_calls: list[tuple[str, str]] = []
+
+    def fake_create_video(parent_id, child_item, parent_state):
+        create_calls.append((parent_id, child_item.get("kind") or ""))
+        # 模拟真实创建：插入新 row + 标 type
+        fake_db.execute(
+            "INSERT INTO projects (id, user_id, type, status, state_json) "
+            "VALUES (%s, %s, 'bulk_translate', 'planning', %s)",
+            (expected_child_id, 1, "{}"),
+        )
+        fake_db.execute(
+            "UPDATE projects SET type = %s WHERE id = %s",
+            ("multi_translate", expected_child_id),
+        )
+        return expected_child_id, "multi_translate", "running"
+
+    monkeypatch.setattr(mod, "_create_video_child", fake_create_video)
+
+    child_id, child_type, child_status = mod._create_child_task(
+        "parent-1",
+        item,
+        {"product_id": 77, "initiator": {"user_id": 1}},
+    )
+
+    assert child_id == expected_child_id
+    assert child_type == "multi_translate"
+    assert child_status == "running"
+    # 关键回归：必须真的走 _create_video_child（启动 runner），而不是 return existing
+    assert create_calls == [("parent-1", "videos")]
+    # 旧 row 已被替换，现在新 row 的 status 是 fake_create 写的 'planning' / 之后的更新
+    assert fake_db.rows[expected_child_id]["type"] == "multi_translate"
 
 
 def test_create_video_child_materializes_media_raw_source_locally(runtime_env, monkeypatch, tmp_path):
