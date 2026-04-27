@@ -1,13 +1,14 @@
 """ASR 路由层。
 
 职责：
-  1. 根据 source_language 选 ASR adapter（zh→豆包，其他→Scribe v2）
+  1. 根据 source_language 选 ASR adapter（当前临时全部走豆包 SeedASR）
   2. 调 adapter 拿 utterances
   3. 跑 purify_language 清理语言污染段
   4. 返回 utterances
 
-路由表硬编码：当前只有两个 ASR provider 且按语言分死，没有覆盖需求；如未来
-再加 provider 或需要管理员级覆盖，再做 settings UI。
+路由表硬编码。当前临时配置：所有源语言一律走豆包 SeedASR；Scribe / 其他
+adapter 代码与配置完整保留，需要时把 ``__default__`` 改为
+``"elevenlabs_tts"`` 等 provider_code 即可恢复多 provider 路由。
 """
 from __future__ import annotations
 
@@ -30,9 +31,11 @@ log = logging.getLogger(__name__)
 
 # 路由表：source_language（归一化后） → provider_code
 # 未列出的语言一律走兜底（"__default__"）。
+#
+# 当前临时配置：所有源语言全部走豆包 SeedASR（用户手动指定）。Scribe 等其它
+# adapter 代码与凭据保留，需要切回多 provider 路由时改 ``__default__`` 即可。
 DEFAULT_ROUTE_TABLE: dict[str, str] = {
-    "zh": "doubao_asr",
-    "__default__": "elevenlabs_tts",
+    "__default__": "doubao_asr",
 }
 
 

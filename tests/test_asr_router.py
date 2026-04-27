@@ -25,36 +25,39 @@ def test_resolve_zh_with_locale_suffix_routes_to_doubao():
     assert force is None
 
 
-def test_resolve_es_routes_to_scribe_with_force():
+# 当前临时配置：所有语言全部走豆包；豆包不支持强制语言，所以 force 永远 None。
+# Scribe 路由代码保留，未通过路由测试单独覆盖（手动验证时再恢复）。
+
+def test_resolve_es_routes_to_doubao_no_force():
     adapter, force = asr_router.resolve_adapter("es")
-    assert isinstance(adapter, ScribeAdapter)
-    assert force == "es"
-
-
-def test_resolve_de_routes_to_scribe_with_force():
-    adapter, force = asr_router.resolve_adapter("de")
-    assert isinstance(adapter, ScribeAdapter)
-    assert force == "de"
-
-
-def test_resolve_unknown_lang_routes_to_scribe_with_force():
-    adapter, force = asr_router.resolve_adapter("xx")
-    assert isinstance(adapter, ScribeAdapter)
-    assert force == "xx"
-
-
-def test_resolve_auto_routes_to_scribe_no_force():
-    adapter, force = asr_router.resolve_adapter("auto")
-    assert isinstance(adapter, ScribeAdapter)
+    assert isinstance(adapter, DoubaoAdapter)
     assert force is None
 
 
-def test_resolve_empty_routes_to_scribe_no_force():
+def test_resolve_de_routes_to_doubao_no_force():
+    adapter, force = asr_router.resolve_adapter("de")
+    assert isinstance(adapter, DoubaoAdapter)
+    assert force is None
+
+
+def test_resolve_unknown_lang_routes_to_doubao_no_force():
+    adapter, force = asr_router.resolve_adapter("xx")
+    assert isinstance(adapter, DoubaoAdapter)
+    assert force is None
+
+
+def test_resolve_auto_routes_to_doubao_no_force():
+    adapter, force = asr_router.resolve_adapter("auto")
+    assert isinstance(adapter, DoubaoAdapter)
+    assert force is None
+
+
+def test_resolve_empty_routes_to_doubao_no_force():
     adapter, force = asr_router.resolve_adapter(None)
-    assert isinstance(adapter, ScribeAdapter)
+    assert isinstance(adapter, DoubaoAdapter)
     assert force is None
     adapter, force = asr_router.resolve_adapter("")
-    assert isinstance(adapter, ScribeAdapter)
+    assert isinstance(adapter, DoubaoAdapter)
     assert force is None
 
 
