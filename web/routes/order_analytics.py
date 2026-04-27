@@ -252,3 +252,35 @@ def ad_match():
     """重新执行广告系列到素材库产品的匹配。"""
     affected = oa.match_meta_ads_to_products()
     return jsonify({"matched": affected})
+
+
+@bp.route("/order-analytics/dashboard")
+@login_required
+@admin_required
+def dashboard():
+    """产品看板：每日产品级订单 + 广告 + ROAS + 环比。"""
+    period = (request.args.get("period") or "month").strip().lower()
+    if period not in ("day", "week", "month"):
+        return jsonify(error="invalid_period",
+                       detail="period must be one of day/week/month"), 400
+
+    try:
+        data = oa.get_dashboard(
+            period=period,
+            year=request.args.get("year", type=int),
+            month=request.args.get("month", type=int),
+            week=request.args.get("week", type=int),
+            date_str=request.args.get("date") or None,
+            country=(request.args.get("country") or "").strip() or None,
+            sort_by=(request.args.get("sort_by") or "").strip() or None,
+            sort_dir=(request.args.get("sort_dir") or "desc").strip().lower(),
+            compare=(request.args.get("compare") or "true").strip().lower() != "false",
+            search=(request.args.get("search") or "").strip() or None,
+        )
+    except ValueError as exc:
+        return jsonify(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("dashboard query failed: %s", exc)
+        return jsonify(error="internal_error", detail=str(exc)), 500
+
+    return jsonify(_json_safe(data))
