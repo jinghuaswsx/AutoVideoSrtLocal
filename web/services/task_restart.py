@@ -91,8 +91,16 @@ def restart_task(
     interactive_review: bool,
     user_id: int | None,
     runner,
+    source_language: str | None = None,
 ) -> dict:
-    """Restart a translation task and return the refreshed task state."""
+    """Restart a translation task and return the refreshed task state.
+
+    ``source_language`` semantics:
+      - ``None`` (default): keep current task's source_language untouched.
+      - ``""``: reset to auto-detect (clears user_specified flag, ASR will re-detect).
+      - any allowed code (e.g. ``"en"``, ``"es"``): force that source language and
+        skip auto-detection by setting ``user_specified_source_language=True``.
+    """
     task = store.get(task_id) or {}
     if not task:
         raise ValueError(f"task {task_id} not found")
@@ -117,6 +125,12 @@ def restart_task(
             "interactive_review": interactive_review,
         }
     )
+    if source_language is not None:
+        payload["source_language"] = source_language or "zh"
+        payload["user_specified_source_language"] = bool(source_language)
+        payload["utterances_en"] = None
+        payload["asr_normalize_artifact"] = None
+        payload["detected_source_language"] = None
     store.update(task_id, **payload)
 
     runner.start(task_id, user_id=user_id)

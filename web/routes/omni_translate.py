@@ -362,6 +362,12 @@ def restart(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     body = request.get_json(silent=True) or {}
+    raw_source_language = body.get("source_language", None)
+    if raw_source_language is not None:
+        if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+            return jsonify({
+                "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
+            }), 400
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -372,6 +378,7 @@ def restart(task_id):
         subtitle_position_y=float(body.get("subtitle_position_y", 0.68)),
         subtitle_position=body.get("subtitle_position", "bottom"),
         interactive_review=body.get("interactive_review", "false") in ("true", True, "1"),
+        source_language=raw_source_language,
         user_id=current_user.id,
         runner=omni_pipeline_runner,
     )

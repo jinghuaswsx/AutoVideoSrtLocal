@@ -69,7 +69,92 @@
   <p>该项目对应的文件已经被清理，无法继续查看或处理。</p>
 </div>
 {% else %}
-<a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
+{% set _force_restart_api = '' %}
+{% if request.path.startswith('/omni-translate') %}
+  {% set _force_restart_api = '/api/omni-translate' %}
+{% elif request.path.startswith('/multi-translate') %}
+  {% set _force_restart_api = '/api/multi-translate' %}
+{% endif %}
+{% set _current_src_lang = state.source_language if state.user_specified_source_language else '' %}
+<div class="detail-topbar">
+  <a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
+  {% if _force_restart_api %}
+  <button type="button"
+          class="force-restart-btn"
+          id="forceRestartBtn"
+          data-task-id="{{ project.id }}"
+          data-api-base="{{ _force_restart_api }}"
+          data-voice-id="{{ state.voice_id or '' }}"
+          data-voice-gender="{{ state.voice_gender or 'male' }}"
+          data-subtitle-font="{{ state.subtitle_font or 'Impact' }}"
+          data-subtitle-size="{{ state.subtitle_size or 14 }}"
+          data-subtitle-position-y="{{ state.subtitle_position_y or 0.68 }}"
+          data-subtitle-position="{{ state.subtitle_position or 'bottom' }}"
+          data-interactive-review="{{ 'true' if state.interactive_review else 'false' }}">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="1 4 1 10 7 10"></polyline>
+      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+    </svg>
+    强制重新开始
+  </button>
+  <div class="source-lang-picker">
+    <label for="forceRestartLangSelect" class="source-lang-picker-label">原始语言</label>
+    <select id="forceRestartLangSelect"
+            class="source-lang-select"
+            data-current-value="{{ _current_src_lang }}">
+      <option value="" {% if _current_src_lang == '' %}selected{% endif %}>自动识别</option>
+      <option value="zh" {% if _current_src_lang == 'zh' %}selected{% endif %}>中文</option>
+      <option value="en" {% if _current_src_lang == 'en' %}selected{% endif %}>英文</option>
+      <option value="es" {% if _current_src_lang == 'es' %}selected{% endif %}>西班牙语</option>
+      <option value="pt" {% if _current_src_lang == 'pt' %}selected{% endif %}>葡萄牙语</option>
+      <option value="fr" {% if _current_src_lang == 'fr' %}selected{% endif %}>法语</option>
+      <option value="it" {% if _current_src_lang == 'it' %}selected{% endif %}>意大利语</option>
+      <option value="ja" {% if _current_src_lang == 'ja' %}selected{% endif %}>日语</option>
+      <option value="de" {% if _current_src_lang == 'de' %}selected{% endif %}>德语</option>
+      <option value="nl" {% if _current_src_lang == 'nl' %}selected{% endif %}>荷兰语</option>
+      <option value="sv" {% if _current_src_lang == 'sv' %}selected{% endif %}>瑞典语</option>
+      <option value="fi" {% if _current_src_lang == 'fi' %}selected{% endif %}>芬兰语</option>
+    </select>
+  </div>
+  {% endif %}
+</div>
+
+{% if _force_restart_api %}
+<div class="force-restart-modal" id="forceRestartModal" hidden>
+  <div class="force-restart-modal-overlay" data-close></div>
+  <div class="force-restart-modal-card" role="dialog" aria-modal="true" aria-labelledby="forceRestartModalTitle">
+    <div class="force-restart-modal-header">
+      <h3 id="forceRestartModalTitle">强制重新开始翻译</h3>
+      <button type="button" class="force-restart-modal-close" data-close aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="force-restart-modal-body">
+      <p class="force-restart-modal-line">
+        原始语言：<strong id="forceRestartModalLang">自动识别</strong>
+      </p>
+      <p class="force-restart-modal-desc">
+        这将清除该任务所有中间产物（识别、翻译、TTS、字幕、合成等），仅保留原始视频，从第一步「提取音频」按选定的原始语言重新跑。
+      </p>
+      <p class="force-restart-modal-warning">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        此操作不可撤销
+      </p>
+    </div>
+    <div class="force-restart-modal-footer">
+      <button type="button" class="force-restart-modal-cancel" data-close>取消</button>
+      <button type="button" class="force-restart-modal-confirm" id="forceRestartModalConfirm">确定重新跑</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 <p class="page-subtitle">
   {% if detail_mode == 'multi' %}
   中文/英文 → {{ target_lang | upper }} 本土化翻译
@@ -101,5 +186,122 @@
 {% if detail_mode in ('multi', 'ja') %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
+<script>
+(function() {
+  var btn = document.getElementById('forceRestartBtn');
+  var modal = document.getElementById('forceRestartModal');
+  if (!btn || !modal) return;
+
+  var sel = document.getElementById('forceRestartLangSelect');
+  var titleEl = document.getElementById('forceRestartModalTitle');
+  var langLabel = document.getElementById('forceRestartModalLang');
+  var confirmBtn = document.getElementById('forceRestartModalConfirm');
+
+  var LANGUAGE_LABELS = {
+    '': '自动识别', 'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
+    'fr': '法语', 'it': '意大利语', 'ja': '日语', 'de': '德语',
+    'nl': '荷兰语', 'sv': '瑞典语', 'fi': '芬兰语'
+  };
+
+  var currentLang = sel ? (sel.dataset.currentValue || '') : '';
+  var ctx = { sourceLanguageOverride: null, fromSelect: false };
+  var lastFocused = null;
+  var keydownHandler = null;
+
+  function labelFor(code) {
+    return LANGUAGE_LABELS[code] != null ? LANGUAGE_LABELS[code] : (code || '自动识别');
+  }
+
+  function openModal(nextCtx) {
+    ctx = nextCtx;
+    var displayLang = nextCtx.sourceLanguageOverride !== null
+      ? nextCtx.sourceLanguageOverride
+      : currentLang;
+    if (langLabel) langLabel.textContent = labelFor(displayLang);
+    if (titleEl) titleEl.textContent = nextCtx.fromSelect
+      ? '切换原始语言并重新开始'
+      : '强制重新开始翻译';
+    lastFocused = document.activeElement;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+    keydownHandler = function(e) {
+      if (e.key === 'Escape') { e.preventDefault(); closeModal(false); }
+    };
+    document.addEventListener('keydown', keydownHandler);
+    setTimeout(function() { confirmBtn && confirmBtn.focus(); }, 0);
+  }
+
+  function closeModal(confirmed) {
+    modal.hidden = true;
+    document.body.style.overflow = '';
+    if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
+    keydownHandler = null;
+    if (!confirmed && ctx.fromSelect && sel) {
+      sel.value = currentLang;
+    }
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      try { lastFocused.focus(); } catch (_) {}
+    }
+  }
+
+  modal.addEventListener('click', function(e) {
+    var closer = e.target.closest && e.target.closest('[data-close]');
+    if (closer) { e.preventDefault(); closeModal(false); }
+  });
+
+  btn.addEventListener('click', function() {
+    openModal({ sourceLanguageOverride: null, fromSelect: false });
+  });
+
+  if (sel) {
+    sel.addEventListener('change', function() {
+      var newLang = sel.value;
+      if (newLang === currentLang) return;
+      openModal({ sourceLanguageOverride: newLang, fromSelect: true });
+    });
+  }
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async function() {
+      var apiBase = btn.dataset.apiBase;
+      var taskId = btn.dataset.taskId;
+      var payload = {
+        voice_id: btn.dataset.voiceId || null,
+        voice_gender: btn.dataset.voiceGender || 'male',
+        subtitle_font: btn.dataset.subtitleFont || 'Impact',
+        subtitle_size: parseInt(btn.dataset.subtitleSize, 10) || 14,
+        subtitle_position_y: parseFloat(btn.dataset.subtitlePositionY) || 0.68,
+        subtitle_position: btn.dataset.subtitlePosition || 'bottom',
+        interactive_review: btn.dataset.interactiveReview === 'true'
+      };
+      if (ctx.sourceLanguageOverride !== null) {
+        payload.source_language = ctx.sourceLanguageOverride;
+      }
+
+      var originalText = confirmBtn.textContent;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '重新启动中…';
+      try {
+        var res = await fetch(apiBase + '/' + taskId + '/restart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          var err = {};
+          try { err = await res.json(); } catch (_) {}
+          throw new Error(err.error || ('HTTP ' + res.status));
+        }
+        window.location.reload();
+      } catch (e) {
+        window.alert('强制重新开始失败：' + (e && e.message ? e.message : e));
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+        closeModal(false);
+      }
+    });
+  }
+})();
+</script>
 {% endif %}
 {% endblock %}
