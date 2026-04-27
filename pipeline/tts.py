@@ -1,7 +1,10 @@
+import logging
 import os
 import subprocess
 import threading
-from typing import List, Dict
+from typing import Callable, List, Dict, Optional
+
+log = logging.getLogger(__name__)
 
 try:
     from elevenlabs import VoiceSettings
@@ -91,13 +94,20 @@ def generate_full_audio(
     segments: List[Dict],
     voice_id: str,
     output_dir: str,
+    *,
     variant: str | None = None,
     elevenlabs_api_key: str | None = None,
     model_id: str = "eleven_turbo_v2_5",
     language_code: str | None = None,
+    on_segment_done: Optional[Callable[[int, int, dict], None]] = None,
 ) -> Dict:
     """
     为所有翻译段落生成音频并拼接成完整音轨
+
+    Args:
+        on_segment_done: 每段完成后调用，签名 (done: int, total: int, info: dict)。
+                         info 包含 segment_index / tts_duration / tts_text_preview。
+                         回调抛出的异常会被吞掉，不影响主流程。
 
     Returns:
         {"full_audio_path": str, "segments": [...]}  # 每段新增 tts_path, tts_duration
@@ -107,6 +117,7 @@ def generate_full_audio(
 
     updated_segments = []
     concat_list_path = os.path.join(seg_dir, "concat.txt")
+    total = len(segments)
 
     with open(concat_list_path, "w", encoding="utf-8") as concat_f:
         for i, seg in enumerate(segments):
@@ -123,6 +134,16 @@ def generate_full_audio(
             updated_segments.append(seg_copy)
 
             concat_f.write(f"file '{os.path.abspath(seg_path)}'\n")
+
+            if on_segment_done is not None:
+                try:
+                    on_segment_done(i + 1, total, {
+                        "segment_index": i,
+                        "tts_duration": duration,
+                        "tts_text_preview": (text or "")[:60],
+                    })
+                except Exception:
+                    log.exception("on_segment_done callback raised; ignoring")
 
     full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
     full_audio_path = os.path.join(output_dir, full_audio_name)

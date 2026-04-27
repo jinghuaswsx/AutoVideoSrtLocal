@@ -1329,7 +1329,11 @@
     return `${base}/${taskId}/round-file/${roundIndex}/${kind}`;
   }
 
-  function _phaseLabel(phase) {
+  function _phaseLabel(phase, round) {
+    if (phase === 'audio_gen' && round && round.audio_segments_total) {
+      const done = round.audio_segments_done || 0;
+      return `正在生成 TTS 音频 ${done}/${round.audio_segments_total}`;
+    }
     return ({
       translate_rewrite: '正在重写译文',
       tts_script_regen:  '正在切分朗读块',
@@ -1676,12 +1680,18 @@
 
     const parts = [];
     parts.push(`
-      <div class="duration-log-header">
-        <span>翻译本土化 · 时长控制迭代（Duration Loop）</span>
+      <div class="collapsible-header duration-log-header">
+        <span class="collapsible-title">翻译本土化 · 时长控制迭代（Duration Loop）</span>
         ${statusTag}
         ${modelTag}
         <span class="meta">${metaStr}</span>
+        <button type="button" class="collapsible-toggle" aria-label="展开/折叠" aria-expanded="true">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
+      <div class="collapsible-body">
     `);
 
     // 音频时长走势 sparkline（至少 2 轮才画）
@@ -1702,7 +1712,7 @@
       const isLast = idx === rounds.length - 1;
       const isFinal = finalRound === round.round;
       const [iconClass, iconChar] = _roundStatusIcon(round, status === 'failed' && isLast);
-      const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase) : '';
+      const phaseLabel = isLast && status === 'running' ? _phaseLabel(round.__current_phase, round) : '';
 
       const targetWords = round.target_words != null ? round.target_words : round.target_chars;
       const dirLabel = ({ shrink: '缩写', expand: '扩写' })[round.direction] || round.direction || '';
@@ -1845,8 +1855,18 @@
       parts.push('<div class="duration-log-final failed">✗ 时长控制迭代失败</div>');
     }
 
+    parts.push('</div>'); // close .collapsible-body
+    container.classList.add('collapsible-card');
+    container.dataset.collapsible = 'duration-log';
+    // Inner content (including .collapsible-header) is recreated on every
+    // render, so the previous header's click listener is gone. Clear the
+    // bound flag so bootCollapsibleCards rebinds the new header.
+    delete container.dataset.collapsibleBound;
     container.innerHTML = parts.join('');
     container.hidden = false;
+    if (window.bootCollapsibleCards) {
+      window.bootCollapsibleCards(container.parentNode || document, taskId);
+    }
   }
 
   function isAvSyncTask(task = currentTask) {
@@ -2508,6 +2528,43 @@
       }
     });
   });
+
+  // ============================================================
+  // 通用可折叠卡片：任意带 .collapsible-card[data-collapsible="<key>"]
+  // 的容器都会被绑定 toggle 行为；折叠状态走 localStorage，按 taskId 隔离。
+  // ============================================================
+  function bootCollapsibleCards(root, currentTaskId) {
+    root = root || document;
+    currentTaskId = currentTaskId || (typeof taskId !== 'undefined' ? taskId : '') || 'global';
+    root.querySelectorAll('.collapsible-card[data-collapsible]').forEach(card => {
+      if (card.dataset.collapsibleBound === '1') return;
+      card.dataset.collapsibleBound = '1';
+      const key = card.dataset.collapsible;
+      const storageKey = `collapsibleCard:${key}:${currentTaskId}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored === '1') card.dataset.collapsed = 'true';
+
+      const btn = card.querySelector('.collapsible-toggle');
+      if (btn) {
+        btn.setAttribute('aria-expanded', card.dataset.collapsed === 'true' ? 'false' : 'true');
+      }
+
+      const toggle = (ev) => {
+        if (ev && ev.target && ev.target.closest('a, button:not(.collapsible-toggle), input, select')) return;
+        const collapsed = card.dataset.collapsed === 'true';
+        card.dataset.collapsed = collapsed ? 'false' : 'true';
+        try {
+          localStorage.setItem(storageKey, collapsed ? '0' : '1');
+        } catch (_) { /* quota / private mode → silently ignore */ }
+        const btnEl = card.querySelector('.collapsible-toggle');
+        if (btnEl) btnEl.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+      };
+
+      const header = card.querySelector('.collapsible-header');
+      if (header) header.addEventListener('click', toggle);
+    });
+  }
+  window.bootCollapsibleCards = bootCollapsibleCards;
 </script>
 
 {# 翻译质量评估卡片脚本：脚本自带 DOMContentLoaded 自动初始化（按 #quality-assessment-card 上的 data-* 读取参数）。 #}

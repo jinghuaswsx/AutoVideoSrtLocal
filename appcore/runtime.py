@@ -439,6 +439,20 @@ class PipelineRunner:
             payload["model_tag"] = existing_tag
         self._emit(task_id, EVT_STEP_UPDATE, payload)
 
+    def _emit_substep_msg(self, task_id: str, step: str, sub_msg: str) -> None:
+        """Emit EVT_STEP_UPDATE with a refreshed message but DO NOT persist.
+
+        Use for high-frequency sub-step progress (per ElevenLabs segment, etc.)
+        where persisting every event would thrash task_state.
+        """
+        task = task_state.get(task_id) or {}
+        status = (task.get("steps") or {}).get(step, "running")
+        payload = {"step": step, "status": status, "message": sub_msg}
+        existing_tag = (task.get("step_model_tags") or {}).get(step, "")
+        if existing_tag:
+            payload["model_tag"] = existing_tag
+        self._emit(task_id, EVT_STEP_UPDATE, payload)
+
     def _get_localization_module(self, task: dict):
         del task
         import importlib
@@ -511,6 +525,12 @@ class PipelineRunner:
             max_words=14 if target_language_label in ("de", "fr") else 10,
         )
 
+        def _substep(sub: str) -> None:
+            self._emit_substep_msg(
+                task_id, "tts",
+                f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · {sub}",
+            )
+
         for round_index in range(1, MAX_ROUNDS + 1):
             round_record: dict = {
                 "round": round_index,
@@ -567,6 +587,7 @@ class PipelineRunner:
                     f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
                     f"（目标 {target_words} 单词，{direction}）"
                 )
+                _substep("准备重写译文")
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
                 # ========= 字数收敛内循环（最多 5 次 rewrite）=========
@@ -590,6 +611,10 @@ class PipelineRunner:
                 prior_word_counts: list[int] = []
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
+                    _substep(
+                        f"重写译文 attempt {attempt}/{MAX_REWRITE_ATTEMPTS}"
+                        f"（目标 {target_words} 词，{direction}）"
+                    )
                     feedback_notes = None
                     if prior_word_counts:
                         feedback_notes = (
@@ -721,6 +746,7 @@ class PipelineRunner:
                 round_record["word_count_prev"] = last_word_count
 
             # Phase 2: tts_script_regen
+            _substep("切分朗读文案中")
             self._emit_duration_round(task_id, round_index, "tts_script_regen", round_record)
             tts_script = generate_tts_script(
                 localized_translation,
@@ -748,17 +774,32 @@ class PipelineRunner:
                 round_record["tts_script_tokens_out"] = tts_usage.get("output_tokens")
 
             # Phase 3: audio_gen
-            self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
             tts_segments = loc_mod.build_tts_segments(tts_script, script_segments)
+            round_record["audio_segments_total"] = len(tts_segments)
+            round_record["audio_segments_done"] = 0
+            _substep(f"生成 ElevenLabs 音频 0/{len(tts_segments)}")
+            self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
+
+            def _on_seg_done(done, total, info):
+                round_record["audio_segments_done"] = done
+                round_record["audio_segments_total"] = total
+                self._emit_substep_msg(
+                    task_id, "tts",
+                    f"正在生成{_lang_display(target_language_label)}配音 · 第 {round_index} 轮 · 生成 ElevenLabs 音频 {done}/{total}",
+                )
+                self._emit_duration_round(task_id, round_index, "audio_gen", round_record)
+
             result = generate_full_audio(
                 tts_segments, voice["elevenlabs_voice_id"], task_dir,
                 variant=f"round_{round_index}",
                 elevenlabs_api_key=elevenlabs_api_key,
                 model_id=tts_model_id,
                 language_code=tts_language_code,
+                on_segment_done=_on_seg_done,
             )
             round_record["artifact_paths"]["tts_full_audio"] = f"tts_full.round_{round_index}.mp3"
 
+            _substep("校验语言 / 测量时长")
             language_check_filename = f"tts_language_check.round_{round_index}.json"
             try:
                 language_check = validate_tts_script_language_or_raise(
@@ -1508,6 +1549,8 @@ class PipelineRunner:
         from pipeline.translate import get_model_display_name as _get_model_name
         _tts_model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
         self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...", model_tag=_tts_model_tag)
+        self._emit_substep_msg(task_id, "tts",
+            f"正在生成{lang_display}配音 · 加载配音模板")
         variants = dict(task.get("variants", {}))
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")

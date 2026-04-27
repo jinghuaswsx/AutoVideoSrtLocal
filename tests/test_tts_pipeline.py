@@ -102,3 +102,66 @@ def test_generate_segment_audio_passes_speed_via_voice_settings(tmp_path, monkey
     assert path == str(out)
     assert captured["voice_settings_kwargs"]["speed"] == pytest.approx(1.05)
     assert captured["convert_kwargs"]["voice_settings"].__class__ is DummyVoiceSettings
+
+
+def test_generate_full_audio_invokes_on_segment_done_per_segment(tmp_path, monkeypatch):
+    """每完成一段 TTS 都应该调一次回调，参数为 (done, total, info)，
+    done 从 1 递增到 total。"""
+    import pipeline.tts as tts
+
+    def fake_segment_audio(text, voice_id, output_path, **kwargs):
+        with open(output_path, "wb") as f:
+            f.write(b"x")
+        return output_path
+
+    monkeypatch.setattr(tts, "generate_segment_audio", fake_segment_audio)
+    monkeypatch.setattr(tts, "_get_audio_duration", lambda p: 1.5)
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **kw: type("R", (), {"returncode": 0, "stderr": ""})(),
+    )
+
+    segments = [{"tts_text": "a"}, {"tts_text": "b"}, {"tts_text": "c"}]
+    calls: list[tuple[int, int, dict]] = []
+
+    tts.generate_full_audio(
+        segments,
+        voice_id="v1",
+        output_dir=str(tmp_path),
+        on_segment_done=lambda done, total, info: calls.append((done, total, info)),
+    )
+
+    assert [c[0] for c in calls] == [1, 2, 3]
+    assert all(c[1] == 3 for c in calls)
+    assert calls[0][2]["segment_index"] == 0
+    assert calls[0][2]["tts_duration"] == 1.5
+    assert calls[0][2]["tts_text_preview"] == "a"
+
+
+def test_generate_full_audio_swallows_callback_exceptions(tmp_path, monkeypatch):
+    """回调抛错不能让主流程失败。返回值仍然完整。"""
+    import pipeline.tts as tts
+
+    def fake_segment_audio(text, voice_id, output_path, **kwargs):
+        with open(output_path, "wb") as f:
+            f.write(b"x")
+        return output_path
+
+    monkeypatch.setattr(tts, "generate_segment_audio", fake_segment_audio)
+    monkeypatch.setattr(tts, "_get_audio_duration", lambda p: 1.0)
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **kw: type("R", (), {"returncode": 0, "stderr": ""})(),
+    )
+
+    def boom(done, total, info):
+        raise RuntimeError("callback explodes")
+
+    out = tts.generate_full_audio(
+        [{"tts_text": "x"}],
+        voice_id="v1",
+        output_dir=str(tmp_path),
+        on_segment_done=boom,
+    )
+    assert "full_audio_path" in out
+    assert len(out["segments"]) == 1

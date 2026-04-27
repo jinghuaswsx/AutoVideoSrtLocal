@@ -35,6 +35,69 @@ def test_set_step_publishes_step_update_event():
     assert task_state.get(task_id)["steps"]["asr"] == "running"
 
 
+def test_emit_substep_msg_publishes_event_without_persisting(monkeypatch):
+    """_emit_substep_msg should publish EVT_STEP_UPDATE reflecting the current
+    step status, but not call task_state.set_step_message / set_step (avoid
+    per-segment disk writes)."""
+    task_id = "substep-task"
+    _make_task(task_id)
+    runner, events = _make_runner()
+
+    # Pre-set the step to running (production scenario: substep is emitted
+    # while the step is running)
+    runner._set_step(task_id, "tts", "running", "正在生成英语配音...")
+    events.clear()  # drop the _set_step event so we only assert the substep one
+
+    set_step_calls = []
+    set_msg_calls = []
+    monkeypatch.setattr(task_state, "set_step",
+                        lambda *a, **kw: set_step_calls.append((a, kw)))
+    monkeypatch.setattr(task_state, "set_step_message",
+                        lambda *a, **kw: set_msg_calls.append((a, kw)))
+
+    runner._emit_substep_msg(task_id, "tts", "正在生成英语配音 · 第 1 轮 · 切分朗读文案中")
+
+    step_events = [e for e in events if e.type == EVT_STEP_UPDATE]
+    assert len(step_events) == 1
+    assert step_events[0].payload["step"] == "tts"
+    assert step_events[0].payload["status"] == "running"
+    assert step_events[0].payload["message"] == "正在生成英语配音 · 第 1 轮 · 切分朗读文案中"
+    assert set_step_calls == []
+    assert set_msg_calls == []
+
+
+def test_step_tts_emits_loading_voice_substep(tmp_path, monkeypatch):
+    """_step_tts 一进来就应该立即发一条 EVT_STEP_UPDATE，message 包含
+    '加载配音模板'，覆盖首轮 LLM 调用前的几百毫秒空白。"""
+    task_id = "loading-msg-task"
+    _make_task(task_id)
+    runner, events = _make_runner()
+
+    # Prepare task state with minimal required fields
+    task_state.update(task_id, source_full_text="hi",
+                      script_segments=[{"index": 0, "text": "hi", "start_time": 0.0, "end_time": 1.0}],
+                      localized_translation={"full_text": "hola", "sentences": [{"text": "hola"}]},
+                      variants={"normal": {"localized_translation": {"full_text": "hola", "sentences": [{"text": "hola"}]}}})
+
+    # Mock _run_tts_duration_loop to fail immediately so we only test entry
+    monkeypatch.setattr(
+        runner, "_run_tts_duration_loop",
+        lambda **kw: (_ for _ in ()).throw(RuntimeError("stop here")),
+    )
+    monkeypatch.setattr("pipeline.extract.get_video_duration", lambda p: 30.0)
+    monkeypatch.setattr(runner, "_resolve_voice", lambda task, mod: {
+        "id": 1, "elevenlabs_voice_id": "vid"})
+    monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *a, **kw: "fake")
+
+    try:
+        runner._step_tts(task_id, str(tmp_path))
+    except RuntimeError:
+        pass
+
+    msgs = [e.payload["message"] for e in events if e.type == EVT_STEP_UPDATE]
+    assert any("加载配音模板" in m for m in msgs), f"got messages: {msgs}"
+
+
 def test_run_calls_all_steps_in_order():
     task_id = "test_run_order"
     _make_task(task_id)

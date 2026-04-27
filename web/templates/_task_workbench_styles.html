@@ -487,6 +487,45 @@ video.media-player {
   font-size: var(--text-sm);
 }
 
+/* ============================================================
+ * 通用可折叠卡片 (Duration Log 是首个使用者；后续模块按同款
+ * markup 接入即可)
+ * ============================================================ */
+.collapsible-card[data-collapsed="true"] > .collapsible-body {
+  display: none;
+}
+
+.collapsible-card .collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapsible-card .collapsible-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: transform var(--duration) var(--ease-out),
+              background-color var(--duration-fast) var(--ease);
+}
+
+.collapsible-card .collapsible-toggle:hover {
+  background: var(--bg-muted);
+  color: var(--fg);
+}
+
+.collapsible-card[data-collapsed="true"] .collapsible-toggle {
+  transform: rotate(-90deg);
+}
+
 .duration-log-header {
   display: flex;
   align-items: baseline;
