@@ -26,23 +26,24 @@ def test_resolve_asr_main_zh_with_locale_suffix_routes_to_doubao():
     assert force is None
 
 
-def test_resolve_asr_main_es_routes_to_default_doubao_no_force():
+def test_resolve_asr_main_es_auto_falls_back_to_scribe():
+    # 默认 stage 是豆包，但豆包不支持 es → 自动切到 Scribe + force_language=es
     adapter, force = asr_router.resolve_adapter("asr_main", "es")
-    assert isinstance(adapter, DoubaoAdapter)
-    assert force is None
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "es"
 
 
-def test_resolve_subtitle_asr_de_routes_to_default_doubao_no_force():
+def test_resolve_subtitle_asr_de_auto_falls_back_to_scribe():
     adapter, force = asr_router.resolve_adapter("subtitle_asr", "de")
-    assert isinstance(adapter, DoubaoAdapter)
-    assert force is None
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "de"
 
 
-def test_resolve_unknown_stage_falls_back_to_doubao():
-    # 未知 stage → asr_routing_config 兜底返回 doubao_asr
+def test_resolve_unknown_stage_falls_back_to_doubao_default_then_scribe():
+    # 未知 stage → asr_routing_config 兜底 doubao_asr → 豆包不支持 es → Scribe
     adapter, force = asr_router.resolve_adapter("not_a_stage", "es")
-    assert isinstance(adapter, DoubaoAdapter)
-    assert force is None
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "es"
 
 
 def test_resolve_auto_source_language_no_force():
@@ -70,6 +71,43 @@ def test_resolve_scribe_when_stage_overridden_to_elevenlabs(monkeypatch):
     adapter, force = asr_router.resolve_adapter("asr_main", "es")
     assert isinstance(adapter, ScribeAdapter)
     assert force == "es"
+
+
+# -------------------- auto-fallback when adapter doesn't support source --------------------
+
+def test_resolve_es_auto_falls_back_from_doubao_to_scribe():
+    """user-picked doubao + source=es → 豆包不支持 es → 自动切到 Scribe，
+    并把 es 透传给 force_language（Scribe 强制西语解码）。"""
+    adapter, force = asr_router.resolve_adapter("asr_main", "es")
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "es"
+
+
+def test_resolve_de_auto_falls_back_from_doubao_to_scribe():
+    adapter, force = asr_router.resolve_adapter("asr_main", "de")
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "de"
+
+
+def test_resolve_zh_does_not_fallback():
+    """中文 → 豆包支持，不 fallback。"""
+    adapter, force = asr_router.resolve_adapter("asr_main", "zh")
+    assert isinstance(adapter, DoubaoAdapter)
+    assert force is None
+
+
+def test_resolve_en_does_not_fallback():
+    """英文 → 豆包支持，不 fallback。"""
+    adapter, force = asr_router.resolve_adapter("asr_main", "en")
+    assert isinstance(adapter, DoubaoAdapter)
+    assert force is None
+
+
+def test_resolve_subtitle_asr_target_lang_fallback_to_scribe():
+    """字幕用 ASR：target_lang=fr 跑在 TTS 法语音频上 → 豆包不支持 fr → Scribe。"""
+    adapter, force = asr_router.resolve_adapter("subtitle_asr", "fr")
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "fr"
 
 
 # -------------------- transcribe (集成 router + adapter + purify) --------------------

@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from typing import TypedDict
 
-from appcore.asr_providers import BaseASRAdapter, build_adapter
+from appcore.asr_providers import REGISTRY as _ADAPTER_REGISTRY, BaseASRAdapter, build_adapter
 from appcore.asr_providers.base import Utterance
 from appcore.asr_purify import _normalize_lang_code
 from appcore.asr_routing_config import get_stage_provider
@@ -44,15 +44,43 @@ log = logging.getLogger(__name__)
 def resolve_adapter(stage: str, source_language: str | None) -> tuple[BaseASRAdapter, str | None]:
     """按 stage 选 adapter，再按 source_language 决定要不要 force_language。
 
+    自动 fallback：``/settings?tab=asr_routing`` 选的 provider 如果不支持当前
+    ``source_language``（比如选了豆包但音频是西语），会自动切到 REGISTRY 里
+    第一个支持的 adapter。豆包只支持 zh/en，非中-英文源语言会自动落到 Scribe。
+
     Returns:
         adapter: 已实例化的 BaseASRAdapter
         force_language: 传给 ``adapter.transcribe(language=...)``；adapter 不支持
                         force language 或 source_language 为 auto/空时为 None。
     """
-    provider_code = get_stage_provider(stage)
+    requested = get_stage_provider(stage)
+    main_lang = _normalize_lang_code(source_language or "")
+
+    provider_code = requested
     adapter = build_adapter(provider_code)
 
-    main_lang = _normalize_lang_code(source_language or "")
+    # 用户选的 adapter 不支持这个 source_language → 找 REGISTRY 里支持的兜底。
+    # auto / 空主语言不触发 fallback（adapter 自识别）。
+    if main_lang and main_lang != "auto" and not adapter.capabilities.supports_language(main_lang):
+        for code in _ADAPTER_REGISTRY:
+            if code == provider_code:
+                continue
+            cand = build_adapter(code)
+            if cand.capabilities.supports_language(main_lang):
+                log.info(
+                    "[ASR-Router] auto-fallback stage=%s source_language=%s: %s 不支持 → 切到 %s",
+                    stage, main_lang, provider_code, code,
+                )
+                provider_code = code
+                adapter = cand
+                break
+        else:
+            log.warning(
+                "[ASR-Router] no adapter in REGISTRY supports source_language=%s; "
+                "keeping user-selected %s and hoping for the best",
+                main_lang, provider_code,
+            )
+
     if not main_lang or main_lang == "auto":
         force = None
     elif adapter.capabilities.supports_force_language:
@@ -61,8 +89,8 @@ def resolve_adapter(stage: str, source_language: str | None) -> tuple[BaseASRAda
         force = None
 
     log.info(
-        "[ASR-Router] stage=%s source_language=%s → provider=%s force_language=%s",
-        stage, source_language, provider_code, force,
+        "[ASR-Router] stage=%s source_language=%s requested=%s → provider=%s force_language=%s",
+        stage, source_language, requested, provider_code, force,
     )
     return adapter, force
 
