@@ -274,19 +274,25 @@ class MultiTranslateRunner(PipelineRunner):
         lang = self._resolve_target_lang(task)
         rules = self._get_lang_rules(lang)
 
-        self._set_step(task_id, "subtitle", "running",
-                       f"正在根据 {lang.upper()} 音频校正字幕...")
+        from appcore import asr_router
 
-        volc_api_key = resolve_key(self.user_id, "volc", "VOLC_API_KEY")
+        # 字幕用 ASR：在 TTS 合成的目标语言音频上跑一次，拿词级时间戳给字幕对齐。
+        _sub_adapter, _ = asr_router.resolve_adapter("subtitle_asr", lang)
+        _sub_model_tag = f"{_sub_adapter.display_name} · {_sub_adapter.model_id}"
+        self._set_step(
+            task_id, "subtitle", "running",
+            f"正在根据 {lang.upper()} 音频校正字幕...",
+            model_tag=_sub_model_tag,
+        )
 
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get("normal", {}))
         tts_audio_path = variant_state.get("tts_audio_path", "")
 
-        utterances = transcribe_local_audio(
-            tts_audio_path, prefix=f"tts-asr/{task_id}/normal",
-            volc_api_key=volc_api_key,
+        _sub_result = asr_router.transcribe(
+            tts_audio_path, source_language=lang, stage="subtitle_asr",
         )
+        utterances = _sub_result["utterances"]
         asr_result = {
             "full_text": " ".join(u.get("text", "").strip()
                                     for u in utterances if u.get("text")).strip(),

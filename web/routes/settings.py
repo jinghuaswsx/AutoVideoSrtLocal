@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import llm_bindings, llm_provider_configs, pricing
+from appcore import asr_routing_config, llm_bindings, llm_provider_configs, pricing
 from appcore.api_keys import get_all, set_key
 from appcore.db import execute, query
 from web.auth import superadmin_required
@@ -142,6 +142,8 @@ def index():
             _handle_bindings_post()
         elif tab == "push":
             _handle_push_post()
+        elif tab == "asr_routing":
+            _handle_asr_routing_post()
         else:
             _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
@@ -186,6 +188,7 @@ def index():
     if is_admin:
         allowed_tabs.add("pricing")
         allowed_tabs.add("push")
+        allowed_tabs.add("asr_routing")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
 
@@ -234,6 +237,10 @@ def index():
         can_manage_pricing=is_admin,
         pricing_units_types=PRICING_UNITS_TYPES,
         push_credentials_view=push_credentials_view,
+        asr_stage_providers=asr_routing_config.get_all_stage_providers(),
+        asr_stages=asr_routing_config.STAGES,
+        asr_stage_labels=asr_routing_config.STAGE_LABELS,
+        asr_routing_provider_options=asr_routing_config.list_available_providers(),
     )
 
 
@@ -346,6 +353,16 @@ def _handle_bindings_post() -> None:
         llm_bindings.upsert(
             code, provider=provider, model=model, updated_by=current_user.id,
         )
+
+
+def _handle_asr_routing_post() -> None:
+    """ASR 路由 tab：保存每个 stage 选择的 provider_code 到 system_settings。"""
+    if not getattr(current_user, "is_admin", False):
+        return
+    payload: dict[str, str] = {}
+    for stage in asr_routing_config.STAGES:
+        payload[stage] = (request.form.get(f"asr_stage_{stage}") or "").strip()
+    asr_routing_config.set_stage_providers(payload)
 
 
 def _handle_push_post() -> None:

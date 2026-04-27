@@ -116,6 +116,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'pricing' }}">AI 定价</a>
   <a href="{{ url_for('settings.index', tab='push') }}"
      class="settings-tab {{ 'active' if active_tab == 'push' }}">推送</a>
+  <a href="{{ url_for('settings.index', tab='asr_routing') }}"
+     class="settings-tab {{ 'active' if active_tab == 'asr_routing' }}">ASR 路由</a>
   {% endif %}
 </div>
 
@@ -572,6 +574,57 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
     </div>
     <pre style="background:var(--settings-surface-muted);border:1px solid var(--settings-border);border-radius:8px;padding:12px;font-size:12px;overflow:auto;font-family:ui-monospace,Consolas,monospace;color:var(--settings-fg)">python tools/wedev_sync.py</pre>
     <p class="hint">工具会打开浏览器让你登录 <code>os.wedev.vip</code>，然后读 Chrome cookies + localStorage token + 主项目 session，一键 POST 到 <code>/pushes/api/push-credentials</code>。Windows 也可直接双击 <code>tools/wedev_sync.bat</code>。</p>
+  </div>
+</form>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab 5 · ASR 路由（admin-only）
+   每个 ASR 阶段独立选 provider；当前两个 stage：
+     - asr_main: 音频提取后的主 ASR
+     - subtitle_asr: TTS 合成后的字幕 ASR
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'asr_routing' %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="asr_routing">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">ASR 路由</h1>
+    <button class="btn btn-primary" type="submit">保存配置</button>
+  </div>
+
+  <div class="settings-card">
+    <h2>各阶段 ASR Provider</h2>
+    <p class="step-desc">
+      视频翻译流水线里有两处 ASR：① 提取音频后识别原视频语音；② TTS 合成配音后再识别一次给字幕对齐时间戳。
+      每处可独立选 provider，方便定位"哪个模型出问题了"。Provider 凭据仍在
+      <a href="{{ url_for('settings.index', tab='providers') }}" style="color:var(--settings-accent)">服务商接入</a> tab 维护。
+    </p>
+
+    {% for stage in asr_stages %}
+    <div style="margin-top:16px;padding-top:16px;{% if not loop.first %}border-top:1px solid var(--settings-border);{% endif %}">
+      <label style="display:block;font-size:13px;font-weight:600;color:var(--settings-fg);margin-bottom:6px;">
+        {{ asr_stage_labels[stage] or stage }}
+      </label>
+      <select name="asr_stage_{{ stage }}">
+        {% for opt in asr_routing_provider_options %}
+        <option value="{{ opt.provider_code }}"
+                {{ 'selected' if asr_stage_providers[stage] == opt.provider_code }}>
+          {{ opt.display_name }}（{{ opt.provider_code }}）
+        </option>
+        {% endfor %}
+      </select>
+      <p class="hint" style="margin-top:6px;">
+        当前：<code>{{ asr_stage_providers[stage] }}</code>
+      </p>
+    </div>
+    {% endfor %}
+
+    <p class="hint" style="margin-top:16px;">
+      豆包 SeedASR 不支持 force_language（中文/英文以外的音频靠模型自识别，可能产出混合结果）；
+      ElevenLabs Scribe 支持按目标语言强制解码，但需要在服务商接入 tab 里配好 <code>elevenlabs_tts</code> 凭据。
+    </p>
   </div>
 </form>
 {% endif %}
