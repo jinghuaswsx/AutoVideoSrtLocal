@@ -48,11 +48,20 @@ def _build_inputs(task: dict) -> dict:
             (u.get("text") or "").strip() for u in utts if u.get("text")
         ).strip()
 
+    # multi-translate 在 asr_normalize 步骤会把 source_language 改写成 'en'（统一英文路径），
+    # 但 task.utterances（这里拼成 original_asr）保留的是源语言原文（如 es）。
+    # 优先读 detected_source_language，避免把"标签 vs 实际语言"错位的 ORIGINAL_ASR 喂给评估器。
+    source_language = (
+        task.get("detected_source_language")
+        or task.get("source_language")
+        or ""
+    )
+
     return {
         "original_asr": original_asr,
         "translation": translation,
         "tts_recognition": tts_recognition,
-        "source_language": task.get("source_language") or "",
+        "source_language": source_language,
         "target_language": task.get("target_lang") or "",
     }
 

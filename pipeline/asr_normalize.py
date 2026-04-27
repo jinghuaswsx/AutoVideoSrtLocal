@@ -224,8 +224,8 @@ def translate_to_en(
     utterances_en = [
         {
             "index": i,
-            "start": utterances[i].get("start", utterances[i].get("start_time")),
-            "end": utterances[i].get("end", utterances[i].get("end_time")),
+            "start_time": utterances[i].get("start_time", utterances[i].get("start")),
+            "end_time": utterances[i].get("end_time", utterances[i].get("end")),
             "text": by_index[i],
         }
         for i in range(len(utterances))

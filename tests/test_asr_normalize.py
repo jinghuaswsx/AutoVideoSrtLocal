@@ -153,8 +153,8 @@ def test_translate_to_en_preserves_timestamps_and_returns_usage(
         task_id="t10", user_id=1,
     )
     assert len(out) == 2
-    assert out[0] == {"index": 0, "start": 0.5, "end": 2.3, "text": "Hi there"}
-    assert out[1] == {"index": 1, "start": 2.3, "end": 4.8, "text": "Check this out"}
+    assert out[0] == {"index": 0, "start_time": 0.5, "end_time": 2.3, "text": "Hi there"}
+    assert out[1] == {"index": 1, "start_time": 2.3, "end_time": 4.8, "text": "Check this out"}
     assert usage == {"input_tokens": 1850, "output_tokens": 1620}
 
 
