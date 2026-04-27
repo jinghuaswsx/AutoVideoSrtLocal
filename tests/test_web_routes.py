@@ -2347,6 +2347,14 @@ def test_image_translate_templates_show_concurrency_mode_pills():
     assert ".it-mode-pill" in styles
 
 
+def test_image_translate_retry_fetch_handles_non_json_errors():
+    root = Path(__file__).resolve().parents[1]
+    scripts = (root / "web" / "templates" / "_image_translate_scripts.html").read_text(encoding="utf-8")
+
+    assert "parseJsonResponse" in scripts
+    assert ".catch(function(){ return {}; })" in scripts
+
+
 def test_medias_edit_modal_contains_detail_image_translation_controls():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")

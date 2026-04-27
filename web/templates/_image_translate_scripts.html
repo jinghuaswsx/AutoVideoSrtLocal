@@ -3,6 +3,11 @@
   var pageEl = document.querySelector("[data-page^='image-translate']");
   if (!pageEl) return;
   var pageType = pageEl.getAttribute("data-page");
+  function parseJsonResponse(r){
+    return r.json().catch(function(){ return {}; }).then(function(d){
+      return {ok:r.ok, body:d};
+    });
+  }
 
   if (pageType === "image-translate-list") {
     var state = { files: [] };
@@ -244,7 +249,7 @@
           retryBtn.textContent = "提交中...";
           fetch("/api/image-translate/" + encodeURIComponent(historyTaskId) + "/retry-unfinished",
                 {method:"POST", credentials:"same-origin"})
-            .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+            .then(parseJsonResponse)
             .then(function(res){
               if (!res.ok) {
                 alert((res.body && res.body.error) || "重新生成失败");
@@ -442,18 +447,19 @@
 
     function retry(idx){
       fetch("/api/image-translate/"+taskId+"/retry/"+idx,{method:"POST",credentials:"same-origin"})
-        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+        .then(parseJsonResponse)
         .then(function(res){
           if (!res.ok) { alert(res.body && res.body.error || "重试失败"); return; }
           refresh();
-        });
+        })
+        .catch(function(){ alert("网络错误，稍后再试"); });
     }
 
     if (retryUnfinishedBtn) {
       retryUnfinishedBtn.onclick = function(){
         retryUnfinishedBtn.disabled = true;
         fetch("/api/image-translate/"+taskId+"/retry-unfinished",{method:"POST",credentials:"same-origin"})
-          .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, body:d}; }); })
+          .then(parseJsonResponse)
           .then(function(res){
             if (!res.ok) { alert(res.body && res.body.error || "重试失败"); retryUnfinishedBtn.disabled = false; return; }
             refresh();

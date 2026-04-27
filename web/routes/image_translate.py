@@ -109,6 +109,13 @@ def _get_owned_task(task_id: str) -> dict:
     return task
 
 
+def _get_retryable_task(task_id: str) -> dict:
+    task = _get_existing_image_translate_task(task_id)
+    if not (_task_belongs_to_current_user(task) or _is_admin_user()):
+        abort(404)
+    return task
+
+
 def _get_viewable_task(task_id: str) -> dict:
     task = _get_existing_image_translate_task(task_id)
     if not (_task_belongs_to_current_user(task) or _is_admin_user()):
@@ -128,6 +135,10 @@ def _target_language_name(code: str) -> str:
 
 def _start_runner(task_id: str, uid: int) -> bool:
     return image_translate_runner.start(task_id, user_id=uid)
+
+
+def _task_runner_user_id(task: dict) -> int:
+    return int(task.get("_user_id") or getattr(current_user, "id", 0) or 0)
 
 
 def start_image_translate_runner(task_id: str, uid: int) -> bool:
@@ -457,7 +468,7 @@ def api_download_result(task_id: str, idx: int):
 @bp.route("/api/image-translate/<task_id>/retry/<int:idx>", methods=["POST"])
 @login_required
 def api_retry_item(task_id: str, idx: int):
-    task = _get_owned_task(task_id)
+    task = _get_retryable_task(task_id)
     item = _get_item(task, idx)
     if not item:
         abort(404)
@@ -478,7 +489,7 @@ def api_retry_item(task_id: str, idx: int):
         progress=task["progress"],
         status="queued",
     )
-    _start_runner(task_id, current_user.id)
+    _start_runner(task_id, _task_runner_user_id(task))
     return jsonify({"task_id": task_id, "idx": idx, "status": "queued"}), 202
 
 
@@ -486,7 +497,7 @@ def api_retry_item(task_id: str, idx: int):
 @login_required
 def api_retry_failed(task_id: str):
     """一键把该任务下所有 failed 项重置为 pending，重新入队跑一轮。"""
-    task = _get_owned_task(task_id)
+    task = _get_retryable_task(task_id)
     items = task.get("items") or []
     reset_count = 0
     for item in items:
@@ -507,7 +518,7 @@ def api_retry_failed(task_id: str):
         progress=task["progress"],
         status="queued",
     )
-    _start_runner(task_id, current_user.id)
+    _start_runner(task_id, _task_runner_user_id(task))
     return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
 
 
@@ -517,7 +528,7 @@ def api_retry_unfinished(task_id: str):
     """把所有非 done 的 item 重置为 pending 并重启 runner。
     与 retry-failed 的区别：范围不只是 failed，还包含 pending/running 僵尸。
     仅允许在 runner 不活跃时调用，避免与在跑的线程冲突。"""
-    task = _get_owned_task(task_id)
+    task = _get_retryable_task(task_id)
     if image_translate_runner.is_running(task_id):
         return jsonify({"error": "任务正在跑，等跑完再重试"}), 409
     items = task.get("items") or []
@@ -561,7 +572,7 @@ def api_retry_unfinished(task_id: str):
         progress=task["progress"],
         status="queued",
     )
-    _start_runner(task_id, current_user.id)
+    _start_runner(task_id, _task_runner_user_id(task))
     return jsonify({"task_id": task_id, "reset": reset_count, "status": "queued"}), 202
 
 
