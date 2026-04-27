@@ -30,35 +30,40 @@ _STEPS = (
     "export",
 )
 
-_RESET_FIELDS: dict[str, Any] = {
-    "status": "uploaded",
-    "current_review_step": "",
-    "utterances": [],
-    "scene_cuts": [],
-    "alignment": {},
-    "script_segments": [],
-    "segments": [],
-    "source_full_text_zh": "",
-    "localized_translation": {},
-    "tts_script": {},
-    "english_asr_result": {},
-    "corrected_subtitle": {},
-    "srt_path": "",
-    "result": {},
-    "exports": {},
-    "artifacts": {},
-    "preview_files": {},
-    "tos_uploads": {},
-    "source_tos_key": "",
-    "delivery_mode": "local_primary",
-    "tts_duration_rounds": [],
-    "tts_duration_status": None,
-    "translation_history": [],
-    "selected_translation_index": None,
-    "_segments_confirmed": False,
-    "_translate_pre_select": False,
-    "error": "",
-}
+def _build_reset_fields() -> dict[str, Any]:
+    # 必须是 factory：每次 restart 都生成 fresh dict / list 字面量。
+    # 之前曾用 module-level _RESET_FIELDS + dict(...) shallow copy，结果所有 restart 过的
+    # task 共享同一份 preview_files / result / exports / artifacts / tos_uploads dict 引用，
+    # 导致 set_preview_file 跨任务互相覆盖（任务 A 的 hard_video 会出现在任务 B 的预览里）。
+    return {
+        "status": "uploaded",
+        "current_review_step": "",
+        "utterances": [],
+        "scene_cuts": [],
+        "alignment": {},
+        "script_segments": [],
+        "segments": [],
+        "source_full_text_zh": "",
+        "localized_translation": {},
+        "tts_script": {},
+        "english_asr_result": {},
+        "corrected_subtitle": {},
+        "srt_path": "",
+        "result": {},
+        "exports": {},
+        "artifacts": {},
+        "preview_files": {},
+        "tos_uploads": {},
+        "source_tos_key": "",
+        "delivery_mode": "local_primary",
+        "tts_duration_rounds": [],
+        "tts_duration_status": None,
+        "translation_history": [],
+        "selected_translation_index": None,
+        "_segments_confirmed": False,
+        "_translate_pre_select": False,
+        "error": "",
+    }
 
 _TASK_DIR_KEEP_PREFIXES: tuple[str, ...] = ("thumbnail",)
 
@@ -110,7 +115,7 @@ def restart_task(
 
     _purge_task_dir(task.get("task_dir") or "")
 
-    payload = dict(_RESET_FIELDS)
+    payload = _build_reset_fields()
     payload.update(
         {
             "steps": {step: "pending" for step in _STEPS},

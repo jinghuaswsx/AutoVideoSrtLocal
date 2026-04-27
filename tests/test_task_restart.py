@@ -177,6 +177,55 @@ def test_restart_triggers_pipeline_start(done_task):
     assert runner.started == [(done_task["task_id"], 1)]
 
 
+def test_restart_payload_does_not_share_mutable_state_across_tasks(tmp_path, monkeypatch):
+    # Regression: restart_task once aliased preview_files / result / exports / artifacts /
+    # tos_uploads to a shared module-level dict, so set_preview_file from one task
+    # leaked into every other restarted task. Lock the deep-isolation invariant.
+    import appcore.task_state as task_state
+
+    monkeypatch.setattr(task_restart, "ensure_local_source_video", lambda tid: None)
+    monkeypatch.setattr(task_state, "_db_upsert", lambda *a, **k: None)
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *a, **k: None)
+
+    def _seed(task_id: str) -> None:
+        task_dir = tmp_path / task_id
+        task_dir.mkdir()
+        video_path = tmp_path / "uploads" / f"{task_id}.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"src")
+        store.create(task_id, str(video_path), str(task_dir), user_id=1)
+        store.update(task_id, status="done", type="multi_translate")
+
+    _seed("task-a")
+    _seed("task-b")
+
+    runner = _Runner()
+    common_kwargs = dict(
+        voice_id=None, voice_gender="male",
+        subtitle_font="Impact", subtitle_size=14,
+        subtitle_position_y=0.68, subtitle_position="bottom",
+        interactive_review=False, user_id=1, runner=runner,
+    )
+    task_restart.restart_task("task-a", **common_kwargs)
+    task_restart.restart_task("task-b", **common_kwargs)
+
+    a = task_state.get("task-a")
+    b = task_state.get("task-b")
+
+    # Each restart must yield its own preview_files / result / exports / artifacts / tos_uploads
+    # dict object, not a shared reference.
+    for field in ("preview_files", "result", "exports", "artifacts", "tos_uploads"):
+        assert a[field] is not b[field], (
+            f"{field} dict is shared across restarted tasks (aliasing regression)"
+        )
+
+    # Cross-task write isolation: writing to A must not leak into B.
+    task_state.set_preview_file("task-a", "audio_extract", "/A/a.wav")
+    task_state.set_preview_file("task-b", "audio_extract", "/B/b.wav")
+    assert task_state.get("task-a")["preview_files"]["audio_extract"] == "/A/a.wav"
+    assert task_state.get("task-b")["preview_files"]["audio_extract"] == "/B/b.wav"
+
+
 def test_restart_stops_when_source_video_cannot_be_restored(done_task, monkeypatch):
     runner = _Runner()
     monkeypatch.setattr(
