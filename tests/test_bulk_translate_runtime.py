@@ -1722,3 +1722,186 @@ def test_materialize_multi_translate_cover_prefers_existing_translated_cover(
     )
 
     assert result == translated_cover_key
+
+
+# ---------------------------------------------------------------------------
+# Fail-fast 调度回归（事故：2026-04-27 product 537 6 个 pending 永远 stuck）
+# ---------------------------------------------------------------------------
+
+
+def test_derive_parent_status_keeps_running_when_pending_exists_alongside_failed():
+    """1 项失败 + 多项未派发 pending → 父任务必须保留 running，
+    否则下一轮 sync 会把 status 写成 failed，scheduler 顶部读到立即退出，
+    pending 永远 stuck。"""
+    from appcore import bulk_translate_runtime as mod
+
+    plan = [
+        {"status": "done"},
+        {"status": "failed"},
+        {"status": "pending"},
+        {"status": "pending"},
+    ]
+    assert mod._derive_parent_status(plan, "running") == "running"
+
+
+def test_derive_parent_status_marks_failed_only_when_no_pending_or_active():
+    """plan 完全 terminal 且含 retryable → 父任务才标 failed。"""
+    from appcore import bulk_translate_runtime as mod
+
+    plan_all_terminal_with_failure = [
+        {"status": "done"},
+        {"status": "failed"},
+        {"status": "skipped"},
+    ]
+    assert mod._derive_parent_status(plan_all_terminal_with_failure, "running") == "failed"
+
+
+def test_derive_parent_status_running_when_active_item_with_failed_sibling():
+    """有 active item（dispatching/running）+ failed 兄弟 → 不能标 failed。"""
+    from appcore import bulk_translate_runtime as mod
+
+    plan = [{"status": "running"}, {"status": "failed"}]
+    assert mod._derive_parent_status(plan, "running") == "running"
+
+
+def test_derive_parent_status_waiting_manual_takes_priority_over_failed():
+    """awaiting_voice 子项 + failed 兄弟 → waiting_manual（仍是调度态，
+    scheduler 会继续派发其它 pending）。"""
+    from appcore import bulk_translate_runtime as mod
+
+    plan = [{"status": "awaiting_voice"}, {"status": "failed"}]
+    assert mod._derive_parent_status(plan, "running") == "waiting_manual"
+
+
+def test_sync_does_not_mark_parent_failed_when_pending_items_remain(runtime_env, monkeypatch):
+    """事故根因回归：sync 看到 1 项失败子任务 + 多项未派发 pending 时，
+    若把父任务写成 failed，scheduler 下一轮 status not in {running, waiting_manual}
+    立即 return，pending 永远不派发。这里固化"父级保持 running"。"""
+    mod, fake_db = runtime_env
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", lang="fr", ref={"source_raw_id": 401}),
+            _item(1, kind="videos", lang="de", ref={"source_raw_id": 402},
+                  dispatch_after_seconds=10),
+            _item(2, kind="videos", lang="es", ref={"source_raw_id": 403},
+                  dispatch_after_seconds=20),
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["fr", "de", "es"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[401, 402, 403],
+    )
+    state = _load_state(fake_db, task_id)
+    # 模拟 idx=0 已派发并跑挂（child status='error'），idx=1/2 还是 pending
+    state["plan"][0]["child_task_id"] = "video-fr"
+    state["plan"][0]["child_task_type"] = "multi_translate"
+    state["plan"][0]["status"] = "running"
+    fake_db.rows[task_id]["status"] = "running"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        mod,
+        "_load_child_snapshot",
+        lambda task_type, child_task_id: {
+            "_project_status": "error",
+            "error": "list indices must be integers or slices, not str",
+        },
+    )
+
+    mod.sync_task_with_children_once(task_id, user_id=1)
+
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "failed"
+    assert state["plan"][1]["status"] == "pending"
+    assert state["plan"][2]["status"] == "pending"
+    # 关键回归断言：父级不能因 1 项失败就被标 failed —— pending 还在等派发
+    assert fake_db.rows[task_id]["status"] == "running"
+
+
+def test_retry_item_keeps_parent_running_when_other_failed_items_remain(runtime_env, monkeypatch):
+    """事故场景：用户 retry idx=0 时 idx=1 仍 failed。旧逻辑因 _derive_parent_status
+    见 failed 直接返回 failed，路由后启动的 scheduler 第一轮就 return 退出，
+    被 retry 的 idx=0 永远不派发。新逻辑保留 running。"""
+    mod, fake_db = runtime_env
+
+    monkeypatch.setattr(
+        mod,
+        "generate_plan",
+        lambda *args, **kwargs: [
+            _item(0, kind="videos", lang="de", ref={"source_raw_id": 501}),
+            _item(1, kind="videos", lang="fr", ref={"source_raw_id": 502}),
+        ],
+    )
+    task_id = mod.create_bulk_translate_task(
+        user_id=1,
+        product_id=77,
+        target_langs=["de", "fr"],
+        content_types=["videos"],
+        force_retranslate=False,
+        video_params={},
+        initiator={"user_id": 1, "user_name": "", "ip": "", "user_agent": ""},
+        raw_source_ids=[501, 502],
+    )
+    state = _load_state(fake_db, task_id)
+    state["plan"][0]["status"] = "failed"
+    state["plan"][0]["child_task_id"] = "child-de"
+    state["plan"][0]["child_task_type"] = "multi_translate"
+    state["plan"][0]["error"] = "boom"
+    state["plan"][1]["status"] = "failed"
+    state["plan"][1]["child_task_id"] = "child-fr"
+    state["plan"][1]["child_task_type"] = "multi_translate"
+    state["plan"][1]["error"] = "list indices must be integers or slices, not str"
+    fake_db.rows[task_id]["status"] = "failed"
+    fake_db.rows[task_id]["state_json"] = json.dumps(state, ensure_ascii=False)
+
+    mod.retry_item(task_id, idx=0, user_id=1)
+
+    state = _load_state(fake_db, task_id)
+    assert state["plan"][0]["status"] == "pending"
+    assert state["plan"][1]["status"] == "failed"
+    # 关键回归：retry 之后父级必须是 running，否则 spawn 出来的 scheduler 立即 return
+    assert fake_db.rows[task_id]["status"] == "running"
+
+
+def test_spawn_scheduler_logs_exception_instead_of_swallowing(monkeypatch, caplog):
+    """事故诊断盲区：原 _spawn_scheduler 用 try/except: pass 吞掉所有异常，
+    导致 scheduler greenthread 死亡时 journal 完全无 traceback。改为 log.exception
+    保留堆栈。"""
+    import logging as _logging
+
+    from web.routes import bulk_translate as routes_mod
+
+    class _DummySocketIO:
+        def emit(self, *_a, **_kw):
+            pass
+
+    class _DummyExtensions:
+        socketio = _DummySocketIO()
+
+    import sys as _sys
+    monkeypatch.setitem(_sys.modules, "web.extensions", _DummyExtensions())
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("scheduler exploded")
+
+    monkeypatch.setattr(routes_mod, "run_scheduler", boom)
+
+    with caplog.at_level(_logging.ERROR, logger=routes_mod.log.name):
+        routes_mod._spawn_scheduler("task-xyz")
+
+    assert any(
+        record.levelno == _logging.ERROR
+        and "scheduler crashed" in record.getMessage()
+        and "task-xyz" in record.getMessage()
+        and record.exc_info is not None
+        for record in caplog.records
+    ), [r.getMessage() for r in caplog.records]
