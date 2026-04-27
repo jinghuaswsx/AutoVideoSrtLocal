@@ -157,13 +157,21 @@ def parse_json_content(raw: str):
 # Vertex AI (Google Cloud Express Mode) 分支 —— 复用图片翻译模块的授权方式
 # ---------------------------------------------------------------------------
 
+_GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS = frozenset({
+    "additionalProperties",
+    "additional_properties",
+    "strict",
+    "$schema",
+})
+
+
 def _strip_unsupported_schema(obj):
-    """Gemini response_schema 不认识 OpenAI 的 additionalProperties / strict，递归剥掉。"""
+    """Gemini response_schema 不认识部分 OpenAI JSON Schema 关键字，递归剥掉。"""
     if isinstance(obj, dict):
         return {
             k: _strip_unsupported_schema(v)
             for k, v in obj.items()
-            if k not in ("additionalProperties", "strict", "$schema")
+            if k not in _GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS
         }
     if isinstance(obj, list):
         return [_strip_unsupported_schema(x) for x in obj]
