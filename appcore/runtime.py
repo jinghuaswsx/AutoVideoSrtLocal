@@ -1318,6 +1318,16 @@ class PipelineRunner:
             self._complete_original_video_passthrough(task_id, task["video_path"], task_dir)
             return
 
+        # 这一轮 ASR 不再触发 passthrough（utterances 够长），清掉之前留下的
+        # passthrough flag。否则下游 voice_match / translate / tts / subtitle
+        # 仍按"音乐视频直通"短路，整个翻译流程跑空。
+        task_state.update(
+            task_id,
+            media_passthrough_mode=None,
+            media_passthrough_reason=None,
+            media_passthrough_source_chars=None,
+        )
+
         if not utterances:
             self._set_step(task_id, "asr", "done", "未检测到语音内容，可能是纯音乐/音效视频")
             self._emit(task_id, EVT_ASR_RESULT, {"segments": []})
