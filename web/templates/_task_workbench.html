@@ -613,17 +613,25 @@
     {# 翻译质量评估：异步评估，不阻塞主流水线，呈现在「字幕生成」之后、「视频合成」之前 #}
     {% if not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/quality_assessment_card.css') }}">
-    <div id="quality-assessment-card" class="qa-card"
+    <div id="quality-assessment-card" class="step qa-step"
          data-task-id="{{ project.id }}"
          data-project-type="{{ 'omni_translate' if request.path.startswith('/omni-translate') else 'multi_translate' }}"
          data-is-admin="{{ '1' if current_user.is_admin else '0' }}">
-      <div class="qa-card-header">
-        <div class="qa-card-title">翻译质量评估</div>
-        {% if current_user.is_admin %}
-        <button type="button" class="qa-rerun-btn" data-action="rerun">重跑评估</button>
-        {% endif %}
+      <div class="step-main">
+        <div class="step-icon qa-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        </div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">翻译质量评估</span>
+            {% if current_user.is_admin %}
+            <button type="button" class="resume-btn qa-rerun-btn" data-action="rerun">重跑评估</button>
+            {% endif %}
+          </div>
+          <div class="step-msg">异步评估，不阻塞主流水线</div>
+        </div>
       </div>
-      <div class="qa-body"></div>
+      <div class="step-preview qa-body"></div>
     </div>
     {% endif %}
     <div class="step" id="step-compose">
