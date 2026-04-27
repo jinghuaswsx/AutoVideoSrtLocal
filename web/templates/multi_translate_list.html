@@ -400,8 +400,8 @@
       </div>
       <div class="modal-field" id="sourceLanguageField">
         <label for="sourceLanguageSelect">源语言</label>
-        <select id="sourceLanguageSelect" name="source_language">
-          <option value="" selected>自动检测</option>
+        <select id="sourceLanguageSelect" name="source_language" required>
+          <option value="" disabled selected hidden>请选择源语言</option>
           <option value="zh">中文</option>
           <option value="en">English</option>
           <option value="es">Español</option>
@@ -414,7 +414,7 @@
           <option value="sv">Svenska</option>
           <option value="fi">Suomi</option>
         </select>
-        <div class="modal-hint" style="margin:6px 0 0;">不确定时选「自动检测」即可。明确选择会跳过两层 LLM 检测，路由更精准。</div>
+        <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
       </div>
       <p class="modal-hint">上传后将自动识别原视频语言并标准化为英文输入</p>
       <div class="modal-actions">
@@ -526,6 +526,8 @@ function _resetUploadModal() {
   });
   document.getElementById('targetLangSelect').value = '';
   document.getElementById('videoFile').value = '';
+  var srcSel = document.getElementById('sourceLanguageSelect');
+  if (srcSel) srcSel.selectedIndex = 0;
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');
   if (warning) warning.classList.remove('shake');
@@ -667,6 +669,12 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
   }
   if (!fileInput.files[0]) {
     alert('请选择视频文件');
+    return;
+  }
+  var sourceLangSelect = document.getElementById('sourceLanguageSelect');
+  if (sourceLangSelect && !sourceLangSelect.value) {
+    alert('请选择源语言');
+    sourceLangSelect.focus();
     return;
   }
 
