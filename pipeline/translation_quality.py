@@ -44,8 +44,13 @@ def _system_prompt() -> str:
         "  - text_recall: did the TTS faithfully recite the script?\n"
         "  - pronunciation_fidelity: are key product/brand terms pronounced correctly?\n"
         "  - rhythm_match: are pauses and segmentation reasonable?\n\n"
-        "Provide up to 3 short issue strings and up to 3 short highlight strings per dimension. "
-        "verdict_reason should be one short sentence in Chinese explaining the worst-scoring dimension."
+        "Provide up to 3 short issue strings and up to 3 short highlight strings per dimension.\n"
+        "ALL human-readable output (translation_issues, translation_highlights, tts_issues, "
+        "tts_highlights, verdict_reason) MUST be written in Simplified Chinese (中文), "
+        "regardless of the source or target language being assessed. "
+        "Each issue/highlight should be a concise Chinese phrase, ideally under 25 Chinese characters; "
+        "do not output English sentences. "
+        "verdict_reason should be one short Chinese sentence explaining the worst-scoring dimension."
     )
 
 
