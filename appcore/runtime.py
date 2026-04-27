@@ -1522,6 +1522,8 @@ class PipelineRunner:
         from pipeline.translate import get_model_display_name as _get_model_name
         _tts_model_tag = f"{provider} · {_get_model_name(provider, self.user_id)}"
         self._set_step(task_id, "tts", "running", f"正在生成{lang_display}配音...", model_tag=_tts_model_tag)
+        self._emit_substep_msg(task_id, "tts",
+            f"正在生成{lang_display}配音 · 加载配音模板")
         variants = dict(task.get("variants", {}))
         source_full_text = task.get("source_full_text_zh") or task.get("source_full_text", "")
         source_language = task.get("source_language", "zh")
