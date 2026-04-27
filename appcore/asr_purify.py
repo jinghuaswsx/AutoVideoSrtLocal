@@ -120,6 +120,19 @@ def purify_language(
     if deleted == 0:
         return cloned
 
+    # 多数派保护：如果"被判非主语言"的段超过 judged 段的 60%，说明
+    # source_language 跟实际音频对不上（豆包对非中/英文音频会输出乱码，
+    # fast-langdetect 又会把乱码归类成英语，整段全删），不是局部污染。
+    # 这种情况退回原 utterances，让下游照常用，避免 ASR 输出被一刀切清空。
+    judged = sum(1 for u in cloned if not _too_short_to_judge(u))
+    if judged > 0 and deleted >= judged * 0.6:
+        log.warning(
+            "[ASR-Purify] 跳过清理：%d/%d 段被判非主语言（main=%s），"
+            "源语言可能与实际音频不一致；保留原 ASR 输出",
+            deleted, judged, main_lang,
+        )
+        return cloned
+
     log.info("[ASR-Purify] 清理 %d/%d 段非主语言", deleted, len(cloned))
     return _merge_adjacent(cloned, drop_mask)
 

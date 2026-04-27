@@ -160,13 +160,22 @@ def test_purify_consecutive_drops_accumulate():
     assert out[1]["start_time"] == pytest.approx(7.0)
 
 
-def test_purify_all_segments_dropped_returns_empty():
+def test_purify_majority_non_main_keeps_all():
+    """多数派保护：当多数段（≥60%）被判非主语言时，认为是 source_language
+    与实际音频不一致（不是局部污染），原样保留 ASR 输出而不是清空。
+
+    场景：用户填 source_language=es，但音频实际是中文，豆包识别出全中文段。
+    旧逻辑会把所有段都删掉 → 下游报"未检测到语音"。新逻辑保留原段落，
+    让下游尽量利用现有 ASR 结果。
+    """
     utts: List[Utterance] = [
         _u("你好这是中文污染段落啊啊啊啊", 0.0, 2.0),
         _u("再来一段中文污染应该也被删除掉啊啊", 2.0, 4.0),
     ]
     out = purify_language(utts, source_language="es")
-    assert out == []
+    assert len(out) == 2
+    assert out[0]["text"] == "你好这是中文污染段落啊啊啊啊"
+    assert out[1]["text"] == "再来一段中文污染应该也被删除掉啊啊"
 
 
 def test_purify_low_confidence_keeps_segment(monkeypatch: pytest.MonkeyPatch):
@@ -210,3 +219,46 @@ def test_merge_adjacent_all_drops():
     utts = [_u("a", 0.0, 1.0), _u("b", 1.0, 2.0)]
     out = _merge_adjacent(utts, [True, True])
     assert out == []
+
+
+# -------------------- 多数派保护：source_language 与音频不一致 --------------------
+
+def test_purify_keeps_all_when_majority_is_non_main(monkeypatch):
+    """source_language=zh 但音频实际是西语 → 豆包硬识别成乱码英文 →
+    fast-langdetect 全标 en → 旧逻辑会把所有段都删掉，新逻辑应原样保留。
+    """
+    # 6 段都被 fast-langdetect 判成 en，但 source_language=zh
+    monkeypatch.setattr(
+        "appcore.asr_purify.detect_language",
+        lambda text: ("en", 0.95),
+    )
+    utts = [
+        _u(f"long enough sentence number {i}.", float(i) * 2.0, float(i + 1) * 2.0)
+        for i in range(6)
+    ]
+    out = purify_language(utts, source_language="zh")
+    # 多数派保护触发 → 原样返回，不一刀切
+    assert len(out) == 6
+    for original, kept in zip(utts, out):
+        assert kept["text"] == original["text"]
+
+
+def test_purify_still_cleans_minority_pollution(monkeypatch):
+    """正常的局部污染场景：5 段中文 + 1 段英文乱码，应正确清掉那 1 段。"""
+
+    def _fake_detect(text: str):
+        if "你好" in text:
+            return ("zh", 0.99)
+        return ("en", 0.95)
+
+    monkeypatch.setattr("appcore.asr_purify.detect_language", _fake_detect)
+    utts = [
+        _u(f"你好世界这是中文 {i} 段足够长的句子。", float(i) * 2.0, float(i + 1) * 2.0)
+        for i in range(5)
+    ]
+    utts.append(_u("background noise garbage en pollution.", 10.0, 12.0))
+    out = purify_language(utts, source_language="zh")
+    # 5/6 段中文，污染段在阈值之下 → 正常清理
+    assert len(out) == 5
+    for kept in out:
+        assert "你好" in kept["text"]
