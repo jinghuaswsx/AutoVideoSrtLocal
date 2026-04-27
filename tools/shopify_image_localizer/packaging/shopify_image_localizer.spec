@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 root = Path.cwd()
 hiddenimports = sorted(set(
     collect_submodules("playwright")
+    + collect_submodules("link_check_desktop")
     + [
         "websocket",
         "websocket._abnf",
@@ -28,10 +29,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     datas=datas,
     excludes=[
-        "link_check_desktop",
         "pytest",
-        "scipy",
-        "skimage",
         "sklearn",
         "torch",
         "tools.shopify_image_localizer.browser.orchestrator",
