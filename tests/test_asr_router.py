@@ -118,15 +118,20 @@ def test_transcribe_passes_force_language_for_es(
     assert out["stage"] == "asr_main"
 
 
-def test_transcribe_purifies_chinese_pollution_in_es_video(
+def test_transcribe_returns_raw_utterances_no_purify(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    polluted = [
+    """router 不再做"删段"清理：adapter 给什么就返回什么，下游 LLM 步骤负责规整。
+
+    回归用例：之前 source_language 与音频实际语言不符时（豆包硬识别非中-英文）
+    会被 purify_language 一刀切删光，导致流水线"未检测到语音"。现在原样返回。
+    """
+    raw = [
         {"text": "Hola amigo, esto es una prueba en español", "start_time": 0.0, "end_time": 3.0, "words": []},
         {"text": "你好这是中文污染段落啊啊啊啊啊", "start_time": 3.0, "end_time": 5.0, "words": []},
         {"text": "Adiós a todos, hasta luego en español", "start_time": 5.0, "end_time": 7.0, "words": []},
     ]
-    fake = _FakeAdapter(utterances=polluted)
+    fake = _FakeAdapter(utterances=raw)
     monkeypatch.setattr(
         "appcore.asr_router.resolve_adapter",
         lambda stage, src: (fake, "es"),
@@ -135,22 +140,22 @@ def test_transcribe_purifies_chinese_pollution_in_es_video(
     audio.write_bytes(b"x")
     out = asr_router.transcribe(audio, source_language="es")
     utterances = out["utterances"]
-    assert len(utterances) == 2
-    assert all("你好" not in u["text"] for u in utterances)
-    # 时间合并验证
-    assert utterances[0]["end_time"] == pytest.approx(5.0)
-    assert utterances[1]["start_time"] == pytest.approx(5.0)
+    # 全部 3 段原样返回；中文"污染段"也保留，由下游 LLM 规整改文本（不删段）
+    assert len(utterances) == 3
+    assert utterances[0]["text"].startswith("Hola")
+    assert "你好" in utterances[1]["text"]
+    assert utterances[2]["text"].startswith("Adiós")
 
 
-def test_transcribe_skips_purify_when_source_auto(
+def test_transcribe_with_auto_source_returns_raw_utterances(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """source=auto 时不跑 purify，所有段保留。"""
-    polluted = [
+    """source=auto 时同样原样返回；行为与显式 source_language 一致。"""
+    raw = [
         {"text": "Hola amigo, esto es una prueba en español", "start_time": 0.0, "end_time": 3.0, "words": []},
         {"text": "你好这是一段足够长的中文测试文本啊啊啊啊", "start_time": 3.0, "end_time": 5.0, "words": []},
     ]
-    fake = _FakeAdapter(utterances=polluted)
+    fake = _FakeAdapter(utterances=raw)
     monkeypatch.setattr(
         "appcore.asr_router.resolve_adapter",
         lambda stage, src: (fake, None),

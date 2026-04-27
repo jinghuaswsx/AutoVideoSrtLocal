@@ -4,8 +4,17 @@
   1. 按 stage（``asr_main`` / ``subtitle_asr``）选 adapter，配置存于
      ``system_settings.asr_stage_routing``，可在 ``/settings?tab=asr_routing`` 后台覆盖
   2. 调 adapter 拿 utterances
-  3. 跑 purify_language 清理语言污染段
-  4. 返回 utterances + adapter 元数据（provider_code / model_id / display_name）
+  3. 返回 utterances + adapter 元数据（provider_code / model_id / display_name）
+
+**不在这一层做"删除非主语言段"的清理**。早期版本会跑 ``asr_purify.purify_language``
+按 fast-langdetect 删段，但当 ``source_language`` 与实际音频不一致时（用户填错 /
+豆包对非中-英文音频硬识别成乱码）会把整段 ASR 都删光，下游报"未检测到语音"。
+同语言规整、错字修正、错语言段恢复一律下沉到 LLM 步骤：
+
+  - omni 流水线：``runtime_omni._step_asr_clean`` → ``pipeline.asr_clean``
+  - multi 流水线：``runtime_multi._step_asr_normalize`` → ``pipeline.asr_normalize``
+
+LLM 步骤只改文本不删段，时间戳一一对应保留，不会丢内容。
 
 新增 stage 时同步扩展 :mod:`appcore.asr_routing_config` 的 ``STAGES``。
 """
@@ -17,7 +26,7 @@ from typing import TypedDict
 
 from appcore.asr_providers import BaseASRAdapter, build_adapter
 from appcore.asr_providers.base import Utterance
-from appcore.asr_purify import _normalize_lang_code, purify_language
+from appcore.asr_purify import _normalize_lang_code
 from appcore.asr_routing_config import get_stage_provider
 
 
@@ -82,9 +91,9 @@ def transcribe(
     """
     adapter, force = resolve_adapter(stage, source_language)
     utterances = adapter.transcribe(Path(local_audio_path), language=force)
-    purified = purify_language(utterances, source_language=source_language)
+    # 不在这一层删段：交给下游 _step_asr_clean / _step_asr_normalize 用 LLM 规整。
     return {
-        "utterances": purified,
+        "utterances": utterances,
         "provider_code": adapter.provider_code,
         "model_id": adapter.model_id,
         "display_name": adapter.display_name,
