@@ -2,6 +2,8 @@
 {% block title %}
 {% if detail_mode == 'multi' %}
 {{ project.display_name or project.original_filename or project.id }} - {{ target_lang | upper }} 翻译
+{% elif detail_mode == 'av_sync' %}
+{{ project.display_name or project.original_filename or project.id }} - 视频翻译音画同步
 {% elif detail_mode == 'ja' %}
 {{ project.display_name or project.original_filename or project.id }} - 日语翻译
 {% endif %}
@@ -9,6 +11,8 @@
 {% block page_title %}
 {% if detail_mode == 'multi' %}
 {{ project.display_name or project.original_filename or project.id }}（{{ target_lang | upper }}）
+{% elif detail_mode == 'av_sync' %}
+{{ project.display_name or project.original_filename or project.id }}（音画同步）
 {% elif detail_mode == 'ja' %}
 {{ project.display_name or project.original_filename or project.id }}（日语）
 {% endif %}
@@ -142,7 +146,7 @@
   .task-status-card .opt-state--done    { background: rgba(22, 163, 74, 0.14); color: #15803d; }
   .task-status-card .opt-state--error   { background: rgba(220, 38, 38, 0.12); color: #b91c1c; }
 
-  {% if detail_mode == 'multi' %}
+  {% if detail_mode in ('multi', 'av_sync') %}
   /* 多语种视频翻译：隐藏 _task_workbench.html 里老的 voicePanel（仅 2 个默认音色），
      由新的 _voice_selector_multi.html 全库选择器取代 */
   #voicePanel { display: none !important; }
@@ -164,7 +168,10 @@
 </style>
 {% endblock %}
 {% block content %}
-{% if detail_mode == 'multi' %}
+{% if detail_mode == 'av_sync' %}
+{% set detail_back_href = '/video-translate-av-sync' %}
+{% set detail_back_label = '← 返回视频翻译音画同步' %}
+{% elif detail_mode == 'multi' %}
 {% if request.path.startswith('/omni-translate') %}
 {% set detail_back_href = '/omni-translate' %}
 {% set detail_back_label = '← 返回全能视频翻译列表' %}
@@ -189,6 +196,8 @@
   {% set _force_restart_api = '/api/omni-translate' %}
 {% elif request.path.startswith('/multi-translate') %}
   {% set _force_restart_api = '/api/multi-translate' %}
+{% elif detail_mode == 'av_sync' %}
+  {% set _force_restart_api = '/api/tasks' %}
 {% endif %}
 {% set _current_src_lang = state.source_language if state.user_specified_source_language else '' %}
 <div class="detail-topbar">
@@ -270,7 +279,7 @@
   </div>
 </div>
 {% endif %}
-{% if detail_mode == 'multi' %}
+{% if detail_mode in ('multi', 'av_sync') %}
 {# 顶部实时状态卡：源/目标语言按 user_specified / detected 真实值渲染，进度条 + 当前阶段 + 中断提示 + 可选项 #}
 {% set _LANG_LABELS = {
   'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
@@ -295,7 +304,7 @@
         <span class="status-lang-source" id="statusLangSource">{{ _src_label_init }}</span>
         <span class="status-lang-arrow">→</span>
         <span class="status-lang-target" id="statusLangTarget">{{ _tgt_label_init }}</span>
-        <span class="status-lang-suffix">本土化翻译</span>
+        <span class="status-lang-suffix">{% if detail_mode == 'av_sync' %}本土化音画同步{% else %}本土化翻译{% endif %}</span>
       </div>
       <div class="status-step-line" id="statusStepLine">准备启动…</div>
     </div>
@@ -339,7 +348,7 @@
   {% endif %}
 </p>
 {% endif %}
-{% if detail_mode in ('multi', 'ja') %}
+{% if detail_mode in ('multi', 'ja', 'av_sync') %}
 {% include "_voice_selector_multi.html" %}
 {% endif %}
 {% include "_task_workbench.html" %}
@@ -348,7 +357,7 @@
 {% block scripts %}
 {% if not project.deleted_at %}
 {% include "_task_workbench_scripts.html" %}
-{% if detail_mode in ('multi', 'ja') %}
+{% if detail_mode in ('multi', 'ja', 'av_sync') %}
 <script src="{{ url_for('static', filename='voice_selector_multi.js') }}"></script>
 {% endif %}
 <script>

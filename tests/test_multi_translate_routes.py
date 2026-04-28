@@ -337,7 +337,8 @@ def test_multi_translate_list_page_uses_local_multipart_upload():
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
 
     assert "new FormData(uploadForm)" in template
-    assert "fetch('/api/multi-translate/start'" in template
+    assert "module_start_api|default('/api/multi-translate/start')" in template
+    assert "fetch({{ module_start_api|tojson }}" in template
     assert "/api/multi-translate/bootstrap" not in template
     assert "/api/multi-translate/complete" not in template
     assert "/api/multi-translate/compat-bootstrap" not in template

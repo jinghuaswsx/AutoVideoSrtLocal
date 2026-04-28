@@ -1,6 +1,16 @@
 {% extends "layout.html" %}
-{% block title %}多语种视频翻译 - AutoVideoSrt{% endblock %}
-{% block page_title %}多语种视频翻译{% endblock %}
+{% set module_title = module_title|default('多语种视频翻译') %}
+{% set module_list_path = module_list_path|default('/multi-translate') %}
+{% set module_detail_path = module_detail_path|default('/multi-translate') %}
+{% set module_start_api = module_start_api|default('/api/multi-translate/start') %}
+{% set module_delete_api = module_delete_api|default('/api/multi-translate') %}
+{% set module_new_title = module_new_title|default('新建多语种翻译项目') %}
+{% set module_empty_text = module_empty_text|default('还没有多语种翻译项目，点击右上角新建') %}
+{% set module_storage_key = module_storage_key|default('multiTranslateViewMode') %}
+{% set module_icon = module_icon|default('🌍') %}
+{% set module_kind = module_kind|default('multi_translate') %}
+{% block title %}{{ module_title }} - AutoVideoSrt{% endblock %}
+{% block page_title %}{{ module_title }}{% endblock %}
 {% block extra_style %}
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .page-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
@@ -257,7 +267,7 @@
 {% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>多语种视频翻译</h1>
+  <h1>{{ module_title }}</h1>
   <div class="page-header-right">
     <div class="view-toggle">
       <button class="view-toggle-btn active" id="viewGrid" onclick="switchView('grid')" title="卡片视图">&#9638;</button>
@@ -269,11 +279,11 @@
 
 {% set lang_label_map = {'de':'🇩🇪 德语','fr':'🇫🇷 法语','es':'🇪🇸 西语','it':'🇮🇹 意语','ja':'🇯🇵 日语','pt':'🇵🇹 葡语','nl':'🇳🇱 荷兰语','sv':'🇸🇪 瑞典语','fi':'🇫🇮 芬兰语','en':'🇺🇸 英语'} %}
 <div class="lang-pills">
-  <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="/multi-translate">全部</a>
+  <a class="lang-pill {{ 'active' if not current_lang else '' }}" href="{{ module_list_path }}">全部</a>
   {% for lang in filter_langs %}
     {% set label = lang_label_map.get(lang, lang.upper()) %}
     <a class="lang-pill {{ 'active' if current_lang == lang else '' }}"
-       href="/multi-translate?lang={{ lang }}">{{ label }}</a>
+       href="{{ module_list_path }}?lang={{ lang }}">{{ label }}</a>
   {% endfor %}
 </div>
 
@@ -286,12 +296,12 @@
 <div class="grid active" id="gridView">
   {% for p in projects %}
   <div class="project-card-wrap">
-    <a class="project-card" href="/multi-translate/{{ p.id }}">
+    <a class="project-card" href="{{ module_detail_path }}/{{ p.id }}">
       <div class="thumb">
         {% if p.thumbnail_path %}
           <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
         {% else %}
-          <div class="thumb-inner">🌍</div>
+          <div class="thumb-inner">{{ module_icon }}</div>
         {% endif %}
       </div>
       <div class="info">
@@ -329,12 +339,12 @@
 <div class="list-view" id="listView">
   {% for p in projects %}
   <div class="list-item" style="position:relative">
-    <a href="/multi-translate/{{ p.id }}" style="display:contents;text-decoration:none;color:inherit">
+    <a href="{{ module_detail_path }}/{{ p.id }}" style="display:contents;text-decoration:none;color:inherit">
       <div class="list-thumb">
         {% if p.thumbnail_path %}
           <img src="/api/tasks/{{ p.id }}/thumbnail" alt="" loading="lazy">
         {% else %}
-          🌍
+          {{ module_icon }}
         {% endif %}
       </div>
       <div class="list-info">
@@ -365,15 +375,15 @@
 </div>
 {% else %}
 <div class="empty">
-  <p style="font-size:48px;margin-bottom:16px">🌍</p>
-  <p>还没有多语种翻译项目，点击右上角新建</p>
+  <p style="font-size:48px;margin-bottom:16px">{{ module_icon }}</p>
+  <p>{{ module_empty_text }}</p>
 </div>
 {% endif %}
 
 <!-- 上传弹窗 -->
 <div class="modal-overlay" id="uploadOverlay">
   <div class="modal-box modal-box-wide">
-    <h3>新建多语种翻译项目</h3>
+    <h3>{{ module_new_title }}</h3>
     <form id="uploadForm" enctype="multipart/form-data">
       <div class="modal-scroll-body">
         <div class="modal-warning" id="langWarning">
@@ -390,6 +400,24 @@
           </div>
           <input type="hidden" id="targetLangSelect" name="target_lang" value="">
         </div>
+        {% if module_kind == 'av_sync' %}
+        <div class="modal-field">
+          <label for="targetMarketSelect">目标市场</label>
+          <select id="targetMarketSelect" name="target_market">
+            {% for market in av_target_markets %}
+              <option value="{{ market.code }}" {% if market.code == 'US' %}selected{% endif %}>{{ market.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-field">
+          <label for="syncGranularitySelect">同步粒度</label>
+          <select id="syncGranularitySelect" name="sync_granularity">
+            <option value="sentence" selected>句子级同步</option>
+            <option value="hybrid">混合收敛</option>
+          </select>
+          <div class="modal-hint" style="margin:6px 0 0;">上传后进入多语言详情壳，在音色确认后按 V2 收敛流程启动。</div>
+        </div>
+        {% endif %}
         <div class="modal-field">
           <label>选择视频</label>
           <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
@@ -447,10 +475,10 @@ function switchView(mode) {
   document.getElementById('viewList').classList.toggle('active', mode === 'list');
   grid.classList.toggle('active', mode === 'grid');
   list.classList.toggle('active', mode === 'list');
-  try { localStorage.setItem('multiTranslateViewMode', mode); } catch {}
+  try { localStorage.setItem({{ module_storage_key|tojson }}, mode); } catch {}
 }
 try {
-  var saved = localStorage.getItem('multiTranslateViewMode');
+  var saved = localStorage.getItem({{ module_storage_key|tojson }});
   if (saved === 'list') switchView('list');
 } catch {}
 
@@ -470,7 +498,7 @@ async function deleteTask(e, taskId) {
   document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
   if (!confirm('确定删除这个项目吗？此操作不可恢复。')) return;
   var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
-  var res = await fetch('/api/multi-translate/' + taskId, {
+  var res = await fetch({{ module_delete_api|tojson }} + '/' + taskId, {
     method: 'DELETE',
     headers: { 'X-CSRFToken': csrfToken },
   });
@@ -699,13 +727,13 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var nameInput = document.getElementById('projectName');
     var trimmedName = nameInput ? nameInput.value.trim() : '';
     formData.set('display_name', trimmedName);
-    var res = await fetch('/api/multi-translate/start', {
+    var res = await fetch({{ module_start_api|tojson }}, {
       method: 'POST',
       body: formData,
     });
     var data = await res.json();
     if (!res.ok) throw new Error(data.error || '创建任务失败');
-    window.location.href = data.redirect_url || ('/multi-translate/' + data.task_id);
+    window.location.href = data.redirect_url || ({{ module_detail_path|tojson }} + '/' + data.task_id);
   } catch (err) {
     alert(err.message);
     btn.disabled = false;

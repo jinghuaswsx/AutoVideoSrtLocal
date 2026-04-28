@@ -1,6 +1,6 @@
 from __future__ import annotations
 import json
-from flask import Blueprint, render_template, abort, redirect, url_for
+from flask import Blueprint, render_template, abort, redirect, url_for, request
 from flask_login import login_required, current_user
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_OPTIONS,
@@ -12,6 +12,19 @@ from appcore.task_recovery import recover_all_interrupted_tasks, recover_project
 from appcore.settings import get_retention_hours
 
 bp = Blueprint("projects", __name__)
+
+
+def _is_av_sync_state(state: dict) -> bool:
+    return (
+        state.get("pipeline_version") == "av"
+        or state.get("type") == "av_translate"
+        or bool(state.get("av_translate_inputs"))
+    )
+
+
+def _av_sync_target_lang(state: dict) -> str:
+    av_inputs = state.get("av_translate_inputs") if isinstance(state.get("av_translate_inputs"), dict) else {}
+    return str(av_inputs.get("target_language") or state.get("target_lang") or "en").strip().lower() or "en"
 
 
 @bp.route("/")
@@ -37,15 +50,63 @@ def index():
 @bp.route("/video-translate-av-sync")
 @login_required
 def av_sync_page():
-    from appcore.api_keys import get_key
+    from datetime import datetime
 
+    filter_langs = tuple(item["code"] for item in AV_TARGET_LANGUAGE_OPTIONS)
+    current_lang = request.args.get("lang", "").strip().lower()
+    if current_lang and current_lang not in filter_langs:
+        current_lang = ""
+
+    rows = []
     try:
-        translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+        base_sql = (
+            "p.user_id = %s AND p.type = 'translation' AND p.deleted_at IS NULL "
+            "AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.pipeline_version')) = 'av' "
+            "     OR JSON_EXTRACT(p.state_json, '$.av_translate_inputs') IS NOT NULL)"
+        )
+        args: tuple = (current_user.id,)
+        lang_sql = ""
+        if current_lang:
+            lang_sql = (
+                " AND (JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.av_translate_inputs.target_language')) = %s "
+                "      OR JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.target_lang')) = %s)"
+            )
+            args = (current_user.id, current_lang, current_lang)
+        rows = query(
+            "SELECT p.id, p.original_filename, p.display_name, p.thumbnail_path, p.status, "
+            "       p.state_json, p.created_at, p.expires_at, p.deleted_at, "
+            "       u.username AS creator_name "
+            "FROM projects p "
+            "LEFT JOIN users u ON u.id = p.user_id "
+            f"WHERE {base_sql}{lang_sql} "
+            "ORDER BY p.created_at DESC",
+            args,
+        )
     except Exception:
-        translate_pref = "openrouter"
+        rows = []
+    try:
+        retention_hours = get_retention_hours("translation")
+    except Exception:
+        retention_hours = 24
+
     return render_template(
-        "video_translate_av_sync.html",
-        translate_pref=translate_pref,
+        "multi_translate_list.html",
+        projects=rows,
+        now=datetime.now(),
+        current_lang=current_lang,
+        filter_langs=filter_langs,
+        supported_langs=filter_langs,
+        retention_hours=retention_hours,
+        module_title="视频翻译音画同步",
+        module_list_path="/video-translate-av-sync",
+        module_detail_path="/projects",
+        module_start_api="/api/tasks",
+        module_delete_api="/api/tasks",
+        module_new_title="新建视频翻译音画同步项目",
+        module_empty_text="还没有音画同步项目，点击右上角新建",
+        module_storage_key="avSyncViewMode",
+        module_icon="🎬",
+        module_kind="av_sync",
         av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
         av_translate_defaults=build_default_av_translate_inputs(),
@@ -73,6 +134,21 @@ def detail(task_id: str):
         translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
     except Exception:
         translate_pref = "openrouter"
+    if _is_av_sync_state(state):
+        target_lang = _av_sync_target_lang(state)
+        state = dict(state)
+        state.setdefault("target_lang", target_lang)
+        return render_template(
+            "av_sync_detail.html",
+            project=row,
+            state=state,
+            initial_task_json=json.dumps(state, ensure_ascii=False),
+            translate_pref=translate_pref,
+            target_lang=target_lang,
+            av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+            av_target_markets=AV_TARGET_MARKET_OPTIONS,
+            av_translate_defaults=build_default_av_translate_inputs(),
+        )
     return render_template(
         "project_detail.html",
         project=row,

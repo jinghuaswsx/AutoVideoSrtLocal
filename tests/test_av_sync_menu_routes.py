@@ -35,8 +35,19 @@ def test_av_sync_menu_page_renders_shared_workbench(authed_client_no_db):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "视频翻译音画同步" in html
-    assert "音画同步配置" in html
     assert 'href="/video-translate-av-sync"' in html
+
+
+def test_av_sync_menu_page_uses_multilingual_list_shell(authed_client_no_db):
+    resp = authed_client_no_db.get("/video-translate-av-sync")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="viewGrid"' in html
+    assert 'id="modalLangPills"' in html
+    assert 'fetch("/api/tasks"' in html
+    assert '"/projects" + \'/\' + data.task_id' in html
+    assert "音画同步配置" not in html
 
 
 def test_dashboard_sidebar_prioritizes_primary_translation_entries(

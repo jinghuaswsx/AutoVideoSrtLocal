@@ -30,6 +30,7 @@ from appcore.av_translate_inputs import (
     build_default_av_translate_inputs,
     normalize_av_translate_inputs,
 )
+from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
 from appcore import cleanup
 from appcore.task_recovery import recover_task_if_needed
@@ -49,6 +50,11 @@ from web.preview_artifacts import (
 from web import store
 from web.services import pipeline_runner
 from web.services.artifact_download import serve_artifact_download
+from web.services.translate_detail_protocol import (
+    build_voice_library_payload,
+    lookup_default_voice_row,
+    normalize_confirm_voice_payload,
+)
 from appcore.db import query_one as db_query_one, execute as db_execute, query as db_query
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
@@ -95,7 +101,7 @@ def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None
             override_inputs[key] = value
 
     raw_inputs = {
-        "target_language": data.get("target_language", nested_inputs.get("target_language")),
+        "target_language": data.get("target_language") or data.get("target_lang") or nested_inputs.get("target_language"),
         "target_language_name": data.get("target_language_name", nested_inputs.get("target_language_name")),
         "target_market": data.get("target_market", nested_inputs.get("target_market")),
         "sync_granularity": data.get("sync_granularity", nested_inputs.get("sync_granularity")),
@@ -112,6 +118,18 @@ def _validate_av_translate_inputs(av_inputs: dict) -> str | None:
     if target_market not in AV_TARGET_MARKET_CODES:
         return "target_market 非法"
     return None
+
+
+def _get_current_user_task(task_id: str) -> dict | None:
+    task = store.get(task_id)
+    if not task or task.get("_user_id") != current_user.id:
+        return None
+    return task
+
+
+def _av_task_target_lang(task: dict) -> str:
+    av_inputs = task.get("av_translate_inputs") if isinstance(task.get("av_translate_inputs"), dict) else {}
+    return str(task.get("target_lang") or av_inputs.get("target_language") or "").strip().lower()
 
 
 def _rebuild_tts_full_audio(task_dir: str, segments: list[dict], variant: str = "av") -> str:
@@ -337,6 +355,11 @@ def upload():
     original_filename = os.path.basename(file.filename)
     if not validate_video_extension(original_filename):
         return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
+    form_payload = request.form.to_dict(flat=True)
+    av_inputs = _collect_av_translate_inputs(form_payload)
+    av_error = _validate_av_translate_inputs(av_inputs)
+    if av_error:
+        return jsonify({"error": av_error}), 400
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -353,7 +376,8 @@ def upload():
         user_id=user_id,
     )
 
-    display_name = _default_display_name(original_filename)
+    desired_name = (form_payload.get("display_name") or "").strip()[:200]
+    display_name = desired_name or _default_display_name(original_filename)
     if user_id is not None:
         display_name = _resolve_name_conflict(user_id, display_name)
         db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
@@ -363,7 +387,8 @@ def upload():
         display_name=display_name,
         source_language="zh",
         pipeline_version="av",
-        av_translate_inputs=build_default_av_translate_inputs(),
+        target_lang=av_inputs["target_language"],
+        av_translate_inputs=av_inputs,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -385,6 +410,157 @@ def get_task(task_id):
     if not task or task.get("_user_id") != current_user.id:
         return jsonify({"error": "Task not found"}), 404
     return jsonify(task)
+
+
+@bp.route("/<task_id>/subtitle-preview", methods=["GET"])
+@login_required
+def subtitle_preview(task_id: str):
+    task = _get_current_user_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    return jsonify(build_multi_translate_preview_payload(task_id, current_user.id, api_base="/api/tasks"))
+
+
+@bp.route("/user-default-voice", methods=["PUT"])
+@login_required
+def set_user_default_voice_route():
+    body = request.get_json(silent=True) or {}
+    lang = (body.get("lang") or "").strip().lower()
+    voice_id = (body.get("voice_id") or "").strip()
+    voice_name = (body.get("voice_name") or "").strip() or None
+    if lang not in AV_TARGET_LANGUAGE_CODES:
+        return jsonify({"error": f"lang must be one of {sorted(AV_TARGET_LANGUAGE_CODES)}"}), 400
+    if not voice_id:
+        return jsonify({"error": "voice_id required"}), 400
+
+    from appcore.video_translate_defaults import set_user_default_voice
+
+    set_user_default_voice(current_user.id, lang, voice_id, voice_name)
+    return jsonify({"ok": True, "lang": lang, "voice_id": voice_id, "voice_name": voice_name})
+
+
+@bp.route("/<task_id>/voice-library", methods=["GET"])
+@login_required
+def voice_library_for_task(task_id: str):
+    task = _get_current_user_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    lang = _av_task_target_lang(task)
+    if not lang:
+        return jsonify({"error": "task has no target_lang"}), 400
+
+    from appcore.voice_library_browse import list_voices
+
+    gender = request.args.get("gender") or None
+    q = request.args.get("q") or None
+    try:
+        data = list_voices(language=lang, gender=gender, q=q, page=1, page_size=500)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    state = dict(task)
+    state["target_lang"] = lang
+    default_voice = lookup_default_voice_row(lang, current_user.id)
+    payload = build_voice_library_payload(
+        state=state,
+        owner_user_id=current_user.id,
+        items=data.get("items", []),
+        total=data.get("total", 0),
+        default_voice=default_voice,
+    )
+    return jsonify(payload)
+
+
+@bp.route("/<task_id>/rematch", methods=["POST"])
+@login_required
+def rematch_voice(task_id: str):
+    task = _get_current_user_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    lang = _av_task_target_lang(task)
+    if not lang:
+        return jsonify({"error": "task has no target_lang"}), 400
+
+    body = request.get_json(silent=True) or {}
+    gender = (body.get("gender") or "").strip().lower() or None
+    if gender and gender not in {"male", "female"}:
+        return jsonify({"error": "gender must be male|female|null"}), 400
+
+    embedding_b64 = task.get("voice_match_query_embedding")
+    if not embedding_b64:
+        return jsonify({"error": "voice_match 尚未完成，无法重新匹配"}), 409
+
+    import base64
+    from appcore.video_translate_defaults import resolve_default_voice
+    from appcore.voice_library_browse import fetch_voices_by_ids
+    from pipeline.voice_embedding import deserialize_embedding
+    from pipeline.voice_match import match_candidates
+
+    try:
+        vec = deserialize_embedding(base64.b64decode(embedding_b64))
+    except Exception:
+        return jsonify({"error": "query embedding 解码失败"}), 500
+
+    default_voice_id = resolve_default_voice(lang, user_id=current_user.id)
+    candidates = match_candidates(
+        vec,
+        language=lang,
+        gender=gender,
+        top_k=10,
+        exclude_voice_ids={default_voice_id} if default_voice_id else None,
+    ) or []
+    for candidate in candidates:
+        candidate["similarity"] = float(candidate.get("similarity", 0.0))
+
+    candidate_ids = [candidate["voice_id"] for candidate in candidates if candidate.get("voice_id")]
+    extra_items = fetch_voices_by_ids(language=lang, voice_ids=candidate_ids) if candidate_ids else []
+    store.update(task_id, voice_match_candidates=candidates)
+    return jsonify({"ok": True, "gender": gender, "candidates": candidates, "extra_items": extra_items})
+
+
+@bp.route("/<task_id>/confirm-voice", methods=["POST"])
+@login_required
+def confirm_voice(task_id: str):
+    task = _get_current_user_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    lang = _av_task_target_lang(task)
+    body = request.get_json(silent=True) or {}
+
+    from appcore.video_translate_defaults import resolve_default_voice
+
+    try:
+        normalized = normalize_confirm_voice_payload(
+            body=body,
+            lang=lang or "",
+            default_voice_id=resolve_default_voice(lang, user_id=current_user.id) if lang else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    store.update(
+        task_id,
+        selected_voice_id=normalized["voice_id"],
+        selected_voice_name=normalized["voice_name"],
+        voice_id=normalized["voice_id"],
+        subtitle_font=normalized["subtitle_font"],
+        subtitle_size=normalized["subtitle_size"],
+        subtitle_position_y=normalized["subtitle_position_y"],
+        subtitle_position=normalized["subtitle_position"],
+        pipeline_version="av",
+        target_lang=lang or task.get("target_lang"),
+    )
+    store.set_step(task_id, "voice_match", "done")
+    store.set_current_review_step(task_id, "")
+
+    updated_task = store.get(task_id) or task
+    try:
+        _ensure_local_source_video(task_id, updated_task)
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+    pipeline_runner.start(task_id, user_id=current_user.id if current_user.is_authenticated else None)
+    return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
 
 
 @bp.route("/<task_id>/thumbnail")
