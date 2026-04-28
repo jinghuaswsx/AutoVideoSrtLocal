@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import hashlib
+import mimetypes
 import subprocess
 import tempfile
 import threading
@@ -10,6 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from appcore import llm_client, local_media_storage, medias, pushes, tos_clients
 from appcore.db import execute, query, query_one
@@ -302,6 +305,132 @@ def _decision_from_score(score: float, is_suitable: bool) -> str:
     if score >= 50:
         return "谨慎推广"
     return "不适合推广"
+
+
+def _debug_media_entry(
+    *,
+    role: str,
+    label: str,
+    object_key: str,
+    preview_url: str,
+    path: Path | None = None,
+    item: dict | None = None,
+    include_base64: bool = False,
+) -> dict:
+    filename = Path(str(object_key or "")).name or (path.name if path else "")
+    mime_type = mimetypes.guess_type(filename or str(path or ""))[0] or "application/octet-stream"
+    entry = {
+        "role": role,
+        "label": label,
+        "object_key": object_key,
+        "filename": filename,
+        "mime_type": mime_type,
+        "preview_url": preview_url,
+    }
+    if item:
+        entry.update({
+            "item_id": item.get("id"),
+            "duration_seconds": item.get("duration_seconds"),
+            "file_size": item.get("file_size"),
+        })
+    if include_base64 and path:
+        data = path.read_bytes()
+        entry["byte_size"] = len(data)
+        entry["base64"] = base64.b64encode(data).decode("ascii")
+    return entry
+
+
+def build_request_debug_payload(product_id: int, *, include_base64: bool = False) -> dict:
+    product_id = int(product_id)
+    product = medias.get_product(product_id)
+    if not product:
+        raise ValueError("product_missing")
+
+    languages = _normalize_languages(medias.list_enabled_languages_kv())
+    if not languages:
+        raise ValueError("missing_languages")
+
+    product_url = pushes.resolve_product_page_url("en", product)
+    if not product_url:
+        raise ValueError("missing_product_link")
+
+    cover_key = _resolve_product_cover_key(product_id, product)
+    if not cover_key or not _looks_like_image_key(cover_key):
+        raise ValueError("missing_cover")
+
+    video = _first_english_video(product_id)
+    if not video:
+        raise ValueError("missing_video")
+    video_key = str(video.get("object_key") or "").strip()
+
+    cover_path = _materialize_media(cover_key) if include_base64 else None
+    video_path = _make_eval_clip_15s(product_id, video) if include_base64 else None
+    system_prompt = build_system_prompt()
+    user_prompt = build_prompt(product, product_url, languages)
+    response_schema = build_response_schema(languages)
+    media = [
+        _debug_media_entry(
+            role="product_cover",
+            label="商品主图",
+            object_key=cover_key,
+            preview_url=f"/medias/cover/{product_id}?lang=en",
+            path=cover_path,
+            include_base64=include_base64,
+        ),
+        _debug_media_entry(
+            role="english_video",
+            label="英文视频",
+            object_key=video_key,
+            preview_url=f"/medias/object?object_key={quote(video_key, safe='')}",
+            path=video_path,
+            item=video,
+            include_base64=include_base64,
+        ),
+    ]
+    request_payload = {
+        "use_case": USE_CASE_CODE,
+        "system": system_prompt,
+        "prompt": user_prompt,
+        "media": [
+            {
+                "role": item["role"],
+                "filename": item["filename"],
+                "mime_type": item["mime_type"],
+                "object_key": item["object_key"],
+                "data_base64": item.get("base64") if include_base64 else "[omitted]",
+            }
+            for item in media
+        ],
+        "user_id": product.get("user_id"),
+        "project_id": f"media-product-{product_id}",
+        "response_schema": response_schema,
+        "temperature": 0.2,
+        "max_output_tokens": 4096,
+    }
+    return {
+        "product": {
+            "id": product_id,
+            "name": product.get("name") or "",
+            "product_code": product.get("product_code") or "",
+            "product_url": product_url,
+            "user_id": product.get("user_id"),
+        },
+        "languages": languages,
+        "prompts": {
+            "system": system_prompt,
+            "user": user_prompt,
+        },
+        "response_schema": response_schema,
+        "llm": {
+            "use_case": USE_CASE_CODE,
+            "temperature": 0.2,
+            "max_output_tokens": 4096,
+            "project_id": f"media-product-{product_id}",
+        },
+        "media": media,
+        "request": request_payload,
+        "include_base64": include_base64,
+    }
 
 
 def find_ready_product_ids(limit: int = 5) -> list[int]:
