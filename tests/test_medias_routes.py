@@ -208,6 +208,90 @@ def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, mon
     assert resp.get_json()["message"] == "AI 评估完成"
 
 
+def _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path):
+    from web.routes import medias as r
+
+    cover_path = tmp_path / "cover.jpg"
+    video_path = tmp_path / "clip.mp4"
+    cover_path.write_bytes(b"cover-bytes")
+    video_path.write_bytes(b"video-bytes")
+
+    product = {
+        "id": 123,
+        "user_id": 1,
+        "name": "Debug Product",
+        "product_code": "debug-product-rjc",
+    }
+    video = {
+        "id": 456,
+        "product_id": 123,
+        "lang": "en",
+        "filename": "debug.mp4",
+        "object_key": "1/medias/123/debug.mp4",
+        "duration_seconds": 12,
+        "file_size": len(b"video-bytes"),
+    }
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r.material_evaluation.medias, "get_product", lambda pid: product)
+    monkeypatch.setattr(
+        r.material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "de", "name_zh": "German"}, {"code": "fr", "name_zh": "French"}],
+    )
+    monkeypatch.setattr(r.material_evaluation.medias, "resolve_cover", lambda pid, lang: "1/medias/123/cover.jpg")
+    monkeypatch.setattr(r.material_evaluation.medias, "list_items", lambda pid, lang=None: [video])
+    monkeypatch.setattr(r.material_evaluation.pushes, "resolve_product_page_url", lambda lang, product: "https://example.test/products/debug-product-rjc")
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover_path if object_key.endswith("cover.jpg") else video_path,
+    )
+    monkeypatch.setattr(r.material_evaluation, "_make_eval_clip_15s", lambda pid, item: video_path)
+    return r
+
+
+def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path)
+
+    resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-preview")
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    payload = data["payload"]
+    assert payload["product"]["id"] == 123
+    assert payload["product"]["product_url"] == "https://example.test/products/debug-product-rjc"
+    assert payload["media"][0]["role"] == "product_cover"
+    assert payload["media"][0]["preview_url"] == "/medias/cover/123?lang=en"
+    assert payload["media"][1]["role"] == "english_video"
+    assert payload["media"][1]["preview_url"].startswith("/medias/object?object_key=")
+    assert payload["prompts"]["system"]
+    assert payload["prompts"]["user"]
+    assert payload["response_schema"]["type"] == "object"
+    assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
+    assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
+
+
+def test_manual_ai_evaluate_request_payload_includes_full_base64(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    _stub_ai_evaluation_debug_payload(monkeypatch, tmp_path)
+
+    resp = authed_client_no_db.get("/medias/api/products/123/evaluate/request-payload")
+
+    assert resp.status_code == 200
+    payload = resp.get_json()["payload"]
+    assert payload["media"][0]["base64"] == "Y292ZXItYnl0ZXM="
+    assert payload["media"][1]["base64"] == "dmlkZW8tYnl0ZXM="
+    assert payload["request"]["media"][0]["data_base64"] == "Y292ZXItYnl0ZXM="
+    assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
+    assert payload["request"]["prompt"] == payload["prompts"]["user"]
+
+
 def test_item_bootstrap_rejects_bad_localized_material_filename(
     authed_client_no_db, monkeypatch
 ):

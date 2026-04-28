@@ -1170,6 +1170,33 @@ def api_product_evaluate(pid: int):
     return jsonify({**payload, "error": message}), 400
 
 
+@bp.route("/api/products/<int:pid>/evaluate/request-preview", methods=["GET"])
+@login_required
+def api_product_evaluate_request_preview(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    try:
+        payload = material_evaluation.build_request_debug_payload(pid, include_base64=False)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    payload["full_payload_url"] = f"/medias/api/products/{pid}/evaluate/request-payload"
+    return jsonify({"ok": True, "payload": payload})
+
+
+@bp.route("/api/products/<int:pid>/evaluate/request-payload", methods=["GET"])
+@login_required
+def api_product_evaluate_request_payload(pid: int):
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    try:
+        payload = material_evaluation.build_request_debug_payload(pid, include_base64=True)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "payload": payload})
+
+
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])
 @login_required
 def api_delete_product(pid: int):
