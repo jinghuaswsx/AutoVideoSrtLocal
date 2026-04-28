@@ -90,6 +90,10 @@ def _candidate_from_current(current: dict, *, round_number: int) -> dict:
     }
 
 
+def _error_text(exc: Exception) -> str:
+    return str(exc)[:500]
+
+
 def _apply_candidate(current: dict, candidate: dict) -> None:
     current["text"] = candidate["text"]
     current["est_chars"] = len(candidate["text"])
@@ -212,23 +216,46 @@ def reconcile_duration(
                     current_duration,
                 )
                 rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
-                new_text = av_translate.rewrite_one(
-                    asr_index=asr_index,
-                    prev_text=before_text,
-                    overshoot_sec=max(0.0, current_duration - current["target_duration"]),
-                    direction=action,
-                    new_target_chars_range=new_range,
-                    script_segments=script_segments,
-                    shot_notes=shot_notes,
-                    av_inputs=av_inputs,
-                    voice_id=voice_id,
-                    user_id=user_id,
-                    project_id=project_id,
-                    attempt_number=rewrite_round,
-                    previous_attempts=list(current["attempts"]),
-                    temperature=rewrite_temperature,
-                )
                 current["text_rewrite_attempts"] += 1
+                try:
+                    new_text = av_translate.rewrite_one(
+                        asr_index=asr_index,
+                        prev_text=before_text,
+                        overshoot_sec=max(0.0, current_duration - current["target_duration"]),
+                        direction=action,
+                        new_target_chars_range=new_range,
+                        script_segments=script_segments,
+                        shot_notes=shot_notes,
+                        av_inputs=av_inputs,
+                        voice_id=voice_id,
+                        user_id=user_id,
+                        project_id=project_id,
+                        attempt_number=rewrite_round,
+                        previous_attempts=list(current["attempts"]),
+                        temperature=rewrite_temperature,
+                    )
+                except Exception as exc:
+                    current["rewrite_rounds"] = rewrite_round
+                    current["attempts"].append(
+                        {
+                            "round": rewrite_round,
+                            "text_attempt": current["text_rewrite_attempts"],
+                            "tts_attempt": current["tts_regenerate_attempts"],
+                            "temperature": rewrite_temperature,
+                            "action": action,
+                            "before_text": before_text,
+                            "after_text": "",
+                            "target_duration": current["target_duration"],
+                            "tts_duration": current_duration,
+                            "duration_ratio": round(current["duration_ratio"], 4),
+                            "delta_pct": _delta_pct(current["target_duration"], current_duration),
+                            "status": "rewrite_error",
+                            "reason": "rewrite_failed",
+                            "error": _error_text(exc),
+                            "selected": False,
+                        }
+                    )
+                    continue
                 current["text"] = new_text
                 current["est_chars"] = len(new_text)
                 current["rewrite_rounds"] = rewrite_round

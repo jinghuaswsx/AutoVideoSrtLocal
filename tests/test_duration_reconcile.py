@@ -126,6 +126,72 @@ def test_reconcile_duration_runs_ten_attempts_and_keeps_closest_candidate(monkey
     assert regenerate_calls == [{"text": f"Candidate {index}", "speed": None} for index in range(1, 11)]
 
 
+def test_reconcile_duration_records_rewrite_errors_and_keeps_best_candidate(monkeypatch):
+    durations = iter([5.8, 5.3])
+    rewrite_calls = []
+    regenerate_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        if kwargs["attempt_number"] == 2:
+            raise ValueError("av_translate requires a JSON response")
+        return f"Candidate {kwargs['attempt_number']}"
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (60, 70),
+                    "text": "A very long line that needs many rewrites",
+                    "est_chars": 42,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 6.2}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=3,
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "warning_long"
+    assert sentence["text"] == "Candidate 3"
+    assert sentence["text_rewrite_attempts"] == 3
+    assert sentence["tts_regenerate_attempts"] == 2
+    assert len(sentence["attempts"]) == 3
+    assert sentence["attempts"][1] | {
+        "round": 2,
+        "text_attempt": 2,
+        "tts_attempt": 1,
+        "after_text": "",
+        "status": "rewrite_error",
+        "reason": "rewrite_failed",
+        "selected": False,
+    } == sentence["attempts"][1]
+    assert "av_translate requires a JSON response" in sentence["attempts"][1]["error"]
+    assert [call["attempt_number"] for call in rewrite_calls] == [1, 2, 3]
+    assert regenerate_calls == [
+        {"text": "Candidate 1", "speed": None},
+        {"text": "Candidate 3", "speed": None},
+    ]
+
+
 def test_reconcile_duration_rewrite_success(monkeypatch):
     durations = iter([5.0])
     regenerate_calls = []
