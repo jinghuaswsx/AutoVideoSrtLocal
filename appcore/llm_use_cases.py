@@ -149,9 +149,9 @@ USE_CASES: dict[str, UseCase] = {
         "video_translate",
         "画面笔记",
         "多模态分析视频并输出逐句画面笔记",
-        "gemini_aistudio",
-        "gemini-3.1-pro-preview",
-        "gemini_video_analysis",
+        "openrouter",
+        "google/gemini-3.1-pro-preview",
+        "openrouter",
         "tokens",
     ),
     "video_translate.av_localize": _uc(

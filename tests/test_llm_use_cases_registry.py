@@ -121,9 +121,9 @@ def test_new_billing_backfill_use_cases_defaults():
 def test_video_translate_av_sync_defaults():
     expected = {
         "video_translate.shot_notes": (
-            "gemini_aistudio",
-            "gemini-3.1-pro-preview",
-            "gemini_video_analysis",
+            "openrouter",
+            "google/gemini-3.1-pro-preview",
+            "openrouter",
         ),
         "video_translate.av_localize": (
             "openrouter",
