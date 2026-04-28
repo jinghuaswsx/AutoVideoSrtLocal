@@ -16,9 +16,9 @@ from appcore import order_analytics as oa
 
 ORDER_URL = "https://www.dianxiaomi.com/api/package/list.json"
 PROFIT_URL = "https://www.dianxiaomi.com/api/orderProfit/getOrderProfit.json"
-ORDER_PAGE_URL = "https://www.dianxiaomi.com/web/order/paid"
+ORDER_PAGE_URL = "https://www.dianxiaomi.com/web/order/all"
 SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9223"
-DEFAULT_STATES = ["paid", "approved", "processed", "allocated", "shipped"]
+DEFAULT_STATES = [""]
 BROWSER_MODES = ("auto", "server-cdp")
 DXM_ENVIRONMENTS = {
     "DXM-01": {
@@ -57,15 +57,15 @@ def build_order_payload(day: date, page_no: int, state: str) -> dict[str, Any]:
         "shopId": "-1",
         "state": state,
         "platform": "",
-        "isSearch": 0,
+        "isSearch": 1,
         "searchType": "orderId",
         "authId": "-1",
         "startTime": f"{day:%Y-%m-%d} 00:00:00",
         "endTime": f"{day:%Y-%m-%d} 23:59:59",
         "country": "",
         "orderField": "order_pay_time",
-        "isVoided": 0,
-        "isRemoved": 0,
+        "isVoided": -1,
+        "isRemoved": -1,
         "ruleId": "-1",
         "sysRule": "",
         "applyType": "",
@@ -77,8 +77,8 @@ def build_order_payload(day: date, page_no: int, state: str) -> dict[str, Any]:
         "jhComment": "-1",
         "storageId": 0,
         "isOversea": "-1",
-        "isFree": 0,
-        "isBatch": 0,
+        "isFree": -1,
+        "isBatch": -1,
         "history": "",
         "custom": "-1",
         "timeOut": 0,
@@ -90,6 +90,17 @@ def build_order_payload(day: date, page_no: int, state: str) -> dict[str, Any]:
         "orderId": "",
         "axios_cancelToken": "true",
     }
+
+
+def build_recent_scan_payload(page_no: int, state: str) -> dict[str, Any]:
+    payload = build_order_payload(date.today(), page_no, state)
+    # Dianxiaomi's startTime/endTime filter on this endpoint can drift into a
+    # package/shipping-time search. The blank-date "all orders" query is sorted
+    # by order creation time and is the reliable source for paid-time filtering.
+    payload["startTime"] = ""
+    payload["endTime"] = ""
+    payload["orderField"] = "order_create_time"
+    return payload
 
 
 def ensure_dianxiaomi_success(payload: dict[str, Any]) -> None:
@@ -116,7 +127,10 @@ def _parse_date(text: str) -> date:
 
 
 def _normalize_csv_list(text: str) -> list[str]:
-    return [item.strip().lower() for item in (text or "").split(",") if item.strip()]
+    values = [item.strip().lower() for item in (text or "").split(",") if item.strip()]
+    if not values or values == ["all"]:
+        return [""]
+    return values
 
 
 def _summary_template() -> dict[str, int]:
@@ -152,17 +166,18 @@ def _coerce_order_datetime(value: Any) -> datetime | None:
     return None
 
 
-def _order_reference_date(order: dict[str, Any], state: str) -> date | None:
-    keys = (
-        ("shippedTime", "shippedTimeStr", "commitPlatformTime", "commitPlatformTimeStr")
-        if state == "shipped"
-        else ("orderPayTime", "paidTime", "orderPayTimeStr", "paidTimeStr", "orderCreateTime")
-    )
+def _order_reference_datetime(order: dict[str, Any]) -> datetime | None:
+    keys = ("orderPayTime", "paidTime", "orderPayTimeStr", "paidTimeStr", "orderCreateTime")
     for key in keys:
         parsed = _coerce_order_datetime(order.get(key))
         if parsed:
-            return parsed.date()
+            return parsed
     return None
+
+
+def _order_reference_date(order: dict[str, Any], state: str) -> date | None:
+    ref = _order_reference_datetime(order)
+    return ref.date() if ref else None
 
 
 def _order_in_date_range(order: dict[str, Any], state: str, start_date: date, end_date: date) -> bool:
@@ -196,6 +211,42 @@ def _normalize_page_orders(
         summary["fetched_lines"] += len(rows)
         page_rows.extend(rows)
     return page_rows
+
+
+def _normalize_orders_in_paid_date_range(
+    *,
+    orders: list[dict[str, Any]],
+    start_date: date,
+    end_date: date,
+    scope: oa.DianxiaomiProductScope,
+    fetch_profits: Callable[[list[str]], dict[str, dict[str, Any]]],
+    summary: dict[str, int],
+) -> tuple[list[dict[str, Any]], list[datetime]]:
+    matched_orders: list[dict[str, Any]] = []
+    seen_times: list[datetime] = []
+    skipped_total = 0
+    for order in orders:
+        ref_time = _order_reference_datetime(order)
+        if ref_time:
+            seen_times.append(ref_time)
+        if not ref_time or not (start_date <= ref_time.date() <= end_date):
+            continue
+        rows, skipped = oa.normalize_dianxiaomi_order(order, scope, {})
+        skipped_total += skipped
+        if rows:
+            matched_orders.append(order)
+    summary["skipped_lines"] += skipped_total
+    if not matched_orders:
+        return [], seen_times
+
+    package_ids = [str(order.get("id")) for order in matched_orders if order.get("id")]
+    profits = fetch_profits(package_ids) if package_ids else {}
+    page_rows: list[dict[str, Any]] = []
+    for order in matched_orders:
+        rows, _skipped = oa.normalize_dianxiaomi_order(order, scope, profits)
+        summary["fetched_lines"] += len(rows)
+        page_rows.extend(rows)
+    return page_rows, seen_times
 
 
 def _extract_profit_rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -232,7 +283,9 @@ def run_import(
     if end_date < start_date:
         raise ValueError("end_date 不能早于 start_date")
     site_codes = [code.strip().lower() for code in site_codes if code.strip()]
-    states = [state.strip() for state in states if state.strip()]
+    states = [state.strip() for state in states]
+    if not states:
+        states = [""]
     scope = oa.build_dianxiaomi_product_scope(site_codes)
     batch_id = None
     summary = _summary_template()
@@ -281,6 +334,78 @@ def run_import(
             "states": states,
             "dry_run": dry_run,
             "summary": summary,
+        }
+    except Exception as exc:
+        if batch_id is not None:
+            oa.finish_dianxiaomi_order_import_batch(batch_id, "failed", summary, error_message=str(exc))
+        raise
+
+
+def run_import_by_recent_scan(
+    *,
+    start_date: date,
+    end_date: date,
+    site_codes: list[str],
+    states: list[str],
+    fetch_orders: Callable[[int, str], dict[str, Any]],
+    fetch_profits: Callable[[list[str]], dict[str, dict[str, Any]]],
+    dry_run: bool = False,
+    max_pages: int = 220,
+) -> dict[str, Any]:
+    if end_date < start_date:
+        raise ValueError("end_date 涓嶈兘鏃╀簬 start_date")
+    site_codes = [code.strip().lower() for code in site_codes if code.strip()]
+    states = [state.strip() for state in states] or [""]
+    scope = oa.build_dianxiaomi_product_scope(site_codes)
+    batch_id = None
+    summary = _summary_template()
+    if not dry_run:
+        batch_id = oa.start_dianxiaomi_order_import_batch(
+            start_date.isoformat(),
+            end_date.isoformat(),
+            site_codes,
+            len(scope.by_shopify_id),
+        )
+    try:
+        for state in states:
+            total_page = None
+            for page_no in range(1, max_pages + 1):
+                print(f"[dianxiaomi-order-import] scan state={state} page={page_no}", flush=True)
+                page = extract_order_page(fetch_orders(page_no, state))
+                if total_page is None:
+                    total_page = page.total_page
+                if not page.orders:
+                    break
+                summary["total_pages"] += 1
+                summary["fetched_orders"] += len(page.orders)
+                page_rows, seen_times = _normalize_orders_in_paid_date_range(
+                    orders=page.orders,
+                    start_date=start_date,
+                    end_date=end_date,
+                    scope=scope,
+                    fetch_profits=fetch_profits,
+                    summary=summary,
+                )
+                if page_rows and not dry_run:
+                    result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
+                    summary["inserted_lines"] += int(result.get("rows") or 0)
+                    summary["updated_lines"] += max(0, int(result.get("affected") or 0) - int(result.get("rows") or 0))
+                if seen_times and max(seen_times).date() < start_date:
+                    break
+                if total_page and page_no >= total_page:
+                    break
+        status = "dry_run" if dry_run else "success"
+        if batch_id is not None:
+            oa.finish_dianxiaomi_order_import_batch(batch_id, status, summary)
+        return {
+            "batch_id": batch_id,
+            "date_from": start_date.isoformat(),
+            "date_to": end_date.isoformat(),
+            "site_codes": site_codes,
+            "states": states,
+            "dry_run": dry_run,
+            "summary": summary,
+            "date_filter_mode": "recent_scan",
         }
     except Exception as exc:
         if batch_id is not None:
@@ -342,6 +467,10 @@ def _fetch_orders_via_page(page, day: date, page_no: int, state: str) -> dict[st
     return _post_form_via_page(page, ORDER_URL, build_order_payload(day, page_no, state))
 
 
+def _fetch_recent_scan_orders_via_page(page, page_no: int, state: str) -> dict[str, Any]:
+    return _post_form_via_page(page, ORDER_URL, build_recent_scan_payload(page_no, state))
+
+
 def _fetch_profits_via_page(page, package_ids: list[str]) -> dict[str, dict[str, Any]]:
     if not package_ids:
         return {}
@@ -360,6 +489,8 @@ def run_import_from_server_browser(
     dry_run: bool = False,
     skip_login_prompt: bool = True,
     day_delay_seconds: int = 0,
+    date_filter_mode: str = "recent-scan",
+    max_scan_pages: int = 220,
 ) -> dict[str, Any]:
     from playwright.sync_api import sync_playwright
 
@@ -377,16 +508,28 @@ def run_import_from_server_browser(
                 input("如果还没登录，请先登录店小秘；登录完成后按回车继续...")
                 page.goto(ORDER_PAGE_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
-            report = run_import(
-                start_date=_parse_date(start_date_text),
-                end_date=_parse_date(end_date_text),
-                site_codes=site_codes,
-                states=states or DEFAULT_STATES,
-                fetch_orders=lambda day, page_no, state: _fetch_orders_via_page(page, day, page_no, state),
-                fetch_profits=lambda package_ids: _fetch_profits_via_page(page, package_ids),
-                dry_run=dry_run,
-                day_delay_seconds=day_delay_seconds,
-            )
+            if date_filter_mode == "recent-scan":
+                report = run_import_by_recent_scan(
+                    start_date=_parse_date(start_date_text),
+                    end_date=_parse_date(end_date_text),
+                    site_codes=site_codes,
+                    states=states or DEFAULT_STATES,
+                    fetch_orders=lambda page_no, state: _fetch_recent_scan_orders_via_page(page, page_no, state),
+                    fetch_profits=lambda package_ids: _fetch_profits_via_page(page, package_ids),
+                    dry_run=dry_run,
+                    max_pages=max_scan_pages,
+                )
+            else:
+                report = run_import(
+                    start_date=_parse_date(start_date_text),
+                    end_date=_parse_date(end_date_text),
+                    site_codes=site_codes,
+                    states=states or DEFAULT_STATES,
+                    fetch_orders=lambda day, page_no, state: _fetch_orders_via_page(page, day, page_no, state),
+                    fetch_profits=lambda package_ids: _fetch_profits_via_page(page, package_ids),
+                    dry_run=dry_run,
+                    day_delay_seconds=day_delay_seconds,
+                )
             report["dxm_env"] = dxm_env
             report["dxm_env_label"] = env["label"]
             report["browser_cdp_url"] = resolved_cdp_url
@@ -410,6 +553,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--skip-login-prompt", action="store_true")
     parser.add_argument("--day-delay-seconds", type=int, default=0)
+    parser.add_argument("--date-filter-mode", choices=("recent-scan", "api-date"), default="recent-scan")
+    parser.add_argument("--max-scan-pages", type=int, default=220)
     return parser
 
 
@@ -428,6 +573,8 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         skip_login_prompt=args.skip_login_prompt,
         day_delay_seconds=max(0, args.day_delay_seconds),
+        date_filter_mode=args.date_filter_mode,
+        max_scan_pages=max(1, args.max_scan_pages),
     )
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     return 0
