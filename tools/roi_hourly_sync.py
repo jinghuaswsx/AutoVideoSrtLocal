@@ -236,7 +236,7 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
     ) or {}
     ad_spend = round(float(ad_row.get("ad_spend_usd") or 0), 4)
     ad_status = "ok" if ad_spend > 0 else "pending_source"
-    return int(execute(
+    execute(
         "INSERT INTO roi_realtime_daily_snapshots "
         "(snapshot_at, business_date, timezone, store_scope, ad_platform_scope, "
         "order_count, line_count, units, order_revenue_usd, shipping_revenue_usd, "
@@ -263,7 +263,59 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
             order_row.get("last_order_at"),
             run_id,
         ),
-    ))
+    )
+    row = query_one(
+        "SELECT id FROM roi_realtime_daily_snapshots "
+        "WHERE business_date=%s AND snapshot_at=%s AND store_scope=%s AND ad_platform_scope=%s "
+        "ORDER BY id DESC LIMIT 1",
+        (business_date, snapshot_at, STORE_SCOPE, AD_PLATFORM_SCOPE),
+    ) or {}
+    snapshot_id = int(row.get("id") or 0)
+    _upsert_daily_roas_node(snapshot_id, snapshot_at)
+    return snapshot_id
+
+
+def _upsert_daily_roas_node(snapshot_id: int, snapshot_at: datetime) -> int:
+    snap = query_one(
+        "SELECT * FROM roi_realtime_daily_snapshots WHERE id=%s",
+        (snapshot_id,),
+    )
+    if not snap:
+        return 0
+    revenue = round(float(snap.get("order_revenue_usd") or 0), 2)
+    spend = round(float(snap.get("ad_spend_usd") or 0), 4)
+    ad_status = str(snap.get("ad_data_status") or "pending_source")
+    roas = round(revenue / spend, 6) if spend > 0 and ad_status == "ok" else None
+    execute(
+        "INSERT INTO roi_daily_roas_nodes "
+        "(business_date, node_hour, node_at, timezone, store_scope, ad_platform_scope, snapshot_id, "
+        "order_count, units, order_revenue_usd, shipping_revenue_usd, ad_spend_usd, true_roas, "
+        "order_data_status, ad_data_status) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE node_at=VALUES(node_at), snapshot_id=VALUES(snapshot_id), "
+        "order_count=VALUES(order_count), units=VALUES(units), order_revenue_usd=VALUES(order_revenue_usd), "
+        "shipping_revenue_usd=VALUES(shipping_revenue_usd), ad_spend_usd=VALUES(ad_spend_usd), "
+        "true_roas=VALUES(true_roas), order_data_status=VALUES(order_data_status), "
+        "ad_data_status=VALUES(ad_data_status), updated_at=NOW()",
+        (
+            snap.get("business_date"),
+            int(snapshot_at.hour),
+            snapshot_at,
+            TIMEZONE,
+            STORE_SCOPE,
+            AD_PLATFORM_SCOPE,
+            snapshot_id,
+            int(snap.get("order_count") or 0),
+            int(snap.get("units") or 0),
+            revenue,
+            round(float(snap.get("shipping_revenue_usd") or 0), 2),
+            spend,
+            roas,
+            snap.get("order_data_status") or "ok",
+            ad_status,
+        ),
+    )
+    return 1
 
 
 def _snapshot_before_or_at(business_date, node_at: datetime) -> dict[str, Any] | None:

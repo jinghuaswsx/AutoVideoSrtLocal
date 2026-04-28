@@ -503,6 +503,14 @@
 
   <div class="oa-table-wrap">
     <div class="oa-table-header">
+      <div class="oa-table-title">当天 ROAS 走势</div>
+      <div class="oar-note">0-23 点，每个点表示当天截至该节点的累计 ROAS</div>
+    </div>
+    <div id="realtimeRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
       <div class="oa-table-title">当日节点记录</div>
       <div class="oar-note" id="realtimeGranularity">每 10 分钟刷新当天累计数据</div>
     </div>
@@ -1267,6 +1275,7 @@
         document.getElementById('realtimeWindow').textContent = formatShortDateTime((data.period || {}).data_until_at) + ' 截止';
         document.getElementById('realtimeGranularity').textContent =
           '每 10 分钟记录当天累计订单、销售额、广告费和 ROAS';
+        renderRealtimeRoasChart(data.roas_points || []);
         body.innerHTML = '';
         var rows = data.hourly || [];
         if (!rows.length && (data.snapshots || []).length) {
@@ -1306,6 +1315,40 @@
       .catch(function(err) {
         if (body) body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
       });
+  }
+
+  function renderRealtimeRoasChart(points) {
+    var el = document.getElementById('realtimeRoasChart');
+    if (!el) return;
+    var usable = (points || []).filter(function(p) { return p.true_roas !== null && p.true_roas !== undefined; });
+    if (!usable.length) {
+      el.innerHTML = '<div class="oar-note">暂无可绘制的 ROAS 节点；广告费同步到当天累计值后会自动出现走势。</div>';
+      return;
+    }
+    var maxRoas = Math.max.apply(null, usable.map(function(p) { return Number(p.true_roas) || 0; }));
+    maxRoas = Math.max(maxRoas, 1);
+    var width = 920, height = 240, padL = 42, padR = 18, padT = 20, padB = 34;
+    var innerW = width - padL - padR, innerH = height - padT - padB;
+    function x(hour) { return padL + (innerW * hour / 23); }
+    function y(v) { return padT + innerH - (innerH * (Number(v) || 0) / maxRoas); }
+    var path = usable.map(function(p, i) {
+      return (i ? 'L' : 'M') + x(p.hour).toFixed(1) + ' ' + y(p.true_roas).toFixed(1);
+    }).join(' ');
+    var dots = usable.map(function(p) {
+      return '<circle cx="' + x(p.hour).toFixed(1) + '" cy="' + y(p.true_roas).toFixed(1) +
+        '" r="4" fill="var(--accent)"><title>' + String(p.hour).padStart(2, '0') +
+        ':00 ROAS ' + fmtRoasValue(p.true_roas) + '</title></circle>';
+    }).join('');
+    var labels = [0, 6, 12, 18, 23].map(function(h) {
+      return '<text x="' + x(h).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" fill="var(--fg-muted)" font-size="12">' + h + ':00</text>';
+    }).join('');
+    el.innerHTML =
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="260" role="img" aria-label="当天 ROAS 走势">' +
+      '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" stroke="var(--border-strong)"/>' +
+      '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" stroke="var(--border-strong)"/>' +
+      '<text x="8" y="' + (padT + 4) + '" fill="var(--fg-muted)" font-size="12">' + maxRoas.toFixed(2) + '</text>' +
+      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dots + labels + '</svg>';
   }
 
   function formatShortDateTime(value) {

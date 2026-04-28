@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS roi_daily_roas_nodes (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_date DATE NOT NULL,
+  node_hour TINYINT UNSIGNED NOT NULL,
+  node_at DATETIME NOT NULL,
+  timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai',
+  store_scope VARCHAR(128) NOT NULL DEFAULT 'newjoy,omurio',
+  ad_platform_scope VARCHAR(128) NOT NULL DEFAULT 'meta',
+  snapshot_id BIGINT DEFAULT NULL,
+  order_count INT NOT NULL DEFAULT 0,
+  units INT NOT NULL DEFAULT 0,
+  order_revenue_usd DECIMAL(14,2) NOT NULL DEFAULT 0,
+  shipping_revenue_usd DECIMAL(14,2) NOT NULL DEFAULT 0,
+  ad_spend_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  true_roas DECIMAL(12,6) DEFAULT NULL,
+  order_data_status VARCHAR(32) NOT NULL DEFAULT 'ok',
+  ad_data_status VARCHAR(32) NOT NULL DEFAULT 'pending_source',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_roi_daily_node (business_date, node_hour, store_scope, ad_platform_scope),
+  KEY idx_roi_daily_node_time (business_date, node_at),
+  KEY idx_roi_daily_node_status (ad_data_status, business_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='0-23 hour cumulative real ROAS nodes';

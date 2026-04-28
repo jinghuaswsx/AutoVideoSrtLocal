@@ -743,6 +743,35 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         data_until = day_start
         complete_hour_until = day_start
 
+    roas_node_rows = query(
+        "SELECT node_hour, node_at, order_count, units, order_revenue_usd, "
+        "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
+        "FROM roi_daily_roas_nodes "
+        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "ORDER BY node_hour",
+        (target,),
+    )
+    roas_nodes_by_hour = {int(row["node_hour"]): row for row in roas_node_rows if row.get("node_hour") is not None}
+    roas_points = [
+        {
+            "hour": hour,
+            "node_at": (roas_nodes_by_hour.get(hour) or {}).get("node_at"),
+            "order_count": int((roas_nodes_by_hour.get(hour) or {}).get("order_count") or 0),
+            "units": int((roas_nodes_by_hour.get(hour) or {}).get("units") or 0),
+            "order_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("order_revenue_usd")),
+            "shipping_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("shipping_revenue_usd")),
+            "ad_spend": _money((roas_nodes_by_hour.get(hour) or {}).get("ad_spend_usd")),
+            "true_roas": (
+                round(float((roas_nodes_by_hour.get(hour) or {}).get("true_roas")), 4)
+                if (roas_nodes_by_hour.get(hour) or {}).get("true_roas") is not None
+                else None
+            ),
+            "order_data_status": (roas_nodes_by_hour.get(hour) or {}).get("order_data_status"),
+            "ad_data_status": (roas_nodes_by_hour.get(hour) or {}).get("ad_data_status"),
+        }
+        for hour in range(24)
+    ]
+
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
@@ -790,6 +819,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
             },
             "hourly": [],
+            "roas_points": roas_points,
             "snapshots": [snap],
         }
 
@@ -887,6 +917,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         },
         "summary": summary,
         "hourly": hourly,
+        "roas_points": roas_points,
     }
 
 
