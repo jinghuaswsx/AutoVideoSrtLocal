@@ -2357,6 +2357,109 @@ def _join_source_full_text(script_segments: list[dict]) -> str:
     ).strip()
 
 
+def _load_json_if_exists(path: str):
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _restore_av_localize_outputs_from_files(
+    task_id: str,
+    *,
+    runner: PipelineRunner,
+    task: dict,
+    task_dir: str,
+    variant: str,
+    target_language: str,
+    target_language_name: str,
+    source_full_text: str,
+) -> bool:
+    full_audio_path = os.path.join(task_dir, f"tts_full.{variant}.mp3")
+    srt_path = os.path.join(task_dir, f"subtitle.{variant}.srt")
+    localized_path = os.path.join(task_dir, f"localized_translation.{variant}.json")
+    tts_result_path = os.path.join(task_dir, f"tts_result.{variant}.json")
+    subtitle_path = os.path.join(task_dir, f"corrected_subtitle.{variant}.json")
+
+    if not all(os.path.isfile(path) for path in (full_audio_path, srt_path, localized_path, tts_result_path, subtitle_path)):
+        return False
+
+    try:
+        localized_translation = _load_json_if_exists(localized_path)
+        tts_segments = _load_json_if_exists(tts_result_path)
+        subtitle_payload = _load_json_if_exists(subtitle_path)
+        shot_notes = task.get("shot_notes") or _load_json_if_exists(os.path.join(task_dir, "shot_notes.json")) or {}
+    except (OSError, json.JSONDecodeError, TypeError) as exc:
+        log.warning("failed to restore AV outputs from disk for task %s: %s", task_id, exc)
+        return False
+
+    if not isinstance(localized_translation, dict) or not isinstance(tts_segments, list) or not isinstance(subtitle_payload, dict):
+        return False
+
+    srt_content = str(subtitle_payload.get("srt_content") or "")
+    if not srt_content:
+        try:
+            with open(srt_path, "r", encoding="utf-8") as fh:
+                srt_content = fh.read()
+        except OSError:
+            srt_content = ""
+    subtitle_units = list(subtitle_payload.get("chunks") or [])
+    tts_result = {"full_audio_path": full_audio_path, "segments": tts_segments}
+
+    task = task_state.get(task_id) or task
+    variants, variant_state = _ensure_variant_state(task, variant)
+    variant_state.update(
+        {
+            "sentences": tts_segments,
+            "localized_translation": localized_translation,
+            "tts_result": tts_result,
+            "tts_audio_path": full_audio_path,
+            "subtitle_units": subtitle_units,
+            "srt_path": srt_path,
+            "corrected_subtitle": {"chunks": subtitle_units, "srt_content": srt_content},
+            "shot_notes": shot_notes,
+        }
+    )
+    variant_state.setdefault("preview_files", {})["tts_full_audio"] = full_audio_path
+    variant_state.setdefault("preview_files", {})["srt"] = srt_path
+    variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(tts_segments)
+    variants[variant] = variant_state
+
+    task_state.update(
+        task_id,
+        variants=variants,
+        shot_notes=shot_notes,
+        localized_translation=localized_translation,
+        source_full_text_zh=source_full_text,
+        segments=tts_segments,
+        tts_audio_path=full_audio_path,
+        srt_path=srt_path,
+        corrected_subtitle={"chunks": subtitle_units, "srt_content": srt_content},
+        tts_duration_status="done",
+    )
+    task_state.set_preview_file(task_id, "tts_full_audio", full_audio_path)
+    task_state.set_preview_file(task_id, "srt", srt_path)
+    task_state.set_artifact(
+        task_id,
+        "translate",
+        build_translate_artifact(
+            source_full_text,
+            localized_translation,
+            target_language=target_language,
+        ),
+    )
+    task_state.set_artifact(task_id, "tts", build_tts_artifact(tts_segments))
+    task_state.set_artifact(
+        task_id,
+        "subtitle",
+        build_subtitle_artifact(srt_content, target_language=target_language),
+    )
+    runner._set_step(task_id, "translate", "done", f"{target_language_name}音画同步翻译已从缓存恢复")
+    runner._set_step(task_id, "tts", "done", f"{target_language_name}配音已从缓存恢复")
+    runner._set_step(task_id, "subtitle", "done", f"{target_language_name}字幕已从缓存恢复")
+    return True
+
+
 def _normalize_av_sentences(sentences: list[dict]) -> list[dict]:
     normalized: list[dict] = []
     for fallback_index, sentence in enumerate(sentences or []):
@@ -2572,6 +2675,17 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             return
 
         source_full_text = _join_source_full_text(script_segments)
+        if _restore_av_localize_outputs_from_files(
+            task_id,
+            runner=runner,
+            task=task,
+            task_dir=task_dir,
+            variant=variant,
+            target_language=target_language,
+            target_language_name=target_language_name,
+            source_full_text=source_full_text,
+        ):
+            return
 
         runner._set_step(task_id, "translate", "running", "正在分析画面并生成笔记...")
         try:

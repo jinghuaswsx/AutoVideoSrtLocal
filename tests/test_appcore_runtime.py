@@ -4,6 +4,7 @@ All pipeline steps are mocked — runtime logic only.
 """
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import appcore.task_state as task_state
@@ -633,6 +634,82 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert "attempts" in av_state["sentences"][0]
     assert isinstance(av_state["sentences"][0]["attempts"], list)
     assert av_state["sentences"][0]["attempts"] == [{"round": 1, "status": "ok"}]
+
+
+def test_run_av_localize_restores_completed_av_outputs_from_files(tmp_path, monkeypatch):
+    task_id = "test_av_localize_restore_outputs"
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake-video")
+    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        pipeline_version="av",
+        script_segments=[
+            {"index": 0, "text": "source line", "start_time": 0.0, "end_time": 1.0},
+        ],
+        recommended_voice_id="voice-1",
+        av_translate_inputs={
+            "target_language": "en",
+            "target_language_name": "English",
+            "target_market": "US",
+            "sync_granularity": "hybrid",
+        },
+    )
+    shot_notes = {"global": {"overall_theme": "cached"}, "sentences": [{"asr_index": 0}]}
+    localized_translation = {
+        "full_text": "Cached line.",
+        "sentences": [{"index": 0, "asr_index": 0, "text": "Cached line."}],
+    }
+    tts_segments = [
+        {
+            "index": 0,
+            "asr_index": 0,
+            "text": "Cached line.",
+            "translated": "Cached line.",
+            "tts_text": "Cached line.",
+            "tts_duration": 1.0,
+        }
+    ]
+    subtitle_payload = {
+        "chunks": [{"unit_index": 0, "text": "Cached line.", "start_time": 0.0, "end_time": 1.0}],
+        "srt_content": "1\n00:00:00,000 --> 00:00:01,000\nCached line.\n",
+    }
+    (tmp_path / "shot_notes.json").write_text(json.dumps(shot_notes), encoding="utf-8")
+    (tmp_path / "localized_translation.av.json").write_text(json.dumps(localized_translation), encoding="utf-8")
+    (tmp_path / "tts_result.av.json").write_text(json.dumps(tts_segments), encoding="utf-8")
+    (tmp_path / "corrected_subtitle.av.json").write_text(json.dumps(subtitle_payload), encoding="utf-8")
+    (tmp_path / "tts_full.av.mp3").write_bytes(b"audio")
+    (tmp_path / "subtitle.av.srt").write_text(subtitle_payload["srt_content"], encoding="utf-8")
+
+    runner, _events = _make_runner()
+    unexpected_calls = []
+
+    monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(runner, "_resolve_voice", lambda task, mod: {"id": "voice-1", "elevenlabs_voice_id": "el"})
+    monkeypatch.setattr(
+        "pipeline.shot_notes.generate_shot_notes",
+        lambda **kwargs: unexpected_calls.append("shot_notes") or shot_notes,
+    )
+    monkeypatch.setattr(
+        "pipeline.av_translate.generate_av_localized_translation",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("should restore cached AV outputs")),
+    )
+
+    import appcore.runtime as runtime
+
+    runtime.run_av_localize(task_id, runner=runner)
+
+    saved = task_state.get(task_id)
+    assert unexpected_calls == []
+    assert saved["steps"]["translate"] == "done"
+    assert saved["steps"]["tts"] == "done"
+    assert saved["steps"]["subtitle"] == "done"
+    assert saved["shot_notes"]["global"]["overall_theme"] == "cached"
+    assert saved["localized_translation"]["full_text"] == "Cached line."
+    assert saved["variants"]["av"]["tts_audio_path"] == str(tmp_path / "tts_full.av.mp3")
+    assert saved["variants"]["av"]["srt_path"] == str(tmp_path / "subtitle.av.srt")
+    assert saved["variants"]["av"]["corrected_subtitle"]["chunks"][0]["text"] == "Cached line."
 
 
 def test_step_translate_dispatches_av_pipeline_version(tmp_path, monkeypatch):
