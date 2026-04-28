@@ -123,6 +123,51 @@
 }
 
 /* ── 控件区 ───────────────────────────────────── */
+.oar-hero {
+  display: grid; grid-template-columns: minmax(260px, 1.25fr) minmax(260px, 1fr) minmax(180px, .7fr);
+  gap: var(--space-4); margin-bottom: var(--space-5);
+}
+.oar-card {
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-6);
+}
+.oar-card.is-primary {
+  border-color: var(--accent); background: var(--accent-subtle);
+}
+.oar-label {
+  font-size: var(--text-sm); color: var(--fg-muted); font-weight: 600; margin-bottom: var(--space-2);
+}
+.oar-value {
+  font-size: 38px; line-height: 1.1; font-weight: 800; color: var(--accent);
+  font-family: var(--font-mono);
+}
+.oar-sub {
+  margin-top: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm);
+}
+.oar-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: var(--space-4); margin-bottom: var(--space-5);
+}
+.oar-mini-value {
+  font-size: var(--text-xl); font-weight: 700; color: var(--fg);
+  font-family: var(--font-mono);
+}
+.oar-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  margin-bottom: var(--space-4); flex-wrap: wrap;
+}
+.oar-toolbar input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--bg-card); color: var(--fg);
+}
+.oar-note {
+  color: var(--fg-muted); font-size: var(--text-sm);
+}
+@media (max-width: 980px) {
+  .oar-hero, .oar-grid { grid-template-columns: 1fr; }
+  .oar-value { font-size: 32px; }
+}
+
 .oa-controls {
   display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
 }
@@ -406,15 +451,82 @@
 
 <!-- Tab 导航 -->
 <div class="oa-tabs">
-  <button class="oa-tab active" data-tab="dashboard">产品看板</button>
+  <button class="oa-tab active" data-tab="realtime">实时大盘</button>
+  <button class="oa-tab" data-tab="dashboard">产品看板</button>
   <button class="oa-tab" data-tab="trueRoas">真实 ROAS</button>
   <button class="oa-tab" data-tab="import">订单导入</button>
   <button class="oa-tab" data-tab="analytics">订单分析</button>
   <button class="oa-tab" data-tab="ads">广告分析</button>
 </div>
 
+<section class="oa-panel active" id="panelRealtime">
+  <div class="oar-toolbar">
+    <div class="oar-note">NewJoy + Omurio / Meta + 店小秘订单</div>
+    <div>
+      <input type="date" id="realtimeDate">
+      <button class="btn btn-primary btn-sm" id="realtimeRefresh">刷新</button>
+    </div>
+  </div>
+
+  <div class="oar-hero">
+    <div class="oar-card is-primary">
+      <div class="oar-label">大盘销售额</div>
+      <div class="oar-value" id="realtimeRevenue">$0.00</div>
+      <div class="oar-sub" id="realtimeRevenueSub">订单 0 单</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">大盘广告费消耗</div>
+      <div class="oar-value" id="realtimeSpend">$0.00</div>
+      <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">真实 ROAS</div>
+      <div class="oar-value" id="realtimeRoas">-</div>
+      <div class="oar-sub" id="realtimeWindow">今日实时</div>
+    </div>
+  </div>
+
+  <div class="oar-grid">
+    <div class="oar-card">
+      <div class="oar-label">商品件数</div>
+      <div class="oar-mini-value" id="realtimeUnits">0</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">运费收入</div>
+      <div class="oar-mini-value" id="realtimeShipping">$0.00</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">订单最新时间</div>
+      <div class="oar-mini-value" id="realtimeFreshness">-</div>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">小时订单明细</div>
+      <div class="oar-note" id="realtimeGranularity">广告消耗当前为日级</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>小时</th>
+            <th>订单数</th>
+            <th>销售额</th>
+            <th>商品件数</th>
+            <th>运费</th>
+            <th>广告费</th>
+            <th>ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="realtimeHourlyBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <!-- ═══════ Tab 0: 产品看板 ═══════ -->
-<section class="oa-panel active" id="panelDashboard">
+<section class="oa-panel" id="panelDashboard">
 <style>
   .oad-toolbar { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
@@ -1090,6 +1202,8 @@
         initAds();
       } else if (tab.dataset.tab === 'trueRoas') {
         loadTrueRoas();
+      } else if (tab.dataset.tab === 'realtime') {
+        loadRealtimeOverview();
       }
     });
   });
@@ -1116,6 +1230,74 @@
   // ── 上传 ──────────────────────────────────────────
   var trueRoasRefresh = document.getElementById('trueRoasRefresh');
   if (trueRoasRefresh) trueRoasRefresh.addEventListener('click', loadTrueRoas);
+  var realtimeRefresh = document.getElementById('realtimeRefresh');
+  if (realtimeRefresh) realtimeRefresh.addEventListener('click', loadRealtimeOverview);
+  var realtimeDate = document.getElementById('realtimeDate');
+  if (realtimeDate && !realtimeDate.value) {
+    realtimeDate.value = localDateString(new Date());
+  }
+  loadRealtimeOverview();
+
+  function localDateString(value) {
+    var y = value.getFullYear();
+    var m = String(value.getMonth() + 1).padStart(2, '0');
+    var d = String(value.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function loadRealtimeOverview() {
+    var dateInput = document.getElementById('realtimeDate');
+    var date = dateInput ? dateInput.value : '';
+    var body = document.getElementById('realtimeHourlyBody');
+    if (body) body.innerHTML = '<tr><td colspan="7">加载中...</td></tr>';
+    fetch('/order-analytics/realtime-overview?date=' + encodeURIComponent(date))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var s = data.summary || {};
+        document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
+        document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
+        document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
+        document.getElementById('realtimeRevenueSub').textContent = '订单 ' + (s.order_count || 0) + ' 单';
+        document.getElementById('realtimeUnits').textContent = s.units || 0;
+        document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
+        document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
+        document.getElementById('realtimeWindow').textContent = formatShortDateTime((data.period || {}).data_until_at) + ' 截止';
+        document.getElementById('realtimeGranularity').textContent =
+          (data.scope || {}).hourly_ad_ready ? '广告消耗为小时级' : '广告消耗当前为日级，小时 ROAS 待小时同步接入';
+        body.innerHTML = '';
+        (data.hourly || []).forEach(function(row) {
+          var tr = document.createElement('tr');
+          [
+            String(row.hour).padStart(2, '0') + ':00-' + String(row.hour + 1).padStart(2, '0') + ':00',
+            row.order_count || 0,
+            fmtMoney(row.order_revenue),
+            row.units || 0,
+            fmtMoney(row.shipping_revenue),
+            row.ad_spend == null ? '-' : fmtMoney(row.ad_spend),
+            fmtRoasValue(row.true_roas)
+          ].forEach(function(value) {
+            var td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+        if (!body.children.length) {
+          body.innerHTML = '<tr><td colspan="7">暂无数据</td></tr>';
+        }
+      })
+      .catch(function(err) {
+        if (body) body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  function formatShortDateTime(value) {
+    if (!value) return '-';
+    return String(value).replace('T', ' ').slice(0, 16);
+  }
 
   function loadTrueRoas() {
     var start = document.getElementById('trueRoasStart').value || '2026-04-01';
@@ -1166,6 +1348,12 @@
 
   function fmtRoasValue(value) {
     return value === null || value === undefined ? '-' : Number(value).toFixed(2);
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function(ch) {
+      return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[ch];
+    });
   }
 
   function formatRoasWindow(start, end) {

@@ -152,6 +152,20 @@ def ad_summary():
     return jsonify(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
+@bp.route("/order-analytics/realtime-overview")
+@login_required
+@admin_required
+def realtime_overview():
+    date_text = (request.args.get("date") or "").strip() or None
+    try:
+        return jsonify(_json_safe(oa.get_realtime_roas_overview(date_text)))
+    except ValueError as exc:
+        return jsonify(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("realtime roas overview query failed: %s", exc)
+        return jsonify(error="internal_error", detail=str(exc)), 500
+
+
 @bp.route("/order-analytics/true-roas")
 @login_required
 @admin_required

@@ -10,8 +10,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -721,6 +722,122 @@ def _roas(revenue: float, spend: float) -> float | None:
     if spend <= 0:
         return None
     return round(revenue / spend, 4)
+
+
+def _beijing_now() -> datetime:
+    return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
+
+
+def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
+    now = (now or _beijing_now()).replace(microsecond=0)
+    target = _parse_iso_date_param(date_text, "date") if date_text else now.date()
+    day_start = datetime.combine(target, dt_time.min)
+    day_end = day_start + timedelta(days=1)
+    if target == now.date():
+        data_until = min(now, day_end)
+        complete_hour_until = now.replace(minute=0, second=0, microsecond=0)
+    elif target < now.date():
+        data_until = day_end
+        complete_hour_until = day_end
+    else:
+        data_until = day_start
+        complete_hour_until = day_start
+
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    order_rows = query(
+        "SELECT HOUR(" + order_time_expr + ") AS hour, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "MIN(" + order_time_expr + ") AS first_order_at, "
+        "MAX(" + order_time_expr + ") AS last_order_at "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        "GROUP BY HOUR(" + order_time_expr + ") "
+        "ORDER BY hour",
+        (day_start, day_end),
+    )
+    ad_rows = query(
+        "SELECT SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date = %s",
+        (target,),
+    )
+
+    orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
+    ad = ad_rows[0] if ad_rows else {}
+    summary = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+        "ad_spend": _money(ad.get("ad_spend")),
+        "meta_purchase_value": _money(ad.get("meta_purchase_value")),
+        "meta_purchases": int(ad.get("meta_purchases") or 0),
+    }
+    first_order_at = None
+    last_order_at = None
+    hourly: list[dict[str, Any]] = []
+    for hour in range(24):
+        row = orders_by_hour.get(hour, {})
+        order_revenue = _money(row.get("order_revenue"))
+        item = {
+            "hour": hour,
+            "window_start_at": day_start + timedelta(hours=hour),
+            "window_end_at": day_start + timedelta(hours=hour + 1),
+            "order_count": int(row.get("order_count") or 0),
+            "line_count": int(row.get("line_count") or 0),
+            "units": int(row.get("units") or 0),
+            "order_revenue": order_revenue,
+            "line_revenue": _money(row.get("line_revenue")),
+            "shipping_revenue": _money(row.get("shipping_revenue")),
+            "ad_spend": None,
+            "true_roas": None,
+        }
+        hourly.append(item)
+        for key in ("order_count", "line_count", "units"):
+            summary[key] += item[key]
+        for key in ("order_revenue", "line_revenue", "shipping_revenue"):
+            summary[key] = round(summary[key] + float(item[key]), 2)
+        if row.get("first_order_at") and (first_order_at is None or row["first_order_at"] < first_order_at):
+            first_order_at = row["first_order_at"]
+        if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
+            last_order_at = row["last_order_at"]
+
+    summary["true_roas"] = _roas(summary["order_revenue"], summary["ad_spend"])
+    return {
+        "period": {
+            "date": target,
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+            "day_start_at": day_start,
+            "day_end_at": day_end,
+            "data_until_at": data_until,
+            "complete_hour_until_at": complete_hour_until,
+            "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+        },
+        "scope": {
+            "stores": ["newjoy", "omurio"],
+            "ad_platforms": ["meta"],
+            "order_source": "dianxiaomi",
+            "ad_source": "meta_ad_daily_campaign_metrics",
+            "ad_granularity": "daily",
+            "hourly_ad_ready": False,
+        },
+        "freshness": {
+            "first_order_at": first_order_at,
+            "last_order_at": last_order_at,
+        },
+        "summary": summary,
+        "hourly": hourly,
+    }
 
 
 def get_true_roas_summary(start_date: str, end_date: str) -> dict:
