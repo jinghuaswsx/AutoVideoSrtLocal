@@ -20,6 +20,9 @@ from appcore.db import execute, query, query_one
 logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
+EVALUATION_PROVIDER = "gemini_aistudio"
+EVALUATION_MODEL = "gemini-3.1-pro-preview"
+EVALUATION_GOOGLE_SEARCH = True
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
@@ -417,6 +420,8 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
     ]
     request_payload = {
         "use_case": USE_CASE_CODE,
+        "provider": EVALUATION_PROVIDER,
+        "model": EVALUATION_MODEL,
         "system": system_prompt,
         "prompt": user_prompt,
         "media": [
@@ -434,6 +439,8 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
         "response_schema": response_schema,
         "temperature": 0.2,
         "max_output_tokens": 4096,
+        "google_search": EVALUATION_GOOGLE_SEARCH,
+        "tools": [{"google_search": {}}],
     }
     return {
         "product": {
@@ -451,9 +458,13 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
         "response_schema": response_schema,
         "llm": {
             "use_case": USE_CASE_CODE,
+            "provider": EVALUATION_PROVIDER,
+            "model": EVALUATION_MODEL,
             "temperature": 0.2,
             "max_output_tokens": 4096,
             "project_id": f"media-product-{product_id}",
+            "google_search": EVALUATION_GOOGLE_SEARCH,
+            "tools": [{"google_search": {}}],
         },
         "media": media,
         "request": request_payload,
@@ -573,6 +584,10 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             response_schema=build_response_schema(languages),
             temperature=0.2,
             max_output_tokens=4096,
+            provider_override=EVALUATION_PROVIDER,
+            model_override=EVALUATION_MODEL,
+            google_search=EVALUATION_GOOGLE_SEARCH,
+            billing_extra={"google_search": EVALUATION_GOOGLE_SEARCH},
         )
         raw_json = llm_result.get("json")
         if raw_json is None:

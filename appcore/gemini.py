@@ -254,6 +254,7 @@ def _build_config(
     temperature: float | None,
     response_schema: dict | None,
     max_output_tokens: int | None,
+    google_search: bool | None = None,
 ) -> genai_types.GenerateContentConfig:
     kwargs: dict[str, Any] = {}
     if system:
@@ -265,6 +266,8 @@ def _build_config(
     if response_schema is not None:
         kwargs["response_mime_type"] = "application/json"
         kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
+    if google_search:
+        kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
     return genai_types.GenerateContentConfig(**kwargs)
 
 
@@ -365,6 +368,7 @@ def generate(
     service: str = "gemini",
     default_model: str | None = None,
     return_payload: bool = False,
+    google_search: bool = False,
 ) -> str | Any:
     """一次性生成。传 response_schema 时返回解析后的 JSON。"""
     try:
@@ -389,12 +393,16 @@ def generate(
         request_payload["temperature"] = temperature
     if max_output_tokens is not None:
         request_payload["max_output_tokens"] = max_output_tokens
+    if google_search:
+        request_payload["google_search"] = True
+        request_payload["tools"] = [{"google_search": {}}]
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(
         system=system,
         temperature=temperature,
         response_schema=response_schema,
         max_output_tokens=max_output_tokens,
+        google_search=google_search,
     )
 
     last_err: Exception | None = None

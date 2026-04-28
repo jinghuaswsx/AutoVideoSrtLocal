@@ -33,7 +33,9 @@ def test_vertex_generate_supports_media_with_schema(tmp_path):
     client = Mock()
     client.models.generate_content.return_value = resp
     adapter = GeminiVertexAdapter()
-    with patch("appcore.llm_providers.gemini_vertex_adapter._get_client",
+    with patch.object(adapter, "resolve_credentials",
+                      return_value={"api_key": "key", "project": "proj", "location": "us-central1"}), \
+         patch("appcore.llm_providers.gemini_vertex_adapter._get_client",
                return_value=client), \
          patch("appcore.gemini.genai_types.Part.from_bytes",
                return_value="image-part"), \

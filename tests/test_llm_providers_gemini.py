@@ -9,7 +9,7 @@ from appcore.llm_providers.gemini_aistudio_adapter import GeminiAIStudioAdapter
 def test_aistudio_generate_delegates_to_gemini_api():
     adapter = GeminiAIStudioAdapter()
     with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value="result-text") as m:
+               return_value={"text": "result-text", "json": None, "raw": None, "usage": {}}) as m:
         result = adapter.generate(
             model="gemini-3.1-pro-preview",
             prompt="hello", user_id=42,
@@ -24,7 +24,7 @@ def test_aistudio_generate_delegates_to_gemini_api():
 def test_aistudio_generate_returns_json_when_schema_given():
     adapter = GeminiAIStudioAdapter()
     with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
-               return_value={"score": 95}):
+               return_value={"text": None, "json": {"score": 95}, "raw": None, "usage": {}}):
         result = adapter.generate(
             model="gemini-3.1-pro-preview",
             prompt="score this",
@@ -65,3 +65,16 @@ def test_aistudio_chat_extracts_json_schema_from_response_format():
             response_format=rf,
         )
     assert m.call_args.kwargs["response_schema"] == {"type": "object"}
+
+
+def test_aistudio_generate_forwards_google_search_flag():
+    adapter = GeminiAIStudioAdapter()
+    with patch("appcore.llm_providers.gemini_aistudio_adapter.gemini_api.generate",
+               return_value={"text": "ok", "json": None, "raw": None, "usage": {}}) as m:
+        adapter.generate(
+            model="gemini-3.1-pro-preview",
+            prompt="hello",
+            google_search=True,
+        )
+
+    assert m.call_args.kwargs["google_search"] is True

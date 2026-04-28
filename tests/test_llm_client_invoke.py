@@ -81,6 +81,31 @@ def test_invoke_generate_logs_media_network_estimate(tmp_path):
     assert request_payload["network_estimate"]["media"][0]["bytes"] == 5
 
 
+def test_invoke_generate_passes_google_search_to_adapter_and_usage_log():
+    fake_adapter = MagicMock()
+    fake_adapter.generate.return_value = {
+        "text": "ok",
+        "json": None,
+        "raw": None,
+        "usage": {},
+    }
+    with patch("appcore.llm_client.llm_bindings.resolve",
+               return_value=_fake_binding("gemini_aistudio", "gemini-3.1-pro-preview")), \
+         patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
+         patch("appcore.llm_client._log_usage") as m_log:
+        llm_client.invoke_generate(
+            "material_evaluation.evaluate",
+            prompt="score this",
+            user_id=1,
+            google_search=True,
+        )
+
+    assert fake_adapter.generate.call_args.kwargs["google_search"] is True
+    request_payload = m_log.call_args.kwargs["request_payload"]
+    assert request_payload["google_search"] is True
+    assert request_payload["tools"] == [{"google_search": {}}]
+
+
 def test_invoke_records_usage_via_ai_billing_with_usecase_and_provider():
     fake_adapter = MagicMock()
     fake_adapter.chat.return_value = {

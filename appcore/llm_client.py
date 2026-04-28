@@ -229,6 +229,7 @@ def invoke_generate(
     max_output_tokens: int | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    google_search: bool | None = None,
     billing_extra: dict | None = None,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
@@ -261,6 +262,10 @@ def invoke_generate(
         req_payload["max_output_tokens"] = max_output_tokens
     if response_schema:
         req_payload["response_schema"] = response_schema
+    if google_search is not None:
+        req_payload["google_search"] = bool(google_search)
+        if google_search:
+            req_payload["tools"] = [{"google_search": {}}]
 
     try:
         result = adapter.generate(
@@ -269,6 +274,7 @@ def invoke_generate(
             response_schema=response_schema,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            google_search=google_search,
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,

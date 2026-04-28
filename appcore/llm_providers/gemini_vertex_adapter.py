@@ -111,7 +111,11 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None):
+                 max_output_tokens=None, google_search=None):
+        if google_search:
+            raise NotImplementedError(
+                "gemini_vertex generate() does not support google_search; use gemini_aistudio"
+            )
         media_list = _normalize_media(media)
         if media_list:
             return self._generate_with_media(
@@ -142,7 +146,11 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
-                             max_output_tokens=None):
+                             max_output_tokens=None, google_search=None):
+        if google_search:
+            raise NotImplementedError(
+                "gemini_vertex media generate() does not support google_search; use gemini_aistudio"
+            )
         # Reuse shared Gemini media/schema helpers, but resolve creds via DAO
         # so image flows can pick gemini_cloud_image when desired.
         from appcore import gemini as gemini_api

@@ -294,9 +294,9 @@ USE_CASES: dict[str, UseCase] = {
         "material",
         "素材评估",
         "根据商品图、链接和视频评估市场适配度",
-        "openrouter",
-        "google/gemini-3.1-pro-preview",
-        "openrouter",
+        "gemini_aistudio",
+        "gemini-3.1-pro-preview",
+        "gemini",
         "tokens",
     ),
     # 图片与链接
@@ -435,7 +435,6 @@ USE_CASES: dict[str, UseCase] = {
         "tokens",
     ),
 }
-
 
 def get_use_case(code: str) -> UseCase:
     if code not in USE_CASES:

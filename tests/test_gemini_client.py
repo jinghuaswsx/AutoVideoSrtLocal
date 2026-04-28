@@ -223,6 +223,51 @@ def test_generate_logs_request_and_response_payloads(monkeypatch, tmp_path):
     }
 
 
+def test_generate_enables_google_search_tool_and_logs_request(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+
+    captured: dict = {}
+    resp = SimpleNamespace(
+        text="ok",
+        parsed=None,
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=11,
+            candidates_token_count=7,
+        ),
+    )
+
+    def fake_generate_content(**kwargs):
+        captured.update(kwargs)
+        return resp
+
+    client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    billing_calls: list[dict] = []
+
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
+    monkeypatch.setattr(gemini, "_build_contents", lambda client, prompt, media: ["parts"])
+    monkeypatch.setattr(gemini.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
+
+    out = gemini.generate(
+        "hello",
+        model="gemini-3.1-pro-preview",
+        user_id=9,
+        project_id="proj-9",
+        service="material_evaluation.evaluate",
+        google_search=True,
+        max_retries=1,
+    )
+
+    assert out == "ok"
+    tools = captured["config"].tools
+    assert tools
+    assert tools[0].google_search is not None
+    assert billing_calls[0]["request_payload"]["google_search"] is True
+    assert billing_calls[0]["request_payload"]["tools"] == [{"google_search": {}}]
+
+
 def test_generate_logs_failure_via_ai_billing(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
 

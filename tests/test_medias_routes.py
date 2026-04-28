@@ -8,6 +8,13 @@ from types import SimpleNamespace
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _disable_background_material_evaluation(monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r, "_schedule_material_evaluation", lambda *args, **kwargs: None)
+
+
 def _stub_material_filename_product(monkeypatch, *, name="窗帘挂钩"):
     from web.routes import medias as r
 
@@ -43,6 +50,7 @@ def _stub_raw_source_upload_product(monkeypatch, *, name="可堆叠棒球帽收�
         },
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(r, "_schedule_material_evaluation", lambda *args, **kwargs: None)
     return r
 
 
@@ -273,6 +281,9 @@ def test_manual_ai_evaluate_request_preview_returns_observable_inputs(
     assert payload["prompts"]["user"]
     assert payload["response_schema"]["type"] == "object"
     assert payload["llm"]["use_case"] == "material_evaluation.evaluate"
+    assert payload["llm"]["provider"] == "gemini_aistudio"
+    assert payload["llm"]["model"] == "gemini-3.1-pro-preview"
+    assert payload["llm"]["google_search"] is True
     assert payload["full_payload_url"] == "/medias/api/products/123/evaluate/request-payload"
 
 
@@ -290,6 +301,10 @@ def test_manual_ai_evaluate_request_payload_includes_full_base64(
     assert payload["request"]["media"][0]["data_base64"] == "Y292ZXItYnl0ZXM="
     assert payload["request"]["media"][1]["data_base64"] == "dmlkZW8tYnl0ZXM="
     assert payload["request"]["prompt"] == payload["prompts"]["user"]
+    assert payload["request"]["provider"] == "gemini_aistudio"
+    assert payload["request"]["model"] == "gemini-3.1-pro-preview"
+    assert payload["request"]["google_search"] is True
+    assert payload["request"]["tools"] == [{"google_search": {}}]
 
 
 def test_item_bootstrap_rejects_bad_localized_material_filename(

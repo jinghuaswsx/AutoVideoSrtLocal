@@ -29,7 +29,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None):
+                 max_output_tokens=None, google_search=None):
         media_list = None
         if media:
             media_list = [media] if isinstance(media, (str, Path)) else list(media)
@@ -38,6 +38,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
             response_schema=response_schema, temperature=temperature,
             max_output_tokens=max_output_tokens, user_id=user_id,
             service="gemini", default_model=model, return_payload=True,
+            google_search=bool(google_search),
         )
         return result
 

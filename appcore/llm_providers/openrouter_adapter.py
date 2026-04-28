@@ -187,7 +187,11 @@ class OpenRouterAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None):
+                 max_output_tokens=None, google_search=None):
+        if google_search:
+            raise NotImplementedError(
+                "openrouter generate() does not support Google Search grounding; use gemini_aistudio"
+            )
         media_list = _normalize_media(media)
         messages = []
         if system:
