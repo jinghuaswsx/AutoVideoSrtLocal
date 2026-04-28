@@ -48,3 +48,17 @@ def test_pushes_css_expands_ai_evaluation_detail_modal():
     assert ".audit-detail-modal .pm-body" in css
     assert "flex: 1 1 auto" in css
     assert "max-height: none" in css
+
+
+def test_eval_country_table_expands_risk_section_but_keeps_meta_collapsed():
+    script = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
+
+    extra_start = script.index("function extraSectionHtml")
+    meta_start = script.index("function metaSectionHtml")
+    render_start = script.index("function render")
+    extra_section = script[extra_start:meta_start]
+    meta_section = script[meta_start:render_start]
+
+    assert 'return `<details class="ect-collapsible" open>' in extra_section
+    assert 'return `<details class="ect-collapsible">' in meta_section
+    assert 'return `<details class="ect-collapsible" open>' not in meta_section

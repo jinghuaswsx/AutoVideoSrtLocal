@@ -350,7 +350,7 @@
   function extraSectionHtml(countries) {
     const totalSuggestions = countries.reduce((sum, c) => sum + (Array.isArray(c.suggestions) ? c.suggestions.filter(s => String(s || '').trim()).length : 0), 0);
     const note = totalSuggestions > 0 ? `（含 ${totalSuggestions} 条建议）` : '';
-    return `<details class="ect-collapsible">
+    return `<details class="ect-collapsible" open>
       <summary>风险等级与建议${note ? `<span class="ect-summary-count">${escapeHtml(note)}</span>` : ''}</summary>
       <div class="ect-collapsible-body">${extraTableHtml(countries)}</div>
     </details>`;
