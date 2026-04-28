@@ -53,6 +53,34 @@ def test_invoke_generate_routes_to_adapter_generate():
     fake_adapter.generate.assert_called_once()
 
 
+def test_invoke_generate_logs_media_network_estimate(tmp_path):
+    media_path = tmp_path / "clip.mp4"
+    media_path.write_bytes(b"12345")
+    fake_adapter = MagicMock()
+    fake_adapter.generate.return_value = {
+        "text": "ok",
+        "json": None,
+        "raw": None,
+        "usage": {},
+    }
+    with patch("appcore.llm_client.llm_bindings.resolve",
+               return_value=_fake_binding("openrouter", "google/gemini-pro")), \
+         patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
+         patch("appcore.llm_client._log_usage") as m_log:
+        llm_client.invoke_generate(
+            "material_evaluation.evaluate",
+            prompt="score this",
+            media=[media_path],
+            user_id=1,
+        )
+
+    request_payload = m_log.call_args.kwargs["request_payload"]
+    assert request_payload["network_route_intent"] == "proxy_required"
+    assert request_payload["network_estimate"]["total_media_bytes"] == 5
+    assert request_payload["network_estimate"]["estimated_base64_payload_bytes"] == 8
+    assert request_payload["network_estimate"]["media"][0]["bytes"] == 5
+
+
 def test_invoke_records_usage_via_ai_billing_with_usecase_and_provider():
     fake_adapter = MagicMock()
     fake_adapter.chat.return_value = {

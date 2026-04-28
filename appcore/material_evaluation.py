@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
 import tempfile
 import threading
 import uuid
@@ -10,11 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from appcore import llm_client, local_media_storage, medias, pushes, tos_clients
-from appcore.db import query
+from appcore.db import execute, query, query_one
 
 logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
+MAX_AUTOMATIC_ATTEMPTS = 1
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
@@ -273,12 +275,13 @@ def find_ready_product_ids(limit: int = 5) -> list[int]:
     return [int(row["id"]) for row in rows]
 
 
-def evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
+def evaluate_product_if_ready(product_id: int, *, force: bool = False,
+                              manual: bool = False) -> dict:
     pid = int(product_id)
     if not _enter_product(pid):
         return {"status": "running", "product_id": pid}
     try:
-        return _evaluate_product_if_ready(pid, force=force)
+        return _evaluate_product_if_ready(pid, force=force, manual=manual)
     finally:
         _leave_product(pid)
 
@@ -296,7 +299,8 @@ def _leave_product(product_id: int) -> None:
         _ACTIVE_PRODUCT_IDS.discard(product_id)
 
 
-def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
+def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
+                               manual: bool = False) -> dict:
     product = medias.get_product(product_id)
     if not product:
         return {"status": "product_missing", "product_id": product_id}
@@ -320,10 +324,27 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
     video = _first_english_video(product_id)
     if not video:
         return {"status": "missing_video", "product_id": product_id}
+    video_key = str(video.get("object_key") or "").strip()
 
+    if not manual:
+        attempts = _automatic_attempt_count(product_id, cover_key, video_key)
+        if attempts >= MAX_AUTOMATIC_ATTEMPTS:
+            return {
+                "status": "auto_attempt_limit_reached",
+                "product_id": product_id,
+                "attempts": attempts,
+            }
+
+    attempt_id = None
     try:
         cover_path = _materialize_media(cover_key)
-        video_path = _materialize_media(video["object_key"])
+        video_path = _materialize_media(video_key)
+        attempt_id = _record_attempt_start(
+            product_id,
+            cover_key,
+            video_key,
+            trigger="manual" if manual else "auto",
+        )
         prompt = build_prompt(product, product_url, languages)
         llm_result = llm_client.invoke_generate(
             USE_CASE_CODE,
@@ -348,7 +369,7 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
             "product_url": product_url,
             "cover_object_key": cover_key,
             "video_item_id": video.get("id"),
-            "video_object_key": video.get("object_key"),
+            "video_object_key": video_key,
             "countries": normalized["countries"],
         }
         medias.update_product(
@@ -357,19 +378,122 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
             ai_evaluation_result=normalized["ai_evaluation_result"],
             ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
         )
+        _record_attempt_finish(attempt_id, success=True, error="")
         return {
             "status": "evaluated",
             "product_id": product_id,
             "ai_score": normalized["ai_score"],
             "ai_evaluation_result": normalized["ai_evaluation_result"],
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("material evaluation LLM call failed for product_id=%s", product_id)
+        error_message = str(exc)[:500] or exc.__class__.__name__
+        _record_attempt_finish(attempt_id, success=False, error=str(exc))
         try:
-            medias.update_product(product_id, ai_evaluation_result="评估失败")
+            detail = {
+                "schema_version": 1,
+                "use_case": USE_CASE_CODE,
+                "evaluated_at": datetime.now(UTC).isoformat(),
+                "product_id": product_id,
+                "product_url": product_url,
+                "cover_object_key": cover_key,
+                "video_item_id": video.get("id"),
+                "video_object_key": video_key,
+                "error": error_message,
+            }
+            medias.update_product(
+                product_id,
+                ai_evaluation_result="评估失败",
+                ai_evaluation_detail=json.dumps(detail, ensure_ascii=False),
+            )
         except Exception:
             logger.exception("failed to save evaluation failure status for product_id=%s", product_id)
-        return {"status": "failed", "product_id": product_id}
+        return {"status": "failed", "product_id": product_id, "error": error_message}
+
+
+def _automatic_attempt_count(product_id: int, cover_key: str, video_key: str) -> int:
+    """Count automatic attempts, including historical usage logs before this guard."""
+    table_count = 0
+    try:
+        row = query_one(
+            "SELECT automatic_attempts FROM material_evaluation_attempts "
+            "WHERE product_id=%s AND cover_key_hash=%s AND video_key_hash=%s "
+            "AND cover_object_key=%s AND video_object_key=%s "
+            "LIMIT 1",
+            (int(product_id), _key_hash(cover_key), _key_hash(video_key), cover_key, video_key),
+        )
+        table_count = int((row or {}).get("automatic_attempts") or 0)
+    except Exception:
+        logger.debug("material evaluation attempt table count failed", exc_info=True)
+
+    logged_count = 0
+    try:
+        row = query_one(
+            "SELECT COUNT(*) AS cnt FROM usage_logs "
+            "WHERE use_case_code=%s AND project_id=%s",
+            (USE_CASE_CODE, f"media-product-{int(product_id)}"),
+        )
+        logged_count = int((row or {}).get("cnt") or 0)
+    except Exception:
+        logger.debug("material evaluation historical usage count failed", exc_info=True)
+    return max(table_count, logged_count)
+
+
+def _record_attempt_start(product_id: int, cover_key: str, video_key: str,
+                          *, trigger: str) -> int | None:
+    trigger = "manual" if trigger == "manual" else "auto"
+    try:
+        execute(
+            "INSERT INTO material_evaluation_attempts "
+            "(product_id, cover_object_key, video_object_key, cover_key_hash, "
+            " video_key_hash, automatic_attempts, manual_attempts, last_trigger, "
+            " last_status, last_started_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'running', NOW()) "
+            "ON DUPLICATE KEY UPDATE "
+            " automatic_attempts=automatic_attempts+VALUES(automatic_attempts), "
+            " manual_attempts=manual_attempts+VALUES(manual_attempts), "
+            " last_trigger=VALUES(last_trigger), last_status='running', "
+            " last_started_at=NOW(), updated_at=NOW()",
+            (
+                int(product_id),
+                cover_key,
+                video_key,
+                _key_hash(cover_key),
+                _key_hash(video_key),
+                0 if trigger == "manual" else 1,
+                1 if trigger == "manual" else 0,
+                trigger,
+            ),
+        )
+        row = query_one(
+            "SELECT id FROM material_evaluation_attempts "
+            "WHERE product_id=%s AND cover_key_hash=%s AND video_key_hash=%s "
+            "AND cover_object_key=%s AND video_object_key=%s "
+            "LIMIT 1",
+            (int(product_id), _key_hash(cover_key), _key_hash(video_key), cover_key, video_key),
+        )
+        return int(row["id"]) if row else None
+    except Exception:
+        logger.debug("record material evaluation attempt start failed", exc_info=True)
+        return None
+
+
+def _record_attempt_finish(attempt_id: int | None, *, success: bool, error: str) -> None:
+    if not attempt_id:
+        return
+    try:
+        execute(
+            "UPDATE material_evaluation_attempts "
+            "SET last_status=%s, last_error=%s, last_finished_at=NOW(), updated_at=NOW() "
+            "WHERE id=%s",
+            ("success" if success else "failed", (error or "")[:500], int(attempt_id)),
+        )
+    except Exception:
+        logger.debug("record material evaluation attempt finish failed", exc_info=True)
+
+
+def _key_hash(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
 def _resolve_product_cover_key(product_id: int, product: dict) -> str:

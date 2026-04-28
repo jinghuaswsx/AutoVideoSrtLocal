@@ -1130,9 +1130,10 @@
     btn.disabled = true;
     btn.innerHTML = icon('loader', 12) + '<span>触发中…</span>';
     try {
-      await fetchJSON('/medias/api/products/' + pid + '/evaluate', { method: 'POST' });
-      btn.innerHTML = icon('check', 12) + '<span>已触发</span>';
-      setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; }, 2000);
+      const data = await fetchJSON('/medias/api/products/' + pid + '/evaluate', { method: 'POST' });
+      btn.innerHTML = icon('check', 12) + '<span>已完成</span>';
+      await loadList();
+      setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; }, 1200);
     } catch (err) {
       btn.innerHTML = origHTML;
       btn.disabled = false;

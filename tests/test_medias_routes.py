@@ -160,6 +160,54 @@ def test_create_raw_source_accepts_matching_english_video_filename_without_auto_
     assert len(writes) == 2
 
 
+def test_manual_ai_evaluate_returns_llm_error_to_frontend(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "evaluate_product_if_ready",
+        lambda pid, **kwargs: {
+            "status": "failed",
+            "product_id": pid,
+            "error": "OpenRouter 502 upstream error",
+        },
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "OpenRouter 502 upstream error"
+    assert body["result"]["status"] == "failed"
+
+
+def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    calls = []
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "evaluate_product_if_ready",
+        lambda pid, **kwargs: calls.append((pid, kwargs)) or {
+            "status": "evaluated",
+            "product_id": pid,
+            "ai_score": 90,
+            "ai_evaluation_result": "适合推广",
+        },
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+
+    assert resp.status_code == 200
+    assert calls == [(123, {"force": True, "manual": True})]
+    assert resp.get_json()["message"] == "AI 评估完成"
+
+
 def test_item_bootstrap_rejects_bad_localized_material_filename(
     authed_client_no_db, monkeypatch
 ):
