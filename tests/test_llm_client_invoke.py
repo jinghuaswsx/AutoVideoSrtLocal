@@ -90,7 +90,7 @@ def test_invoke_generate_passes_google_search_to_adapter_and_usage_log():
         "usage": {},
     }
     with patch("appcore.llm_client.llm_bindings.resolve",
-               return_value=_fake_binding("gemini_aistudio", "gemini-3.1-pro-preview")), \
+               return_value=_fake_binding("openrouter", "google/gemini-3.1-pro-preview")), \
          patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
          patch("appcore.llm_client._log_usage") as m_log:
         llm_client.invoke_generate(
@@ -103,7 +103,7 @@ def test_invoke_generate_passes_google_search_to_adapter_and_usage_log():
     assert fake_adapter.generate.call_args.kwargs["google_search"] is True
     request_payload = m_log.call_args.kwargs["request_payload"]
     assert request_payload["google_search"] is True
-    assert request_payload["tools"] == [{"google_search": {}}]
+    assert request_payload["tools"] == [{"type": "openrouter:web_search"}]
 
 
 def test_invoke_records_usage_via_ai_billing_with_usecase_and_provider():

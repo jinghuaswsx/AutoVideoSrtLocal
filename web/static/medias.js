@@ -735,6 +735,9 @@
             <dt>视频</dt><dd>${escapeHtml(video.object_key || '-')}</dd>
             <dt>语种</dt><dd>${escapeHtml((preview.languages || []).map((lang) => `${lang.name}(${lang.code})`).join('、') || '-')}</dd>
             <dt>UseCase</dt><dd>${escapeHtml(preview.llm && preview.llm.use_case || '-')}</dd>
+            <dt>Provider</dt><dd>${escapeHtml(preview.llm && preview.llm.provider || '-')}</dd>
+            <dt>Model</dt><dd>${escapeHtml(preview.llm && preview.llm.model || '-')}</dd>
+            <dt>Search</dt><dd>${preview.llm && preview.llm.google_search ? escapeHtml(JSON.stringify(preview.llm.tools || [])) : '-'}</dd>
             <dt>参数</dt><dd>temperature=${escapeHtml(preview.llm && preview.llm.temperature)}, max_output_tokens=${escapeHtml(preview.llm && preview.llm.max_output_tokens)}</dd>
           </dl>
         </div>

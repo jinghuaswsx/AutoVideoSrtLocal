@@ -213,11 +213,14 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates
     assert "listing_status" not in result
-    assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
-    assert llm_calls[0][1]["model_override"] == "gemini-3.1-pro-preview"
+    assert llm_calls[0][1]["provider_override"] == "openrouter"
+    assert llm_calls[0][1]["model_override"] == "google/gemini-3.1-pro-preview"
     assert llm_calls[0][1]["google_search"] is True
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
+    assert detail["provider"] == "openrouter"
+    assert detail["model"] == "google/gemini-3.1-pro-preview"
+    assert detail["search_tools"] == [{"type": "openrouter:web_search"}]
     assert detail["countries"][0]["lang"] == "de"
 
 

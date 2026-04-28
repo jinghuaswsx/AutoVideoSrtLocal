@@ -147,6 +147,22 @@ def test_openrouter_chat_respects_custom_response_format(fake_provider_db):
     assert kwargs["extra_body"]["response_format"] == rf
 
 
+def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        client = _mock_openai(m_openai, content='{"ok":true}')
+        OpenRouterAdapter().generate(
+            model="google/gemini-3.1-pro-preview",
+            prompt="score this",
+            response_schema={"type": "object"},
+            google_search=True,
+        )
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["extra_body"]["tools"] == [{"type": "openrouter:web_search"}]
+    assert kwargs["extra_body"]["plugins"] == [{"id": "response-healing"}]
+
+
 def test_openrouter_media_parts_use_video_url_for_video_files(tmp_path):
     image_path = tmp_path / "cover.jpg"
     video_path = tmp_path / "promo.mp4"

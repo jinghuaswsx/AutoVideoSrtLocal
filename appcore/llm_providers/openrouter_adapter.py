@@ -188,10 +188,6 @@ class OpenRouterAdapter(LLMAdapter):
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
                  max_output_tokens=None, google_search=None):
-        if google_search:
-            raise NotImplementedError(
-                "openrouter generate() does not support Google Search grounding; use gemini_aistudio"
-            )
         media_list = _normalize_media(media)
         messages = []
         if system:
@@ -204,6 +200,9 @@ class OpenRouterAdapter(LLMAdapter):
                 "type": "json_schema",
                 "json_schema": {"name": "openrouter_generate", "schema": response_schema},
             }
+        extra_body = None
+        if google_search:
+            extra_body = {"tools": [{"type": "openrouter:web_search"}]}
         result = self.chat(
             model=_coerce_openrouter_model(model),
             messages=messages,
@@ -211,6 +210,7 @@ class OpenRouterAdapter(LLMAdapter):
             temperature=temperature,
             max_tokens=max_output_tokens,
             response_format=response_format,
+            extra_body=extra_body,
         )
         if response_schema is not None:
             result["json"] = _parse_json_content(result.get("text") or "")

@@ -63,6 +63,14 @@ def _network_route_intent(provider: str) -> str:
     return "unknown"
 
 
+def _search_tools_payload(provider: str, enabled: bool | None) -> list[dict] | None:
+    if not enabled:
+        return None
+    if (provider or "").strip().lower() == "openrouter":
+        return [{"type": "openrouter:web_search"}]
+    return [{"google_search": {}}]
+
+
 def _media_network_estimate(media_paths: list[str]) -> dict:
     items: list[dict[str, Any]] = []
     total_bytes = 0
@@ -264,8 +272,9 @@ def invoke_generate(
         req_payload["response_schema"] = response_schema
     if google_search is not None:
         req_payload["google_search"] = bool(google_search)
-        if google_search:
-            req_payload["tools"] = [{"google_search": {}}]
+        tools_payload = _search_tools_payload(provider, google_search)
+        if tools_payload:
+            req_payload["tools"] = tools_payload
 
     try:
         result = adapter.generate(

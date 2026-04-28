@@ -428,6 +428,15 @@
     if (videoItemId != null && videoItemId !== '') items.push({ label: '视频 item ID', value: `<code>${escapeHtml(videoItemId)}</code>` });
     const useCase = String(detail.use_case || '').trim();
     if (useCase) items.push({ label: 'Use case', value: `<code>${escapeHtml(useCase)}</code>` });
+    const provider = String(detail.provider || '').trim();
+    if (provider) items.push({ label: 'Provider', value: `<code>${escapeHtml(provider)}</code>` });
+    const model = String(detail.model || '').trim();
+    if (model) items.push({ label: 'Model', value: `<code>${escapeHtml(model)}</code>` });
+    if (detail.search_enabled != null) {
+      const searchLabel = detail.search_enabled ? 'enabled' : 'disabled';
+      const tools = Array.isArray(detail.search_tools) ? ` ${escapeHtml(JSON.stringify(detail.search_tools))}` : '';
+      items.push({ label: 'Search tools', value: `<code>${escapeHtml(searchLabel)}</code>${tools}` });
+    }
     const schemaVersion = detail.schema_version;
     if (schemaVersion != null && schemaVersion !== '') items.push({ label: 'Schema version', value: `<code>${escapeHtml(schemaVersion)}</code>` });
 
