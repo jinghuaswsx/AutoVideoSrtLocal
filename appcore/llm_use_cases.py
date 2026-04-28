@@ -144,6 +144,16 @@ USE_CASES: dict[str, UseCase] = {
         "seconds",
     ),
     # 视频翻译 v2
+    "video_translate.source_normalize": _uc(
+        "video_translate.source_normalize",
+        "video_translate",
+        "AV source normalize",
+        "Clean source ASR text before AV-sync localization without translating or changing timing.",
+        "openrouter",
+        "openai/gpt-5.5",
+        "openrouter",
+        "tokens",
+    ),
     "video_translate.shot_notes": _uc(
         "video_translate.shot_notes",
         "video_translate",

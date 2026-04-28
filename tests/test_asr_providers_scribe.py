@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from appcore.asr_providers.scribe import ScribeAdapter
+from appcore.asr_providers.scribe import ScribeAdapter, parse_scribe_response
 
 
 class _FakeResponse:
@@ -135,3 +135,39 @@ def test_legacy_wrapper_compat(
     out = transcribe_local_audio(str(audio), language_code="en")
     assert len(out) == 1
     assert out[0]["text"] == "Hi."
+
+
+def test_parse_scribe_response_splits_long_unpunctuated_stream() -> None:
+    payload = {
+        "audio_duration_secs": 20.0,
+        "words": [
+            {"text": "this", "start": 3.0, "end": 3.6, "type": "word"},
+            {"text": "model", "start": 3.7, "end": 4.5, "type": "word"},
+            {"text": "has", "start": 4.6, "end": 5.0, "type": "word"},
+            {"text": "a", "start": 5.1, "end": 5.3, "type": "word"},
+            {"text": "really", "start": 5.4, "end": 6.2, "type": "word"},
+            {"text": "long", "start": 6.3, "end": 7.0, "type": "word"},
+            {"text": "demo", "start": 7.1, "end": 8.0, "type": "word"},
+            {"text": "without", "start": 8.1, "end": 9.0, "type": "word"},
+            {"text": "clear", "start": 9.1, "end": 9.8, "type": "word"},
+            {"text": "punctuation", "start": 9.9, "end": 10.8, "type": "word"},
+            {"text": "so", "start": 10.9, "end": 11.2, "type": "word"},
+            {"text": "we", "start": 11.3, "end": 11.6, "type": "word"},
+            {"text": "need", "start": 11.7, "end": 12.2, "type": "word"},
+            {"text": "a", "start": 12.3, "end": 12.5, "type": "word"},
+            {"text": "timing", "start": 12.6, "end": 13.3, "type": "word"},
+            {"text": "break", "start": 13.4, "end": 14.1, "type": "word"},
+            {"text": "before", "start": 14.2, "end": 15.0, "type": "word"},
+            {"text": "eighteen", "start": 15.1, "end": 16.0, "type": "word"},
+            {"text": "seconds", "start": 16.1, "end": 17.0, "type": "word"},
+            {"text": "arrives", "start": 17.1, "end": 18.0, "type": "word"},
+        ],
+    }
+
+    out = parse_scribe_response(payload)
+
+    assert len(out) >= 2
+    assert out[0]["start_time"] == 3.0
+    assert out[-1]["end_time"] == 18.0
+    assert any(item.get("force_break_after") for item in out[:-1])
+    assert max(item["end_time"] - item["start_time"] for item in out) <= 6.5

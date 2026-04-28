@@ -198,6 +198,8 @@ def _build_sentence_inputs(script_segments: list[dict], shot_notes: dict, av_inp
         asr_index = _segment_index(segment, fallback_index)
         start_time = _segment_start(segment)
         end_time = _segment_end(segment)
+        source_text = str(segment.get("text") or "")
+        original_source_text = str(segment.get("original_text") or source_text)
         target_duration = round(end_time - start_time, 3)
         target_chars_range = compute_target_chars_range(target_duration, voice_id, target_language)
         sentence_inputs.append(
@@ -205,7 +207,10 @@ def _build_sentence_inputs(script_segments: list[dict], shot_notes: dict, av_inp
                 "asr_index": asr_index,
                 "start_time": start_time,
                 "end_time": end_time,
-                "source_text": str(segment.get("text") or ""),
+                "source_text": source_text,
+                "original_source_text": original_source_text,
+                "source_normalization_status": segment.get("source_normalization_status"),
+                "source_normalization_note": segment.get("source_normalization_note"),
                 "shot_context": _shot_context_for_index(shot_notes, asr_index),
                 "role_in_structure": _role_in_structure(asr_index, structure_ranges),
                 "target_duration": target_duration,
@@ -273,6 +278,9 @@ def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dic
                 "start_time": sentence["start_time"],
                 "end_time": sentence["end_time"],
                 "source_text": sentence["source_text"],
+                "original_source_text": sentence.get("original_source_text", sentence["source_text"]),
+                "source_normalization_status": sentence.get("source_normalization_status"),
+                "source_normalization_note": sentence.get("source_normalization_note"),
                 "shot_context": sentence["shot_context"],
                 "role_in_structure": sentence["role_in_structure"],
                 "target_duration": sentence["target_duration"],

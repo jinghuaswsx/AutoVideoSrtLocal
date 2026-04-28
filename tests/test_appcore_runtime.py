@@ -347,9 +347,37 @@ def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
         "pipeline.shot_notes.generate_shot_notes",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("openrouter timeout")),
     )
+    monkeypatch.setattr(
+        "pipeline.av_source_normalize.normalize_source_segments",
+        lambda **kwargs: {
+            "segments": [
+                {
+                    "index": 0,
+                    "asr_index": 0,
+                    "text": "clean source line",
+                    "original_text": "source line",
+                    "start_time": 0.0,
+                    "end_time": 1.0,
+                    "source_normalization_status": "normalized",
+                    "source_normalization_note": "cleaned",
+                }
+            ],
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "original_text": "source line",
+                    "normalized_text": "clean source line",
+                    "changed": True,
+                    "cleanup_note": "cleaned",
+                }
+            ],
+            "summary": {"total_sentences": 1, "changed_sentences": 1},
+        },
+    )
 
     def fake_av_translate(**kwargs):
         captured["shot_notes"] = kwargs["shot_notes"]
+        captured["script_segments"] = kwargs["script_segments"]
         return {
             "sentences": [
                 {
@@ -358,7 +386,7 @@ def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
                     "end_time": 1.0,
                     "target_duration": 1.0,
                     "target_chars_range": (8, 12),
-                    "source_text": "source line",
+                    "source_text": "clean source line",
                     "role_in_structure": "hook",
                     "text": "Localized line",
                     "est_chars": 14,
@@ -423,6 +451,7 @@ def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
 
     saved = task_state.get(task_id)
     assert saved["steps"]["translate"] == "done"
+    assert captured["script_segments"][0]["text"] == "clean source line"
     assert captured["shot_notes"]["fallback"]["used"] is True
     assert "openrouter timeout" in captured["shot_notes"]["fallback"]["reason"]
 
@@ -456,6 +485,35 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     )
     runner, _events = _make_runner()
     call_order = []
+    source_normalization = {
+        "segments": [
+            {
+                "index": 0,
+                "asr_index": 0,
+                "text": "clean first line",
+                "original_text": "第一句",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "source_normalization_status": "normalized",
+                "source_normalization_note": "cleaned ASR",
+            },
+            {
+                "index": 1,
+                "asr_index": 1,
+                "text": "clean second line",
+                "original_text": "第二句",
+                "start_time": 1.0,
+                "end_time": 2.2,
+                "source_normalization_status": "normalized",
+                "source_normalization_note": "cleaned ASR",
+            },
+        ],
+        "sentences": [
+            {"asr_index": 0, "original_text": "第一句", "normalized_text": "clean first line", "changed": True},
+            {"asr_index": 1, "original_text": "第二句", "normalized_text": "clean second line", "changed": True},
+        ],
+        "summary": {"total_sentences": 2, "changed_sentences": 2},
+    }
 
     shot_notes = {
         "global": {"overall_theme": "海边场景"},
@@ -563,8 +621,18 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
         lambda **kwargs: call_order.append("shot_notes") or shot_notes,
     )
     monkeypatch.setattr(
+        "pipeline.av_source_normalize.normalize_source_segments",
+        lambda **kwargs: call_order.append("source_normalize") or source_normalization,
+    )
+    def fake_generate_av_localized_translation(**kwargs):
+        call_order.append("av_translate")
+        assert kwargs["script_segments"][0]["text"] == "clean first line"
+        assert kwargs["script_segments"][0]["original_text"] == "第一句"
+        return av_output
+
+    monkeypatch.setattr(
         "pipeline.av_translate.generate_av_localized_translation",
-        lambda **kwargs: call_order.append("av_translate") or av_output,
+        fake_generate_av_localized_translation,
     )
     monkeypatch.setattr(
         "pipeline.tts.get_voice_by_id",
@@ -606,7 +674,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     runtime.run_av_localize(task_id, runner=runner)
 
     saved = task_state.get(task_id)
-    assert call_order == ["shot_notes", "av_translate", "tts", "reconcile", "subtitle"]
+    assert call_order == ["source_normalize", "shot_notes", "av_translate", "tts", "reconcile", "subtitle"]
     final_tts_segments = saved["variants"]["av"]["tts_result"]["segments"]
     assert rebuild_calls == [
         {"task_dir": str(tmp_path), "segments": final_tts_segments, "variant": "av"}
@@ -614,6 +682,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert saved["steps"]["translate"] == "done"
     assert saved["steps"]["tts"] == "done"
     assert saved["steps"]["subtitle"] == "done"
+    assert saved["source_normalization"]["summary"] == {"total_sentences": 2, "changed_sentences": 2}
+    assert saved["normalized_script_segments"][0]["text"] == "clean first line"
     assert saved["shot_notes"]["global"]["overall_theme"] == "海边场景"
     assert saved["variants"]["av"]["voice_id"] == "voice-1"
     assert saved["variants"]["av"]["sentences"][1]["status"] == "speed_adjusted"
@@ -634,9 +704,11 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert av_state["av_debug"]["summary"]["text_rewrite_attempts"] == 3
     assert av_state["av_debug"]["summary"]["tts_regenerate_attempts"] == 3
     assert av_state["av_debug"]["summary"]["speed_adjustment_attempts"] == 1
+    assert av_state["av_debug"]["summary"]["source_changed_sentences"] == 2
     assert av_state["av_debug"]["sentence_convergence"]["sentences"] == av_state["sentences"]
     step_codes = [step["code"] for step in av_state["av_debug"]["steps"]]
     assert step_codes == [
+        "source_normalize",
         "sentence_localize",
         "tts_first_pass",
         "duration_converge",

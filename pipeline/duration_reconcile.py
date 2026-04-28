@@ -121,7 +121,7 @@ def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
     for key, value in av_sentence.items():
         if key in current:
             continue
-        if key.startswith("source") or key.startswith("localization"):
+        if key.startswith("source") or key.startswith("original_source") or key.startswith("localization"):
             current[key] = value
 
 

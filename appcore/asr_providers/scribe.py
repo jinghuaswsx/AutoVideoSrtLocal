@@ -38,6 +38,7 @@ _REQUEST_TIMEOUT_SEC = 600  # 长视频可能要几分钟
 
 _SENTENCE_END_PUNCT: tuple[str, ...] = (".", "!", "?", "。", "！", "？", "…")
 _SILENCE_GAP_SEC = 0.6
+_MAX_UNPUNCTUATED_SEGMENT_SEC = 6.0
 
 
 def _resolve_elevenlabs_api_key() -> str:
@@ -144,7 +145,40 @@ def parse_scribe_response(payload: dict) -> List[Utterance]:
     sentences: List[Utterance] = []
     current_words: list = []
 
+    def _flush_current(*, force_break_after: bool = False) -> None:
+        nonlocal current_words
+        sent_text = " ".join(
+            (w.get("text") or "").strip() for w in current_words
+        ).strip()
+        if sent_text:
+            sentence: Utterance = {
+                "text": sent_text,
+                "start_time": float(current_words[0].get("start") or 0.0),
+                "end_time": float(current_words[-1].get("end") or 0.0),
+                "words": [
+                    {
+                        "text": w.get("text") or "",
+                        "start_time": float(w.get("start") or 0.0),
+                        "end_time": float(w.get("end") or 0.0),
+                        "confidence": float(w.get("logprob") or 0.0),
+                    }
+                    for w in current_words
+                ],
+            }
+            if force_break_after:
+                sentence["force_break_after"] = True
+            sentences.append(sentence)
+        current_words = []
+
     for i, word in enumerate(word_items):
+        if current_words:
+            current_start = float(current_words[0].get("start") or 0.0)
+            prospective_end = float(word.get("end") or 0.0)
+            if (
+                len(current_words) > 1
+                and prospective_end - current_start > _MAX_UNPUNCTUATED_SEGMENT_SEC
+            ):
+                _flush_current(force_break_after=True)
         current_words.append(word)
         text = (word.get("text") or "").strip()
         is_sentence_end = any(text.endswith(p) for p in _SENTENCE_END_PUNCT)
@@ -156,27 +190,16 @@ def parse_scribe_response(payload: dict) -> List[Utterance]:
             cur_end = float(word.get("end") or 0.0)
             next_gap = next_start - cur_end
 
-        if is_sentence_end or is_last_word or next_gap > _SILENCE_GAP_SEC:
-            sent_text = " ".join(
-                (w.get("text") or "").strip() for w in current_words
-            ).strip()
-            if sent_text:
-                sentences.append(
-                    {
-                        "text": sent_text,
-                        "start_time": float(current_words[0].get("start") or 0.0),
-                        "end_time": float(current_words[-1].get("end") or 0.0),
-                        "words": [
-                            {
-                                "text": w.get("text") or "",
-                                "start_time": float(w.get("start") or 0.0),
-                                "end_time": float(w.get("end") or 0.0),
-                                "confidence": float(w.get("logprob") or 0.0),
-                            }
-                            for w in current_words
-                        ],
-                    }
-                )
-            current_words = []
+        current_start = float(current_words[0].get("start") or 0.0)
+        current_end = float(word.get("end") or 0.0)
+        is_too_long = (
+            len(current_words) > 1
+            and not is_sentence_end
+            and not is_last_word
+            and current_end - current_start >= _MAX_UNPUNCTUATED_SEGMENT_SEC
+        )
+
+        if is_sentence_end or is_last_word or next_gap > _SILENCE_GAP_SEC or is_too_long:
+            _flush_current(force_break_after=is_too_long)
 
     return sentences

@@ -53,8 +53,11 @@ def resolve_adapter(stage: str, source_language: str | None) -> tuple[BaseASRAda
         force_language: 传给 ``adapter.transcribe(language=...)``；adapter 不支持
                         force language 或 source_language 为 auto/空时为 None。
     """
-    requested = get_stage_provider(stage)
     main_lang = _normalize_lang_code(source_language or "")
+    if stage == "asr_main" and main_lang == "en":
+        requested = "elevenlabs_tts"
+    else:
+        requested = get_stage_provider(stage)
 
     provider_code = requested
     adapter = build_adapter(provider_code)

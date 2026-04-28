@@ -30,6 +30,9 @@ def test_video_translate_asr_and_tts_defaults():
     assert USE_CASES["video_translate.tts"]["units_type"] == "chars"
     assert USE_CASES["video_translate.asr"]["default_provider"] == "doubao_asr"
     assert USE_CASES["video_translate.asr"]["units_type"] == "seconds"
+    assert USE_CASES["video_translate.source_normalize"]["default_provider"] == "openrouter"
+    assert USE_CASES["video_translate.source_normalize"]["default_model"] == "openai/gpt-5.5"
+    assert USE_CASES["video_translate.source_normalize"]["units_type"] == "tokens"
     assert USE_CASES["video_translate.tts_language_check"]["default_provider"] == "openrouter"
     assert USE_CASES["video_translate.tts_language_check"]["default_model"] == "google/gemini-3.1-flash-lite-preview"
     assert USE_CASES["video_translate.tts_language_check"]["units_type"] == "tokens"
@@ -56,7 +59,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 38
+    assert len(USE_CASES) == 39
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES

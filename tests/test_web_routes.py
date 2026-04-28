@@ -352,6 +352,9 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
         pipeline_version="av",
         av_debug={
             "model": "GPT-5.5",
+            "source_normalization": {
+                "summary": {"total_sentences": 1, "changed_sentences": 1},
+            },
             "sentence_convergence": {
                 "model": "GPT-5.5",
                 "sentences": [
@@ -404,6 +407,8 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
             {
                 "asr_index": 0,
                 "source_text": "这款精华很清爽",
+                "original_source_text": "这款净化很清爽",
+                "source_normalization_note": "修正 ASR 误识别",
                 "final_text": "This serum feels fresh.",
                 "target_duration": 1.2,
                 "tts_duration": 1.22,
@@ -440,6 +445,7 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "文案尝试" in body
     assert "TTS 重生成" in body
     assert "调速" in body
+    assert "原文纯净化" in body
     assert "GPT-5.5" in body
     assert "renderAvConvergence()" in body
     assert "renderAvSubtitleUnits()" in body
@@ -458,6 +464,8 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "最佳候选" in scripts
     assert "avSyncGranularity" in scripts
     assert "subtitle_units" in scripts
+    assert "original_source_text" in scripts
+    assert "原 ASR" in scripts
 
 
 def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, monkeypatch):

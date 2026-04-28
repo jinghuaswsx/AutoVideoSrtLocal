@@ -2028,6 +2028,8 @@
 
     const av = currentTask.variants?.av || {};
     const avDebug = currentTask.av_debug || av.av_debug || {};
+    const sourceNormalization = avDebug.source_normalization || av.source_normalization || currentTask.source_normalization || {};
+    const sourceNormSummary = sourceNormalization.summary || {};
     const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
     const debugSentences = Array.isArray(convergenceDebug.sentences)
       ? convergenceDebug.sentences
@@ -2047,6 +2049,8 @@
     const allRows = sentences.length ? sentences : debugSentences;
     const convergedCount = allRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
     const reviewCount = Math.max(allRows.length - convergedCount, 0);
+    const sourceChangedCount = sourceNormSummary.changed_sentences ?? avDebug.summary?.source_changed_sentences ?? 0;
+    const sourceTotalCount = sourceNormSummary.total_sentences ?? allRows.length;
     const totals = allRows.reduce((acc, sentence, rowIndex) => {
       const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
       const attempts = normalizeAvAttempts(sentence, debug);
@@ -2061,6 +2065,7 @@
       renderAvConvergenceMetric("共几句", allRows.length),
       renderAvConvergenceMetric("已收敛", convergedCount),
       renderAvConvergenceMetric("需校对", reviewCount),
+      renderAvConvergenceMetric("原文纯净化", `${sourceChangedCount}/${sourceTotalCount}`),
       renderAvConvergenceMetric("文案尝试", totals.text),
       renderAvConvergenceMetric("TTS 重生成", totals.tts),
       renderAvConvergenceMetric("调速", totals.speed),
@@ -2084,6 +2089,9 @@
         : (targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null);
       const status = sentence.status || debug.status || (isAvSentenceConverged(sentence, debugByIndex) ? "converged" : "needs_review");
       const sourceText = sentence.source_text || sentence.original_text || debug.source_text || debug.original_text || "";
+      const originalSourceText = sentence.original_source_text || debug.original_source_text || "";
+      const sourceNormalizationStatus = sentence.source_normalization_status || debug.source_normalization_status || "";
+      const sourceNormalizationNote = sentence.source_normalization_note || debug.source_normalization_note || "";
       const finalText = sentence.final_text || sentence.text || debug.final_text || debug.text || "";
       const asrIndex = sentence.asr_index ?? debug.asr_index ?? rowIndex;
       const statusLabel = avConvergenceStatusLabel(status, computedDelta);
@@ -2092,7 +2100,7 @@
       return `
         <tr>
           <td>${escapeHtml(asrIndex)}</td>
-          <td><div class="av-convergence-text">${escapeHtml(sourceText || "--")}</div></td>
+          <td>${renderAvSourceCell(sourceText, originalSourceText, sourceNormalizationStatus, sourceNormalizationNote)}</td>
           <td><div class="av-convergence-text">${escapeHtml(finalText || "--")}</div></td>
           <td>${formatAvDuration(targetDuration)}</td>
           <td>${formatAvDuration(ttsDuration)}</td>
@@ -2121,6 +2129,16 @@
         <span>${escapeHtml(label)}</span>
         <strong>${escapeHtml(value)}</strong>
       </div>
+    `;
+  }
+
+  function renderAvSourceCell(sourceText, originalSourceText, status, note) {
+    const hasOriginal = originalSourceText && sourceText && originalSourceText !== sourceText;
+    const statusLabel = status === "normalized" ? "已纯净化" : "";
+    return `
+      <div class="av-convergence-text">${escapeHtml(sourceText || "--")}</div>
+      ${hasOriginal ? `<div class="av-source-original">原 ASR：${escapeHtml(originalSourceText)}</div>` : ""}
+      ${statusLabel || note ? `<div class="av-source-note">${escapeHtml([statusLabel, note].filter(Boolean).join(" · "))}</div>` : ""}
     `;
   }
 

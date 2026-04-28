@@ -44,7 +44,7 @@ def suggest_break_after(
         current_end = float(utterance.get("end_time", 0.0))
         text = utterance.get("text", "").strip()
 
-        break_here = is_last or bool(_BREAK_PUNCT.search(text))
+        break_here = is_last or bool(_BREAK_PUNCT.search(text)) or bool(utterance.get("force_break_after"))
 
         if not is_last:
             next_start = float(utterances[index + 1].get("start_time", current_end))

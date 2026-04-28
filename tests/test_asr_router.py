@@ -96,11 +96,11 @@ def test_resolve_zh_does_not_fallback():
     assert force is None
 
 
-def test_resolve_en_does_not_fallback():
-    """英文 → 豆包支持，不 fallback。"""
+def test_resolve_asr_main_en_prefers_scribe_for_sentence_timing():
+    """English main ASR prefers Scribe for word-level timing."""
     adapter, force = asr_router.resolve_adapter("asr_main", "en")
-    assert isinstance(adapter, DoubaoAdapter)
-    assert force is None
+    assert isinstance(adapter, ScribeAdapter)
+    assert force == "en"
 
 
 def test_resolve_subtitle_asr_target_lang_fallback_to_scribe():

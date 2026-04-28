@@ -2557,7 +2557,11 @@ def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], v
     return full_audio_path
 
 
-def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") -> dict:
+def _build_av_debug_state(
+    sentences: list[dict],
+    model: str = "openai/gpt-5.5",
+    source_normalization: dict | None = None,
+) -> dict:
     ok_statuses = {"ok", "rewritten_ok", "speed_adjusted"}
     total = len(sentences or [])
     ok_sentences = sum(
@@ -2585,8 +2589,10 @@ def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") 
         for sentence in (sentences or [])
         if isinstance(sentence, dict) and sentence.get("best_effort")
     )
+    source_summary = (source_normalization or {}).get("summary") or {}
     return {
         "model": model,
+        "source_normalization": source_normalization or {},
         "summary": {
             "total_sentences": total,
             "ok_sentences": ok_sentences,
@@ -2595,12 +2601,14 @@ def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") 
             "tts_regenerate_attempts": tts_regenerate_attempts,
             "speed_adjustment_attempts": speed_adjustment_attempts,
             "best_effort_sentences": best_effort_sentences,
+            "source_changed_sentences": int(source_summary.get("changed_sentences") or 0),
         },
         "sentence_convergence": {
             "model": model,
             "sentences": sentences or [],
         },
         "steps": [
+            {"code": "source_normalize", "label": "原文纯净化", "status": "done"},
             {"code": "sentence_localize", "label": "GPT-5.5 句级本土化", "status": "done"},
             {"code": "tts_first_pass", "label": "ElevenLabs 首轮生成", "status": "done"},
             {"code": "duration_converge", "label": "句级时长收敛", "status": "done"},
@@ -2662,6 +2670,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
     try:
         from appcore.source_video import ensure_local_source_video
         import importlib
+        from pipeline.av_source_normalize import normalize_source_segments
         from pipeline.av_translate import generate_av_localized_translation
         from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
         from pipeline.duration_reconcile import reconcile_duration
@@ -2715,6 +2724,35 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         ):
             return
 
+        raw_script_segments = script_segments
+        runner._set_step(task_id, "translate", "running", "正在纯净化原文 ASR...")
+        source_language = (
+            task.get("detected_source_language")
+            or task.get("source_language")
+            or "auto"
+        )
+        source_normalization = normalize_source_segments(
+            script_segments=raw_script_segments,
+            source_language=source_language,
+            av_inputs=av_inputs,
+            user_id=runner.user_id,
+            project_id=task_id,
+        )
+        normalized_script_segments = list(source_normalization.get("segments") or raw_script_segments)
+        normalized_source_full_text = _join_source_full_text(normalized_script_segments)
+        task_state.update(
+            task_id,
+            raw_script_segments=raw_script_segments,
+            normalized_script_segments=normalized_script_segments,
+            source_normalization=source_normalization,
+            source_full_text_raw=source_full_text,
+            source_full_text_zh=normalized_source_full_text,
+        )
+        _save_json(task_dir, "source_normalization.av.json", source_normalization)
+        script_segments = normalized_script_segments
+        source_full_text = normalized_source_full_text
+        task = task_state.get(task_id) or task
+
         runner._set_step(task_id, "translate", "running", "正在分析画面并生成笔记...")
         try:
             shot_notes = generate_shot_notes(
@@ -2748,6 +2786,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         localized_translation = _build_av_localized_translation(av_sentences)
         task = task_state.get(task_id) or task
         variants, variant_state = _ensure_variant_state(task, variant)
+        variant_state["source_normalization"] = source_normalization
         variant_state["sentences"] = av_sentences
         variant_state["localized_translation"] = localized_translation
         variants[variant] = variant_state
@@ -2824,7 +2863,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             user_id=runner.user_id,
             project_id=task_id,
         )
-        av_debug = _build_av_debug_state(final_sentences)
+        av_debug = _build_av_debug_state(final_sentences, source_normalization=source_normalization)
         final_localized_translation = _build_av_localized_translation(final_sentences)
         final_tts_segments = _build_av_tts_segments(final_sentences)
         final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant=variant)
@@ -2846,6 +2885,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
                 "tts_audio_path": final_tts_output["full_audio_path"],
                 "voice_id": voice.get("id") or tts_voice_id,
                 "av_debug": av_debug,
+                "source_normalization": source_normalization,
                 "subtitle_units": subtitle_units,
             }
         )
