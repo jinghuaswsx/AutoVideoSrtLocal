@@ -43,6 +43,9 @@ def test_pushes_css_expands_ai_evaluation_detail_modal():
     css = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
 
     assert ".ect-modal-overlay" in css
+    assert "--oc-bg:            oklch(99%  0.004 230);" in css
+    assert "--oc-border:        oklch(91%  0.012 230);" in css
+    assert "--oc-fg:            oklch(22%  0.020 235);" in css
     assert "calc(100vh - 24px)" in css
     assert "min(1760px, calc(100vw - 48px))" in css
     assert ".ect-modal-body" in css

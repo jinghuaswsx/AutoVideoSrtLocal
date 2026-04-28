@@ -108,7 +108,43 @@
     .ect-meta-list dd a:hover { text-decoration: underline; }
     .ect-meta-list dd.ect-muted { color: var(--oc-fg-subtle); }
 
-    .ect-modal-overlay { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: flex-start; justify-content: center; padding: var(--oc-sp-6, 24px) var(--oc-sp-6, 24px) 0; background: oklch(22% 0.02 235 / 0.45); overflow: hidden; animation: ect-fade-in 180ms var(--oc-ease-out, ease-out); }
+    .ect-modal-overlay {
+      --oc-bg:            oklch(99%  0.004 230);
+      --oc-bg-subtle:     oklch(97%  0.006 230);
+      --oc-bg-muted:      oklch(94%  0.010 230);
+      --oc-border:        oklch(91%  0.012 230);
+      --oc-border-strong: oklch(84%  0.015 230);
+      --oc-fg:            oklch(22%  0.020 235);
+      --oc-fg-muted:      oklch(48%  0.018 230);
+      --oc-fg-subtle:     oklch(62%  0.015 230);
+      --oc-accent:        oklch(56%  0.16  230);
+      --oc-accent-subtle: oklch(94%  0.04  225);
+      --oc-accent-ring:   oklch(56%  0.16  230 / 0.22);
+      --oc-success:       oklch(62%  0.13  165);
+      --oc-success-bg:    oklch(95%  0.04  165);
+      --oc-success-fg:    oklch(38%  0.09  165);
+      --oc-warning:       oklch(72%  0.14  80);
+      --oc-warning-bg:    oklch(96%  0.05  85);
+      --oc-warning-fg:    oklch(42%  0.10  60);
+      --oc-danger-bg:     oklch(96%  0.04  25);
+      --oc-danger-fg:     oklch(42%  0.14  25);
+      --oc-r-sm: 4px;
+      --oc-r: 6px;
+      --oc-r-md: 8px;
+      --oc-r-lg: 12px;
+      --oc-r-full: 9999px;
+      --oc-sp-2: 8px;
+      --oc-sp-3: 12px;
+      --oc-sp-4: 16px;
+      --oc-sp-5: 20px;
+      --oc-sp-6: 24px;
+      --oc-dur-fast: 120ms;
+      --oc-dur: 180ms;
+      --oc-ease: cubic-bezier(0.32, 0.72, 0, 1);
+      --oc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --oc-shadow-lg: 0 12px 24px -4px oklch(22% 0.02 235 / 0.10), 0 4px 8px -2px oklch(22% 0.02 235 / 0.06);
+      position: fixed; inset: 0; z-index: 1100; display: flex; align-items: flex-start; justify-content: center; padding: var(--oc-sp-6, 24px) var(--oc-sp-6, 24px) 0; background: oklch(22% 0.02 235 / 0.45); overflow: hidden; animation: ect-fade-in 180ms var(--oc-ease-out, ease-out);
+    }
     .ect-modal { width: min(1760px, calc(100vw - 48px)); height: calc(100vh - 24px); max-height: calc(100vh - 24px); background: var(--oc-bg); border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg, 12px) var(--oc-r-lg, 12px) 0 0; box-shadow: var(--oc-shadow-lg, 0 12px 24px -4px oklch(22% 0.02 235 / 0.10)); display: flex; flex-direction: column; animation: ect-slide-in 220ms var(--oc-ease-out, ease-out); }
     .ect-modal-header { display: flex; align-items: center; gap: var(--oc-sp-3, 12px); padding: var(--oc-sp-3, 12px) var(--oc-sp-5, 20px); border-bottom: 1px solid var(--oc-border); flex: 0 0 auto; }
     .ect-modal-title { margin: 0; color: var(--oc-fg); font-size: 15px; font-weight: 600; line-height: 1.3; }
