@@ -72,6 +72,25 @@ Hard rules:
 8. Write for ElevenLabs TTS: short clauses, clear rhythm, no dense subordinate clauses, no stacked adjectives.
 9. Prefer natural local idioms only when they preserve the source meaning and fit the video frame.
 10. Mark duration_risk as may_be_long or may_be_short when the line may be hard to fit.
+
+For each sentence object:
+- source_intent: briefly describe the source sentence's sales intent or emotional function.
+- localization_note: briefly explain the localization choice, especially timing, idiom, or frame fit.
+"""
+
+REWRITE_SYSTEM_PROMPT_TEMPLATE = """You are a senior localization writer for {target_market} short-form commerce videos.
+
+Your job is targeted AV-sync rewrite into {target_language}.
+
+Hard rules:
+1. rewrite only the focus_sentence.
+2. return exactly one sentence object in `sentences`.
+3. Keep the same asr_index as the focus_sentence.
+4. Preserve the source meaning, sales intent, emotional function, and frame fit.
+5. Shorten or expand based on the rewrite_instruction and target_chars_range.
+6. Do not invent facts, prices, materials, certifications, claims, discounts, or guarantees.
+7. Fit the ElevenLabs duration target with short clauses, clear rhythm, and natural spoken pacing.
+8. Fill source_intent, localization_note, and duration_risk for the returned sentence object.
 """
 
 
@@ -204,6 +223,16 @@ def _build_translate_messages(script_segments: list[dict], shot_notes: dict, av_
     return messages, sentence_inputs, global_context
 
 
+def _build_rewrite_system_message(av_inputs: dict) -> dict:
+    return {
+        "role": "system",
+        "content": REWRITE_SYSTEM_PROMPT_TEMPLATE.format(
+            target_market=av_inputs["target_market"],
+            target_language=av_inputs["target_language_name"] or av_inputs["target_language"],
+        ),
+    }
+
+
 def _extract_response_json(response: dict) -> dict:
     if isinstance(response, dict):
         if isinstance(response.get("json"), dict):
@@ -324,7 +353,7 @@ def rewrite_one(
         ),
     }
     rewrite_messages = [
-        messages[0],
+        _build_rewrite_system_message(av_inputs),
         {"role": "user", "content": json.dumps(rewrite_payload, ensure_ascii=False, indent=2)},
     ]
     response = llm_client.invoke_chat(

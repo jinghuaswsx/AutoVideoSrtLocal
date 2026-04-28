@@ -299,6 +299,10 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
 
     assert text == "Shorter copy"
     assert captured["use_case_code"] == "video_translate.av_rewrite"
+    system_prompt = captured["kwargs"]["messages"][0]["content"]
+    assert "rewrite only the focus_sentence" in system_prompt
+    assert "return exactly one sentence object" in system_prompt
+    assert "one target-language sentence for every source sentence" not in system_prompt
     user_prompt = captured["kwargs"]["messages"][1]["content"]
     assert "0.8" in user_prompt
     assert "12-16" in user_prompt
