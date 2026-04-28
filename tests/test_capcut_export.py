@@ -403,7 +403,182 @@ def test_capcut_export_clamps_audio_duration_before_pyjianyingdraft(tmp_path, mo
     assert manifest["backend"] == "pyJianYingDraft"
     assert "fallback_reason" not in manifest
     audio_segment = [item for item in calls if item[0] == "AudioSegment"][-1]
-    assert audio_segment[2] == ("trange", "0s", "43.023s")
+    assert audio_segment[2] == ("trange", "0s", "42.516s")
+
+
+def test_capcut_export_caps_long_audio_to_video_duration(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeScript:
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, segment, **kwargs):
+            calls.append(("add_segment", getattr(segment, "kind", type(segment).__name__), kwargs))
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            return None
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript()
+
+    class FakeAudioSegment:
+        kind = "AudioSegment"
+
+        def __init__(self, path, timerange):
+            calls.append(("AudioSegment", path, timerange))
+
+    class FakeVideoSegment:
+        kind = "VideoSegment"
+
+        def __init__(self, path, timerange, source_timerange):
+            calls.append(("VideoSegment", path, timerange, source_timerange))
+
+    fake_module = types.ModuleType("pyJianYingDraft")
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = FakeAudioSegment
+    fake_module.VideoSegment = FakeVideoSegment
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr(
+        "pipeline.capcut._probe_media_duration",
+        lambda path: 35.9 if Path(path).suffix == ".mp4" else 37.2,
+    )
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={
+            "video_duration": 35.9,
+            "total_tts_duration": 37.2,
+            "video_consumed_duration": 35.9,
+            "segments": [
+                {
+                    "timeline_start": 0.0,
+                    "video_ranges": [{"start": 0.0, "end": 35.9}],
+                }
+            ],
+        },
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+    )
+
+    manifest = json.loads(Path(export["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["backend"] == "pyJianYingDraft"
+    audio_segment = [item for item in calls if item[0] == "AudioSegment"][-1]
+    assert audio_segment[2] == ("trange", "0s", "35.9s")
+    video_segment = [item for item in calls if item[0] == "VideoSegment"][-1]
+    assert video_segment[2] == ("trange", "0.0s", "35.9s")
+
+
+def test_capcut_export_keeps_video_tail_when_audio_is_shorter(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeScript:
+        def add_track(self, *args, **kwargs):
+            return self
+
+        def add_segment(self, segment, **kwargs):
+            calls.append(("add_segment", getattr(segment, "kind", type(segment).__name__), kwargs))
+            return self
+
+        def import_srt(self, *args, **kwargs):
+            return self
+
+        def save(self):
+            return None
+
+    class FakeDraftFolder:
+        def __init__(self, root):
+            self.root = Path(root)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+        def create_draft(self, name, width, height, allow_replace=True):
+            draft_dir = self.root / name
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            return FakeScript()
+
+    class FakeAudioSegment:
+        kind = "AudioSegment"
+
+        def __init__(self, path, timerange):
+            calls.append(("AudioSegment", path, timerange))
+
+    class FakeVideoSegment:
+        kind = "VideoSegment"
+
+        def __init__(self, path, timerange, source_timerange):
+            calls.append(("VideoSegment", path, timerange, source_timerange))
+
+    fake_module = types.ModuleType("pyJianYingDraft")
+    fake_module.DraftFolder = FakeDraftFolder
+    fake_module.TrackType = types.SimpleNamespace(audio="audio", video="video", text="text")
+    fake_module.AudioSegment = FakeAudioSegment
+    fake_module.VideoSegment = FakeVideoSegment
+    fake_module.TextStyle = lambda **kwargs: ("TextStyle", kwargs)
+    fake_module.ClipSettings = lambda **kwargs: ("ClipSettings", kwargs)
+    fake_module.trange = lambda start, duration: ("trange", start, duration)
+
+    monkeypatch.setitem(sys.modules, "pyJianYingDraft", fake_module)
+    monkeypatch.setattr(
+        "pipeline.capcut._probe_media_duration",
+        lambda path: 35.9 if Path(path).suffix == ".mp4" else 35.0,
+    )
+
+    video = tmp_path / "sample.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={
+            "video_duration": 35.9,
+            "total_tts_duration": 35.0,
+            "video_consumed_duration": 35.0,
+            "segments": [
+                {
+                    "timeline_start": 0.0,
+                    "video_ranges": [{"start": 0.0, "end": 35.0}],
+                }
+            ],
+        },
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+    )
+
+    audio_segment = [item for item in calls if item[0] == "AudioSegment"][-1]
+    assert audio_segment[2] == ("trange", "0s", "35.0s")
+    video_segments = [item for item in calls if item[0] == "VideoSegment"]
+    assert video_segments[-1][2] == ("trange", "35.0s", "0.9s")
+    assert video_segments[-1][3] == ("trange", "35.0s", "0.9s")
 
 
 def test_capcut_export_names_archives_by_variant(tmp_path, monkeypatch):

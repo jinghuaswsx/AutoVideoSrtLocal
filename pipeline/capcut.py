@@ -251,18 +251,22 @@ def _export_with_pyjianyingdraft(
     script.add_track(draft.TrackType.audio, track_name="audio")
 
     total_duration = float(timeline_manifest.get("total_tts_duration", 0.0) or 0.0)
-    if total_duration > 0:
+    manifest_video_duration = float(timeline_manifest.get("video_duration", 0.0) or 0.0)
+    output_duration = manifest_video_duration or media_duration or total_duration
+    if output_duration > 0:
+        audio_segment_duration = min(total_duration or output_duration, output_duration)
         if audio_duration > 0:
-            total_duration = min(total_duration, _truncate_milliseconds(audio_duration))
+            audio_segment_duration = min(audio_segment_duration, _truncate_milliseconds(audio_duration))
         script.add_segment(
             draft.AudioSegment(
                 str(copied_audio),
-                draft.trange("0s", f"{round(total_duration, 3)}s"),
+                draft.trange("0s", f"{round(audio_segment_duration, 3)}s"),
             ),
             track_name="audio",
         )
 
     prev_end_us = -1
+    video_consumed_end = 0.0
     for segment in timeline_manifest.get("segments", []):
         target_cursor = float(segment.get("timeline_start", 0.0) or 0.0)
         for clip in segment.get("video_ranges", []):
@@ -291,6 +295,24 @@ def _export_with_pyjianyingdraft(
             )
             prev_end_us = int((target_start + clip_duration) * 1_000_000)
             target_cursor += clip_duration
+            video_consumed_end = max(video_consumed_end, target_start + clip_duration)
+
+    manifest_consumed = float(timeline_manifest.get("video_consumed_duration", 0.0) or 0.0)
+    if manifest_consumed > 0:
+        video_consumed_end = max(video_consumed_end, min(manifest_consumed, media_duration or manifest_consumed))
+    if media_duration > 0 and output_duration > video_consumed_end + 0.001:
+        tail_start = round(video_consumed_end, 3)
+        tail_end = min(output_duration, media_duration)
+        tail_duration = round(max(tail_end - tail_start, 0.0), 3)
+        if tail_duration > 0:
+            script.add_segment(
+                draft.VideoSegment(
+                    str(copied_video),
+                    draft.trange(f"{tail_start}s", f"{tail_duration}s"),
+                    source_timerange=draft.trange(f"{tail_start}s", f"{tail_duration}s"),
+                ),
+                track_name="video",
+            )
 
     _import_srt_safe(
         draft, script, str(copied_srt), subtitle_position,
