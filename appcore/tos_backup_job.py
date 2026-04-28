@@ -220,7 +220,17 @@ def run_scheduled_backup(*, scheduled_for: datetime | None = None) -> dict[str, 
         _finish_scheduled_run(run_id, status="failed", error_message=str(exc))
         raise
     output_file = ((summary.get("db_dump") or {}).get("object_key") if isinstance(summary, dict) else None)
-    _finish_scheduled_run(run_id, status="success", summary=summary, output_file=output_file)
+    failed_files = int(((summary.get("files") or {}).get("failed") or 0) if isinstance(summary, dict) else 0)
+    if failed_files:
+        _finish_scheduled_run(
+            run_id,
+            status="failed",
+            summary=summary,
+            error_message=f"file sync failed for {failed_files} protected files",
+            output_file=output_file,
+        )
+    else:
+        _finish_scheduled_run(run_id, status="success", summary=summary, output_file=output_file)
     return summary
 
 
@@ -228,7 +238,7 @@ def register(scheduler) -> None:
     scheduler.add_job(
         run_scheduled_backup,
         "cron",
-        hour=1,
+        hour=2,
         minute=0,
         id=TASK_CODE,
         replace_existing=True,

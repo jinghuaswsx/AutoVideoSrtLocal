@@ -33,7 +33,7 @@ from pipeline.voice_library_sync import (
 )
 from web import store
 from web.services import translate_lab_runner
-from web.upload_util import validate_video_extension
+from web.upload_util import save_uploaded_file_to_path, validate_video_extension
 
 log = logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ def upload_and_create():
 
     ext = os.path.splitext(file.filename)[1].lower()
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
-    file.save(video_path)
+    save_uploaded_file_to_path(file, video_path)
 
     user_id = current_user.id
     original_filename = os.path.basename(file.filename)

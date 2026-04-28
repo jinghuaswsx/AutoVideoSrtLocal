@@ -1,4 +1,4 @@
-def test_tos_backup_job_registers_daily_one_am_cron():
+def test_tos_backup_job_registers_daily_two_am_cron():
     from appcore import tos_backup_job
 
     calls = []
@@ -13,7 +13,7 @@ def test_tos_backup_job_registers_daily_one_am_cron():
         (
             (tos_backup_job.run_scheduled_backup, "cron"),
             {
-                "hour": 1,
+                "hour": 2,
                 "minute": 0,
                 "id": "tos_backup",
                 "replace_existing": True,

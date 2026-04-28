@@ -19,7 +19,7 @@ TASK_DEFINITIONS: dict[str, dict[str, str]] = {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",
         "description": "每天凌晨同步受保护文件到 autovideosrtlocal 桶，并保留 7 天 MySQL dump。",
-        "schedule": "每天 01:00",
+        "schedule": "每天 02:00",
     },
 }
 

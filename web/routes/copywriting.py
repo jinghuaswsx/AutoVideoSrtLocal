@@ -118,7 +118,7 @@ def upload():
     if not file or not file.filename:
         return jsonify(error="请上传视频文件"), 400
 
-    from web.upload_util import validate_video_extension
+    from web.upload_util import save_uploaded_file_to_path, validate_video_extension
     if not validate_video_extension(file.filename):
         return jsonify(error="不支持的视频格式"), 400
 
@@ -129,7 +129,7 @@ def upload():
     # 保存视频
     video_filename = file.filename
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{video_filename}")
-    file.save(video_path)
+    save_uploaded_file_to_path(file, video_path)
 
     # 生成缩略图
     thumbnail_path = _extract_thumbnail(video_path, task_dir)

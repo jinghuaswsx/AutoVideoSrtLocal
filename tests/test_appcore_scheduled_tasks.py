@@ -46,4 +46,4 @@ def test_task_definitions_include_tos_backup():
 
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
-    assert definitions["tos_backup"]["schedule"] == "每天 01:00"
+    assert definitions["tos_backup"]["schedule"] == "每天 02:00"

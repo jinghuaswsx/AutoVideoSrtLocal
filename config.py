@@ -92,6 +92,7 @@ TOS_BACKUP_ENV = _env("TOS_BACKUP_ENV", "test")
 TOS_BACKUP_SIGNED_URL_EXPIRES = int(_env("TOS_BACKUP_SIGNED_URL_EXPIRES", str(TOS_SIGNED_URL_EXPIRES or 3600)))
 TOS_BACKUP_DB_RETENTION_DAYS = int(_env("TOS_BACKUP_DB_RETENTION_DAYS", "7"))
 MYSQLDUMP_BIN = _env("MYSQLDUMP_BIN", "mysqldump")
+MYSQL_BIN = _env("MYSQL_BIN", "mysql")
 
 
 # ---------------------------------------------------------------------------

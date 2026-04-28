@@ -168,7 +168,7 @@ Expected: pass.
 
 - [ ] **Step 1: Write failing tests**
 
-Test previous-day Beijing-time window calculation, summary counts from reconcile results, DB dump object key shape, 7-day retention deletion, and scheduler cron registration at 01:00.
+Test previous-day Beijing-time window calculation, summary counts from reconcile results, DB dump object key shape, 7-day retention deletion, and scheduler cron registration at 02:00.
 
 - [ ] **Step 2: Run tests and verify RED**
 

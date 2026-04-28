@@ -4,7 +4,7 @@ Last updated: 2026-04-28
 
 ## Goal
 
-Build a disaster-recovery storage layer for selected AutoVideoSrtLocal business assets so the server can be replaced quickly after disk failure. The system must keep a local copy and a TOS copy for every protected file, support a system-level `local_primary` / `tos_primary` switch, and run a daily 01:00 backup job for the previous day's file references and MySQL dump.
+Build a disaster-recovery storage layer for selected AutoVideoSrtLocal business assets so the server can be replaced quickly after disk failure. The system must keep a local copy and a TOS copy for every protected file, support a system-level `local_primary` / `tos_primary` switch, and run a daily 02:00 backup job for the previous day's file references and MySQL dump.
 
 ## Scope
 
@@ -268,7 +268,7 @@ Unit tests cover:
 - Reference collector includes media item files, covers, product detail images, raw source files, raw source covers, and project original videos.
 - Daily window uses previous Beijing-time day.
 - DB dump object key and 7-day retention deletion.
-- Scheduler registers the 01:00 daily job.
+- Scheduler registers the 02:00 daily job.
 
 Integration tests use monkeypatched TOS clients and local temp files. No test should touch the real TOS bucket or a local MySQL server.
 
@@ -277,7 +277,7 @@ Integration tests use monkeypatched TOS clients and local temp files. No test sh
 - Setting `FILE_STORAGE_MODE=local_primary` keeps current local-first behavior while ensuring TOS backup objects are created for protected files.
 - Setting `FILE_STORAGE_MODE=tos_primary` allows a fresh server with missing local protected files to restore them from TOS on access or full reconcile.
 - Every protected local file path has a deterministic, human-readable TOS object key in `autovideosrtlocal`.
-- Daily 01:00 job backs up previous-day protected files and uploads a gzip MySQL dump under `DB/{env}/YYYY-MM-DD/`.
+- Daily 02:00 job first reconciles protected files, then uploads a previous-day gzip MySQL dump under `DB/{env}/YYYY-MM-DD/`.
 - DB dump retention keeps 7 days and removes older dumps only after a successful new dump upload.
 - TOS traffic is configured for DIRECT routing and bypasses proxy environment variables for Volcengine TOS domains.
 - On the TUN-mode server, deployment documentation includes the required Clash/Mihomo DIRECT rules and fake-ip-filter entries, plus a command to run the network check.
