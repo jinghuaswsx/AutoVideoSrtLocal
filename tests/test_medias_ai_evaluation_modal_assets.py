@@ -64,3 +64,25 @@ def test_medias_js_ai_evaluation_modal_panels_fill_available_height():
     assert ".ect-ai-panels { flex:1 1 auto; min-height:0; overflow:auto;" in script
     assert "height:calc(min(820px, 100vh - 48px) - 220px)" not in script
     assert "video.filename || video.object_key || '暂无视频文件名'" in script
+
+
+def test_medias_js_ai_evaluation_stops_timer_when_request_finishes():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "function stopAiEvaluationTimers(modalState)" in script
+    assert "window.clearInterval(modalState.timer)" in script
+    assert "modalState.timer = null" in script
+    assert "window.clearTimeout(modalState.timeoutTimer)" in script
+    assert "modalState.timeoutTimer = null" in script
+    assert "if (modalState.done) return;" in script
+
+    result_block = script[
+        script.index("function setAiEvaluationModalResult"):
+        script.index("function setAiEvaluationModalLoading")
+    ]
+    failure_block = script[
+        script.index("function setAiEvaluationModalFailure"):
+        script.index("function listingStatus")
+    ]
+    assert "stopAiEvaluationTimers(modalState)" in result_block
+    assert "stopAiEvaluationTimers(modalState)" in failure_block

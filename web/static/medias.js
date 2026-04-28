@@ -580,6 +580,18 @@
     return Math.max(0, Math.floor((Date.now() - modalState.startedAt) / 1000));
   }
 
+  function stopAiEvaluationTimers(modalState) {
+    if (!modalState) return;
+    if (modalState.timer) {
+      window.clearInterval(modalState.timer);
+      modalState.timer = null;
+    }
+    if (modalState.timeoutTimer) {
+      window.clearTimeout(modalState.timeoutTimer);
+      modalState.timeoutTimer = null;
+    }
+  }
+
   function openAiEvaluationRequestModal(product) {
     const titleText = product && product.name ? `AI评估 - ${product.name}` : 'AI评估';
     ensureAiEvaluationRequestModalStyle();
@@ -605,12 +617,12 @@
     modalState.modal.classList.add('ect-modal--ai-evaluating');
 
     function updateElapsed() {
+      if (modalState.done) return;
       const elapsed = aiEvaluationElapsedSeconds(modalState);
       if (modalState.status) modalState.status.textContent = `已请求 ${elapsed} 秒`;
     }
     function close() {
-      if (modalState.timer) window.clearInterval(modalState.timer);
-      if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+      stopAiEvaluationTimers(modalState);
       document.removeEventListener('keydown', onKey);
       shell.close();
     }
@@ -813,7 +825,7 @@
   function setAiEvaluationModalResult(modalState, data) {
     if (!modalState || !modalState.body) return;
     modalState.done = true;
-    if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+    stopAiEvaluationTimers(modalState);
     if (modalState.statusTitle) modalState.statusTitle.textContent = '评估完成';
     if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
     const detail = data && (data.ai_evaluation_detail || data.detail || data.result || data);
@@ -835,7 +847,7 @@
   function setAiEvaluationModalFailure(modalState, reason) {
     if (!modalState || !modalState.body) return;
     modalState.done = true;
-    if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+    stopAiEvaluationTimers(modalState);
     if (modalState.statusTitle) modalState.statusTitle.textContent = '评估失败';
     if (modalState.status) modalState.status.textContent = `总耗时 ${aiEvaluationElapsedSeconds(modalState)} 秒`;
     modalState.resultHtml = `<div class="ect-ai-empty"><strong>本次评估失败</strong><br>${escapeHtml(aiEvaluationFailureReason(reason))}</div>`;
