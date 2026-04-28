@@ -40,6 +40,32 @@ def test_prompt_mentions_europe_small_languages_and_input_assets():
     assert "法语(fr)" in prompt
 
 
+def test_prompt_includes_current_date_and_local_season_rules():
+    from datetime import date
+
+    from appcore import material_evaluation
+
+    prompt = material_evaluation.build_prompt(
+        product={"id": 7, "name": "毛球修剪器", "product_code": "digital-lint-shaver"},
+        product_url="https://newjoyloo.com/products/digital-lint-shaver",
+        languages=[
+            {"code": "de", "name": "德语"},
+            {"code": "en-au", "name": "澳大利亚英语"},
+        ],
+        as_of_date=date(2026, 4, 29),
+    )
+
+    assert "当前评估日期：2026-04-29" in prompt
+    assert "北半球季节参考" in prompt
+    assert "南半球季节相反" in prompt
+    assert "澳大利亚" in prompt
+    assert "当前季节明显错配" in prompt
+    assert "score 通常不应高于 55" in prompt
+    assert "毛球修剪器主要用于大衣、毛衣、羽绒服" in prompt
+    assert "接近夏季" in prompt
+    assert "不应仅因素材清晰就给出“适合推广”" in prompt
+
+
 def test_normalize_result_covers_all_languages_and_truncates_reason():
     from appcore import material_evaluation
 

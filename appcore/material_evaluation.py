@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -180,12 +180,20 @@ def build_system_prompt() -> str:
     )
 
 
-def build_prompt(product: dict, product_url: str, languages: list[Any]) -> str:
+def build_prompt(
+    product: dict,
+    product_url: str,
+    languages: list[Any],
+    *,
+    as_of_date: date | None = None,
+) -> str:
     langs = _normalize_languages(languages)
     lang_text = "、".join(f"{item['name']}({item['code']})" for item in langs)
     product_name = str(product.get("name") or "").strip() or "未命名商品"
     product_code = str(product.get("product_code") or "").strip() or "无"
-    return f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在欧洲市场的小语种国家推广。
+    eval_date = as_of_date or datetime.now().date()
+    eval_date_text = eval_date.isoformat()
+    return f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在目标国家/语种市场推广；业务以欧洲市场为主，如果语种配置或 country 判断涉及非欧洲国家，也必须按该国家的真实季节和消费场景判断。
 
 输入素材顺序：
 1. 商品主图：判断品类、外观、卖点、潜在合规风险。
@@ -198,17 +206,27 @@ def build_prompt(product: dict, product_url: str, languages: list[Any]) -> str:
 
 需要覆盖的小语种国家/语种：{lang_text}
 
+当前时间与季节判断：
+- 当前评估日期：{eval_date_text}。所有季节、节日、气候和消费场景判断都必须以这个日期为准。
+- 必须先判断每个目标国家/地区所处半球及当前季节，再判断产品是否处在当地当季需求窗口。
+- 北半球季节参考：3-5 月春季，6-8 月夏季，9-11 月秋季，12-2 月冬季。
+- 南半球季节相反：澳大利亚、新西兰、南非、智利、阿根廷等地在 12-2 月为夏季，6-8 月为冬季。
+- 如果目标语种对应多个国家，请按该语种最常见的主要投放国家判断；如果模型判断为澳大利亚等南半球国家，必须使用南半球季节。
+- 对强季节性产品必须严格扣分：冬季服饰/保暖/大衣羽绒服护理/毛球修剪器等冬季使用场景，在当地春末或夏季通常不适合当前投放；夏季降温、防晒、户外水上用品在当地秋冬通常不适合当前投放。
+- 如果产品的核心使用场景与当地当前季节明显错配，除非素材中有明确的反季促销、全年刚需或礼品场景证据，否则 is_suitable 应为 false，decision 应为“不适合推广”或“谨慎推广”，score 通常不应高于 55，并在 reason 中说明季节错配。
+- 例：毛球修剪器主要用于大衣、毛衣、羽绒服等冬季衣物护理。当前若目标国家位于北半球且接近夏季，应判定当前投放需求弱，不应仅因素材清晰就给出“适合推广”。
+
 请逐一判断每个国家/语种的推广适配度，重点考虑：
-- 欧洲消费者是否有明确需求和购买场景。
+- 目标国家消费者是否有明确需求和购买场景。
 - 商品主图与视频卖点是否清晰、可信、容易本地化。
 - 是否存在医疗、功效夸大、安全、儿童、隐私、环保等广告合规风险。
-- 价格敏感度、季节性、文化接受度、视频内容与当地审美是否匹配。
+- 价格敏感度、当前当地季节、文化接受度、视频内容与当地审美是否匹配。
 
 输出要求：
 - 必须覆盖上面列出的每一个语种，不能遗漏或新增。
 - 每个语种返回结构化 JSON 字段：lang、country、is_suitable、score、risk_level、decision、reason、suggestions。
 - reason 必须是中文，100 字以内。
-- score 为 0-100，越高代表越适合推广。
+- score 为 0-100，越高代表越适合当前日期在该目标国家推广。
 """
 
 
