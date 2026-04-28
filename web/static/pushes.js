@@ -189,6 +189,24 @@
     return Number.isInteger(num) ? String(num) : num.toFixed(1);
   }
 
+  function formatAuditDetail(detail) {
+    if (detail === null || detail === undefined || detail === '') return '-';
+    if (typeof detail === 'string') {
+      const trimmed = detail.trim();
+      if (!trimmed) return '-';
+      try {
+        return JSON.stringify(JSON.parse(trimmed), null, 2);
+      } catch (_) {
+        return detail;
+      }
+    }
+    try {
+      return JSON.stringify(detail, null, 2);
+    } catch (_) {
+      return String(detail);
+    }
+  }
+
   function renderAuditCell(it) {
     const result = String(it.ai_evaluation_result || '').trim() || '未评估';
     const remark = String(it.remark || '').trim() || '暂无备注';
