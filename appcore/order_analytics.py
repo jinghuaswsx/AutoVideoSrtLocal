@@ -807,7 +807,7 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     # 按产品汇总
     products = query(
         f"SELECT so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"mp.product_code, "
         f"SUM(so.lineitem_quantity) AS total_qty, "
         f"COUNT(DISTINCT so.shopify_order_id) AS order_count, "
@@ -835,11 +835,12 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     # 产品 × 国家矩阵
     matrix_rows = query(
         f"SELECT so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"so.billing_country, "
         f"SUM(so.lineitem_quantity) AS total_qty "
         f"FROM shopify_orders so "
         f"LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        f"LEFT JOIN media_products mp ON mp.id = so.product_id "
         f"WHERE so.created_at_order >= %s AND so.created_at_order < %s {extra_filter} "
         f"GROUP BY so.product_id, display_name, so.billing_country "
         f"ORDER BY display_name, total_qty DESC",
@@ -955,12 +956,13 @@ def get_daily_detail(year: int, month: int, product_id: int | None = None) -> li
     return query(
         f"SELECT DATE(so.created_at_order) AS sale_date, "
         f"so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"so.billing_country, "
         f"SUM(so.lineitem_quantity) AS total_qty, "
         f"COUNT(DISTINCT so.shopify_order_id) AS order_count "
         f"FROM shopify_orders so "
         f"LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        f"LEFT JOIN media_products mp ON mp.id = so.product_id "
         f"WHERE so.created_at_order >= %s AND so.created_at_order < %s {extra_filter} "
         f"GROUP BY sale_date, so.product_id, display_name, so.billing_country "
         f"ORDER BY sale_date ASC, total_qty DESC",
@@ -973,11 +975,12 @@ def get_weekly_summary(year: int, week: int) -> dict:
     target = f"{year:04d}{week:02d}"
     products = query(
         "SELECT so.product_id, "
-        "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         "SUM(so.lineitem_quantity) AS total_qty, "
         "COUNT(DISTINCT so.shopify_order_id) AS order_count "
         "FROM shopify_orders so "
         "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        "LEFT JOIN media_products mp ON mp.id = so.product_id "
         "WHERE YEARWEEK(so.created_at_order, 1) = %s "
         "GROUP BY so.product_id, display_name ORDER BY total_qty DESC",
         (target,),
@@ -1004,7 +1007,7 @@ def search_products(q: str) -> list[dict]:
     if pid is not None:
         return query(
             "SELECT DISTINCT so.product_id, "
-            "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+            "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
             "mp.product_code "
             "FROM shopify_orders so "
             "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
@@ -1015,7 +1018,7 @@ def search_products(q: str) -> list[dict]:
         )
     return query(
         "SELECT DISTINCT so.product_id, "
-        "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         "mp.product_code "
         "FROM shopify_orders so "
         "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
