@@ -121,6 +121,18 @@ def _parse_json_content(raw: str):
     return json.loads(content.strip())
 
 
+def _append_schema_instruction(prompt: str, response_schema: dict | None) -> str:
+    if not response_schema:
+        return prompt
+    schema_text = json.dumps(response_schema, ensure_ascii=False)
+    return (
+        f"{prompt}\n\n"
+        "Return only one valid JSON value. Do not use Markdown or explanatory text. "
+        "The JSON must match this JSON Schema:\n"
+        f"{schema_text}"
+    )
+
+
 def _has_media(messages):
     for msg in messages or []:
         content = msg.get("content")
@@ -168,6 +180,15 @@ class OpenRouterAdapter(LLMAdapter):
         if body:
             kwargs["extra_body"] = body
         resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
+        choices = getattr(resp, "choices", None)
+        if not choices:
+            error = getattr(resp, "error", None)
+            if isinstance(error, dict):
+                message = error.get("message") or "unknown error"
+                code = error.get("code")
+                suffix = f" (code {code})" if code is not None else ""
+                raise RuntimeError(f"OpenRouter response missing choices: {message}{suffix}")
+            raise RuntimeError("OpenRouter response missing choices")
         usage = getattr(resp, "usage", None)
         cost_usd = getattr(usage, "cost", None) if usage else None
         cost_cny = None
@@ -176,7 +197,7 @@ class OpenRouterAdapter(LLMAdapter):
                 Decimal(str(cost_usd)) * Decimal(str(USD_TO_CNY))
             ).quantize(Decimal("0.000001"))
         return {
-            "text": resp.choices[0].message.content or "",
+            "text": choices[0].message.content or "",
             "raw": resp,
             "usage": {
                 "input_tokens": getattr(usage, "prompt_tokens", None) if usage else None,
@@ -189,13 +210,15 @@ class OpenRouterAdapter(LLMAdapter):
                  media=None, response_schema=None, temperature=None,
                  max_output_tokens=None, google_search=None):
         media_list = _normalize_media(media)
+        schema_via_prompt = bool(response_schema is not None and google_search)
+        prompt_for_model = _append_schema_instruction(prompt, response_schema) if schema_via_prompt else prompt
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
-        user_content = _media_parts(prompt, media_list) if media_list else prompt
+        user_content = _media_parts(prompt_for_model, media_list) if media_list else prompt_for_model
         messages.append({"role": "user", "content": user_content})
         response_format = None
-        if response_schema is not None:
+        if response_schema is not None and not schema_via_prompt:
             response_format = {
                 "type": "json_schema",
                 "json_schema": {"name": "openrouter_generate", "schema": response_schema},

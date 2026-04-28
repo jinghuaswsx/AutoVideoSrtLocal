@@ -147,6 +147,20 @@ def test_openrouter_chat_respects_custom_response_format(fake_provider_db):
     assert kwargs["extra_body"]["response_format"] == rf
 
 
+def test_openrouter_chat_raises_clear_error_when_response_has_no_choices(fake_provider_db):
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    mock_resp = MagicMock()
+    mock_resp.choices = None
+    mock_resp.error = {"message": "The operation was aborted", "code": 504}
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_resp
+        m_openai.return_value = mock_client
+        with pytest.raises(RuntimeError, match="OpenRouter response missing choices.*504"):
+            OpenRouterAdapter().chat(model="x", messages=[{"role": "user", "content": "hi"}])
+
+
 def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     fake_provider_db.seed("openrouter_text", api_key="k",
                           base_url="https://openrouter.ai/api/v1")
@@ -161,6 +175,9 @@ def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     kwargs = client.chat.completions.create.call_args.kwargs
     assert kwargs["extra_body"]["tools"] == [{"type": "openrouter:web_search"}]
     assert kwargs["extra_body"]["plugins"] == [{"id": "response-healing"}]
+    assert "response_format" not in kwargs["extra_body"]
+    sent_messages = client.chat.completions.create.call_args.kwargs["messages"]
+    assert "JSON Schema" in sent_messages[0]["content"]
 
 
 def test_openrouter_media_parts_use_video_url_for_video_files(tmp_path):

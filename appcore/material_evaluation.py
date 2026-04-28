@@ -249,7 +249,10 @@ def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
         raw = json.loads(raw)
     langs = _normalize_languages(languages)
     expected_codes = [item["code"] for item in langs]
-    rows = raw.get("countries") if isinstance(raw, dict) else None
+    if isinstance(raw, list):
+        rows = raw
+    else:
+        rows = raw.get("countries") if isinstance(raw, dict) else None
     if isinstance(rows, dict):
         rows = list(rows.values())
     if not isinstance(rows, list):
