@@ -267,35 +267,44 @@ def run_import(
 
 
 def _post_form_via_page(page, url: str, payload: dict[str, Any]) -> dict[str, Any]:
-    result = page.evaluate(
-        """
-        async ({ url, payload }) => {
-          const body = new URLSearchParams();
-          for (const [key, value] of Object.entries(payload)) {
-            body.append(key, String(value ?? ""));
-          }
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-              "X-Requested-With": "XMLHttpRequest",
-            },
-            credentials: "include",
-            body: body.toString(),
-          });
-          const text = await response.text();
-          return { ok: response.ok, status: response.status, text };
-        }
-        """,
-        {"url": url, "payload": payload},
-    )
-    if not result.get("ok"):
-        raise RuntimeError(f"店小秘接口请求失败：HTTP {result.get('status')}")
-    text = str(result.get("text") or "")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"店小秘接口返回了非 JSON 内容：{text[:200]}") from exc
+    last_error: Exception | None = None
+    for attempt in range(1, 5):
+        result = page.evaluate(
+            """
+            async ({ url, payload }) => {
+              const body = new URLSearchParams();
+              for (const [key, value] of Object.entries(payload)) {
+                body.append(key, String(value ?? ""));
+              }
+              const response = await fetch(url, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                  "X-Requested-With": "XMLHttpRequest",
+                },
+                credentials: "include",
+                body: body.toString(),
+              });
+              const text = await response.text();
+              return { ok: response.ok, status: response.status, text };
+            }
+            """,
+            {"url": url, "payload": payload},
+        )
+        text = str(result.get("text") or "")
+        if result.get("ok"):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                last_error = RuntimeError(f"店小秘接口返回了非 JSON 内容：{text[:200]}")
+        else:
+            last_error = RuntimeError(f"店小秘接口请求失败：HTTP {result.get('status')}")
+        print(
+            f"[dianxiaomi-order-import] retry {attempt}/4 url={url} error={last_error}",
+            flush=True,
+        )
+        page.wait_for_timeout(1500 * attempt)
+    raise last_error or RuntimeError("店小秘接口请求失败")
 
 
 def _fetch_orders_via_page(page, day: date, page_no: int, state: str) -> dict[str, Any]:
