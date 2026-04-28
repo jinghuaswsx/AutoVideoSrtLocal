@@ -2,11 +2,33 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
+
+
+# Shopify 模板里嵌的"支付方式截图"在 image-translate 阶段会被 Gemini 误判为商品图。
+# 这些图普遍 alt="Payment Methods …" 或 host 是 cdn.techcloudly.com，下载阶段直接跳过。
+_PAYMENT_IMAGE_HOSTS: set[str] = {
+    "cdn.techcloudly.com",
+}
+_PAYMENT_IMAGE_ALT_PATTERN = re.compile(
+    r"\b(payment\s*methods?|secure\s*(checkout|payment)"
+    r"|trust\s*badge|all\s*transactions\s*are\s*secure)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_payment_screenshot(source_url: str, alt: str | None) -> bool:
+    host = urlparse(source_url).netloc.lower()
+    if host in _PAYMENT_IMAGE_HOSTS:
+        return True
+    if alt and _PAYMENT_IMAGE_ALT_PATTERN.search(alt):
+        return True
+    return False
 
 
 class LocaleLockError(RuntimeError):
@@ -234,6 +256,8 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
     ]
 
     for source_url in _variant_featured_images(soup, base_url=base_url):
+        if _is_payment_screenshot(source_url, ""):
+            continue
         _append_image(items, seen, source_url=source_url, kind="carousel")
 
     for selector in carousel_selectors:
@@ -241,14 +265,20 @@ def extract_images_from_html(html: str, *, base_url: str) -> list[dict]:
             src = _image_source(node)
             if not src:
                 continue
-            _append_image(items, seen, source_url=_absolute_image_url(src, base_url), kind="carousel")
+            absolute = _absolute_image_url(src, base_url)
+            if _is_payment_screenshot(absolute, node.get("alt")):
+                continue
+            _append_image(items, seen, source_url=absolute, kind="carousel")
 
     for selector in detail_selectors:
         for node in soup.select(selector):
             src = _image_source(node)
             if not src:
                 continue
-            _append_image(items, seen, source_url=_absolute_image_url(src, base_url), kind="detail")
+            absolute = _absolute_image_url(src, base_url)
+            if _is_payment_screenshot(absolute, node.get("alt")):
+                continue
+            _append_image(items, seen, source_url=absolute, kind="detail")
 
     return items
 

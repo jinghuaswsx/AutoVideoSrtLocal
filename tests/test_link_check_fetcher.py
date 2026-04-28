@@ -172,6 +172,35 @@ def test_extract_images_from_html_uses_shopify_selectors_and_dedupes():
     assert items[1]["source_url"] == "https://img.example.com/detail.jpg?width=800"
 
 
+def test_extract_images_from_html_skips_payment_method_screenshots():
+    from appcore.link_check_fetcher import extract_images_from_html
+
+    html = """
+    <html lang="en">
+      <body>
+        <div class="t4s-product__media-item" data-media-id="1">
+          <img src="https://img.example.com/hero.jpg?width=720" alt="Product hero">
+        </div>
+        <div class="product__description">
+          <img src="https://img.example.com/detail.jpg?width=720" alt="Real product detail">
+          <img src="https://cdn.techcloudly.com/image/aaaaaa.webp" alt="Payment Methods 1">
+          <img src="https://cdn.techcloudly.com/image/bbbbbb.webp" alt="Payment Methods 2">
+          <img src="https://img.example.com/secure.jpg" alt="Secure Checkout">
+          <img src="https://img.example.com/trust.jpg" alt="Trust Badge">
+        </div>
+      </body>
+    </html>
+    """
+
+    items = extract_images_from_html(html, base_url="https://shop.example.com/products/demo")
+
+    sources = [item["source_url"] for item in items]
+    assert sources == [
+        "https://img.example.com/hero.jpg?width=720",
+        "https://img.example.com/detail.jpg?width=720",
+    ]
+
+
 def test_extract_images_from_html_prioritizes_selected_variant_media():
     from appcore.link_check_fetcher import extract_images_from_html
 
