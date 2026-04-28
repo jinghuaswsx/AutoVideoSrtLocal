@@ -2427,9 +2427,10 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         from appcore.source_video import ensure_local_source_video
         import importlib
         from pipeline.av_translate import generate_av_localized_translation
+        from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
         from pipeline.duration_reconcile import reconcile_duration
         from pipeline.shot_notes import generate_shot_notes
-        from pipeline.subtitle import build_srt_from_tts, save_srt
+        from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.tts import generate_full_audio
 
         ensure_local_source_video(task_id)
@@ -2574,6 +2575,10 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         final_localized_translation = _build_av_localized_translation(final_sentences)
         final_tts_segments = _build_av_tts_segments(final_sentences)
         final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant=variant)
+        subtitle_units = build_subtitle_units_from_sentences(
+            final_sentences,
+            mode=str(av_inputs.get("sync_granularity") or "hybrid"),
+        )
         final_tts_output = {
             "full_audio_path": final_full_audio_path,
             "segments": final_tts_segments,
@@ -2588,6 +2593,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
                 "tts_audio_path": final_tts_output["full_audio_path"],
                 "voice_id": voice.get("id") or tts_voice_id,
                 "av_debug": av_debug,
+                "subtitle_units": subtitle_units,
             }
         )
         variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_tts_output["full_audio_path"]
@@ -2609,18 +2615,19 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
 
         current_step = "subtitle"
         runner._set_step(task_id, "subtitle", "running", f"正在生成{target_language_name}字幕...")
-        srt_content = build_srt_from_tts(final_tts_segments)
+        srt_content = build_srt_from_chunks(subtitle_units)
         srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
         task = task_state.get(task_id) or task
         variants, variant_state = _ensure_variant_state(task, variant)
         variant_state["srt_path"] = srt_path
-        variant_state.setdefault("corrected_subtitle", {})["srt_content"] = srt_content
+        variant_state["subtitle_units"] = subtitle_units
+        variant_state["corrected_subtitle"] = {"chunks": subtitle_units, "srt_content": srt_content}
         variants[variant] = variant_state
         task_state.update(
             task_id,
             variants=variants,
             srt_path=srt_path,
-            corrected_subtitle={"srt_content": srt_content},
+            corrected_subtitle={"chunks": subtitle_units, "srt_content": srt_content},
         )
         task_state.set_preview_file(task_id, "srt", srt_path)
         task_state.set_artifact(
@@ -2628,6 +2635,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             "subtitle",
             build_subtitle_artifact(srt_content, target_language=target_language),
         )
+        _save_json(task_dir, f"corrected_subtitle.{variant}.json", {"chunks": subtitle_units, "srt_content": srt_content})
         runner._emit(task_id, EVT_SUBTITLE_READY, {"srt": srt_content})
         runner._set_step(task_id, "subtitle", "done", f"{target_language_name}字幕生成完成")
 

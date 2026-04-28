@@ -333,6 +333,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "target_language": "en",
             "target_language_name": "English",
             "target_market": "US",
+            "sync_granularity": "hybrid",
             "product_overrides": {
                 "product_name": None,
                 "brand": None,
@@ -407,6 +408,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "end_time": 1.0,
             "target_duration": 1.0,
             "target_chars_range": (8, 10),
+            "source_text": "第一句",
+            "role_in_structure": "hook",
             "text": "First line",
             "tts_duration": 1.0,
             "tts_path": str(tmp_path / "seg0.mp3"),
@@ -422,6 +425,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "end_time": 2.2,
             "target_duration": 1.2,
             "target_chars_range": (10, 12),
+            "source_text": "第二句",
+            "role_in_structure": "hook",
             "text": "Second line",
             "tts_duration": 1.1,
             "tts_path": str(tmp_path / "seg1.mp3"),
@@ -476,8 +481,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(
-        "pipeline.subtitle.build_srt_from_tts",
-        lambda segments: call_order.append("subtitle") or "1\n00:00:00,000 --> 00:00:01,000\nFirst line\n",
+        "pipeline.subtitle.build_srt_from_chunks",
+        lambda chunks: call_order.append("subtitle") or "1\n00:00:00,000 --> 00:00:02,100\nFirst line Second line\n",
     )
 
     runtime.run_av_localize(task_id, runner=runner)
@@ -500,6 +505,10 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert final_tts_segments == saved["segments"]
     assert saved["variants"]["av"]["srt_path"].endswith("subtitle.av.srt")
     av_state = saved["variants"]["av"]
+    assert av_state["subtitle_units"][0]["asr_indices"] == [0, 1]
+    assert av_state["subtitle_units"][0]["text"] == "First line Second line"
+    assert saved["corrected_subtitle"]["chunks"] == av_state["subtitle_units"]
+    assert "First line Second line" in saved["corrected_subtitle"]["srt_content"]
     assert av_state["av_debug"]["model"] == "openai/gpt-5.5"
     assert av_state["av_debug"]["summary"]["total_sentences"] == len(av_state["sentences"])
     assert av_state["av_debug"]["summary"]["ok_sentences"] == 2
