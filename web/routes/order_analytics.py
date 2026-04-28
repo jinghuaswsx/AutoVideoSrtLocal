@@ -152,6 +152,45 @@ def ad_summary():
     return jsonify(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
+@bp.route("/order-analytics/dianxiaomi-import-batches")
+@login_required
+@admin_required
+def dianxiaomi_import_batches():
+    """返回最近的店小秘订单明细导入批次。"""
+    rows = oa.get_dianxiaomi_order_import_batches(
+        limit=request.args.get("limit", 20, type=int),
+    )
+    return jsonify(_json_safe({"rows": rows}))
+
+
+@bp.route("/order-analytics/dianxiaomi-import", methods=["POST"])
+@login_required
+@admin_required
+def dianxiaomi_import():
+    """从店小秘订单接口抓取 NewJoy / omurio 订单明细。"""
+    payload = request.get_json(silent=True) or {}
+    start_date = (payload.get("start_date") or "2026-01-01").strip()
+    end_date = (payload.get("end_date") or "2026-04-28").strip()
+    site_codes = payload.get("site_codes") or ["newjoy", "omurio"]
+    states = payload.get("states") or None
+    dry_run = bool(payload.get("dry_run", True))
+    try:
+        from tools import dianxiaomi_order_import as dxm_import
+
+        result = dxm_import.run_import_from_server_browser(
+            start_date_text=start_date,
+            end_date_text=end_date,
+            site_codes=[str(code).strip().lower() for code in site_codes if str(code).strip()],
+            states=[str(state).strip() for state in states if str(state).strip()] if states else None,
+            dry_run=dry_run,
+            skip_login_prompt=True,
+        )
+    except Exception as exc:
+        log.warning("dianxiaomi import failed: %s", exc, exc_info=True)
+        return jsonify(error=f"店小秘订单导入失败：{exc}"), 500
+    return jsonify(_json_safe(result))
+
+
 @bp.route("/order-analytics/available-months")
 @login_required
 @admin_required

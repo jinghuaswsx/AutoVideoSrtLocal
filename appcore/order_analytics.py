@@ -438,6 +438,15 @@ def upsert_dianxiaomi_order_lines(batch_id: int, rows: list[dict[str, Any]]) -> 
     return {"affected": affected, "rows": len(rows)}
 
 
+def get_dianxiaomi_order_import_batches(limit: int = 20) -> list[dict]:
+    limit = max(1, min(int(limit or 20), 100))
+    return query(
+        "SELECT * FROM dianxiaomi_order_import_batches "
+        "ORDER BY started_at DESC LIMIT %s",
+        (limit,),
+    )
+
+
 # ── 解析 ───────────────────────────────────────────────
 
 def parse_shopify_file(file_stream, filename: str) -> list[dict]:
