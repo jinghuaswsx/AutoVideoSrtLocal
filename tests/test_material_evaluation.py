@@ -166,6 +166,74 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert detail["countries"][0]["lang"] == "de"
 
 
+def test_evaluate_product_waits_when_english_items_are_not_videos(monkeypatch):
+    from appcore import material_evaluation
+
+    invoked = []
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "鑻辫"}, {"code": "de", "name": "寰疯"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "filename": "detail.jpg", "object_key": "media/detail.jpg"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: invoked.append((args, kwargs)),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result == {"status": "missing_video", "product_id": 7}
+    assert invoked == []
+
+
+def test_first_english_video_skips_image_items():
+    from appcore import material_evaluation
+
+    class FakeMedias:
+        @staticmethod
+        def list_items(product_id, lang="en"):
+            return [
+                {"id": 10, "filename": "main.jpg", "object_key": "media/main.jpg"},
+                {"id": 11, "filename": "promo.mp4", "object_key": "media/promo.mp4"},
+            ]
+
+    original = material_evaluation.medias
+    try:
+        material_evaluation.medias = FakeMedias
+        assert material_evaluation._first_english_video(7)["id"] == 11
+    finally:
+        material_evaluation.medias = original
+
+
 def test_medias_route_schedules_material_evaluation_in_background(monkeypatch):
     from web.routes import medias as route
 
@@ -197,6 +265,7 @@ def test_find_ready_product_ids_uses_exists_without_distinct(monkeypatch):
 
     assert material_evaluation.find_ready_product_ids(limit=2) == [7, 8]
     assert "EXISTS (" in captured["sql"]
+    assert "LOWER(i.object_key) LIKE '%.mp4'" in captured["sql"]
     assert "SELECT DISTINCT" not in captured["sql"]
     assert captured["args"] == (2,)
 
