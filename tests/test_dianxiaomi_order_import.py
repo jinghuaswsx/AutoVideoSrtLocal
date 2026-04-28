@@ -95,3 +95,51 @@ def test_run_import_dry_run_uses_fetchers_and_does_not_write(monkeypatch):
     assert report["summary"]["fetched_lines"] == 1
     assert report["summary"]["inserted_lines"] == 0
     assert written == []
+
+
+def test_run_import_scans_shipped_state_once_for_date_range(monkeypatch):
+    mod = _load_module()
+    calls = []
+    scope = mod.oa.DianxiaomiProductScope(
+        by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
+        excluded_shopify_ids=set(),
+        requested_site_codes={"newjoy"},
+    )
+    monkeypatch.setattr(mod.oa, "build_dianxiaomi_product_scope", lambda sites: scope)
+    monkeypatch.setattr(mod.oa, "normalize_dianxiaomi_order", lambda order, scope, profits: ([{
+        "site_code": "newjoy",
+        "dxm_package_id": order["id"],
+        "shopify_product_id": "111",
+        "raw_order_json": order,
+        "raw_line_json": {"productId": "111"},
+    }], 0))
+
+    def fetch_orders(day, page_no, state):
+        calls.append((day, page_no, state))
+        return {
+            "code": 0,
+            "data": {
+                "page": {
+                    "totalPage": 1,
+                    "pageNo": page_no,
+                    "list": [{
+                        "id": "9001",
+                        "shippedTimeStr": "2026-04-27 14:47",
+                        "productList": [{"productId": "111"}],
+                    }],
+                }
+            },
+        }
+
+    report = mod.run_import(
+        start_date=date(2026, 4, 27),
+        end_date=date(2026, 4, 28),
+        site_codes=["newjoy"],
+        states=["shipped"],
+        fetch_orders=fetch_orders,
+        fetch_profits=lambda package_ids: {},
+        dry_run=True,
+    )
+
+    assert calls == [(date(2026, 4, 28), 1, "shipped")]
+    assert report["summary"]["fetched_orders"] == 1

@@ -115,6 +115,33 @@ def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
     assert rows[0]["order_paid_at"] == datetime(2026, 4, 27, 10, 3)
 
 
+def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
+    scope = oa.DianxiaomiProductScope(
+        by_shopify_id={
+            "8560559554733": {
+                "product_id": 7,
+                "product_code": "demo-product",
+                "site_code": "newjoy",
+                "shopifyid": "8560559554733",
+            }
+        },
+        excluded_shopify_ids=set(),
+        requested_site_codes={"newjoy"},
+    )
+    order = {
+        "id": "9001",
+        "orderPayTime": 1777272317000,
+        "shippedTime": 1777272434610,
+        "productList": [{"productId": "8560559554733", "quantity": "1", "price": "10"}],
+    }
+
+    rows, skipped = oa.normalize_dianxiaomi_order(order, scope, {})
+
+    assert skipped == 0
+    assert rows[0]["order_paid_at"] == datetime(2026, 4, 27, 14, 45, 17)
+    assert rows[0]["shipped_at"] == datetime(2026, 4, 27, 14, 47, 14)
+
+
 def test_normalize_dianxiaomi_order_keeps_requested_site_from_order_line_url():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},

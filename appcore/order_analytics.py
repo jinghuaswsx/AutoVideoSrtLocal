@@ -91,9 +91,19 @@ def _safe_decimal_float(value: Any) -> float | None:
 
 
 def _parse_dianxiaomi_ts(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp = timestamp / 1000
+        try:
+            return datetime.fromtimestamp(timestamp).replace(microsecond=0)
+        except (OSError, OverflowError, ValueError):
+            return None
     text = str(value or "").strip()
     if not text:
         return None
+    if text.isdigit():
+        return _parse_dianxiaomi_ts(int(text))
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         candidate = text[:19] if fmt.endswith("%S") else text[:10]
         try:

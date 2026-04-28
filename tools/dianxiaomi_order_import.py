@@ -115,6 +115,46 @@ def _summary_template() -> dict[str, int]:
     }
 
 
+def _coerce_order_datetime(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp = timestamp / 1000
+        try:
+            return datetime.fromtimestamp(timestamp).replace(microsecond=0)
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return _coerce_order_datetime(int(text))
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text[:19] if fmt.endswith("%S") else text[:16], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _order_reference_date(order: dict[str, Any], state: str) -> date | None:
+    keys = (
+        ("shippedTime", "shippedTimeStr", "commitPlatformTime", "commitPlatformTimeStr")
+        if state == "shipped"
+        else ("orderPayTime", "paidTime", "orderPayTimeStr", "paidTimeStr", "orderCreateTime")
+    )
+    for key in keys:
+        parsed = _coerce_order_datetime(order.get(key))
+        if parsed:
+            return parsed.date()
+    return None
+
+
+def _order_in_date_range(order: dict[str, Any], state: str, start_date: date, end_date: date) -> bool:
+    ref_date = _order_reference_date(order, state)
+    return ref_date is None or start_date <= ref_date <= end_date
+
+
 def _extract_profit_rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ensure_dianxiaomi_success(payload)
     data = payload.get("data") or {}
@@ -160,8 +200,34 @@ def run_import(
             len(scope.by_shopify_id),
         )
     try:
-        for day in iter_dates(start_date, end_date):
-            for state in states:
+        single_scan_states = {"shipped"}
+        for state in states:
+            if state in single_scan_states:
+                first_payload = fetch_orders(end_date, 1, state)
+                first_page = extract_order_page(first_payload)
+                total_page = max(first_page.total_page, 1 if first_page.orders else 0)
+                for page_no in range(1, total_page + 1):
+                    page = first_page if page_no == 1 else extract_order_page(fetch_orders(end_date, page_no, state))
+                    summary["total_pages"] += 1
+                    orders = [
+                        order for order in page.orders
+                        if _order_in_date_range(order, state, start_date, end_date)
+                    ]
+                    summary["fetched_orders"] += len(orders)
+                    package_ids = [str(order.get("id")) for order in orders if order.get("id")]
+                    profits = fetch_profits(package_ids) if package_ids else {}
+                    page_rows: list[dict[str, Any]] = []
+                    for order in orders:
+                        rows, skipped = oa.normalize_dianxiaomi_order(order, scope, profits)
+                        summary["skipped_lines"] += skipped
+                        summary["fetched_lines"] += len(rows)
+                        page_rows.extend(rows)
+                    if page_rows and not dry_run:
+                        result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
+                        summary["inserted_lines"] += int(result.get("affected") or 0)
+                continue
+
+            for day in iter_dates(start_date, end_date):
                 first_payload = fetch_orders(day, 1, state)
                 first_page = extract_order_page(first_payload)
                 total_page = max(first_page.total_page, 1 if first_page.orders else 0)
