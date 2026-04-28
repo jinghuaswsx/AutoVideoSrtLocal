@@ -30,6 +30,7 @@ from appcore.events import (
     EVT_SUBTITLE_READY,
     EVT_TRANSLATE_RESULT,
     EVT_TTS_SCRIPT_READY,
+    EVT_VOICE_MATCH_READY,
     Event,
     EventBus,
 )
@@ -273,6 +274,12 @@ def _is_av_pipeline_task(task: dict | None) -> bool:
     task_type = str(task.get("type") or "").strip()
     pipeline_version = str(task.get("pipeline_version") or "").strip()
     return task_type == "av_translate" or pipeline_version == "av"
+
+
+def _av_target_lang(task: dict | None) -> str:
+    task = task or {}
+    av_inputs = task.get("av_translate_inputs") or {}
+    return str(task.get("target_lang") or av_inputs.get("target_language") or "en").strip().lower() or "en"
 
 
 # Default words-per-second by target language (fallback when no measured data).
@@ -1085,6 +1092,20 @@ class PipelineRunner:
         """
         from pipeline.tts import get_voice_by_id
 
+        if _is_av_pipeline_task(task):
+            voice_id = str(task.get("selected_voice_id") or task.get("voice_id") or "").strip()
+            if voice_id:
+                return {
+                    "id": None,
+                    "elevenlabs_voice_id": voice_id,
+                    "name": task.get("selected_voice_name") or voice_id,
+                }
+            from appcore.video_translate_defaults import resolve_default_voice
+
+            default_voice_id = resolve_default_voice(_av_target_lang(task), user_id=self.user_id)
+            if default_voice_id:
+                return {"id": None, "elevenlabs_voice_id": default_voice_id, "name": "Default"}
+
         voice = None
         if task.get("voice_id"):
             voice = get_voice_by_id(task["voice_id"], self.user_id)
@@ -1136,7 +1157,91 @@ class PipelineRunner:
         ]
         if not self.include_analysis_in_main_flow:
             steps = [s for s in steps if s[0] != "analysis"]
+        if _is_av_pipeline_task(task_state.get(task_id)):
+            out = []
+            for name, fn in steps:
+                out.append((name, fn))
+                if name == "asr":
+                    out.append(("asr_normalize", lambda: self._step_av_asr_normalize(task_id)))
+                    out.append(("voice_match", lambda: self._step_av_voice_match(task_id)))
+            return out
         return steps
+
+    def _step_av_asr_normalize(self, task_id: str) -> None:
+        task = task_state.get(task_id) or {}
+        if self._skip_original_video_passthrough_step(task_id, "asr_normalize", task=task):
+            return
+        task_state.update(
+            task_id,
+            utterances_en=None,
+            asr_normalize_artifact=None,
+            detected_source_language=task.get("source_language") or "zh",
+        )
+        self._set_step(task_id, "asr_normalize", "done", "AV Sync 保留原 ASR 分段，直接进入音色匹配")
+
+    def _step_av_voice_match(self, task_id: str) -> None:
+        task = task_state.get(task_id) or {}
+        if self._skip_original_video_passthrough_step(task_id, "voice_match", task=task):
+            return
+
+        lang = _av_target_lang(task)
+        utterances = task.get("utterances") or []
+        video_path = task.get("video_path")
+        default_voice_id = None
+        try:
+            from appcore.video_translate_defaults import resolve_default_voice
+
+            default_voice_id = resolve_default_voice(lang, user_id=self.user_id)
+        except Exception:
+            log.exception("resolve default voice failed for AV task %s", task_id)
+
+        self._set_step(task_id, "voice_match", "running", f"{lang.upper()} 音色库加载中...")
+
+        candidates: list = []
+        query_embedding_b64 = None
+        if utterances and video_path:
+            try:
+                import base64
+                from pipeline.voice_embedding import embed_audio_file, serialize_embedding
+                from pipeline.voice_match import extract_sample_from_utterances, match_candidates
+
+                sample_out_dir = task.get("task_dir") or os.path.dirname(os.path.abspath(video_path)) or "."
+                clip = extract_sample_from_utterances(
+                    video_path,
+                    utterances,
+                    out_dir=sample_out_dir,
+                    min_duration=8.0,
+                )
+                vec = embed_audio_file(clip)
+                candidates = match_candidates(
+                    vec,
+                    language=lang,
+                    top_k=10,
+                    exclude_voice_ids={default_voice_id} if default_voice_id else None,
+                ) or []
+                for candidate in candidates:
+                    candidate["similarity"] = float(candidate.get("similarity", 0.0))
+                query_embedding_b64 = base64.b64encode(serialize_embedding(vec)).decode("ascii")
+            except Exception as exc:
+                log.exception("AV voice match failed for %s: %s", task_id, exc)
+                candidates = []
+                query_embedding_b64 = None
+
+        fallback = None if candidates else default_voice_id
+        task_state.update(
+            task_id,
+            target_lang=lang,
+            voice_match_candidates=candidates,
+            voice_match_fallback_voice_id=fallback,
+            voice_match_query_embedding=query_embedding_b64,
+        )
+        task_state.set_current_review_step(task_id, "voice_match")
+        self._set_step(task_id, "voice_match", "waiting", f"{lang.upper()} 音色库已就绪，请选择 TTS 音色")
+        self._emit(
+            task_id,
+            EVT_VOICE_MATCH_READY,
+            {"candidates": candidates, "fallback_voice_id": fallback, "target_lang": lang},
+        )
 
     def _run(self, task_id: str, start_step: str = "extract") -> None:
         # Make sure the source video is present locally before any step runs.

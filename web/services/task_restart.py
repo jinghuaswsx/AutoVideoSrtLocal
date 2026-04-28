@@ -30,6 +30,20 @@ _STEPS = (
     "export",
 )
 
+_AV_SYNC_STEPS = (
+    "extract",
+    "asr",
+    "asr_normalize",
+    "voice_match",
+    "alignment",
+    "translate",
+    "tts",
+    "subtitle",
+    "compose",
+    "export",
+)
+
+
 def _build_reset_fields() -> dict[str, Any]:
     # 必须是 factory：每次 restart 都生成 fresh dict / list 字面量。
     # 之前曾用 module-level _RESET_FIELDS + dict(...) shallow copy，结果所有 restart 过的
@@ -60,6 +74,11 @@ def _build_reset_fields() -> dict[str, Any]:
         "tts_duration_status": None,
         "translation_history": [],
         "selected_translation_index": None,
+        "selected_voice_id": None,
+        "selected_voice_name": None,
+        "voice_match_candidates": [],
+        "voice_match_fallback_voice_id": None,
+        "voice_match_query_embedding": None,
         "_segments_confirmed": False,
         "_translate_pre_select": False,
         "error": "",
@@ -97,6 +116,7 @@ def restart_task(
     user_id: int | None,
     runner,
     source_language: str | None = None,
+    step_order: tuple[str, ...] | None = None,
 ) -> dict:
     """Restart a translation task and return the refreshed task state.
 
@@ -118,10 +138,11 @@ def restart_task(
     payload = _build_reset_fields()
     if source_video_path:
         payload["preview_files"] = {"source_video": source_video_path}
+    steps = step_order or (_AV_SYNC_STEPS if task.get("pipeline_version") == "av" else _STEPS)
     payload.update(
         {
-            "steps": {step: "pending" for step in _STEPS},
-            "step_messages": {step: "" for step in _STEPS},
+            "steps": {step: "pending" for step in steps},
+            "step_messages": {step: "" for step in steps},
             "variants": {"normal": _empty_variant_state("普通版")},
             "voice_id": voice_id,
             "voice_gender": voice_gender,

@@ -542,7 +542,7 @@ def test_av_task_voice_library_supports_shared_detail_shell(authed_client_no_db,
     assert payload["voice_match_ready"] is True
 
 
-def test_av_task_confirm_voice_starts_pipeline_from_shared_detail_shell(tmp_path, authed_client_no_db, monkeypatch):
+def test_av_task_confirm_voice_resumes_from_alignment_after_shared_detail_shell(tmp_path, authed_client_no_db, monkeypatch):
     video_path = tmp_path / "video.mp4"
     video_path.write_bytes(b"fake")
     task = store.create("task-av-confirm-shell", str(video_path), str(tmp_path), user_id=1)
@@ -553,9 +553,16 @@ def test_av_task_confirm_voice_starts_pipeline_from_shared_detail_shell(tmp_path
         av_translate_inputs={"target_language": "de", "target_market": "DE", "sync_granularity": "sentence"},
     )
     started = {}
+    resumed = {}
     monkeypatch.setattr(
         "web.routes.task.pipeline_runner.start",
         lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.resume",
+        lambda task_id, start_step, user_id=None: resumed.update(
+            {"task_id": task_id, "start_step": start_step, "user_id": user_id}
+        ),
     )
 
     response = authed_client_no_db.post(
@@ -573,7 +580,8 @@ def test_av_task_confirm_voice_starts_pipeline_from_shared_detail_shell(tmp_path
     payload = response.get_json()
     assert payload["ok"] is True
     assert payload["voice_id"] == "voice-a"
-    assert started == {"task_id": "task-av-confirm-shell", "user_id": 1}
+    assert started == {}
+    assert resumed == {"task_id": "task-av-confirm-shell", "start_step": "alignment", "user_id": 1}
     updated = store.get("task-av-confirm-shell")
     assert updated["voice_id"] == "voice-a"
     assert updated["selected_voice_id"] == "voice-a"

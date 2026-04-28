@@ -13,6 +13,61 @@ def _silent_bus():
     return EventBus()
 
 
+def test_av_pipeline_inserts_voice_match_before_alignment(tmp_path):
+    task_id = "task-av-voice-match-order"
+    store.create(task_id, "video.mp4", str(tmp_path))
+    store.update(
+        task_id,
+        pipeline_version="av",
+        av_translate_inputs={"target_language": "en", "target_market": "US"},
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    step_names = [
+        name
+        for name, _fn in runner._get_pipeline_steps(task_id, "video.mp4", str(tmp_path))
+    ]
+
+    assert step_names[:5] == ["extract", "asr", "asr_normalize", "voice_match", "alignment"]
+
+
+def test_av_voice_match_uses_video_parent_when_task_dir_missing(tmp_path, monkeypatch):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake")
+    store.create("task-av-voice-match-dir", str(video_path), "")
+    store.update(
+        "task-av-voice-match-dir",
+        pipeline_version="av",
+        av_translate_inputs={"target_language": "en", "target_market": "US"},
+        utterances=[{"text": "hello", "start_time": 0.0, "end_time": 8.0}],
+    )
+    captured = {}
+
+    def fake_extract_sample(video_path, utterances, *, out_dir, min_duration):
+        captured["out_dir"] = out_dir
+        return str(tmp_path / "clip.wav")
+
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: "default")
+    monkeypatch.setattr(
+        "pipeline.voice_match.extract_sample_from_utterances",
+        fake_extract_sample,
+    )
+    monkeypatch.setattr("pipeline.voice_embedding.embed_audio_file", lambda path: object())
+    monkeypatch.setattr("pipeline.voice_embedding.serialize_embedding", lambda vec: b"embedding")
+    monkeypatch.setattr(
+        "pipeline.voice_match.match_candidates",
+        lambda *args, **kwargs: [{"voice_id": "voice-a", "name": "Voice A", "similarity": 0.9}],
+    )
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_av_voice_match("task-av-voice-match-dir")
+
+    saved = store.get("task-av-voice-match-dir")
+    assert captured["out_dir"] == str(tmp_path)
+    assert saved["steps"]["voice_match"] == "waiting"
+    assert saved["voice_match_candidates"][0]["voice_id"] == "voice-a"
+
+
 def test_step_alignment_auto_confirms_when_interactive_review_disabled(tmp_path, monkeypatch):
     task = store.create("task-auto-alignment", "video.mp4", str(tmp_path))
     task["utterances"] = [

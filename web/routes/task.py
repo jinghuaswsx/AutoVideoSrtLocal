@@ -59,6 +59,23 @@ from appcore.db import query_one as db_query_one, execute as db_execute, query a
 
 bp = Blueprint("task", __name__, url_prefix="/api/tasks")
 
+AV_SYNC_STEPS = (
+    "extract",
+    "asr",
+    "asr_normalize",
+    "voice_match",
+    "alignment",
+    "translate",
+    "tts",
+    "subtitle",
+    "compose",
+    "export",
+)
+
+
+def _av_step_maps(status: str = "pending") -> tuple[dict, dict]:
+    return {step: status for step in AV_SYNC_STEPS}, {step: "" for step in AV_SYNC_STEPS}
+
 
 from pipeline.ffutil import extract_thumbnail as _extract_thumbnail
 
@@ -382,6 +399,7 @@ def upload():
         display_name = _resolve_name_conflict(user_id, display_name)
         db_execute("UPDATE projects SET display_name=%s WHERE id=%s", (display_name, task_id))
 
+    steps, step_messages = _av_step_maps()
     store.update(
         task_id,
         display_name=display_name,
@@ -389,6 +407,8 @@ def upload():
         pipeline_version="av",
         target_lang=av_inputs["target_language"],
         av_translate_inputs=av_inputs,
+        steps=steps,
+        step_messages=step_messages,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -559,7 +579,11 @@ def confirm_voice(task_id: str):
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 409
 
-    pipeline_runner.start(task_id, user_id=current_user.id if current_user.is_authenticated else None)
+    pipeline_runner.resume(
+        task_id,
+        "alignment",
+        user_id=current_user.id if current_user.is_authenticated else None,
+    )
     return jsonify({"ok": True, "voice_id": normalized["voice_id"], "voice_name": normalized["voice_name"]})
 
 
@@ -688,6 +712,12 @@ def restart(task_id):
     av_error = _validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
+    store.update(
+        task_id,
+        pipeline_version="av",
+        target_lang=av_inputs["target_language"],
+        av_translate_inputs=av_inputs,
+    )
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -700,11 +730,7 @@ def restart(task_id):
         interactive_review=_parse_bool(body.get("interactive_review", False)),
         user_id=current_user.id if current_user.is_authenticated else None,
         runner=pipeline_runner,
-    )
-    store.update(
-        task_id,
-        pipeline_version="av",
-        av_translate_inputs=av_inputs,
+        step_order=AV_SYNC_STEPS,
     )
     updated = store.get(task_id) or updated
     return jsonify({"status": "restarted", "task": updated})
@@ -723,6 +749,10 @@ def start(task_id):
     av_error = _validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
+    current_steps = task.get("steps") or {}
+    current_messages = task.get("step_messages") or {}
+    av_steps = {step: current_steps.get(step, "pending") for step in AV_SYNC_STEPS}
+    av_step_messages = {step: current_messages.get(step, "") for step in AV_SYNC_STEPS}
     store.update(
         task_id,
         voice_gender=body.get("voice_gender", "male"),
@@ -734,6 +764,9 @@ def start(task_id):
         interactive_review=_parse_bool(body.get("interactive_review", False)),
         pipeline_version="av",
         av_translate_inputs=av_inputs,
+        target_lang=av_inputs["target_language"],
+        steps=av_steps,
+        step_messages=av_step_messages,
     )
     task = store.get(task_id) or task
 
@@ -1266,7 +1299,7 @@ def delete_task(task_id):
     return jsonify({"status": "ok"})
 
 
-RESUMABLE_STEPS = ["extract", "asr", "alignment", "translate", "tts", "subtitle", "compose", "export"]
+RESUMABLE_STEPS = list(AV_SYNC_STEPS)
 
 
 @bp.route("/<task_id>/resume", methods=["POST"])
