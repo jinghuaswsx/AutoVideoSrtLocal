@@ -361,6 +361,17 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     store.update_variant(
         task["id"],
         "av",
+        subtitle_units=[
+            {
+                "unit_index": 0,
+                "asr_indices": [0],
+                "start_time": 0.0,
+                "end_time": 1.22,
+                "text": "This serum feels fresh.",
+                "source_text": "这款精华很清爽",
+                "status": "ok",
+            }
+        ],
         sentences=[
             {
                 "asr_index": 0,
@@ -393,11 +404,14 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert 'id="avConvergencePanel"' in body
+    assert 'id="avSubtitleUnitsPanel"' in body
     assert "句级收敛" in body
+    assert "字幕编排" in body
     assert "目标时长" in body
     assert "偏差" in body
     assert "GPT-5.5" in body
     assert "renderAvConvergence()" in body
+    assert "renderAvSubtitleUnits()" in body
 
     scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
         encoding="utf-8"
@@ -406,6 +420,8 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "after_text" in scripts
     assert "duration_ratio" in scripts
     assert "reason" in scripts
+    assert "avSyncGranularity" in scripts
+    assert "subtitle_units" in scripts
 
 
 def test_av_rewrite_warning_filter_includes_warning_long():
@@ -1558,6 +1574,7 @@ def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path,
             "voice_id": "auto",
             "target_language": "ja",
             "target_market": "JP",
+            "sync_granularity": "sentence",
             "override_product_name": "Glow Serum",
             "override_brand": "Ocean Lab",
             "override_selling_points": "轻薄不黏腻\n夜间修护",
@@ -1574,6 +1591,7 @@ def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path,
     assert task["av_translate_inputs"]["target_language"] == "ja"
     assert task["av_translate_inputs"]["target_language_name"] == "Japanese"
     assert task["av_translate_inputs"]["target_market"] == "JP"
+    assert task["av_translate_inputs"]["sync_granularity"] == "sentence"
     assert task["av_translate_inputs"]["product_overrides"] == {
         "product_name": "Glow Serum",
         "brand": "Ocean Lab",
@@ -1618,6 +1636,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
             "target_language": "en",
             "target_language_name": "English",
             "target_market": "US",
+            "sync_granularity": "hybrid",
             "product_overrides": {},
         },
         shot_notes={
@@ -1767,6 +1786,13 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
         return str(full_audio_path)
 
     monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", fake_rebuild_full_audio)
+    built_chunks = []
+
+    def fake_build_srt_from_chunks(chunks):
+        built_chunks.append(chunks)
+        return "1\n00:00:00,000 --> 00:00:03,150\nFresh new hook Keep this one\n"
+
+    monkeypatch.setattr("web.routes.task.build_srt_from_chunks", fake_build_srt_from_chunks, raising=False)
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",
@@ -1802,6 +1828,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert saved["tts_audio_path"] == str(full_audio_path)
     assert saved["srt_path"] == str(srt_path)
     assert "Fresh new hook" in saved["corrected_subtitle"]["srt_content"]
+    assert saved["corrected_subtitle"]["chunks"][0]["text"] == "Fresh new hook Keep this one"
     assert saved["steps"]["compose"] == "done"
     assert saved["steps"]["export"] == "done"
     assert "请从此步继续" in saved["step_messages"]["compose"]
@@ -1818,6 +1845,9 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert av_variant["sentences"][0]["tts_duration"] == 1.95
     assert av_variant["tts_audio_path"] == str(full_audio_path)
     assert av_variant["srt_path"] == str(srt_path)
+    assert av_variant["subtitle_units"][0]["asr_indices"] == [0, 1]
+    assert av_variant["subtitle_units"][0]["text"] == "Fresh new hook Keep this one"
+    assert built_chunks and built_chunks[0] == av_variant["subtitle_units"]
     assert av_variant["result"] == {}
     assert av_variant["exports"] == {}
     assert "hard_video" not in av_variant["preview_files"]

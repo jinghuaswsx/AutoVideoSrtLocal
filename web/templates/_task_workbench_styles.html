@@ -1308,7 +1308,8 @@ video.media-player {
   background: var(--bg);
 }
 
-.av-convergence-table {
+.av-convergence-table,
+.av-subtitle-units-table {
   width: 100%;
   min-width: 1120px;
   border-collapse: collapse;
@@ -1316,7 +1317,9 @@ video.media-player {
 }
 
 .av-convergence-table th,
-.av-convergence-table td {
+.av-convergence-table td,
+.av-subtitle-units-table th,
+.av-subtitle-units-table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   text-align: left;
@@ -1324,7 +1327,8 @@ video.media-player {
   color: var(--fg);
 }
 
-.av-convergence-table th {
+.av-convergence-table th,
+.av-subtitle-units-table th {
   background: var(--bg-subtle);
   color: var(--fg-muted);
   font-size: var(--text-xs);
@@ -1333,8 +1337,13 @@ video.media-player {
   white-space: nowrap;
 }
 
-.av-convergence-table tr:last-child td {
+.av-convergence-table tr:last-child td,
+.av-subtitle-units-table tr:last-child td {
   border-bottom: 0;
+}
+
+.av-subtitle-units-table {
+  min-width: 960px;
 }
 
 .av-convergence-text {

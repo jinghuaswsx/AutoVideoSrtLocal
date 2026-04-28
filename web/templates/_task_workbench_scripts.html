@@ -312,6 +312,7 @@
     const targetLanguage = (document.getElementById("avTargetLanguage")?.value || defaults.target_language || "en").trim();
     const languageOption = (TASK_WORKBENCH_CONFIG.avTargetLanguages || []).find(item => item.code === targetLanguage);
     const targetMarket = (document.getElementById("avTargetMarket")?.value || defaults.target_market || "US").trim();
+    const syncGranularity = (document.getElementById("avSyncGranularity")?.value || defaults.sync_granularity || "hybrid").trim();
     const sellingPointsRaw = document.getElementById("avOverrideSellingPoints")?.value || "";
     const sellingPoints = sellingPointsRaw
       .split(/\r?\n/)
@@ -322,6 +323,7 @@
       target_language: targetLanguage,
       target_language_name: (languageOption && languageOption.name) || defaults.target_language_name || targetLanguage,
       target_market: targetMarket,
+      sync_granularity: syncGranularity,
       product_overrides: {
         product_name: (document.getElementById("avOverrideProductName")?.value || "").trim() || null,
         brand: (document.getElementById("avOverrideBrand")?.value || "").trim() || null,
@@ -339,11 +341,14 @@
     const overrides = currentInputs.product_overrides || {};
     const targetLanguage = currentInputs.target_language || defaults.target_language || "en";
     const targetMarket = currentInputs.target_market || defaults.target_market || "US";
+    const syncGranularity = currentInputs.sync_granularity || defaults.sync_granularity || "hybrid";
 
     const languageSelect = document.getElementById("avTargetLanguage");
     const marketSelect = document.getElementById("avTargetMarket");
+    const granularitySelect = document.getElementById("avSyncGranularity");
     if (languageSelect) languageSelect.value = targetLanguage;
     if (marketSelect) marketSelect.value = targetMarket;
+    if (granularitySelect) granularitySelect.value = syncGranularity;
 
     const productNameInput = document.getElementById("avOverrideProductName");
     const brandInput = document.getElementById("avOverrideBrand");
@@ -811,6 +816,7 @@
     }
     renderAvInsights();
     renderAvConvergence();
+    renderAvSubtitleUnits();
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
@@ -2182,6 +2188,53 @@
       return { label: "已收敛", className: "av-convergence-status--ok" };
     }
     return { label: "需校对", className: "av-convergence-status--review" };
+  }
+
+  function renderAvSubtitleUnits() {
+    const panel = document.getElementById("avSubtitleUnitsPanel");
+    const rows = document.getElementById("avSubtitleUnitsRows");
+    if (!panel || !rows) return;
+
+    if (!currentTask || !isAvSyncTask(currentTask)) {
+      panel.classList.add("hidden");
+      rows.innerHTML = "";
+      return;
+    }
+
+    const av = currentTask.variants?.av || {};
+    const correctedChunks = currentTask.corrected_subtitle?.chunks || av.corrected_subtitle?.chunks || [];
+    const units = Array.isArray(av.subtitle_units) && av.subtitle_units.length
+      ? av.subtitle_units
+      : (Array.isArray(correctedChunks) ? correctedChunks : []);
+
+    if (!units.length) {
+      panel.classList.add("hidden");
+      rows.innerHTML = "";
+      return;
+    }
+
+    rows.innerHTML = units.map((unit, index) => {
+      const asrIndices = Array.isArray(unit.asr_indices)
+        ? unit.asr_indices
+        : (Array.isArray(unit.sentence_indices) ? unit.sentence_indices : []);
+      const start = numberOrNull(unit.start_time);
+      const end = numberOrNull(unit.end_time);
+      const duration = numberOrNull(unit.tts_duration ?? (start != null && end != null ? end - start : null));
+      const statusLabel = avConvergenceStatusLabel(unit.status || "ok", null);
+      return `
+        <tr>
+          <td>#${escapeHtml(unit.unit_index ?? index)}</td>
+          <td>${escapeHtml(asrIndices.join(", ") || "--")}</td>
+          <td><div class="av-convergence-text">${escapeHtml(unit.source_text || "--")}</div></td>
+          <td><div class="av-convergence-text">${escapeHtml(unit.text || "--")}</div></td>
+          <td>${formatAvDuration(start)}</td>
+          <td>${formatAvDuration(end)}</td>
+          <td>${formatAvDuration(duration)}</td>
+          <td><span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span></td>
+        </tr>
+      `;
+    }).join("");
+    panel.classList.remove("hidden");
   }
 
   function openAvRewriteModal(asrIndex) {

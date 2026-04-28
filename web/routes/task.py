@@ -36,8 +36,9 @@ from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
 from pipeline import tts
+from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
 from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
-from pipeline.subtitle import build_srt_from_tts, save_srt
+from pipeline.subtitle import build_srt_from_chunks, save_srt
 from web.preview_artifacts import (
     build_alignment_artifact,
     build_subtitle_artifact,
@@ -97,6 +98,7 @@ def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None
         "target_language": data.get("target_language", nested_inputs.get("target_language")),
         "target_language_name": data.get("target_language_name", nested_inputs.get("target_language_name")),
         "target_market": data.get("target_market", nested_inputs.get("target_market")),
+        "sync_granularity": data.get("sync_granularity", nested_inputs.get("sync_granularity")),
         "product_overrides": override_inputs,
     }
     return normalize_av_translate_inputs(raw_inputs, base=current_inputs)
@@ -904,7 +906,9 @@ def av_rewrite_sentence(task_id):
     tts_segments = _build_av_tts_segments(sentences)
     full_audio_path = _rebuild_tts_full_audio(task_dir, tts_segments, variant)
 
-    srt_content = build_srt_from_tts(tts_segments)
+    sync_granularity = str((av_inputs or {}).get("sync_granularity") or "hybrid")
+    subtitle_units = build_subtitle_units_from_sentences(sentences, mode=sync_granularity)
+    srt_content = build_srt_from_chunks(subtitle_units)
     srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
 
     (
@@ -948,8 +952,9 @@ def av_rewrite_sentence(task_id):
             "localized_translation": localized_translation,
             "tts_result": {"full_audio_path": full_audio_path, "segments": tts_segments},
             "tts_audio_path": full_audio_path,
+            "subtitle_units": subtitle_units,
             "srt_path": srt_path,
-            "corrected_subtitle": {"srt_content": srt_content},
+            "corrected_subtitle": {"chunks": subtitle_units, "srt_content": srt_content},
             "result": variant_result,
             "exports": variant_exports,
             "artifacts": variant_artifacts,
@@ -969,7 +974,7 @@ def av_rewrite_sentence(task_id):
         localized_translation=localized_translation,
         tts_audio_path=full_audio_path,
         srt_path=srt_path,
-        corrected_subtitle={"srt_content": srt_content},
+        corrected_subtitle={"chunks": subtitle_units, "srt_content": srt_content},
         result=result,
         exports=exports,
         artifacts=artifacts,
