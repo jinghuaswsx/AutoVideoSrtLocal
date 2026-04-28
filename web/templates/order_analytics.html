@@ -283,6 +283,14 @@
   font-weight: 700; background: var(--bg-subtle); border-top: 2px solid var(--border-strong);
 }
 .oam-table tr:hover td:not(.oam-col-product) { background: oklch(97% 0.01 230); }
+.oam-action-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: var(--text-xs);
+}
+.oam-action-link:hover {
+  text-decoration: underline;
+}
 {% endblock %}
 
 {% block content %}
@@ -1363,18 +1371,18 @@
     // 表头：商品 / 总单量 / 订单数 / 收入(可选) / 国家列 / 操作
     var headRow = document.getElementById('monthTableHead');
     headRow.innerHTML = '';
-    addThText(headRow, 'oam-col-product', '商品');
-    addThText(headRow, 'oam-col-num', '总单量');
-    addThText(headRow, 'oam-col-num', '订单数');
-    if (!currentProductId) addThText(headRow, 'oam-col-revenue', '收入');
+    addTh(headRow, 'oam-col-product', '商品');
+    addTh(headRow, 'oam-col-num', '总单量');
+    addTh(headRow, 'oam-col-num', '订单数');
+    if (!currentProductId) addTh(headRow, 'oam-col-revenue', '收入');
     countryCols.forEach(function(col) {
       var th = document.createElement('th');
       th.className = 'oam-col-country';
-      th.innerHTML = (col.country || '') +
-        '<span class="oam-th-lang">' + (col.lang || '') + '</span>';
+      th.innerHTML = escHtml(col.country || '') +
+        '<span class="oam-th-lang">' + escHtml(col.lang || '') + '</span>';
       headRow.appendChild(th);
     });
-    addThText(headRow, 'oam-col-actions', '操作');
+    addTh(headRow, 'oam-col-actions', '操作');
 
     // 表体
     var tbody = document.getElementById('monthTableBody');
@@ -1407,10 +1415,10 @@
       var qty = parseInt(p.total_qty) || 0;
       var orderCnt = parseInt(p.order_count) || 0;
       sumQty += qty; sumOrders += orderCnt;
-      addTdText(tr, 'oam-col-num', qty.toLocaleString());
-      addTdText(tr, 'oam-col-num', orderCnt.toLocaleString());
+      addTd(tr, 'oam-col-num', qty.toLocaleString());
+      addTd(tr, 'oam-col-num', orderCnt.toLocaleString());
       if (!currentProductId) {
-        addTdText(tr, 'oam-col-revenue', '$' + (parseFloat(p.total_revenue) || 0).toFixed(2));
+        addTd(tr, 'oam-col-revenue', '$' + (parseFloat(p.total_revenue) || 0).toFixed(2));
       }
 
       // 国家列：双行 [素材数 / 订单数]
@@ -1430,7 +1438,7 @@
         } else {
           var mediaHtml;
           if (media === 0 && orders > 0) {
-            mediaHtml = '<span class="oam-cell-warn" title="该国语种 ' + col.lang +
+            mediaHtml = '<span class="oam-cell-warn" title="该国语种 ' + escAttr(col.lang || '') +
               ' 暂无素材，但有订单——请检查">⚠ 0</span>';
           } else {
             mediaHtml = '<span class="oam-cell-media">' +
@@ -1448,10 +1456,16 @@
       // 操作列
       var tdAct = document.createElement('td');
       tdAct.className = 'oam-col-actions';
-      tdAct.innerHTML = pid
-        ? '<a href="/medias?product_id=' + pid + '" target="_blank" rel="noopener" ' +
-          'onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-size:var(--text-xs)">素材↗</a>'
-        : '';
+      if (pid != null && pid !== '') {
+        var aLink = document.createElement('a');
+        aLink.href = '/medias?product_id=' + encodeURIComponent(pid);
+        aLink.target = '_blank';
+        aLink.rel = 'noopener';
+        aLink.className = 'oam-action-link';
+        aLink.textContent = '素材↗';
+        aLink.addEventListener('click', function(ev) { ev.stopPropagation(); });
+        tdAct.appendChild(aLink);
+      }
       tr.appendChild(tdAct);
 
       tbody.appendChild(tr);
@@ -1460,10 +1474,10 @@
     // 合计行
     var totalRow = document.createElement('tr');
     totalRow.className = 'oam-row-total';
-    addTdText(totalRow, 'oam-col-product', '合计');
-    addTdText(totalRow, 'oam-col-num', sumQty.toLocaleString());
-    addTdText(totalRow, 'oam-col-num', sumOrders.toLocaleString());
-    if (!currentProductId) addTdText(totalRow, 'oam-col-revenue', '');
+    addTd(totalRow, 'oam-col-product', '合计');
+    addTd(totalRow, 'oam-col-num', sumQty.toLocaleString());
+    addTd(totalRow, 'oam-col-num', sumOrders.toLocaleString());
+    if (!currentProductId) addTd(totalRow, 'oam-col-revenue', '');
     countryCols.forEach(function(col) {
       var v = totalsByCountry[col.country] || 0;
       var td = document.createElement('td');
@@ -1473,23 +1487,10 @@
         : '<span class="oam-cell-empty">—</span>';
       totalRow.appendChild(td);
     });
-    addTdText(totalRow, 'oam-col-actions', '');
+    addTd(totalRow, 'oam-col-actions', '');
     tbody.appendChild(totalRow);
   }
 
-  // 小工具：纯文本表头/单元格（避免误把字符串当 HTML）
-  function addThText(tr, cls, text) {
-    var th = document.createElement('th');
-    if (cls) th.className = cls;
-    th.textContent = text;
-    tr.appendChild(th);
-  }
-  function addTdText(tr, cls, text) {
-    var td = document.createElement('td');
-    if (cls) td.className = cls;
-    td.textContent = text;
-    tr.appendChild(td);
-  }
   function escAttr(s) {
     return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
   }
