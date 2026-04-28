@@ -108,8 +108,24 @@
     .ect-meta-list dd a:hover { text-decoration: underline; }
     .ect-meta-list dd.ect-muted { color: var(--oc-fg-subtle); }
 
+    .ect-modal-overlay { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: flex-start; justify-content: center; padding: var(--oc-sp-6, 24px) var(--oc-sp-6, 24px) 0; background: oklch(22% 0.02 235 / 0.45); overflow: hidden; animation: ect-fade-in 180ms var(--oc-ease-out, ease-out); }
+    .ect-modal { width: min(1760px, calc(100vw - 48px)); height: calc(100vh - 24px); max-height: calc(100vh - 24px); background: var(--oc-bg); border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg, 12px) var(--oc-r-lg, 12px) 0 0; box-shadow: var(--oc-shadow-lg, 0 12px 24px -4px oklch(22% 0.02 235 / 0.10)); display: flex; flex-direction: column; animation: ect-slide-in 220ms var(--oc-ease-out, ease-out); }
+    .ect-modal-header { display: flex; align-items: center; gap: var(--oc-sp-3, 12px); padding: var(--oc-sp-3, 12px) var(--oc-sp-5, 20px); border-bottom: 1px solid var(--oc-border); flex: 0 0 auto; }
+    .ect-modal-title { margin: 0; color: var(--oc-fg); font-size: 15px; font-weight: 600; line-height: 1.3; }
+    .ect-modal-close { width: 32px; height: 32px; margin-left: auto; border: none; border-radius: var(--oc-r, 6px); background: transparent; color: var(--oc-fg-muted); cursor: pointer; font-size: 22px; line-height: 1; }
+    .ect-modal-close:hover { background: var(--oc-bg-muted); color: var(--oc-fg); }
+    .ect-modal-body { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; padding: var(--oc-sp-4, 16px) var(--oc-sp-5, 20px); }
+    .ect-modal-footer { display: flex; justify-content: flex-end; padding: var(--oc-sp-3, 12px) var(--oc-sp-5, 20px); border-top: 1px solid var(--oc-border); flex: 0 0 auto; }
+    .ect-modal-button { height: 32px; padding: 0 14px; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r, 6px); background: var(--oc-bg); color: var(--oc-fg-muted); cursor: pointer; font: inherit; font-size: 13px; }
+    .ect-modal-button:hover { background: var(--oc-bg-muted); color: var(--oc-fg); }
+    .ect-modal-json { min-height: 180px; margin: 0; padding: var(--oc-sp-3, 12px); background: var(--oc-bg-subtle); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md, 8px); color: var(--oc-fg); font-family: var(--font-mono, "JetBrains Mono", ui-monospace, Consolas, monospace); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; overflow: auto; }
+    @keyframes ect-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ect-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
     @media (max-width: 768px) {
       .ect-meta-list { grid-template-columns: 100px 1fr; }
+      .ect-modal-overlay { padding: var(--oc-sp-3, 12px) var(--oc-sp-3, 12px) 0; }
+      .ect-modal { width: calc(100vw - 24px); height: calc(100vh - 12px); max-height: calc(100vh - 12px); }
     }
   `;
 
@@ -404,5 +420,93 @@
     ].filter(Boolean).join('');
   }
 
-  window.EvalCountryTable = { render: render, parse: parse };
+  function formatDetail(detail) {
+    if (detail && typeof detail === 'object') {
+      return JSON.stringify(detail, null, 2);
+    }
+    const text = String(detail || '').trim();
+    if (!text) return '暂无评估详情';
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch (_) {
+      return text;
+    }
+  }
+
+  function openAiEvaluationDetailModal(rawDetail, options) {
+    ensureStyle();
+    const opts = options || {};
+    const old = document.getElementById('ectAiEvaluationDetailOverlay');
+    if (old) old.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ectAiEvaluationDetailOverlay';
+    overlay.className = 'ect-modal-overlay';
+    overlay.setAttribute('role', 'presentation');
+
+    const modal = document.createElement('div');
+    modal.className = 'ect-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'ectAiEvaluationDetailTitle');
+    overlay.appendChild(modal);
+
+    const header = document.createElement('div');
+    header.className = 'ect-modal-header';
+    const title = document.createElement('h3');
+    title.id = 'ectAiEvaluationDetailTitle';
+    title.className = 'ect-modal-title';
+    title.textContent = opts.title || 'AI 评估详情';
+    const closeTop = document.createElement('button');
+    closeTop.type = 'button';
+    closeTop.className = 'ect-modal-close';
+    closeTop.setAttribute('aria-label', '关闭');
+    closeTop.textContent = '×';
+    header.appendChild(title);
+    header.appendChild(closeTop);
+    modal.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'ect-modal-body';
+    const parsed = parse(rawDetail);
+    const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
+    if (hasTable) {
+      body.innerHTML = render(rawDetail);
+    } else {
+      const pre = document.createElement('pre');
+      pre.className = 'ect-modal-json';
+      pre.textContent = formatDetail(rawDetail);
+      body.appendChild(pre);
+    }
+    modal.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'ect-modal-footer';
+    const closeBottom = document.createElement('button');
+    closeBottom.type = 'button';
+    closeBottom.className = 'ect-modal-button';
+    closeBottom.textContent = '关闭';
+    footer.appendChild(closeBottom);
+    modal.appendChild(footer);
+
+    function close() {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') close();
+    }
+
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) close();
+    });
+    closeTop.addEventListener('click', close);
+    closeBottom.addEventListener('click', close);
+
+    document.body.appendChild(overlay);
+    return { close: close, overlay: overlay, modal: modal };
+  }
+
+  window.EvalCountryTable = { render: render, parse: parse, openModal: openAiEvaluationDetailModal };
 })();

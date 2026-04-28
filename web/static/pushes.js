@@ -189,19 +189,6 @@
     return Number.isInteger(num) ? String(num) : num.toFixed(1);
   }
 
-  function formatAuditDetail(detail) {
-    if (detail && typeof detail === 'object') {
-      return JSON.stringify(detail, null, 2);
-    }
-    const text = String(detail || '').trim();
-    if (!text) return '暂无详情';
-    try {
-      return JSON.stringify(JSON.parse(text), null, 2);
-    } catch (_) {
-      return text;
-    }
-  }
-
   function renderAuditCell(it) {
     const result = String(it.ai_evaluation_result || '').trim() || '未评估';
     const remark = String(it.remark || '').trim() || '暂无备注';
@@ -220,47 +207,12 @@
     </div>`;
   }
 
-  function openAuditDetailModal(itemId) {
+  function showAuditDetail(itemId) {
     const item = state.items.find(i => Number(i.id) === Number(itemId));
     if (!item) return;
-    const overlay = el('div', { class: 'pm-overlay audit-detail-overlay' });
-    const modal = el('div', { class: 'pm-modal audit-detail-modal' });
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-
-    const header = el('div', { class: 'pm-header' });
-    header.appendChild(el('h3', { class: 'audit-detail-title' }, 'AI 评估详情'));
-    const btnClose = el('button', { type: 'button', class: 'pm-close', 'aria-label': '关闭' }, '×');
-    header.appendChild(btnClose);
-    modal.appendChild(header);
-
-    const body = el('div', { class: 'pm-body audit-detail-body' });
-    const detailRaw = item.ai_evaluation_detail;
-    const parsed = window.EvalCountryTable && window.EvalCountryTable.parse(detailRaw);
-    const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
-    if (hasTable) {
-      body.innerHTML = window.EvalCountryTable.render(detailRaw);
-    } else {
-      body.appendChild(el('pre', { class: 'pm-json audit-detail-json' }, formatAuditDetail(detailRaw)));
+    if (window.EvalCountryTable && typeof window.EvalCountryTable.openModal === 'function') {
+      window.EvalCountryTable.openModal(item.ai_evaluation_detail);
     }
-    modal.appendChild(body);
-
-    const footer = el('div', { class: 'pm-footer' });
-    const btnCancel = el('button', { type: 'button', class: 'btn-mini' }, '关闭');
-    footer.appendChild(btnCancel);
-    modal.appendChild(footer);
-
-    function close() {
-      overlay.remove();
-      document.removeEventListener('keydown', onEsc);
-    }
-    function onEsc(e) {
-      if (e.key === 'Escape') close();
-    }
-    document.addEventListener('keydown', onEsc);
-    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-    btnClose.addEventListener('click', close);
-    btnCancel.addEventListener('click', close);
   }
 
   function renderActionCell(it) {
@@ -841,7 +793,7 @@
     const action = btn.getAttribute('data-action');
     const id = Number(btn.getAttribute('data-id'));
     if (action === 'open-modal') openPushModal(id);
-    else if (action === 'ai-detail') openAuditDetailModal(id);
+    else if (action === 'ai-detail') showAuditDetail(id);
     else if (action === 'reset') resetPush(id);
     else if (action === 'view-logs') viewLogs(id);
   });

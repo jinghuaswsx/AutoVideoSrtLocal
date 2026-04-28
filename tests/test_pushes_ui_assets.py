@@ -40,12 +40,12 @@ def test_pushes_css_styles_product_link_and_copy_button():
 
 
 def test_pushes_css_expands_ai_evaluation_detail_modal():
-    css = Path("web/static/pushes.css").read_text(encoding="utf-8")
+    css = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
 
-    assert ".audit-detail-overlay" in css
+    assert ".ect-modal-overlay" in css
     assert "calc(100vh - 24px)" in css
-    assert "min(1720px, calc(100vw - 48px))" in css
-    assert ".audit-detail-modal .pm-body" in css
+    assert "min(1760px, calc(100vw - 48px))" in css
+    assert ".ect-modal-body" in css
     assert "flex: 1 1 auto" in css
     assert "max-height: none" in css
 
@@ -62,3 +62,17 @@ def test_eval_country_table_expands_risk_section_but_keeps_meta_collapsed():
     assert 'return `<details class="ect-collapsible" open>' in extra_section
     assert 'return `<details class="ect-collapsible">' in meta_section
     assert 'return `<details class="ect-collapsible" open>' not in meta_section
+
+
+def test_pushes_and_medias_use_shared_ai_evaluation_detail_modal():
+    shared = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
+    pushes = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    medias = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "openModal:" in shared
+    assert "function openAiEvaluationDetailModal" in shared
+    assert "window.EvalCountryTable.openModal(" in pushes
+    assert "window.EvalCountryTable.openModal(" in medias
+    assert "function openAuditDetailModal" not in pushes
+    assert "function openAiEvaluationDetail(product)" not in medias
+    assert "aiEvalDetailMask" not in medias

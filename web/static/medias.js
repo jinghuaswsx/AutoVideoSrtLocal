@@ -382,57 +382,10 @@
     return text ? escapeHtml(text) : '<span class="muted">—</span>';
   }
 
-  function formatAiEvaluationDetail(detail) {
-    if (detail && typeof detail === 'object') {
-      return JSON.stringify(detail, null, 2);
+  function showAiEvaluationDetail(product) {
+    if (window.EvalCountryTable && typeof window.EvalCountryTable.openModal === 'function') {
+      window.EvalCountryTable.openModal(product && product.ai_evaluation_detail);
     }
-    const text = String(detail || '').trim();
-    if (!text) return '暂无评估详情';
-    try {
-      return JSON.stringify(JSON.parse(text), null, 2);
-    } catch (_) {
-      return text;
-    }
-  }
-
-  function openAiEvaluationDetail(product) {
-    const old = document.getElementById('aiEvalDetailMask');
-    if (old) old.remove();
-    const mask = document.createElement('div');
-    mask.id = 'aiEvalDetailMask';
-    mask.className = 'oc-modal-mask oc';
-    const detailRaw = product && product.ai_evaluation_detail;
-    const parsed = window.EvalCountryTable && window.EvalCountryTable.parse(detailRaw);
-    const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
-    const bodyHtml = hasTable
-      ? window.EvalCountryTable.render(detailRaw)
-      : `<pre class="oc-ai-detail-json">${escapeHtml(formatAiEvaluationDetail(detailRaw))}</pre>`;
-    mask.innerHTML = `
-      <div class="oc-modal oc-ai-detail-modal" role="dialog" aria-modal="true" aria-labelledby="aiEvalDetailTitle">
-        <div class="oc-modal-head">
-          <h3 id="aiEvalDetailTitle">AI 评估详情</h3>
-          <button type="button" class="oc-icon-btn" data-ai-detail-close aria-label="关闭">
-            ${icon('close', 16)}
-          </button>
-        </div>
-        <div class="oc-modal-body">${bodyHtml}</div>
-        <div class="oc-modal-foot">
-          <button type="button" class="oc-btn ghost" data-ai-detail-close>关闭</button>
-        </div>
-      </div>`;
-    document.body.appendChild(mask);
-
-    function close() {
-      mask.remove();
-      document.removeEventListener('keydown', onKey);
-    }
-    function onKey(e) {
-      if (e.key === 'Escape') close();
-    }
-    document.addEventListener('keydown', onKey);
-    mask.addEventListener('click', (e) => {
-      if (e.target === mask || e.target.closest('[data-ai-detail-close]')) close();
-    });
   }
 
   function listingStatus(product) {
@@ -821,7 +774,7 @@
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         const product = items.find(item => Number(item.id) === Number(b.dataset.aiDetail));
-        openAiEvaluationDetail(product || null);
+        showAiEvaluationDetail(product || null);
       }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
