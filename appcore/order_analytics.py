@@ -709,6 +709,80 @@ def match_orders_to_products() -> int:
     return affected
 
 
+# ── 国家 ↔ 语种映射 ───────────────────────────────────────
+
+
+COUNTRY_TO_LANG: dict[str, str] = {
+    "US": "en", "GB": "en", "UK": "en",
+    "AU": "en", "CA": "en", "IE": "en", "NZ": "en",
+    "DE": "de", "AT": "de",
+    "FR": "fr",
+    "ES": "es",
+    "IT": "it",
+    "NL": "nl",
+    "SE": "sv",
+    "FI": "fi",
+    "JP": "ja",
+    "KR": "ko",
+    "BR": "pt-BR",
+    "PT": "pt",
+}
+
+
+# 同语种多国家时，列输出顺序固定走这张表（不出现的语种按 dict 插入序）
+LANG_PRIORITY_COUNTRIES: dict[str, list[str]] = {
+    "en": ["US", "GB", "AU", "CA", "IE", "NZ"],
+    "de": ["DE", "AT"],
+}
+
+
+def _load_enabled_lang_codes() -> list[str]:
+    """读取 media_languages.enabled=1 的语种 code，按 sort_order 升序。
+
+    与 appcore.medias.list_enabled_language_codes() 等价；放在本模块里独立维护，
+    便于单测通过 monkeypatch.setattr(oa, "_load_enabled_lang_codes", …) 替换实现，
+    而不必污染 appcore.medias。
+    """
+    rows = query(
+        "SELECT code FROM media_languages "
+        "WHERE enabled=1 ORDER BY sort_order ASC, code ASC"
+    )
+    return [r["code"] for r in rows]
+
+
+def get_enabled_country_columns() -> list[dict]:
+    """根据 media_languages 启用语种推导出"国家列"序列。
+
+    返回列表如 [{"country": "US", "lang": "en"}, …]，按
+    sort_order(语种) → LANG_PRIORITY_COUNTRIES(同语种内部顺序) 双重排序。
+    未在 COUNTRY_TO_LANG 里出现的启用语种被静默跳过（不报错）。
+    """
+    enabled_langs = _load_enabled_lang_codes()
+    columns: list[dict] = []
+    seen: set[str] = set()
+
+    # 反向构建：lang → [country, ...]，对未在优先表里的语种走 dict 插入序
+    lang_to_countries: dict[str, list[str]] = {}
+    for country, lang in COUNTRY_TO_LANG.items():
+        lang_to_countries.setdefault(lang, []).append(country)
+    # 优先表覆盖默认顺序
+    for lang, ordered in LANG_PRIORITY_COUNTRIES.items():
+        if lang in lang_to_countries:
+            lang_to_countries[lang] = ordered
+
+    for lang in enabled_langs:
+        countries = lang_to_countries.get(lang)
+        if not countries:
+            continue
+        for country in countries:
+            if country in seen:
+                continue
+            seen.add(country)
+            columns.append({"country": country, "lang": lang})
+
+    return columns
+
+
 # ── 分析查询 ───────────────────────────────────────────
 
 def _month_range(year: int, month: int) -> tuple[str, str]:
@@ -783,12 +857,31 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
             product_order.append(dn)
         matrix[dn][mr["billing_country"] or "未知"] = mr["total_qty"]
 
+    # 素材数量：按 product × lang，复用 dashboard 已有的统计逻辑
+    media_counts_all = _count_media_items_by_product()
+    if product_id is not None:
+        media_counts = (
+            {product_id: media_counts_all[product_id]}
+            if product_id in media_counts_all
+            else {}
+        )
+    else:
+        # 仅保留本次查询里出现的产品，避免响应膨胀
+        active_pids = {p["product_id"] for p in products if p.get("product_id") is not None}
+        media_counts = {
+            pid: counts for pid, counts in media_counts_all.items() if pid in active_pids
+        }
+
+    country_columns = get_enabled_country_columns()
+
     return {
         "products": products,
         "countries": countries,
         "country_list": country_list,
         "matrix": matrix,
         "product_order": product_order,
+        "country_columns": country_columns,
+        "media_counts": media_counts,
     }
 
 

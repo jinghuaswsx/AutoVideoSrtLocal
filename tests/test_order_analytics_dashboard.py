@@ -417,3 +417,106 @@ def test_get_dashboard_load_products_filters_archived_and_deleted(monkeypatch):
     oa.get_dashboard(period="month", year=2026, month=4, today=date(2026, 4, 26))
     assert "archived = 0 OR archived IS NULL" in captured["sql"]
     assert "deleted_at IS NULL" in captured["sql"]
+
+
+# ── 国家映射 / 启用国家推导 ────────────────────────────────
+
+
+def test_country_to_lang_canonical_codes_present():
+    assert oa.COUNTRY_TO_LANG["US"] == "en"
+    assert oa.COUNTRY_TO_LANG["GB"] == "en"
+    assert oa.COUNTRY_TO_LANG["UK"] == "en"
+    assert oa.COUNTRY_TO_LANG["DE"] == "de"
+    assert oa.COUNTRY_TO_LANG["AT"] == "de"
+    assert oa.COUNTRY_TO_LANG["BR"] == "pt-BR"
+    assert oa.COUNTRY_TO_LANG["PT"] == "pt"
+
+
+def test_lang_to_countries_uses_priority_order(monkeypatch):
+    """同一语种多个国家时，按 LANG_PRIORITY_COUNTRIES 给的固定优先序输出。"""
+    enabled = ["en", "de"]
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: enabled)
+    cols = oa.get_enabled_country_columns()
+    countries = [c["country"] for c in cols]
+    # en → US, GB, AU, CA, IE, NZ；de → DE, AT
+    assert countries == ["US", "GB", "AU", "CA", "IE", "NZ", "DE", "AT"]
+    # 每列都带 lang 字段
+    assert cols[0] == {"country": "US", "lang": "en"}
+    assert cols[6] == {"country": "DE", "lang": "de"}
+
+
+def test_get_enabled_country_columns_skips_unmapped_lang(monkeypatch):
+    """启用了 COUNTRY_TO_LANG 没覆盖的语种时，跳过该语种但不报错。"""
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en", "xx-unknown"])
+    cols = oa.get_enabled_country_columns()
+    assert all(c["lang"] != "xx-unknown" for c in cols)
+    assert {c["country"] for c in cols} == {"US", "GB", "AU", "CA", "IE", "NZ"}
+
+
+def test_get_enabled_country_columns_full_set(monkeypatch):
+    monkeypatch.setattr(
+        oa,
+        "_load_enabled_lang_codes",
+        lambda: ["en", "de", "fr", "es", "it", "ja", "nl", "sv", "fi", "pt-BR"],
+    )
+    cols = oa.get_enabled_country_columns()
+    countries = [c["country"] for c in cols]
+    assert countries == [
+        "US", "GB", "AU", "CA", "IE", "NZ",
+        "DE", "AT",
+        "FR",
+        "ES",
+        "IT",
+        "JP",
+        "NL",
+        "SE",
+        "FI",
+        "BR",
+    ]
+
+
+def test_get_monthly_summary_returns_country_columns_and_media_counts(monkeypatch):
+    """get_monthly_summary 应返回固定 country_columns 与 media_counts 两个新字段。"""
+    # 模拟启用 en + de
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en", "de"])
+    # 桩掉 DB 调用
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=None: _stub_monthly_query(sql),
+    )
+
+    result = oa.get_monthly_summary(2026, 4)
+
+    assert "country_columns" in result
+    assert result["country_columns"][0] == {"country": "US", "lang": "en"}
+    assert "media_counts" in result
+    # product_id=10 在 fixture 里有 en×3 + de×1
+    assert result["media_counts"][10] == {"en": 3, "de": 1}
+
+
+def _stub_monthly_query(sql: str):
+    """根据 SQL 关键字返回不同 fixture，模拟 4 类查询。"""
+    s = sql.lower()
+    if "from media_items" in s:
+        return [
+            {"product_id": 10, "lang": "en", "n": 3},
+            {"product_id": 10, "lang": "de", "n": 1},
+        ]
+    if "group by billing_country" in s:
+        return [{"billing_country": "US", "total_qty": 5, "order_count": 4}]
+    if "group by so.product_id, display_name, so.billing_country" in s:
+        return [
+            {"product_id": 10, "display_name": "P10", "billing_country": "US", "total_qty": 5},
+        ]
+    # products 汇总
+    return [
+        {
+            "product_id": 10,
+            "display_name": "P10",
+            "product_code": "PCK10",
+            "total_qty": 5,
+            "order_count": 4,
+            "total_revenue": Decimal("99.00"),
+        }
+    ]
