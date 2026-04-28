@@ -8,6 +8,8 @@ MIN_DURATION_RATIO = 0.95
 MAX_DURATION_RATIO = 1.05
 MIN_TTS_SPEED = 0.95
 MAX_TTS_SPEED = 1.05
+MAX_TEXT_REWRITE_ATTEMPTS = 10
+MAX_TTS_REGENERATE_ATTEMPTS = 10
 
 
 def duration_ratio(target_duration: float, tts_duration: float) -> float:
@@ -62,6 +64,48 @@ def _duration_reason(status: str) -> str:
     return status
 
 
+def _duration_distance(target_duration: float, tts_duration: float) -> float:
+    return abs(duration_ratio(target_duration, tts_duration) - 1.0)
+
+
+def _delta_pct(target_duration: float, tts_duration: float) -> float:
+    if target_duration <= 0:
+        return 0.0
+    return round(((tts_duration - target_duration) / target_duration) * 100, 2)
+
+
+def _candidate_from_current(current: dict, *, round_number: int) -> dict:
+    return {
+        "round": round_number,
+        "text": current["text"],
+        "tts_path": current.get("tts_path"),
+        "tts_duration": float(current.get("tts_duration", 0.0) or 0.0),
+        "duration_ratio": duration_ratio(
+            float(current.get("target_duration", 0.0) or 0.0),
+            float(current.get("tts_duration", 0.0) or 0.0),
+        ),
+        "target_chars_range": tuple(current.get("target_chars_range") or (1, 2)),
+        "status": current.get("status", "ok"),
+        "speed": current.get("speed", 1.0),
+    }
+
+
+def _apply_candidate(current: dict, candidate: dict) -> None:
+    current["text"] = candidate["text"]
+    current["est_chars"] = len(candidate["text"])
+    current["tts_path"] = candidate.get("tts_path")
+    current["tts_duration"] = float(candidate.get("tts_duration", 0.0) or 0.0)
+    current["target_chars_range"] = tuple(candidate.get("target_chars_range") or current["target_chars_range"])
+    current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+    current["speed"] = candidate.get("speed", 1.0)
+    current["selected_attempt_round"] = int(candidate.get("round", 0) or 0)
+
+
+def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
+    for attempt in attempts:
+        attempt["selected"] = int(attempt.get("round", -1)) == selected_round
+
+
 def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
     for key, value in av_sentence.items():
         if key in current:
@@ -100,7 +144,8 @@ def reconcile_duration(
     script_segments: list[dict],
     user_id: int | None = None,
     project_id: str | None = None,
-    max_rewrite_rounds: int = 2,
+    max_rewrite_rounds: int = MAX_TEXT_REWRITE_ATTEMPTS,
+    max_tts_regenerate_attempts: int = MAX_TTS_REGENERATE_ATTEMPTS,
 ) -> list[dict]:
     tts_by_index = _tts_segment_map(tts_output)
     final_sentences = []
@@ -120,6 +165,13 @@ def reconcile_duration(
             "tts_duration": float(tts_segment.get("tts_duration", 0.0) or 0.0),
             "speed": 1.0,
             "rewrite_rounds": 0,
+            "text_rewrite_attempts": 0,
+            "tts_regenerate_attempts": 0,
+            "speed_adjustment_attempts": 0,
+            "max_text_rewrite_attempts": max_rewrite_rounds,
+            "max_tts_regenerate_attempts": max_tts_regenerate_attempts,
+            "selected_attempt_round": 0,
+            "best_effort": False,
             "status": "ok",
             "duration_ratio": duration_ratio(
                 float(av_sentence.get("target_duration", 0.0) or 0.0),
@@ -137,6 +189,7 @@ def reconcile_duration(
         if status == "ok":
             speed_for_target = compute_speed_for_target(current["target_duration"], current["tts_duration"])
             if speed_for_target is not None and speed_for_target != 1.0:
+                current["speed_adjustment_attempts"] += 1
                 current["tts_path"], current["tts_duration"] = _regenerate_segment(
                     sentence=current,
                     voice_id=voice_id,
@@ -149,13 +202,16 @@ def reconcile_duration(
         elif status in {"needs_rewrite", "needs_expand"}:
             current_duration = current["tts_duration"]
             action = "shorten" if status == "needs_rewrite" else "expand"
-            for rewrite_round in range(1, max_rewrite_rounds + 1):
+            best_candidate = _candidate_from_current(current, round_number=0)
+            round_limit = min(max_rewrite_rounds, max_tts_regenerate_attempts)
+            for rewrite_round in range(1, round_limit + 1):
                 before_text = current["text"]
                 new_range = _scaled_target_chars_range(
                     current["target_chars_range"],
                     current["target_duration"],
                     current_duration,
                 )
+                rewrite_temperature = av_translate.rewrite_temperature_for_attempt(rewrite_round)
                 new_text = av_translate.rewrite_one(
                     asr_index=asr_index,
                     prev_text=before_text,
@@ -168,7 +224,11 @@ def reconcile_duration(
                     voice_id=voice_id,
                     user_id=user_id,
                     project_id=project_id,
+                    attempt_number=rewrite_round,
+                    previous_attempts=list(current["attempts"]),
+                    temperature=rewrite_temperature,
                 )
+                current["text_rewrite_attempts"] += 1
                 current["text"] = new_text
                 current["est_chars"] = len(new_text)
                 current["rewrite_rounds"] = rewrite_round
@@ -178,28 +238,42 @@ def reconcile_duration(
                     voice_id=voice_id,
                     target_language=target_language,
                 )
+                current["tts_regenerate_attempts"] += 1
                 current["tts_duration"] = current_duration
                 status, speed = classify_overshoot(current["target_duration"], current_duration)
                 current["status"] = status
                 current["speed"] = speed
                 current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
-                current["attempts"].append(
-                    {
-                        "round": rewrite_round,
-                        "action": action,
-                        "before_text": before_text,
-                        "after_text": new_text,
-                        "target_duration": current["target_duration"],
-                        "tts_duration": current_duration,
-                        "duration_ratio": round(current["duration_ratio"], 4),
-                        "status": status,
-                        "reason": _duration_reason(status),
-                    }
-                )
+                attempt = {
+                    "round": rewrite_round,
+                    "text_attempt": current["text_rewrite_attempts"],
+                    "tts_attempt": current["tts_regenerate_attempts"],
+                    "temperature": rewrite_temperature,
+                    "action": action,
+                    "before_text": before_text,
+                    "after_text": new_text,
+                    "target_duration": current["target_duration"],
+                    "tts_duration": current_duration,
+                    "duration_ratio": round(current["duration_ratio"], 4),
+                    "delta_pct": _delta_pct(current["target_duration"], current_duration),
+                    "status": status,
+                    "reason": _duration_reason(status),
+                    "selected": False,
+                }
+                current["attempts"].append(attempt)
+
+                candidate = _candidate_from_current(current, round_number=rewrite_round)
+                best_distance = _duration_distance(current["target_duration"], best_candidate["tts_duration"])
+                candidate_distance = _duration_distance(current["target_duration"], candidate["tts_duration"])
+                if candidate_distance <= best_distance:
+                    best_candidate = candidate
 
                 if status == "ok":
+                    current["selected_attempt_round"] = rewrite_round
+                    _mark_selected_attempt(current["attempts"], rewrite_round)
                     speed_for_target = compute_speed_for_target(current["target_duration"], current_duration)
                     if speed_for_target is not None and speed_for_target != 1.0:
+                        current["speed_adjustment_attempts"] += 1
                         current["tts_path"], current["tts_duration"] = _regenerate_segment(
                             sentence=current,
                             voice_id=voice_id,
@@ -214,8 +288,16 @@ def reconcile_duration(
                     break
 
             if current["status"] in {"needs_rewrite", "needs_expand"}:
-                current["status"] = "warning_long" if action == "shorten" else "warning_short"
+                _apply_candidate(current, best_candidate)
+                _mark_selected_attempt(current["attempts"], current["selected_attempt_round"])
+                current["status"] = (
+                    "warning_long"
+                    if current["duration_ratio"] > MAX_DURATION_RATIO
+                    else "warning_short"
+                )
                 current["speed"] = 1.0
+                current["best_effort"] = True
+                current["best_effort_reason"] = "max_attempts_exhausted"
 
         final_sentences.append(current)
 

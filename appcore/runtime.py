@@ -2565,12 +2565,40 @@ def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") 
         for sentence in (sentences or [])
         if isinstance(sentence, dict) and sentence.get("status") in ok_statuses
     )
+    text_rewrite_attempts = sum(
+        int(sentence.get("text_rewrite_attempts", 0) or 0)
+        for sentence in (sentences or [])
+        if isinstance(sentence, dict)
+    )
+    tts_regenerate_attempts = sum(
+        int(sentence.get("tts_regenerate_attempts", 0) or 0)
+        for sentence in (sentences or [])
+        if isinstance(sentence, dict)
+    )
+    speed_adjustment_attempts = sum(
+        int(sentence.get("speed_adjustment_attempts", 0) or 0)
+        for sentence in (sentences or [])
+        if isinstance(sentence, dict)
+    )
+    best_effort_sentences = sum(
+        1
+        for sentence in (sentences or [])
+        if isinstance(sentence, dict) and sentence.get("best_effort")
+    )
     return {
         "model": model,
         "summary": {
             "total_sentences": total,
             "ok_sentences": ok_sentences,
             "warning_sentences": total - ok_sentences,
+            "text_rewrite_attempts": text_rewrite_attempts,
+            "tts_regenerate_attempts": tts_regenerate_attempts,
+            "speed_adjustment_attempts": speed_adjustment_attempts,
+            "best_effort_sentences": best_effort_sentences,
+        },
+        "sentence_convergence": {
+            "model": model,
+            "sentences": sentences or [],
         },
         "steps": [
             {"code": "sentence_localize", "label": "GPT-5.5 句级本土化", "status": "done"},

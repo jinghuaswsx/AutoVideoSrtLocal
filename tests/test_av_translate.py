@@ -352,3 +352,68 @@ def test_rewrite_one_expand_prompt_avoids_shorten_language(monkeypatch):
     assert "cannot add new facts" in user_prompt
     assert "shorten" not in user_prompt
     assert "trim" not in user_prompt
+
+
+def test_rewrite_one_uses_attempt_temperature_and_failure_feedback(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "A structurally different rewrite",
+                        "est_chars": 32,
+                        "source_intent": "demo",
+                        "localization_note": "changed rhythm and sentence frame",
+                        "duration_risk": "ok",
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    text = av_translate.rewrite_one(
+        asr_index=1,
+        prev_text="This line keeps coming back too long",
+        overshoot_sec=0.7,
+        direction="shorten",
+        new_target_chars_range=(24, 30),
+        script_segments=SCRIPT_SEGMENTS,
+        shot_notes=SHOT_NOTES,
+        av_inputs=AV_INPUTS,
+        voice_id="voice-1",
+        attempt_number=3,
+        previous_attempts=[
+            {
+                "round": 1,
+                "after_text": "This line keeps coming back too long",
+                "tts_duration": 6.1,
+                "duration_ratio": 1.22,
+                "status": "needs_rewrite",
+            },
+            {
+                "round": 2,
+                "after_text": "This line still comes back too long",
+                "tts_duration": 5.9,
+                "duration_ratio": 1.18,
+                "status": "needs_rewrite",
+            },
+        ],
+    )
+
+    assert text == "A structurally different rewrite"
+    assert captured["use_case_code"] == "video_translate.av_rewrite"
+    assert captured["kwargs"]["temperature"] >= 1.0
+    system_prompt = captured["kwargs"]["messages"][0]["content"]
+    assert "Do not reuse the same wording" in system_prompt
+    assert "change the sentence structure" in system_prompt
+    user_prompt = captured["kwargs"]["messages"][1]["content"]
+    assert '"attempt_number": 3' in user_prompt
+    assert "previous_failed_attempts" in user_prompt
+    assert "This line still comes back too long" in user_prompt

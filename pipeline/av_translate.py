@@ -16,6 +16,8 @@ FALLBACK_CPS = {
     "pt": 14.0,
 }
 
+REWRITE_TEMPERATURE_LADDER = (0.6, 0.8, 1.0, 1.05, 1.1, 1.1, 1.15, 1.15, 1.2, 1.2)
+
 AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
     "type": "json_schema",
     "json_schema": {
@@ -91,6 +93,9 @@ Hard rules:
 6. Do not invent facts, prices, materials, certifications, claims, discounts, or guarantees.
 7. Fit the ElevenLabs duration target with short clauses, clear rhythm, and natural spoken pacing.
 8. Fill source_intent, localization_note, and duration_risk for the returned sentence object.
+9. Do not reuse the same wording, clause order, or sentence frame from failed attempts.
+10. On retry attempts, change the sentence structure, rhythm, and spoken phrasing enough to create a meaning-preserving alternative.
+11. Prefer local, idiomatic spoken language over literal translation, but keep every factual claim grounded in the source.
 """
 
 
@@ -113,6 +118,12 @@ def compute_target_chars_range(target_duration, voice_id, target_language):
     lo = max(1, int(cps * target_duration * 0.92))
     hi = max(lo + 1, int(cps * target_duration * 1.08 + 0.5))
     return (lo, hi)
+
+
+def rewrite_temperature_for_attempt(attempt_number: int | None) -> float:
+    normalized = max(1, int(attempt_number or 1))
+    index = min(normalized - 1, len(REWRITE_TEMPERATURE_LADDER) - 1)
+    return REWRITE_TEMPERATURE_LADDER[index]
 
 
 def _first_non_empty(*values):
@@ -330,6 +341,9 @@ def rewrite_one(
     voice_id: str,
     user_id: int | None = None,
     project_id: str | None = None,
+    attempt_number: int | None = None,
+    previous_attempts: list[dict] | None = None,
+    temperature: float | None = None,
 ) -> str:
     messages, sentence_inputs, global_context = _build_translate_messages(
         script_segments, shot_notes, av_inputs, voice_id
@@ -367,6 +381,23 @@ def rewrite_one(
         "focus_sentence": focus_sentence,
         "rewrite_direction": rewrite_direction,
         "rewrite_instruction": rewrite_instruction,
+        "attempt_number": max(1, int(attempt_number or 1)),
+        "previous_failed_attempts": [
+            {
+                "round": item.get("round"),
+                "text": item.get("after_text") or item.get("text"),
+                "tts_duration": item.get("tts_duration"),
+                "duration_ratio": item.get("duration_ratio"),
+                "status": item.get("status"),
+                "reason": item.get("reason"),
+            }
+            for item in (previous_attempts or [])
+        ],
+        "variation_requirements": [
+            "Do not repeat prior candidate wording or only swap synonyms.",
+            "Try a different sentence frame, clause order, and spoken cadence.",
+            "Keep the same source intent and visual fit while changing the local phrasing.",
+        ],
     }
     rewrite_messages = [
         _build_rewrite_system_message(av_inputs),
@@ -377,7 +408,7 @@ def rewrite_one(
         messages=rewrite_messages,
         user_id=user_id,
         project_id=project_id,
-        temperature=0.2,
+        temperature=temperature if temperature is not None else rewrite_temperature_for_attempt(attempt_number),
         max_tokens=4096,
         response_format=AV_TRANSLATE_RESPONSE_FORMAT,
     )
