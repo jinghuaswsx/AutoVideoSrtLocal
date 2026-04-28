@@ -21,3 +21,10 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "calculateRoasBreakEven" in js
     assert "packet_cost_actual" in js
     assert "roas_calculation" in js
+
+
+def test_roas_button_is_after_ai_evaluate_button():
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    row_actions = js.split('<div class="oc-row-actions">', 1)[1].split("</div>", 1)[0]
+
+    assert row_actions.index("data-ai-evaluate") < row_actions.index("data-roas")
