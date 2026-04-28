@@ -37,3 +37,14 @@ def test_pushes_css_styles_product_link_and_copy_button():
     assert ".product-code-row" in css
     assert ".audit-cell" in css
     assert ".audit-detail-pre" in css
+
+
+def test_pushes_css_expands_ai_evaluation_detail_modal():
+    css = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert ".audit-detail-overlay" in css
+    assert "calc(100vh - 24px)" in css
+    assert "min(1720px, calc(100vw - 48px))" in css
+    assert ".audit-detail-modal .pm-body" in css
+    assert "flex: 1 1 auto" in css
+    assert "max-height: none" in css

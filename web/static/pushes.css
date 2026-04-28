@@ -399,11 +399,18 @@
 .audit-modal-section .audit-status {
   vertical-align: middle;
 }
+.audit-detail-overlay {
+  padding: var(--oc-sp-6) var(--oc-sp-6) 0;
+}
 .audit-detail-modal {
-  width: min(1280px, calc(100vw - 48px));
+  width: min(1720px, calc(100vw - 48px));
+  height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px);
 }
 .audit-detail-modal .pm-body {
-  max-height: 78vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
 }
 .audit-detail-title {
