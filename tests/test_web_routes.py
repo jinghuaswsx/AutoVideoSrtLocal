@@ -114,6 +114,34 @@ def test_task_upload_route_accepts_local_multipart_and_marks_local_primary(tmp_p
     assert started == {}
 
 
+def test_task_upload_route_accepts_av_sync_list_form_inputs(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.task.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+
+    response = authed_client_no_db.post(
+        "/api/tasks",
+        data={
+            "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
+            "target_lang": "de",
+            "target_market": "OTHER",
+            "sync_granularity": "sentence",
+            "display_name": "德语项目",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+    task = store.get(response.get_json()["task_id"])
+    assert task["display_name"] == "德语项目"
+    assert task["target_lang"] == "de"
+    assert task["av_translate_inputs"]["target_language"] == "de"
+    assert task["av_translate_inputs"]["target_language_name"] == "German"
+    assert task["av_translate_inputs"]["target_market"] == "OTHER"
+    assert task["av_translate_inputs"]["sync_granularity"] == "sentence"
+
+
 def test_de_translate_list_page_uses_local_multipart_upload():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "de_translate_list.html").read_text(encoding="utf-8")
@@ -422,6 +450,135 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "reason" in scripts
     assert "avSyncGranularity" in scripts
     assert "subtitle_units" in scripts
+
+
+def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-av-shell", "video.mp4", "output/task-project-av-shell")
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        type="av_translate",
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-av-shell")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="taskStatusCard"' in body
+    assert 'id="voice-selector-multi"' in body
+    assert 'class="vs-preview-card"' in body
+    assert 'id="avConvergencePanel"' in body
+    assert 'id="avSubtitleUnitsPanel"' in body
+    assert 'apiBase: "/api/tasks"' in body
+    assert 'detailMode: "av_sync"' in body
+    assert 'voiceLanguage: "de"' in body
+    assert 'href="/video-translate-av-sync"' in body
+
+
+def test_av_task_subtitle_preview_supports_shared_detail_shell(authed_client_no_db):
+    task = store.create("task-av-preview-shell", "video.mp4", "output/task-av-preview-shell", user_id=1)
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        subtitle_font="Impact",
+        subtitle_size=18,
+        subtitle_position_y=0.72,
+    )
+
+    response = authed_client_no_db.get("/api/tasks/task-av-preview-shell/subtitle-preview")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["video_url"] == "/api/tasks/task-av-preview-shell/artifact/source_video"
+    assert payload["subtitle_font"] == "Impact"
+    assert payload["subtitle_size"] == 18
+    assert payload["subtitle_position_y"] == 0.72
+
+
+def test_av_task_voice_library_supports_shared_detail_shell(authed_client_no_db, monkeypatch):
+    task = store.create("task-av-voice-shell", "video.mp4", "output/task-av-voice-shell", user_id=1)
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        target_lang="de",
+        av_translate_inputs={"target_language": "de"},
+        selected_voice_id="voice-a",
+        steps={"extract": "done", "asr": "done", "voice_match": "waiting"},
+        voice_match_candidates=[{"voice_id": "voice-a", "similarity": 0.91}],
+    )
+    monkeypatch.setattr(
+        "appcore.voice_library_browse.list_voices",
+        lambda **kwargs: {"items": [{"voice_id": "voice-a", "name": "A"}], "total": 1},
+    )
+    monkeypatch.setattr("appcore.video_translate_defaults.resolve_default_voice", lambda *args, **kwargs: None)
+
+    response = authed_client_no_db.get("/api/tasks/task-av-voice-shell/voice-library")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["items"] == [{"voice_id": "voice-a", "name": "A"}]
+    assert payload["selected_voice_id"] == "voice-a"
+    assert payload["voice_match_ready"] is True
+
+
+def test_av_task_confirm_voice_starts_pipeline_from_shared_detail_shell(tmp_path, authed_client_no_db, monkeypatch):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake")
+    task = store.create("task-av-confirm-shell", str(video_path), str(tmp_path), user_id=1)
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        target_lang="de",
+        av_translate_inputs={"target_language": "de", "target_market": "DE", "sync_granularity": "sentence"},
+    )
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/tasks/task-av-confirm-shell/confirm-voice",
+        json={
+            "voice_id": "voice-a",
+            "voice_name": "A",
+            "subtitle_font": "Impact",
+            "subtitle_size": 18,
+            "subtitle_position_y": 0.72,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["voice_id"] == "voice-a"
+    assert started == {"task_id": "task-av-confirm-shell", "user_id": 1}
+    updated = store.get("task-av-confirm-shell")
+    assert updated["voice_id"] == "voice-a"
+    assert updated["selected_voice_id"] == "voice-a"
+    assert updated["subtitle_size"] == 18
+    assert updated["subtitle_position_y"] == 0.72
 
 
 def test_av_rewrite_warning_filter_includes_warning_long():

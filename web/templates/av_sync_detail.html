@@ -1,0 +1,14 @@
+{% if not project.deleted_at %}
+{% set allow_upload = false %}
+{% set show_back_link = false %}
+{% set task_id = project.id %}
+{% set initial_task = state %}
+{% set api_base = '/api/tasks' %}
+{% set url_for_detail = '/projects/__TASK_ID__' %}
+{% set voice_language = target_lang %}
+{% set default_source_language = state.source_language or 'zh' %}
+{% set user_default_voice_api = '/api/tasks/user-default-voice' %}
+{% endif %}
+{% set detail_mode = 'av_sync' %}
+{% set pipeline_kind = 'multi_translate' %}
+{% include "_translate_detail_shell.html" %}
