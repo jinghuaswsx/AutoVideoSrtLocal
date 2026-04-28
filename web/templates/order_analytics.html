@@ -163,9 +163,22 @@
 .oar-note {
   color: var(--fg-muted); font-size: var(--text-sm);
 }
+.oar-time-rule {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5);
+  border: 1.5px solid var(--accent); border-radius: var(--radius-lg);
+  background: var(--accent-subtle); color: var(--fg);
+}
+.oar-time-rule strong {
+  color: var(--accent); font-size: var(--text-lg); font-weight: 800;
+}
+.oar-time-rule span {
+  color: var(--fg-muted); font-size: var(--text-sm);
+}
 @media (max-width: 980px) {
   .oar-hero, .oar-grid { grid-template-columns: 1fr; }
   .oar-value { font-size: 32px; }
+  .oar-time-rule { align-items: flex-start; flex-direction: column; }
 }
 
 .oa-controls {
@@ -461,11 +474,19 @@
 
 <section class="oa-panel active" id="panelRealtime">
   <div class="oar-toolbar">
-    <div class="oar-note">NewJoy + Omurio / Meta + 店小秘订单</div>
+    <div class="oar-note">NewJoy + Omurio / 按 Meta 广告系统日期统计</div>
     <div>
       <input type="date" id="realtimeDate">
       <button class="btn btn-primary btn-sm" id="realtimeRefresh">刷新</button>
     </div>
+  </div>
+
+  <div class="oar-time-rule">
+    <div>
+      <strong>日期口径：Meta 广告系统日</strong>
+      <div class="oar-note">“今天”按广告后台日期归属统计，订单会换算到同一个广告系统日后再累计。</div>
+    </div>
+    <span id="realtimeTimeRule">当前广告系统日：-</span>
   </div>
 
   <div class="oar-hero">
@@ -504,7 +525,7 @@
   <div class="oa-table-wrap">
     <div class="oa-table-header">
       <div class="oa-table-title">当天 ROAS 走势</div>
-      <div class="oar-note">0-23 点，每个点表示当天截至该节点的累计 ROAS</div>
+      <div class="oar-note">0-23 点按 Meta 广告系统日计算，每个点是当日累计 ROAS</div>
     </div>
     <div id="realtimeRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
   </div>
@@ -1273,6 +1294,7 @@
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
         document.getElementById('realtimeWindow').textContent = formatShortDateTime((data.period || {}).data_until_at) + ' 截止';
+        document.getElementById('realtimeTimeRule').textContent = formatTimeRule(data.period || {}, data.roas_points || []);
         document.getElementById('realtimeGranularity').textContent =
           '每 10 分钟记录当天累计订单、销售额、广告费和 ROAS';
         renderRealtimeRoasChart(data.roas_points || []);
@@ -1340,7 +1362,7 @@
         ':00 ROAS ' + fmtRoasValue(p.true_roas) + '</title></circle>';
     }).join('');
     var labels = [0, 6, 12, 18, 23].map(function(h) {
-      return '<text x="' + x(h).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" fill="var(--fg-muted)" font-size="12">' + h + ':00</text>';
+      return '<text x="' + x(h).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" fill="var(--fg-muted)" font-size="12">广告' + h + ':00</text>';
     }).join('');
     el.innerHTML =
       '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="260" role="img" aria-label="当天 ROAS 走势">' +
@@ -1354,6 +1376,12 @@
   function formatShortDateTime(value) {
     if (!value) return '-';
     return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function formatTimeRule(period, points) {
+    var latest = (points || []).filter(function(p) { return p.node_at; }).pop();
+    var nodeText = latest ? '广告系统第 ' + latest.hour + ' 点' : '暂无节点';
+    return '广告系统日 ' + (period.date || '-') + ' / 当前节点：' + nodeText;
   }
 
   function loadTrueRoas() {

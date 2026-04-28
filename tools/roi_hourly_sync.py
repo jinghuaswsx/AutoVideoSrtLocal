@@ -18,6 +18,7 @@ from appcore.db import execute, get_conn, query, query_one
 TIMEZONE = "Asia/Shanghai"
 STORE_SCOPE = "newjoy,omurio"
 AD_PLATFORM_SCOPE = "meta"
+META_CUTOVER_HOUR_BJ = 16
 
 
 def _bj_now() -> datetime:
@@ -26,6 +27,19 @@ def _bj_now() -> datetime:
 
 def _floor_hour(value: datetime) -> datetime:
     return value.replace(minute=0, second=0, microsecond=0)
+
+
+def _meta_business_date(value: datetime):
+    return (value - timedelta(hours=META_CUTOVER_HOUR_BJ)).date()
+
+
+def _meta_business_window_start(business_date) -> datetime:
+    return datetime(business_date.year, business_date.month, business_date.day, META_CUTOVER_HOUR_BJ, 0, 0)
+
+
+def _meta_node_hour(snapshot_at: datetime, business_date) -> int:
+    window_start = _meta_business_window_start(business_date)
+    return max(0, min(23, int((snapshot_at - window_start).total_seconds() // 3600)))
 
 
 def _json_default(value: Any) -> str:
@@ -213,8 +227,8 @@ def _snapshot_at_node(value: datetime) -> datetime:
 
 
 def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
-    business_date = snapshot_at.date()
-    day_start = snapshot_at.replace(hour=0, minute=0, second=0, microsecond=0)
+    business_date = _meta_business_date(snapshot_at)
+    day_start = _meta_business_window_start(business_date)
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
     order_row = query_one(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
@@ -299,7 +313,7 @@ def _upsert_daily_roas_node(snapshot_id: int, snapshot_at: datetime) -> int:
         "ad_data_status=VALUES(ad_data_status), updated_at=NOW()",
         (
             snap.get("business_date"),
-            int(snapshot_at.hour),
+            _meta_node_hour(snapshot_at, snap.get("business_date")),
             snapshot_at,
             TIMEZONE,
             STORE_SCOPE,

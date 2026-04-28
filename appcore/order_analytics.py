@@ -730,13 +730,13 @@ def _beijing_now() -> datetime:
 
 def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
-    target = _parse_iso_date_param(date_text, "date") if date_text else now.date()
-    day_start = datetime.combine(target, dt_time.min)
-    day_end = day_start + timedelta(days=1)
-    if target == now.date():
+    target = _parse_iso_date_param(date_text, "date") if date_text else (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    day_start, day_end = compute_meta_business_window_bj(target)
+    current_business_date = (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    if target == current_business_date:
         data_until = min(now, day_end)
         complete_hour_until = now.replace(minute=0, second=0, microsecond=0)
-    elif target < now.date():
+    elif target < current_business_date:
         data_until = day_end
         complete_hour_until = day_end
     else:
@@ -791,6 +791,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
                 "data_until_at": snap.get("snapshot_at") or data_until,
                 "complete_hour_until_at": complete_hour_until,
                 "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+                "day_definition": "meta_ad_platform_business_day",
             },
             "scope": {
                 "stores": ["newjoy", "omurio"],
@@ -902,6 +903,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
             "data_until_at": data_until,
             "complete_hour_until_at": complete_hour_until,
             "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+            "day_definition": "meta_ad_platform_business_day",
         },
         "scope": {
             "stores": ["newjoy", "omurio"],
