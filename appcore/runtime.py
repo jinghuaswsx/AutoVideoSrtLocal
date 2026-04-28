@@ -2534,7 +2534,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         from pipeline.av_translate import generate_av_localized_translation
         from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
         from pipeline.duration_reconcile import reconcile_duration
-        from pipeline.shot_notes import generate_shot_notes
+        from pipeline.shot_notes import build_fallback_shot_notes, generate_shot_notes
         from pipeline.subtitle import build_srt_from_chunks, save_srt
         from pipeline.tts import generate_full_audio
 
@@ -2574,14 +2574,20 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         source_full_text = _join_source_full_text(script_segments)
 
         runner._set_step(task_id, "translate", "running", "正在分析画面并生成笔记...")
-        shot_notes = generate_shot_notes(
-            video_path=video_path,
-            script_segments=script_segments,
-            target_language=target_language_name,
-            target_market=target_market,
-            user_id=runner.user_id,
-            project_id=task_id,
-        )
+        try:
+            shot_notes = generate_shot_notes(
+                video_path=video_path,
+                script_segments=script_segments,
+                target_language=target_language_name,
+                target_market=target_market,
+                user_id=runner.user_id,
+                project_id=task_id,
+                max_retries=0,
+            )
+        except Exception as exc:
+            log.warning("AV shot notes unavailable for task %s; using timeline fallback", task_id, exc_info=True)
+            runner._set_step(task_id, "translate", "running", "画面分析暂不可用，已使用 ASR 时间轴兜底继续翻译...")
+            shot_notes = build_fallback_shot_notes(script_segments, reason=str(exc))
         task = task_state.get(task_id) or task
         variants, variant_state = _ensure_variant_state(task, variant)
         task_state.update(task_id, shot_notes=shot_notes, variants=variants)

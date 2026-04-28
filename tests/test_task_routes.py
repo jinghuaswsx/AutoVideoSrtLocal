@@ -47,6 +47,37 @@ def test_start_translate_accepts_openrouter_gpt_5_5(authed_client_no_db, monkeyp
     assert resume_calls == [("task-start-gpt5-5", "translate", 1)]
 
 
+def test_av_resume_clears_stale_error_and_marks_av_type(authed_client_no_db, monkeypatch, tmp_path):
+    task_id = "task-av-resume-clear-error"
+    task = store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
+    task["steps"].update({"translate": "error", "tts": "pending"})
+    store.update(
+        task_id,
+        pipeline_version="av",
+        error="stale interrupted error",
+    )
+    resume_calls = []
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.resume",
+        lambda task_id, step, user_id=None: resume_calls.append((task_id, step, user_id)),
+    )
+    monkeypatch.setattr("web.routes.task.db_query_one", lambda sql, args: {"id": task_id})
+    monkeypatch.setattr("web.routes.task._ensure_local_source_video", lambda task_id, task: None)
+
+    resp = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/resume",
+        json={"start_step": "translate"},
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["status"] == "running"
+    assert updated["error"] == ""
+    assert updated["type"] == "av_translate"
+    assert updated["steps"]["translate"] == "pending"
+    assert resume_calls == [(task_id, "translate", 1)]
+
+
 def test_retranslate_logs_ai_billing_on_success(authed_client_no_db, monkeypatch, tmp_path):
     task = store.create("task-retranslate-billing", "video.mp4", str(tmp_path), user_id=1)
     task["steps"]["translate"] = "done"

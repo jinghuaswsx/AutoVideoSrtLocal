@@ -84,6 +84,24 @@ def test_openrouter_chat_reads_openrouter_text_row_and_returns_text_and_usage(fa
     assert result["usage"]["cost_cny"] == Decimal("3.400000")
 
 
+def test_openrouter_chat_uses_bounded_timeout_and_retries(fake_provider_db):
+    fake_provider_db.seed(
+        "openrouter_text",
+        api_key="sk-text",
+        base_url="https://openrouter.ai/api/v1",
+        extra_config={"timeout": 45, "max_retries": 0},
+    )
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        _mock_openai(m_openai)
+        OpenRouterAdapter().chat(
+            model="anthropic/claude-sonnet-4.6",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert m_openai.call_args.kwargs["timeout"] == 45
+    assert m_openai.call_args.kwargs["max_retries"] == 0
+
+
 def test_openrouter_chat_switches_to_image_provider_when_message_has_image(fake_provider_db):
     fake_provider_db.seed("openrouter_text", api_key="text-key",
                           base_url="https://openrouter.ai/api/v1")

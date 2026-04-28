@@ -317,6 +317,115 @@ def test_run_av_localize_fails_when_market_missing(tmp_path, monkeypatch):
     assert stage_calls == []
 
 
+def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
+    task_id = "test_av_localize_shot_notes_fallback"
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(b"fake-video")
+    task_state.create(task_id, str(video_path), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        pipeline_version="av",
+        script_segments=[
+            {"index": 0, "text": "source line", "start_time": 0.0, "end_time": 1.0},
+        ],
+        selected_voice_id="el_voice_1",
+        av_translate_inputs={
+            "target_language": "en",
+            "target_language_name": "English",
+            "target_market": "US",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+    )
+    runner, _events = _make_runner()
+    captured = {}
+
+    monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "pipeline.shot_notes.generate_shot_notes",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("openrouter timeout")),
+    )
+
+    def fake_av_translate(**kwargs):
+        captured["shot_notes"] = kwargs["shot_notes"]
+        return {
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 1.0,
+                    "target_duration": 1.0,
+                    "target_chars_range": (8, 12),
+                    "source_text": "source line",
+                    "role_in_structure": "hook",
+                    "text": "Localized line",
+                    "est_chars": 14,
+                }
+            ]
+        }
+
+    monkeypatch.setattr("pipeline.av_translate.generate_av_localized_translation", fake_av_translate)
+    monkeypatch.setattr(
+        "pipeline.tts.generate_full_audio",
+        lambda segments, voice_id, output_dir, variant=None, **kwargs: {
+            "full_audio_path": str(tmp_path / "tts_full.av.mp3"),
+            "segments": [
+                {
+                    "index": 0,
+                    "asr_index": 0,
+                    "translated": "Localized line",
+                    "tts_duration": 1.0,
+                    "tts_path": str(tmp_path / "seg0.mp3"),
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.runtime.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True, "answer": "yes"},
+    )
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.reconcile_duration",
+        lambda **kwargs: [
+            {
+                "asr_index": 0,
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "target_duration": 1.0,
+                "target_chars_range": (8, 12),
+                "source_text": "source line",
+                "role_in_structure": "hook",
+                "text": "Localized line",
+                "tts_duration": 1.0,
+                "tts_path": str(tmp_path / "seg0.mp3"),
+                "speed": 1.0,
+                "rewrite_rounds": 0,
+                "duration_ratio": 1.0,
+                "attempts": [{"round": 1, "status": "ok"}],
+                "status": "ok",
+            }
+        ],
+    )
+
+    import appcore.runtime as runtime
+
+    monkeypatch.setattr(
+        runtime,
+        "_rebuild_tts_full_audio_from_segments",
+        lambda task_dir, segments, variant="av": str(tmp_path / "tts_full.rebuilt.av.mp3"),
+        raising=False,
+    )
+    monkeypatch.setattr("pipeline.subtitle.build_srt_from_chunks", lambda chunks: "srt")
+
+    runtime.run_av_localize(task_id, runner=runner)
+
+    saved = task_state.get(task_id)
+    assert saved["steps"]["translate"] == "done"
+    assert captured["shot_notes"]["fallback"]["used"] is True
+    assert "openrouter timeout" in captured["shot_notes"]["fallback"]["reason"]
+
+
 def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     task_id = "test_av_localize_happy_flow"
     video_path = tmp_path / "video.mp4"

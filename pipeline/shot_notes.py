@@ -265,6 +265,20 @@ def _normalize_output(raw_output: dict, script_segments: list[dict]) -> dict:
     }
 
 
+def build_fallback_shot_notes(script_segments: list[dict], *, reason: str | None = None) -> dict:
+    notes = _normalize_output({}, script_segments)
+    notes["fallback"] = {
+        "used": True,
+        "reason": reason or "shot notes generation unavailable",
+    }
+    notes["global"]["overall_theme"] = notes["global"].get("overall_theme") or "Visual analysis unavailable"
+    notes["global"]["pacing_note"] = (
+        notes["global"].get("pacing_note")
+        or "Use the ASR sentence timeline as the primary pacing constraint."
+    )
+    return notes
+
+
 def generate_shot_notes(
     *,
     video_path: str | Path,

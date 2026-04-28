@@ -93,7 +93,7 @@ def test_shot_notes_happy_path(monkeypatch):
     assert len(result["sentences"]) == 3
     assert result["sentences"][0]["scene"] == "桌面特写"
     assert result["generated_at"]
-    assert result["model"]["provider"] == "gemini_aistudio"
+    assert result["model"]["provider"] == "openrouter"
 
 
 def test_shot_notes_fills_missing_sentences(monkeypatch):

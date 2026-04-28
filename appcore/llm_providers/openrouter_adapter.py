@@ -26,6 +26,41 @@ from config import (
     USD_TO_CNY,
 )
 
+DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 120.0
+DEFAULT_OPENROUTER_MAX_RETRIES = 1
+
+
+def _extra_float(extra: dict, key: str, default: float) -> float:
+    try:
+        value = extra.get(key)
+        if value is None or value == "":
+            return default
+        parsed = float(value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _extra_int(extra: dict, key: str, default: int) -> int:
+    try:
+        value = extra.get(key)
+        if value is None or value == "":
+            return default
+        parsed = int(value)
+        return parsed if parsed >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _openrouter_client(creds: dict) -> OpenAI:
+    extra = creds.get("extra") or {}
+    return OpenAI(
+        api_key=creds["api_key"],
+        base_url=creds["base_url"],
+        timeout=_extra_float(extra, "timeout", DEFAULT_OPENROUTER_TIMEOUT_SECONDS),
+        max_retries=_extra_int(extra, "max_retries", DEFAULT_OPENROUTER_MAX_RETRIES),
+    )
+
 
 def _normalize_media(media):
     if not media:
@@ -115,7 +150,7 @@ class OpenRouterAdapter(LLMAdapter):
              max_tokens=None, response_format=None, extra_body=None):
         media_kind = "image" if _has_media(messages) else "text"
         creds = self.resolve_credentials(user_id, media_kind=media_kind)
-        client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
+        client = _openrouter_client(creds)
         body: dict = dict(extra_body or {})
         if response_format is not None:
             body["response_format"] = response_format
