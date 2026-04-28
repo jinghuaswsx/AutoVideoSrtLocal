@@ -132,6 +132,29 @@ def test_normalize_result_covers_all_languages_and_truncates_reason():
     assert "listing_status" not in normalized
 
 
+def test_normalize_result_accepts_top_level_country_array():
+    from appcore import material_evaluation
+
+    normalized = material_evaluation.normalize_result(
+        [
+            {
+                "lang": "de",
+                "country": "德国",
+                "is_suitable": True,
+                "score": 90,
+                "risk_level": "low",
+                "decision": "适合推广",
+                "reason": "春季园艺需求明确。",
+                "suggestions": ["突出园艺场景"],
+            }
+        ],
+        [{"code": "de", "name": "德语"}],
+    )
+
+    assert normalized["countries"][0]["lang"] == "de"
+    assert normalized["ai_score"] == 90.0
+
+
 def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp_path):
     from appcore import material_evaluation
 
