@@ -380,7 +380,11 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     assert "拖拽视频到这里" in template
     assert 'id="videoPreviewWrap"' in template
     assert 'id="videoPreview"' in template
-    assert "width: 270px; height: 480px" in template
+    assert "width: 90px; height: 160px" in template
+    assert "width: 270px; height: 480px" not in template
+    assert "max-height: calc(100vh - 48px)" in template
+    assert 'class="modal-scroll-body"' in template
+    assert "overflow-y: auto" in template
 
     # 拖放 + 预览 JS
     assert "URL.createObjectURL" in template
@@ -408,6 +412,20 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     assert "_formatMMDDHHmm" in template
     # 提交时附带 display_name
     assert "formData.set('display_name'" in template
+
+
+def test_omni_translate_create_modal_uses_compact_video_preview():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "omni_translate_list.html").read_text(encoding="utf-8")
+
+    assert 'id="videoDropzone"' in template
+    assert 'id="videoPreviewWrap"' in template
+    assert 'id="videoPreview"' in template
+    assert "width: 90px; height: 160px" in template
+    assert "width: 270px; height: 480px" not in template
+    assert "max-height: calc(100vh - 48px)" in template
+    assert 'class="modal-scroll-body"' in template
+    assert "overflow-y: auto" in template
 
 
 def test_multi_translate_start_uses_user_display_name(tmp_path, authed_client_no_db, monkeypatch):

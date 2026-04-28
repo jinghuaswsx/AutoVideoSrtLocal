@@ -172,10 +172,20 @@
 }
 .modal-field select:focus, .modal-field input[type="file"]:focus, .modal-field input[type="text"]:focus { border-color: var(--primary-color); background: var(--bg-card); }
 .modal-hint { font-size: 12px; color: #9ca3af; margin: -8px 0 16px; }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; padding-top: 12px; background: var(--bg-card); }
 
 /* ── 大号弹窗 ── */
-.modal-box.modal-box-wide { width: 560px; max-width: 92vw; }
+.modal-box.modal-box-wide {
+  width: 560px; max-width: 92vw; max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-box.modal-box-wide h3 { flex-shrink: 0; }
+.modal-box.modal-box-wide form {
+  display: flex; flex-direction: column; min-height: 0; flex: 1;
+}
+.modal-scroll-body {
+  min-height: 0; overflow-y: auto; padding-right: 4px;
+}
 
 /* ── 红字粗体提示 ── */
 .modal-warning {
@@ -207,9 +217,9 @@
   background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
 }
 
-/* ── 视频拖拽区与预览（270x480） ── */
+/* ── 视频拖拽区与预览（90x160） ── */
 .video-dropzone {
-  width: 270px; height: 480px; margin: 0 auto;
+  width: 90px; height: 160px; margin: 0 auto;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; padding: 24px; text-align: center;
   border: 1.5px dashed var(--border-main); border-radius: 12px;
@@ -225,7 +235,7 @@
 .video-dropzone .dz-title { font-size: 14px; font-weight: 600; color: var(--text-main); }
 .video-dropzone .dz-hint { font-size: 12px; color: #9ca3af; }
 .video-preview-wrap {
-  width: 270px; height: 480px; margin: 0 auto; position: relative;
+  width: 90px; height: 160px; margin: 0 auto; position: relative;
   border-radius: 12px; overflow: hidden; background: #000;
 }
 .video-preview-wrap video {
@@ -242,7 +252,7 @@
 .video-preview-wrap .preview-clear:hover { background: rgba(0,0,0,0.85); }
 .video-preview-name {
   text-align: center; font-size: 12px; color: #6b7280;
-  margin: 8px auto 0; max-width: 270px; word-break: break-all;
+  margin: 8px auto 0; max-width: 90px; word-break: break-all;
 }
 {% endblock %}
 {% block content %}
@@ -365,58 +375,60 @@
   <div class="modal-box modal-box-wide">
     <h3>新建多语种翻译项目</h3>
     <form id="uploadForm" enctype="multipart/form-data">
-      <div class="modal-warning" id="langWarning">
-        <span class="warning-icon">⚠️</span>
-        <span>先选择目标语言</span>
-      </div>
-      <div class="modal-field">
-        <label>目标语言</label>
-        <div class="modal-lang-pills" id="modalLangPills" role="radiogroup" aria-label="目标语言">
-          {% for lang in supported_langs %}
-            {% set label = lang_label_map.get(lang, lang.upper()) %}
-            <button type="button" class="modal-lang-pill" data-lang="{{ lang }}" role="radio" aria-checked="false">{{ label }}</button>
-          {% endfor %}
+      <div class="modal-scroll-body">
+        <div class="modal-warning" id="langWarning">
+          <span class="warning-icon">⚠️</span>
+          <span>先选择目标语言</span>
         </div>
-        <input type="hidden" id="targetLangSelect" name="target_lang" value="">
-      </div>
-      <div class="modal-field">
-        <label>选择视频</label>
-        <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
-          <div class="dz-icon">📹</div>
-          <div class="dz-title">拖拽视频到这里</div>
-          <div class="dz-hint">或点击选择文件 · 270×480 预览</div>
+        <div class="modal-field">
+          <label>目标语言</label>
+          <div class="modal-lang-pills" id="modalLangPills" role="radiogroup" aria-label="目标语言">
+            {% for lang in supported_langs %}
+              {% set label = lang_label_map.get(lang, lang.upper()) %}
+              <button type="button" class="modal-lang-pill" data-lang="{{ lang }}" role="radio" aria-checked="false">{{ label }}</button>
+            {% endfor %}
+          </div>
+          <input type="hidden" id="targetLangSelect" name="target_lang" value="">
         </div>
-        <div id="videoPreviewWrap" class="video-preview-wrap" style="display:none">
-          <video id="videoPreview" controls preload="metadata" playsinline></video>
-          <button type="button" class="preview-clear" id="previewClear" title="移除并重新选择" aria-label="移除视频">×</button>
+        <div class="modal-field">
+          <label>选择视频</label>
+          <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
+            <div class="dz-icon">📹</div>
+            <div class="dz-title">拖拽视频到这里</div>
+            <div class="dz-hint">或点击选择文件 · 90×160 预览</div>
+          </div>
+          <div id="videoPreviewWrap" class="video-preview-wrap" style="display:none">
+            <video id="videoPreview" controls preload="metadata" playsinline></video>
+            <button type="button" class="preview-clear" id="previewClear" title="移除并重新选择" aria-label="移除视频">×</button>
+          </div>
+          <div id="videoPreviewName" class="video-preview-name" style="display:none"></div>
+          <input type="file" id="videoFile" name="video" accept="video/*" hidden />
         </div>
-        <div id="videoPreviewName" class="video-preview-name" style="display:none"></div>
-        <input type="file" id="videoFile" name="video" accept="video/*" hidden />
+        <div class="modal-field" id="projectNameField" style="display:none">
+          <label for="projectName">项目名</label>
+          <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
+          <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
+        </div>
+        <div class="modal-field" id="sourceLanguageField">
+          <label for="sourceLanguageSelect">源语言</label>
+          <select id="sourceLanguageSelect" name="source_language" required>
+            <option value="" disabled selected hidden>请选择源语言</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="pt">Português</option>
+            <option value="fr">Français</option>
+            <option value="it">Italiano</option>
+            <option value="de">Deutsch</option>
+            <option value="ja">日本語</option>
+            <option value="nl">Nederlands</option>
+            <option value="sv">Svenska</option>
+            <option value="fi">Suomi</option>
+          </select>
+          <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
+        </div>
+        <p class="modal-hint">上传后将自动识别原视频语言并标准化为英文输入</p>
       </div>
-      <div class="modal-field" id="projectNameField" style="display:none">
-        <label for="projectName">项目名</label>
-        <input type="text" id="projectName" name="display_name" maxlength="200" autocomplete="off" placeholder="留空将使用文件名前 10 字符" />
-        <div class="modal-hint" style="margin:6px 0 0;">由文件名 + 语言自动生成，可手动调整</div>
-      </div>
-      <div class="modal-field" id="sourceLanguageField">
-        <label for="sourceLanguageSelect">源语言</label>
-        <select id="sourceLanguageSelect" name="source_language" required>
-          <option value="" disabled selected hidden>请选择源语言</option>
-          <option value="zh">中文</option>
-          <option value="en">English</option>
-          <option value="es">Español</option>
-          <option value="pt">Português</option>
-          <option value="fr">Français</option>
-          <option value="it">Italiano</option>
-          <option value="de">Deutsch</option>
-          <option value="ja">日本語</option>
-          <option value="nl">Nederlands</option>
-          <option value="sv">Svenska</option>
-          <option value="fi">Suomi</option>
-        </select>
-        <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
-      </div>
-      <p class="modal-hint">上传后将自动识别原视频语言并标准化为英文输入</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeUpload()">取消</button>
         <button type="submit" class="btn btn-primary btn-sm" id="uploadBtn">上传并创建</button>
