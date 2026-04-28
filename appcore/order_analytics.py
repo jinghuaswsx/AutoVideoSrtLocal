@@ -739,8 +739,9 @@ LANG_PRIORITY_COUNTRIES: dict[str, list[str]] = {
 def _load_enabled_lang_codes() -> list[str]:
     """读取 media_languages.enabled=1 的语种 code，按 sort_order 升序。
 
-    与 appcore.medias.list_enabled_language_codes() 等价；这里独立写一份避免
-    在订单分析路径上造成循环依赖。
+    与 appcore.medias.list_enabled_language_codes() 等价；放在本模块里独立维护，
+    便于单测通过 monkeypatch.setattr(oa, "_load_enabled_lang_codes", …) 替换实现，
+    而不必污染 appcore.medias。
     """
     rows = query(
         "SELECT code FROM media_languages "
