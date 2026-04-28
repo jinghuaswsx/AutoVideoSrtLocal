@@ -39,6 +39,8 @@ AV_TARGET_MARKET_CODES = {
 
 DEFAULT_TARGET_LANGUAGE = "en"
 DEFAULT_TARGET_MARKET = "US"
+DEFAULT_SYNC_GRANULARITY = "hybrid"
+SYNC_GRANULARITY_OPTIONS = {"sentence", "hybrid"}
 
 _OVERRIDE_KEYS = (
     "product_name",
@@ -55,6 +57,7 @@ def build_default_av_translate_inputs() -> dict[str, Any]:
         "target_language": DEFAULT_TARGET_LANGUAGE,
         "target_language_name": AV_TARGET_LANGUAGE_NAME_MAP[DEFAULT_TARGET_LANGUAGE],
         "target_market": DEFAULT_TARGET_MARKET,
+        "sync_granularity": DEFAULT_SYNC_GRANULARITY,
         "product_overrides": {
             "product_name": None,
             "brand": None,
@@ -102,6 +105,9 @@ def normalize_av_translate_inputs(
         target_market = str(source.get("target_market") or "").strip().upper()
         if target_market:
             result["target_market"] = target_market
+        sync_granularity = str(source.get("sync_granularity") or "").strip().lower()
+        if sync_granularity in SYNC_GRANULARITY_OPTIONS:
+            result["sync_granularity"] = sync_granularity
         target_language_name = str(source.get("target_language_name") or "").strip()
         if target_language_name:
             result["target_language_name"] = target_language_name
