@@ -156,3 +156,94 @@ def test_normalize_dianxiaomi_order_skips_smartgearx_scope():
 
     assert rows == []
     assert skipped == 1
+
+
+def test_start_and_finish_dianxiaomi_batch_use_expected_sql(monkeypatch):
+    calls = []
+
+    class Cursor:
+        lastrowid = 42
+
+        def execute(self, sql, args):
+            calls.append(("cursor.execute", sql, args))
+
+    class CursorContext(Cursor):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class Conn:
+        def cursor(self):
+            return CursorContext()
+
+        def commit(self):
+            calls.append(("commit", "", ()))
+
+        def close(self):
+            calls.append(("close", "", ()))
+
+    monkeypatch.setattr(oa, "get_conn", lambda: Conn())
+    monkeypatch.setattr(
+        oa,
+        "execute",
+        lambda sql, args=(): calls.append(("execute", sql, args)) or 1,
+    )
+
+    batch_id = oa.start_dianxiaomi_order_import_batch("2026-01-01", "2026-01-02", ["newjoy", "omurio"], 2)
+    oa.finish_dianxiaomi_order_import_batch(batch_id, "success", {"inserted_lines": 3})
+
+    assert batch_id == 42
+    assert "INSERT INTO dianxiaomi_order_import_batches" in calls[0][1]
+    assert calls[0][2] == ("2026-01-01", "2026-01-02", "newjoy,omurio", 2)
+    assert "UPDATE dianxiaomi_order_import_batches SET status=%s" in calls[3][1]
+
+
+def test_upsert_dianxiaomi_order_lines_serializes_json(monkeypatch):
+    captured = {}
+
+    class Cursor:
+        rowcount = 1
+
+        def execute(self, sql, args):
+            captured["sql"] = sql
+            captured["args"] = args
+
+    class CursorContext(Cursor):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class Conn:
+        def cursor(self):
+            return CursorContext()
+
+        def commit(self):
+            captured["committed"] = True
+
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr(oa, "get_conn", lambda: Conn())
+
+    result = oa.upsert_dianxiaomi_order_lines(
+        42,
+        [{
+            "site_code": "newjoy",
+            "product_id": 7,
+            "product_code": "demo",
+            "shopify_product_id": "111",
+            "dxm_package_id": "9001",
+            "raw_order_json": {"id": "9001"},
+            "raw_line_json": {"productId": "111"},
+            "profit_json": {"profit": "1.23"},
+        }],
+    )
+
+    assert result == {"affected": 1, "rows": 1}
+    assert "INSERT INTO dianxiaomi_order_lines" in captured["sql"]
+    assert any('"id": "9001"' in str(arg) for arg in captured["args"])
+    assert captured["committed"] is True

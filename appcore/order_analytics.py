@@ -273,6 +273,171 @@ def normalize_dianxiaomi_order(
     return normalized, skipped
 
 
+def start_dianxiaomi_order_import_batch(
+    date_from: str,
+    date_to: str,
+    site_codes: list[str],
+    included_shopify_ids_count: int,
+) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO dianxiaomi_order_import_batches "
+                "(date_from, date_to, requested_site_codes, included_shopify_ids_count) "
+                "VALUES (%s,%s,%s,%s)",
+                (date_from, date_to, ",".join(site_codes), included_shopify_ids_count),
+            )
+            batch_id = int(cur.lastrowid)
+        conn.commit()
+        return batch_id
+    finally:
+        conn.close()
+
+
+def finish_dianxiaomi_order_import_batch(
+    batch_id: int,
+    status: str,
+    summary: dict[str, Any],
+    error_message: str | None = None,
+) -> None:
+    execute(
+        "UPDATE dianxiaomi_order_import_batches SET status=%s, finished_at=NOW(), "
+        "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), "
+        "total_pages=%s, fetched_orders=%s, fetched_lines=%s, inserted_lines=%s, "
+        "updated_lines=%s, skipped_lines=%s, error_message=%s, summary_json=%s "
+        "WHERE id=%s",
+        (
+            status,
+            int(summary.get("total_pages") or 0),
+            int(summary.get("fetched_orders") or 0),
+            int(summary.get("fetched_lines") or 0),
+            int(summary.get("inserted_lines") or 0),
+            int(summary.get("updated_lines") or 0),
+            int(summary.get("skipped_lines") or 0),
+            error_message,
+            json.dumps(summary, ensure_ascii=False, default=str),
+            batch_id,
+        ),
+    )
+
+
+def _json_dumps_for_db(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+_DIANXIAOMI_ORDER_LINE_COLUMNS = [
+    "batch_id",
+    "site_code",
+    "product_id",
+    "product_code",
+    "shopify_product_id",
+    "dxm_shop_id",
+    "dxm_shop_name",
+    "dxm_package_id",
+    "dxm_order_id",
+    "extended_order_id",
+    "package_number",
+    "platform",
+    "order_state",
+    "buyer_name",
+    "buyer_account",
+    "product_name",
+    "product_sku",
+    "product_sub_sku",
+    "product_display_sku",
+    "variant_text",
+    "quantity",
+    "unit_price",
+    "line_amount",
+    "order_amount",
+    "order_currency",
+    "ship_amount",
+    "amount_with_shipping",
+    "amount_cny",
+    "logistic_fee",
+    "profit",
+    "refund_amount_usd",
+    "refund_amount",
+    "buyer_country",
+    "buyer_country_name",
+    "province",
+    "city",
+    "order_created_at",
+    "order_paid_at",
+    "paid_at",
+    "shipped_at",
+    "raw_order_json",
+    "raw_line_json",
+    "profit_json",
+]
+
+
+def _dianxiaomi_order_line_values(batch_id: int, row: dict[str, Any]) -> tuple[Any, ...]:
+    enriched = dict(row)
+    enriched["batch_id"] = batch_id
+    enriched["raw_order_json"] = _json_dumps_for_db(row.get("raw_order_json"))
+    enriched["raw_line_json"] = _json_dumps_for_db(row.get("raw_line_json"))
+    enriched["profit_json"] = _json_dumps_for_db(row.get("profit_json"))
+    return tuple(enriched.get(column) for column in _DIANXIAOMI_ORDER_LINE_COLUMNS)
+
+
+def upsert_dianxiaomi_order_lines(batch_id: int, rows: list[dict[str, Any]]) -> dict[str, int]:
+    if not rows:
+        return {"affected": 0, "rows": 0}
+    columns_sql = ", ".join(_DIANXIAOMI_ORDER_LINE_COLUMNS)
+    placeholders = ", ".join(["%s"] * len(_DIANXIAOMI_ORDER_LINE_COLUMNS))
+    update_columns = [
+        "batch_id",
+        "site_code",
+        "product_id",
+        "product_code",
+        "quantity",
+        "unit_price",
+        "line_amount",
+        "order_amount",
+        "order_currency",
+        "ship_amount",
+        "amount_with_shipping",
+        "amount_cny",
+        "logistic_fee",
+        "profit",
+        "refund_amount_usd",
+        "refund_amount",
+        "buyer_country",
+        "buyer_country_name",
+        "province",
+        "city",
+        "order_created_at",
+        "order_paid_at",
+        "paid_at",
+        "shipped_at",
+        "raw_order_json",
+        "raw_line_json",
+        "profit_json",
+    ]
+    updates_sql = ", ".join(f"{column}=VALUES({column})" for column in update_columns)
+    sql = (
+        f"INSERT INTO dianxiaomi_order_lines ({columns_sql}) "
+        f"VALUES ({placeholders}) "
+        f"ON DUPLICATE KEY UPDATE {updates_sql}, imported_at=NOW()"
+    )
+
+    affected = 0
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            for row in rows:
+                cur.execute(sql, _dianxiaomi_order_line_values(batch_id, row))
+                affected += int(cur.rowcount or 0)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"affected": affected, "rows": len(rows)}
+
+
 # ── 解析 ───────────────────────────────────────────────
 
 def parse_shopify_file(file_stream, filename: str) -> list[dict]:
