@@ -1,6 +1,7 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
   const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0 };
+  const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const $ = (id) => document.getElementById(id);
 
   let LANGUAGES = [];
@@ -388,6 +389,119 @@
     }
   }
 
+  function aiEvaluationFailureReason(reason) {
+    const text = String(reason || '').trim();
+    return text || '服务器没有返回';
+  }
+
+  function aiEvaluationErrorMessage(err) {
+    if (!err) return '';
+    if (err.name === 'AbortError') return '';
+    const message = String(err.message || err || '').trim();
+    if (!message || message.includes('Unexpected end of JSON input')) return '';
+    return message;
+  }
+
+  function openAiEvaluationRequestModal(product) {
+    const old = document.getElementById('aiEvaluationRequestOverlay');
+    if (old) old.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'aiEvaluationRequestOverlay';
+    overlay.className = 'oc-modal-mask';
+    overlay.setAttribute('role', 'presentation');
+
+    const modal = document.createElement('div');
+    modal.className = 'oc-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'aiEvaluationRequestTitle');
+    overlay.appendChild(modal);
+
+    const titleText = product && product.name ? `AI评估 - ${product.name}` : 'AI评估';
+    modal.innerHTML = `
+      <div class="oc-modal-head">
+        <div>
+          <h3 id="aiEvaluationRequestTitle">${escapeHtml(titleText)}</h3>
+          <p class="muted" data-ai-eval-status>已请求 0 秒</p>
+        </div>
+        <button type="button" class="oc-btn text" data-ai-eval-close aria-label="关闭">${icon('x', 14)}</button>
+      </div>
+      <div class="oc-modal-body" data-ai-eval-body></div>
+      <div class="oc-modal-foot">
+        <button type="button" class="oc-btn ghost" data-ai-eval-close>关闭</button>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const modalState = {
+      overlay,
+      body: overlay.querySelector('[data-ai-eval-body]'),
+      status: overlay.querySelector('[data-ai-eval-status]'),
+      startedAt: Date.now(),
+      timer: null,
+      timeoutTimer: null,
+      done: false,
+    };
+
+    function updateElapsed() {
+      const elapsed = Math.max(0, Math.floor((Date.now() - modalState.startedAt) / 1000));
+      if (modalState.status) modalState.status.textContent = `已请求 ${elapsed} 秒`;
+    }
+    function close() {
+      if (modalState.timer) window.clearInterval(modalState.timer);
+      if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+      overlay.remove();
+    }
+
+    overlay.querySelectorAll('[data-ai-eval-close]').forEach((btn) => btn.addEventListener('click', close));
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close();
+    });
+    modalState.timer = window.setInterval(updateElapsed, 1000);
+    modalState.timeoutTimer = window.setTimeout(() => {
+      if (modalState.done) return;
+      setAiEvaluationModalFailure(modalState, '服务器没有返回');
+    }, AI_EVALUATION_TIMEOUT_MS);
+    setAiEvaluationModalLoading(modalState);
+    return modalState;
+  }
+
+  function setAiEvaluationModalLoading(modalState) {
+    if (!modalState || !modalState.body) return;
+    modalState.body.innerHTML = `
+      <div class="oc-state">
+        <div class="icon">${icon('loader', 28)}</div>
+        <p class="title">正在请求中</p>
+        <p class="desc">AI 正在评估当前产品素材，请保持弹窗打开等待结果。</p>
+      </div>`;
+  }
+
+  function setAiEvaluationModalResult(modalState, data) {
+    if (!modalState || !modalState.body) return;
+    modalState.done = true;
+    if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+    if (modalState.status) modalState.status.textContent = '评估完成';
+    const detail = data && (data.ai_evaluation_detail || data.detail || data.result || data);
+    if (window.EvalCountryTable && typeof window.EvalCountryTable.render === 'function') {
+      modalState.body.innerHTML = window.EvalCountryTable.render(detail);
+      return;
+    }
+    modalState.body.innerHTML = `<pre class="audit-detail-pre">${escapeHtml(JSON.stringify(detail || {}, null, 2))}</pre>`;
+  }
+
+  function setAiEvaluationModalFailure(modalState, reason) {
+    if (!modalState || !modalState.body) return;
+    modalState.done = true;
+    if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
+    if (modalState.status) modalState.status.textContent = '评估失败';
+    modalState.body.innerHTML = `
+      <div class="oc-state">
+        <div class="icon">${icon('alert', 28)}</div>
+        <p class="title">本次评估失败</p>
+        <p class="desc">${escapeHtml(aiEvaluationFailureReason(reason))}</p>
+      </div>`;
+  }
+
   function listingStatus(product) {
     return product && product.listing_status === '下架' ? '下架' : '上架';
   }
@@ -769,7 +883,11 @@
     grid.querySelectorAll('[data-del]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); deleteProduct(+b.dataset.del); }));
     grid.querySelectorAll('[data-ai-evaluate]').forEach(b =>
-      b.addEventListener('click', (e) => { e.stopPropagation(); triggerAiEvaluate(+b.dataset.aiEvaluate, b); }));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.aiEvaluate));
+        triggerAiEvaluate(+b.dataset.aiEvaluate, b, product || null);
+      }));
     grid.querySelectorAll('[data-ai-detail]').forEach(b =>
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1125,19 +1243,38 @@
     return 'AI评估';
   }
 
-  async function triggerAiEvaluate(pid, btn) {
+  async function triggerAiEvaluate(pid, btn, product) {
     const origHTML = btn.innerHTML;
+    const modalState = openAiEvaluationRequestModal(product || { id: pid });
+    const controller = window.AbortController ? new AbortController() : null;
     btn.disabled = true;
-    btn.innerHTML = icon('loader', 12) + '<span>触发中…</span>';
+    btn.innerHTML = icon('loader', 12) + '<span>请求中...</span>';
+    const timeout = window.setTimeout(() => {
+      if (controller) controller.abort();
+    }, AI_EVALUATION_TIMEOUT_MS);
     try {
-      const data = await fetchJSON('/medias/api/products/' + pid + '/evaluate', { method: 'POST' });
+      const data = await fetchJSON('/medias/api/products/' + pid + '/evaluate', {
+        method: 'POST',
+        signal: controller ? controller.signal : undefined,
+      });
+      let fresh = null;
+      try {
+        fresh = await fetchJSON('/medias/api/products/' + pid);
+      } catch (_) {
+        fresh = null;
+      }
+      setAiEvaluationModalResult(modalState, (fresh && fresh.product) || data.result || data);
       btn.innerHTML = icon('check', 12) + '<span>已完成</span>';
       await loadList();
       setTimeout(() => { btn.innerHTML = origHTML; btn.disabled = false; }, 1200);
     } catch (err) {
+      if (!modalState.done) {
+        setAiEvaluationModalFailure(modalState, aiEvaluationErrorMessage(err));
+      }
       btn.innerHTML = origHTML;
       btn.disabled = false;
-      alert('触发失败：' + (err.message || err));
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
