@@ -432,9 +432,62 @@
   color: var(--billing-fg);
 }
 
+.billing-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.billing-detail-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.billing-detail-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--billing-info-soft);
+  color: var(--billing-fg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.billing-detail-metric strong {
+  color: var(--billing-fg);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
 .billing-panel-note {
   color: var(--billing-fg-muted);
   font-size: 13px;
+}
+
+.billing-detail-filter-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--billing-border);
+  background: var(--billing-bg);
+}
+
+.billing-detail-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.billing-detail-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .billing-table-wrap {
@@ -989,11 +1042,74 @@
   <section class="billing-panel">
     <div class="billing-panel-head">
       <div>
-        <div class="billing-panel-title">逐条明细</div>
+        <div class="billing-panel-title-row">
+          <div class="billing-panel-title">逐条明细</div>
+          <div class="billing-detail-metrics" aria-label="逐条明细汇总">
+            <span class="billing-detail-metric">总条数 <strong>{{ '{:,}'.format(detail_summary.detail_total_calls|int) }}</strong></span>
+            <span class="billing-detail-metric">费用 <strong>¥ {{ '%.4f'|format(detail_summary.detail_total_cost_cny|float) }}</strong></span>
+            <span class="billing-detail-metric">流量包 <strong>{{ detail_summary.detail_payload_mb or '—' }}</strong></span>
+          </div>
+        </div>
         <div class="billing-panel-note">费用列按 `cost_source` 着色，失败请求也会保留账单行。</div>
       </div>
       <div class="billing-panel-note">第 {{ page }} / {{ total_pages }} 页</div>
     </div>
+    <form method="get" class="billing-detail-filter-form">
+      <input type="hidden" name="from" value="{{ filters.date_from }}">
+      <input type="hidden" name="to" value="{{ filters.date_to }}">
+      {% if admin_mode and filters.user_id is not none %}
+      <input type="hidden" name="user_id" value="{{ filters.user_id }}">
+      {% endif %}
+      <input type="hidden" name="module" value="{{ filters.module }}">
+      <input type="hidden" name="use_case" value="{{ filters.use_case }}">
+      <input type="hidden" name="provider" value="{{ filters.provider }}">
+      <input type="hidden" name="model" value="{{ filters.model }}">
+      <input type="hidden" name="q" value="{{ filters.q }}">
+      <input type="hidden" name="group_by" value="{{ group_by }}">
+      {% if filters.status is sameas true %}
+      <input type="hidden" name="status" value="success">
+      {% elif filters.status is sameas false %}
+      <input type="hidden" name="status" value="failed">
+      {% endif %}
+      <input type="hidden" name="page" value="1">
+      <div class="billing-detail-filter-grid">
+        <label class="billing-field">
+          <span>成功或失败</span>
+          <select class="billing-select" name="detail_status">
+            <option value="">全部状态</option>
+            <option value="success" {% if detail_filters.status is sameas true %}selected{% endif %}>成功</option>
+            <option value="failed" {% if detail_filters.status is sameas false %}selected{% endif %}>失败</option>
+          </select>
+        </label>
+        <label class="billing-field">
+          <span>模块</span>
+          <input class="billing-input billing-mono" type="text" name="detail_module" value="{{ detail_filters.module }}" placeholder="如 video_translate">
+        </label>
+        <label class="billing-field">
+          <span>供应商</span>
+          <select class="billing-select" name="detail_provider">
+            <option value="">全部供应商</option>
+            {% for provider in ['openrouter', 'doubao', 'gemini_vertex', 'gemini_aistudio', 'elevenlabs', 'doubao_asr'] %}
+            <option value="{{ provider }}" {% if detail_filters.provider == provider %}selected{% endif %}>{{ provider }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="billing-field">
+          <span>功能</span>
+          <input class="billing-input billing-mono" type="text" name="detail_use_case" value="{{ detail_filters.use_case }}" placeholder="如 video_translate.localize">
+        </label>
+        {% if admin_mode %}
+        <label class="billing-field">
+          <span>用户 ID</span>
+          <input class="billing-input billing-mono" type="text" name="detail_user_id" value="{{ '' if detail_filters.user_id in (none, -1) else detail_filters.user_id }}">
+        </label>
+        {% endif %}
+      </div>
+      <div class="billing-detail-filter-actions">
+        <a class="btn btn-ghost" href="{{ request.path }}?from={{ filters.date_from|urlencode }}&amp;to={{ filters.date_to|urlencode }}{% if admin_mode and filters.user_id not in (none, -1) %}&amp;user_id={{ filters.user_id }}{% endif %}&amp;module={{ filters.module|urlencode }}&amp;use_case={{ filters.use_case|urlencode }}&amp;provider={{ filters.provider|urlencode }}&amp;model={{ filters.model|urlencode }}{% if filters.status is sameas true %}&amp;status=success{% elif filters.status is sameas false %}&amp;status=failed{% endif %}&amp;q={{ filters.q|urlencode }}&amp;group_by={{ group_by|urlencode }}">重置明细筛选</a>
+        <button type="submit" class="btn btn-primary">筛选明细</button>
+      </div>
+    </form>
     <div class="billing-table-wrap">
       <table class="billing-table">
         <thead>
@@ -1009,7 +1125,9 @@
             <th>费用</th>
             <th>状态</th>
             <th>项目 ID</th>
+            <th>请求包大小</th>
             <th>请求数据</th>
+            <th>返回包大小</th>
             <th>返回数据</th>
           </tr>
         </thead>
@@ -1057,12 +1175,14 @@
               </span>
             </td>
             <td class="billing-mono">{{ row.project_id or '—' }}</td>
+            <td class="billing-mono">{{ row.request_payload_mb or '—' }}</td>
             <td>
               <button class="billing-payload-btn"
                 data-log-id="{{ row.id }}"
                 data-payload-type="request"
                 data-admin="{{ 'true' if admin_mode else 'false' }}">JSON 预览</button>
             </td>
+            <td class="billing-mono">{{ row.response_payload_mb or '—' }}</td>
             <td>
               <button class="billing-payload-btn"
                 data-log-id="{{ row.id }}"
@@ -1071,7 +1191,7 @@
             </td>
           </tr>
           <tr id="{{ detail_id }}" class="billing-detail-row" hidden>
-            <td colspan="{% if admin_mode %}13{% else %}12{% endif %}">
+            <td colspan="{% if admin_mode %}15{% else %}14{% endif %}">
               <div class="billing-detail">
                 <div class="billing-detail-grid">
                   <div class="billing-detail-card">
@@ -1094,7 +1214,7 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
           {% endfor %}
           {% if not rows %}
           <tr>
-            <td colspan="{% if admin_mode %}13{% else %}12{% endif %}" class="billing-empty">
+            <td colspan="{% if admin_mode %}15{% else %}14{% endif %}" class="billing-empty">
               当前筛选条件下没有账单记录。
             </td>
           </tr>
@@ -1135,12 +1255,23 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
     <input type="hidden" name="use_case" value="{{ filters.use_case }}">
     <input type="hidden" name="provider" value="{{ filters.provider }}">
     <input type="hidden" name="model" value="{{ filters.model }}">
+    <input type="hidden" name="detail_module" value="{{ detail_filters.module }}">
+    <input type="hidden" name="detail_use_case" value="{{ detail_filters.use_case }}">
+    <input type="hidden" name="detail_provider" value="{{ detail_filters.provider }}">
+    {% if admin_mode and detail_filters.user_id is not none %}
+    <input type="hidden" name="detail_user_id" value="{{ detail_filters.user_id }}">
+    {% endif %}
     <input type="hidden" name="q" value="{{ filters.q }}">
     <input type="hidden" name="group_by" value="{{ group_by }}">
     {% if filters.status is sameas true %}
     <input type="hidden" name="status" value="success">
     {% elif filters.status is sameas false %}
     <input type="hidden" name="status" value="failed">
+    {% endif %}
+    {% if detail_filters.status is sameas true %}
+    <input type="hidden" name="detail_status" value="success">
+    {% elif detail_filters.status is sameas false %}
+    <input type="hidden" name="detail_status" value="failed">
     {% endif %}
     <div class="billing-pagination-note">分页和筛选共享同一组 URL 参数，方便直接复制链接排查。</div>
     <div class="billing-page-actions">

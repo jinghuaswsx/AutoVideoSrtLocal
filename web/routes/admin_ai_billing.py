@@ -121,6 +121,8 @@ def _render(admin: bool):
         groups=report["groups"],
         rows=report["rows"],
         filters=report["filters"],
+        detail_filters=report["detail_filters"],
+        detail_summary=report["detail_summary"],
         group_by=report["group_by"],
         page=report["page"],
         page_size=PAGE_SIZE,
@@ -132,7 +134,13 @@ def _render(admin: bool):
 
 def _query_report(*, admin: bool, paged: bool) -> dict:
     filters = _parse_filters(admin=admin)
+    detail_filters = _parse_detail_filters(admin=admin)
     where_sql, where_args = _build_where_clause(filters=filters, admin=admin)
+    detail_where_sql, detail_where_args = _build_detail_where_clause(
+        filters=filters,
+        detail_filters=detail_filters,
+        admin=admin,
+    )
     group_field, group_alias = GROUP_BY_FIELDS[filters["group_by"]]
 
     summary_sql = f"""
@@ -167,6 +175,32 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
     """
     groups = query(groups_sql, tuple(where_args))
 
+    detail_summary_sql = f"""
+        SELECT
+            COUNT(*) AS detail_total_calls,
+            COALESCE(SUM(ul.cost_cny), 0) AS detail_total_cost_cny,
+            COALESCE(SUM(
+                COALESCE(OCTET_LENGTH(CAST(p.request_data AS CHAR)), 0)
+                + COALESCE(OCTET_LENGTH(CAST(p.response_data AS CHAR)), 0)
+            ), 0) AS detail_payload_bytes,
+            COALESCE(SUM(CASE
+                WHEN p.request_data IS NOT NULL OR p.response_data IS NOT NULL THEN 1
+                ELSE 0
+            END), 0) AS payload_recorded_calls
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        LEFT JOIN usage_log_payloads p ON p.log_id = ul.id
+        {detail_where_sql}
+    """
+    detail_summary_rows = query(detail_summary_sql, tuple(detail_where_args))
+    detail_summary = detail_summary_rows[0] if detail_summary_rows else {
+        "detail_total_calls": 0,
+        "detail_total_cost_cny": Decimal("0"),
+        "detail_payload_bytes": 0,
+        "payload_recorded_calls": 0,
+    }
+    detail_summary["detail_payload_mb"] = _format_mb(detail_summary.get("detail_payload_bytes"))
+
     rows_sql = f"""
         SELECT
             ul.id,
@@ -187,27 +221,35 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
             ul.units_type,
             ul.cost_cny,
             ul.cost_source,
-            ul.extra_data
+            ul.extra_data,
+            OCTET_LENGTH(CAST(p.request_data AS CHAR)) AS request_payload_bytes,
+            OCTET_LENGTH(CAST(p.response_data AS CHAR)) AS response_payload_bytes
         FROM usage_logs ul
         LEFT JOIN users u ON u.id = ul.user_id
-        {where_sql}
+        LEFT JOIN usage_log_payloads p ON p.log_id = ul.id
+        {detail_where_sql}
         ORDER BY ul.called_at DESC, ul.id DESC
     """
-    row_args = list(where_args)
+    row_args = list(detail_where_args)
     if paged:
         offset = (filters["page"] - 1) * PAGE_SIZE
         rows_sql += " LIMIT %s OFFSET %s"
         row_args.extend([PAGE_SIZE, offset])
     rows = query(rows_sql, tuple(row_args))
+    for row in rows:
+        row["request_payload_mb"] = _format_mb(row.get("request_payload_bytes"))
+        row["response_payload_mb"] = _format_mb(row.get("response_payload_bytes"))
 
-    total_calls = int(summary.get("total_calls") or 0)
+    total_calls = int(detail_summary.get("detail_total_calls") or 0)
     total_pages = max(1, math.ceil(total_calls / PAGE_SIZE)) if paged else 1
 
     return {
         "summary": summary,
+        "detail_summary": detail_summary,
         "groups": groups,
         "rows": rows,
         "filters": filters,
+        "detail_filters": detail_filters,
         "group_by": filters["group_by"],
         "page": filters["page"],
         "total_pages": total_pages,
@@ -234,6 +276,16 @@ def _parse_filters(*, admin: bool) -> dict:
         "q": (request.args.get("q") or "").strip(),
         "group_by": group_by,
         "page": _parse_page(request.args.get("page")),
+    }
+
+
+def _parse_detail_filters(*, admin: bool) -> dict:
+    return {
+        "user_id": _parse_user_id(request.args.get("detail_user_id")) if admin else current_user.id,
+        "module": (request.args.get("detail_module") or "").strip(),
+        "use_case": (request.args.get("detail_use_case") or "").strip(),
+        "provider": (request.args.get("detail_provider") or "").strip(),
+        "status": _parse_status(request.args.get("detail_status")),
     }
 
 
@@ -266,6 +318,39 @@ def _parse_status(raw: str | None) -> bool | None:
 
 
 def _build_where_clause(*, filters: dict, admin: bool) -> tuple[str, list]:
+    clauses, args = _build_clause_parts(filters=filters, admin=admin)
+    if not clauses:
+        return "", args
+    return "WHERE " + " AND ".join(clauses), args
+
+
+def _build_detail_where_clause(*, filters: dict, detail_filters: dict, admin: bool) -> tuple[str, list]:
+    clauses, args = _build_clause_parts(filters=filters, admin=admin)
+
+    if admin:
+        if detail_filters["user_id"] is not None:
+            clauses.append("ul.user_id = %s")
+            args.append(detail_filters["user_id"])
+
+    if detail_filters["module"]:
+        clauses.append("ul.module = %s")
+        args.append(detail_filters["module"])
+    if detail_filters["use_case"]:
+        clauses.append("ul.use_case_code = %s")
+        args.append(detail_filters["use_case"])
+    if detail_filters["provider"]:
+        clauses.append("ul.provider = %s")
+        args.append(detail_filters["provider"])
+    if detail_filters["status"] is not None:
+        clauses.append("ul.success = %s")
+        args.append(1 if detail_filters["status"] else 0)
+
+    if not clauses:
+        return "", args
+    return "WHERE " + " AND ".join(clauses), args
+
+
+def _build_clause_parts(*, filters: dict, admin: bool) -> tuple[list[str], list]:
     clauses: list[str] = []
     args: list = []
 
@@ -302,9 +387,19 @@ def _build_where_clause(*, filters: dict, admin: bool) -> tuple[str, list]:
         clauses.append("ul.project_id LIKE %s")
         args.append(f"%{filters['q']}%")
 
-    if not clauses:
-        return "", args
-    return "WHERE " + " AND ".join(clauses), args
+    return clauses, args
+
+
+def _format_mb(raw_bytes) -> str | None:
+    if raw_bytes is None:
+        return None
+    try:
+        size = int(raw_bytes)
+    except (TypeError, ValueError):
+        return None
+    if size <= 0:
+        return None
+    return f"{size / 1024 / 1024:.2f} MB"
 
 
 def _stream_csv(rows: list[dict]):
