@@ -17,6 +17,26 @@ logger = logging.getLogger(__name__)
 USE_CASE_CODE = "material_evaluation.evaluate"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
+_VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _has_suffix(value: Any, suffixes: set[str]) -> bool:
+    suffix = Path(str(value or "").strip().split("?", 1)[0]).suffix.lower()
+    return suffix in suffixes
+
+
+def _looks_like_video_item(item: dict | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return (
+        _has_suffix(item.get("object_key"), _VIDEO_SUFFIXES)
+        or _has_suffix(item.get("filename"), _VIDEO_SUFFIXES)
+    )
+
+
+def _looks_like_image_key(object_key: str) -> bool:
+    return _has_suffix(object_key, _IMAGE_SUFFIXES)
 
 
 def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:
@@ -235,6 +255,14 @@ def find_ready_product_ids(limit: int = 5) -> list[int]:
             " AND EXISTS ("
             "   SELECT 1 FROM media_items i "
             "   WHERE i.product_id=p.id AND i.lang='en' AND i.deleted_at IS NULL"
+            "     AND ("
+            "       LOWER(i.object_key) LIKE '%.mp4'"
+            "       OR LOWER(i.object_key) LIKE '%.mov'"
+            "       OR LOWER(i.object_key) LIKE '%.m4v'"
+            "       OR LOWER(i.object_key) LIKE '%.webm'"
+            "       OR LOWER(i.object_key) LIKE '%.avi'"
+            "       OR LOWER(i.object_key) LIKE '%.mkv'"
+            "     )"
             " ) "
             "ORDER BY p.updated_at ASC, p.id ASC LIMIT %s",
             (int(limit),),
@@ -285,6 +313,8 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False) -> dict:
 
     cover_key = _resolve_product_cover_key(product_id, product)
     if not cover_key:
+        return {"status": "missing_cover", "product_id": product_id}
+    if not _looks_like_image_key(cover_key):
         return {"status": "missing_cover", "product_id": product_id}
 
     video = _first_english_video(product_id)
@@ -353,7 +383,7 @@ def _resolve_product_cover_key(product_id: int, product: dict) -> str:
 def _first_english_video(product_id: int) -> dict | None:
     for item in medias.list_items(product_id, "en"):
         object_key = str(item.get("object_key") or "").strip()
-        if object_key:
+        if object_key and _looks_like_video_item(item):
             return {**item, "object_key": object_key}
     return None
 
