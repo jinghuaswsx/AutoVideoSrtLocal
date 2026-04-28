@@ -413,7 +413,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "speed": 1.0,
             "rewrite_rounds": 0,
             "duration_ratio": 1.0,
-            "attempts": 1,
+            "attempts": [{"round": 1, "status": "ok"}],
             "status": "ok",
         },
         {
@@ -428,7 +428,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "speed": 1.02,
             "rewrite_rounds": 0,
             "duration_ratio": 0.92,
-            "attempts": 2,
+            "attempts": [{"round": 1, "status": "ok"}, {"round": 2, "status": "speed_adjusted"}],
             "status": "speed_adjusted",
         },
     ]
@@ -485,8 +485,19 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     av_state = saved["variants"]["av"]
     assert av_state["av_debug"]["model"] == "openai/gpt-5.5"
     assert av_state["av_debug"]["summary"]["total_sentences"] == len(av_state["sentences"])
+    assert av_state["av_debug"]["summary"]["ok_sentences"] == 2
+    assert av_state["av_debug"]["summary"]["warning_sentences"] == 0
+    step_codes = [step["code"] for step in av_state["av_debug"]["steps"]]
+    assert step_codes == [
+        "sentence_localize",
+        "tts_first_pass",
+        "duration_converge",
+        "rebuild_outputs",
+    ]
     assert "duration_ratio" in av_state["sentences"][0]
     assert "attempts" in av_state["sentences"][0]
+    assert isinstance(av_state["sentences"][0]["attempts"], list)
+    assert av_state["sentences"][0]["attempts"] == [{"round": 1, "status": "ok"}]
 
 
 def test_step_translate_dispatches_av_pipeline_version(tmp_path, monkeypatch):
