@@ -99,7 +99,7 @@ def test_run_import_dry_run_uses_fetchers_and_does_not_write(monkeypatch):
     assert written == []
 
 
-def test_run_import_scans_shipped_state_once_for_date_range(monkeypatch):
+def test_run_import_scans_shipped_state_per_day(monkeypatch):
     mod = _load_module()
     calls = []
     scope = mod.oa.DianxiaomiProductScope(
@@ -145,8 +145,8 @@ def test_run_import_scans_shipped_state_once_for_date_range(monkeypatch):
         dry_run=True,
     )
 
-    assert calls == [(date(2026, 4, 28), 1, "shipped")]
-    assert report["summary"]["fetched_orders"] == 1
+    assert calls == [(date(2026, 4, 27), 1, "shipped"), (date(2026, 4, 28), 1, "shipped")]
+    assert report["summary"]["fetched_orders"] == 2
 
 
 def test_order_in_date_range_rejects_missing_reference_date_for_range_scan():

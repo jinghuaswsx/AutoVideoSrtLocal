@@ -228,33 +228,9 @@ def run_import(
             len(scope.by_shopify_id),
         )
     try:
-        single_scan_states = {"shipped"}
         for state in states:
-            if state in single_scan_states:
-                first_payload = fetch_orders(end_date, 1, state)
-                first_page = extract_order_page(first_payload)
-                total_page = max(first_page.total_page, 1 if first_page.orders else 0)
-                for page_no in range(1, total_page + 1):
-                    page = first_page if page_no == 1 else extract_order_page(fetch_orders(end_date, page_no, state))
-                    summary["total_pages"] += 1
-                    orders = [
-                        order for order in page.orders
-                        if _order_in_date_range(order, state, start_date, end_date)
-                    ]
-                    summary["fetched_orders"] += len(orders)
-                    page_rows = _normalize_page_orders(
-                        orders=orders,
-                        scope=scope,
-                        fetch_profits=fetch_profits,
-                        summary=summary,
-                    )
-                    if page_rows and not dry_run:
-                        result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
-                        summary["inserted_lines"] += int(result.get("rows") or 0)
-                        summary["updated_lines"] += max(0, int(result.get("affected") or 0) - int(result.get("rows") or 0))
-                continue
-
             for day in iter_dates(start_date, end_date):
+                print(f"[dianxiaomi-order-import] state={state} day={day.isoformat()}", flush=True)
                 first_payload = fetch_orders(day, 1, state)
                 first_page = extract_order_page(first_payload)
                 total_page = max(first_page.total_page, 1 if first_page.orders else 0)
