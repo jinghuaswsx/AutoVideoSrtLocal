@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pipeline import av_translate, tts
@@ -105,6 +106,12 @@ def _apply_candidate(current: dict, candidate: dict) -> None:
     current["selected_attempt_round"] = int(candidate.get("round", 0) or 0)
 
 
+def _candidate_suffix(kind: str, round_number: int, attempt_number: int | None = None) -> str:
+    if attempt_number is None:
+        return f"{kind}_r{round_number}"
+    return f"{kind}_r{round_number}_a{attempt_number}"
+
+
 def _mark_selected_attempt(attempts: list[dict], selected_round: int) -> None:
     for attempt in attempts:
         attempt["selected"] = int(attempt.get("round", -1)) == selected_round
@@ -124,8 +131,12 @@ def _regenerate_segment(
     voice_id: str,
     target_language: str,
     speed: float | None = None,
+    suffix: str | None = None,
 ) -> tuple[str, float]:
     output_path = sentence.get("tts_path") or f"av_seg_{sentence['asr_index']}.mp3"
+    if suffix:
+        base, ext = os.path.splitext(output_path)
+        output_path = f"{base}.{suffix}{ext or '.mp3'}"
     tts.generate_segment_audio(
         text=sentence["text"],
         voice_id=voice_id,
@@ -134,6 +145,51 @@ def _regenerate_segment(
         speed=speed,
     )
     return output_path, tts.get_audio_duration(output_path)
+
+
+def _try_speed_adjustment(*, current: dict, voice_id: str, target_language: str) -> None:
+    speed_for_target = compute_speed_for_target(current["target_duration"], current["tts_duration"])
+    if speed_for_target is None or speed_for_target == 1.0:
+        return
+
+    current["speed_adjustment_attempts"] += 1
+    before_candidate = _candidate_from_current(
+        current,
+        round_number=int(current.get("selected_attempt_round", 0) or 0),
+    )
+    before_distance = _duration_distance(current["target_duration"], current["tts_duration"])
+    adjusted_path, adjusted_duration = _regenerate_segment(
+        sentence=current,
+        voice_id=voice_id,
+        target_language=target_language,
+        speed=speed_for_target,
+        suffix=_candidate_suffix(
+            "speed",
+            int(current.get("selected_attempt_round", 0) or 0),
+            current["speed_adjustment_attempts"],
+        ),
+    )
+    adjusted_status, _speed = classify_overshoot(current["target_duration"], adjusted_duration)
+    adjusted_distance = _duration_distance(current["target_duration"], adjusted_duration)
+    if adjusted_status == "ok" and adjusted_distance <= before_distance:
+        current["tts_path"] = adjusted_path
+        current["tts_duration"] = adjusted_duration
+        current["speed"] = speed_for_target
+        current["status"] = "speed_adjusted"
+        current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+        return
+
+    _apply_candidate(current, before_candidate)
+    current["speed_adjustment_failed"] = True
+    current["speed_adjustment_failure"] = {
+        "speed": speed_for_target,
+        "tts_path": adjusted_path,
+        "tts_duration": adjusted_duration,
+        "duration_ratio": round(duration_ratio(current["target_duration"], adjusted_duration), 4),
+        "delta_pct": _delta_pct(current["target_duration"], adjusted_duration),
+        "status": adjusted_status,
+        "reason": "speed_adjustment_not_closer",
+    }
 
 
 def reconcile_duration(
@@ -191,18 +247,7 @@ def reconcile_duration(
         current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
 
         if status == "ok":
-            speed_for_target = compute_speed_for_target(current["target_duration"], current["tts_duration"])
-            if speed_for_target is not None and speed_for_target != 1.0:
-                current["speed_adjustment_attempts"] += 1
-                current["tts_path"], current["tts_duration"] = _regenerate_segment(
-                    sentence=current,
-                    voice_id=voice_id,
-                    target_language=target_language,
-                    speed=speed_for_target,
-                )
-                current["speed"] = speed_for_target
-                current["status"] = "speed_adjusted"
-                current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+            _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
         elif status in {"needs_rewrite", "needs_expand"}:
             current_duration = current["tts_duration"]
             action = "shorten" if status == "needs_rewrite" else "expand"
@@ -264,6 +309,7 @@ def reconcile_duration(
                     sentence=current,
                     voice_id=voice_id,
                     target_language=target_language,
+                    suffix=_candidate_suffix("rewrite", rewrite_round),
                 )
                 current["tts_regenerate_attempts"] += 1
                 current["tts_duration"] = current_duration
@@ -298,20 +344,7 @@ def reconcile_duration(
                 if status == "ok":
                     current["selected_attempt_round"] = rewrite_round
                     _mark_selected_attempt(current["attempts"], rewrite_round)
-                    speed_for_target = compute_speed_for_target(current["target_duration"], current_duration)
-                    if speed_for_target is not None and speed_for_target != 1.0:
-                        current["speed_adjustment_attempts"] += 1
-                        current["tts_path"], current["tts_duration"] = _regenerate_segment(
-                            sentence=current,
-                            voice_id=voice_id,
-                            target_language=target_language,
-                            speed=speed_for_target,
-                        )
-                        current["speed"] = speed_for_target
-                        current["status"] = "speed_adjusted"
-                        current["duration_ratio"] = duration_ratio(
-                            current["target_duration"], current["tts_duration"]
-                        )
+                    _try_speed_adjustment(current=current, voice_id=voice_id, target_language=target_language)
                     break
 
             if current["status"] in {"needs_rewrite", "needs_expand"}:

@@ -70,6 +70,60 @@ def test_reconcile_duration_speed_adjustment_does_not_consume_audio_retry(monkey
     assert regenerate_calls == [{"text": "Already close enough", "speed": pytest.approx(1.04)}]
 
 
+def test_reconcile_duration_reverts_when_speed_adjustment_is_worse(monkeypatch):
+    durations = iter([5.6])
+    regenerate_calls = []
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "path": output_path, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (50, 60),
+                    "text": "Already close enough",
+                    "est_chars": 20,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 5.2}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "ok"
+    assert sentence["tts_path"] == "/tmp/seg0.mp3"
+    assert sentence["tts_duration"] == pytest.approx(5.2)
+    assert sentence["duration_ratio"] == pytest.approx(1.04)
+    assert sentence["speed"] == pytest.approx(1.0)
+    assert sentence["speed_adjustment_attempts"] == 1
+    assert sentence["speed_adjustment_failed"] is True
+    assert sentence["speed_adjustment_failure"] | {
+        "speed": pytest.approx(1.04),
+        "tts_duration": 5.6,
+        "duration_ratio": 1.12,
+        "status": "needs_rewrite",
+        "reason": "speed_adjustment_not_closer",
+    } == sentence["speed_adjustment_failure"]
+    assert regenerate_calls == [
+        {"text": "Already close enough", "path": "/tmp/seg0.speed_r0_a1.mp3", "speed": pytest.approx(1.04)}
+    ]
+
+
 def test_reconcile_duration_runs_ten_attempts_and_keeps_closest_candidate(monkeypatch):
     durations = iter([6.0, 5.9, 5.7, 5.5, 5.4, 5.35, 5.31, 5.28, 5.26, 5.251])
     rewrite_calls = []
