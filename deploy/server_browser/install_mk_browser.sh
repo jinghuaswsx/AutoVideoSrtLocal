@@ -9,6 +9,8 @@ ENV_FILE="/etc/default/${SERVICE_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 PROBE_RETRIES="${PROBE_RETRIES:-20}"
 PROBE_SLEEP_SECONDS="${PROBE_SLEEP_SECONDS:-2}"
+DESKTOP_USER="${DESKTOP_USER:-cjh}"
+DESKTOP_GROUP="${DESKTOP_GROUP:-cjh}"
 
 if [[ ! -d "$APP_DIR" ]]; then
   echo "APP_DIR does not exist: $APP_DIR" >&2
@@ -20,11 +22,6 @@ cd "$APP_DIR"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y \
-  xvfb \
-  x11vnc \
-  novnc \
-  websockify \
-  openbox \
   dbus-x11 \
   fonts-noto-cjk \
   fonts-liberation
@@ -33,29 +30,24 @@ source "$VENV_DIR/bin/activate"
 python -m pip install -r requirements-browser.txt -i https://pypi.org/simple/
 PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" python -m playwright install chromium
 
-install -d -m 755 /data/autovideosrt/browser/profiles/mk-selection
-install -d -m 755 /data/autovideosrt/browser/runtime-mk-selection
-install -d -m 755 /data/autovideosrt/browser/logs/mk-selection
+install -d -m 755 -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" /data/autovideosrt/browser/profiles/mk-selection
+install -d -m 755 -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" /data/autovideosrt/browser/runtime-mk-selection
+install -d -m 755 -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" /data/autovideosrt/browser/logs/mk-selection
 install -d -m 755 "$PLAYWRIGHT_BROWSERS_PATH"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  cat >"$ENV_FILE" <<'EOF'
-BROWSER_DISPLAY=:21
-BROWSER_SCREEN_SIZE=1600x1000x24
+chown -R "$DESKTOP_USER:$DESKTOP_GROUP" /data/autovideosrt/browser/profiles/mk-selection
+chown -R "$DESKTOP_USER:$DESKTOP_GROUP" /data/autovideosrt/browser/runtime-mk-selection
+chown -R "$DESKTOP_USER:$DESKTOP_GROUP" /data/autovideosrt/browser/logs/mk-selection
+
+cat >"$ENV_FILE" <<'EOF'
 BROWSER_PROFILE_DIR=/data/autovideosrt/browser/profiles/mk-selection
 BROWSER_RUNTIME_DIR=/data/autovideosrt/browser/runtime-mk-selection
 BROWSER_LOG_DIR=/data/autovideosrt/browser/logs/mk-selection
-BROWSER_XDG_RUNTIME_DIR=/tmp/autovideosrt-mk-browser-xdg
 BROWSER_START_URL=https://www.dianxiaomi.com/web/stat/salesStatistics
 BROWSER_CDP_HOST=127.0.0.1
 BROWSER_CDP_PORT=9223
-BROWSER_VNC_HOST=127.0.0.1
-BROWSER_VNC_PORT=5902
-BROWSER_NOVNC_HOST=127.0.0.1
-BROWSER_NOVNC_PORT=6081
 BROWSER_WINDOW_SIZE=1440,900
 EOF
-fi
 
 install -m 644 "deploy/server_browser/autovideosrt-mk-browser.service" "$SERVICE_FILE"
 chmod 755 "deploy/server_browser/run_server_browser.sh"
@@ -97,12 +89,6 @@ probe_until_ready \
   "curl -fsS http://127.0.0.1:9223/json/version"
 echo
 
-echo "[mk-browser] noVNC probe"
-probe_until_ready \
-  "novnc" \
-  "http://127.0.0.1:6081/vnc.html" \
-  "curl -I -fsS http://127.0.0.1:6081/vnc.html | sed -n '1,10p'"
-echo
-
 echo "[mk-browser] install done"
-echo "Use SSH tunnel for noVNC: ssh -L 6081:127.0.0.1:6081 -L 9223:127.0.0.1:9223 root@$(hostname -I | awk '{print $1}')"
+echo "View Chromium via Sunlogin (cjh desktop). CDP tunnel only:"
+echo "  ssh -L 9223:127.0.0.1:9223 root@$(hostname -I | awk '{print $1}')"

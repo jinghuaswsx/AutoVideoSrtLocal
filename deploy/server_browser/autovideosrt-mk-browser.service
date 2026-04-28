@@ -1,16 +1,21 @@
 [Unit]
 Description=AutoVideoSrt MK Selection Isolated Browser Runtime
-After=network.target
+After=graphical.target network-online.target
+Wants=graphical.target network-online.target
 
 [Service]
 Type=simple
-User=root
+User=cjh
+Group=cjh
 WorkingDirectory=/opt/autovideosrt
 Environment="PATH=/opt/autovideosrt/venv/bin:/usr/bin:/usr/local/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="APP_DIR=/opt/autovideosrt"
 Environment="VENV_DIR=/opt/autovideosrt/venv"
 Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/autovideosrt/.playwright-browsers"
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/run/user/1000/gdm/Xauthority"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
 EnvironmentFile=-/etc/default/autovideosrt-mk-browser
 ExecStart=/opt/autovideosrt/deploy/server_browser/run_server_browser.sh
 Restart=always
@@ -18,4 +23,4 @@ RestartSec=5
 TimeoutStopSec=30
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

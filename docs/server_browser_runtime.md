@@ -11,24 +11,17 @@
 
 ## 组成
 
-- `Xvfb`：虚拟显示器
-- `openbox`：轻量窗口管理器
-- `x11vnc`：把虚拟桌面暴露为本地 VNC
-- `websockify + noVNC`：把 VNC 转成浏览器可访问页面
-- `Chromium (Playwright Chromium)`：共享浏览器
+- KDE Plasma X11 真桌面（GDM3 自动登录 cjh，由 Codex 维护）
+- `Chromium`（Playwright Chromium）：跑在真桌面 `:0` 上，由 systemd 管理
 - `CDP`：给自动化模块连接浏览器
+- 向日葵远程桌面：用户介入入口（看页面、关弹窗、补登录）
 
 ## 端口
 
 全部只监听服务器本机：
 
-- `127.0.0.1:6080`：noVNC
-- `127.0.0.1:9222`：Chrome DevTools Protocol
-
-明空选品独立浏览器使用另一组端口，避免和 Shopify ID 店小秘会话混用：
-
-- `127.0.0.1:6081`：明空选品 noVNC
-- `127.0.0.1:9223`：明空选品 Chrome DevTools Protocol
+- `127.0.0.1:9222`：Shopify ID 同步使用的店小秘 Chromium CDP
+- `127.0.0.1:9223`：明空选品店小秘 Chromium CDP
 
 外部访问通过 SSH 隧道完成，不直接暴露公网。
 
@@ -36,13 +29,13 @@
 
 统一使用一个共享浏览器 profile：
 
-- `/data/autovideosrt/browser/profiles/shared`
+- `/data/autovideosrt/browser/profiles/shared`（owner：cjh）
 
 后续不同模块只要复用这一个 profile，即可共用已经登录好的站点状态。
 
 如果某个模块必须隔离账号、Cookie 或店铺上下文，应使用独立 profile。明空选品当前使用：
 
-- `/data/autovideosrt/browser/profiles/mk-selection`
+- `/data/autovideosrt/browser/profiles/mk-selection`（owner：cjh）
 
 ## 安装
 
@@ -51,67 +44,47 @@
 ```bash
 cd /opt/autovideosrt
 bash deploy/server_browser/install_server_browser.sh
+bash deploy/server_browser/install_mk_browser.sh
 ```
 
-## 本地访问
+两个脚本会：
 
-Windows 本机可以执行：
+- 装 `dbus-x11 fonts-noto-cjk fonts-liberation`（不再装 Xvfb / x11vnc / noVNC / openbox）
+- 装 Playwright Chromium
+- 把 profile / runtime / logs 目录 chown 给 cjh
+- 写入 systemd unit + env file
+- 启动 service 并 probe CDP 端口
+
+## 远程查看浏览器
+
+不再使用 noVNC。直接通过向日葵远程桌面连接 cjh 桌面，即可看到两个 Chromium 窗口（店小秘列表页 + 明空选品页）。
+
+需要纯 CDP 访问的本地脚本：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_server_browser_tunnel.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser_tunnel.ps1
 ```
 
-然后在本地浏览器打开：
-
-```text
-http://127.0.0.1:6080/vnc.html
-```
+两个脚本都只转发 CDP 端口（9222 / 9223），不再转发 noVNC。
 
 ## 服务名
 
-- `autovideosrt-browser.service`
+- `autovideosrt-browser.service`：店小秘 Shopify ID 同步使用的共享浏览器
 - `autovideosrt-mk-browser.service`：明空选品独立浏览器
+
+两者都是 `User=cjh`，`After=graphical.target`，依赖 cjh 真桌面登录后才启动。
 
 ## 复用方式
 
 后续任何自动化脚本，只要连接：
 
 ```text
-http://127.0.0.1:9222
+http://127.0.0.1:9222    # 店小秘共享 profile
+http://127.0.0.1:9223    # 明空选品 profile
 ```
 
-并使用共享 profile 浏览器上下文，就可以复用同一套登录态。
-
-## 明空选品独立浏览器
-
-明空选品的店小秘环境和 Shopify ID 回填使用的店小秘环境不同，因此单独运行一个隔离浏览器实例：
-
-```bash
-cd /opt/autovideosrt
-bash deploy/server_browser/install_mk_browser.sh
-```
-
-安装后会创建：
-
-- systemd service：`autovideosrt-mk-browser.service`
-- noVNC：`http://127.0.0.1:6081/vnc.html`
-- CDP：`http://127.0.0.1:9223/json/version`
-- profile：`/data/autovideosrt/browser/profiles/mk-selection`
-- 启动页：`https://www.dianxiaomi.com/web/stat/salesStatistics`
-
-Windows 本机访问明空选品浏览器：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser_tunnel.ps1
-```
-
-然后打开：
-
-```text
-http://127.0.0.1:6081/vnc.html
-```
-
-后续明空选品相关的店小秘自动化脚本，应连接 `http://127.0.0.1:9223`，不要连接 Shopify ID 回填使用的 `9222`。
+并使用对应 profile 浏览器上下文，就可以复用同一套登录态。
 
 ## Shopify ID 回填定时任务
 
