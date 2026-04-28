@@ -857,6 +857,10 @@ def generate_image(
         "prompt": prompt,
         "source_mime": source_mime,
         "source_image_bytes": len(source_image),
+        "estimated_base64_payload_bytes": ((len(source_image) + 2) // 3) * 4,
+        "network_route_intent": (
+            "direct_preferred" if channel == "doubao" else "proxy_required"
+        ),
     }
 
     try:
