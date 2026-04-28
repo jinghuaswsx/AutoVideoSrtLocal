@@ -166,6 +166,229 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert detail["countries"][0]["lang"] == "de"
 
 
+def test_auto_evaluation_skips_after_one_logged_attempt(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    invoked = []
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 1)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: invoked.append((args, kwargs)),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result == {
+        "status": "auto_attempt_limit_reached",
+        "product_id": 7,
+        "attempts": 1,
+    }
+    assert invoked == []
+
+
+def test_manual_evaluation_bypasses_auto_attempt_limit(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    calls = []
+    updates = {}
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": "评估失败",
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 9)
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_start",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or 123,
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_finish",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: {
+            "json": {
+                "countries": [
+                    {
+                        "lang": "de",
+                        "country": "Germany",
+                        "is_suitable": True,
+                        "score": 88,
+                        "risk_level": "low",
+                        "decision": "适合推广",
+                        "reason": "便携场景明确。",
+                        "suggestions": [],
+                    }
+                ]
+            }
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result["status"] == "evaluated"
+    assert updates["ai_evaluation_result"] == "适合推广"
+    assert calls[0][1]["trigger"] == "manual"
+
+
+def test_evaluation_failure_returns_error_and_saves_detail(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    finishes = []
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_finish",
+        lambda *args, **kwargs: finishes.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("upstream timeout")),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result == {"status": "failed", "product_id": 7, "error": "upstream timeout"}
+    assert updates["ai_evaluation_result"] == "评估失败"
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert detail["error"] == "upstream timeout"
+    assert finishes[0][1] == {"success": False, "error": "upstream timeout"}
+
+
 def test_evaluate_product_waits_when_english_items_are_not_videos(monkeypatch):
     from appcore import material_evaluation
 
@@ -247,7 +470,7 @@ def test_medias_route_schedules_material_evaluation_in_background(monkeypatch):
     route._schedule_material_evaluation(7, force=True)
 
     assert calls == [
-        (route.material_evaluation.evaluate_product_if_ready, (7,), {"force": True})
+        (route.material_evaluation.evaluate_product_if_ready, (7,), {"force": True, "manual": False})
     ]
 
 

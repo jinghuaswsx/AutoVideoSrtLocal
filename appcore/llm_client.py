@@ -21,6 +21,39 @@ _PROXY_REQUIRED_PROVIDERS = {
 }
 
 
+def _sanitize_messages(messages: list[dict]) -> list[dict]:
+    """把 messages 里的 base64 图片内容替换为占位符，避免存储巨量数据。"""
+    result = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if (isinstance(part, dict)
+                        and part.get("type") == "image_url"):
+                    url = (part.get("image_url") or {}).get("url", "")
+                    if url.startswith("data:"):
+                        parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"[base64-image, ~{len(url)} bytes]"},
+                        })
+                    else:
+                        parts.append(part)
+                else:
+                    parts.append(part)
+            result.append({**msg, "content": parts})
+        elif isinstance(content, str) and "base64," in content:
+            sanitized = re.sub(
+                r"data:[^;]+;base64,[A-Za-z0-9+/=]+",
+                lambda m: f"[base64-image, ~{len(m.group())} bytes]",
+                content,
+            )
+            result.append({**msg, "content": sanitized})
+        else:
+            result.append(msg)
+    return result
+
+
 def _network_route_intent(provider: str) -> str:
     provider = (provider or "").strip().lower()
     if provider in _PROXY_REQUIRED_PROVIDERS:
@@ -56,39 +89,6 @@ def _media_network_estimate(media_paths: list[str]) -> dict:
         "total_media_bytes": total_bytes,
         "estimated_base64_payload_bytes": estimated_payload_bytes,
     }
-
-
-def _sanitize_messages(messages: list[dict]) -> list[dict]:
-    """把 messages 里的 base64 图片内容替换为占位符，避免存储巨量数据。"""
-    result = []
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, list):
-            parts = []
-            for part in content:
-                if (isinstance(part, dict)
-                        and part.get("type") == "image_url"):
-                    url = (part.get("image_url") or {}).get("url", "")
-                    if url.startswith("data:"):
-                        parts.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"[base64-image, ~{len(url)} bytes]"},
-                        })
-                    else:
-                        parts.append(part)
-                else:
-                    parts.append(part)
-            result.append({**msg, "content": parts})
-        elif isinstance(content, str) and "base64," in content:
-            sanitized = re.sub(
-                r"data:[^;]+;base64,[A-Za-z0-9+/=]+",
-                lambda m: f"[base64-image, ~{len(m.group())} bytes]",
-                content,
-            )
-            result.append({**msg, "content": sanitized})
-        else:
-            result.append(msg)
-    return result
 
 
 def _save_payload(log_id: int, request_data: Any, response_data: Any) -> None:

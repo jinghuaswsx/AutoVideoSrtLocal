@@ -59,12 +59,39 @@ _MAX_MK_VIDEO_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 _MK_VIDEO_CACHE_PREFIX = "mk-selection/videos"
 
 
-def _schedule_material_evaluation(pid: int, *, force: bool = False) -> None:
+def _schedule_material_evaluation(pid: int, *, force: bool = False,
+                                  manual: bool = False) -> None:
     start_background_task(
         material_evaluation.evaluate_product_if_ready,
         int(pid),
         force=force,
+        manual=manual,
     )
+
+
+def _material_evaluation_message(result: dict) -> str:
+    status = str((result or {}).get("status") or "")
+    if status == "evaluated":
+        return "AI 评估完成"
+    if status == "failed":
+        return str(result.get("error") or "AI 评估请求失败")
+    if status == "missing_languages":
+        return "未配置可评估语种，暂不能进行 AI 评估"
+    if status == "missing_product_link":
+        return "缺少英文商品链接，暂不能进行 AI 评估"
+    if status == "missing_cover":
+        return "缺少英文封面图，暂不能进行 AI 评估"
+    if status == "missing_video":
+        return "缺少英文视频素材，暂不能进行 AI 评估"
+    if status == "product_missing":
+        return "商品不存在或已删除"
+    if status == "auto_attempt_limit_reached":
+        return "自动评估已尝试过一次，后续请人工触发处理"
+    if status == "already_evaluated":
+        return "该商品已有 AI 评估结果"
+    if status == "running":
+        return "该商品正在评估中，请稍后再试"
+    return "AI 评估未执行"
 
 
 def _parse_lang(body: dict, default: str = "en") -> tuple[str | None, str | None]:
@@ -1101,8 +1128,12 @@ def api_product_evaluate(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
         abort(404)
-    _schedule_material_evaluation(pid, force=True)
-    return jsonify({"ok": True})
+    result = material_evaluation.evaluate_product_if_ready(pid, force=True, manual=True)
+    message = _material_evaluation_message(result)
+    payload = {"ok": result.get("status") == "evaluated", "message": message, "result": result}
+    if result.get("status") == "evaluated":
+        return jsonify(payload)
+    return jsonify({**payload, "error": message}), 400
 
 
 @bp.route("/api/products/<int:pid>", methods=["DELETE"])

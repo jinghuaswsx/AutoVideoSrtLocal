@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS material_evaluation_attempts (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  product_id INT NOT NULL,
+  cover_object_key TEXT NOT NULL,
+  video_object_key TEXT NOT NULL,
+  cover_key_hash CHAR(64) NOT NULL,
+  video_key_hash CHAR(64) NOT NULL,
+  automatic_attempts INT NOT NULL DEFAULT 0,
+  manual_attempts INT NOT NULL DEFAULT 0,
+  last_trigger VARCHAR(16) NOT NULL DEFAULT 'auto',
+  last_status VARCHAR(16) NOT NULL DEFAULT 'running',
+  last_error VARCHAR(500) NULL,
+  last_started_at DATETIME NULL,
+  last_finished_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_material_eval_asset (product_id, cover_key_hash, video_key_hash),
+  KEY idx_material_eval_product (product_id),
+  KEY idx_material_eval_status (last_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
