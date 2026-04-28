@@ -34,9 +34,21 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
                             "asr_index": {"type": "integer"},
                             "text": {"type": "string"},
                             "est_chars": {"type": "integer"},
-                            "notes": {"type": "string"},
+                            "source_intent": {"type": "string"},
+                            "localization_note": {"type": "string"},
+                            "duration_risk": {
+                                "type": "string",
+                                "enum": ["ok", "may_be_short", "may_be_long"],
+                            },
                         },
-                        "required": ["asr_index", "text", "est_chars"],
+                        "required": [
+                            "asr_index",
+                            "text",
+                            "est_chars",
+                            "source_intent",
+                            "localization_note",
+                            "duration_risk",
+                        ],
                     },
                 }
             },
@@ -45,16 +57,22 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
     },
 }
 
-SYSTEM_PROMPT_TEMPLATE = """你是专业的 {target_market} 市场带货短视频本地化配音师。
-规则：
-1. 服从原视频的 Hook / 卖点 / CTA 骨架顺序，不重排。
-2. 每句译文必须对应提供的 shot_context（此刻画面）。
-3. 每句字符数必须落在给定的 target_chars_range 内，这是一条硬约束。
-4. 带货语气要口语化、钩子化、痛点化，静音看字幕也能看懂。
-5. 产品特写镜头优先说产品名或卖点；无产品画面时讲故事、痛点或证据。
-6. 文化专有梗不要硬翻，要改成目标市场习惯表达。
+SYSTEM_PROMPT_TEMPLATE = """You are a senior localization writer for {target_market} short-form commerce videos.
 
-目标语言：{target_language}"""
+Your job is sentence-level AV-sync localization into {target_language}.
+
+Hard rules:
+1. Return exactly one target-language sentence for every source sentence.
+2. Do not merge, split, reorder, or skip sentences.
+3. Preserve each source sentence's sales intent, emotional function, and information points.
+4. Make every line sound like a native short-video spoken line in the target market, not translated copy.
+5. Preserve the sentence role when provided: hook, pain point, demo, proof, or CTA.
+6. Do not invent facts, prices, materials, certifications, claims, discounts, or guarantees.
+7. Respect target_chars_range as closely as possible. If the range is tight, remove decoration before removing meaning.
+8. Write for ElevenLabs TTS: short clauses, clear rhythm, no dense subordinate clauses, no stacked adjectives.
+9. Prefer natural local idioms only when they preserve the source meaning and fit the video frame.
+10. Mark duration_risk as may_be_long or may_be_short when the line may be hard to fit.
+"""
 
 
 def _segment_index(segment: dict, fallback_index: int) -> int:
@@ -222,6 +240,9 @@ def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dic
                 "text": text,
                 "est_chars": int(raw_item.get("est_chars", len(text))),
                 "notes": raw_item.get("notes"),
+                "source_intent": raw_item.get("source_intent", ""),
+                "localization_note": raw_item.get("localization_note", raw_item.get("notes", "")),
+                "duration_risk": raw_item.get("duration_risk", "ok"),
             }
         )
     return merged
