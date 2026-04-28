@@ -2,6 +2,9 @@
 import mimetypes
 import os
 import re
+import tempfile
+
+from appcore import tos_backup_storage
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -44,7 +47,23 @@ def save_uploaded_video(file_storage, upload_dir: str, task_id: str, original_fi
     ext = os.path.splitext(original_filename)[1].lower()
     video_path = os.path.join(upload_dir, f"{task_id}{ext}")
     os.makedirs(upload_dir, exist_ok=True)
-    file_storage.save(video_path)
+    if tos_backup_storage.is_enabled() and tos_backup_storage.storage_mode() == "tos_primary":
+        fd, temp_name = tempfile.mkstemp(prefix="upload_", suffix=ext, dir=upload_dir)
+        os.close(fd)
+        try:
+            file_storage.save(temp_name)
+            object_key = tos_backup_storage.backup_object_key_for_local_path(video_path)
+            tos_backup_storage.upload_local_file(temp_name, object_key)
+            os.replace(temp_name, video_path)
+        finally:
+            if os.path.exists(temp_name):
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+    else:
+        file_storage.save(video_path)
+        tos_backup_storage.ensure_remote_copy_for_local_path(video_path)
     return video_path, os.path.getsize(video_path), detect_upload_content_type(file_storage, original_filename)
 
 

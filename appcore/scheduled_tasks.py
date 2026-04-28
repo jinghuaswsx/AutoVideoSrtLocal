@@ -14,7 +14,13 @@ TASK_DEFINITIONS: dict[str, dict[str, str]] = {
         "name": "Shopify ID 获取",
         "description": "每天从店小秘 Shopify 在线商品库抓取 shopifyProductId，并回填 media_products.shopifyid。",
         "schedule": "每天 12:10",
-    }
+    },
+    "tos_backup": {
+        "code": "tos_backup",
+        "name": "TOS 文件与数据库备份",
+        "description": "每天凌晨同步受保护文件到 autovideosrtlocal 桶，并保留 7 天 MySQL dump。",
+        "schedule": "每天 01:00",
+    },
 }
 
 

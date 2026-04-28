@@ -74,6 +74,25 @@ TOS_SIGNED_URL_EXPIRES = int(_env("TOS_SIGNED_URL_EXPIRES", "3600"))
 TOS_PRIVATE_PROBE_TTL = int(_env("TOS_PRIVATE_PROBE_TTL", "60"))
 TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS = int(_env("TOS_UPLOAD_CLEANUP_MAX_AGE_SECONDS", str(48 * 3600)))
 
+# Dedicated TOS disaster-recovery backup storage.
+FILE_STORAGE_MODE = _env("FILE_STORAGE_MODE", "local_primary").lower()
+if FILE_STORAGE_MODE not in {"local_primary", "tos_primary"}:
+    FILE_STORAGE_MODE = "local_primary"
+TOS_BACKUP_ENABLED = _env("TOS_BACKUP_ENABLED", "0").lower() in {"1", "true", "yes", "on"} or FILE_STORAGE_MODE == "tos_primary"
+TOS_BACKUP_ACCESS_KEY = _env("TOS_BACKUP_ACCESS_KEY", TOS_ACCESS_KEY)
+TOS_BACKUP_SECRET_KEY = _env("TOS_BACKUP_SECRET_KEY", TOS_SECRET_KEY)
+TOS_BACKUP_REGION = _env("TOS_BACKUP_REGION", TOS_REGION or "cn-shanghai")
+TOS_BACKUP_BUCKET = _env("TOS_BACKUP_BUCKET", "autovideosrtlocal")
+TOS_BACKUP_PUBLIC_ENDPOINT = _env("TOS_BACKUP_PUBLIC_ENDPOINT", TOS_PUBLIC_ENDPOINT or "tos-cn-shanghai.volces.com")
+TOS_BACKUP_PRIVATE_ENDPOINT = _env("TOS_BACKUP_PRIVATE_ENDPOINT", TOS_PRIVATE_ENDPOINT or "tos-cn-shanghai.ivolces.com")
+TOS_BACKUP_USE_PRIVATE_ENDPOINT = _env("TOS_BACKUP_USE_PRIVATE_ENDPOINT", "false").lower() in {"1", "true", "yes", "on"}
+TOS_BACKUP_PREFIX = _env("TOS_BACKUP_PREFIX", "FILES")
+TOS_BACKUP_DB_PREFIX = _env("TOS_BACKUP_DB_PREFIX", "DB")
+TOS_BACKUP_ENV = _env("TOS_BACKUP_ENV", "test")
+TOS_BACKUP_SIGNED_URL_EXPIRES = int(_env("TOS_BACKUP_SIGNED_URL_EXPIRES", str(TOS_SIGNED_URL_EXPIRES or 3600)))
+TOS_BACKUP_DB_RETENTION_DAYS = int(_env("TOS_BACKUP_DB_RETENTION_DAYS", "7"))
+MYSQLDUMP_BIN = _env("MYSQLDUMP_BIN", "mysqldump")
+
 
 # ---------------------------------------------------------------------------
 # 火山 VOD：视频点播 + 字幕擦除上传（对象存储级别，非 LLM 供应商）
