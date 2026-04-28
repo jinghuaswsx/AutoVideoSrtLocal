@@ -47,7 +47,7 @@ def test_start_translate_accepts_openrouter_gpt_5_5(authed_client_no_db, monkeyp
     assert resume_calls == [("task-start-gpt5-5", "translate", 1)]
 
 
-def test_av_resume_clears_stale_error_and_marks_av_type(authed_client_no_db, monkeypatch, tmp_path):
+def test_av_resume_clears_stale_error_and_keeps_db_type_translation(authed_client_no_db, monkeypatch, tmp_path):
     task_id = "task-av-resume-clear-error"
     task = store.create(task_id, "video.mp4", str(tmp_path), user_id=1)
     task["steps"].update({"translate": "error", "tts": "pending"})
@@ -73,7 +73,7 @@ def test_av_resume_clears_stale_error_and_marks_av_type(authed_client_no_db, mon
     updated = store.get(task_id)
     assert updated["status"] == "running"
     assert updated["error"] == ""
-    assert updated["type"] == "av_translate"
+    assert updated["type"] == "translation"
     assert updated["steps"]["translate"] == "pending"
     assert resume_calls == [(task_id, "translate", 1)]
 

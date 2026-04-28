@@ -79,6 +79,8 @@ def _has_waiting_steps(state: dict) -> bool:
 
 def recover_project_state(project_type: str, task_id: str, state: dict | None, active: bool | None = None) -> tuple[bool, dict, str | None]:
     recovered = copy.deepcopy(state or {})
+    if str(recovered.get("pipeline_version") or "").strip() == "av":
+        project_type = "av_translate"
     active = is_task_active(project_type, task_id) if active is None else active
     if active:
         return False, recovered, None

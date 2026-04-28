@@ -406,7 +406,7 @@ def upload():
     store.update(
         task_id,
         display_name=display_name,
-        type="av_translate",
+        type="translation",
         source_language="zh",
         pipeline_version="av",
         target_lang=av_inputs["target_language"],
@@ -564,7 +564,7 @@ def confirm_voice(task_id: str):
 
     store.update(
         task_id,
-        type="av_translate",
+        type="translation",
         selected_voice_id=normalized["voice_id"],
         selected_voice_name=normalized["voice_name"],
         voice_id=normalized["voice_id"],
@@ -719,7 +719,7 @@ def restart(task_id):
         return jsonify({"error": av_error}), 400
     store.update(
         task_id,
-        type="av_translate",
+        type="translation",
         pipeline_version="av",
         target_lang=av_inputs["target_language"],
         av_translate_inputs=av_inputs,
@@ -761,7 +761,7 @@ def start(task_id):
     av_step_messages = {step: current_messages.get(step, "") for step in AV_SYNC_STEPS}
     store.update(
         task_id,
-        type="av_translate",
+        type="translation",
         voice_gender=body.get("voice_gender", "male"),
         voice_id=None if body.get("voice_id") in (None, "", "auto") else body.get("voice_id"),
         subtitle_position=body.get("subtitle_position", "bottom"),
@@ -1341,7 +1341,7 @@ def resume_from_step(task_id):
 
     resume_payload = {"status": "running", "error": "", "current_review_step": ""}
     if (task.get("pipeline_version") or "") == "av":
-        resume_payload["type"] = "av_translate"
+        resume_payload["type"] = "translation"
     store.update(task_id, **resume_payload)
     task = store.get(task_id) or task
     try:

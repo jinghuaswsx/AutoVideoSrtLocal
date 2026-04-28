@@ -614,6 +614,37 @@ def test_recover_project_state_marks_translate_lab_running_as_interrupted():
     assert recovered["steps"]["subtitle"] == "pending"
 
 
+def test_recover_project_state_treats_av_pipeline_translation_as_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="translation",
+        task_id="av-orphan",
+        state={
+            "type": "translation",
+            "pipeline_version": "av",
+            "status": "running",
+            "current_review_step": "compose",
+            "steps": {
+                "translate": "done",
+                "tts": "done",
+                "subtitle": "done",
+                "compose": "running",
+                "export": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
+    assert status == "interrupted"
+    assert recovered["type"] == "translation"
+    assert recovered["pipeline_version"] == "av"
+    assert recovered["steps"]["compose"] == "interrupted"
+    assert recovered["steps"]["export"] == "pending"
+    assert recovered["current_review_step"] == ""
+
+
 def test_recover_project_state_keeps_waiting_multi_translate_review_state():
     from appcore import task_recovery
 

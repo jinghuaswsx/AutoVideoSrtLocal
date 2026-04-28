@@ -1351,7 +1351,7 @@ class PipelineRunner:
             self._skip_original_video_passthrough_step(task_id, step_name, task=task_state.get(task_id) or task)
 
         self._set_step(task_id, "compose", "running", "识别结果过短，正在直接复用原视频...")
-        variant = "normal"
+        variant = "av" if _is_av_pipeline_task(task) else "normal"
         task = task_state.get(task_id) or task
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
@@ -1378,7 +1378,7 @@ class PipelineRunner:
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact("", archive_url=""))
         self._set_step(task_id, "export", "done", "音乐视频直通完成，已跳过 CapCut 导出")
-        self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {"normal": exports}})
+        self._emit(task_id, EVT_PIPELINE_DONE, {"task_id": task_id, "exports": {variant: exports}})
         _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
         return result
 
@@ -2168,7 +2168,7 @@ class PipelineRunner:
         self._set_step(task_id, "compose", "running", "正在合成视频...")
         from pipeline.compose import compose_video
 
-        variant = "normal"
+        variant = "av" if _is_av_pipeline_task(task) else "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         result = compose_video(
@@ -2269,7 +2269,7 @@ class PipelineRunner:
         self._set_step(task_id, "export", "running", "正在导出 CapCut 项目...")
         from pipeline.capcut import export_capcut_project
 
-        variant = "normal"
+        variant = "av" if _is_av_pipeline_task(task) else "normal"
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
         jianying_project_root = resolve_jianying_project_root(self.user_id)
@@ -2307,16 +2307,16 @@ class PipelineRunner:
                 manifest_text = fh.read()
         except OSError:
             pass
-        archive_url = f"/api/tasks/{task_id}/download/capcut?variant=normal"
+        archive_url = f"/api/tasks/{task_id}/download/capcut?variant={variant}"
 
         task_state.update(task_id, variants=variants, exports=exports, status="done", error="")
         task_state.set_expires_at(task_id, self.project_type)
         task_state.set_artifact(task_id, "export", build_export_artifact(manifest_text, archive_url=archive_url))
         self._set_step(task_id, "export", "done", "CapCut 项目已导出")
-        self._emit(task_id, EVT_CAPCUT_READY, {"variants": ["normal"]})
+        self._emit(task_id, EVT_CAPCUT_READY, {"variants": [variant]})
         self._emit(task_id, EVT_PIPELINE_DONE, {
             "task_id": task_id,
-            "exports": {"normal": exports},
+            "exports": {variant: exports},
         })
         _skip_legacy_artifact_upload(task_state.get(task_id) or {}, task_id)
 

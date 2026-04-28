@@ -505,6 +505,94 @@ def test_step_export_populates_variant_capcut_download_urls(tmp_path, monkeypatc
     assert export_artifact["variants"]["hook_cta"]["items"][0]["url"] == "/api/tasks/task-export-download-links/download/capcut?variant=hook_cta"
 
 
+def test_step_compose_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
+    task_id = "task-av-compose-variant"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["pipeline_version"] = "av"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.av.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.av.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["av"] = {
+        "tts_audio_path": str(audio_path),
+        "srt_path": str(srt_path),
+        "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+    }
+
+    captured = {}
+
+    def fake_compose_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "soft_video": "",
+            "hard_video": str(tmp_path / f"hard.{kwargs['variant']}.mp4"),
+        }
+
+    monkeypatch.setattr("pipeline.compose.compose_video", fake_compose_video)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_compose(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert captured["variant"] == "av"
+    assert captured["tts_audio_path"] == str(audio_path)
+    assert captured["srt_path"] == str(srt_path)
+    assert saved["variants"]["av"]["result"]["hard_video"].endswith("hard.av.mp4")
+    assert saved["steps"]["compose"] == "done"
+
+
+def test_step_export_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
+    task_id = "task-av-export-variant"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["pipeline_version"] = "av"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.av.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.av.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["variants"]["av"] = {
+        "tts_audio_path": str(audio_path),
+        "srt_path": str(srt_path),
+        "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+    }
+
+    captured = {}
+
+    def fake_export_capcut_project(**kwargs):
+        captured.update(kwargs)
+        variant = kwargs["variant"]
+        manifest_path = tmp_path / f"manifest.{variant}.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / f"capcut_{variant}"),
+            "archive_path": str(tmp_path / f"capcut_{variant}.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+    monkeypatch.setattr("appcore.runtime.resolve_jianying_project_root", lambda user_id: "")
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_export(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    export_artifact = saved["artifacts"]["export"]
+    assert captured["variant"] == "av"
+    assert captured["tts_audio_path"] == str(audio_path)
+    assert captured["srt_path"] == str(srt_path)
+    assert saved["variants"]["av"]["exports"]["capcut_archive"].endswith("capcut_av.zip")
+    assert export_artifact["items"][0]["url"] == f"/api/tasks/{task_id}/download/capcut?variant=av"
+    assert saved["exports"]["capcut_archive"].endswith("capcut_av.zip")
+    assert saved["status"] == "done"
+
+
 def test_step_export_passes_user_jianying_root_to_capcut_export(tmp_path, monkeypatch):
     task = store.create("task-export-jianying-root", "video.mp4", str(tmp_path), user_id=123)
     task["video_path"] = "video.mp4"
