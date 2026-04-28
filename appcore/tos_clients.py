@@ -114,28 +114,40 @@ def get_server_endpoint() -> str:
     return config.TOS_PUBLIC_ENDPOINT
 
 
-def generate_signed_download_url(object_key: str, expires: int | None = None) -> str:
+def _default_bucket(bucket: str | None = None) -> str:
+    return (bucket or config.TOS_BUCKET).strip()
+
+
+def generate_signed_download_url(
+    object_key: str,
+    expires: int | None = None,
+    bucket: str | None = None,
+) -> str:
     signed = get_public_client().pre_signed_url(
         tos.HttpMethodType.Http_Method_Get,
-        config.TOS_BUCKET,
+        _default_bucket(bucket),
         object_key,
         expires=expires or config.TOS_SIGNED_URL_EXPIRES,
     )
     return signed.signed_url
 
 
-def generate_signed_upload_url(object_key: str, expires: int | None = None) -> str:
+def generate_signed_upload_url(
+    object_key: str,
+    expires: int | None = None,
+    bucket: str | None = None,
+) -> str:
     signed = get_public_client().pre_signed_url(
         tos.HttpMethodType.Http_Method_Put,
-        config.TOS_BUCKET,
+        _default_bucket(bucket),
         object_key,
         expires=expires or config.TOS_SIGNED_URL_EXPIRES,
     )
     return signed.signed_url
 
 
-def upload_file(local_path: str, object_key: str) -> None:
-    get_server_client().put_object_from_file(config.TOS_BUCKET, object_key, local_path)
+def upload_file(local_path: str, object_key: str, bucket: str | None = None) -> None:
+    get_server_client().put_object_from_file(_default_bucket(bucket), object_key, local_path)
 
 
 def download_file(object_key: str, local_path: str) -> str:
@@ -147,10 +159,10 @@ def download_file(object_key: str, local_path: str) -> str:
     return str(destination)
 
 
-def delete_object(object_key: str) -> None:
+def delete_object(object_key: str, bucket: str | None = None) -> None:
     if not object_key:
         return
-    get_server_client().delete_object(config.TOS_BUCKET, object_key)
+    get_server_client().delete_object(_default_bucket(bucket), object_key)
 
 
 def object_exists(object_key: str) -> bool:

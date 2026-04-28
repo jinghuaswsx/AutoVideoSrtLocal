@@ -13,6 +13,7 @@ import logging
 import uuid
 from typing import Dict, List
 
+from config import TOS_ASR_BUCKET
 from appcore.asr_providers.doubao import DoubaoAdapter
 
 log = logging.getLogger(__name__)
@@ -35,12 +36,12 @@ def transcribe_local_audio(
     from pipeline.storage import delete_file, upload_file
 
     object_key = f"{prefix}_{uuid.uuid4().hex[:8]}.mp3"
-    audio_url = upload_file(local_audio_path, object_key)
+    audio_url = upload_file(local_audio_path, object_key, bucket=TOS_ASR_BUCKET)
     try:
         return DoubaoAdapter().transcribe_url(audio_url, api_key=volc_api_key)
     finally:
         try:
-            delete_file(object_key)
+            delete_file(object_key, bucket=TOS_ASR_BUCKET)
         except Exception:
             log.warning(
                 "[ASR] 清理临时音频文件失败: %s", object_key, exc_info=True
