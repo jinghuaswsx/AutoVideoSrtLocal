@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from appcore import product_roas
 from appcore.db import query, query_one, execute, get_conn
 
 
@@ -415,7 +416,12 @@ def update_product(product_id: int, **fields) -> int:
                "ai_evaluation_detail", "listing_status",
                "npr_decision_status", "npr_decided_countries",
                "npr_decided_at", "npr_decided_by",
-               "npr_rejected_reason", "npr_eval_clip_path"}
+               "npr_rejected_reason", "npr_eval_clip_path",
+               "purchase_1688_url", "purchase_price",
+               "packet_cost_estimated", "packet_cost_actual",
+               "package_length_cm", "package_width_cm", "package_height_cm",
+               "tk_sea_cost", "tk_air_cost", "tk_sale_price",
+               "standalone_price"}
     # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
     if "mk_id" in fields:
         v = fields["mk_id"]
@@ -449,6 +455,25 @@ def update_product(product_id: int, **fields) -> int:
     for text_key in ("remark", "ai_evaluation_result", "ai_evaluation_detail"):
         if text_key in fields and fields[text_key] is not None:
             fields[text_key] = str(fields[text_key]).strip() or None
+    for text_key in ("purchase_1688_url",):
+        if text_key in fields and fields[text_key] is not None:
+            fields[text_key] = str(fields[text_key]).strip() or None
+    roas_number_keys = {
+        "purchase_price",
+        "packet_cost_estimated",
+        "packet_cost_actual",
+        "package_length_cm",
+        "package_width_cm",
+        "package_height_cm",
+        "tk_sea_cost",
+        "tk_air_cost",
+        "tk_sale_price",
+        "standalone_price",
+    }
+    for number_key in roas_number_keys:
+        if number_key in fields:
+            value = product_roas.decimal_or_none(fields[number_key])
+            fields[number_key] = float(value) if value is not None else None
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
