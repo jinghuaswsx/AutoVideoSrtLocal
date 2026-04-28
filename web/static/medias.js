@@ -1,6 +1,6 @@
 (function() {
   window.MEDIAS_UPLOAD_READY = window.MEDIAS_UPLOAD_READY !== false;
-  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0 };
+  const state = { page: 1, current: null, pendingItemCover: null, listRequestSeq: 0, roasProduct: null };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const $ = (id) => document.getElementById(id);
 
@@ -381,6 +381,138 @@
   function compactCellText(value) {
     const text = String(value || '').trim();
     return text ? escapeHtml(text) : '<span class="muted">—</span>';
+  }
+
+  const ROAS_FIELDS = [
+    'purchase_1688_url',
+    'purchase_price',
+    'packet_cost_estimated',
+    'packet_cost_actual',
+    'package_length_cm',
+    'package_width_cm',
+    'package_height_cm',
+    'tk_sea_cost',
+    'tk_air_cost',
+    'tk_sale_price',
+    'standalone_price',
+  ];
+
+  function numberOrNull(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function formatRoas(value) {
+    return Number.isFinite(value) ? value.toFixed(2) : '无法保本';
+  }
+
+  function calculateRoasBreakEven(values) {
+    const price = numberOrNull(values.standalone_price);
+    const purchase = numberOrNull(values.purchase_price);
+    const estimatedPacket = numberOrNull(values.packet_cost_estimated);
+    const actualPacket = numberOrNull(values.packet_cost_actual);
+    const calc = (packetCost) => {
+      if (price === null || purchase === null || packetCost === null) return null;
+      const available = price * 0.9 - purchase - packetCost;
+      if (available <= 0) return null;
+      return price / available;
+    };
+    const estimated = calc(estimatedPacket);
+    const actual = calc(actualPacket);
+    const useActual = actualPacket !== null;
+    return {
+      estimated_roas: estimated,
+      actual_roas: actual,
+      effective_basis: useActual ? 'actual' : 'estimated',
+      effective_roas: useActual ? actual : estimated,
+    };
+  }
+
+  function setRoasFieldValues(product) {
+    ROAS_FIELDS.forEach((field) => {
+      const input = document.querySelector(`[data-roas-field="${field}"]`);
+      if (!input) return;
+      const value = product && product[field] !== null && product[field] !== undefined ? product[field] : '';
+      input.value = value;
+    });
+  }
+
+  function collectRoasPayload() {
+    const payload = {};
+    ROAS_FIELDS.forEach((field) => {
+      const input = document.querySelector(`[data-roas-field="${field}"]`);
+      if (!input) return;
+      const raw = String(input.value || '').trim();
+      payload[field] = raw || null;
+    });
+    return payload;
+  }
+
+  function renderRoasResult() {
+    const payload = collectRoasPayload();
+    const result = calculateRoasBreakEven(payload);
+    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = formatRoas(result.estimated_roas);
+    if ($('roasActualValue')) $('roasActualValue').textContent = numberOrNull(payload.packet_cost_actual) === null ? '待回填' : formatRoas(result.actual_roas);
+    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = formatRoas(result.effective_roas);
+    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = result.effective_basis === 'actual' ? '实际保本 ROAS' : '预估保本 ROAS';
+    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.toggle('active', result.effective_basis === 'estimated');
+    if ($('roasActualBox')) $('roasActualBox').classList.toggle('active', result.effective_basis === 'actual');
+  }
+
+  function openRoasModal(product) {
+    if (!product) return;
+    state.roasProduct = product;
+    const mask = $('roasModalMask');
+    if (!mask) return;
+    $('roasProductId').textContent = product.id || '—';
+    $('roasProductName').textContent = product.name || '—';
+    $('roasProductEnglish').textContent = product.product_code || '—';
+    const cover = $('roasProductCover');
+    if (cover) {
+      cover.innerHTML = product.cover_thumbnail_url
+        ? `<img src="${escapeHtml(product.cover_thumbnail_url)}" alt="">`
+        : `<div class="roas-cover-ph">${icon('package', 24)}</div>`;
+    }
+    setRoasFieldValues(product);
+    if ($('roasSaveMsg')) $('roasSaveMsg').textContent = '';
+    renderRoasResult();
+    mask.hidden = false;
+  }
+
+  function closeRoasModal() {
+    const mask = $('roasModalMask');
+    if (mask) mask.hidden = true;
+    state.roasProduct = null;
+  }
+
+  async function saveRoas() {
+    const product = state.roasProduct;
+    const form = $('roasForm');
+    if (!product || !form) return;
+    if (!form.reportValidity()) return;
+    const btn = $('roasSaveBtn');
+    const msg = $('roasSaveMsg');
+    if (btn) btn.disabled = true;
+    if (msg) msg.textContent = '保存中...';
+    try {
+      const payload = collectRoasPayload();
+      await fetchJSON('/medias/api/products/' + product.id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      Object.assign(product, payload);
+      product.roas_calculation = calculateRoasBreakEven(payload);
+      closeRoasModal();
+      loadList();
+    } catch (e) {
+      if (msg) msg.textContent = e.message || '保存失败';
+      alert(e.message || '保存失败');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function showAiEvaluationDetail(product) {
@@ -902,6 +1034,12 @@
         const product = items.find(item => Number(item.id) === Number(b.dataset.aiDetail));
         showAiEvaluationDetail(product || null);
       }));
+    grid.querySelectorAll('[data-roas]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.roas));
+        openRoasModal(product || null);
+      }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
@@ -951,6 +1089,7 @@
           <div class="oc-row-actions">
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
             <button class="oc-btn sm ghost js-raw-sources" data-pid="${p.id}" data-name="${escapeHtml(p.name)}">原始视频 (${rawCount})</button>
+            <button class="oc-btn sm ghost" data-roas="${p.id}"><span>ROAS</span></button>
             <button class="bt-row-btn js-translate" data-pid="${p.id}" data-name="${escapeHtml(p.name)}" title="${escapeHtml(listingTitle)}" ${listed ? '' : 'disabled aria-disabled="true"'}>🌐 翻译</button>
             <button class="oc-btn sm ghost" data-ai-evaluate="${p.id}" title="手动触发 AI 评估">${icon('zap', 12)}<span>${aiEvalBtnLabel(p)}</span></button>
           </div>
@@ -3825,6 +3964,18 @@
     $('mkCopyFetchBtn').addEventListener('click', fillCopywritingFromMkSystem);
     $('editMask').addEventListener('click', (e) => { if (e.target.id === 'editMask') hideModal(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('editMask').hidden) hideModal(); });
+    $('roasCloseBtn') && $('roasCloseBtn').addEventListener('click', closeRoasModal);
+    $('roasCancelBtn') && $('roasCancelBtn').addEventListener('click', closeRoasModal);
+    $('roasSaveBtn') && $('roasSaveBtn').addEventListener('click', saveRoas);
+    $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
+      if (e.target.id === 'roasModalMask') closeRoasModal();
+    });
+    document.querySelectorAll('[data-roas-field]').forEach((input) => {
+      input.addEventListener('input', renderRoasResult);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();
+    });
 
     $('cwAddBtn').addEventListener('click', () => {
       $('cwList').appendChild(cwCard({}, $('cwList').children.length + 1));

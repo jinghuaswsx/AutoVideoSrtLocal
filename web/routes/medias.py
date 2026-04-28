@@ -24,6 +24,7 @@ from appcore import (
     material_evaluation,
     medias,
     object_keys,
+    product_roas,
     pushes,
     shopify_image_localizer_release,
     shopify_image_tasks,
@@ -403,6 +404,21 @@ def _int_or_none(value):
         return None
 
 
+_ROAS_PRODUCT_FIELDS = (
+    "purchase_1688_url",
+    "purchase_price",
+    "packet_cost_estimated",
+    "packet_cost_actual",
+    "package_length_cm",
+    "package_width_cm",
+    "package_height_cm",
+    "tk_sea_cost",
+    "tk_air_cost",
+    "tk_sale_price",
+    "standalone_price",
+)
+
+
 def _start_image_translate_runner(task_id: str, user_id: int) -> bool:
     return image_translate_routes.start_image_translate_runner(task_id, user_id)
 
@@ -473,6 +489,23 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "link_check_tasks": link_check_tasks,
         "shopify_image_status": shopify_image_status,
         "raw_sources_count": raw_sources_count or 0,
+        "purchase_1688_url": p.get("purchase_1688_url") or "",
+        "purchase_price": _json_number_or_none(p.get("purchase_price")),
+        "packet_cost_estimated": _json_number_or_none(p.get("packet_cost_estimated")),
+        "packet_cost_actual": _json_number_or_none(p.get("packet_cost_actual")),
+        "package_length_cm": _json_number_or_none(p.get("package_length_cm")),
+        "package_width_cm": _json_number_or_none(p.get("package_width_cm")),
+        "package_height_cm": _json_number_or_none(p.get("package_height_cm")),
+        "tk_sea_cost": _json_number_or_none(p.get("tk_sea_cost")),
+        "tk_air_cost": _json_number_or_none(p.get("tk_air_cost")),
+        "tk_sale_price": _json_number_or_none(p.get("tk_sale_price")),
+        "standalone_price": _json_number_or_none(p.get("standalone_price")),
+        "roas_calculation": product_roas.calculate_break_even_roas(
+            purchase_price=p.get("purchase_price"),
+            estimated_packet_cost=p.get("packet_cost_estimated"),
+            actual_packet_cost=p.get("packet_cost_actual"),
+            standalone_price=p.get("standalone_price"),
+        ),
     }
 
 
@@ -863,6 +896,10 @@ def api_update_product(pid: int):
         "ai_evaluation_detail",
         "listing_status",
     ):
+        if key in body:
+            update_fields[key] = body.get(key)
+
+    for key in _ROAS_PRODUCT_FIELDS:
         if key in body:
             update_fields[key] = body.get(key)
 
