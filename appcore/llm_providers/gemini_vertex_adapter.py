@@ -111,9 +111,10 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None):
+                 max_output_tokens=None, extra_body=None,
+                 enable_google_search=False):
         media_list = _normalize_media(media)
-        if media_list:
+        if media_list or enable_google_search:
             return self._generate_with_media(
                 model=model,
                 prompt=prompt,
@@ -123,6 +124,7 @@ class GeminiVertexAdapter(LLMAdapter):
                 response_schema=response_schema,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                enable_google_search=enable_google_search,
             )
         messages = []
         if system:
@@ -142,7 +144,8 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
-                             max_output_tokens=None):
+                             max_output_tokens=None,
+                             enable_google_search=False):
         # Reuse shared Gemini media/schema helpers, but resolve creds via DAO
         # so image flows can pick gemini_cloud_image when desired.
         from appcore import gemini as gemini_api
@@ -155,6 +158,7 @@ class GeminiVertexAdapter(LLMAdapter):
             temperature=temperature,
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
+            enable_google_search=enable_google_search,
         )
 
         last_err: Exception | None = None
@@ -170,21 +174,24 @@ class GeminiVertexAdapter(LLMAdapter):
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 }
+                grounding_metadata = gemini_api._extract_grounding_metadata(resp)
                 if response_schema is not None:
                     parsed = getattr(resp, "parsed", None)
                     if parsed is None:
-                        parsed = json.loads(resp.text or "{}")
+                        parsed = gemini_api._parse_json_text(resp.text or "{}")
                     return {
                         "text": None,
                         "json": parsed,
                         "raw": resp,
                         "usage": usage,
+                        "grounding_metadata": grounding_metadata,
                     }
                 return {
                     "text": resp.text or "",
                     "json": None,
                     "raw": resp,
                     "usage": usage,
+                    "grounding_metadata": grounding_metadata,
                 }
             except Exception as exc:
                 last_err = exc

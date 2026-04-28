@@ -152,7 +152,8 @@ class OpenRouterAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None):
+                 max_output_tokens=None, extra_body=None,
+                 enable_google_search=False):
         media_list = _normalize_media(media)
         messages = []
         if system:
@@ -172,6 +173,7 @@ class OpenRouterAdapter(LLMAdapter):
             temperature=temperature,
             max_tokens=max_output_tokens,
             response_format=response_format,
+            extra_body=extra_body,
         )
         if response_schema is not None:
             result["json"] = _parse_json_content(result.get("text") or "")

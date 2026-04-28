@@ -22,6 +22,14 @@ logger = logging.getLogger(__name__)
 USE_CASE_CODE = "material_evaluation.evaluate"
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
+EVAL_MAX_SECONDS = 15
+EVAL_PAYLOAD_TARGET_BYTES = 10 * 1024 * 1024
+EVAL_PAYLOAD_HARD_BYTES = 15 * 1024 * 1024
+EVAL_PAYLOAD_FIXED_OVERHEAD_BYTES = 200_000
+EVAL_REENCODE_MIN_VIDEO_BPS = 500_000
+EVAL_REENCODE_MAX_VIDEO_BPS = 4_000_000
+EVAL_REENCODE_AUDIO_BPS = 64_000
+GROUNDING_CONTEXT_MAX_CHARS = 2_000
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
@@ -55,7 +63,7 @@ def _make_eval_clip_15s(
     src_path = _materialize_media(item["object_key"])
     duration = item.get("duration_seconds")
     try:
-        if duration is not None and float(duration) <= 15:
+        if duration is not None and float(duration) <= EVAL_MAX_SECONDS:
             return src_path
     except (TypeError, ValueError):
         pass
@@ -64,7 +72,7 @@ def _make_eval_clip_15s(
     root = clips_root or EVAL_CLIPS_ROOT
     out_dir = root / str(int(product_id))
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{item_id}_15s.mp4"
+    out_path = out_dir / f"{item_id}_{EVAL_MAX_SECONDS}s.mp4"
     if out_path.is_file() and out_path.stat().st_size > 0:
         return out_path
 
@@ -76,7 +84,7 @@ def _make_eval_clip_15s(
         "-i",
         str(src_path),
         "-t",
-        "15",
+        str(EVAL_MAX_SECONDS),
         "-c",
         "copy",
         "-avoid_negative_ts",
@@ -102,6 +110,205 @@ def _make_eval_clip_15s(
     except FileNotFoundError as exc:
         logger.warning("ffmpeg not found for eval clip, fallback to original: %s", exc)
     return src_path
+
+
+def _base64_size(byte_size: int) -> int:
+    return ((int(byte_size) + 2) // 3) * 4
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return int(path.stat().st_size)
+    except OSError:
+        return 0
+
+
+def _estimate_generate_payload_bytes(
+    media_paths: list[Path],
+    *,
+    prompt: str,
+    system: str | None,
+    response_schema: dict | None,
+) -> int:
+    text_bytes = len((prompt or "").encode("utf-8"))
+    text_bytes += len((system or "").encode("utf-8"))
+    if response_schema is not None:
+        text_bytes += len(json.dumps(response_schema, ensure_ascii=False).encode("utf-8"))
+    media_bytes = sum(_base64_size(_file_size(path)) for path in media_paths)
+    return media_bytes + text_bytes + EVAL_PAYLOAD_FIXED_OVERHEAD_BYTES
+
+
+def _target_video_bitrate_bps(
+    *,
+    cover_path: Path,
+    prompt: str,
+    system: str | None,
+    response_schema: dict | None,
+) -> int:
+    non_video_estimate = _estimate_generate_payload_bytes(
+        [cover_path],
+        prompt=prompt,
+        system=system,
+        response_schema=response_schema,
+    )
+    video_base64_budget = max(256_000, EVAL_PAYLOAD_TARGET_BYTES - non_video_estimate)
+    video_byte_budget = int(video_base64_budget * 3 / 4 * 0.9)
+    duration = max(1, int(EVAL_MAX_SECONDS))
+    bps = int((video_byte_budget * 8 / duration) - EVAL_REENCODE_AUDIO_BPS)
+    return max(EVAL_REENCODE_MIN_VIDEO_BPS, min(EVAL_REENCODE_MAX_VIDEO_BPS, bps))
+
+
+def _reencode_eval_clip(
+    product_id: int,
+    item: dict,
+    *,
+    target_video_bps: int,
+    clips_root: Path | None = None,
+) -> Path | None:
+    src_path = _materialize_media(item["object_key"])
+    item_id = int(item["id"])
+    root = clips_root or EVAL_CLIPS_ROOT
+    out_dir = root / str(int(product_id))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{item_id}_{EVAL_MAX_SECONDS}s_payload.mp4"
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        return out_path
+
+    bitrate_k = max(1, int(target_video_bps / 1000))
+    maxrate_k = max(bitrate_k, int(bitrate_k * 1.2))
+    bufsize_k = max(maxrate_k * 2, bitrate_k)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        "0",
+        "-i",
+        str(src_path),
+        "-t",
+        str(EVAL_MAX_SECONDS),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-vf",
+        r"scale=-2:min(720\,ih)",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-b:v",
+        f"{bitrate_k}k",
+        "-maxrate",
+        f"{maxrate_k}k",
+        "-bufsize",
+        f"{bufsize_k}k",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        f"{int(EVAL_REENCODE_AUDIO_BPS / 1000)}k",
+        "-movflags",
+        "+faststart",
+        str(out_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=120, check=False)
+        if result.returncode == 0 and out_path.is_file() and out_path.stat().st_size > 0:
+            return out_path
+        logger.warning(
+            "ffmpeg eval clip reencode failed. cmd=%s stderr=%s",
+            cmd,
+            result.stderr.decode("utf-8", errors="replace")[:500],
+        )
+        try:
+            if out_path.is_file():
+                out_path.unlink()
+        except Exception:
+            pass
+    except subprocess.TimeoutExpired:
+        logger.warning("ffmpeg eval clip reencode timed out")
+    except FileNotFoundError as exc:
+        logger.warning("ffmpeg not found for eval clip reencode: %s", exc)
+    return None
+
+
+def _make_eval_clip_for_payload(
+    product_id: int,
+    item: dict,
+    *,
+    cover_path: Path,
+    prompt: str,
+    system: str | None,
+    response_schema: dict | None,
+    clips_root: Path | None = None,
+) -> dict:
+    initial_path = _make_eval_clip_15s(product_id, item, clips_root=clips_root)
+    initial_estimate = _estimate_generate_payload_bytes(
+        [cover_path, initial_path],
+        prompt=prompt,
+        system=system,
+        response_schema=response_schema,
+    )
+    if initial_estimate <= EVAL_PAYLOAD_TARGET_BYTES:
+        return {
+            "path": initial_path,
+            "transcoded": False,
+            "estimated_payload_bytes": initial_estimate,
+            "raw_bytes": _file_size(initial_path),
+            "target_bytes": EVAL_PAYLOAD_TARGET_BYTES,
+            "hard_bytes": EVAL_PAYLOAD_HARD_BYTES,
+        }
+
+    target_bps = _target_video_bitrate_bps(
+        cover_path=cover_path,
+        prompt=prompt,
+        system=system,
+        response_schema=response_schema,
+    )
+    reencoded_path = _reencode_eval_clip(
+        product_id,
+        item,
+        target_video_bps=target_bps,
+        clips_root=clips_root,
+    )
+    if reencoded_path is None:
+        return {
+            "path": initial_path,
+            "transcoded": False,
+            "estimated_payload_bytes": initial_estimate,
+            "raw_bytes": _file_size(initial_path),
+            "target_bytes": EVAL_PAYLOAD_TARGET_BYTES,
+            "hard_bytes": EVAL_PAYLOAD_HARD_BYTES,
+            "warning": "reencode_failed",
+        }
+
+    final_estimate = _estimate_generate_payload_bytes(
+        [cover_path, reencoded_path],
+        prompt=prompt,
+        system=system,
+        response_schema=response_schema,
+    )
+    return {
+        "path": reencoded_path,
+        "transcoded": True,
+        "estimated_payload_bytes": final_estimate,
+        "raw_bytes": _file_size(reencoded_path),
+        "target_bytes": EVAL_PAYLOAD_TARGET_BYTES,
+        "hard_bytes": EVAL_PAYLOAD_HARD_BYTES,
+        "target_video_bps": target_bps,
+        "source_estimated_payload_bytes": initial_estimate,
+        "source_raw_bytes": _file_size(initial_path),
+    }
+
+
+def _serializable_clip_info(clip: dict | None) -> dict | None:
+    if not clip:
+        return None
+    out = dict(clip)
+    if out.get("path") is not None:
+        out["path"] = str(out["path"])
+    return out
 
 
 def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:
@@ -180,12 +387,18 @@ def build_system_prompt() -> str:
     )
 
 
-def build_prompt(product: dict, product_url: str, languages: list[Any]) -> str:
+def build_prompt(
+    product: dict,
+    product_url: str,
+    languages: list[Any],
+    *,
+    grounding_context: str | None = None,
+) -> str:
     langs = _normalize_languages(languages)
     lang_text = "、".join(f"{item['name']}({item['code']})" for item in langs)
     product_name = str(product.get("name") or "").strip() or "未命名商品"
     product_code = str(product.get("product_code") or "").strip() or "无"
-    return f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在欧洲市场的小语种国家推广。
+    prompt = f"""请基于随消息附上的两个素材和商品链接，评估该产品是否适合在欧洲市场的小语种国家推广。
 
 输入素材顺序：
 1. 商品主图：判断品类、外观、卖点、潜在合规风险。
@@ -210,6 +423,32 @@ def build_prompt(product: dict, product_url: str, languages: list[Any]) -> str:
 - reason 必须是中文，100 字以内。
 - score 为 0-100，越高代表越适合推广。
 """
+    context = (grounding_context or "").strip()
+    if context:
+        prompt += f"""
+
+联网调研补充信息：
+{context}
+
+请把上面的联网调研作为市场需求、近期合规和本地化判断的参考，但最终仍需结合商品主图、商品链接和短视频内容做判断。
+"""
+    return prompt
+
+
+def build_grounding_prompt(product: dict, product_url: str, languages: list[Any]) -> str:
+    langs = _normalize_languages(languages)
+    lang_text = ", ".join(f"{item['name']}({item['code']})" for item in langs)
+    product_name = str(product.get("name") or "").strip() or "Unnamed product"
+    product_code = str(product.get("product_code") or "").strip() or "N/A"
+    return f"""Use live Google Search to collect concise context for a product promotion evaluation.
+
+Product:
+- Name: {product_name}
+- Code: {product_code}
+- URL: {product_url}
+- Target languages/countries: {lang_text}
+
+Focus on current European consumer demand, marketplace advertising compliance risks, culturally sensitive claims, and any product-category safety concerns. Return a concise Chinese summary with concrete signals and cite-worthy source hints when available. Do not score the product yet."""
 
 
 def normalize_result(raw: dict | str, languages: list[Any]) -> dict:
@@ -363,11 +602,22 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
         raise ValueError("missing_video")
     video_key = str(video.get("object_key") or "").strip()
 
-    cover_path = _materialize_media(cover_key) if include_base64 else None
-    video_path = _make_eval_clip_15s(product_id, video) if include_base64 else None
     system_prompt = build_system_prompt()
     user_prompt = build_prompt(product, product_url, languages)
     response_schema = build_response_schema(languages)
+    cover_path = _materialize_media(cover_key) if include_base64 else None
+    video_clip = None
+    video_path = None
+    if include_base64 and cover_path is not None:
+        video_clip = _make_eval_clip_for_payload(
+            product_id,
+            video,
+            cover_path=cover_path,
+            prompt=user_prompt,
+            system=system_prompt,
+            response_schema=response_schema,
+        )
+        video_path = video_clip["path"]
     media = [
         _debug_media_entry(
             role="product_cover",
@@ -426,6 +676,11 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
             "temperature": 0.2,
             "max_output_tokens": 4096,
             "project_id": f"media-product-{product_id}",
+            "grounding": {
+                "enabled": True,
+                "strategy": "vertex_google_search_preflight",
+            },
+            "video_payload": _serializable_clip_info(video_clip),
         },
         "media": media,
         "request": request_payload,
@@ -462,6 +717,53 @@ def find_ready_product_ids(limit: int = 5) -> list[int]:
         logger.exception("material evaluation ready-product scan failed")
         return []
     return [int(row["id"]) for row in rows]
+
+
+def _collect_grounding_context(
+    *,
+    product: dict,
+    product_url: str,
+    languages: list[Any],
+    user_id: int | None,
+    project_id: str,
+) -> dict:
+    prompt = build_grounding_prompt(product, product_url, languages)
+    try:
+        result = llm_client.invoke_generate(
+            USE_CASE_CODE,
+            prompt=prompt,
+            system=(
+                "You are a web research assistant for cross-border ecommerce "
+                "product evaluation. Use Google Search when useful and keep the "
+                "answer concise."
+            ),
+            user_id=user_id,
+            project_id=project_id,
+            temperature=1.0,
+            max_output_tokens=1024,
+            enable_google_search=True,
+            billing_extra={
+                "phase": "grounding",
+                "google_search_enabled": True,
+            },
+        )
+        text = str(result.get("text") or "").strip()
+        if not text and result.get("json") is not None:
+            text = json.dumps(result["json"], ensure_ascii=False)
+        return {
+            "text": text[:GROUNDING_CONTEXT_MAX_CHARS],
+            "grounding_metadata": result.get("grounding_metadata"),
+        }
+    except Exception as exc:
+        logger.warning(
+            "material evaluation grounding preflight failed for project_id=%s: %s",
+            project_id,
+            exc,
+        )
+        return {
+            "text": "",
+            "error": str(exc)[:500] or exc.__class__.__name__,
+        }
 
 
 def evaluate_product_if_ready(product_id: int, *, force: bool = False,
@@ -527,24 +829,54 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
     attempt_id = None
     try:
         cover_path = _materialize_media(cover_key)
-        video_path = _make_eval_clip_15s(product_id, video)
+        project_id = f"media-product-{product_id}"
+        grounding = _collect_grounding_context(
+            product=product,
+            product_url=product_url,
+            languages=languages,
+            user_id=product.get("user_id"),
+            project_id=project_id,
+        )
+        system_prompt = build_system_prompt()
+        response_schema = build_response_schema(languages)
+        prompt = build_prompt(
+            product,
+            product_url,
+            languages,
+            grounding_context=grounding.get("text"),
+        )
+        video_clip = _make_eval_clip_for_payload(
+            product_id,
+            video,
+            cover_path=cover_path,
+            prompt=prompt,
+            system=system_prompt,
+            response_schema=response_schema,
+        )
+        video_path = video_clip["path"]
         attempt_id = _record_attempt_start(
             product_id,
             cover_key,
             video_key,
             trigger="manual" if manual else "auto",
         )
-        prompt = build_prompt(product, product_url, languages)
         llm_result = llm_client.invoke_generate(
             USE_CASE_CODE,
             prompt=prompt,
-            system=build_system_prompt(),
+            system=system_prompt,
             media=[cover_path, video_path],
             user_id=product.get("user_id"),
-            project_id=f"media-product-{product_id}",
-            response_schema=build_response_schema(languages),
+            project_id=project_id,
+            response_schema=response_schema,
             temperature=0.2,
             max_output_tokens=4096,
+            billing_extra={
+                "phase": "evaluation",
+                "grounding_context_used": bool(grounding.get("text")),
+                "video_payload_estimated_bytes": video_clip.get("estimated_payload_bytes"),
+                "video_raw_bytes": video_clip.get("raw_bytes"),
+                "video_transcoded": video_clip.get("transcoded"),
+            },
         )
         raw_json = llm_result.get("json")
         if raw_json is None:
@@ -560,6 +892,14 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             "video_item_id": video.get("id"),
             "video_object_key": video_key,
             "video_clip_path": str(video_path),
+            "video_payload": _serializable_clip_info(video_clip),
+            "grounding": {
+                "enabled": True,
+                "context_used": bool(grounding.get("text")),
+                "context": grounding.get("text") or "",
+                "metadata": grounding.get("grounding_metadata"),
+                "error": grounding.get("error"),
+            },
             "countries": normalized["countries"],
         }
         medias.update_product(

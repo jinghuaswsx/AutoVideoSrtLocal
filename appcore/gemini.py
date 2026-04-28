@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import mimetypes
 import time
 from pathlib import Path
@@ -211,7 +212,7 @@ def _to_part(client: genai.Client, media: str | Path) -> genai_types.Part:
         raise GeminiError(f"文件不存在：{p}")
     mime = _guess_mime(p)
     size = p.stat().st_size
-    if size <= _INLINE_MAX_BYTES and not mime.startswith("video/"):
+    if size <= _INLINE_MAX_BYTES:
         return genai_types.Part.from_bytes(data=p.read_bytes(), mime_type=mime)
     uploaded = _upload_and_wait(client, p)
     return genai_types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime)
@@ -248,12 +249,71 @@ def _sanitize_schema_for_gemini(schema: dict | list | Any) -> Any:
     return schema
 
 
+def _jsonable(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    for method in ("model_dump", "to_json_dict", "to_dict"):
+        fn = getattr(value, method, None)
+        if callable(fn):
+            try:
+                return _jsonable(fn(exclude_none=True))
+            except TypeError:
+                try:
+                    return _jsonable(fn())
+                except TypeError:
+                    pass
+    if hasattr(value, "__dict__"):
+        return {
+            str(k): _jsonable(v)
+            for k, v in vars(value).items()
+            if not k.startswith("_")
+        }
+    return str(value)
+
+
+def _extract_grounding_metadata(resp: Any) -> dict | None:
+    candidates = getattr(resp, "candidates", None) or []
+    if not candidates:
+        return None
+    metadata = getattr(candidates[0], "grounding_metadata", None)
+    if metadata is None:
+        return None
+    payload = _jsonable(metadata)
+    return payload if isinstance(payload, dict) else {"value": payload}
+
+
+def _parse_json_text(raw: str) -> Any:
+    content = (raw or "").strip()
+    if content.startswith("```"):
+        parts = content.split("```")
+        content = parts[1] if len(parts) > 1 else content
+        if content.lstrip().startswith("json"):
+            content = content.lstrip()[4:]
+    try:
+        return json.loads(content.strip())
+    except json.JSONDecodeError:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(content[start:end + 1])
+        raise
+
+
 def _build_config(
     *,
     system: str | None,
     temperature: float | None,
     response_schema: dict | None,
     max_output_tokens: int | None,
+    enable_google_search: bool = False,
 ) -> genai_types.GenerateContentConfig:
     kwargs: dict[str, Any] = {}
     if system:
@@ -262,7 +322,9 @@ def _build_config(
         kwargs["temperature"] = temperature
     if max_output_tokens is not None:
         kwargs["max_output_tokens"] = max_output_tokens
-    if response_schema is not None:
+    if enable_google_search:
+        kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
+    if response_schema is not None and not enable_google_search:
         kwargs["response_mime_type"] = "application/json"
         kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
     return genai_types.GenerateContentConfig(**kwargs)
@@ -365,6 +427,7 @@ def generate(
     service: str = "gemini",
     default_model: str | None = None,
     return_payload: bool = False,
+    enable_google_search: bool = False,
 ) -> str | Any:
     """一次性生成。传 response_schema 时返回解析后的 JSON。"""
     try:
@@ -389,12 +452,15 @@ def generate(
         request_payload["temperature"] = temperature
     if max_output_tokens is not None:
         request_payload["max_output_tokens"] = max_output_tokens
+    if enable_google_search:
+        request_payload["enable_google_search"] = True
     contents = _build_contents(client, prompt, media_list)
     cfg = _build_config(
         system=system,
         temperature=temperature,
         response_schema=response_schema,
         max_output_tokens=max_output_tokens,
+        enable_google_search=enable_google_search,
     )
 
     last_err: Exception | None = None
@@ -405,38 +471,65 @@ def generate(
             )
             input_tokens, output_tokens = _extract_gemini_tokens(resp)
             usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            grounding_metadata = _extract_grounding_metadata(resp)
             if response_schema is not None:
                 parsed = getattr(resp, "parsed", None)
                 if parsed is not None:
+                    response_payload = {"json": parsed, "usage": usage}
+                    if grounding_metadata is not None:
+                        response_payload["grounding_metadata"] = grounding_metadata
                     _log_gemini_usage(
                         user_id=user_id, project_id=project_id, service=service,
                         model_id=model_id, success=True, resp=resp,
                         request_payload=request_payload,
-                        response_payload={"json": parsed, "usage": usage},
+                        response_payload=response_payload,
                     )
                     if return_payload:
-                        return {"text": None, "json": parsed, "raw": resp, "usage": usage}
+                        return {
+                            "text": None,
+                            "json": parsed,
+                            "raw": resp,
+                            "usage": usage,
+                            "grounding_metadata": grounding_metadata,
+                        }
                     return parsed
-                import json
-                payload = json.loads(resp.text)
+                payload = _parse_json_text(resp.text or "{}")
+                response_payload = {"json": payload, "usage": usage}
+                if grounding_metadata is not None:
+                    response_payload["grounding_metadata"] = grounding_metadata
                 _log_gemini_usage(
                     user_id=user_id, project_id=project_id, service=service,
                     model_id=model_id, success=True, resp=resp,
                     request_payload=request_payload,
-                    response_payload={"json": payload, "usage": usage},
+                    response_payload=response_payload,
                 )
                 if return_payload:
-                    return {"text": None, "json": payload, "raw": resp, "usage": usage}
+                    return {
+                        "text": None,
+                        "json": payload,
+                        "raw": resp,
+                        "usage": usage,
+                        "grounding_metadata": grounding_metadata,
+                    }
                 return payload
             text = resp.text or ""
+            response_payload = {"text": text, "usage": usage}
+            if grounding_metadata is not None:
+                response_payload["grounding_metadata"] = grounding_metadata
             _log_gemini_usage(
                 user_id=user_id, project_id=project_id, service=service,
                 model_id=model_id, success=True, resp=resp,
                 request_payload=request_payload,
-                response_payload={"text": text, "usage": usage},
+                response_payload=response_payload,
             )
             if return_payload:
-                return {"text": text, "json": None, "raw": resp, "usage": usage}
+                return {
+                    "text": text,
+                    "json": None,
+                    "raw": resp,
+                    "usage": usage,
+                    "grounding_metadata": grounding_metadata,
+                }
             return text
         except Exception as e:
             last_err = e

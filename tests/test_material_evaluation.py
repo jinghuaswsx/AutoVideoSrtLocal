@@ -237,11 +237,16 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
         return Result()
 
     monkeypatch.setattr("subprocess.run", fake_run)
-    monkeypatch.setattr(
-        material_evaluation.llm_client,
-        "invoke_generate",
-        lambda *args, **kwargs: llm_calls.append((args, kwargs))
-        or {
+    def fake_invoke_generate(*args, **kwargs):
+        llm_calls.append((args, kwargs))
+        if kwargs.get("enable_google_search"):
+            return {
+                "text": "Fresh EU market and compliance context.",
+                "grounding_metadata": {
+                    "web_search_queries": ["portable neck fan EU compliance"],
+                },
+            }
+        return {
             "json": {
                 "countries": [
                     {
@@ -256,7 +261,12 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
                     }
                 ]
             }
-        },
+        }
+
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        fake_invoke_generate,
     )
     monkeypatch.setattr(
         material_evaluation.medias,
@@ -272,7 +282,14 @@ def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
     assert ffmpeg_calls[0][ffmpeg_calls[0].index("-ss") + 1] == "0"
     assert "-t" in ffmpeg_calls[0]
     assert ffmpeg_calls[0][ffmpeg_calls[0].index("-t") + 1] == "15"
-    media = llm_calls[0][1]["media"]
+    grounding_call = llm_calls[0][1]
+    assert grounding_call["enable_google_search"] is True
+    assert grounding_call["billing_extra"]["phase"] == "grounding"
+    final_call = next(kwargs for _args, kwargs in llm_calls if kwargs.get("media"))
+    assert "Fresh EU market and compliance context." in final_call["prompt"]
+    assert final_call["billing_extra"]["phase"] == "evaluation"
+    assert final_call["billing_extra"]["grounding_context_used"] is True
+    media = final_call["media"]
     assert media[0] == cover
     assert str(media[1]).endswith("11_15s.mp4")
     assert Path(media[1]).read_bytes() == b"clip"
@@ -297,6 +314,54 @@ def test_make_eval_clip_15s_returns_original_for_short_video(monkeypatch, tmp_pa
     )
 
     assert result == video
+
+
+def test_make_eval_clip_for_payload_reencodes_large_15s_clip(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    clip_root = tmp_path / "eval_clips"
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"source")
+    ffmpeg_calls = []
+
+    monkeypatch.setattr(material_evaluation, "EVAL_CLIPS_ROOT", clip_root)
+    monkeypatch.setattr(material_evaluation, "EVAL_PAYLOAD_TARGET_BYTES", 500_000)
+    monkeypatch.setattr(material_evaluation, "EVAL_PAYLOAD_HARD_BYTES", 750_000)
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: video)
+
+    def fake_run(cmd, **kwargs):
+        ffmpeg_calls.append(cmd)
+        out_path = Path(cmd[-1])
+        if "libx264" in cmd:
+            out_path.write_bytes(b"r" * 100_000)
+        else:
+            out_path.write_bytes(b"c" * 600_000)
+
+        class Result:
+            returncode = 0
+            stderr = b""
+
+        return Result()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    clip = material_evaluation._make_eval_clip_for_payload(
+        7,
+        {"id": 11, "object_key": "media/promo.mp4", "duration_seconds": 30.0},
+        cover_path=cover,
+        prompt="score this",
+        system="system",
+        response_schema={"type": "object"},
+    )
+
+    assert clip["path"].is_file()
+    assert str(clip["path"]).endswith("_payload.mp4")
+    assert clip["transcoded"] is True
+    assert clip["estimated_payload_bytes"] <= material_evaluation.EVAL_PAYLOAD_HARD_BYTES
+    assert len(ffmpeg_calls) == 2
+    assert "libx264" in ffmpeg_calls[1]
 
 
 def test_auto_evaluation_skips_after_one_logged_attempt(monkeypatch, tmp_path):

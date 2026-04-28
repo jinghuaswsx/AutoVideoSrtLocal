@@ -91,6 +91,18 @@ def _media_network_estimate(media_paths: list[str]) -> dict:
     }
 
 
+def _generate_extra_body(
+    provider: str,
+    extra_body: dict | None,
+    *,
+    enable_google_search: bool,
+) -> dict | None:
+    body = dict(extra_body or {})
+    if enable_google_search and provider == "openrouter" and "tools" not in body:
+        body["tools"] = [{"type": "openrouter:web_search"}]
+    return body or None
+
+
 def _save_payload(log_id: int, request_data: Any, response_data: Any) -> None:
     """写入 usage_log_payloads，失败静默忽略。"""
     try:
@@ -230,11 +242,18 @@ def invoke_generate(
     provider_override: str | None = None,
     model_override: str | None = None,
     billing_extra: dict | None = None,
+    extra_body: dict | None = None,
+    enable_google_search: bool = False,
 ) -> dict:
     binding = llm_bindings.resolve(use_case_code)
     provider = provider_override or binding["provider"]
     model = model_override or binding["model"]
     adapter = get_adapter(provider)
+    adapter_extra_body = _generate_extra_body(
+        provider,
+        extra_body,
+        enable_google_search=enable_google_search,
+    )
 
     # 规范化 media：只存路径字符串，不传输文件内容
     media_paths: list[str] = []
@@ -261,6 +280,10 @@ def invoke_generate(
         req_payload["max_output_tokens"] = max_output_tokens
     if response_schema:
         req_payload["response_schema"] = response_schema
+    if adapter_extra_body:
+        req_payload["extra_body"] = adapter_extra_body
+    if enable_google_search:
+        req_payload["enable_google_search"] = True
 
     try:
         result = adapter.generate(
@@ -269,6 +292,8 @@ def invoke_generate(
             response_schema=response_schema,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            extra_body=adapter_extra_body,
+            enable_google_search=enable_google_search,
         )
     except Exception as e:
         _log_usage(use_case_code=use_case_code, user_id=user_id,
@@ -288,6 +313,8 @@ def invoke_generate(
         resp_payload["usage"] = {
             k: str(v) for k, v in result["usage"].items()
         }
+    if result.get("grounding_metadata") is not None:
+        resp_payload["grounding_metadata"] = result["grounding_metadata"]
 
     _log_usage(use_case_code=use_case_code, user_id=user_id,
                project_id=project_id, provider=provider, model=model,

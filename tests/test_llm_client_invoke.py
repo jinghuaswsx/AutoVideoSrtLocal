@@ -81,6 +81,65 @@ def test_invoke_generate_logs_media_network_estimate(tmp_path):
     assert request_payload["network_estimate"]["media"][0]["bytes"] == 5
 
 
+def test_invoke_generate_passes_google_search_to_adapter_and_logs_metadata():
+    fake_adapter = MagicMock()
+    fake_adapter.generate.return_value = {
+        "text": "grounded",
+        "json": None,
+        "raw": None,
+        "usage": {},
+        "grounding_metadata": {
+            "web_search_queries": ["current EU product compliance"],
+        },
+    }
+    with patch("appcore.llm_client.llm_bindings.resolve",
+               return_value=_fake_binding("gemini_vertex", "gemini-3.1-pro-preview")), \
+         patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
+         patch("appcore.llm_client._log_usage") as m_log:
+        result = llm_client.invoke_generate(
+            "material_evaluation.evaluate",
+            prompt="search this",
+            user_id=1,
+            enable_google_search=True,
+            billing_extra={"phase": "grounding"},
+        )
+
+    assert result["text"] == "grounded"
+    generate_kwargs = fake_adapter.generate.call_args.kwargs
+    assert generate_kwargs["enable_google_search"] is True
+    assert generate_kwargs["extra_body"] is None
+    request_payload = m_log.call_args.kwargs["request_payload"]
+    response_payload = m_log.call_args.kwargs["response_payload"]
+    assert request_payload["enable_google_search"] is True
+    assert response_payload["grounding_metadata"] == {
+        "web_search_queries": ["current EU product compliance"],
+    }
+
+
+def test_invoke_generate_maps_google_search_to_openrouter_server_tool():
+    fake_adapter = MagicMock()
+    fake_adapter.generate.return_value = {
+        "text": "ok",
+        "json": None,
+        "raw": None,
+        "usage": {},
+    }
+    with patch("appcore.llm_client.llm_bindings.resolve",
+               return_value=_fake_binding("openrouter", "google/gemini-3.1-pro-preview")), \
+         patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
+         patch("appcore.llm_client._log_usage"):
+        llm_client.invoke_generate(
+            "material_evaluation.evaluate",
+            prompt="search this",
+            user_id=1,
+            enable_google_search=True,
+        )
+
+    assert fake_adapter.generate.call_args.kwargs["extra_body"] == {
+        "tools": [{"type": "openrouter:web_search"}],
+    }
+
+
 def test_invoke_records_usage_via_ai_billing_with_usecase_and_provider():
     fake_adapter = MagicMock()
     fake_adapter.chat.return_value = {
