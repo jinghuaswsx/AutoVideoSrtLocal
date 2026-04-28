@@ -585,7 +585,8 @@ def _dismiss_dianxiaomi_notice_overlays(page) -> bool:
 
 
 def _click_sync_products_button(page) -> None:
-    button = page.locator("button").filter(has_text="同步产品")
+    button = page.locator("button").filter(has_text=re.compile(r"^\s*同步产品\s*$"))
+    button.first.wait_for(state="visible", timeout=30000)
     if button.count() != 1:
         raise RuntimeError("未找到唯一的店小秘“同步产品”按钮")
     try:

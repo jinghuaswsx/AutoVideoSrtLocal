@@ -395,8 +395,16 @@ def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
             self.clicks = 0
 
         def filter(self, *, has_text):
-            assert has_text == "同步产品"
+            assert has_text.search("同步产品")
             return self
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, *, state, timeout):
+            assert state == "visible"
+            assert timeout == 30000
 
         def count(self):
             return 1
