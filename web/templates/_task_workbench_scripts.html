@@ -1895,7 +1895,7 @@
     const avSentences = Array.isArray(currentTask.variants?.av?.sentences) ? currentTask.variants.av.sentences : [];
     const warningSentences = avSentences.filter(sentence => {
       const status = sentence?.status || "";
-      return status === "warning_overshoot" || status === "warning_short";
+      return status === "warning_overshoot" || status === "warning_long" || status === "warning_short";
     });
 
     const ranges = [

@@ -322,6 +322,7 @@ def rewrite_one(
     asr_index: int,
     prev_text: str,
     overshoot_sec: float,
+    direction: str | None = None,
     new_target_chars_range: tuple[int, int],
     script_segments: list[dict],
     shot_notes: dict,
@@ -340,17 +341,32 @@ def rewrite_one(
     if focus_sentence is None:
         raise KeyError(f"unknown asr_index: {asr_index}")
 
+    rewrite_direction = (direction or ("shorten" if overshoot_sec > 0 else "expand")).strip().lower()
+    if rewrite_direction == "expand":
+        rewrite_instruction = (
+            f'Previous translation: "{prev_text}". '
+            "Current TTS is shorter than target. "
+            f"Naturally expand it to {new_target_chars_range[0]}-{new_target_chars_range[1]} characters. "
+            "Keep the sales intent and fit the visual scene. "
+            "Cannot add new facts; only make the existing claim feel more complete and natural."
+        )
+    else:
+        rewrite_direction = "shorten"
+        rewrite_instruction = (
+            f'Previous translation: "{prev_text}". '
+            f"TTS exceeded the target by {overshoot_sec} seconds. "
+            f"Rewrite it to {new_target_chars_range[0]}-{new_target_chars_range[1]} characters. "
+            "Keep the sales intent and fit the visual scene. "
+            "Trim modifiers, fillers, emotional padding, and repetition first; do not change the Hook/CTA intent."
+        )
+
     rewrite_payload = {
         "global_context": global_context,
         "target_language": av_inputs["target_language"],
         "target_market": av_inputs["target_market"],
         "focus_sentence": focus_sentence,
-        "rewrite_instruction": (
-            f'上一版译文:"{prev_text}"。'
-            f"TTS 实测超出目标 {overshoot_sec} 秒。"
-            f"请重写到 {new_target_chars_range[0]}-{new_target_chars_range[1]} 字符，"
-            "保留卖点和画面贴合，优先砍修饰词、感叹和重复，不改 Hook/CTA 意图。"
-        ),
+        "rewrite_direction": rewrite_direction,
+        "rewrite_instruction": rewrite_instruction,
     }
     rewrite_messages = [
         _build_rewrite_system_message(av_inputs),

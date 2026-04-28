@@ -36,7 +36,7 @@ from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
 from pipeline import tts
-from pipeline.duration_reconcile import classify_overshoot
+from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
 from pipeline.subtitle import build_srt_from_tts, save_srt
 from web.preview_artifacts import (
     build_alignment_artifact,
@@ -869,31 +869,33 @@ def av_rewrite_sentence(task_id):
         language_code=target_language,
     )
     tts_duration = float(tts.get_audio_duration(segment_path) or 0.0)
-    status, speed = classify_overshoot(float(updated_sentence.get("target_duration", 0.0) or 0.0), tts_duration)
+    target_duration = float(updated_sentence.get("target_duration", 0.0) or 0.0)
+    status, _speed = classify_overshoot(target_duration, tts_duration)
     updated_sentence["tts_duration"] = tts_duration
     updated_sentence["status"] = status
-    updated_sentence["speed"] = speed
+    updated_sentence["speed"] = 1.0
+    updated_sentence["duration_ratio"] = duration_ratio(target_duration, tts_duration)
 
-    if status == "speed_adjusted":
-        tts.generate_segment_audio(
-            text=new_text,
-            voice_id=elevenlabs_voice_id,
-            output_path=segment_path,
-            language_code=target_language,
-            speed=speed,
-        )
-        updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+    if status == "ok":
+        speed = compute_speed_for_target(target_duration, tts_duration)
+        if speed is not None and speed != 1.0:
+            tts.generate_segment_audio(
+                text=new_text,
+                voice_id=elevenlabs_voice_id,
+                output_path=segment_path,
+                language_code=target_language,
+                speed=speed,
+            )
+            updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+            updated_sentence["duration_ratio"] = duration_ratio(target_duration, updated_sentence["tts_duration"])
+            updated_sentence["status"] = "speed_adjusted"
+            updated_sentence["speed"] = speed
     elif status == "needs_rewrite":
-        updated_sentence["status"] = "warning_overshoot"
-        updated_sentence["speed"] = 1.12
-        tts.generate_segment_audio(
-            text=new_text,
-            voice_id=elevenlabs_voice_id,
-            output_path=segment_path,
-            language_code=target_language,
-            speed=updated_sentence["speed"],
-        )
-        updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+        updated_sentence["status"] = "warning_long"
+        updated_sentence["speed"] = 1.0
+    elif status == "needs_expand":
+        updated_sentence["status"] = "warning_short"
+        updated_sentence["speed"] = 1.0
 
     sentences[sentence_index] = updated_sentence
     localized_translation = _build_av_localized_translation(sentences)

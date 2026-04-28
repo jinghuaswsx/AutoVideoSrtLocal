@@ -288,6 +288,7 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
         asr_index=1,
         prev_text="This one is definitely too long for the slot",
         overshoot_sec=0.8,
+        direction="shorten",
         new_target_chars_range=(12, 16),
         script_segments=SCRIPT_SEGMENTS,
         shot_notes=SHOT_NOTES,
@@ -307,3 +308,47 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
     assert "0.8" in user_prompt
     assert "12-16" in user_prompt
     assert "This one is definitely too long for the slot" in user_prompt
+
+
+def test_rewrite_one_expand_prompt_avoids_shorten_language(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "Expanded natural copy",
+                        "est_chars": 21,
+                        "source_intent": "demo",
+                        "localization_note": "expanded naturally for timing",
+                        "duration_risk": "ok",
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    text = av_translate.rewrite_one(
+        asr_index=1,
+        prev_text="Too brief",
+        overshoot_sec=0.0,
+        direction="expand",
+        new_target_chars_range=(20, 24),
+        script_segments=SCRIPT_SEGMENTS,
+        shot_notes=SHOT_NOTES,
+        av_inputs=AV_INPUTS,
+        voice_id="voice-1",
+    )
+
+    assert text == "Expanded natural copy"
+    user_prompt = captured["kwargs"]["messages"][1]["content"].lower()
+    assert "expand" in user_prompt
+    assert "shorter than target" in user_prompt
+    assert "cannot add new facts" in user_prompt
+    assert "shorten" not in user_prompt
+    assert "trim" not in user_prompt

@@ -160,6 +160,7 @@ def reconcile_duration(
                     asr_index=asr_index,
                     prev_text=before_text,
                     overshoot_sec=max(0.0, current_duration - current["target_duration"]),
+                    direction=action,
                     new_target_chars_range=new_range,
                     script_segments=script_segments,
                     shot_notes=shot_notes,
