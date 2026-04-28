@@ -25,7 +25,25 @@ def test_ai_billing_template_shows_input_and_output_token_columns():
     assert "<th>输出 Token</th>" in template
     assert "{{ row.input_tokens if row.input_tokens is not none else '' }}" in template
     assert "{{ row.output_tokens if row.output_tokens is not none else '' }}" in template
-    assert 'colspan="{% if admin_mode %}13{% else %}12{% endif %}"' in template
+    assert 'colspan="{% if admin_mode %}15{% else %}14{% endif %}"' in template
+
+
+def test_ai_billing_template_has_detail_filters_summary_and_payload_sizes():
+    template = (ROOT / "web" / "templates" / "admin_ai_billing.html").read_text(encoding="utf-8")
+
+    assert 'name="detail_status"' in template
+    assert 'name="detail_module"' in template
+    assert 'name="detail_provider"' in template
+    assert 'name="detail_use_case"' in template
+    assert 'name="detail_user_id"' in template
+    assert "detail_summary.detail_total_calls" in template
+    assert "detail_summary.detail_total_cost_cny" in template
+    assert "detail_summary.detail_payload_mb" in template
+    assert "<th>请求包大小</th>" in template
+    assert "<th>返回包大小</th>" in template
+    assert "row.request_payload_mb" in template
+    assert "row.response_payload_mb" in template
+    assert 'colspan="{% if admin_mode %}15{% else %}14{% endif %}"' in template
 
 
 def _install_template_stub(monkeypatch):
@@ -40,6 +58,8 @@ def _install_template_stub(monkeypatch):
                 "summary": context["summary"],
                 "groups": context["groups"],
                 "filters": context["filters"],
+                "detail_filters": context["detail_filters"],
+                "detail_summary": context["detail_summary"],
                 "group_by": context["group_by"],
                 "admin_mode": context["admin_mode"],
             }
@@ -122,6 +142,8 @@ def test_my_ai_usage_only_returns_current_user_rows(authed_user_client_no_db, mo
         "cost_cny": 1.23,
         "cost_source": "response",
         "extra_data": None,
+        "request_payload_mb": None,
+        "response_payload_mb": None,
     }]
     assert any(args and args[0] == 2 for _, args in captured)
 
@@ -282,6 +304,87 @@ def test_admin_ai_usage_includes_material_evaluation_rows(authed_client_no_db, m
     assert payload["rows"][0]["module"] == "material"
     assert payload["rows"][0]["provider"] == "openrouter"
     assert payload["rows"][0]["model_name"] == "google/gemini-3.1-pro-preview"
+
+
+def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_no_db, monkeypatch):
+    route_mod = _install_template_stub(monkeypatch)
+    captured = []
+
+    def fake_query(sql, args=()):
+        captured.append((sql, args))
+        if "COUNT(*) AS total_calls" in sql and "usage_log_payloads" not in sql:
+            assert "ul.module = %s" not in sql
+            assert "ul.provider = %s" not in sql
+            assert "ul.success = %s" not in sql
+            assert "ul.use_case_code = %s" not in sql
+            return [{
+                "total_cost_cny": 9.99,
+                "total_calls": 7,
+                "billed_calls": 6,
+                "unbilled_calls": 1,
+            }]
+        if "GROUP BY" in sql and "group_value" in sql:
+            return []
+        if "detail_total_calls" in sql:
+            assert "LEFT JOIN usage_log_payloads p ON p.log_id = ul.id" in sql
+            assert args[-5:] == (2, "image", "image.translate", "gemini_vertex", 1)
+            return [{
+                "detail_total_calls": 1,
+                "detail_total_cost_cny": 0.53,
+                "detail_payload_bytes": 1572864,
+                "payload_recorded_calls": 1,
+            }]
+        if "ORDER BY ul.called_at DESC" in sql:
+            assert "LEFT JOIN usage_log_payloads p ON p.log_id = ul.id" in sql
+            assert args[-7:-2] == (2, "image", "image.translate", "gemini_vertex", 1)
+            return [{
+                "id": 801,
+                "called_at": "2026-04-28 12:00:00",
+                "user_id": 2,
+                "username": "designer",
+                "project_id": "asset-1",
+                "service": "gemini",
+                "use_case_code": "image.translate",
+                "module": "image",
+                "provider": "gemini_vertex",
+                "model_name": "gemini-3.1-flash",
+                "success": 1,
+                "input_tokens": 10,
+                "output_tokens": 12,
+                "audio_duration_seconds": None,
+                "request_units": 22,
+                "units_type": "tokens",
+                "cost_cny": 0.53,
+                "cost_source": "response",
+                "extra_data": None,
+                "request_payload_bytes": 524288,
+                "response_payload_bytes": 1048576,
+            }]
+        return []
+
+    monkeypatch.setattr(route_mod, "query", fake_query)
+
+    resp = authed_client_no_db.get(
+        "/admin/ai-usage?detail_user_id=2&detail_module=image"
+        "&detail_use_case=image.translate&detail_provider=gemini_vertex"
+        "&detail_status=success"
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["summary"]["total_calls"] == 7
+    assert payload["detail_filters"] == {
+        "user_id": 2,
+        "module": "image",
+        "use_case": "image.translate",
+        "provider": "gemini_vertex",
+        "status": True,
+    }
+    assert payload["detail_summary"]["detail_total_calls"] == 1
+    assert payload["detail_summary"]["detail_payload_mb"] == "1.50 MB"
+    assert payload["rows"][0]["request_payload_mb"] == "0.50 MB"
+    assert payload["rows"][0]["response_payload_mb"] == "1.00 MB"
+    assert any("detail_total_calls" in sql for sql, _ in captured)
 
 
 def _install_pricing_store(monkeypatch):
