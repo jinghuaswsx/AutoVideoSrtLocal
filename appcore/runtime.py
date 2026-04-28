@@ -2322,6 +2322,30 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
     return segments
 
 
+def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") -> dict:
+    ok_statuses = {"ok", "rewritten_ok", "speed_adjusted"}
+    total = len(sentences or [])
+    ok_sentences = sum(
+        1
+        for sentence in (sentences or [])
+        if isinstance(sentence, dict) and sentence.get("status") in ok_statuses
+    )
+    return {
+        "model": model,
+        "summary": {
+            "total_sentences": total,
+            "ok_sentences": ok_sentences,
+            "warning_sentences": total - ok_sentences,
+        },
+        "steps": [
+            {"code": "sentence_localize", "label": "GPT-5.5 句级本土化", "status": "done"},
+            {"code": "tts_first_pass", "label": "ElevenLabs 首轮生成", "status": "done"},
+            {"code": "duration_converge", "label": "句级时长收敛", "status": "done"},
+            {"code": "rebuild_outputs", "label": "重建音频和字幕", "status": "done"},
+        ],
+    }
+
+
 def _fail_localize(task_id: str, runner: "PipelineRunner", step: str, message: str) -> None:
     task_state.update(task_id, status="failed", error=message)
     runner._set_step(task_id, step, "error", message)
@@ -2519,6 +2543,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
             user_id=runner.user_id,
             project_id=task_id,
         )
+        av_debug = _build_av_debug_state(final_sentences)
         final_localized_translation = _build_av_localized_translation(final_sentences)
         final_tts_segments = _build_av_tts_segments(final_sentences)
         final_tts_output = {
@@ -2534,6 +2559,7 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
                 "tts_result": final_tts_output,
                 "tts_audio_path": final_tts_output["full_audio_path"],
                 "voice_id": voice.get("id") or tts_voice_id,
+                "av_debug": av_debug,
             }
         )
         variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_tts_output["full_audio_path"]

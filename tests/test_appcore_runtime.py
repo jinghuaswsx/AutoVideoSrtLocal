@@ -412,6 +412,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "tts_path": str(tmp_path / "seg0.mp3"),
             "speed": 1.0,
             "rewrite_rounds": 0,
+            "duration_ratio": 1.0,
+            "attempts": 1,
             "status": "ok",
         },
         {
@@ -425,6 +427,8 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "tts_path": str(tmp_path / "seg1.mp3"),
             "speed": 1.02,
             "rewrite_rounds": 0,
+            "duration_ratio": 0.92,
+            "attempts": 2,
             "status": "speed_adjusted",
         },
     ]
@@ -478,6 +482,11 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert saved["variants"]["av"]["sentences"][1]["status"] == "speed_adjusted"
     assert saved["variants"]["av"]["tts_audio_path"].endswith("tts_full.av.mp3")
     assert saved["variants"]["av"]["srt_path"].endswith("subtitle.av.srt")
+    av_state = saved["variants"]["av"]
+    assert av_state["av_debug"]["model"] == "openai/gpt-5.5"
+    assert av_state["av_debug"]["summary"]["total_sentences"] == len(av_state["sentences"])
+    assert "duration_ratio" in av_state["sentences"][0]
+    assert "attempts" in av_state["sentences"][0]
 
 
 def test_step_translate_dispatches_av_pipeline_version(tmp_path, monkeypatch):
