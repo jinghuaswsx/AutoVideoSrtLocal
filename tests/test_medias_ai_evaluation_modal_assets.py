@@ -55,4 +55,12 @@ def test_medias_js_ai_evaluation_preview_uses_fixed_media_sizes():
     assert ".ect-ai-video { width:180px; height:320px;" in script
     assert ".ect-ai-video-name" in script
     assert "-webkit-line-clamp:3" in script
+
+
+def test_medias_js_ai_evaluation_modal_panels_fill_available_height():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert ".ect-modal--ai-evaluating .ect-modal-body { display:flex; flex-direction:column; min-height:0;" in script
+    assert ".ect-ai-panels { flex:1 1 auto; min-height:0; overflow:auto;" in script
+    assert "height:calc(min(820px, 100vh - 48px) - 220px)" not in script
     assert "video.filename || video.object_key || '暂无视频文件名'" in script

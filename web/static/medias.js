@@ -541,7 +541,7 @@
     style.id = 'aiEvaluationRequestModalStyle';
     style.textContent = `
       .ect-modal--ai-evaluating { max-width:min(1420px, calc(100vw - 48px)); min-height:min(820px, calc(100vh - 48px)); }
-      .ect-modal--ai-evaluating .ect-modal-body { display:block; padding:0; overflow:hidden; }
+      .ect-modal--ai-evaluating .ect-modal-body { display:flex; flex-direction:column; min-height:0; padding:0; overflow:hidden; }
       .ect-ai-topbar { display:flex; align-items:center; justify-content:center; gap:24px; min-height:96px; padding:24px 20px; border-bottom:1px solid var(--oc-border, oklch(91% 0.012 230)); background:var(--oc-bg-subtle, oklch(97% 0.006 230)); }
       .ect-ai-status { display:flex; align-items:center; justify-content:center; gap:16px; min-width:0; }
       .ect-ai-status-dot { width:18px; height:18px; border-radius:50%; background:var(--oc-accent, oklch(56% 0.16 230)); box-shadow:0 0 0 7px var(--oc-accent-ring, oklch(56% 0.16 230 / 0.22)); }
@@ -550,7 +550,7 @@
       .ect-ai-tabs { display:flex; gap:8px; padding:12px 20px 0; background:var(--oc-bg, oklch(99% 0.004 230)); }
       .ect-ai-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong, oklch(84% 0.015 230)); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle, oklch(97% 0.006 230)); color:var(--oc-fg-muted, oklch(48% 0.018 230)); font-size:13px; font-weight:600; cursor:pointer; }
       .ect-ai-tab.active { background:var(--oc-bg, oklch(99% 0.004 230)); color:var(--oc-accent, oklch(56% 0.16 230)); border-color:var(--oc-accent, oklch(56% 0.16 230)); }
-      .ect-ai-panels { height:calc(min(820px, 100vh - 48px) - 220px); min-height:480px; overflow:auto; padding:20px; }
+      .ect-ai-panels { flex:1 1 auto; min-height:0; overflow:auto; padding:20px; }
       .ect-ai-panel[hidden] { display:none !important; }
       .ect-ai-grid { display:grid; grid-template-columns:minmax(320px, 420px) minmax(0, 1fr); gap:18px; align-items:start; }
       .ect-ai-card { border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:12px; background:var(--oc-bg, oklch(99% 0.004 230)); padding:16px; }
