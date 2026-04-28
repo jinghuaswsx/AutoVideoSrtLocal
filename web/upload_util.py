@@ -2,6 +2,11 @@
 import mimetypes
 import os
 import re
+import shutil
+import tempfile
+from pathlib import Path
+
+from appcore import tos_backup_storage
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -40,11 +45,57 @@ def detect_upload_content_type(file_storage, original_filename: str) -> str:
     return str(content_type).strip() or "application/octet-stream"
 
 
+def _should_upload_before_local_replace() -> bool:
+    return tos_backup_storage.is_enabled() and tos_backup_storage.storage_mode() == "tos_primary"
+
+
+def _write_temp_and_commit(destination: str | os.PathLike[str], writer) -> str:
+    destination_path = Path(destination)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix="upload_",
+        suffix=destination_path.suffix,
+        dir=str(destination_path.parent),
+    )
+    os.close(fd)
+    try:
+        writer(temp_name)
+        if _should_upload_before_local_replace():
+            object_key = tos_backup_storage.backup_object_key_for_local_path(destination_path)
+            tos_backup_storage.upload_local_file(temp_name, object_key)
+        os.replace(temp_name, destination_path)
+        if not _should_upload_before_local_replace():
+            tos_backup_storage.ensure_remote_copy_for_local_path(destination_path)
+        return str(destination_path)
+    finally:
+        if os.path.exists(temp_name):
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
+
+
+def save_uploaded_file_to_path(file_storage, destination: str | os.PathLike[str]) -> str:
+    return _write_temp_and_commit(destination, lambda temp_name: file_storage.save(temp_name))
+
+
+def write_stream_to_path(
+    stream,
+    destination: str | os.PathLike[str],
+    *,
+    chunk_size: int = 1024 * 1024,
+) -> str:
+    def _copy(temp_name: str) -> None:
+        with open(temp_name, "wb") as handle:
+            shutil.copyfileobj(stream, handle, length=chunk_size)
+
+    return _write_temp_and_commit(destination, _copy)
+
+
 def save_uploaded_video(file_storage, upload_dir: str, task_id: str, original_filename: str) -> tuple[str, int, str]:
     ext = os.path.splitext(original_filename)[1].lower()
     video_path = os.path.join(upload_dir, f"{task_id}{ext}")
-    os.makedirs(upload_dir, exist_ok=True)
-    file_storage.save(video_path)
+    save_uploaded_file_to_path(file_storage, video_path)
     return video_path, os.path.getsize(video_path), detect_upload_content_type(file_storage, original_filename)
 
 

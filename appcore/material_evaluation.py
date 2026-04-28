@@ -707,7 +707,10 @@ def _materialize_media(object_key: str) -> Path:
     if not key:
         raise ValueError("object_key required")
     if local_media_storage.exists(key):
-        return local_media_storage.local_path_for(key)
+        local_path = local_media_storage.local_path_for(key)
+        if not local_path.is_file():
+            local_media_storage.download_to(key, local_path)
+        return local_path
     local_path = local_media_storage.local_path_for(key)
     try:
         local_path.parent.mkdir(parents=True, exist_ok=True)

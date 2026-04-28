@@ -32,7 +32,7 @@ from appcore.av_translate_inputs import (
 )
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import cleanup
+from appcore import cleanup, tos_backup_storage
 from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
@@ -346,6 +346,9 @@ def _resolve_artifact_path(task_id: str, name: str, task: dict | None = None, va
 def _ensure_local_source_video(task_id: str, task: dict) -> None:
     video_path = (task.get("video_path") or "").strip()
     if not video_path or os.path.exists(video_path):
+        return
+    tos_backup_storage.ensure_local_copy_for_local_path(video_path)
+    if os.path.exists(video_path):
         return
     raise FileNotFoundError(
         f"本地源视频缺失: {video_path}。请先运行本地存储迁移回填，或重新上传源视频。"

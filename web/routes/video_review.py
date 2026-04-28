@@ -22,6 +22,7 @@ from config import UPLOAD_DIR, OUTPUT_DIR
 from pipeline.video_review import get_review_prompts, save_review_prompts
 from web.background import start_background_task
 from web.extensions import socketio
+from web.upload_util import save_uploaded_file_to_path
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def upload():
 
     video_filename = file.filename
     video_path = os.path.join(UPLOAD_DIR, f"{task_id}_{video_filename}")
-    file.save(video_path)
+    save_uploaded_file_to_path(file, video_path)
 
     display_name = os.path.splitext(video_filename)[0]
 

@@ -39,3 +39,11 @@ def test_normalize_row_decodes_summary_json():
 
     assert row["summary"] == {"updated": 3, "fetched": 404}
     assert "summary_json" not in row
+
+
+def test_task_definitions_include_tos_backup():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    assert definitions["tos_backup"]["schedule"] == "每天 02:00"

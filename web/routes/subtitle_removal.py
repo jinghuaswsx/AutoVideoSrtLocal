@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import threading
 import uuid
 from datetime import datetime
@@ -20,7 +19,7 @@ from config import OUTPUT_DIR, UPLOAD_DIR
 from pipeline.ffutil import extract_thumbnail, probe_media_info
 from web import store
 from web.services import subtitle_removal_runner
-from web.upload_util import validate_video_extension
+from web.upload_util import validate_video_extension, write_stream_to_path
 
 log = logging.getLogger(__name__)
 
@@ -512,8 +511,7 @@ def api_local_upload(task_id: str):
     if not video_path:
         abort(404)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    with open(video_path, "wb") as handle:
-        shutil.copyfileobj(request.stream, handle)
+    write_stream_to_path(request.stream, video_path)
     return ("", 204)
 
 

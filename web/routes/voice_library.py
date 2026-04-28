@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import threading
 import uuid as _uuid
 
@@ -14,6 +13,7 @@ from appcore import medias
 from appcore import voice_match_tasks as vmt
 from appcore.voice_library_browse import list_filter_options, list_voices
 from config import UPLOAD_DIR
+from web.upload_util import write_stream_to_path
 
 log = logging.getLogger(__name__)
 bp = Blueprint("voice_library", __name__, url_prefix="/voice-library")
@@ -155,8 +155,7 @@ def api_match_local_upload(upload_token: str):
     if not video_path:
         abort(404)
     os.makedirs(os.path.dirname(video_path), exist_ok=True)
-    with open(video_path, "wb") as handle:
-        shutil.copyfileobj(request.stream, handle)
+    write_stream_to_path(request.stream, video_path)
     _mark_upload_complete(upload_token)
     return ("", 204)
 

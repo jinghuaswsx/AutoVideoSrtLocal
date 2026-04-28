@@ -23,6 +23,7 @@ from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
 from web.extensions import socketio
+from web.upload_util import save_uploaded_file_to_path
 
 log = logging.getLogger(__name__)
 
@@ -227,7 +228,7 @@ def upload():
             return jsonify(error="不支持的视频格式"), 400
         video_filename = video_file.filename
         video_path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{secure_filename_component(video_filename)}")
-        video_file.save(video_path)
+        save_uploaded_file_to_path(video_file, video_path)
 
     # 保存图片
     image_paths = []
@@ -600,7 +601,7 @@ def add_asset(task_id: str, kind: str):
             return jsonify(error="不支持的视频格式"), 400
         safe_name = secure_filename_component(upload_file.filename)
         path = os.path.join(UPLOAD_DIR, f"{task_id}_video_{safe_name}")
-        upload_file.save(path)
+        save_uploaded_file_to_path(upload_file, path)
         state["video_path"] = path
     elif kind == "image":
         image_paths = state.get("image_paths", [])

@@ -89,6 +89,31 @@ systemctl status autovideosrt-test --no-pager -l
 - 两个环境共用虚拟环境路径 `/opt/autovideosrt/venv`。如需安装或升级 Python 依赖，要先评估是否会影响线上环境。
 - 服务器 `.env` 中包含密钥和密码，排查时只读取必要的非敏感键；不要把敏感值写入仓库。
 
+## TOS 灾备存储
+
+- 专用桶：`autovideosrtlocal`。
+- 文件 Object Key 映射：`FILES/{TOS_BACKUP_ENV}/{本地绝对路径}`。例如 `/data/autovideosrt-test/output/media_store/1/items/a.mp4` 对应 `FILES/test/data/autovideosrt-test/output/media_store/1/items/a.mp4`。
+- 数据库 dump 目录：`DB/{TOS_BACKUP_ENV}/{YYYY-MM-DD}/`，每天凌晨 02:00 先遍历同步受保护文件，再生成前一天日期的 MySQL 全量 dump，保留 7 天。
+- 系统级开关：`FILE_STORAGE_MODE=local_primary` 表示业务读写本地并补齐 TOS；`FILE_STORAGE_MODE=tos_primary` 表示优先以 TOS 为准，本地缺文件时自动拉回。
+- 手动备份：`python scripts/tos_backup_sync.py` 全量执行；`--files-only` 只同步受保护文件；`--db-only` 只生成/上传数据库 dump 并清理过期 dump。
+- 新服务器恢复：先配置同一套 `DB_*`、`TOS_BACKUP_*`、`MYSQL_BIN`，再执行 `python scripts/tos_backup_restore.py`。默认流程是下载 TOS 中最新 DB dump、导入 MySQL，然后按恢复后的数据库引用把所有受保护文件拉回本地。`--download-only` 只下载最新 dump；`--db-only` 只恢复数据库；`--files-only` 只按当前数据库恢复文件。
+- 恢复路径约束：文件 Key 直接绑定本地绝对路径，新服务器建议保持相同的数据目录布局，或提前把 `/opt/autovideosrt/uploads`、`/opt/autovideosrt/output` 软链到与原服务器一致的数据目录，避免恢复后的文件路径与数据库引用不一致。
+- 受保护文件范围：项目上传原始视频、素材管理中的商品详情图、视频素材、视频封面、各小语种视频素材/封面/详情图，以及 raw source 的小语种封面。
+
+服务器启用 TUN 模式时，TOS 必须走 DIRECT，不要走代理。代码层会自动补 `NO_PROXY/no_proxy`，代理配置层仍需加直连规则：
+
+```yaml
+rules:
+  - DOMAIN-SUFFIX,volces.com,DIRECT
+  - DOMAIN-SUFFIX,ivolces.com,DIRECT
+
+fake-ip-filter:
+  - "*.volces.com"
+  - "*.ivolces.com"
+```
+
+如果使用的是 Mihomo/Clash 的 rule-providers，把这两条 `DOMAIN-SUFFIX` 放在代理规则之前，确保 `tos-cn-shanghai.volces.com` 和 `tos-cn-shanghai.ivolces.com` 不消耗代理流量。
+
 ## 本次核对结果
 
 2026-04-23 已通过 SSH 只读核对：
