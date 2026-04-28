@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -65,6 +66,211 @@ _META_AD_NUMERIC_FIELDS: dict[str, tuple[str, str]] = {
     "展示次数": ("impressions", "int"),
     "视频平均播放时长": ("video_avg_play_time", "float"),
 }
+
+_DIANXIAOMI_SITE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "newjoy": ("newjoyloo.com",),
+    "omurio": ("omurio.com", "omurio"),
+}
+_DIANXIAOMI_EXCLUDED_DOMAINS = ("smartgearx.com", "smartgearx")
+
+
+@dataclass(frozen=True)
+class DianxiaomiProductScope:
+    by_shopify_id: dict[str, dict[str, Any]]
+    excluded_shopify_ids: set[str]
+    requested_site_codes: set[str]
+
+
+def _safe_decimal_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return round(float(str(value).replace(",", "").strip()), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_dianxiaomi_ts(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        candidate = text[:19] if fmt.endswith("%S") else text[:10]
+        try:
+            return datetime.strptime(candidate, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _combined_link_text(*values: Any) -> str:
+    return " ".join(str(value or "") for value in values).lower()
+
+
+def _infer_dianxiaomi_site_code_from_text(text: str, requested_site_codes: set[str]) -> str | None:
+    normalized = (text or "").lower()
+    if not normalized:
+        return None
+    if any(domain in normalized for domain in _DIANXIAOMI_EXCLUDED_DOMAINS):
+        return "smartgearx"
+    for site_code in sorted(requested_site_codes):
+        domains = _DIANXIAOMI_SITE_DOMAINS.get(site_code, (site_code,))
+        if any(domain in normalized for domain in domains):
+            return site_code
+    return None
+
+
+def extract_dianxiaomi_shopify_product_id(line: dict[str, Any]) -> str | None:
+    for key in ("productId", "shopifyProductId", "pid"):
+        value = str(line.get(key) or "").strip()
+        if value.isdigit():
+            return value
+    for key in ("productUrl", "sourceUrl"):
+        text = str(line.get(key) or "")
+        match = re.search(r"/products/(\d+)", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductScope:
+    requested = {str(code).strip().lower() for code in site_codes if str(code).strip()}
+    rows = query(
+        "SELECT id, product_code, shopifyid, product_link, localized_links_json "
+        "FROM media_products "
+        "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL AND shopifyid <> ''"
+    )
+    by_shopify_id: dict[str, dict[str, Any]] = {}
+    excluded_shopify_ids: set[str] = set()
+    for row in rows:
+        shopifyid = str(row.get("shopifyid") or "").strip()
+        if not shopifyid:
+            continue
+        site_code = _infer_dianxiaomi_site_code_from_text(
+            _combined_link_text(
+                row.get("product_code"),
+                row.get("product_link"),
+                row.get("localized_links_json"),
+            ),
+            requested,
+        )
+        if site_code == "smartgearx":
+            excluded_shopify_ids.add(shopifyid)
+            continue
+        if site_code in requested:
+            by_shopify_id[shopifyid] = {
+                "product_id": row.get("id"),
+                "product_code": row.get("product_code"),
+                "site_code": site_code,
+                "shopifyid": shopifyid,
+            }
+    return DianxiaomiProductScope(
+        by_shopify_id=by_shopify_id,
+        excluded_shopify_ids=excluded_shopify_ids,
+        requested_site_codes=requested,
+    )
+
+
+def _dianxiaomi_order_lines(order: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in ("productList", "cancelProductList"):
+        value = order.get(key) or []
+        if isinstance(value, list):
+            rows.extend(item for item in value if isinstance(item, dict))
+    return rows
+
+
+def _resolve_dianxiaomi_line_product(
+    line: dict[str, Any],
+    shopify_product_id: str,
+    scope: DianxiaomiProductScope,
+) -> dict[str, Any] | None:
+    if shopify_product_id in scope.excluded_shopify_ids:
+        return None
+    product = scope.by_shopify_id.get(shopify_product_id)
+    if product:
+        return product
+    site_code = _infer_dianxiaomi_site_code_from_text(
+        _combined_link_text(line.get("productUrl"), line.get("sourceUrl")),
+        scope.requested_site_codes,
+    )
+    if site_code == "smartgearx" or site_code not in scope.requested_site_codes:
+        return None
+    return {
+        "product_id": None,
+        "product_code": None,
+        "site_code": site_code,
+        "shopifyid": shopify_product_id,
+    }
+
+
+def normalize_dianxiaomi_order(
+    order: dict[str, Any],
+    scope: DianxiaomiProductScope,
+    profits_by_package_id: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    normalized: list[dict[str, Any]] = []
+    skipped = 0
+    package_id = str(order.get("id") or order.get("packageId") or "").strip()
+    profit = profits_by_package_id.get(package_id) or {}
+    for line in _dianxiaomi_order_lines(order):
+        shopify_product_id = extract_dianxiaomi_shopify_product_id(line)
+        if not shopify_product_id:
+            skipped += 1
+            continue
+        product = _resolve_dianxiaomi_line_product(line, shopify_product_id, scope)
+        if not product:
+            skipped += 1
+            continue
+        quantity = _safe_int(str(line.get("quantity") or line.get("productCount") or "1"), 1)
+        unit_price = _safe_decimal_float(line.get("price"))
+        line_amount = round((unit_price or 0) * quantity, 2) if unit_price is not None else None
+        addr = order.get("dxmPackageAddr") if isinstance(order.get("dxmPackageAddr"), dict) else {}
+        normalized.append({
+            "site_code": product["site_code"],
+            "product_id": product["product_id"],
+            "product_code": product["product_code"],
+            "shopify_product_id": shopify_product_id,
+            "dxm_shop_id": str(order.get("shopId") or "").strip() or None,
+            "dxm_shop_name": str(order.get("shopName") or "").strip() or None,
+            "dxm_package_id": package_id,
+            "dxm_order_id": str(order.get("orderId") or "").strip() or None,
+            "extended_order_id": str(order.get("extendedOrderId") or "").strip() or None,
+            "package_number": str(order.get("packageNumber") or "").strip() or None,
+            "platform": str(order.get("platform") or order.get("shopPlatform") or "").strip() or None,
+            "order_state": str(order.get("state") or "").strip() or None,
+            "buyer_name": str(order.get("buyerName") or "").strip() or None,
+            "buyer_account": str(order.get("buyerAccount") or "").strip() or None,
+            "product_name": str(line.get("productName") or "").strip()[:500] or None,
+            "product_sku": str(line.get("productSku") or "").strip() or None,
+            "product_sub_sku": str(line.get("productSubSku") or "").strip() or None,
+            "product_display_sku": str(line.get("productDisplaySku") or line.get("displaySku") or "").strip() or None,
+            "variant_text": str(line.get("attrListStr") or line.get("attrList") or "").strip()[:500] or None,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "line_amount": line_amount,
+            "order_amount": _safe_decimal_float(order.get("orderAmount")),
+            "order_currency": str(order.get("orderUnit") or "").strip() or None,
+            "ship_amount": _safe_decimal_float(order.get("shipAmount")),
+            "amount_with_shipping": _safe_decimal_float(order.get("orderAmount")),
+            "amount_cny": _safe_decimal_float(profit.get("amountCNY")),
+            "logistic_fee": _safe_decimal_float(profit.get("logisticFee")),
+            "profit": _safe_decimal_float(profit.get("profit")),
+            "refund_amount_usd": _safe_decimal_float(order.get("refundAmountUsd")),
+            "refund_amount": _safe_decimal_float(order.get("refundAmount")),
+            "buyer_country": str(order.get("buyerCountry") or addr.get("country") or "").strip() or None,
+            "buyer_country_name": str(order.get("countryCN") or "").strip() or None,
+            "province": str(addr.get("province") or "").strip() or None,
+            "city": str(addr.get("city") or "").strip() or None,
+            "order_created_at": _parse_dianxiaomi_ts(order.get("orderCreateTime")),
+            "order_paid_at": _parse_dianxiaomi_ts(order.get("orderPayTime")),
+            "paid_at": _parse_dianxiaomi_ts(order.get("paidTime")),
+            "shipped_at": _parse_dianxiaomi_ts(order.get("shippedTime")),
+            "raw_order_json": order,
+            "raw_line_json": line,
+            "profit_json": profit or None,
+        })
+    return normalized, skipped
 
 
 # ── 解析 ───────────────────────────────────────────────
