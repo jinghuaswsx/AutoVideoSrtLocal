@@ -155,6 +155,34 @@ def _order_in_date_range(order: dict[str, Any], state: str, start_date: date, en
     return ref_date is not None and start_date <= ref_date <= end_date
 
 
+def _normalize_page_orders(
+    *,
+    orders: list[dict[str, Any]],
+    scope: oa.DianxiaomiProductScope,
+    fetch_profits: Callable[[list[str]], dict[str, dict[str, Any]]],
+    summary: dict[str, int],
+) -> list[dict[str, Any]]:
+    matched_orders: list[dict[str, Any]] = []
+    skipped_total = 0
+    for order in orders:
+        rows, skipped = oa.normalize_dianxiaomi_order(order, scope, {})
+        skipped_total += skipped
+        if rows:
+            matched_orders.append(order)
+    summary["skipped_lines"] += skipped_total
+    if not matched_orders:
+        return []
+
+    package_ids = [str(order.get("id")) for order in matched_orders if order.get("id")]
+    profits = fetch_profits(package_ids) if package_ids else {}
+    page_rows: list[dict[str, Any]] = []
+    for order in matched_orders:
+        rows, _skipped = oa.normalize_dianxiaomi_order(order, scope, profits)
+        summary["fetched_lines"] += len(rows)
+        page_rows.extend(rows)
+    return page_rows
+
+
 def _extract_profit_rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ensure_dianxiaomi_success(payload)
     data = payload.get("data") or {}
@@ -214,14 +242,12 @@ def run_import(
                         if _order_in_date_range(order, state, start_date, end_date)
                     ]
                     summary["fetched_orders"] += len(orders)
-                    package_ids = [str(order.get("id")) for order in orders if order.get("id")]
-                    profits = fetch_profits(package_ids) if package_ids else {}
-                    page_rows: list[dict[str, Any]] = []
-                    for order in orders:
-                        rows, skipped = oa.normalize_dianxiaomi_order(order, scope, profits)
-                        summary["skipped_lines"] += skipped
-                        summary["fetched_lines"] += len(rows)
-                        page_rows.extend(rows)
+                    page_rows = _normalize_page_orders(
+                        orders=orders,
+                        scope=scope,
+                        fetch_profits=fetch_profits,
+                        summary=summary,
+                    )
                     if page_rows and not dry_run:
                         result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
                         summary["inserted_lines"] += int(result.get("affected") or 0)
@@ -235,14 +261,12 @@ def run_import(
                     page = first_page if page_no == 1 else extract_order_page(fetch_orders(day, page_no, state))
                     summary["total_pages"] += 1
                     summary["fetched_orders"] += len(page.orders)
-                    package_ids = [str(order.get("id")) for order in page.orders if order.get("id")]
-                    profits = fetch_profits(package_ids) if package_ids else {}
-                    page_rows: list[dict[str, Any]] = []
-                    for order in page.orders:
-                        rows, skipped = oa.normalize_dianxiaomi_order(order, scope, profits)
-                        summary["skipped_lines"] += skipped
-                        summary["fetched_lines"] += len(rows)
-                        page_rows.extend(rows)
+                    page_rows = _normalize_page_orders(
+                        orders=page.orders,
+                        scope=scope,
+                        fetch_profits=fetch_profits,
+                        summary=summary,
+                    )
                     if page_rows and not dry_run:
                         result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
                         summary["inserted_lines"] += int(result.get("affected") or 0)
