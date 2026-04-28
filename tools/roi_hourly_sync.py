@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+
+import requests
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -19,6 +22,7 @@ TIMEZONE = "Asia/Shanghai"
 STORE_SCOPE = "newjoy,omurio"
 AD_PLATFORM_SCOPE = "meta"
 META_CUTOVER_HOUR_BJ = 16
+META_GRAPH_API_VERSION = os.environ.get("META_GRAPH_API_VERSION", "v22.0")
 
 
 def _bj_now() -> datetime:
@@ -98,6 +102,137 @@ def _run_dxm_recent_import(window_start: datetime, window_end: datetime, *, max_
     batch_ids = [item.get("batch_id") for item in report["reports"] if item.get("batch_id")]
     report["batch_id"] = batch_ids[-1] if batch_ids else None
     return report
+
+
+def _meta_config() -> tuple[str | None, list[str]]:
+    token = os.environ.get("META_AD_ACCESS_TOKEN") or os.environ.get("FACEBOOK_AD_ACCESS_TOKEN")
+    raw_accounts = os.environ.get("META_AD_ACCOUNT_IDS") or os.environ.get("FACEBOOK_AD_ACCOUNT_IDS") or ""
+    accounts = [item.strip().removeprefix("act_") for item in raw_accounts.split(",") if item.strip()]
+    return token, accounts
+
+
+def _extract_action_value(rows: list[dict[str, Any]] | None, action_types: set[str]) -> float:
+    total = 0.0
+    for item in rows or []:
+        if str(item.get("action_type") or "") in action_types:
+            try:
+                total += float(item.get("value") or 0)
+            except (TypeError, ValueError):
+                pass
+    return total
+
+
+def _start_meta_run(business_date, snapshot_at: datetime, accounts: list[str]) -> int:
+    return int(execute(
+        "INSERT INTO meta_ad_realtime_import_runs "
+        "(status, business_date, snapshot_at, graph_api_version, ad_account_ids) "
+        "VALUES ('running', %s, %s, %s, %s)",
+        (business_date, snapshot_at, META_GRAPH_API_VERSION, ",".join(accounts)),
+    ))
+
+
+def _finish_meta_run(run_id: int, status: str, summary: dict[str, Any], error: str | None = None) -> None:
+    execute(
+        "UPDATE meta_ad_realtime_import_runs SET status=%s, finished_at=NOW(), "
+        "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), rows_imported=%s, "
+        "spend_usd=%s, summary_json=%s, error_message=%s WHERE id=%s",
+        (
+            status,
+            int(summary.get("rows_imported") or 0),
+            round(float(summary.get("spend_usd") or 0), 4),
+            json.dumps(summary, ensure_ascii=False, default=_json_default),
+            error,
+            run_id,
+        ),
+    )
+
+
+def _fetch_meta_account_insights(account_id: str, business_date, token: str) -> list[dict[str, Any]]:
+    url = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}/act_{account_id}/insights"
+    params = {
+        "access_token": token,
+        "level": "campaign",
+        "fields": "account_id,account_name,campaign_id,campaign_name,spend,impressions,clicks,actions,action_values",
+        "time_range": json.dumps({"since": business_date.isoformat(), "until": business_date.isoformat()}),
+        "time_increment": 1,
+        "limit": 500,
+    }
+    rows: list[dict[str, Any]] = []
+    while url:
+        response = requests.get(url, params=params, timeout=60)
+        params = None
+        if response.status_code >= 400:
+            raise RuntimeError(f"Meta insights API failed: HTTP {response.status_code} {response.text[:500]}")
+        payload = response.json()
+        rows.extend([item for item in payload.get("data") or [] if isinstance(item, dict)])
+        url = ((payload.get("paging") or {}).get("next") or "")
+    return rows
+
+
+def _sync_meta_realtime_daily(business_date, snapshot_at: datetime) -> dict[str, Any]:
+    token, accounts = _meta_config()
+    summary = {
+        "business_date": business_date,
+        "snapshot_at": snapshot_at,
+        "rows_imported": 0,
+        "spend_usd": 0.0,
+        "accounts": accounts,
+        "data_completeness": "realtime_partial",
+    }
+    run_id = _start_meta_run(business_date, snapshot_at, accounts)
+    summary["run_id"] = run_id
+    if not token or not accounts:
+        _finish_meta_run(run_id, "skipped", summary, "missing META_AD_ACCESS_TOKEN or META_AD_ACCOUNT_IDS")
+        summary["status"] = "skipped"
+        summary["error"] = "missing META_AD_ACCESS_TOKEN or META_AD_ACCOUNT_IDS"
+        return summary
+    try:
+        purchase_actions = {"purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase"}
+        all_rows: list[dict[str, Any]] = []
+        for account in accounts:
+            all_rows.extend(_fetch_meta_account_insights(account, business_date, token))
+        for row in all_rows:
+            spend = round(float(row.get("spend") or 0), 4)
+            purchase_count = int(round(_extract_action_value(row.get("actions"), purchase_actions)))
+            purchase_value = round(_extract_action_value(row.get("action_values"), purchase_actions), 4)
+            campaign_id = str(row.get("campaign_id") or row.get("campaign_name") or "").strip()
+            campaign_name = str(row.get("campaign_name") or campaign_id or "unknown").strip()
+            execute(
+                "INSERT INTO meta_ad_realtime_daily_campaign_metrics "
+                "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
+                "campaign_id, campaign_name, normalized_campaign_code, result_count, spend_usd, purchase_value_usd, "
+                "impressions, clicks, raw_json) "
+                "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
+                "ad_account_name=VALUES(ad_account_name), campaign_name=VALUES(campaign_name), "
+                "normalized_campaign_code=VALUES(normalized_campaign_code), result_count=VALUES(result_count), "
+                "spend_usd=VALUES(spend_usd), purchase_value_usd=VALUES(purchase_value_usd), "
+                "impressions=VALUES(impressions), clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
+                (
+                    run_id,
+                    business_date,
+                    snapshot_at,
+                    str(row.get("account_id") or "").removeprefix("act_") or None,
+                    row.get("account_name"),
+                    campaign_id,
+                    campaign_name,
+                    campaign_name.lower(),
+                    purchase_count,
+                    spend,
+                    purchase_value,
+                    int(float(row.get("impressions") or 0)),
+                    int(float(row.get("clicks") or 0)),
+                    json.dumps(row, ensure_ascii=False),
+                ),
+            )
+            summary["rows_imported"] += 1
+            summary["spend_usd"] = round(float(summary["spend_usd"]) + spend, 4)
+        _finish_meta_run(run_id, "success", summary)
+        summary["status"] = "success"
+        return summary
+    except Exception as exc:
+        _finish_meta_run(run_id, "failed", summary, str(exc))
+        raise
 
 
 def _hour_ranges(window_start: datetime, window_end: datetime) -> list[tuple[datetime, datetime]]:
@@ -244,9 +379,9 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
     ) or {}
     ad_row = query_one(
         "SELECT SUM(spend_usd) AS ad_spend_usd "
-        "FROM meta_ad_daily_campaign_metrics "
-        "WHERE meta_business_date=%s",
-        (business_date,),
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
+        (business_date, snapshot_at),
     ) or {}
     ad_spend = round(float(ad_row.get("ad_spend_usd") or 0), 4)
     ad_status = "ok" if ad_spend > 0 else "pending_source"
@@ -425,6 +560,8 @@ def run_sync(
             dxm_report = _run_dxm_recent_import(window_start, window_end, max_scan_pages=max_scan_pages)
             summary["dxm_import_batch_id"] = dxm_report.get("batch_id")
             summary["dxm_report"] = dxm_report
+        business_date = _meta_business_date(snapshot_at)
+        summary["meta_realtime_report"] = _sync_meta_realtime_daily(business_date, snapshot_at)
         summary["snapshot_id"] = _insert_daily_snapshot(run_id, snapshot_at)
         summary["snapshot_at"] = snapshot_at
         # Current requirement: only keep the real-time day-level board fresh.

@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS meta_ad_realtime_import_runs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  status ENUM('running','success','failed','skipped') NOT NULL DEFAULT 'running',
+  business_date DATE NOT NULL,
+  snapshot_at DATETIME NOT NULL,
+  graph_api_version VARCHAR(16) DEFAULT NULL,
+  ad_account_ids VARCHAR(512) DEFAULT NULL,
+  rows_imported INT NOT NULL DEFAULT 0,
+  spend_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  error_message MEDIUMTEXT DEFAULT NULL,
+  summary_json JSON DEFAULT NULL,
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME DEFAULT NULL,
+  duration_seconds INT UNSIGNED DEFAULT NULL,
+  KEY idx_meta_rt_runs_date_snapshot (business_date, snapshot_at),
+  KEY idx_meta_rt_runs_status_started (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Realtime partial Meta ad pulls';
+
+CREATE TABLE IF NOT EXISTS meta_ad_realtime_daily_campaign_metrics (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  import_run_id BIGINT NOT NULL,
+  business_date DATE NOT NULL COMMENT 'Meta ad platform business date',
+  snapshot_at DATETIME NOT NULL,
+  data_completeness VARCHAR(32) NOT NULL DEFAULT 'realtime_partial',
+  ad_account_id VARCHAR(32) DEFAULT NULL,
+  ad_account_name VARCHAR(128) DEFAULT NULL,
+  campaign_id VARCHAR(64) DEFAULT NULL,
+  campaign_name VARCHAR(255) NOT NULL,
+  normalized_campaign_code VARCHAR(255) NOT NULL,
+  result_count INT NOT NULL DEFAULT 0,
+  spend_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  purchase_value_usd DECIMAL(14,4) NOT NULL DEFAULT 0,
+  impressions INT NOT NULL DEFAULT 0,
+  clicks INT NOT NULL DEFAULT 0,
+  raw_json JSON DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_meta_rt_campaign_snapshot (business_date, snapshot_at, ad_account_id, campaign_id),
+  KEY idx_meta_rt_campaign_date (business_date, snapshot_at),
+  KEY idx_meta_rt_campaign_account (ad_account_id, business_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Realtime partial Meta campaign metrics, separated from final daily reports';
