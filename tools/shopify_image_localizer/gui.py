@@ -38,6 +38,7 @@ class ShopifyImageLocalizerApp:
         self.advanced_visible = False
         self.language_items: list[dict] = []
         self.language_label_to_code: dict[str, str] = {}
+        self.language_label_to_shop_locale: dict[str, str] = {}
         self.language_label_to_shopify_name: dict[str, str] = {}
         self._workspace_root = ""
         self._download_dir = ""
@@ -284,6 +285,7 @@ class ShopifyImageLocalizerApp:
 
     def _set_language_items(self, items: list[dict], fallback: bool = False) -> None:
         mapping: dict[str, str] = {}
+        shop_locale_mapping: dict[str, str] = {}
         shopify_name_mapping: dict[str, str] = {}
         labels: list[str] = []
         filtered_items: list[dict] = []
@@ -295,12 +297,14 @@ class ShopifyImageLocalizerApp:
                 continue
             label = self._language_label(item)
             mapping[label] = code
+            shop_locale_mapping[label] = str(item.get("shop_locale") or code).strip()
             shopify_name_mapping[label] = str(item.get("shopify_language_name") or "").strip()
             labels.append(label)
             filtered_items.append(item)
 
         self.language_items = filtered_items
         self.language_label_to_code = mapping
+        self.language_label_to_shop_locale = shop_locale_mapping
         self.language_label_to_shopify_name = shopify_name_mapping
         self.language_box.configure(values=labels)
         if labels:
@@ -340,6 +344,9 @@ class ShopifyImageLocalizerApp:
     def _selected_shopify_language_name(self, language_label: str) -> str:
         return self.language_label_to_shopify_name.get(language_label, "")
 
+    def _selected_shop_locale(self, language_label: str) -> str:
+        return self.language_label_to_shop_locale.get(language_label, "")
+
     def start_run(self) -> None:
         product_code = self.product_code_var.get().strip().lower()
         language_label = self.language_var.get().strip()
@@ -355,6 +362,7 @@ class ShopifyImageLocalizerApp:
             return
 
         lang_code = self._selected_lang_code(language_label)
+        shop_locale = self._selected_shop_locale(language_label)
         shopify_language_name = self._selected_shopify_language_name(language_label)
         base_url = settings.DEFAULT_BASE_URL
         self.base_url_var.set(base_url)
@@ -386,6 +394,7 @@ class ShopifyImageLocalizerApp:
                 browser_dir,
                 product_code,
                 lang_code,
+                shop_locale,
                 shopify_product_id,
                 shopify_language_name,
                 cancel_token,
@@ -408,6 +417,7 @@ class ShopifyImageLocalizerApp:
             return
 
         lang_code = self._selected_lang_code(language_label)
+        shop_locale = self._selected_shop_locale(language_label)
         base_url = settings.DEFAULT_BASE_URL
         self.base_url_var.set(base_url)
         api_key = self.api_key_var.get().strip()
@@ -425,7 +435,7 @@ class ShopifyImageLocalizerApp:
         )
         threading.Thread(
             target=self._open_shopify_target_worker,
-            args=(target, base_url, api_key, browser_dir, product_code, lang_code, shopify_product_id),
+            args=(target, base_url, api_key, browser_dir, product_code, lang_code, shop_locale, shopify_product_id),
             daemon=True,
         ).start()
 
@@ -482,6 +492,7 @@ class ShopifyImageLocalizerApp:
         browser_dir: str,
         product_code: str,
         lang_code: str,
+        shop_locale: str,
         shopify_product_id: str,
     ) -> None:
         try:
@@ -492,6 +503,7 @@ class ShopifyImageLocalizerApp:
                 browser_user_data_dir=browser_dir,
                 product_code=product_code,
                 lang=lang_code,
+                shop_locale=shop_locale,
                 shopify_product_id=shopify_product_id,
             )
             self.root.after(0, self._render_open_result, result, product_code)
@@ -521,6 +533,7 @@ class ShopifyImageLocalizerApp:
         browser_dir: str,
         product_code: str,
         lang_code: str,
+        shop_locale: str,
         shopify_product_id: str,
         shopify_language_name: str,
         cancel_token: cancellation.CancellationToken,
@@ -532,6 +545,7 @@ class ShopifyImageLocalizerApp:
                 browser_user_data_dir=browser_dir,
                 product_code=product_code,
                 lang=lang_code,
+                shop_locale=shop_locale,
                 shopify_product_id=shopify_product_id,
                 shopify_language_name=shopify_language_name,
                 cancel_token=cancel_token,

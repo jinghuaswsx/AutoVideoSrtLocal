@@ -40,6 +40,13 @@ ISO_TO_ENGLISH_NAME: dict[str, str] = {
     "hi": "Hindi",
 }
 
+TRANSLATE_AND_ADAPT_LOCALE_ALIASES: dict[str, str] = {
+    # Shopify storefront uses /pt/, but Translate & Adapt requires the
+    # region-qualified locale. Passing plain "pt" redirects the admin app to
+    # another language and the embedded iframe cannot be matched safely.
+    "pt": "pt-PT",
+}
+
 
 def english_name_for(lang_code: str) -> str:
     """给出浏览器下拉里显示的英文名；未知代码回退到 ISO 大写形式。"""
@@ -49,3 +56,10 @@ def english_name_for(lang_code: str) -> str:
         return name
     # 未知语言码：回退到大写 + 原始代码，如 "KO-KP" 这种
     return code.upper() if code else ""
+
+
+def translate_and_adapt_locale_for(lang_code: str) -> str:
+    code = (lang_code or "").strip()
+    if not code:
+        return ""
+    return TRANSLATE_AND_ADAPT_LOCALE_ALIASES.get(code.lower(), code)

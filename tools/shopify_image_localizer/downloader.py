@@ -8,15 +8,36 @@ import requests
 
 from tools.shopify_image_localizer import cancellation
 
-MAX_FILENAME_LENGTH = 96
+MAX_FILENAME_LENGTH = 255
+FALLBACK_FILENAME_LENGTH = 96
+_WINDOWS_RESERVED_NAMES = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{idx}" for idx in range(1, 10)),
+    *(f"lpt{idx}" for idx in range(1, 10)),
+}
+_ILLEGAL_FILENAME_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _SOURCE_TOKEN_RE = re.compile(r"(from_url_[a-z]{2,8}_\d{2}_[0-9a-fA-F]{32})")
 
 
-def _safe_filename(filename: str, fallback: str, *, max_length: int = MAX_FILENAME_LENGTH) -> str:
-    normalized = (filename or "").strip().replace("\\", "_").replace("/", "_")
-    normalized = normalized or (fallback or "").strip().replace("\\", "_").replace("/", "_")
+def _preferred_filename(filename: str, fallback: str) -> str:
+    normalized = (filename or "").strip()
+    normalized = normalized or (fallback or "").strip()
+    normalized = _ILLEGAL_FILENAME_CHARS_RE.sub("_", normalized)
+    normalized = normalized.strip(" .")
     if not normalized:
         normalized = "image.jpg"
+    stem = Path(normalized).stem
+    suffix = Path(normalized).suffix
+    if stem.lower() in _WINDOWS_RESERVED_NAMES:
+        return f"{stem}_{suffix}" if suffix else f"{stem}_"
+    return normalized
+
+
+def _safe_filename(filename: str, fallback: str, *, max_length: int = MAX_FILENAME_LENGTH) -> str:
+    normalized = _preferred_filename(filename, fallback)
     if len(normalized) <= max_length:
         return normalized
 
@@ -55,11 +76,15 @@ def download_images(
         cancellation.throw_if_cancelled(cancel_token)
         item_id = str(item.get("id") or f"image-{index}")
         raw_filename = str(item.get("filename") or "")
-        filename = _safe_filename(raw_filename, f"{item_id}.jpg")
-        output_path = output_dir / filename
+        preferred_filename = _preferred_filename(raw_filename, f"{item_id}.jpg")
+        filename = (
+            preferred_filename
+            if len(preferred_filename) <= MAX_FILENAME_LENGTH
+            else _safe_filename(preferred_filename, f"{item_id}.jpg")
+        )
         last_exc: Exception | None = None
         if status_cb is not None:
-            if raw_filename and raw_filename != filename:
+            if preferred_filename != filename:
                 status_cb(f"下载图片 {index}/{total}: 原文件名过长，已缩短为 {filename}")
             else:
                 status_cb(f"下载图片 {index}/{total}: {filename}")
@@ -69,8 +94,28 @@ def download_images(
             try:
                 response = requests.get(str(item.get("url") or ""), timeout=30)
                 response.raise_for_status()
-                output_path.write_bytes(response.content)
-                downloaded.append({**item, "local_path": str(output_path)})
+                output_path = output_dir / filename
+                try:
+                    output_path.write_bytes(response.content)
+                except OSError:
+                    fallback_filename = _safe_filename(
+                        preferred_filename,
+                        f"{item_id}.jpg",
+                        max_length=FALLBACK_FILENAME_LENGTH,
+                    )
+                    if fallback_filename == filename:
+                        raise
+                    filename = fallback_filename
+                    output_path = output_dir / filename
+                    if status_cb is not None:
+                        status_cb(f"涓嬭浇鍥剧墖 {index}/{total}: 鏂囦欢鍚嶈繃闀挎垨涓嶅彲鐢紝宸茬敤鍏滃簳鏂囦欢鍚?{filename}")
+                    output_path.write_bytes(response.content)
+                downloaded.append({
+                    **item,
+                    "filename": filename,
+                    "original_filename": raw_filename or preferred_filename,
+                    "local_path": str(output_path),
+                })
                 if status_cb is not None:
                     status_cb(f"已保存图片 {index}/{total}: {filename}")
                 last_exc = None
