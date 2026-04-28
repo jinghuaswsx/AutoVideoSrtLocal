@@ -1,4 +1,30 @@
 {% extends "layout.html" %}
+{% macro billing_multi_filter(name, label, options, selected, placeholder, mono=False) -%}
+{% set selected_values = selected | map('string') | list %}
+<div class="billing-field">
+  <span>{{ label }}</span>
+  <div class="billing-multi" data-billing-multi>
+    <button type="button" class="billing-multi-trigger" data-billing-multi-trigger aria-expanded="false">
+      <span data-billing-multi-label>{{ placeholder }}</span>
+      <span class="billing-multi-chev">⌄</span>
+    </button>
+    <div class="billing-multi-menu" data-billing-multi-menu hidden>
+      {% if options %}
+      {% for option in options %}
+      {% set option_value = option.value|string %}
+      <label class="billing-multi-option">
+        <input type="checkbox" name="{{ name }}" value="{{ option.value }}" {% if option_value in selected_values %}checked{% endif %}>
+        <span class="{% if mono %}billing-mono{% endif %}">{{ option.label }}</span>
+        {% if option.meta %}<small>{{ option.meta }}</small>{% endif %}
+      </label>
+      {% endfor %}
+      {% else %}
+      <div class="billing-multi-empty">当前范围无可选项</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{%- endmacro %}
 {% block title %}API 账单 — AutoVideoSrt{% endblock %}
 {% block page_title %}{% if admin_mode %}API 账单{% else %}我的 API 账单{% endif %}{% endblock %}
 {% block extra_style %}
@@ -129,6 +155,97 @@
   border-color: var(--billing-accent);
   box-shadow: 0 0 0 3px oklch(56% 0.16 230 / 0.14);
   background: white;
+}
+
+.billing-multi {
+  position: relative;
+}
+
+.billing-multi-trigger {
+  min-height: 38px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--billing-border-strong);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--billing-fg);
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.billing-multi-trigger:hover,
+.billing-multi-trigger[aria-expanded="true"] {
+  border-color: var(--billing-accent);
+  background: white;
+}
+
+.billing-multi-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px oklch(56% 0.16 230 / 0.14);
+}
+
+.billing-multi-chev {
+  color: var(--billing-fg-subtle);
+  font-size: 13px;
+}
+
+.billing-multi-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, calc(100vw - 48px));
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--billing-border);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 18px 36px -24px oklch(22% 0.02 235 / 0.34);
+}
+
+.billing-multi-menu[hidden] {
+  display: none;
+}
+
+.billing-multi-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--billing-fg);
+  cursor: pointer;
+}
+
+.billing-multi-option:hover {
+  background: var(--billing-bg-subtle);
+}
+
+.billing-multi-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--billing-accent);
+}
+
+.billing-multi-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.billing-multi-empty {
+  padding: 14px 10px;
+  color: var(--billing-fg-subtle);
+  font-size: 13px;
 }
 
 .billing-field-range {
@@ -1073,36 +1190,12 @@
       {% endif %}
       <input type="hidden" name="page" value="1">
       <div class="billing-detail-filter-grid">
-        <label class="billing-field">
-          <span>成功或失败</span>
-          <select class="billing-select" name="detail_status">
-            <option value="">全部状态</option>
-            <option value="success" {% if detail_filters.status is sameas true %}selected{% endif %}>成功</option>
-            <option value="failed" {% if detail_filters.status is sameas false %}selected{% endif %}>失败</option>
-          </select>
-        </label>
-        <label class="billing-field">
-          <span>模块</span>
-          <input class="billing-input billing-mono" type="text" name="detail_module" value="{{ detail_filters.module }}" placeholder="如 video_translate">
-        </label>
-        <label class="billing-field">
-          <span>供应商</span>
-          <select class="billing-select" name="detail_provider">
-            <option value="">全部供应商</option>
-            {% for provider in ['openrouter', 'doubao', 'gemini_vertex', 'gemini_aistudio', 'elevenlabs', 'doubao_asr'] %}
-            <option value="{{ provider }}" {% if detail_filters.provider == provider %}selected{% endif %}>{{ provider }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="billing-field">
-          <span>功能</span>
-          <input class="billing-input billing-mono" type="text" name="detail_use_case" value="{{ detail_filters.use_case }}" placeholder="如 video_translate.localize">
-        </label>
+        {{ billing_multi_filter('detail_status', '成功或失败', detail_filter_options.statuses, detail_filters.statuses, '全部状态') }}
+        {{ billing_multi_filter('detail_module', '模块', detail_filter_options.modules, detail_filters.modules, '全部模块', True) }}
+        {{ billing_multi_filter('detail_provider', '供应商', detail_filter_options.providers, detail_filters.providers, '全部供应商', True) }}
+        {{ billing_multi_filter('detail_use_case', '功能', detail_filter_options.use_cases, detail_filters.use_cases, '全部功能', True) }}
         {% if admin_mode %}
-        <label class="billing-field">
-          <span>用户 ID</span>
-          <input class="billing-input billing-mono" type="text" name="detail_user_id" value="{{ '' if detail_filters.user_id in (none, -1) else detail_filters.user_id }}">
-        </label>
+        {{ billing_multi_filter('detail_user_id', '用户', detail_filter_options.users, detail_filters.user_ids, '全部用户') }}
         {% endif %}
       </div>
       <div class="billing-detail-filter-actions">
@@ -1144,7 +1237,7 @@
             </td>
             {% if admin_mode %}
             <td>
-              <div>{{ row.username or '—' }}</div>
+              <div>{{ row.user_display_name or row.username or '—' }}</div>
               <div class="billing-mono" style="margin-top:4px; color:var(--billing-fg-subtle);">#{{ row.user_id }}</div>
             </td>
             {% endif %}
@@ -1255,11 +1348,19 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
     <input type="hidden" name="use_case" value="{{ filters.use_case }}">
     <input type="hidden" name="provider" value="{{ filters.provider }}">
     <input type="hidden" name="model" value="{{ filters.model }}">
-    <input type="hidden" name="detail_module" value="{{ detail_filters.module }}">
-    <input type="hidden" name="detail_use_case" value="{{ detail_filters.use_case }}">
-    <input type="hidden" name="detail_provider" value="{{ detail_filters.provider }}">
-    {% if admin_mode and detail_filters.user_id is not none %}
-    <input type="hidden" name="detail_user_id" value="{{ detail_filters.user_id }}">
+    {% for value in detail_filters.modules %}
+    <input type="hidden" name="detail_module" value="{{ value }}">
+    {% endfor %}
+    {% for value in detail_filters.use_cases %}
+    <input type="hidden" name="detail_use_case" value="{{ value }}">
+    {% endfor %}
+    {% for value in detail_filters.providers %}
+    <input type="hidden" name="detail_provider" value="{{ value }}">
+    {% endfor %}
+    {% if admin_mode %}
+    {% for value in detail_filters.user_ids %}
+    <input type="hidden" name="detail_user_id" value="{{ value }}">
+    {% endfor %}
     {% endif %}
     <input type="hidden" name="q" value="{{ filters.q }}">
     <input type="hidden" name="group_by" value="{{ group_by }}">
@@ -1268,11 +1369,9 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
     {% elif filters.status is sameas false %}
     <input type="hidden" name="status" value="failed">
     {% endif %}
-    {% if detail_filters.status is sameas true %}
-    <input type="hidden" name="detail_status" value="success">
-    {% elif detail_filters.status is sameas false %}
-    <input type="hidden" name="detail_status" value="failed">
-    {% endif %}
+    {% for value in detail_filters.statuses %}
+    <input type="hidden" name="detail_status" value="{% if value %}success{% else %}failed{% endif %}">
+    {% endfor %}
     <div class="billing-pagination-note">分页和筛选共享同一组 URL 参数，方便直接复制链接排查。</div>
     <div class="billing-page-actions">
       <button type="submit" name="page" value="{{ page - 1 if page > 1 else 1 }}" class="btn btn-ghost" {% if page <= 1 %}disabled{% endif %}>上一页</button>
@@ -1622,6 +1721,80 @@ cost_source: {{ row.cost_source or 'unknown' }}</pre>
   }
 
   initBillingDateRangePicker();
+
+  function initBillingMultiSelects() {
+    var roots = document.querySelectorAll("[data-billing-multi]");
+    if (!roots.length) return;
+
+    function checkedLabels(root) {
+      var checked = Array.prototype.slice.call(root.querySelectorAll('input[type="checkbox"]:checked'));
+      return checked.map(function (input) {
+        var label = input.closest(".billing-multi-option");
+        var text = label ? label.querySelector("span") : null;
+        return text ? text.textContent.trim() : input.value;
+      });
+    }
+
+    function updateLabel(root) {
+      var label = root.querySelector("[data-billing-multi-label]");
+      var trigger = root.querySelector("[data-billing-multi-trigger]");
+      if (!label || !trigger) return;
+      var placeholder = trigger.getAttribute("data-placeholder") || label.textContent;
+      var labels = checkedLabels(root);
+      if (!trigger.getAttribute("data-placeholder")) {
+        trigger.setAttribute("data-placeholder", placeholder);
+      }
+      if (!labels.length) {
+        label.textContent = trigger.getAttribute("data-placeholder");
+      } else if (labels.length <= 2) {
+        label.textContent = labels.join("、");
+      } else {
+        label.textContent = labels.slice(0, 2).join("、") + " 等 " + labels.length + " 项";
+      }
+    }
+
+    function closeRoot(root) {
+      var menu = root.querySelector("[data-billing-multi-menu]");
+      var trigger = root.querySelector("[data-billing-multi-trigger]");
+      if (!menu || !trigger) return;
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    }
+
+    roots.forEach(function (root) {
+      var trigger = root.querySelector("[data-billing-multi-trigger]");
+      var menu = root.querySelector("[data-billing-multi-menu]");
+      if (!trigger || !menu) return;
+
+      updateLabel(root);
+
+      trigger.addEventListener("click", function () {
+        var nextOpen = menu.hidden;
+        roots.forEach(function (other) {
+          if (other !== root) closeRoot(other);
+        });
+        menu.hidden = !nextOpen;
+        trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+      });
+
+      menu.addEventListener("change", function () {
+        updateLabel(root);
+      });
+    });
+
+    document.addEventListener("mousedown", function (event) {
+      roots.forEach(function (root) {
+        if (!root.contains(event.target)) closeRoot(root);
+      });
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      roots.forEach(closeRoot);
+    });
+  }
+
+  initBillingMultiSelects();
 
   document.querySelectorAll("[data-detail-toggle]").forEach(function (row) {
     row.addEventListener("click", function (evt) {
