@@ -19,6 +19,20 @@ ORDER_PAGE_URL = "https://www.dianxiaomi.com/web/order/paid"
 SERVER_BROWSER_CDP_URL = "http://127.0.0.1:9223"
 DEFAULT_STATES = ["paid", "approved", "processed", "allocated", "shipped"]
 BROWSER_MODES = ("auto", "server-cdp")
+DXM_ENVIRONMENTS = {
+    "DXM-01": {
+        "label": "Shopify ID 同步店小秘账号",
+        "cdp_url": "http://127.0.0.1:9222",
+        "novnc_url": "http://127.0.0.1:6080/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/shared",
+    },
+    "DXM-02": {
+        "label": "明空选品店小秘账号",
+        "cdp_url": "http://127.0.0.1:9223",
+        "novnc_url": "http://127.0.0.1:6081/vnc.html",
+        "profile": "/data/autovideosrt/browser/profiles/mk-selection",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -337,14 +351,19 @@ def run_import_from_server_browser(
     end_date_text: str,
     site_codes: list[str],
     states: list[str] | None = None,
-    browser_cdp_url: str = SERVER_BROWSER_CDP_URL,
+    dxm_env: str = "DXM-01",
+    browser_cdp_url: str | None = None,
     dry_run: bool = False,
     skip_login_prompt: bool = True,
 ) -> dict[str, Any]:
     from playwright.sync_api import sync_playwright
 
+    env = DXM_ENVIRONMENTS.get(dxm_env)
+    if not env:
+        raise ValueError(f"未知店小秘环境编号：{dxm_env}")
+    resolved_cdp_url = browser_cdp_url or str(env["cdp_url"])
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(browser_cdp_url)
+        browser = playwright.chromium.connect_over_cdp(resolved_cdp_url)
         try:
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             page = context.pages[0] if context.pages else context.new_page()
@@ -353,7 +372,7 @@ def run_import_from_server_browser(
                 input("如果还没登录，请先登录店小秘；登录完成后按回车继续...")
                 page.goto(ORDER_PAGE_URL, wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
-            return run_import(
+            report = run_import(
                 start_date=_parse_date(start_date_text),
                 end_date=_parse_date(end_date_text),
                 site_codes=site_codes,
@@ -362,6 +381,10 @@ def run_import_from_server_browser(
                 fetch_profits=lambda package_ids: _fetch_profits_via_page(page, package_ids),
                 dry_run=dry_run,
             )
+            report["dxm_env"] = dxm_env
+            report["dxm_env_label"] = env["label"]
+            report["browser_cdp_url"] = resolved_cdp_url
+            return report
         finally:
             browser.close()
 
@@ -372,8 +395,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--sites", default="newjoy,omurio")
     parser.add_argument("--states", default=",".join(DEFAULT_STATES))
+    parser.add_argument("--dxm-env", choices=sorted(DXM_ENVIRONMENTS.keys()), default="DXM-01")
     parser.add_argument("--browser-mode", choices=BROWSER_MODES, default=os.environ.get("DXM_ORDER_BROWSER_MODE", "auto"))
-    parser.add_argument("--browser-cdp-url", default=os.environ.get("DXM_ORDER_BROWSER_CDP_URL", SERVER_BROWSER_CDP_URL))
+    parser.add_argument("--browser-cdp-url", default=os.environ.get("DXM_ORDER_BROWSER_CDP_URL", ""))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--skip-login-prompt", action="store_true")
@@ -390,7 +414,8 @@ def main(argv: list[str] | None = None) -> int:
         end_date_text=args.end_date,
         site_codes=_normalize_csv_list(args.sites),
         states=_normalize_csv_list(args.states),
-        browser_cdp_url=args.browser_cdp_url,
+        dxm_env=args.dxm_env,
+        browser_cdp_url=args.browser_cdp_url or None,
         dry_run=args.dry_run,
         skip_login_prompt=args.skip_login_prompt,
     )
