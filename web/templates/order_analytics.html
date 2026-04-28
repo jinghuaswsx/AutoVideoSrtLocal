@@ -1715,23 +1715,54 @@
 
   // ── 导出 CSV ──────────────────────────────────────
   window.exportMonthCSV = function() {
-    if (!lastMonthData) return;
-    var d = lastMonthData;
-    var lines = [];
-    lines.push(['商品名', '总单量', '订单数'].concat(d.country_list).join(','));
-    d.product_order.forEach(function(dn) {
-      var p = d.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
-      var vals = [dn, parseInt(p.total_qty) || 0, parseInt(p.order_count) || 0];
-      d.country_list.forEach(function(c) {
-        vals.push((d.matrix[dn] || {})[c] || 0);
-      });
-      lines.push(vals.join(','));
+    if (!lastMonthData) { alert('暂无数据可导出'); return; }
+    var data = lastMonthData;
+    var countryCols = data.country_columns || [];
+    var mediaCounts = data.media_counts || {};
+
+    var rows = [];
+    var header = ['商品名', 'product_code', '总单量', '订单数', '收入'];
+    countryCols.forEach(function(col) {
+      header.push(col.country + ' 订单');
+      header.push(col.country + ' ' + col.lang + ' 素材数');
     });
-    var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    rows.push(header);
+
+    data.product_order.forEach(function(dn) {
+      var p = data.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
+      var pid = p.product_id;
+      var langCounts = (pid != null && mediaCounts[pid]) ? mediaCounts[pid] : {};
+      var rowOrders = data.matrix[dn] || {};
+
+      var line = [
+        dn,
+        p.product_code || '',
+        parseInt(p.total_qty) || 0,
+        parseInt(p.order_count) || 0,
+        parseFloat(p.total_revenue) || 0,
+      ];
+      countryCols.forEach(function(col) {
+        line.push(parseInt(rowOrders[col.country]) || 0);
+        line.push(parseInt(langCounts[col.lang]) || 0);
+      });
+      rows.push(line);
+    });
+
+    var csv = rows.map(function(r) {
+      return r.map(function(cell) {
+        var s = String(cell == null ? '' : cell);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(',');
+    }).join('\n');
+
+    var bom = '﻿';  // UTF-8 BOM so Excel reads Chinese correctly
+    var blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '订单月度分析_' + new Date().toISOString().slice(0, 10) + '.csv';
-    a.click();
+    a.href = url;
+    a.download = '订单分析-' + (data.product_order && data.product_order.length ? '商品' : '空') + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ── 工具函数 ──────────────────────────────────────
