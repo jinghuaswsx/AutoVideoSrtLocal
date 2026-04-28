@@ -12,6 +12,51 @@ from appcore.llm_providers import get_adapter
 
 log = logging.getLogger(__name__)
 
+_PROXY_REQUIRED_PROVIDERS = {
+    "anthropic",
+    "gemini_aistudio",
+    "gemini_vertex",
+    "openai",
+    "openrouter",
+}
+
+
+def _network_route_intent(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    if provider in _PROXY_REQUIRED_PROVIDERS:
+        return "proxy_required"
+    if provider.startswith("doubao"):
+        return "direct_preferred"
+    return "unknown"
+
+
+def _media_network_estimate(media_paths: list[str]) -> dict:
+    items: list[dict[str, Any]] = []
+    total_bytes = 0
+    estimated_payload_bytes = 0
+    for raw_path in media_paths:
+        path = Path(raw_path)
+        size = None
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = None
+        if size is not None:
+            total_bytes += int(size)
+            estimated_payload_bytes += ((int(size) + 2) // 3) * 4
+        items.append({
+            "path": str(path),
+            "bytes": size,
+            "estimated_base64_payload_bytes": (
+                ((int(size) + 2) // 3) * 4 if size is not None else None
+            ),
+        })
+    return {
+        "media": items,
+        "total_media_bytes": total_bytes,
+        "estimated_base64_payload_bytes": estimated_payload_bytes,
+    }
+
 
 def _sanitize_messages(messages: list[dict]) -> list[dict]:
     """把 messages 里的 base64 图片内容替换为占位符，避免存储巨量数据。"""
@@ -128,6 +173,7 @@ def invoke_chat(
         "type": "chat",
         "model": model,
         "messages": _sanitize_messages(messages),
+        "network_route_intent": _network_route_intent(provider),
     }
     if temperature is not None:
         req_payload["temperature"] = temperature
@@ -202,11 +248,13 @@ def invoke_generate(
         "type": "generate",
         "model": model,
         "prompt": prompt,
+        "network_route_intent": _network_route_intent(provider),
     }
     if system:
         req_payload["system"] = system
     if media_paths:
         req_payload["media"] = media_paths
+        req_payload["network_estimate"] = _media_network_estimate(media_paths)
     if temperature is not None:
         req_payload["temperature"] = temperature
     if max_output_tokens is not None:

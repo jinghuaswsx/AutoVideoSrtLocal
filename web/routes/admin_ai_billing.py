@@ -9,6 +9,7 @@ from decimal import Decimal
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 from flask_login import current_user, login_required
 
+from appcore import medias
 from appcore.db import query, query_one
 from web.auth import admin_required
 
@@ -20,8 +21,18 @@ GROUP_BY_FIELDS = {
     "use_case": ("ul.use_case_code", "group_value"),
     "provider": ("ul.provider", "group_value"),
     "model": ("ul.model_name", "group_value"),
-    "user": ("u.username", "group_value"),
+    "user": ("__user_display__", "group_value"),
 }
+
+REQUEST_PAYLOAD_BYTES_SQL = """
+COALESCE(
+    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.request_data, '$.network_estimate.estimated_base64_payload_bytes')), 'null'), '') AS UNSIGNED),
+    CAST(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.request_data, '$.estimated_base64_payload_bytes')), 'null'), '') AS UNSIGNED),
+    OCTET_LENGTH(CAST(p.request_data AS CHAR))
+)
+"""
+
+RESPONSE_PAYLOAD_BYTES_SQL = "OCTET_LENGTH(CAST(p.response_data AS CHAR))"
 
 CSV_COLUMNS = [
     "id",
@@ -122,6 +133,7 @@ def _render(admin: bool):
         rows=report["rows"],
         filters=report["filters"],
         detail_filters=report["detail_filters"],
+        detail_filter_options=report["detail_filter_options"],
         detail_summary=report["detail_summary"],
         group_by=report["group_by"],
         page=report["page"],
@@ -141,7 +153,11 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
         detail_filters=detail_filters,
         admin=admin,
     )
+    detail_filter_options = _query_detail_filter_options(filters=filters, admin=admin)
+    user_display_expr = _user_display_expr()
     group_field, group_alias = GROUP_BY_FIELDS[filters["group_by"]]
+    if group_field == "__user_display__":
+        group_field = user_display_expr
 
     summary_sql = f"""
         SELECT
@@ -180,8 +196,8 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
             COUNT(*) AS detail_total_calls,
             COALESCE(SUM(ul.cost_cny), 0) AS detail_total_cost_cny,
             COALESCE(SUM(
-                COALESCE(OCTET_LENGTH(CAST(p.request_data AS CHAR)), 0)
-                + COALESCE(OCTET_LENGTH(CAST(p.response_data AS CHAR)), 0)
+                COALESCE({REQUEST_PAYLOAD_BYTES_SQL}, 0)
+                + COALESCE({RESPONSE_PAYLOAD_BYTES_SQL}, 0)
             ), 0) AS detail_payload_bytes,
             COALESCE(SUM(CASE
                 WHEN p.request_data IS NOT NULL OR p.response_data IS NOT NULL THEN 1
@@ -207,6 +223,7 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
             ul.called_at,
             ul.user_id,
             u.username,
+            {user_display_expr} AS user_display_name,
             ul.project_id,
             ul.service,
             ul.use_case_code,
@@ -222,8 +239,8 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
             ul.cost_cny,
             ul.cost_source,
             ul.extra_data,
-            OCTET_LENGTH(CAST(p.request_data AS CHAR)) AS request_payload_bytes,
-            OCTET_LENGTH(CAST(p.response_data AS CHAR)) AS response_payload_bytes
+            {REQUEST_PAYLOAD_BYTES_SQL} AS request_payload_bytes,
+            {RESPONSE_PAYLOAD_BYTES_SQL} AS response_payload_bytes
         FROM usage_logs ul
         LEFT JOIN users u ON u.id = ul.user_id
         LEFT JOIN usage_log_payloads p ON p.log_id = ul.id
@@ -250,6 +267,7 @@ def _query_report(*, admin: bool, paged: bool) -> dict:
         "rows": rows,
         "filters": filters,
         "detail_filters": detail_filters,
+        "detail_filter_options": detail_filter_options,
         "group_by": filters["group_by"],
         "page": filters["page"],
         "total_pages": total_pages,
@@ -281,11 +299,11 @@ def _parse_filters(*, admin: bool) -> dict:
 
 def _parse_detail_filters(*, admin: bool) -> dict:
     return {
-        "user_id": _parse_user_id(request.args.get("detail_user_id")) if admin else current_user.id,
-        "module": (request.args.get("detail_module") or "").strip(),
-        "use_case": (request.args.get("detail_use_case") or "").strip(),
-        "provider": (request.args.get("detail_provider") or "").strip(),
-        "status": _parse_status(request.args.get("detail_status")),
+        "user_ids": _parse_user_ids(request.args.getlist("detail_user_id")) if admin else [current_user.id],
+        "modules": _parse_text_values(request.args.getlist("detail_module")),
+        "use_cases": _parse_text_values(request.args.getlist("detail_use_case")),
+        "providers": _parse_text_values(request.args.getlist("detail_provider")),
+        "statuses": _parse_status_values(request.args.getlist("detail_status")),
     }
 
 
@@ -308,6 +326,18 @@ def _parse_user_id(raw: str | None) -> int | None:
     return user_id if user_id > 0 else -1
 
 
+def _parse_user_ids(raw_values: list[str]) -> list[int]:
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in raw_values:
+        user_id = _parse_user_id(raw)
+        if user_id is None or user_id in seen:
+            continue
+        ids.append(user_id)
+        seen.add(user_id)
+    return ids
+
+
 def _parse_status(raw: str | None) -> bool | None:
     value = (raw or "").strip().lower()
     if value in {"success", "1", "true"}:
@@ -315,6 +345,28 @@ def _parse_status(raw: str | None) -> bool | None:
     if value in {"failed", "0", "false"}:
         return False
     return None
+
+
+def _parse_status_values(raw_values: list[str]) -> list[bool]:
+    statuses: list[bool] = []
+    for raw in raw_values:
+        status = _parse_status(raw)
+        if status is None or status in statuses:
+            continue
+        statuses.append(status)
+    return statuses
+
+
+def _parse_text_values(raw_values: list[str]) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        value = (raw or "").strip()
+        if not value or value in seen:
+            continue
+        values.append(value)
+        seen.add(value)
+    return values
 
 
 def _build_where_clause(*, filters: dict, admin: bool) -> tuple[str, list]:
@@ -328,26 +380,24 @@ def _build_detail_where_clause(*, filters: dict, detail_filters: dict, admin: bo
     clauses, args = _build_clause_parts(filters=filters, admin=admin)
 
     if admin:
-        if detail_filters["user_id"] is not None:
-            clauses.append("ul.user_id = %s")
-            args.append(detail_filters["user_id"])
+        _append_in_clause(clauses, args, "ul.user_id", detail_filters["user_ids"])
 
-    if detail_filters["module"]:
-        clauses.append("ul.module = %s")
-        args.append(detail_filters["module"])
-    if detail_filters["use_case"]:
-        clauses.append("ul.use_case_code = %s")
-        args.append(detail_filters["use_case"])
-    if detail_filters["provider"]:
-        clauses.append("ul.provider = %s")
-        args.append(detail_filters["provider"])
-    if detail_filters["status"] is not None:
-        clauses.append("ul.success = %s")
-        args.append(1 if detail_filters["status"] else 0)
+    _append_in_clause(clauses, args, "ul.module", detail_filters["modules"])
+    _append_in_clause(clauses, args, "ul.use_case_code", detail_filters["use_cases"])
+    _append_in_clause(clauses, args, "ul.provider", detail_filters["providers"])
+    _append_in_clause(clauses, args, "ul.success", [1 if status else 0 for status in detail_filters["statuses"]])
 
     if not clauses:
         return "", args
     return "WHERE " + " AND ".join(clauses), args
+
+
+def _append_in_clause(clauses: list[str], args: list, field: str, values: list) -> None:
+    if not values:
+        return
+    placeholders = ", ".join(["%s"] * len(values))
+    clauses.append(f"{field} IN ({placeholders})")
+    args.extend(values)
 
 
 def _build_clause_parts(*, filters: dict, admin: bool) -> tuple[list[str], list]:
@@ -388,6 +438,63 @@ def _build_clause_parts(*, filters: dict, admin: bool) -> tuple[list[str], list]
         args.append(f"%{filters['q']}%")
 
     return clauses, args
+
+
+def _query_detail_filter_options(*, filters: dict, admin: bool) -> dict:
+    clauses, args = _build_clause_parts(filters=filters, admin=admin)
+    where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
+    return {
+        "statuses": [
+            {"value": "success", "label": "成功"},
+            {"value": "failed", "label": "失败"},
+        ],
+        "modules": _query_distinct_options("ul.module", where_sql, args),
+        "use_cases": _query_distinct_options("ul.use_case_code", where_sql, args),
+        "providers": _query_distinct_options("ul.provider", where_sql, args),
+        "users": _query_user_options(where_sql, args) if admin else [],
+    }
+
+
+def _query_distinct_options(field: str, where_sql: str, args: list) -> list[dict]:
+    rows = query(
+        f"""
+        SELECT DISTINCT {field} AS value
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {_where_with_extra(where_sql, f"{field} IS NOT NULL AND {field} <> ''")}
+        ORDER BY value ASC
+        """,
+        tuple(args),
+    )
+    return [{"value": row["value"], "label": row["value"]} for row in rows]
+
+
+def _query_user_options(where_sql: str, args: list) -> list[dict]:
+    user_display_expr = _user_display_expr()
+    rows = query(
+        f"""
+        SELECT DISTINCT ul.user_id AS value, {user_display_expr} AS label
+        FROM usage_logs ul
+        LEFT JOIN users u ON u.id = ul.user_id
+        {_where_with_extra(where_sql, "ul.user_id IS NOT NULL")}
+        ORDER BY label ASC, value ASC
+        """,
+        tuple(args),
+    )
+    return [
+        {"value": int(row["value"]), "label": (row.get("label") or f"用户 {row['value']}")}
+        for row in rows
+    ]
+
+
+def _user_display_expr() -> str:
+    return medias._media_product_owner_name_expr()
+
+
+def _where_with_extra(where_sql: str, extra_condition: str) -> str:
+    if where_sql:
+        return f"{where_sql} AND {extra_condition}"
+    return f"WHERE {extra_condition}"
 
 
 def _format_mb(raw_bytes) -> str | None:

@@ -31,11 +31,14 @@ def test_ai_billing_template_shows_input_and_output_token_columns():
 def test_ai_billing_template_has_detail_filters_summary_and_payload_sizes():
     template = (ROOT / "web" / "templates" / "admin_ai_billing.html").read_text(encoding="utf-8")
 
+    assert 'data-billing-multi' in template
     assert 'name="detail_status"' in template
     assert 'name="detail_module"' in template
     assert 'name="detail_provider"' in template
     assert 'name="detail_use_case"' in template
     assert 'name="detail_user_id"' in template
+    assert 'type="text" name="detail_user_id"' not in template
+    assert "row.user_display_name or row.username" in template
     assert "detail_summary.detail_total_calls" in template
     assert "detail_summary.detail_total_cost_cny" in template
     assert "detail_summary.detail_payload_mb" in template
@@ -49,6 +52,11 @@ def test_ai_billing_template_has_detail_filters_summary_and_payload_sizes():
 def _install_template_stub(monkeypatch):
     from flask import jsonify
     from web.routes import admin_ai_billing as route_mod
+    monkeypatch.setattr(
+        route_mod.medias,
+        "_media_product_owner_name_expr",
+        lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+    )
 
     def fake_render(template_name, **context):
         assert template_name == "admin_ai_billing.html"
@@ -59,6 +67,7 @@ def _install_template_stub(monkeypatch):
                 "groups": context["groups"],
                 "filters": context["filters"],
                 "detail_filters": context["detail_filters"],
+                "detail_filter_options": context["detail_filter_options"],
                 "detail_summary": context["detail_summary"],
                 "group_by": context["group_by"],
                 "admin_mode": context["admin_mode"],
@@ -185,6 +194,11 @@ def test_admin_ai_usage_user_id_filter_is_parameterized(authed_client_no_db, mon
 
 def test_admin_ai_usage_csv_export_has_header_and_all_rows(authed_client_no_db, monkeypatch):
     from web.routes import admin_ai_billing as route_mod
+    monkeypatch.setattr(
+        route_mod.medias,
+        "_media_product_owner_name_expr",
+        lambda: "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)",
+    )
 
     def fake_query(sql, args=()):
         if "COUNT(*) AS total_calls" in sql:
@@ -327,6 +341,8 @@ def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_n
             return []
         if "detail_total_calls" in sql:
             assert "LEFT JOIN usage_log_payloads p ON p.log_id = ul.id" in sql
+            assert "$.network_estimate.estimated_base64_payload_bytes" in sql
+            assert "$.estimated_base64_payload_bytes" in sql
             assert args[-5:] == (2, "image", "image.translate", "gemini_vertex", 1)
             return [{
                 "detail_total_calls": 1,
@@ -336,6 +352,7 @@ def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_n
             }]
         if "ORDER BY ul.called_at DESC" in sql:
             assert "LEFT JOIN usage_log_payloads p ON p.log_id = ul.id" in sql
+            assert "$.network_estimate.estimated_base64_payload_bytes" in sql
             assert args[-7:-2] == (2, "image", "image.translate", "gemini_vertex", 1)
             return [{
                 "id": 801,
@@ -374,11 +391,11 @@ def test_admin_ai_usage_detail_filters_do_not_change_top_summary(authed_client_n
     payload = resp.get_json()
     assert payload["summary"]["total_calls"] == 7
     assert payload["detail_filters"] == {
-        "user_id": 2,
-        "module": "image",
-        "use_case": "image.translate",
-        "provider": "gemini_vertex",
-        "status": True,
+        "user_ids": [2],
+        "modules": ["image"],
+        "use_cases": ["image.translate"],
+        "providers": ["gemini_vertex"],
+        "statuses": [True],
     }
     assert payload["detail_summary"]["detail_total_calls"] == 1
     assert payload["detail_summary"]["detail_payload_mb"] == "1.50 MB"
