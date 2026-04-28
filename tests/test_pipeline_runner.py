@@ -31,6 +31,16 @@ def test_av_pipeline_inserts_voice_match_before_alignment(tmp_path):
     assert step_names[:5] == ["extract", "asr", "asr_normalize", "voice_match", "alignment"]
 
 
+def test_web_pipeline_runner_tracks_av_tasks_as_av_translate(tmp_path):
+    task_id = "task-av-runner-project-type"
+    store.create(task_id, "video.mp4", str(tmp_path))
+    store.update(task_id, pipeline_version="av")
+
+    from web.services import pipeline_runner as service
+
+    assert service._project_type_for_task(task_id, "translation") == "av_translate"
+
+
 def test_av_voice_match_uses_video_parent_when_task_dir_missing(tmp_path, monkeypatch):
     video_path = tmp_path / "video.mp4"
     video_path.write_bytes(b"fake")

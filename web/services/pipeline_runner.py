@@ -22,6 +22,22 @@ def _make_socketio_handler(task_id: str):
     return handler
 
 
+def _project_type_for_task(task_id: str, fallback: str) -> str:
+    task = task_state.get(task_id) or {}
+    if str(task.get("pipeline_version") or "").strip() == "av":
+        return "av_translate"
+    task_type = str(task.get("type") or "").strip()
+    return task_type or fallback
+
+
+def _make_runner(task_id: str, user_id: int | None) -> PipelineRunner:
+    bus = EventBus()
+    bus.subscribe(_make_socketio_handler(task_id))
+    runner = PipelineRunner(bus=bus, user_id=user_id)
+    runner.project_type = _project_type_for_task(task_id, runner.project_type)
+    return runner
+
+
 def _run_with_tracking(runner: PipelineRunner, task_id: str, start_step: str | None = None):
     register_active_task(runner.project_type, task_id)
     try:
@@ -34,18 +50,14 @@ def _run_with_tracking(runner: PipelineRunner, task_id: str, start_step: str | N
 
 
 def start(task_id: str, user_id: int | None = None):
-    bus = EventBus()
-    bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus, user_id=user_id)
+    runner = _make_runner(task_id, user_id)
     register_active_task(runner.project_type, task_id)
     thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id), daemon=True)
     thread.start()
 
 
 def resume(task_id: str, start_step: str, user_id: int | None = None):
-    bus = EventBus()
-    bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus, user_id=user_id)
+    runner = _make_runner(task_id, user_id)
     register_active_task(runner.project_type, task_id)
     thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id, start_step), daemon=True)
     thread.start()
