@@ -503,8 +503,8 @@
 
   <div class="oa-table-wrap">
     <div class="oa-table-header">
-      <div class="oa-table-title">小时订单明细</div>
-      <div class="oar-note" id="realtimeGranularity">广告消耗当前为日级</div>
+      <div class="oa-table-title">当日节点记录</div>
+      <div class="oar-note" id="realtimeGranularity">每 10 分钟刷新当天累计数据</div>
     </div>
     <div class="oa-table-scroll">
       <table class="oa-table">
@@ -1266,12 +1266,26 @@
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
         document.getElementById('realtimeWindow').textContent = formatShortDateTime((data.period || {}).data_until_at) + ' 截止';
         document.getElementById('realtimeGranularity').textContent =
-          (data.scope || {}).hourly_ad_ready ? '广告消耗为小时级' : '广告消耗当前为日级，小时 ROAS 待小时同步接入';
+          '每 10 分钟记录当天累计订单、销售额、广告费和 ROAS';
         body.innerHTML = '';
-        (data.hourly || []).forEach(function(row) {
+        var rows = data.hourly || [];
+        if (!rows.length && (data.snapshots || []).length) {
+          rows = (data.snapshots || []).map(function(snap) {
+            return {
+              hour: String(snap.snapshot_at || '').replace('T', ' ').slice(11, 16),
+              order_count: snap.order_count,
+              order_revenue: snap.order_revenue_usd,
+              units: snap.units,
+              shipping_revenue: snap.shipping_revenue_usd,
+              ad_spend: snap.ad_spend_usd,
+              true_roas: s.true_roas
+            };
+          });
+        }
+        rows.forEach(function(row) {
           var tr = document.createElement('tr');
           [
-            String(row.hour).padStart(2, '0') + ':00-' + String(row.hour + 1).padStart(2, '0') + ':00',
+            typeof row.hour === 'number' ? String(row.hour).padStart(2, '0') + ':00-' + String(row.hour + 1).padStart(2, '0') + ':00' : row.hour,
             row.order_count || 0,
             fmtMoney(row.order_revenue),
             row.units || 0,

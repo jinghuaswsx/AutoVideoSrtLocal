@@ -743,6 +743,56 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         data_until = day_start
         complete_hour_until = day_start
 
+    latest_snapshot = query(
+        "SELECT * FROM roi_realtime_daily_snapshots "
+        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
+        (target,),
+    )
+    if latest_snapshot:
+        snap = latest_snapshot[0]
+        order_revenue = _money(snap.get("order_revenue_usd"))
+        ad_spend = _money(snap.get("ad_spend_usd"))
+        return {
+            "period": {
+                "date": target,
+                "timezone": META_ATTRIBUTION_TIMEZONE,
+                "day_start_at": day_start,
+                "day_end_at": day_end,
+                "data_until_at": snap.get("snapshot_at") or data_until,
+                "complete_hour_until_at": complete_hour_until,
+                "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+            },
+            "scope": {
+                "stores": ["newjoy", "omurio"],
+                "ad_platforms": ["meta"],
+                "order_source": "dianxiaomi",
+                "ad_source": "roi_realtime_daily_snapshots",
+                "ad_granularity": "day_realtime_snapshot",
+                "hourly_ad_ready": False,
+            },
+            "freshness": {
+                "first_order_at": None,
+                "last_order_at": snap.get("last_order_at"),
+            },
+            "summary": {
+                "order_count": int(snap.get("order_count") or 0),
+                "line_count": int(snap.get("line_count") or 0),
+                "units": int(snap.get("units") or 0),
+                "order_revenue": order_revenue,
+                "line_revenue": 0.0,
+                "shipping_revenue": _money(snap.get("shipping_revenue_usd")),
+                "ad_spend": ad_spend,
+                "meta_purchase_value": 0.0,
+                "meta_purchases": 0,
+                "true_roas": _roas(order_revenue, ad_spend),
+                "order_data_status": snap.get("order_data_status") or "ok",
+                "ad_data_status": snap.get("ad_data_status") or "pending_source",
+            },
+            "hourly": [],
+            "snapshots": [snap],
+        }
+
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
     order_rows = query(
         "SELECT HOUR(" + order_time_expr + ") AS hour, "

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt real ROAS realtime day snapshot sync every 10 minutes
+
+[Timer]
+OnCalendar=*:00/10
+Persistent=true
+Unit=autovideosrt-roi-realtime-sync.service
+
+[Install]
+WantedBy=timers.target
