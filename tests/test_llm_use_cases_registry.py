@@ -149,8 +149,10 @@ def test_video_translate_av_sync_uses_gpt55_openrouter():
 
     assert localize["default_provider"] == "openrouter"
     assert localize["default_model"] == "openai/gpt-5.5"
+    assert localize["units_type"] == "tokens"
     assert rewrite["default_provider"] == "openrouter"
     assert rewrite["default_model"] == "openai/gpt-5.5"
+    assert rewrite["units_type"] == "tokens"
 
 
 def test_get_use_case_unknown_raises():
