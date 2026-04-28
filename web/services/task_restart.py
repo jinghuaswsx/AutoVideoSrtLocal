@@ -111,11 +111,13 @@ def restart_task(
         raise ValueError(f"task {task_id} not found")
 
     # Do not purge outputs or start the runner unless the source can be used.
-    ensure_local_source_video(task_id)
+    source_video_path = ensure_local_source_video(task_id) or (task.get("video_path") or "")
 
     _purge_task_dir(task.get("task_dir") or "")
 
     payload = _build_reset_fields()
+    if source_video_path:
+        payload["preview_files"] = {"source_video": source_video_path}
     payload.update(
         {
             "steps": {step: "pending" for step in _STEPS},

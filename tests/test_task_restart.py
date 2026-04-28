@@ -140,7 +140,7 @@ def test_restart_resets_state_and_persists_new_config(done_task):
     assert task["tos_uploads"] == {}
     assert task["result"] == {}
     assert task["exports"] == {}
-    assert task["preview_files"] == {}
+    assert task["preview_files"] == {"source_video": str(done_task["video_path"])}
     assert task["translation_history"] == []
     assert task["variants"] != {} and "normal" in task["variants"]
     assert task["variants"]["normal"].get("result") == {}
