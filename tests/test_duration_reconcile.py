@@ -204,3 +204,55 @@ def test_reconcile_duration_expands_short_sentence(monkeypatch):
     assert result[0]["localization_notes"] == {"tone": "direct"}
     assert result[0]["attempts"][0]["action"] == "expand"
     assert rewrite_calls[0]["overshoot_sec"] == pytest.approx(0.0)
+
+
+def test_reconcile_duration_expand_gives_up_without_out_of_range_speed(monkeypatch):
+    durations = iter([4.0, 4.0])
+    regenerate_calls = []
+
+    monkeypatch.setattr(
+        "pipeline.duration_reconcile.av_translate.rewrite_one",
+        lambda **kwargs: "Still too short",
+    )
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (20, 30),
+                    "text": "Short",
+                    "est_chars": 5,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 4.0}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+        max_rewrite_rounds=2,
+    )
+
+    assert result[0]["status"] == "warning_short"
+    assert result[0]["speed"] == pytest.approx(1.0)
+    assert result[0]["rewrite_rounds"] == 2
+    assert len(result[0]["attempts"]) == 2
+    assert [attempt["action"] for attempt in result[0]["attempts"]] == ["expand", "expand"]
+    assert result[0]["duration_ratio"] == pytest.approx(0.8)
+    assert regenerate_calls == [
+        {"text": "Still too short", "speed": None},
+        {"text": "Still too short", "speed": None},
+    ]
