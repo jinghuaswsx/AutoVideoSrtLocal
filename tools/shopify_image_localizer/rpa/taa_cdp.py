@@ -20,7 +20,7 @@ from urllib.parse import unquote, urlparse
 import websocket
 from playwright.sync_api import sync_playwright
 
-from tools.shopify_image_localizer import cancellation
+from tools.shopify_image_localizer import cancellation, locales
 from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -254,7 +254,7 @@ class TaaSession:
         cancel_token: cancellation.CancellationToken | None = None,
     ) -> None:
         self.product_id = str(product_id).strip()
-        self.shop_locale = str(shop_locale).strip().lower()
+        self.shop_locale = locales.translate_and_adapt_locale_for(str(shop_locale).strip())
         self.user_data_dir = user_data_dir
         self.port = port
         self.cancel_token = cancel_token

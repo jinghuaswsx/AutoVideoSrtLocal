@@ -10,6 +10,7 @@ from tools.shopify_image_localizer import api_client
 from tools.shopify_image_localizer import cancellation
 from tools.shopify_image_localizer import controller
 from tools.shopify_image_localizer import downloader
+from tools.shopify_image_localizer.browser import session
 from tools.shopify_image_localizer.rpa import ez_cdp
 from tools.shopify_image_localizer.rpa import taa_cdp
 from tools.shopify_image_localizer.rpa import run_product_cdp
@@ -31,7 +32,7 @@ def _write_shape_image(path: Path, *, shape: str, fill: str = "black") -> None:
     image.save(path)
 
 
-def test_downloader_shortens_long_shopify_filename_without_losing_match_keys():
+def test_downloader_fallback_shortens_long_shopify_filename_without_losing_match_keys():
     token = "f348cc3161901b6173b86170ab9a2eca"
     filename = (
         "20260425_0b9f7177_20260420_ed1b2369_"
@@ -39,14 +40,19 @@ def test_downloader_shortens_long_shopify_filename_without_losing_match_keys():
         "9af389e3-ed41-4433-8a5f-a1b16fb37c59.png"
     )
 
-    safe = downloader._safe_filename(filename, "fallback.png")
+    safe = downloader._safe_filename(
+        filename,
+        "fallback.png",
+        max_length=downloader.FALLBACK_FILENAME_LENGTH,
+    )
 
-    assert len(safe) <= downloader.MAX_FILENAME_LENGTH
+    assert safe != filename
+    assert len(safe) <= downloader.FALLBACK_FILENAME_LENGTH
     assert f"from_url_en_10_{token}" in safe
     assert safe.endswith(".png")
 
 
-def test_downloader_writes_long_shopify_filename_to_safe_local_path(tmp_path, monkeypatch):
+def test_downloader_preserves_long_shopify_filename_when_path_is_valid(tmp_path, monkeypatch):
     token = "f348cc3161901b6173b86170ab9a2eca"
     filename = (
         "20260425_0b9f7177_20260420_ed1b2369_"
@@ -72,8 +78,42 @@ def test_downloader_writes_long_shopify_filename_to_safe_local_path(tmp_path, mo
     assert local_path.parent == tmp_path
     assert local_path.is_file()
     assert local_path.read_bytes() == b"image-bytes"
+    assert local_path.name == filename
     assert len(local_path.name) <= downloader.MAX_FILENAME_LENGTH
     assert f"from_url_en_10_{token}" in local_path.name
+    assert downloaded[0]["filename"] == local_path.name
+    assert downloaded[0]["original_filename"] == filename
+
+
+def test_downloader_shortens_only_when_filename_exceeds_windows_limit(tmp_path, monkeypatch):
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    filename = (
+        "20260425_0b9f7177_20260420_ed1b2369_"
+        f"from_url_en_10_{token}_"
+        f"{'tail_' * 45}.png"
+    )
+    assert len(filename) > downloader.MAX_FILENAME_LENGTH
+
+    class DummyResponse:
+        content = b"image-bytes"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    monkeypatch.setattr(downloader.requests, "get", lambda *_args, **_kwargs: DummyResponse())
+
+    downloaded = downloader.download_images(
+        [{"id": "image-10", "filename": filename, "url": "https://cdn.example.com/image.png"}],
+        tmp_path,
+    )
+
+    local_path = Path(downloaded[0]["local_path"])
+    assert local_path.name != filename
+    assert len(local_path.name) <= downloader.MAX_FILENAME_LENGTH
+    assert f"from_url_en_10_{token}" in local_path.name
+    assert downloaded[0]["filename"] == local_path.name
+    assert downloaded[0]["original_filename"] == filename
 
 
 def test_pair_carousel_images_prefers_matching_source_index_for_duplicate_tokens():
@@ -439,6 +479,92 @@ def test_run_uses_confirmed_visual_detail_fallback_when_plan_has_missing_src(mon
     assert captured_forced[0][src]["local_path"] == str(localized_path)
     assert confirmed_pairs[0]["target_kind"] == "detail"
     assert result["detail"]["visual_fallback_count"] == 1
+
+
+def test_run_skips_detail_visual_fallback_for_non_auto_replace_targets(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    shopify_src = "https://cdn.shopify.com/s/files/1/0000/files/plain-detail.jpg?v=1"
+    gif_src = "https://cdn.example.com/files/plain-detail.gif?v=1"
+    html = f'<p><img src="{shopify_src}"><img src="{gif_src}"></p>'
+    product = {"id": "8560000000000", "images": [], "description": html}
+    bootstrap = {
+        "reference_images": [{"id": "ref-detail", "filename": "reference-detail.png", "url": "https://server/ref.png"}],
+        "localized_images": [],
+    }
+    captured_forced: list[dict] = []
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda: {"browser_user_data_dir": "C:/chrome"})
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_image_display_sizes", lambda **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        run_product_cdp,
+        "download_visual_detail_sources",
+        lambda **_kwargs: pytest.fail("detail visual fallback should not run for skipped targets"),
+    )
+
+    def fake_replace_detail_images(**kwargs):
+        captured_forced.append(kwargs["forced_replacements_by_src"])
+        return {
+            "status": "skipped",
+            "image_count": 2,
+            "replacement_count": 0,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 2,
+            "replacements": [],
+            "verify": {"expected_new_urls_present": 0, "expected_total": 0, "old_non_shopify_count": 0},
+        }
+
+    monkeypatch.setattr(run_product_cdp.taa_cdp, "replace_detail_images", fake_replace_detail_images)
+
+    args = argparse.Namespace(
+        product_code="plain-detail-product-rjc",
+        lang="de",
+        shop_locale="de",
+        language="German",
+        product_id="",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=False,
+        no_preserve_detail_size=True,
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    result = run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
+
+    assert captured_forced == [{}]
+    assert result["detail"]["visual_fallback_count"] == 0
+    assert result["detail"]["visual_confirmation_pairs"] == []
 
 
 def test_build_detail_source_index_map_prefers_detail_side_indices():
@@ -851,6 +977,24 @@ def test_controller_prefers_api_shopify_language_name_over_static_fallback():
     )
 
     assert args.language == "Nederlands"
+
+
+def test_controller_separates_storefront_locale_from_translate_and_adapt_locale():
+    args = controller._build_batch_args(
+        product_code="sonic-lens-refresher-rjc",
+        lang="pt",
+        shopify_product_id="8559391932589",
+    )
+
+    assert args.shop_locale == "pt"
+    assert args.taa_shop_locale == "pt-PT"
+
+
+def test_translate_and_adapt_url_maps_portuguese_to_shopify_region_locale():
+    url = session.build_translate_url("8559391932589", "pt")
+
+    assert "shopLocale=pt-PT" in url
+    assert "shopLocale=pt-pt" not in url
 
 
 def test_verify_target_language_marks_all_expected_slots():

@@ -173,9 +173,10 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
         app._set_language_items(
             [
                 {
-                    "code": "nl",
-                    "label": "Dutch (NL/nl)",
-                    "shopify_language_name": "Dutch",
+                    "code": "pt",
+                    "label": "Portuguese (PT/pt)",
+                    "shop_locale": "pt-PT",
+                    "shopify_language_name": "Portuguese",
                 }
             ]
         )
@@ -185,8 +186,9 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
         app.start_run()
 
         assert done.wait(2)
-        assert captured["lang"] == "nl"
-        assert captured["shopify_language_name"] == "Dutch"
+        assert captured["lang"] == "pt"
+        assert captured["shop_locale"] == "pt-PT"
+        assert captured["shopify_language_name"] == "Portuguese"
     finally:
         app.root.destroy()
 

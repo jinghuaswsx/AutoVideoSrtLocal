@@ -495,6 +495,17 @@ def download_visual_detail_sources(
     }
 
 
+def should_attempt_detail_visual_fallback(src: str, *, replace_shopify_cdn: bool) -> bool:
+    normalized = _normalize_src(src)
+    if not normalized:
+        return False
+    if normalized.lower().split("?", 1)[0].endswith(".gif"):
+        return False
+    if "cdn.shopify.com/s/files/" in normalized and not replace_shopify_cdn:
+        return False
+    return True
+
+
 def build_detail_source_index_map(
     body_html: str,
     reference_images: list[dict],
@@ -759,6 +770,7 @@ def run(
         "product_code": args.product_code,
         "lang": args.lang,
         "shop_locale": args.shop_locale,
+        "taa_shop_locale": getattr(args, "taa_shop_locale", args.shop_locale),
         "shopify_product_id": product_id,
         "workspace": str(workspace.root),
         "download_dir": str(workspace.source_localized_dir),
@@ -893,7 +905,17 @@ def run(
                 str(row.get("src") or "")
                 for row in preliminary_detail_plan.get("skipped_missing") or []
                 if row.get("src")
+                and should_attempt_detail_visual_fallback(
+                    str(row.get("src") or ""),
+                    replace_shopify_cdn=args.replace_shopify_cdn,
+                )
             ]
+            skipped_visual_missing = len(preliminary_detail_plan.get("skipped_missing") or []) - len(missing_detail_srcs)
+            if skipped_visual_missing > 0:
+                print(
+                    "[detail] visual fallback skipped "
+                    f"{skipped_visual_missing} missing src(s) that are not auto-replace targets"
+                )
             if missing_detail_srcs and bootstrap.get("reference_images"):
                 print(f"[detail] visual fallback srcs={len(missing_detail_srcs)}")
                 detail_visual_sources = download_visual_detail_sources(
@@ -920,7 +942,7 @@ def run(
             print(f"[detail] visual fallback unavailable: {exc}")
         detail_result = taa_cdp.replace_detail_images(
             product_id=product_id,
-            shop_locale=args.shop_locale,
+            shop_locale=getattr(args, "taa_shop_locale", args.shop_locale),
             user_data_dir=cfg["browser_user_data_dir"],
             localized_images=downloaded,
             source_index_by_token=source_index_map,
@@ -970,6 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--product-code", required=True)
     parser.add_argument("--lang", default="it")
     parser.add_argument("--shop-locale", default="")
+    parser.add_argument("--taa-shop-locale", default="")
     parser.add_argument("--language", default="")
     parser.add_argument("--product-id", default="")
     parser.add_argument("--store-domain", default=DEFAULT_STORE_DOMAIN)
@@ -992,6 +1015,9 @@ def main() -> None:
     args = parser.parse_args()
     args.lang = str(args.lang or "").strip().lower()
     args.shop_locale = str(args.shop_locale or args.lang).strip().lower()
+    args.taa_shop_locale = locales.translate_and_adapt_locale_for(
+        str(args.taa_shop_locale or args.shop_locale).strip()
+    )
     args.language = str(args.language or locales.english_name_for(args.lang)).strip()
     try:
         run(args)

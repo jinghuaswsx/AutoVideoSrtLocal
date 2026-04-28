@@ -22,6 +22,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from tools.shopify_image_localizer import locales
+
 
 STORE_SLUG = "0ixug9-pv"
 
@@ -108,9 +110,10 @@ def build_ez_url(shopify_product_id: str) -> str:
 
 
 def build_translate_url(shopify_product_id: str, shop_locale: str) -> str:
+    taa_locale = locales.translate_and_adapt_locale_for(shop_locale)
     return (
         f"https://admin.shopify.com/store/{STORE_SLUG}/apps/translate-and-adapt/localize/product"
-        f"?highlight=handle&id={shopify_product_id}&shopLocale={shop_locale}"
+        f"?highlight=handle&id={shopify_product_id}&shopLocale={taa_locale}"
     )
 
 

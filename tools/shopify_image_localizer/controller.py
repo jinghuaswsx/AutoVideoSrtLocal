@@ -53,13 +53,16 @@ def _build_batch_args(
     lang: str,
     shopify_product_id: str,
     shopify_language_name: str = "",
+    shop_locale: str = "",
 ) -> argparse.Namespace:
     normalized_lang = str(lang or "").strip().lower()
     language_name = str(shopify_language_name or "").strip() or locales.english_name_for(normalized_lang)
+    taa_shop_locale = locales.translate_and_adapt_locale_for(shop_locale or normalized_lang)
     return argparse.Namespace(
         product_code=str(product_code or "").strip().lower(),
         lang=normalized_lang,
         shop_locale=normalized_lang,
+        taa_shop_locale=taa_shop_locale,
         language=language_name,
         product_id=str(shopify_product_id or "").strip(),
         store_domain=run_product_cdp.DEFAULT_STORE_DOMAIN,
@@ -86,6 +89,7 @@ def run_shopify_localizer(
     lang: str,
     shopify_product_id: str = "",
     shopify_language_name: str = "",
+    shop_locale: str = "",
     status_cb: StatusCallback | None = None,
     shopify_product_id_cb: ShopifyProductIdCallback | None = None,
     visual_pair_confirm_cb: VisualPairConfirmCallback | None = None,
@@ -113,6 +117,7 @@ def run_shopify_localizer(
         lang=lang,
         shopify_product_id=shopify_product_id,
         shopify_language_name=shopify_language_name,
+        shop_locale=shop_locale,
     )
     cancellation.throw_if_cancelled(cancel_token)
     resolved_product_id = resolve_shopify_product_id(
@@ -246,7 +251,7 @@ def build_shopify_target_url(*, target: str, shopify_product_id: str, lang: str)
     if normalized_target == "ez":
         return session.build_ez_url(product_id)
     if normalized_target == "detail":
-        return session.build_translate_url(product_id, str(lang or "").strip().lower())
+        return session.build_translate_url(product_id, str(lang or "").strip())
     raise ValueError(f"unsupported Shopify target: {target}")
 
 
@@ -259,6 +264,7 @@ def open_shopify_target(
     product_code: str,
     lang: str,
     shopify_product_id: str = "",
+    shop_locale: str = "",
 ) -> dict:
     settings.save_runtime_config(
         base_url=base_url,
@@ -275,7 +281,7 @@ def open_shopify_target(
     url = build_shopify_target_url(
         target=target,
         shopify_product_id=product_id,
-        lang=lang,
+        lang=shop_locale or lang,
     )
     session.open_urls_in_chrome(browser_user_data_dir, [url])
     return {
