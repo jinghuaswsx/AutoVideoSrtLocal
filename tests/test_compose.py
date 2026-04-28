@@ -8,6 +8,7 @@ import pytest
 from pipeline.compose import (
     _build_subtitle_filter,
     _compose_hard,
+    _compose_soft_from_manifest,
     _compute_font_size,
     _compute_margin_v,
     _get_video_height,
@@ -21,11 +22,11 @@ from pipeline.compose import (
 def test_compose_hard_uses_filename_quoted_subtitle_filter_on_windows(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_run(cmd, capture_output=True, text=True):
+    def fake_run_ffmpeg(cmd, error_prefix):
         captured["cmd"] = cmd
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+        captured["error_prefix"] = error_prefix
 
-    monkeypatch.setattr("pipeline.compose.subprocess.run", fake_run)
+    monkeypatch.setattr("pipeline.compose._run_ffmpeg", fake_run_ffmpeg)
 
     video_path = str(tmp_path / "video_soft.mp4")
     output_path = str(tmp_path / "video_hard.mp4")
@@ -238,6 +239,73 @@ class TestGetVideoHeightReturnsDefaultOnFailure:
 # ---------------------------------------------------------------------------
 # compose_video — with_soft 开关
 # ---------------------------------------------------------------------------
+
+def test_compose_soft_from_manifest_caps_output_at_source_video_duration(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_ffmpeg(cmd, error_prefix):
+        captured["cmd"] = cmd
+        captured["error_prefix"] = error_prefix
+
+    monkeypatch.setattr("pipeline.compose._run_ffmpeg", fake_run_ffmpeg)
+
+    manifest = {
+        "video_duration": 35.9,
+        "total_tts_duration": 37.2,
+        "video_consumed_duration": 35.9,
+        "segments": [
+            {
+                "video_ranges": [{"start": 0.0, "end": 35.9}],
+            }
+        ],
+    }
+
+    _compose_soft_from_manifest(
+        str(tmp_path / "source.mp4"),
+        str(tmp_path / "tts.mp3"),
+        manifest,
+        str(tmp_path / "out.mp4"),
+    )
+
+    cmd = captured["cmd"]
+    assert "-t" in cmd
+    assert cmd[cmd.index("-t") + 1] == "35.9"
+    assert "tpad=" not in cmd[cmd.index("-filter_complex") + 1]
+
+
+def test_compose_soft_from_manifest_keeps_short_silent_tail(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_ffmpeg(cmd, error_prefix):
+        captured["cmd"] = cmd
+        captured["error_prefix"] = error_prefix
+
+    monkeypatch.setattr("pipeline.compose._run_ffmpeg", fake_run_ffmpeg)
+
+    manifest = {
+        "video_duration": 35.9,
+        "total_tts_duration": 35.0,
+        "video_consumed_duration": 35.0,
+        "segments": [
+            {
+                "video_ranges": [{"start": 0.0, "end": 35.0}],
+            }
+        ],
+    }
+
+    _compose_soft_from_manifest(
+        str(tmp_path / "source.mp4"),
+        str(tmp_path / "tts.mp3"),
+        manifest,
+        str(tmp_path / "out.mp4"),
+    )
+
+    cmd = captured["cmd"]
+    filter_complex = cmd[cmd.index("-filter_complex") + 1]
+    assert cmd[cmd.index("-t") + 1] == "35.9"
+    assert "trim=start=35.0:end=35.9" in filter_complex
+    assert "tpad=" not in filter_complex
+
 
 class TestComposeVideoWithSoftFlag:
     """控制是否生成软字幕视频。"""

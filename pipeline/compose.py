@@ -147,7 +147,18 @@ def _compose_soft_from_manifest(video_path: str, audio_path: str, manifest: dict
         raise RuntimeError("timeline_manifest does not contain any video ranges")
 
     total_duration = float(manifest.get("total_tts_duration", 0.0) or 0.0)
+    video_duration = float(manifest.get("video_duration", 0.0) or 0.0)
     video_consumed = float(manifest.get("video_consumed_duration", 0.0) or 0.0)
+    output_duration = video_duration if video_duration > 0 else total_duration
+    if video_duration > 0 and total_duration + 0.001 < video_duration and video_consumed + 0.001 < video_duration:
+        label = f"v{segment_idx}"
+        trim_labels.append(f"[{label}]")
+        filter_parts.append(
+            f"[0:v]trim=start={round(video_consumed, 3)}:end={round(video_duration, 3)},setpts=PTS-STARTPTS[{label}]"
+        )
+        segment_idx += 1
+        video_consumed = video_duration
+
     concat_label = "vcat"
     if len(trim_labels) == 1:
         filter_parts.append(f"{trim_labels[0]}null[{concat_label}]")
@@ -155,7 +166,7 @@ def _compose_soft_from_manifest(video_path: str, audio_path: str, manifest: dict
         filter_parts.append("".join(trim_labels) + f"concat=n={len(trim_labels)}:v=1:a=0[{concat_label}]")
 
     final_label = "vout"
-    pad_duration = max(total_duration - video_consumed, 0.0)
+    pad_duration = max(output_duration - video_consumed, 0.0)
     if pad_duration > 0.001:
         filter_parts.append(
             f"[{concat_label}]tpad=stop_mode=clone:stop_duration={round(pad_duration, 3)}[{final_label}]"
@@ -175,6 +186,7 @@ def _compose_soft_from_manifest(video_path: str, audio_path: str, manifest: dict
         "-crf", "18",
         "-c:a", "aac",
         "-b:a", "192k",
+        "-t", str(round(output_duration, 3)),
         "-movflags", "+faststart",
         output_path,
     ]
