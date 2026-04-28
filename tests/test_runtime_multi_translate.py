@@ -318,6 +318,49 @@ def test_step_translate_rejects_sparse_source_for_long_video():
     m_gen.assert_not_called()
 
 
+def test_step_translate_accepts_dense_chinese_source_without_spaces():
+    runner = _make_runner()
+    source_text = "\n".join([
+        "我女儿自己在这里玩昆虫，已经玩了快一个小时了，真的太省妈了。",
+        "这是纽奇家新出的3D立体昆虫模型，我女儿一收到就喜欢的不得了，就连出去玩都得带着。",
+        "只要拧一下底部的发条，就能满地跑，小翅膀还跟着扑闪扑闪的。",
+        "一盒里面是有7只不一样的昆虫，每个细节都做的超级逼真，就连七星瓢虫有几条腿都看的清清楚楚的。",
+        "而且还是带夜光的，就好像是真的昆虫在爬一样。",
+        "还搭配了虫虫的写真和知识卡片，孩子一边玩一边学习各种昆虫知识，真的比看电视玩手机有意义多了。",
+        "小孩子嘛，对这种昆虫都特别好奇，家里有娃的真的可以安排上。",
+    ])
+    task = {
+        "task_dir": "/tmp/x",
+        "video_path": "/tmp/source.mp4",
+        "target_lang": "en",
+        "source_language": "zh",
+        "script_segments": [{"index": i, "text": line} for i, line in enumerate(source_text.splitlines())],
+        "interactive_review": True,
+        "variants": {},
+    }
+    with patch("appcore.task_state.get", return_value=task), \
+         patch("appcore.task_state.update"), \
+         patch("appcore.task_state.set_artifact"), \
+         patch("appcore.task_state.set_current_review_step"), \
+         patch.object(runner, "_set_step"), \
+         patch.object(runner, "_emit"), \
+         patch("appcore.runtime_multi._save_json"), \
+         patch("appcore.runtime_multi.resolve_prompt_config", return_value={"content": "PROMPT"}), \
+         patch("appcore.runtime_multi._resolve_translate_provider", return_value="claude_sonnet"), \
+         patch("appcore.runtime_multi.get_model_display_name", return_value="anthropic/claude-sonnet-4.6"), \
+         patch("pipeline.extract.get_video_duration", return_value=37.384), \
+         patch("appcore.runtime_multi.generate_localized_translation", return_value={"sentences": []}) as m_gen, \
+         patch("appcore.runtime_multi._build_review_segments", return_value=[]), \
+         patch("appcore.runtime_multi._log_translate_billing"), \
+         patch("appcore.runtime_multi._llm_request_payload", return_value={}), \
+         patch("appcore.runtime_multi._llm_response_payload", return_value={}), \
+         patch("appcore.runtime_multi.build_asr_artifact", return_value={}), \
+         patch("appcore.runtime_multi.build_translate_artifact", return_value={}):
+        runner._step_translate("t1")
+
+    m_gen.assert_called_once()
+
+
 def test_step_translate_resolves_en_prompt_and_uses_eleven_multilingual():
     """target_lang='en' 应当走 ('base_translation','en') resolver 并使用 eleven_multilingual_v2 TTS 模型。"""
     runner = _make_runner()

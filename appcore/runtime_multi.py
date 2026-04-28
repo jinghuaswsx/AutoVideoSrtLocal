@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_key
@@ -52,6 +53,19 @@ from web.preview_artifacts import (
 log = logging.getLogger(__name__)
 
 
+_CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def _count_source_speech_units(text: str) -> int:
+    """Count source speech density across spaced languages and CJK transcripts."""
+    if not text:
+        return 0
+    cjk_chars = len(_CJK_CHAR_RE.findall(text))
+    if cjk_chars:
+        return cjk_chars + count_words(_CJK_CHAR_RE.sub(" ", text))
+    return count_words(text)
+
+
 def _ensure_source_transcript_is_actionable(
     *,
     source_full_text: str,
@@ -59,15 +73,15 @@ def _ensure_source_transcript_is_actionable(
     target_lang: str,
 ) -> None:
     """Fail fast when ASR is too sparse to support long-duration dubbing."""
-    source_word_count = count_words(source_full_text)
+    source_unit_count = _count_source_speech_units(source_full_text)
     if video_duration < 8.0:
         return
     min_words = max(5, int(math.floor(video_duration * 0.45)))
-    if source_word_count >= min_words:
+    if source_unit_count >= min_words:
         return
     raise RuntimeError(
-        f"源视频语音过短（{video_duration:.1f}s 仅识别到 {source_word_count} 词，"
-        f"低于可靠翻译所需的 {min_words} 词），无法安全生成 {target_lang.upper()} 配音；"
+        f"源视频语音过短（{video_duration:.1f}s 仅识别到 {source_unit_count} 字/词，"
+        f"低于可靠翻译所需的 {min_words} 字/词），无法安全生成 {target_lang.upper()} 配音；"
         "请检查源视频是否为可翻译口播素材，或更换原视频后重试。"
     )
 
