@@ -555,10 +555,11 @@
       .ect-ai-grid { display:grid; grid-template-columns:minmax(320px, 420px) minmax(0, 1fr); gap:18px; align-items:start; }
       .ect-ai-card { border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:12px; background:var(--oc-bg, oklch(99% 0.004 230)); padding:16px; }
       .ect-ai-card h4 { margin:0 0 12px; font-size:14px; color:var(--oc-fg, oklch(22% 0.020 235)); }
-      .ect-ai-media { display:grid; gap:12px; }
-      .ect-ai-cover { width:100%; aspect-ratio:1/1; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted, oklch(94% 0.010 230)); }
+      .ect-ai-media { display:grid; gap:12px; justify-items:start; }
+      .ect-ai-cover { width:180px; height:180px; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted, oklch(94% 0.010 230)); }
       .ect-ai-cover img, .ect-ai-video video { width:100%; height:100%; object-fit:contain; display:block; background:var(--oc-bg-muted, oklch(94% 0.010 230)); }
-      .ect-ai-video { width:100%; aspect-ratio:16/9; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted, oklch(94% 0.010 230)); }
+      .ect-ai-video-name { width:180px; min-height:58px; color:var(--oc-fg-muted, oklch(48% 0.018 230)); font-size:13px; line-height:1.45; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+      .ect-ai-video { width:180px; height:320px; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:10px; overflow:hidden; background:var(--oc-bg-muted, oklch(94% 0.010 230)); }
       .ect-ai-kv { display:grid; grid-template-columns:92px minmax(0, 1fr); gap:8px 12px; font-size:13px; line-height:1.55; }
       .ect-ai-kv dt { color:var(--oc-fg-subtle, oklch(62% 0.015 230)); }
       .ect-ai-kv dd { margin:0; min-width:0; overflow-wrap:anywhere; color:var(--oc-fg, oklch(22% 0.020 235)); }
@@ -708,6 +709,7 @@
           <h4>素材预览</h4>
           <div class="ect-ai-media">
             <div class="ect-ai-cover">${cover.preview_url ? `<img src="${escapeHtml(cover.preview_url)}" alt="商品主图">` : '暂无主图'}</div>
+            <div class="ect-ai-video-name" title="${escapeHtml(video.filename || video.object_key || '')}">${escapeHtml(video.filename || video.object_key || '暂无视频文件名')}</div>
             <div class="ect-ai-video">${video.preview_url ? `<video controls preload="metadata" src="${escapeHtml(video.preview_url)}"></video>` : '暂无视频'}</div>
           </div>
         </div>

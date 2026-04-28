@@ -46,3 +46,13 @@ def test_medias_js_ai_evaluation_modal_has_request_and_result_tabs():
     assert "<video controls" in script
     assert "<img src=\"" in script
     assert "fullPayloadUrl" in script
+
+
+def test_medias_js_ai_evaluation_preview_uses_fixed_media_sizes():
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert ".ect-ai-cover { width:180px; height:180px;" in script
+    assert ".ect-ai-video { width:180px; height:320px;" in script
+    assert ".ect-ai-video-name" in script
+    assert "-webkit-line-clamp:3" in script
+    assert "video.filename || video.object_key || '暂无视频文件名'" in script
