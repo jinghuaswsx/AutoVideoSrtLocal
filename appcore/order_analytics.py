@@ -885,6 +885,64 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     }
 
 
+def get_product_country_detail(product_id: int, year: int, month: int) -> list[dict]:
+    """单个产品在指定月份的"国家×素材×订单"明细。
+
+    覆盖所有启用国家，即使该国当月 0 单 0 素材，也会输出一行（值全 0）。
+
+    返回每行字段：country / lang / qty / orders / revenue / media_count
+    """
+    start, end = _month_range(year, month)
+
+    # 该产品在月份内的国家汇总
+    rows = query(
+        "SELECT so.billing_country, "
+        "SUM(so.lineitem_quantity) AS qty, "
+        "COUNT(DISTINCT so.shopify_order_id) AS orders, "
+        "SUM(COALESCE(so.lineitem_price, 0) * so.lineitem_quantity) AS revenue "
+        "FROM shopify_orders so "
+        "WHERE so.product_id = %s "
+        "AND so.created_at_order >= %s AND so.created_at_order < %s "
+        "GROUP BY so.billing_country",
+        (product_id, start, end),
+    )
+    by_country: dict[str, dict] = {}
+    for r in rows:
+        country = r.get("billing_country") or ""
+        by_country[country] = {
+            "qty": int(r.get("qty") or 0),
+            "orders": int(r.get("orders") or 0),
+            "revenue": float(r.get("revenue") or 0),
+        }
+
+    # 该产品的素材语种分布
+    media_rows = query(
+        "SELECT lang, COUNT(*) AS n FROM media_items "
+        "WHERE product_id = %s AND deleted_at IS NULL "
+        "GROUP BY lang",
+        (product_id,),
+    )
+    media_by_lang: dict[str, int] = {}
+    for r in media_rows:
+        lang = r.get("lang") or ""
+        media_by_lang[lang] = int(r.get("n") or 0)
+
+    out: list[dict] = []
+    for col in get_enabled_country_columns():
+        country = col["country"]
+        lang = col["lang"]
+        order_data = by_country.get(country, {})
+        out.append({
+            "country": country,
+            "lang": lang,
+            "qty": order_data.get("qty", 0),
+            "orders": order_data.get("orders", 0),
+            "revenue": round(order_data.get("revenue", 0.0), 2),
+            "media_count": media_by_lang.get(lang, 0),
+        })
+    return out
+
+
 def get_daily_detail(year: int, month: int, product_id: int | None = None) -> list[dict]:
     """每日明细：按日期 × 产品 × 国家。"""
     start, end = _month_range(year, month)
