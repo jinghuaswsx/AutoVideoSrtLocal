@@ -807,7 +807,7 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     # 按产品汇总
     products = query(
         f"SELECT so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"mp.product_code, "
         f"SUM(so.lineitem_quantity) AS total_qty, "
         f"COUNT(DISTINCT so.shopify_order_id) AS order_count, "
@@ -835,11 +835,12 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     # 产品 × 国家矩阵
     matrix_rows = query(
         f"SELECT so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"so.billing_country, "
         f"SUM(so.lineitem_quantity) AS total_qty "
         f"FROM shopify_orders so "
         f"LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        f"LEFT JOIN media_products mp ON mp.id = so.product_id "
         f"WHERE so.created_at_order >= %s AND so.created_at_order < %s {extra_filter} "
         f"GROUP BY so.product_id, display_name, so.billing_country "
         f"ORDER BY display_name, total_qty DESC",
@@ -885,6 +886,64 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
     }
 
 
+def get_product_country_detail(product_id: int, year: int, month: int) -> list[dict]:
+    """单个产品在指定月份的"国家×素材×订单"明细。
+
+    覆盖所有启用国家，即使该国当月 0 单 0 素材，也会输出一行（值全 0）。
+
+    返回每行字段：country / lang / qty / orders / revenue / media_count
+    """
+    start, end = _month_range(year, month)
+
+    # 该产品在月份内的国家汇总
+    rows = query(
+        "SELECT so.billing_country, "
+        "SUM(so.lineitem_quantity) AS qty, "
+        "COUNT(DISTINCT so.shopify_order_id) AS orders, "
+        "SUM(COALESCE(so.lineitem_price, 0) * so.lineitem_quantity) AS revenue "
+        "FROM shopify_orders so "
+        "WHERE so.product_id = %s "
+        "AND so.created_at_order >= %s AND so.created_at_order < %s "
+        "GROUP BY so.billing_country",
+        (product_id, start, end),
+    )
+    by_country: dict[str, dict] = {}
+    for r in rows:
+        country = r.get("billing_country") or ""
+        by_country[country] = {
+            "qty": int(r.get("qty") or 0),
+            "orders": int(r.get("orders") or 0),
+            "revenue": float(r.get("revenue") or 0),
+        }
+
+    # 该产品的素材语种分布
+    media_rows = query(
+        "SELECT lang, COUNT(*) AS n FROM media_items "
+        "WHERE product_id = %s AND deleted_at IS NULL "
+        "GROUP BY lang",
+        (product_id,),
+    )
+    media_by_lang: dict[str, int] = {}
+    for r in media_rows:
+        lang = r.get("lang") or ""
+        media_by_lang[lang] = int(r.get("n") or 0)
+
+    out: list[dict] = []
+    for col in get_enabled_country_columns():
+        country = col["country"]
+        lang = col["lang"]
+        order_data = by_country.get(country, {})
+        out.append({
+            "country": country,
+            "lang": lang,
+            "qty": order_data.get("qty", 0),
+            "orders": order_data.get("orders", 0),
+            "revenue": round(order_data.get("revenue", 0.0), 2),
+            "media_count": media_by_lang.get(lang, 0),
+        })
+    return out
+
+
 def get_daily_detail(year: int, month: int, product_id: int | None = None) -> list[dict]:
     """每日明细：按日期 × 产品 × 国家。"""
     start, end = _month_range(year, month)
@@ -897,12 +956,13 @@ def get_daily_detail(year: int, month: int, product_id: int | None = None) -> li
     return query(
         f"SELECT DATE(so.created_at_order) AS sale_date, "
         f"so.product_id, "
-        f"COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        f"COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         f"so.billing_country, "
         f"SUM(so.lineitem_quantity) AS total_qty, "
         f"COUNT(DISTINCT so.shopify_order_id) AS order_count "
         f"FROM shopify_orders so "
         f"LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        f"LEFT JOIN media_products mp ON mp.id = so.product_id "
         f"WHERE so.created_at_order >= %s AND so.created_at_order < %s {extra_filter} "
         f"GROUP BY sale_date, so.product_id, display_name, so.billing_country "
         f"ORDER BY sale_date ASC, total_qty DESC",
@@ -915,11 +975,12 @@ def get_weekly_summary(year: int, week: int) -> dict:
     target = f"{year:04d}{week:02d}"
     products = query(
         "SELECT so.product_id, "
-        "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         "SUM(so.lineitem_quantity) AS total_qty, "
         "COUNT(DISTINCT so.shopify_order_id) AS order_count "
         "FROM shopify_orders so "
         "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
+        "LEFT JOIN media_products mp ON mp.id = so.product_id "
         "WHERE YEARWEEK(so.created_at_order, 1) = %s "
         "GROUP BY so.product_id, display_name ORDER BY total_qty DESC",
         (target,),
@@ -946,7 +1007,7 @@ def search_products(q: str) -> list[dict]:
     if pid is not None:
         return query(
             "SELECT DISTINCT so.product_id, "
-            "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+            "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
             "mp.product_code "
             "FROM shopify_orders so "
             "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "
@@ -957,7 +1018,7 @@ def search_products(q: str) -> list[dict]:
         )
     return query(
         "SELECT DISTINCT so.product_id, "
-        "COALESCE(ptc.page_title, so.lineitem_name) AS display_name, "
+        "COALESCE(mp.name, ptc.page_title, so.lineitem_name) AS display_name, "
         "mp.product_code "
         "FROM shopify_orders so "
         "LEFT JOIN product_title_cache ptc ON ptc.product_id = so.product_id "

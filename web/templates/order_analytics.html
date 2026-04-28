@@ -291,6 +291,95 @@
 .oam-action-link:hover {
   text-decoration: underline;
 }
+
+/* ── 查看素材详情按钮 + 弹窗 ─────────────────────────── */
+.oam-detail-btn {
+  height: 26px; padding: 0 10px;
+  font-size: var(--text-xs); font-weight: 500;
+  color: var(--accent); background: var(--bg-card);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.oam-detail-btn:hover {
+  background: var(--accent-subtle); border-color: var(--accent);
+}
+.oam-detail-btn:active { transform: translateY(1px); }
+
+.oam-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: oklch(22% 0.02 235 / 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-4);
+}
+.oam-modal-overlay[hidden] { display: none; }
+
+.oam-modal-card {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: min(900px, 96vw); max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: oam-modal-in .18s var(--ease-out);
+}
+@keyframes oam-modal-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.oam-modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+.oam-modal-title {
+  font-size: var(--text-md); font-weight: 600; color: var(--fg);
+  word-break: break-word;
+}
+.oam-modal-subtitle {
+  font-size: var(--text-xs); color: var(--fg-subtle); margin-top: 4px;
+}
+.oam-modal-close {
+  flex-shrink: 0;
+  height: 32px; width: 32px; padding: 0;
+  background: none; border: 0; cursor: pointer; color: var(--fg-muted);
+  border-radius: var(--radius); transition: background .15s, color .15s;
+}
+.oam-modal-close:hover { background: var(--bg-muted); color: var(--fg); }
+
+.oam-modal-body {
+  flex: 1; overflow: auto;
+  padding: var(--space-3) var(--space-5) var(--space-5);
+}
+.oam-modal-loading, .oam-modal-error {
+  text-align: center; padding: var(--space-7) var(--space-4);
+  color: var(--fg-muted); font-size: var(--text-sm);
+}
+.oam-modal-error { color: var(--danger-fg); }
+
+.oam-detail-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: var(--text-sm);
+}
+.oam-detail-table th, .oam-detail-table td {
+  padding: 8px var(--space-3); border-bottom: 1px solid var(--border);
+  text-align: right; white-space: nowrap;
+}
+.oam-detail-table th {
+  background: var(--bg-subtle); font-weight: 600; color: var(--fg);
+  position: sticky; top: 0;
+}
+.oam-detail-table th:first-child,
+.oam-detail-table td:first-child { text-align: left; }
+.oam-detail-table th:nth-child(2),
+.oam-detail-table td:nth-child(2) { text-align: left; color: var(--fg-subtle); font-size: var(--text-xs); }
+.oam-detail-table tr:hover td { background: oklch(97% 0.01 230); }
+.oam-detail-table tfoot td {
+  font-weight: 600; background: var(--bg-subtle);
+  border-top: 2px solid var(--border-strong); border-bottom: 0;
+}
+.oam-detail-row-empty td { color: var(--fg-subtle); }
+.oam-detail-cell-warn { color: var(--danger); font-weight: 600; }
 {% endblock %}
 
 {% block content %}
@@ -812,6 +901,24 @@
           </table>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 查看素材详情弹窗 -->
+<div class="oam-modal-overlay" id="oamProductDetailModal" hidden>
+  <div class="oam-modal-card" role="dialog" aria-labelledby="oamModalTitle">
+    <div class="oam-modal-header">
+      <div>
+        <div class="oam-modal-title" id="oamModalTitle">商品素材详情</div>
+        <div class="oam-modal-subtitle" id="oamModalSubtitle"></div>
+      </div>
+      <button type="button" class="oam-modal-close" id="oamModalClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="oam-modal-body" id="oamModalBody">
+      <div class="oam-modal-loading">加载中…</div>
     </div>
   </div>
 </div>
@@ -1395,7 +1502,6 @@
     data.product_order.forEach(function(dn) {
       var p = data.products.find(function(x) { return (x.display_name || '未知') === dn; }) || {};
       var pid = p.product_id;
-      var langCounts = (pid != null && mediaCounts[pid]) ? mediaCounts[pid] : {};
       var rowOrdersByCountry = data.matrix[dn] || {};
 
       var tr = document.createElement('tr');
@@ -1421,50 +1527,34 @@
         addTd(tr, 'oam-col-revenue', '$' + (parseFloat(p.total_revenue) || 0).toFixed(2));
       }
 
-      // 国家列：双行 [素材数 / 订单数]
+      // 国家列：单行订单数（素材信息已挪到「查看素材详情」弹窗）
       countryCols.forEach(function(col) {
         var orders = parseInt(rowOrdersByCountry[col.country]) || 0;
-        var media = parseInt(langCounts[col.lang]) || 0;
         totalsByCountry[col.country] = (totalsByCountry[col.country] || 0) + orders;
 
         var td = document.createElement('td');
         td.className = 'oam-col-country';
-        if (orders === 0 && media === 0) {
-          td.classList.add('oam-cell-bg-empty');
-          td.innerHTML = '<div class="oam-cell-country">' +
-            '<span class="oam-cell-empty">—</span>' +
-            '<span class="oam-cell-empty">—</span>' +
-            '</div>';
+        if (orders > 0) {
+          td.innerHTML = '<span class="oam-cell-orders">' + orders + '</span>';
         } else {
-          var mediaHtml;
-          if (media === 0 && orders > 0) {
-            mediaHtml = '<span class="oam-cell-warn" title="该国语种 ' + escAttr(col.lang || '') +
-              ' 暂无素材，但有订单——请检查">⚠ 0</span>';
-          } else {
-            mediaHtml = '<span class="oam-cell-media">' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2" ry="2"/><polyline points="2 10 22 10"/></svg>' +
-              media + '</span>';
-          }
-          var ordersHtml = orders > 0
-            ? '<span class="oam-cell-orders">' + orders + '</span>'
-            : '<span class="oam-cell-empty">0</span>';
-          td.innerHTML = '<div class="oam-cell-country">' + mediaHtml + ordersHtml + '</div>';
+          td.innerHTML = '<span class="oam-cell-empty">—</span>';
         }
         tr.appendChild(td);
       });
 
-      // 操作列
+      // 操作列：查看素材详情按钮
       var tdAct = document.createElement('td');
       tdAct.className = 'oam-col-actions';
       if (pid != null && pid !== '') {
-        var aLink = document.createElement('a');
-        aLink.href = '/medias?product_id=' + encodeURIComponent(pid);
-        aLink.target = '_blank';
-        aLink.rel = 'noopener';
-        aLink.className = 'oam-action-link';
-        aLink.textContent = '素材↗';
-        aLink.addEventListener('click', function(ev) { ev.stopPropagation(); });
-        tdAct.appendChild(aLink);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'oam-detail-btn';
+        btn.textContent = '查看素材详情';
+        btn.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          openProductDetailModal(pid, dn, p.product_code || '', year, month);
+        });
+        tdAct.appendChild(btn);
       }
       tr.appendChild(tdAct);
 
@@ -1493,6 +1583,111 @@
 
   function escAttr(s) {
     return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+
+  // ── 查看素材详情弹窗 ───────────────────────────
+  var modalEl = document.getElementById('oamProductDetailModal');
+  var modalCloseBtn = document.getElementById('oamModalClose');
+  var modalBody = document.getElementById('oamModalBody');
+  var modalTitle = document.getElementById('oamModalTitle');
+  var modalSubtitle = document.getElementById('oamModalSubtitle');
+
+  function closeProductDetailModal() {
+    if (modalEl) modalEl.hidden = true;
+  }
+  if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeProductDetailModal);
+  if (modalEl) {
+    modalEl.addEventListener('click', function(ev) {
+      if (ev.target === modalEl) closeProductDetailModal();
+    });
+  }
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape' && modalEl && !modalEl.hidden) closeProductDetailModal();
+  });
+
+  window.openProductDetailModal = function(productId, productName, productCode, year, month) {
+    if (!modalEl) return;
+    modalEl.hidden = false;
+    modalTitle.textContent = productName || '商品素材详情';
+    modalSubtitle.textContent = year + '年' + month + '月' +
+      (productCode ? ' · ' + productCode : '') + ' · 国家 × 素材分布';
+    modalBody.innerHTML = '<div class="oam-modal-loading">加载中…</div>';
+
+    var url = '/order-analytics/product-country-detail?product_id=' + encodeURIComponent(productId) +
+              '&year=' + encodeURIComponent(year) + '&month=' + encodeURIComponent(month);
+    fetch(url)
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.error || ('HTTP ' + r.status)); },
+                               function() { throw new Error('HTTP ' + r.status); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        renderProductDetailModalBody(data, productCode);
+      })
+      .catch(function(err) {
+        modalBody.innerHTML = '<div class="oam-modal-error">加载失败：' +
+          escHtml(err.message || String(err)) + '</div>';
+      });
+  };
+
+  function renderProductDetailModalBody(data, productCode) {
+    var rows = (data && Array.isArray(data.rows)) ? data.rows.slice() : [];
+    if (!rows.length) {
+      modalBody.innerHTML = '<div class="oam-modal-loading">该产品当月暂无国家可统计</div>';
+      return;
+    }
+    rows.sort(function(a, b) {
+      return (parseInt(b.orders) || 0) - (parseInt(a.orders) || 0);
+    });
+
+    var html = '<table class="oam-detail-table">';
+    html += '<thead><tr>' +
+      '<th>国家</th><th>语种</th>' +
+      '<th>素材数</th><th>总单量</th><th>订单数</th><th>销售额</th>' +
+      '</tr></thead><tbody>';
+
+    var totalQty = 0, totalOrders = 0, totalRevenue = 0, totalMedia = 0;
+
+    rows.forEach(function(row) {
+      var qty = parseInt(row.qty) || 0;
+      var orders = parseInt(row.orders) || 0;
+      var revenue = parseFloat(row.revenue) || 0;
+      var media = parseInt(row.media_count) || 0;
+      totalQty += qty; totalOrders += orders; totalRevenue += revenue; totalMedia += media;
+
+      var isEmpty = (qty === 0 && orders === 0 && media === 0);
+      var trClass = isEmpty ? ' class="oam-detail-row-empty"' : '';
+
+      var mediaCellHtml;
+      if (media === 0 && orders > 0) {
+        mediaCellHtml = '<span class="oam-detail-cell-warn" title="该国语种暂无素材但有订单">⚠ 0</span>';
+      } else if (media === 0) {
+        mediaCellHtml = '0';
+      } else {
+        mediaCellHtml = String(media);
+      }
+
+      html += '<tr' + trClass + '>' +
+        '<td>' + escHtml(row.country || '') + '</td>' +
+        '<td>' + escHtml(row.lang || '') + '</td>' +
+        '<td>' + mediaCellHtml + '</td>' +
+        '<td>' + qty.toLocaleString() + '</td>' +
+        '<td>' + orders.toLocaleString() + '</td>' +
+        '<td>$' + revenue.toFixed(2) + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody><tfoot><tr>' +
+      '<td>合计</td><td></td>' +
+      '<td>' + totalMedia + '</td>' +
+      '<td>' + totalQty.toLocaleString() + '</td>' +
+      '<td>' + totalOrders.toLocaleString() + '</td>' +
+      '<td>$' + totalRevenue.toFixed(2) + '</td>' +
+      '</tr></tfoot></table>';
+
+    modalBody.innerHTML = html;
   }
 
   // ── 每日明细 ──────────────────────────────────────

@@ -182,6 +182,22 @@ def monthly():
     return jsonify(data)
 
 
+@bp.route("/order-analytics/product-country-detail")
+@login_required
+@admin_required
+def product_country_detail():
+    """单产品在指定月份的国家×素材明细，供「查看素材详情」弹窗调用。"""
+    product_id = request.args.get("product_id", type=int)
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    if not product_id or not year or not month:
+        return jsonify(error="请提供 product_id、year、month"), 400
+
+    rows = oa.get_product_country_detail(product_id, year, month)
+    return jsonify(_json_safe({"rows": rows, "product_id": product_id,
+                               "year": year, "month": month}))
+
+
 @bp.route("/order-analytics/daily")
 @login_required
 @admin_required

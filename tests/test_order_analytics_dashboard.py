@@ -520,3 +520,124 @@ def _stub_monthly_query(sql: str):
             "total_revenue": Decimal("99.00"),
         }
     ]
+
+
+def test_get_product_country_detail_covers_all_enabled_countries(monkeypatch):
+    """每个启用国家都要出现在返回里，即使该国 0 单 0 素材。"""
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en", "de"])
+
+    def stub_query(sql, args=None):
+        s = sql.lower()
+        if "from media_items" in s:
+            # product_id=42 → en×2，de 没素材
+            return [{"product_id": 42, "lang": "en", "n": 2}]
+        if "group by so.billing_country" in s:
+            # 只有 US 有订单
+            return [{
+                "billing_country": "US",
+                "qty": 23,
+                "orders": 18,
+                "revenue": Decimal("489.50"),
+            }]
+        return []
+
+    monkeypatch.setattr(oa, "query", stub_query)
+
+    rows = oa.get_product_country_detail(42, 2026, 4)
+
+    # 8 个 en 国家 (US/GB/AU/CA/IE/NZ) + 2 个 de 国家 (DE/AT) = 8 行
+    assert len(rows) == 8
+    countries = [r["country"] for r in rows]
+    assert countries == ["US", "GB", "AU", "CA", "IE", "NZ", "DE", "AT"]
+
+    us = next(r for r in rows if r["country"] == "US")
+    assert us == {
+        "country": "US",
+        "lang": "en",
+        "qty": 23,
+        "orders": 18,
+        "revenue": 489.50,
+        "media_count": 2,
+    }
+
+    # GB 启用了但当月 0 单；en 素材数 = 2
+    gb = next(r for r in rows if r["country"] == "GB")
+    assert gb == {
+        "country": "GB", "lang": "en",
+        "qty": 0, "orders": 0, "revenue": 0.0,
+        "media_count": 2,
+    }
+
+    # DE 也启用了但当月 0 单；de 素材数 = 0
+    de = next(r for r in rows if r["country"] == "DE")
+    assert de == {
+        "country": "DE", "lang": "de",
+        "qty": 0, "orders": 0, "revenue": 0.0,
+        "media_count": 0,
+    }
+
+
+def test_get_product_country_detail_no_orders_no_media(monkeypatch):
+    """完全没数据的产品，每个启用国家也应返回一行全 0。"""
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en"])
+    monkeypatch.setattr(oa, "query", lambda sql, args=None: [])
+
+    rows = oa.get_product_country_detail(99, 2026, 4)
+    assert len(rows) == 6  # US, GB, AU, CA, IE, NZ
+    for r in rows:
+        assert r["qty"] == 0
+        assert r["orders"] == 0
+        assert r["revenue"] == 0.0
+        assert r["media_count"] == 0
+        assert r["lang"] == "en"
+
+
+def test_get_monthly_summary_uses_media_product_chinese_name(monkeypatch):
+    """display_name 应优先取 media_products.name (中文)，再到 page_title / lineitem_name。"""
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en"])
+
+    captured_sqls = []
+
+    def stub_query(sql, args=None):
+        captured_sqls.append(sql)
+        s = sql.lower()
+        if "from media_items" in s:
+            return []
+        if "group by billing_country" in s:
+            return []
+        if "group by so.product_id, display_name, so.billing_country" in s:
+            return []
+        # products aggregate — make sure SQL contains mp.name in COALESCE
+        return [{
+            "product_id": 7,
+            "display_name": "中文产品名",  # 假装 SQL 已经返回中文
+            "product_code": "PCK7",
+            "total_qty": 1,
+            "order_count": 1,
+            "total_revenue": Decimal("10.00"),
+        }]
+
+    monkeypatch.setattr(oa, "query", stub_query)
+
+    result = oa.get_monthly_summary(2026, 4)
+
+    # 验证: products 汇总 / matrix_rows / countries / media_items 都跑过
+    assert any("coalesce(mp.name" in s.lower() for s in captured_sqls), \
+        "至少一个 SQL 里要把 mp.name 放在 COALESCE 第一位（products + matrix_rows）"
+    # 至少有 2 个查询用了 mp.name 优先（products 汇总 + matrix_rows）
+    mp_name_count = sum(1 for s in captured_sqls if "coalesce(mp.name" in s.lower())
+    assert mp_name_count >= 2, f"期望至少 2 个 SQL 用 mp.name 在 COALESCE 首位，实际 {mp_name_count}"
+
+
+def test_get_daily_detail_uses_media_product_chinese_name(monkeypatch):
+    captured_sqls = []
+    monkeypatch.setattr(oa, "query", lambda sql, args=None: (captured_sqls.append(sql), [])[1])
+    oa.get_daily_detail(2026, 4)
+    assert any("coalesce(mp.name" in s.lower() for s in captured_sqls)
+
+
+def test_search_products_uses_media_product_chinese_name(monkeypatch):
+    captured = []
+    monkeypatch.setattr(oa, "query", lambda sql, args=None: (captured.append(sql), [])[1])
+    oa.search_products("test")
+    assert any("coalesce(mp.name" in s.lower() for s in captured)
