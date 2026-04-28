@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -226,6 +227,7 @@ def run_import(
     fetch_orders: Callable[[date, int, str], dict[str, Any]],
     fetch_profits: Callable[[list[str]], dict[str, dict[str, Any]]],
     dry_run: bool = False,
+    day_delay_seconds: int = 0,
 ) -> dict[str, Any]:
     if end_date < start_date:
         raise ValueError("end_date 不能早于 start_date")
@@ -262,6 +264,12 @@ def run_import(
                         result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
                         summary["inserted_lines"] += int(result.get("rows") or 0)
                         summary["updated_lines"] += max(0, int(result.get("affected") or 0) - int(result.get("rows") or 0))
+                if day_delay_seconds > 0 and day < end_date:
+                    print(
+                        f"[dianxiaomi-order-import] sleep {day_delay_seconds}s after {day.isoformat()}",
+                        flush=True,
+                    )
+                    time.sleep(day_delay_seconds)
         status = "dry_run" if dry_run else "success"
         if batch_id is not None:
             oa.finish_dianxiaomi_order_import_batch(batch_id, status, summary)
@@ -355,6 +363,7 @@ def run_import_from_server_browser(
     browser_cdp_url: str | None = None,
     dry_run: bool = False,
     skip_login_prompt: bool = True,
+    day_delay_seconds: int = 0,
 ) -> dict[str, Any]:
     from playwright.sync_api import sync_playwright
 
@@ -380,6 +389,7 @@ def run_import_from_server_browser(
                 fetch_orders=lambda day, page_no, state: _fetch_orders_via_page(page, day, page_no, state),
                 fetch_profits=lambda package_ids: _fetch_profits_via_page(page, package_ids),
                 dry_run=dry_run,
+                day_delay_seconds=day_delay_seconds,
             )
             report["dxm_env"] = dxm_env
             report["dxm_env_label"] = env["label"]
@@ -401,6 +411,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--skip-login-prompt", action="store_true")
+    parser.add_argument("--day-delay-seconds", type=int, default=0)
     return parser
 
 
@@ -418,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         browser_cdp_url=args.browser_cdp_url or None,
         dry_run=args.dry_run,
         skip_login_prompt=args.skip_login_prompt,
+        day_delay_seconds=max(0, args.day_delay_seconds),
     )
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     return 0
