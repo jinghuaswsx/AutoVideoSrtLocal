@@ -320,11 +320,7 @@ def _post_form_via_page(page, url: str, payload: dict[str, Any]) -> dict[str, An
                 f"[dianxiaomi-order-import] retry {attempt}/4 url={url} error={exc}",
                 flush=True,
             )
-            try:
-                page.wait_for_load_state("domcontentloaded", timeout=5000)
-            except Exception:
-                pass
-            page.wait_for_timeout(1500 * attempt)
+            time.sleep(1.5 * attempt)
             continue
         text = str(result.get("text") or "")
         if result.get("ok"):
@@ -396,7 +392,9 @@ def run_import_from_server_browser(
             report["browser_cdp_url"] = resolved_cdp_url
             return report
         finally:
-            browser.close()
+            # This is an existing shared Chrome reached through CDP. Let the
+            # script process exit drop the connection without closing Chrome.
+            pass
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
