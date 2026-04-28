@@ -152,7 +152,7 @@ def _order_reference_date(order: dict[str, Any], state: str) -> date | None:
 
 def _order_in_date_range(order: dict[str, Any], state: str, start_date: date, end_date: date) -> bool:
     ref_date = _order_reference_date(order, state)
-    return ref_date is None or start_date <= ref_date <= end_date
+    return ref_date is not None and start_date <= ref_date <= end_date
 
 
 def _extract_profit_rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:

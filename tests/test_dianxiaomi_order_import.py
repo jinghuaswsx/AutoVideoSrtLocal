@@ -143,3 +143,9 @@ def test_run_import_scans_shipped_state_once_for_date_range(monkeypatch):
 
     assert calls == [(date(2026, 4, 28), 1, "shipped")]
     assert report["summary"]["fetched_orders"] == 1
+
+
+def test_order_in_date_range_rejects_missing_reference_date_for_range_scan():
+    mod = _load_module()
+
+    assert not mod._order_in_date_range({}, "shipped", date(2026, 4, 27), date(2026, 4, 28))
