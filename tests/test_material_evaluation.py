@@ -66,6 +66,30 @@ def test_prompt_includes_current_date_and_local_season_rules():
     assert "不应仅因素材清晰就给出“适合推广”" in prompt
 
 
+def test_prompt_includes_balanced_market_timing_rules():
+    from datetime import date
+
+    from appcore import material_evaluation
+
+    prompt = material_evaluation.build_prompt(
+        product={"id": 8, "name": "Portable Neck Fan", "product_code": "neck-fan"},
+        product_url="https://newjoyloo.com/products/neck-fan",
+        languages=[{"code": "de", "name": "德语"}, {"code": "fr", "name": "法语"}],
+        as_of_date=date(2026, 4, 29),
+    )
+
+    assert "市场时点 Gate" in prompt
+    assert "投放准备提前量" in prompt
+    assert "节日/礼品节点" in prompt
+    assert "气候触发因素" in prompt
+    assert "品类生命周期" in prompt
+    assert "竞争和价格敏感度" in prompt
+    assert "物流履约限制" in prompt
+    assert "不是一票否决" in prompt
+    assert "不要因为产品存在季节性就自动判为不适合" in prompt
+    assert "全年刚需、礼品属性、提前预热、反季市场" in prompt
+
+
 def test_normalize_result_covers_all_languages_and_truncates_reason():
     from appcore import material_evaluation
 
