@@ -402,46 +402,41 @@
     return message;
   }
 
+  function ensureAiEvaluationRequestModalStyle() {
+    if (document.getElementById('aiEvaluationRequestModalStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'aiEvaluationRequestModalStyle';
+    style.textContent = `
+      .ect-modal--ai-evaluating { max-width:min(980px, calc(100vw - 48px)); min-height:420px; }
+      .ect-modal--ai-evaluating .ect-modal-body { display:flex; align-items:center; justify-content:center; padding:48px; }
+      .ect-ai-request-card { width:min(560px, 100%); display:flex; align-items:flex-start; gap:18px; padding:28px; border:1px solid var(--oc-border, oklch(91% 0.012 230)); border-radius:16px; background:var(--oc-bg, oklch(99% 0.004 230)); box-shadow:0 12px 28px -18px oklch(22% 0.02 235 / 0.28); }
+      .ect-ai-request-icon { flex:0 0 auto; width:48px; height:48px; display:flex; align-items:center; justify-content:center; border-radius:14px; background:var(--oc-accent-subtle, oklch(94% 0.04 225)); color:var(--oc-accent, oklch(56% 0.16 230)); }
+      .ect-ai-request-card.is-error .ect-ai-request-icon { background:var(--oc-danger-bg, oklch(96% 0.04 25)); color:var(--oc-danger-fg, oklch(42% 0.14 25)); }
+      .ect-ai-request-copy { min-width:0; flex:1; }
+      .ect-ai-request-title { font-size:18px; line-height:1.3; font-weight:650; color:var(--oc-fg, oklch(22% 0.020 235)); margin:0 0 8px; }
+      .ect-ai-request-timer { display:inline-flex; align-items:center; height:26px; padding:0 10px; border-radius:999px; background:var(--oc-cyan-subtle, oklch(94% 0.04 215)); color:var(--oc-accent, oklch(56% 0.16 230)); font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; margin-bottom:12px; }
+      .ect-ai-request-desc, .ect-ai-request-error { font-size:14px; line-height:1.7; color:var(--oc-fg-muted, oklch(48% 0.018 230)); }
+      .ect-ai-request-error { color:var(--oc-danger-fg, oklch(42% 0.14 25)); word-break:break-word; }
+    `;
+    document.head.appendChild(style);
+  }
+
   function openAiEvaluationRequestModal(product) {
-    const old = document.getElementById('aiEvaluationRequestOverlay');
-    if (old) old.remove();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'aiEvaluationRequestOverlay';
-    overlay.className = 'oc-modal-mask';
-    overlay.setAttribute('role', 'presentation');
-
-    const modal = document.createElement('div');
-    modal.className = 'oc-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-labelledby', 'aiEvaluationRequestTitle');
-    overlay.appendChild(modal);
-
     const titleText = product && product.name ? `AI评估 - ${product.name}` : 'AI评估';
-    modal.innerHTML = `
-      <div class="oc-modal-head">
-        <div>
-          <h3 id="aiEvaluationRequestTitle">${escapeHtml(titleText)}</h3>
-          <p class="muted" data-ai-eval-status>已请求 0 秒</p>
-        </div>
-        <button type="button" class="oc-btn text" data-ai-eval-close aria-label="关闭">${icon('x', 14)}</button>
-      </div>
-      <div class="oc-modal-body" data-ai-eval-body></div>
-      <div class="oc-modal-foot">
-        <button type="button" class="oc-btn ghost" data-ai-eval-close>关闭</button>
-      </div>`;
-    document.body.appendChild(overlay);
-
+    ensureAiEvaluationRequestModalStyle();
+    const shell = window.EvalCountryTable.openModal('', { title: titleText });
     const modalState = {
-      overlay,
-      body: overlay.querySelector('[data-ai-eval-body]'),
-      status: overlay.querySelector('[data-ai-eval-status]'),
+      overlay: shell.overlay,
+      modal: shell.modal,
+      close: shell.close,
+      body: shell.modal.querySelector('.ect-modal-body'),
+      status: null,
       startedAt: Date.now(),
       timer: null,
       timeoutTimer: null,
       done: false,
     };
+    modalState.modal.classList.add('ect-modal--ai-evaluating');
 
     function updateElapsed() {
       const elapsed = Math.max(0, Math.floor((Date.now() - modalState.startedAt) / 1000));
@@ -450,13 +445,20 @@
     function close() {
       if (modalState.timer) window.clearInterval(modalState.timer);
       if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
-      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      shell.close();
+    }
+    function onKey(event) {
+      if (event.key === 'Escape') close();
     }
 
-    overlay.querySelectorAll('[data-ai-eval-close]').forEach((btn) => btn.addEventListener('click', close));
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) close();
+    shell.overlay.querySelectorAll('.ect-modal-close, .ect-modal-button').forEach((btn) => {
+      btn.addEventListener('click', close, { once: true });
     });
+    shell.overlay.addEventListener('click', (event) => {
+      if (event.target === shell.overlay) close();
+    }, { capture: true, once: true });
+    document.addEventListener('keydown', onKey);
     modalState.timer = window.setInterval(updateElapsed, 1000);
     modalState.timeoutTimer = window.setTimeout(() => {
       if (modalState.done) return;
@@ -464,16 +466,6 @@
     }, AI_EVALUATION_TIMEOUT_MS);
     setAiEvaluationModalLoading(modalState);
     return modalState;
-  }
-
-  function setAiEvaluationModalLoading(modalState) {
-    if (!modalState || !modalState.body) return;
-    modalState.body.innerHTML = `
-      <div class="oc-state">
-        <div class="icon">${icon('loader', 28)}</div>
-        <p class="title">正在请求中</p>
-        <p class="desc">AI 正在评估当前产品素材，请保持弹窗打开等待结果。</p>
-      </div>`;
   }
 
   function setAiEvaluationModalResult(modalState, data) {
@@ -489,16 +481,32 @@
     modalState.body.innerHTML = `<pre class="audit-detail-pre">${escapeHtml(JSON.stringify(detail || {}, null, 2))}</pre>`;
   }
 
+  function setAiEvaluationModalLoading(modalState) {
+    if (!modalState || !modalState.body) return;
+    modalState.body.innerHTML = `
+      <div class="ect-ai-request-card">
+        <div class="ect-ai-request-icon">${icon('loader', 28)}</div>
+        <div class="ect-ai-request-copy">
+          <div class="ect-ai-request-title">正在请求中</div>
+          <div class="ect-ai-request-timer" data-ai-eval-status>已请求 0 秒</div>
+          <div class="ect-ai-request-desc">AI 正在评估当前产品素材，请保持弹窗打开等待结果。</div>
+        </div>
+      </div>`;
+    modalState.status = modalState.body.querySelector('[data-ai-eval-status]');
+  }
+
   function setAiEvaluationModalFailure(modalState, reason) {
     if (!modalState || !modalState.body) return;
     modalState.done = true;
     if (modalState.timeoutTimer) window.clearTimeout(modalState.timeoutTimer);
     if (modalState.status) modalState.status.textContent = '评估失败';
     modalState.body.innerHTML = `
-      <div class="oc-state">
-        <div class="icon">${icon('alert', 28)}</div>
-        <p class="title">本次评估失败</p>
-        <p class="desc">${escapeHtml(aiEvaluationFailureReason(reason))}</p>
+      <div class="ect-ai-request-card is-error">
+        <div class="ect-ai-request-icon">${icon('alert', 28)}</div>
+        <div class="ect-ai-request-copy">
+          <div class="ect-ai-request-title">本次评估失败</div>
+          <div class="ect-ai-request-error">${escapeHtml(aiEvaluationFailureReason(reason))}</div>
+        </div>
       </div>`;
   }
 
