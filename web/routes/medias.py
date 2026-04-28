@@ -502,10 +502,7 @@ def _serialize_item(it: dict, raw_sources_by_id: dict[int, dict] | None = None) 
         "object_key": it["object_key"],
         "cover_object_key": it.get("cover_object_key"),
         "thumbnail_url": f"/medias/thumb/{it['id']}" if it.get("thumbnail_path") else None,
-        "cover_url": (
-            f"/medias/item-cover/{it['id']}" if has_user_cover
-            else (f"/medias/thumb/{it['id']}" if it.get("thumbnail_path") else None)
-        ),
+        "cover_url": f"/medias/item-cover/{it['id']}" if has_user_cover else None,
         "duration_seconds": it.get("duration_seconds"),
         "file_size": it.get("file_size"),
         "source_raw_id": source_raw_id,
@@ -1588,6 +1585,44 @@ def api_item_cover_set_from_url(item_id: int):
     except Exception:
         pass
     return jsonify({"ok": True, "cover_url": f"/medias/item-cover/{item_id}", "object_key": object_key})
+
+
+@bp.route("/api/items/<int:item_id>/cover", methods=["PATCH"])
+@login_required
+def api_item_cover_update(item_id: int):
+    """Replace or clear a media item's cover without touching its video thumbnail."""
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+
+    body = request.get_json(silent=True) or {}
+    if "object_key" not in body:
+        return jsonify({"error": "object_key required"}), 400
+    object_key = (body.get("object_key") or "").strip()
+    next_key = object_key or None
+    if next_key and not _is_media_available(next_key):
+        return jsonify({"error": "object not found"}), 400
+
+    medias.update_item_cover(item_id, next_key)
+
+    if next_key:
+        try:
+            product_dir = THUMB_DIR / str(it["product_id"])
+            product_dir.mkdir(parents=True, exist_ok=True)
+            ext = Path(next_key).suffix or ".jpg"
+            local = product_dir / f"item_cover_{item_id}{ext}"
+            _download_media_object(next_key, str(local))
+        except Exception:
+            pass
+
+    return jsonify({
+        "ok": True,
+        "object_key": next_key,
+        "cover_url": f"/medias/item-cover/{item_id}" if next_key else None,
+    })
 
 
 @bp.route("/api/products/<int:pid>/item-cover/bootstrap", methods=["POST"])

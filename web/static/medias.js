@@ -1326,8 +1326,8 @@
     g.innerHTML = items.map(it => `
       <div class="oc-item" data-item="${it.id}">
         <div class="thumb">
-          ${(it.thumbnail_url || it.cover_url)
-            ? `<img src="${escapeHtml(it.thumbnail_url || it.cover_url)}" loading="lazy" alt="">`
+          ${it.cover_url
+            ? `<img src="${escapeHtml(it.cover_url)}" loading="lazy" alt="">`
             : `<div class="thumb-ph">${icon('film', 20)}</div>`}
           <button class="rm" type="button" aria-label="删除">${icon('close', 12)}</button>
         </div>
@@ -3518,7 +3518,7 @@
   function edRenderItems(items) {
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
-      const cover = it.cover_url || it.thumbnail_url;
+      const cover = it.cover_url;
       const name = escapeHtml(it.display_name || it.filename);
       const sourceLabel = itemSourceLabel(it);
       const sourceHtml = sourceLabel

@@ -184,3 +184,51 @@ def test_product_detail_items_include_raw_source_provenance(authed_client_no_db,
     assert item["source_raw_id"] == 88
     assert item["auto_translated"] is True
     assert item["source_raw"]["display_name"] == "Clean English Raw"
+
+
+def test_product_detail_item_cover_url_does_not_fallback_to_video_thumbnail(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "user_id": 1,
+            "name": "t-tr",
+            "created_at": None,
+            "updated_at": None,
+        },
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: product is not None)
+    monkeypatch.setattr(r.medias, "get_product_covers", lambda product_id: {})
+    monkeypatch.setattr(r.medias, "list_copywritings", lambda product_id: [])
+    monkeypatch.setattr(
+        r.medias,
+        "list_items",
+        lambda product_id: [{
+            "id": 702,
+            "product_id": product_id,
+            "lang": "de",
+            "filename": "de-final.mp4",
+            "display_name": "DE Final",
+            "object_key": "1/medias/123/de-final.mp4",
+            "cover_object_key": "",
+            "thumbnail_path": "thumbs/702.jpg",
+            "duration_seconds": 88.0,
+            "file_size": 1024,
+            "source_raw_id": 88,
+            "source_ref_id": 88,
+            "bulk_task_id": "bt-1",
+            "auto_translated": 1,
+            "created_at": None,
+        }],
+    )
+    monkeypatch.setattr(r.medias, "list_raw_sources", lambda product_id: [])
+
+    resp = authed_client_no_db.get("/medias/api/products/123")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["thumbnail_url"] == "/medias/thumb/702"
+    assert item["cover_url"] is None

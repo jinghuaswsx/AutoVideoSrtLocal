@@ -1786,6 +1786,65 @@ def test_materialize_multi_translate_cover_prefers_existing_translated_cover(
     assert result == translated_cover_key
 
 
+def test_materialize_multi_translate_cover_never_uses_video_thumbnail_without_translated_cover(
+    runtime_env,
+    monkeypatch,
+    tmp_path,
+):
+    mod, _fake_db = runtime_env
+    thumbnail = tmp_path / "thumbnail.jpg"
+    thumbnail.write_bytes(b"video-thumbnail")
+
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source",
+        lambda raw_id: {
+            "id": raw_id,
+            "user_id": 33,
+            "cover_object_key": "33/medias/6/raw_sources/source.cover.jpg",
+        },
+    )
+    monkeypatch.setattr(
+        mod.medias,
+        "get_raw_source_translation",
+        lambda raw_id, lang: None,
+    )
+    monkeypatch.setattr(
+        mod.local_media_storage,
+        "write_bytes",
+        lambda *_args, **_kwargs: pytest.fail("video thumbnails must not become material covers"),
+    )
+
+    result = mod._materialize_multi_translate_cover(
+        product_id=6,
+        lang="it",
+        source_raw_id=19,
+        child_task_id="video-task",
+        child_state={"thumbnail_path": str(thumbnail)},
+    )
+
+    assert result == ""
+
+
+def test_sync_child_result_refreshes_video_covers_for_any_translation_kind(runtime_env, monkeypatch):
+    mod, _fake_db = runtime_env
+    refreshed = []
+    monkeypatch.setattr(
+        mod,
+        "refresh_translated_video_item_covers_for_scope",
+        lambda product_id, lang: refreshed.append((product_id, lang)) or 3,
+    )
+
+    mod._sync_child_result(
+        "bt-1",
+        {"kind": "copywriting", "lang": "de", "child_task_id": "copy-1"},
+        {"product_id": 77},
+        {"_project_status": "done"},
+    )
+
+    assert refreshed == [(77, "de")]
+
+
 # ---------------------------------------------------------------------------
 # Fail-fast 调度回归（事故：2026-04-27 product 537 6 个 pending 永远 stuck）
 # ---------------------------------------------------------------------------

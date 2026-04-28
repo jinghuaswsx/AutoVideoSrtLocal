@@ -159,7 +159,75 @@ def sync_video_cover_result(
         source_ref_id=source_raw_id,
         bulk_task_id=parent_task_id,
     )
+    refresh_translated_video_item_cover(
+        product_id=product_id,
+        lang=lang,
+        source_raw_id=source_raw_id,
+        cover_object_key=cover_object_key,
+    )
     return target_id
+
+
+def refresh_translated_video_item_cover(
+    *,
+    product_id: int,
+    lang: str,
+    source_raw_id: int,
+    cover_object_key: str,
+) -> int:
+    return execute(
+        """
+        UPDATE media_items
+           SET cover_object_key=%s
+         WHERE product_id=%s
+           AND lang=%s
+           AND source_raw_id=%s
+           AND deleted_at IS NULL
+        """,
+        (cover_object_key, product_id, lang, source_raw_id),
+    )
+
+
+def refresh_all_translated_video_item_covers() -> int:
+    """Re-apply translated raw-source covers to existing translated videos."""
+    return execute(
+        """
+        UPDATE media_items mi
+        JOIN media_raw_source_translations rt
+          ON rt.product_id = mi.product_id
+         AND rt.lang = mi.lang
+         AND rt.source_ref_id = mi.source_raw_id
+         AND rt.deleted_at IS NULL
+         AND rt.cover_object_key <> ''
+           SET mi.cover_object_key = rt.cover_object_key
+         WHERE mi.deleted_at IS NULL
+           AND mi.source_raw_id IS NOT NULL
+        """
+    )
+
+
+def refresh_translated_video_item_covers_for_scope(
+    *,
+    product_id: int,
+    lang: str,
+) -> int:
+    return execute(
+        """
+        UPDATE media_items mi
+        JOIN media_raw_source_translations rt
+          ON rt.product_id = mi.product_id
+         AND rt.lang = mi.lang
+         AND rt.source_ref_id = mi.source_raw_id
+         AND rt.deleted_at IS NULL
+         AND rt.cover_object_key <> ''
+           SET mi.cover_object_key = rt.cover_object_key
+         WHERE mi.product_id = %s
+           AND mi.lang = %s
+           AND mi.deleted_at IS NULL
+           AND mi.source_raw_id IS NOT NULL
+        """,
+        (product_id, lang),
+    )
 
 
 def sync_detail_images_result(

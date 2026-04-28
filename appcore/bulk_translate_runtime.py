@@ -21,6 +21,7 @@ from pathlib import Path
 
 from appcore import local_media_storage, medias
 from appcore.bulk_translate_backfill import (
+    refresh_translated_video_item_covers_for_scope,
     sync_detail_images_result,
     sync_video_cover_result,
     sync_video_result,
@@ -873,6 +874,7 @@ def _sync_child_result(
     lang = (item.get("lang") or "").strip()
 
     if kind in {"copy", "copywriting", "detail", "cover"}:
+        _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return
 
     if kind == "detail_images":
@@ -880,6 +882,7 @@ def _sync_child_result(
             parent_task_id=parent_task_id,
             child_task_id=item["child_task_id"],
         )
+        _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return
 
     if kind == "video_covers":
@@ -897,6 +900,7 @@ def _sync_child_result(
                 source_raw_id=int(raw_id),
                 cover_object_key=cover_object_key,
             )
+        _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return
 
     if kind in {"video", "videos"}:
@@ -923,7 +927,17 @@ def _sync_child_result(
             video_object_key=video_object_key,
             cover_object_key=cover_object_key,
         )
+        _refresh_video_item_covers_for_scope(product_id=product_id, lang=lang)
         return
+
+
+def _refresh_video_item_covers_for_scope(*, product_id: int, lang: str) -> None:
+    if not product_id or not lang:
+        return
+    refresh_translated_video_item_covers_for_scope(
+        product_id=product_id,
+        lang=lang,
+    )
 
 
 def _create_copy_child(parent_id: str, item: dict, parent_state: dict) -> tuple[str, str, str]:
@@ -1175,26 +1189,11 @@ def _materialize_multi_translate_cover(
     child_task_id: str,
     child_state: dict,
 ) -> str:
-    raw_source = medias.get_raw_source(source_raw_id) or {}
+    del product_id, child_task_id, child_state
     existing_cover = medias.get_raw_source_translation(source_raw_id, lang) or {}
     if (existing_cover.get("cover_object_key") or "").strip():
         return existing_cover["cover_object_key"]
-
-    thumbnail_path = _pick_existing_path(
-        [
-            (child_state.get("thumbnail_path") or ""),
-            ((child_state.get("preview_files") or {}).get("thumbnail") or ""),
-            (((child_state.get("variants") or {}).get("normal") or {}).get("preview_files") or {}).get("thumbnail") or "",
-        ]
-    )
-    if not thumbnail_path:
-        return raw_source.get("cover_object_key") or ""
-    ext = Path(thumbnail_path).suffix or ".jpg"
-    base_name = Path(raw_source.get("cover_object_key") or "").stem or f"raw_{source_raw_id}_cover"
-    object_key = f"{int(raw_source.get('user_id') or 0)}/medias/{product_id}/{lang}_{base_name}{ext}"
-    with open(thumbnail_path, "rb") as fh:
-        local_media_storage.write_bytes(object_key, fh.read())
-    return object_key
+    return ""
 
 
 def _pick_existing_path(candidates: list[str]) -> str:

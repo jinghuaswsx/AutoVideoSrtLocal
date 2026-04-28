@@ -64,6 +64,19 @@ def test_sync_video_cover_result_marks_auto_translated(monkeypatch):
         )
         or 1,
     )
+    monkeypatch.setattr(
+        mod,
+        "refresh_translated_video_item_cover",
+        lambda product_id, lang, source_raw_id, cover_object_key: captured.update(
+            {
+                "refreshed_product_id": product_id,
+                "refreshed_lang": lang,
+                "refreshed_source_raw_id": source_raw_id,
+                "refreshed_cover_object_key": cover_object_key,
+            }
+        )
+        or 1,
+    )
 
     mod.sync_video_cover_result(
         parent_task_id="bt-1",
@@ -76,6 +89,66 @@ def test_sync_video_cover_result_marks_auto_translated(monkeypatch):
     assert captured["table"] == "media_raw_source_translations"
     assert captured["target_id"] == 901
     assert captured["bulk_task_id"] == "bt-1"
+    assert captured["refreshed_product_id"] == 77
+    assert captured["refreshed_lang"] == "de"
+    assert captured["refreshed_source_raw_id"] == 301
+    assert captured["refreshed_cover_object_key"] == "1/medias/77/cover_de_raw301.png"
+
+
+def test_sync_video_cover_result_updates_existing_translated_video_items(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    monkeypatch.setattr(
+        mod.medias,
+        "upsert_raw_source_translation",
+        lambda product_id, source_ref_id, lang, cover_object_key: 901,
+    )
+    monkeypatch.setattr(mod, "mark_auto_translated", lambda *args, **kwargs: 1)
+    executed = []
+    monkeypatch.setattr(mod, "execute", lambda sql, args=None: executed.append((sql, args)) or 2)
+
+    mod.sync_video_cover_result(
+        parent_task_id="bt-1",
+        product_id=77,
+        lang="de",
+        source_raw_id=301,
+        cover_object_key="1/medias/77/cover_de_raw301.png",
+    )
+
+    update_calls = [
+        (sql, args) for sql, args in executed
+        if "UPDATE media_items" in " ".join(sql.split())
+    ]
+    assert update_calls == [(
+        """
+        UPDATE media_items
+           SET cover_object_key=%s
+         WHERE product_id=%s
+           AND lang=%s
+           AND source_raw_id=%s
+           AND deleted_at IS NULL
+        """,
+        ("1/medias/77/cover_de_raw301.png", 77, "de", 301),
+    )]
+
+
+def test_refresh_all_translated_video_item_covers_uses_translation_table(monkeypatch):
+    from appcore import bulk_translate_backfill as mod
+
+    captured = {}
+    monkeypatch.setattr(
+        mod,
+        "execute",
+        lambda sql, args=None: captured.update({"sql": sql, "args": args}) or 8,
+    )
+
+    updated = mod.refresh_all_translated_video_item_covers()
+
+    assert updated == 8
+    normalized = " ".join(captured["sql"].split())
+    assert "UPDATE media_items mi JOIN media_raw_source_translations rt" in normalized
+    assert "SET mi.cover_object_key = rt.cover_object_key" in normalized
+    assert captured["args"] is None
 
 
 def test_sync_detail_images_result_marks_applied_rows(monkeypatch):
