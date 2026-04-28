@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/roi_hourly_sync.py --lookback-hours 3 --max-scan-pages 40
 User=root
