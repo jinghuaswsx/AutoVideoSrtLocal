@@ -50,6 +50,7 @@ example.mp4
 
 # Stray empty file
 AutoVideoSrt
+AutoVideoSrtLocal
 
 # Claude Code local state
 .claude/
@@ -73,6 +74,19 @@ link_check_desktop_config.json
 /*.patch
 /test_*.js
 /README.MIMO.MD
+/*clash*.yaml
+/check_task.py
+/watch_task.py
+/server_fix_voice.py
+/server_force_fix.py
+/test_playground/
+/instance/
+/docs/任务中心-手工验收清单-*.md
+/tools/fix_utterances_en_field_names.py
+/tools/rerun_compose.py
+/tools/rerun_omni_tts.py
+/tools/rerun_voice_match.py
+/tools/tts_convergence_stats.py
 
 # Server SSH keys / drop-zone — never commit private keys or server configs
 .server/
