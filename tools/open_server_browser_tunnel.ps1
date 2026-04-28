@@ -3,9 +3,7 @@ param(
     [string]$ServerHost = "172.30.254.14",
     [string]$User = "root",
     [string]$KeyPath = "C:\Users\admin\.ssh\CC.pem",
-    [int]$NoVncPort = 6080,
-    [int]$CdpPort = 9222,
-    [switch]$NoOpenBrowser
+    [int]$CdpPort = 9222
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,23 +20,13 @@ $args = @(
     "-o", "ServerAliveInterval=60",
     "-N",
     "-T",
-    "-L", "$NoVncPort`:127.0.0.1:6080",
     "-L", "$CdpPort`:127.0.0.1:9222",
     "$User@$ServerHost"
 )
 
-Write-Host "Opening SSH tunnel..." -ForegroundColor Green
-Write-Host "noVNC URL: http://127.0.0.1:$NoVncPort/vnc.html"
-Write-Host "CDP URL:   http://127.0.0.1:$CdpPort/json/version"
+Write-Host "Opening SSH tunnel for shared browser CDP..." -ForegroundColor Green
+Write-Host "CDP URL: http://127.0.0.1:$CdpPort/json/version"
+Write-Host "Use Sunlogin to view the actual browser window on the cjh desktop."
 Write-Host "Keep this window open while using the remote browser."
-
-if (-not $NoOpenBrowser) {
-    $openCommand = "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:$NoVncPort/vnc.html'"
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @(
-        "-NoProfile",
-        "-Command",
-        $openCommand
-    ) | Out-Null
-}
 
 & $sshExe @args
