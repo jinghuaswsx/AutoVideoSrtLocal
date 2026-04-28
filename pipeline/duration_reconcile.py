@@ -4,22 +4,35 @@ from typing import Any
 
 from pipeline import av_translate, tts
 
+MIN_DURATION_RATIO = 0.95
+MAX_DURATION_RATIO = 1.05
+MIN_TTS_SPEED = 0.95
+MAX_TTS_SPEED = 1.05
+
+
+def duration_ratio(target_duration: float, tts_duration: float) -> float:
+    if target_duration <= 0:
+        return 1.0
+    return tts_duration / target_duration
+
+
+def compute_speed_for_target(target_duration: float, tts_duration: float) -> float | None:
+    if target_duration <= 0 or tts_duration <= 0:
+        return 1.0
+    speed = tts_duration / target_duration
+    if MIN_TTS_SPEED <= speed <= MAX_TTS_SPEED:
+        return round(speed, 4)
+    return None
+
 
 def classify_overshoot(target_duration: float, tts_duration: float) -> tuple[str, float]:
     """Return (status, speed) using the v2 duration reconciliation thresholds."""
-    if target_duration <= 0:
+    ratio = duration_ratio(target_duration, tts_duration)
+    if MIN_DURATION_RATIO <= ratio <= MAX_DURATION_RATIO:
         return ("ok", 1.0)
-    ratio = (tts_duration - target_duration) / target_duration
-    if -0.05 <= ratio <= 0.05:
-        return ("ok", 1.0)
-    if 0.05 < ratio <= 0.15:
-        speed = min(1.08, max(1.0, tts_duration / target_duration))
-        return ("speed_adjusted", speed)
-    if -0.15 <= ratio < -0.05:
-        return ("ok_short", 1.0)
-    if ratio > 0.15:
+    if ratio > MAX_DURATION_RATIO:
         return ("needs_rewrite", 1.0)
-    return ("warning_short", 1.0)
+    return ("needs_expand", 1.0)
 
 
 def _tts_segment_map(tts_output: dict) -> dict[int, dict]:
@@ -37,6 +50,24 @@ def _scaled_target_chars_range(old_range: Any, target_duration: float, tts_durat
     lo = max(1, int(old_range[0] * scale))
     hi = max(lo + 1, int(old_range[1] * scale + 0.5))
     return (lo, hi)
+
+
+def _duration_reason(status: str) -> str:
+    if status == "ok":
+        return "within_duration_ratio"
+    if status == "needs_rewrite":
+        return "above_duration_ratio"
+    if status == "needs_expand":
+        return "below_duration_ratio"
+    return status
+
+
+def _preserve_sentence_fields(current: dict, av_sentence: dict) -> None:
+    for key, value in av_sentence.items():
+        if key in current:
+            continue
+        if key.startswith("source") or key.startswith("localization"):
+            current[key] = value
 
 
 def _regenerate_segment(
@@ -90,22 +121,36 @@ def reconcile_duration(
             "speed": 1.0,
             "rewrite_rounds": 0,
             "status": "ok",
+            "duration_ratio": duration_ratio(
+                float(av_sentence.get("target_duration", 0.0) or 0.0),
+                float(tts_segment.get("tts_duration", 0.0) or 0.0),
+            ),
+            "attempts": [],
         }
+        _preserve_sentence_fields(current, av_sentence)
 
         status, speed = classify_overshoot(current["target_duration"], current["tts_duration"])
         current["status"] = status
         current["speed"] = speed
+        current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
 
-        if status == "speed_adjusted":
-            current["tts_path"], current["tts_duration"] = _regenerate_segment(
-                sentence=current,
-                voice_id=voice_id,
-                target_language=target_language,
-                speed=speed,
-            )
-        elif status == "needs_rewrite":
+        if status == "ok":
+            speed_for_target = compute_speed_for_target(current["target_duration"], current["tts_duration"])
+            if speed_for_target is not None and speed_for_target != 1.0:
+                current["tts_path"], current["tts_duration"] = _regenerate_segment(
+                    sentence=current,
+                    voice_id=voice_id,
+                    target_language=target_language,
+                    speed=speed_for_target,
+                )
+                current["speed"] = speed_for_target
+                current["status"] = "speed_adjusted"
+                current["duration_ratio"] = duration_ratio(current["target_duration"], current["tts_duration"])
+        elif status in {"needs_rewrite", "needs_expand"}:
             current_duration = current["tts_duration"]
+            action = "shorten" if status == "needs_rewrite" else "expand"
             for rewrite_round in range(1, max_rewrite_rounds + 1):
+                before_text = current["text"]
                 new_range = _scaled_target_chars_range(
                     current["target_chars_range"],
                     current["target_duration"],
@@ -113,7 +158,7 @@ def reconcile_duration(
                 )
                 new_text = av_translate.rewrite_one(
                     asr_index=asr_index,
-                    prev_text=current["text"],
+                    prev_text=before_text,
                     overshoot_sec=max(0.0, current_duration - current["target_duration"]),
                     new_target_chars_range=new_range,
                     script_segments=script_segments,
@@ -136,26 +181,40 @@ def reconcile_duration(
                 status, speed = classify_overshoot(current["target_duration"], current_duration)
                 current["status"] = status
                 current["speed"] = speed
-                if status == "speed_adjusted":
-                    current["tts_path"], current["tts_duration"] = _regenerate_segment(
-                        sentence=current,
-                        voice_id=voice_id,
-                        target_language=target_language,
-                        speed=speed,
-                    )
-                    break
-                if status in {"ok", "ok_short"}:
+                current["duration_ratio"] = duration_ratio(current["target_duration"], current_duration)
+                current["attempts"].append(
+                    {
+                        "round": rewrite_round,
+                        "action": action,
+                        "before_text": before_text,
+                        "after_text": new_text,
+                        "target_duration": current["target_duration"],
+                        "tts_duration": current_duration,
+                        "duration_ratio": round(current["duration_ratio"], 4),
+                        "status": status,
+                        "reason": _duration_reason(status),
+                    }
+                )
+
+                if status == "ok":
+                    speed_for_target = compute_speed_for_target(current["target_duration"], current_duration)
+                    if speed_for_target is not None and speed_for_target != 1.0:
+                        current["tts_path"], current["tts_duration"] = _regenerate_segment(
+                            sentence=current,
+                            voice_id=voice_id,
+                            target_language=target_language,
+                            speed=speed_for_target,
+                        )
+                        current["speed"] = speed_for_target
+                        current["status"] = "speed_adjusted"
+                        current["duration_ratio"] = duration_ratio(
+                            current["target_duration"], current["tts_duration"]
+                        )
                     break
 
-            if current["status"] == "needs_rewrite":
-                current["status"] = "warning_overshoot"
-                current["speed"] = 1.12
-                current["tts_path"], current["tts_duration"] = _regenerate_segment(
-                    sentence=current,
-                    voice_id=voice_id,
-                    target_language=target_language,
-                    speed=current["speed"],
-                )
+            if current["status"] in {"needs_rewrite", "needs_expand"}:
+                current["status"] = "warning_long" if action == "shorten" else "warning_short"
+                current["speed"] = 1.0
 
         final_sentences.append(current)
 
