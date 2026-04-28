@@ -407,6 +407,7 @@
 <!-- Tab 导航 -->
 <div class="oa-tabs">
   <button class="oa-tab active" data-tab="dashboard">产品看板</button>
+  <button class="oa-tab" data-tab="trueRoas">真实 ROAS</button>
   <button class="oa-tab" data-tab="import">订单导入</button>
   <button class="oa-tab" data-tab="analytics">订单分析</button>
   <button class="oa-tab" data-tab="ads">广告分析</button>
@@ -776,6 +777,42 @@
 </script>
 </section>
 
+<!-- Tab: 真实 ROAS -->
+<div class="oa-panel" id="panelTrueRoas">
+  <div class="oa-controls">
+    <label>日期范围:</label>
+    <input type="date" id="trueRoasStart" value="2026-04-01">
+    <span>至</span>
+    <input type="date" id="trueRoasEnd" value="2026-04-30">
+    <button class="btn btn-primary btn-sm" id="trueRoasRefresh">查询</button>
+  </div>
+
+  <div id="trueRoasSummary" class="oa-stats"></div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">真实 ROAS 日报</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>归因日</th>
+            <th>北京时间窗口</th>
+            <th>订单数</th>
+            <th>销售额</th>
+            <th>广告费</th>
+            <th>真实 ROAS</th>
+            <th>Meta 转化价值</th>
+            <th>Meta 成效</th>
+          </tr>
+        </thead>
+        <tbody id="trueRoasTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -1051,6 +1088,8 @@
         initAnalytics();
       } else if (tab.dataset.tab === 'ads') {
         initAds();
+      } else if (tab.dataset.tab === 'trueRoas') {
+        loadTrueRoas();
       }
     });
   });
@@ -1075,6 +1114,65 @@
   debug('JS 已加载');
 
   // ── 上传 ──────────────────────────────────────────
+  var trueRoasRefresh = document.getElementById('trueRoasRefresh');
+  if (trueRoasRefresh) trueRoasRefresh.addEventListener('click', loadTrueRoas);
+
+  function loadTrueRoas() {
+    var start = document.getElementById('trueRoasStart').value || '2026-04-01';
+    var end = document.getElementById('trueRoasEnd').value || start;
+    var summaryEl = document.getElementById('trueRoasSummary');
+    var body = document.getElementById('trueRoasTableBody');
+    summaryEl.innerHTML = '';
+    body.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    fetch('/order-analytics/true-roas?start_date=' + encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var s = data.summary || {};
+        summaryEl.innerHTML =
+          statCard('订单销售额', fmtMoney(s.order_revenue)) +
+          statCard('广告费', fmtMoney(s.ad_spend)) +
+          statCard('真实 ROAS', fmtRoasValue(s.true_roas)) +
+          statCard('订单数', s.order_count || 0);
+        body.innerHTML = '';
+        (data.rows || []).forEach(function(row) {
+          var tr = document.createElement('tr');
+          [
+            row.meta_business_date,
+            formatRoasWindow(row.window_start_at, row.window_end_at),
+            row.order_count || 0,
+            fmtMoney(row.order_revenue),
+            fmtMoney(row.ad_spend),
+            fmtRoasValue(row.true_roas),
+            fmtMoney(row.meta_purchase_value),
+            row.meta_purchases || 0
+          ].forEach(function(value) {
+            var td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+        if (!body.children.length) {
+          body.innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
+        }
+      })
+      .catch(function(err) {
+        body.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  function fmtRoasValue(value) {
+    return value === null || value === undefined ? '-' : Number(value).toFixed(2);
+  }
+
+  function formatRoasWindow(start, end) {
+    return String(start || '').replace('T', ' ').slice(0, 16) + ' ~ ' +
+           String(end || '').replace('T', ' ').slice(5, 16);
+  }
+
   var zone = document.getElementById('uploadZone');
   var input = document.getElementById('fileInput');
   var errorBox = document.getElementById('errorBox');

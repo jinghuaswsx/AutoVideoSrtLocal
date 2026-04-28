@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from appcore import order_analytics as oa
+
+
+def test_get_true_roas_summary_uses_order_revenue_over_ad_spend(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=()):
+        calls.append((sql, args))
+        if "FROM dianxiaomi_order_lines" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-01"),
+                    "order_count": 2,
+                    "line_count": 3,
+                    "units": 4,
+                    "order_revenue": 2000.0,
+                    "line_revenue": 1800.0,
+                    "shipping_revenue": 200.0,
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "meta_business_date": oa._parse_meta_date("2026-04-01"),
+                    "ad_spend": 1000.0,
+                    "meta_purchase_value": 9999.0,
+                    "meta_purchases": 99,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_true_roas_summary("2026-04-01", "2026-04-01")
+
+    assert result["summary"]["order_revenue"] == 2000.0
+    assert result["summary"]["ad_spend"] == 1000.0
+    assert result["summary"]["true_roas"] == 2.0
+    assert result["rows"][0]["true_roas"] == 2.0
+    assert result["rows"][0]["meta_purchase_value"] == 9999.0
+    assert any("meta_business_date" in sql for sql, _args in calls)
+
+
+def test_true_roas_endpoint_returns_json(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_summary(start_date, end_date):
+        captured["args"] = (start_date, end_date)
+        return {
+            "period": {"start": "2026-04-01", "end": "2026-04-30"},
+            "rows": [],
+            "summary": {"order_revenue": 0, "ad_spend": 0, "true_roas": None},
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_true_roas_summary", fake_summary)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/true-roas?start_date=2026-04-01&end_date=2026-04-30"
+    )
+
+    assert response.status_code == 200
+    assert captured["args"] == ("2026-04-01", "2026-04-30")
+    assert response.get_json()["period"]["start"] == "2026-04-01"
+
+
+def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "真实 ROAS" in body
+    assert 'data-tab="trueRoas"' in body
+    assert 'id="panelTrueRoas"' in body

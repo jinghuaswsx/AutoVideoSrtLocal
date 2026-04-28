@@ -117,6 +117,10 @@ def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
     assert rows[0]["amount_with_shipping"] == 17.94
     assert rows[0]["logistic_fee"] == 6.5
     assert rows[0]["order_paid_at"] == datetime(2026, 4, 27, 10, 3)
+    assert rows[0]["attribution_time_at"] == datetime(2026, 4, 27, 10, 3)
+    assert rows[0]["meta_business_date"].isoformat() == "2026-04-26"
+    assert rows[0]["meta_window_start_at"] == datetime(2026, 4, 26, 16, 0)
+    assert rows[0]["meta_window_end_at"] == datetime(2026, 4, 27, 16, 0)
 
 
 def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
@@ -146,6 +150,7 @@ def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
     assert skipped == 0
     assert rows[0]["order_paid_at"] == datetime(2026, 4, 27, 14, 45, 17)
     assert rows[0]["shipped_at"] == datetime(2026, 4, 27, 14, 47, 14)
+    assert rows[0]["meta_business_date"].isoformat() == "2026-04-26"
 
 
 def test_normalize_dianxiaomi_order_keeps_requested_site_from_order_line_url():
@@ -318,5 +323,6 @@ def test_upsert_dianxiaomi_order_lines_serializes_json(monkeypatch):
 
     assert result == {"affected": 1, "rows": 1}
     assert "INSERT INTO dianxiaomi_order_lines" in captured["sql"]
+    assert "meta_business_date" in captured["sql"]
     assert any('"id": "9001"' in str(arg) for arg in captured["args"])
     assert captured["committed"] is True

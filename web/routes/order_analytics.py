@@ -152,6 +152,23 @@ def ad_summary():
     return jsonify(_json_safe(oa.get_meta_ad_summary(batch_id, start_date, end_date)))
 
 
+@bp.route("/order-analytics/true-roas")
+@login_required
+@admin_required
+def true_roas():
+    start_date = (request.args.get("start_date") or "").strip()
+    end_date = (request.args.get("end_date") or "").strip()
+    if not start_date or not end_date:
+        return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
+    try:
+        return jsonify(_json_safe(oa.get_true_roas_summary(start_date, end_date)))
+    except ValueError as exc:
+        return jsonify(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("true roas query failed: %s", exc)
+        return jsonify(error="internal_error", detail=str(exc)), 500
+
+
 @bp.route("/order-analytics/dianxiaomi-import-batches")
 @login_required
 @admin_required

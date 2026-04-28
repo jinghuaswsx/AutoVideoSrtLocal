@@ -19,6 +19,9 @@ from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
 
+META_ATTRIBUTION_CUTOVER_HOUR_BJ = 16
+META_ATTRIBUTION_TIMEZONE = "Asia/Shanghai"
+
 # Shopify CSV 列名映射
 _SHOPIFY_COLS = {
     "Id":                   "shopify_order_id",
@@ -113,6 +116,36 @@ def _parse_dianxiaomi_ts(value: Any) -> datetime | None:
         except ValueError:
             continue
     return None
+
+
+def compute_meta_business_window_bj(day_value: date) -> tuple[datetime, datetime]:
+    start = datetime(day_value.year, day_value.month, day_value.day, META_ATTRIBUTION_CUTOVER_HOUR_BJ, 0, 0)
+    return start, start + timedelta(days=1)
+
+
+def compute_order_meta_attribution(
+    *values: datetime | None,
+) -> dict[str, Any]:
+    attribution_time = next((value for value in values if value is not None), None)
+    if attribution_time is None:
+        return {
+            "attribution_time_at": None,
+            "attribution_source": None,
+            "attribution_timezone": META_ATTRIBUTION_TIMEZONE,
+            "meta_business_date": None,
+            "meta_window_start_at": None,
+            "meta_window_end_at": None,
+        }
+    business_date = (attribution_time - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    window_start, window_end = compute_meta_business_window_bj(business_date)
+    return {
+        "attribution_time_at": attribution_time,
+        "attribution_source": None,
+        "attribution_timezone": META_ATTRIBUTION_TIMEZONE,
+        "meta_business_date": business_date,
+        "meta_window_start_at": window_start,
+        "meta_window_end_at": window_end,
+    }
 
 
 def _combined_link_text(*values: Any) -> str:
@@ -280,6 +313,17 @@ def normalize_dianxiaomi_order(
         unit_price = _safe_decimal_float(line.get("price"))
         line_amount = round((unit_price or 0) * quantity, 2) if unit_price is not None else None
         addr = order.get("dxmPackageAddr") if isinstance(order.get("dxmPackageAddr"), dict) else {}
+        order_created_at = _parse_dianxiaomi_ts(order.get("orderCreateTime"))
+        order_paid_at = _parse_dianxiaomi_ts(order.get("orderPayTime"))
+        paid_at = _parse_dianxiaomi_ts(order.get("paidTime"))
+        shipped_at = _parse_dianxiaomi_ts(order.get("shippedTime"))
+        attribution = compute_order_meta_attribution(order_paid_at, paid_at, order_created_at, shipped_at)
+        attribution["attribution_source"] = (
+            "order_paid_at" if order_paid_at is not None else
+            "paid_at" if paid_at is not None else
+            "order_created_at" if order_created_at is not None else
+            "shipped_at" if shipped_at is not None else None
+        )
         normalized.append({
             "site_code": product["site_code"],
             "product_id": product["product_id"],
@@ -316,10 +360,11 @@ def normalize_dianxiaomi_order(
             "buyer_country_name": str(order.get("countryCN") or "").strip() or None,
             "province": str(addr.get("province") or "").strip() or None,
             "city": str(addr.get("city") or "").strip() or None,
-            "order_created_at": _parse_dianxiaomi_ts(order.get("orderCreateTime")),
-            "order_paid_at": _parse_dianxiaomi_ts(order.get("orderPayTime")),
-            "paid_at": _parse_dianxiaomi_ts(order.get("paidTime")),
-            "shipped_at": _parse_dianxiaomi_ts(order.get("shippedTime")),
+            "order_created_at": order_created_at,
+            "order_paid_at": order_paid_at,
+            "paid_at": paid_at,
+            "shipped_at": shipped_at,
+            **attribution,
             "raw_order_json": order,
             "raw_line_json": line,
             "profit_json": profit or None,
@@ -423,6 +468,12 @@ _DIANXIAOMI_ORDER_LINE_COLUMNS = [
     "order_paid_at",
     "paid_at",
     "shipped_at",
+    "attribution_time_at",
+    "attribution_source",
+    "attribution_timezone",
+    "meta_business_date",
+    "meta_window_start_at",
+    "meta_window_end_at",
     "raw_order_json",
     "raw_line_json",
     "profit_json",
@@ -468,6 +519,12 @@ def upsert_dianxiaomi_order_lines(batch_id: int, rows: list[dict[str, Any]]) -> 
         "order_paid_at",
         "paid_at",
         "shipped_at",
+        "attribution_time_at",
+        "attribution_source",
+        "attribution_timezone",
+        "meta_business_date",
+        "meta_window_start_at",
+        "meta_window_end_at",
         "raw_order_json",
         "raw_line_json",
         "profit_json",
@@ -649,6 +706,111 @@ def parse_meta_ad_file(file_stream, filename: str) -> list[dict]:
     ]
 
 
+def _parse_iso_date_param(value: str, name: str) -> date:
+    try:
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"{name} must be YYYY-MM-DD") from exc
+
+
+def _money(value: Any) -> float:
+    return round(float(value or 0), 2)
+
+
+def _roas(revenue: float, spend: float) -> float | None:
+    if spend <= 0:
+        return None
+    return round(revenue / spend, 4)
+
+
+def get_true_roas_summary(start_date: str, end_date: str) -> dict:
+    start = _parse_iso_date_param(start_date, "start_date")
+    end = _parse_iso_date_param(end_date, "end_date")
+    if end < start:
+        raise ValueError("end_date must be >= start_date")
+
+    order_rows = query(
+        "SELECT meta_business_date, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue "
+        "FROM dianxiaomi_order_lines "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+    ad_rows = query(
+        "SELECT meta_business_date, "
+        "SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+
+    orders_by_day = {row["meta_business_date"]: row for row in order_rows}
+    ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
+    rows: list[dict[str, Any]] = []
+    totals = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+        "ad_spend": 0.0,
+        "meta_purchase_value": 0.0,
+        "meta_purchases": 0,
+    }
+
+    current = start
+    while current <= end:
+        order = orders_by_day.get(current, {})
+        ad = ads_by_day.get(current, {})
+        window_start, window_end = compute_meta_business_window_bj(current)
+        order_revenue = _money(order.get("order_revenue"))
+        ad_spend = _money(ad.get("ad_spend"))
+        item = {
+            "meta_business_date": current,
+            "window_start_at": window_start,
+            "window_end_at": window_end,
+            "order_count": int(order.get("order_count") or 0),
+            "line_count": int(order.get("line_count") or 0),
+            "units": int(order.get("units") or 0),
+            "order_revenue": order_revenue,
+            "line_revenue": _money(order.get("line_revenue")),
+            "shipping_revenue": _money(order.get("shipping_revenue")),
+            "ad_spend": ad_spend,
+            "true_roas": _roas(order_revenue, ad_spend),
+            "meta_purchase_value": _money(ad.get("meta_purchase_value")),
+            "meta_purchases": int(ad.get("meta_purchases") or 0),
+        }
+        rows.append(item)
+        for key in totals:
+            totals[key] += item[key]
+        current += timedelta(days=1)
+
+    for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
+        totals[key] = round(float(totals[key]), 2)
+    summary = dict(totals)
+    summary["true_roas"] = _roas(summary["order_revenue"], summary["ad_spend"])
+    return {
+        "period": {
+            "start": start,
+            "end": end,
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+            "cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+        },
+        "summary": summary,
+        "rows": rows,
+    }
+
+
 def _coerce_ad_frequency(value: str | None) -> str:
     normalized = (value or "custom").strip().lower()
     if normalized not in {"weekly", "monthly", "custom"}:
@@ -691,6 +853,12 @@ def import_meta_ad_rows(
                 matched_product_code = product.get("product_code") if product else None
                 if product_id:
                     matched += 1
+                meta_business_date = None
+                meta_window_start_at = None
+                meta_window_end_at = None
+                if row["report_start_date"] == row["report_end_date"]:
+                    meta_business_date = row["report_start_date"]
+                    meta_window_start_at, meta_window_end_at = compute_meta_business_window_bj(meta_business_date)
                 args = (
                     batch_id,
                     row["report_start_date"],
@@ -719,6 +887,10 @@ def import_meta_ad_rows(
                     row.get("impressions") or 0,
                     row.get("video_avg_play_time"),
                     json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                    meta_business_date,
+                    meta_window_start_at,
+                    meta_window_end_at,
+                    META_ATTRIBUTION_TIMEZONE,
                 )
                 cur.execute(
                     "INSERT INTO meta_ad_campaign_metrics "
@@ -728,8 +900,9 @@ def import_meta_ad_rows(
                     "cpm_usd, unique_link_click_cost_usd, link_ctr, campaign_delivery, link_clicks, "
                     "add_to_cart_count, initiate_checkout_count, add_to_cart_cost_usd, "
                     "initiate_checkout_cost_usd, cost_per_result_usd, average_purchase_value_usd, "
-                    "impressions, video_avg_play_time, raw_json) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "impressions, video_avg_play_time, raw_json, "
+                    "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                     "ON DUPLICATE KEY UPDATE "
                     "import_batch_id=VALUES(import_batch_id), import_frequency=VALUES(import_frequency), "
                     "normalized_campaign_code=VALUES(normalized_campaign_code), "
@@ -746,7 +919,10 @@ def import_meta_ad_rows(
                     "cost_per_result_usd=VALUES(cost_per_result_usd), "
                     "average_purchase_value_usd=VALUES(average_purchase_value_usd), "
                     "impressions=VALUES(impressions), video_avg_play_time=VALUES(video_avg_play_time), "
-                    "raw_json=VALUES(raw_json)",
+                    "raw_json=VALUES(raw_json), meta_business_date=VALUES(meta_business_date), "
+                    "meta_window_start_at=VALUES(meta_window_start_at), "
+                    "meta_window_end_at=VALUES(meta_window_end_at), "
+                    "attribution_timezone=VALUES(attribution_timezone)",
                     args,
                 )
                 if cur.rowcount == 1:
