@@ -269,28 +269,41 @@ def run_import(
 def _post_form_via_page(page, url: str, payload: dict[str, Any]) -> dict[str, Any]:
     last_error: Exception | None = None
     for attempt in range(1, 5):
-        result = page.evaluate(
-            """
-            async ({ url, payload }) => {
-              const body = new URLSearchParams();
-              for (const [key, value] of Object.entries(payload)) {
-                body.append(key, String(value ?? ""));
-              }
-              const response = await fetch(url, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                  "X-Requested-With": "XMLHttpRequest",
-                },
-                credentials: "include",
-                body: body.toString(),
-              });
-              const text = await response.text();
-              return { ok: response.ok, status: response.status, text };
-            }
-            """,
-            {"url": url, "payload": payload},
-        )
+        try:
+            result = page.evaluate(
+                """
+                async ({ url, payload }) => {
+                  const body = new URLSearchParams();
+                  for (const [key, value] of Object.entries(payload)) {
+                    body.append(key, String(value ?? ""));
+                  }
+                  const response = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                      "X-Requested-With": "XMLHttpRequest",
+                    },
+                    credentials: "include",
+                    body: body.toString(),
+                  });
+                  const text = await response.text();
+                  return { ok: response.ok, status: response.status, text };
+                }
+                """,
+                {"url": url, "payload": payload},
+            )
+        except Exception as exc:
+            last_error = exc
+            print(
+                f"[dianxiaomi-order-import] retry {attempt}/4 url={url} error={exc}",
+                flush=True,
+            )
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=5000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1500 * attempt)
+            continue
         text = str(result.get("text") or "")
         if result.get("ok"):
             try:
