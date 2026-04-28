@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import hashlib
+import subprocess
 import tempfile
 import threading
 import uuid
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
 MAX_AUTOMATIC_ATTEMPTS = 1
+EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
@@ -39,6 +41,64 @@ def _looks_like_video_item(item: dict | None) -> bool:
 
 def _looks_like_image_key(object_key: str) -> bool:
     return _has_suffix(object_key, _IMAGE_SUFFIXES)
+
+
+def _make_eval_clip_15s(
+    product_id: int,
+    item: dict,
+    *,
+    clips_root: Path | None = None,
+) -> Path:
+    src_path = _materialize_media(item["object_key"])
+    duration = item.get("duration_seconds")
+    try:
+        if duration is not None and float(duration) <= 15:
+            return src_path
+    except (TypeError, ValueError):
+        pass
+
+    item_id = int(item["id"])
+    root = clips_root or EVAL_CLIPS_ROOT
+    out_dir = root / str(int(product_id))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{item_id}_15s.mp4"
+    if out_path.is_file() and out_path.stat().st_size > 0:
+        return out_path
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        "0",
+        "-i",
+        str(src_path),
+        "-t",
+        "15",
+        "-c",
+        "copy",
+        "-avoid_negative_ts",
+        "1",
+        str(out_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=60, check=False)
+        if result.returncode == 0 and out_path.is_file() and out_path.stat().st_size > 0:
+            return out_path
+        logger.warning(
+            "ffmpeg eval clip cut failed, fallback to original. cmd=%s stderr=%s",
+            cmd,
+            result.stderr.decode("utf-8", errors="replace")[:500],
+        )
+        try:
+            if out_path.is_file():
+                out_path.unlink()
+        except Exception:
+            pass
+    except subprocess.TimeoutExpired:
+        logger.warning("ffmpeg eval clip cut timed out, fallback to original")
+    except FileNotFoundError as exc:
+        logger.warning("ffmpeg not found for eval clip, fallback to original: %s", exc)
+    return src_path
 
 
 def _normalize_languages(languages: list[Any]) -> list[dict[str, str]]:
@@ -338,7 +398,7 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
     attempt_id = None
     try:
         cover_path = _materialize_media(cover_key)
-        video_path = _materialize_media(video_key)
+        video_path = _make_eval_clip_15s(product_id, video)
         attempt_id = _record_attempt_start(
             product_id,
             cover_key,
@@ -370,6 +430,7 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             "cover_object_key": cover_key,
             "video_item_id": video.get("id"),
             "video_object_key": video_key,
+            "video_clip_path": str(video_path),
             "countries": normalized["countries"],
         }
         medias.update_product(

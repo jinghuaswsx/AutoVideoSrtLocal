@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 
 def test_response_schema_requires_every_enabled_small_language():
@@ -164,6 +165,138 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     detail = json.loads(updates["ai_evaluation_detail"])
     assert detail["product_url"] == "https://newjoyloo.com/products/neck-fan"
     assert detail["countries"][0]["lang"] == "de"
+
+
+def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    clip_root = tmp_path / "eval_clips"
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    llm_calls = []
+    ffmpeg_calls = []
+
+    monkeypatch.setattr(material_evaluation, "EVAL_CLIPS_ROOT", clip_root)
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Portable Neck Fan",
+            "product_code": "neck-fan",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {
+                "id": 11,
+                "lang": "en",
+                "object_key": "media/promo.mp4",
+                "duration_seconds": 30.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/neck-fan",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+
+    def fake_run(cmd, **kwargs):
+        ffmpeg_calls.append(cmd)
+        Path(cmd[-1]).write_bytes(b"clip")
+
+        class Result:
+            returncode = 0
+            stderr = b""
+
+        return Result()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: llm_calls.append((args, kwargs))
+        or {
+            "json": {
+                "countries": [
+                    {
+                        "lang": "de",
+                        "country": "Germany",
+                        "is_suitable": True,
+                        "score": 88,
+                        "risk_level": "low",
+                        "decision": "适合推广",
+                        "reason": "portable cooling demand is clear",
+                        "suggestions": [],
+                    }
+                ]
+            }
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7)
+
+    assert result["status"] == "evaluated"
+    assert ffmpeg_calls
+    assert "-ss" in ffmpeg_calls[0]
+    assert ffmpeg_calls[0][ffmpeg_calls[0].index("-ss") + 1] == "0"
+    assert "-t" in ffmpeg_calls[0]
+    assert ffmpeg_calls[0][ffmpeg_calls[0].index("-t") + 1] == "15"
+    media = llm_calls[0][1]["media"]
+    assert media[0] == cover
+    assert str(media[1]).endswith("11_15s.mp4")
+    assert Path(media[1]).read_bytes() == b"clip"
+
+
+def test_make_eval_clip_15s_returns_original_for_short_video(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"video")
+
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: video)
+
+    def fail_if_ffmpeg_runs(*args, **kwargs):
+        raise AssertionError("ffmpeg should not run for videos within 15 seconds")
+
+    monkeypatch.setattr("subprocess.run", fail_if_ffmpeg_runs)
+
+    result = material_evaluation._make_eval_clip_15s(
+        7,
+        {"id": 11, "object_key": "media/short.mp4", "duration_seconds": 14.9},
+    )
+
+    assert result == video
 
 
 def test_auto_evaluation_skips_after_one_logged_attempt(monkeypatch, tmp_path):

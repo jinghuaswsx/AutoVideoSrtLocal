@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -91,62 +90,16 @@ from appcore import material_evaluation
 
 
 def _make_eval_clip_15s(product_id: int, item: dict) -> str:
-    """生成（或复用）15 秒截短产物，返回相对项目根的路径。
-
-    步骤：
-      1. 若 instance/eval_clips/<pid>/<iid>_15s.mp4 已存在 → 直接返回
-      2. 用 material_evaluation._materialize_media(object_key) 拿原视频本地 Path
-      3. ffmpeg -ss 0 -i <input> -t 15 -c copy -avoid_negative_ts 1 -y <out>
-      4. ffmpeg 失败时 fallback 用原视频路径（不抛异常）
-    """
-    item_id = int(item["id"])
-    out_dir = EVAL_CLIPS_ROOT / str(product_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{item_id}_15s.mp4"
-
-    if out_path.is_file() and out_path.stat().st_size > 0:
-        return str(out_path)
-
     try:
-        src_path = material_evaluation._materialize_media(item["object_key"])
+        return str(
+            material_evaluation._make_eval_clip_15s(
+                product_id,
+                item,
+                clips_root=EVAL_CLIPS_ROOT,
+            )
+        )
     except Exception as e:
         raise ClipGenerationError(f"materialize source video failed: {e}") from e
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", "0",
-        "-i", str(src_path),
-        "-t", "15",
-        "-c", "copy",
-        "-avoid_negative_ts", "1",
-        str(out_path),
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
-        if result.returncode != 0 or not out_path.is_file() or out_path.stat().st_size == 0:
-            logger.warning(
-                "ffmpeg clip cut failed, fallback to original. cmd=%s stderr=%s",
-                cmd, result.stderr.decode("utf-8", errors="replace")[:500],
-            )
-            try:
-                if out_path.is_file():
-                    out_path.unlink()
-            except Exception:
-                pass
-            return str(src_path)
-        return str(out_path)
-    except subprocess.TimeoutExpired:
-        logger.warning("ffmpeg clip cut timed out, fallback to original")
-        return str(src_path)
-    except FileNotFoundError as e:
-        # ffmpeg 不在 PATH，fallback 到原视频
-        logger.warning("ffmpeg not found, fallback to original: %s", e)
-        return str(src_path)
 
 
 # ---- Task 6: _build_evaluation_inputs ----
