@@ -621,7 +621,8 @@ def test_find_ready_product_ids_uses_exists_without_distinct(monkeypatch):
 
     assert material_evaluation.find_ready_product_ids(limit=2) == [7, 8]
     assert "EXISTS (" in captured["sql"]
-    assert "LOWER(i.object_key) LIKE '%.mp4'" in captured["sql"]
+    assert "LOWER(i.object_key) LIKE '%%.mp4'" in captured["sql"]
+    assert "LIKE '%.mp4'" not in captured["sql"]
     assert "SELECT DISTINCT" not in captured["sql"]
     assert captured["args"] == (2,)
 
