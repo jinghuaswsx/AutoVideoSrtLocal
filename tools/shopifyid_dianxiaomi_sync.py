@@ -520,6 +520,81 @@ def _close_shopify_product_sync_dialog(page) -> None:
         return
 
 
+def _dismiss_dianxiaomi_notice_overlays(page) -> bool:
+    """店小秘会弹公告 iframe，遮住“同步产品”按钮；自动化前先清掉它。"""
+    dismissed = False
+    close_selectors = [
+        ".ant-modal-wrap.bullet-layer .ant-modal-close",
+        ".ant-modal-wrap.bullet-layer button[aria-label='Close']",
+        ".bullet-layer .ant-modal-close",
+        ".bullet-layer button[aria-label='Close']",
+    ]
+    for selector in close_selectors:
+        locator = page.locator(selector)
+        try:
+            count = locator.count()
+        except Exception:
+            continue
+        for index in range(count):
+            try:
+                locator.nth(index).click(timeout=800)
+                dismissed = True
+                page.wait_for_timeout(200)
+            except Exception:
+                continue
+
+    try:
+        removed = page.evaluate(
+            """
+            () => {
+              const selectors = [
+                ".ant-modal-wrap.bullet-layer",
+                ".bullet-layer",
+                "#theNewestModalLabelFrame",
+              ];
+              const roots = new Set();
+              for (const selector of selectors) {
+                for (const node of document.querySelectorAll(selector)) {
+                  roots.add(node.closest(".ant-modal-root") || node);
+                }
+              }
+              let count = 0;
+              for (const node of roots) {
+                node.remove();
+                count += 1;
+              }
+              for (const mask of document.querySelectorAll(".ant-modal-mask")) {
+                if (!document.querySelector(".ant-modal-wrap")) {
+                  mask.remove();
+                  count += 1;
+                }
+              }
+              document.body.classList.remove("ant-scrolling-effect");
+              document.body.style.overflow = "";
+              document.body.style.width = "";
+              return count;
+            }
+            """
+        )
+        if int(removed or 0) > 0:
+            dismissed = True
+            page.wait_for_timeout(300)
+    except Exception:
+        pass
+    return dismissed
+
+
+def _click_sync_products_button(page) -> None:
+    button = page.locator("button").filter(has_text="同步产品")
+    if button.count() != 1:
+        raise RuntimeError("未找到唯一的店小秘“同步产品”按钮")
+    try:
+        button.click(timeout=5000)
+    except Exception:
+        _dismiss_dianxiaomi_notice_overlays(page)
+        button.click(timeout=10000)
+
+
 def _assert_shopify_product_sync_success(detail_text: str) -> None:
     failure_matches = list(
         re.finditer(
@@ -544,10 +619,8 @@ def _assert_shopify_product_sync_success(detail_text: str) -> None:
 
 def _sync_all_shopify_products(page, *, timeout_s: int = 180) -> dict[str, str]:
     _close_shopify_product_sync_dialog(page)
-    button = page.locator("button").filter(has_text="同步产品")
-    if button.count() != 1:
-        raise RuntimeError("未找到唯一的店小秘“同步产品”按钮")
-    button.click()
+    _dismiss_dianxiaomi_notice_overlays(page)
+    _click_sync_products_button(page)
     option = page.get_by_text("同步全部产品", exact=True)
     option.wait_for(state="visible", timeout=5000)
     option.click()

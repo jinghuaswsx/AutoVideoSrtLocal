@@ -380,6 +380,60 @@ def test_product_sync_success_rejects_unignored_store_level_failure():
         )
 
 
+def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
+    mod = _load_module()
+
+    class EmptyLocator:
+        def count(self):
+            return 0
+
+        def nth(self, index):
+            raise AssertionError(f"unexpected nth({index})")
+
+    class ButtonLocator:
+        def __init__(self):
+            self.clicks = 0
+
+        def filter(self, *, has_text):
+            assert has_text == "同步产品"
+            return self
+
+        def count(self):
+            return 1
+
+        def click(self, *, timeout):
+            self.clicks += 1
+            if self.clicks == 1:
+                raise RuntimeError("notice iframe intercepts pointer events")
+
+    class FakePage:
+        def __init__(self):
+            self.button = ButtonLocator()
+            self.evaluated = False
+            self.waits = []
+
+        def locator(self, selector):
+            if selector == "button":
+                return self.button
+            return EmptyLocator()
+
+        def evaluate(self, script):
+            assert "theNewestModalLabelFrame" in script
+            self.evaluated = True
+            return 1
+
+        def wait_for_timeout(self, value):
+            self.waits.append(value)
+
+    page = FakePage()
+
+    mod._click_sync_products_button(page)
+
+    assert page.button.clicks == 2
+    assert page.evaluated is True
+    assert 300 in page.waits
+
+
 def test_module_exposes_main_entrypoint_for_systemd_timer():
     mod = _load_module()
 
