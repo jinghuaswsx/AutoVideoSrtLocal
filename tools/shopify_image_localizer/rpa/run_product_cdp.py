@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from appcore.payment_screenshot_filter import is_payment_screenshot
 from link_check_desktop.image_compare import find_best_reference, run_binary_quick_check
 from playwright.sync_api import sync_playwright
 
@@ -458,10 +459,13 @@ def download_visual_detail_sources(
     candidate_srcs: list[str],
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    candidate_set = set(candidate_srcs)
+    candidate_set = {_normalize_src(src) for src in candidate_srcs}
     slot_rows: list[dict[str, Any]] = []
-    for idx, src in enumerate(taa_cdp.extract_image_srcs(detail_html)):
-        src = _normalize_src(src)
+    for idx, ref in enumerate(taa_cdp.extract_image_refs(detail_html)):
+        src = _normalize_src(ref.get("src") or "")
+        if is_payment_screenshot(src, ref.get("alt") or ""):
+            print(f"[detail] skipped payment screenshot visual fallback: {src}")
+            continue
         if src not in candidate_set:
             continue
         if not src or src.lower().split("?", 1)[0].endswith(".gif"):
@@ -499,6 +503,8 @@ def should_attempt_detail_visual_fallback(src: str, *, replace_shopify_cdn: bool
     normalized = _normalize_src(src)
     if not normalized:
         return False
+    if is_payment_screenshot(normalized, ""):
+        return False
     if normalized.lower().split("?", 1)[0].endswith(".gif"):
         return False
     if "cdn.shopify.com/s/files/" in normalized and not replace_shopify_cdn:
@@ -526,7 +532,10 @@ def build_detail_source_index_map(
 
     mapping: dict[str, int] = {}
     used_indices: set[int] = set()
-    for src in taa_cdp.extract_image_srcs(body_html):
+    for ref in taa_cdp.extract_image_refs(body_html):
+        src = _normalize_src(ref.get("src") or "")
+        if is_payment_screenshot(src, ref.get("alt") or ""):
+            continue
         token = ez_cdp.md5_token(src)
         name_key = taa_cdp.source_name_key(src)
         key = token or name_key
@@ -627,8 +636,12 @@ def add_original_detail_fallbacks(
 ) -> list[dict]:
     candidates_by_token = _localized_by_token(localized_images)
     added: list[dict] = []
-    for idx, src in enumerate(taa_cdp.extract_image_srcs(body_html)):
+    for idx, ref in enumerate(taa_cdp.extract_image_refs(body_html)):
         cancellation.throw_if_cancelled(cancel_token)
+        src = _normalize_src(ref.get("src") or "")
+        if is_payment_screenshot(src, ref.get("alt") or ""):
+            print(f"[detail] skipped payment screenshot fallback: {src}")
+            continue
         token = ez_cdp.md5_token(src)
         if not token or token in candidates_by_token:
             continue

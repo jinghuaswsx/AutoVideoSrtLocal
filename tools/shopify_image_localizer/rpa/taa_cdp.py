@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import websocket
+from appcore.payment_screenshot_filter import is_payment_screenshot
 from playwright.sync_api import sync_playwright
 
 from tools.shopify_image_localizer import cancellation, locales
@@ -27,7 +28,8 @@ from tools.shopify_image_localizer.rpa import ez_cdp
 
 BODY_HTML_FIELD_PREFIX = "editable_Ym9keV9odG1s"
 SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
-IMG_SRC_RE = re.compile(r"<img\b[^>]*\bsrc\s*=\s*(['\"])(.*?)\1", re.I)
+IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
+IMG_ATTR_RE = re.compile(r"\b(src|alt)\s*=\s*(['\"])(.*?)\2", re.I | re.S)
 INSERT_IMAGE_BUTTON_LABELS = ("Insert image", "插入图片")
 INSERT_IMAGE_DIALOG_LABELS = ("Insert image", "插入图片")
 SAVE_BUTTON_LABELS = ("Save", "保存")
@@ -468,7 +470,19 @@ class TaaSession:
 
 
 def extract_image_srcs(html: str) -> list[str]:
-    return [match.group(2) for match in IMG_SRC_RE.finditer(html or "")]
+    return [row["src"] for row in extract_image_refs(html)]
+
+
+def extract_image_refs(html: str) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    for tag_match in IMG_TAG_RE.finditer(html or ""):
+        attrs: dict[str, str] = {}
+        for attr_match in IMG_ATTR_RE.finditer(tag_match.group(0)):
+            attrs[attr_match.group(1).lower()] = attr_match.group(3)
+        src = attrs.get("src") or ""
+        if src:
+            refs.append({"src": src, "alt": attrs.get("alt") or ""})
+    return refs
 
 
 def source_index_from_filename(filename: str) -> int | None:
@@ -638,7 +652,11 @@ def plan_body_html_replacements(
     candidates_by_token = build_localized_candidates(localized_images)
     candidates_by_source_index = build_localized_candidates_by_source_index(localized_images)
     forced_replacements = forced_replacements_by_src or {}
-    srcs = extract_image_srcs(html)
+    srcs = [
+        row["src"]
+        for row in extract_image_refs(html)
+        if not is_payment_screenshot(row["src"], row.get("alt") or "")
+    ]
     replacements: list[dict[str, Any]] = []
     skipped_existing: list[dict[str, Any]] = []
     skipped_missing: list[dict[str, Any]] = []

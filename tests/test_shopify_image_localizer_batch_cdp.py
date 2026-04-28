@@ -276,6 +276,138 @@ def test_visual_detail_replacement_plan_matches_unkeyed_detail_src(tmp_path):
     assert plan["confirmation_pairs"][0]["replacement_local_path"] == str(localized_path)
 
 
+def test_taa_extract_image_refs_preserves_srcs_and_alt_text():
+    html = (
+        '<section>'
+        '<img src="https://cdn.example.com/product.jpg" alt="Product detail">'
+        '<img alt="Payment Methods 1" src="https://cdn.techcloudly.com/pay.webp">'
+        '</section>'
+    )
+
+    refs = taa_cdp.extract_image_refs(html)
+
+    assert refs == [
+        {"src": "https://cdn.example.com/product.jpg", "alt": "Product detail"},
+        {"src": "https://cdn.techcloudly.com/pay.webp", "alt": "Payment Methods 1"},
+    ]
+    assert taa_cdp.extract_image_srcs(html) == [
+        "https://cdn.example.com/product.jpg",
+        "https://cdn.techcloudly.com/pay.webp",
+    ]
+
+
+def test_download_visual_detail_sources_skips_payment_screenshot_candidates(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    product_src = "https://cdn.example.com/product-detail.jpg"
+    alt_payment_src = "https://cdn.example.com/payment-alt.jpg"
+    host_payment_src = "https://cdn.techcloudly.com/image/payment-host.webp"
+    html = (
+        f'<p><img src="{product_src}" alt="Product detail"></p>'
+        f'<p><img src="{alt_payment_src}" alt="Payment Methods 1"></p>'
+        f'<p><img src="{host_payment_src}" alt=""></p>'
+    )
+    captured: dict[str, list[dict]] = {}
+
+    def fake_download_visual_rows(items, _output_dir, *, prefix, **_kwargs):
+        captured[prefix] = list(items)
+        return list(items)
+
+    monkeypatch.setattr(run_product_cdp, "_download_visual_rows", fake_download_visual_rows)
+
+    result = run_product_cdp.download_visual_detail_sources(
+        workspace=workspace,
+        detail_html=html,
+        reference_images=[{"id": "ref", "url": "https://server.example.com/ref.jpg"}],
+        candidate_srcs=[product_src, alt_payment_src, host_payment_src],
+    )
+
+    assert [row["src"] for row in captured["detail"]] == [product_src]
+    assert [row["src"] for row in result["slot_images"]] == [product_src]
+    assert captured["reference"][0]["url"] == "https://server.example.com/ref.jpg"
+
+
+def test_add_original_detail_fallbacks_skips_payment_screenshot_images(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    workspace.source_localized_dir.mkdir(parents=True)
+    product_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    payment_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    product_src = f"https://cdn.example.com/{product_token}.jpg"
+    payment_src = f"https://cdn.example.com/{payment_token}.jpg"
+    html = (
+        f'<p><img src="{product_src}" alt="Product detail"></p>'
+        f'<p><img src="{payment_src}" alt="Secure Payment"></p>'
+    )
+    fetched: list[str] = []
+
+    class DummyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def read():
+            return b"image-bytes"
+
+    def fake_urlopen(request, timeout):
+        fetched.append(request.full_url)
+        return DummyResponse()
+
+    monkeypatch.setattr(run_product_cdp.urllib.request, "urlopen", fake_urlopen)
+
+    added = run_product_cdp.add_original_detail_fallbacks(
+        workspace=workspace,
+        body_html=html,
+        localized_images=[],
+    )
+
+    assert fetched == [product_src]
+    assert len(added) == 1
+    assert added[0]["url"] == product_src
+
+
+def test_build_detail_source_index_map_ignores_payment_screenshot_refs():
+    payment_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    product_token = "cccccccccccccccccccccccccccccccc"
+    html = (
+        f'<section><img src="https://cdn.example.com/{payment_token}.jpg" alt="Trust Badge"></section>'
+        f'<section><img src="https://cdn.example.com/{product_token}.jpg" alt="Product detail"></section>'
+    )
+    reference_images = [
+        {"filename": f"ref_from_url_en_12_{payment_token}.jpg"},
+        {"filename": f"ref_from_url_en_13_{product_token}.jpg"},
+    ]
+
+    mapping = run_product_cdp.build_detail_source_index_map(
+        html,
+        reference_images,
+        carousel_image_count=11,
+    )
+
+    assert mapping == {product_token: 13}
+
+
 def test_run_uses_confirmed_visual_carousel_fallback_when_deterministic_pairing_misses(monkeypatch, tmp_path):
     localized_path = tmp_path / "translated-a.png"
     reference_path = tmp_path / "reference-a.png"
@@ -626,6 +758,27 @@ def test_detail_replacements_accept_visual_forced_candidate_when_src_has_no_matc
     assert plan["replacements"][0]["old"] == src
     assert plan["replacements"][0]["candidate"]["local_path"] == candidate["local_path"]
     assert plan["replacements"][0]["match_method"] == "visual"
+
+
+def test_plan_body_html_replacements_skips_payment_screenshot_before_matching():
+    payment_token = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    product_token = "cccccccccccccccccccccccccccccccc"
+    payment_src = f"https://cdn.example.com/{payment_token}.jpg"
+    product_src = f"https://cdn.example.com/{product_token}.jpg"
+    html = (
+        f'<p><img src="{payment_src}" alt="Payment Methods 1"></p>'
+        f'<p><img src="{product_src}" alt="Product detail"></p>'
+    )
+    localized_images = [
+        _localized(f"loc_from_url_en_10_{payment_token}.png"),
+        _localized(f"loc_from_url_en_11_{product_token}.png"),
+    ]
+
+    plan = taa_cdp.plan_body_html_replacements(html, localized_images)
+
+    assert plan["image_count"] == 1
+    assert [row["old"] for row in plan["replacements"]] == [product_src]
+    assert plan["skipped_missing"] == []
 
 
 def test_apply_uploaded_replacements_preserves_display_width():
