@@ -250,7 +250,8 @@ def run_import(
                     )
                     if page_rows and not dry_run:
                         result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
-                        summary["inserted_lines"] += int(result.get("affected") or 0)
+                        summary["inserted_lines"] += int(result.get("rows") or 0)
+                        summary["updated_lines"] += max(0, int(result.get("affected") or 0) - int(result.get("rows") or 0))
                 continue
 
             for day in iter_dates(start_date, end_date):
@@ -269,7 +270,8 @@ def run_import(
                     )
                     if page_rows and not dry_run:
                         result = oa.upsert_dianxiaomi_order_lines(int(batch_id), page_rows)
-                        summary["inserted_lines"] += int(result.get("affected") or 0)
+                        summary["inserted_lines"] += int(result.get("rows") or 0)
+                        summary["updated_lines"] += max(0, int(result.get("affected") or 0) - int(result.get("rows") or 0))
         status = "dry_run" if dry_run else "success"
         if batch_id is not None:
             oa.finish_dianxiaomi_order_import_batch(batch_id, status, summary)
