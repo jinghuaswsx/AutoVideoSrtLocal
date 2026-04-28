@@ -1,90 +1,131 @@
-"""Provider 前端视图 DAO。
+"""Compatibility DAO for old provider-settings callers.
 
-封装"供应商卡片"视角所需的全部读写：
-- 用户级 LLM / 音频类 provider：复用 api_keys 表（service 作为 provider_code）
-- 全局级 provider（仅管理员可改）：存 system_settings
-
-注意 provider_code 与 adapter provider_code 的命名对应：
-    UI 层 gemini       == api_keys.service="gemini"       (AI Studio)
-    UI 层 gemini_cloud == api_keys.service="gemini_cloud" (Vertex Express, 新增)
-    UI 层 doubao_llm   == api_keys.service="doubao_llm"   (豆包 ARK)
-
-LLM adapter 层的 provider_code（openrouter / doubao / gemini_aistudio / gemini_vertex）
-通过 bindings 表与 UI 层 service 解耦，见 llm_use_cases.py。
+The active settings page reads/writes ``llm_provider_configs`` directly. This
+module remains for older imports and tests, but it no longer stores provider
+credentials in ``api_keys`` or ``system_settings``.
 """
 from __future__ import annotations
 
-from appcore.api_keys import get_all, set_key
-from appcore.settings import get_setting, set_setting
+from appcore.llm_provider_configs import get_provider_config, save_provider_config
 
-# (service_code, 显示名, [(field_key, field_label, input_type)])
+
+# Old UI code -> llm_provider_configs.provider_code.
+_COMPAT_PROVIDER_MAP = {
+    "openrouter": "openrouter_text",
+    "doubao_llm": "doubao_llm",
+    "gemini": "gemini_aistudio_text",
+    "gemini_cloud": "gemini_cloud_text",
+    "elevenlabs": "elevenlabs_tts",
+    "volc_asr": "doubao_asr",
+}
+
+
+# (service_code, display_name, [(field_key, field_label, input_type)])
+# ``key_value`` is kept only for compatibility with the old template contract.
 USER_LEVEL_PROVIDERS: list[tuple[str, str, list[tuple[str, str, str]]]] = [
     ("openrouter", "OpenRouter", [
-        ("key_value", "API Key", "password"),
+        ("key_value", "API Key", "text"),
         ("base_url", "Base URL", "text"),
+        ("model_id", "Model", "text"),
     ]),
     ("doubao_llm", "豆包 ARK", [
-        ("key_value", "API Key", "password"),
+        ("key_value", "API Key", "text"),
         ("base_url", "Base URL", "text"),
+        ("model_id", "Model", "text"),
     ]),
     ("gemini", "Google Gemini (AI Studio)", [
-        ("key_value", "API Key", "password"),
+        ("key_value", "API Key", "text"),
+        ("model_id", "Model", "text"),
     ]),
     ("gemini_cloud", "Google Gemini (Vertex Express)", [
-        ("key_value", "API Key", "password"),
+        ("key_value", "API Key", "text"),
+        ("model_id", "Model", "text"),
     ]),
     ("elevenlabs", "ElevenLabs", [
-        ("key_value", "API Key", "password"),
+        ("key_value", "API Key", "text"),
+        ("base_url", "Base URL", "text"),
     ]),
 ]
 
 GLOBAL_PROVIDERS: list[tuple[str, str, list[tuple[str, str, str]]]] = [
     ("volc_asr", "火山引擎 ASR", [
-        ("api_key", "API Key", "password"),
+        ("key_value", "API Key", "text"),
+        ("model_id", "Resource ID", "text"),
     ]),
 ]
 
-_VOLC_ASR_KEY = "provider.volc_asr.api_key"
+
+def _fields_for(code: str, definitions: list[tuple[str, str, list[tuple[str, str, str]]]]):
+    return next((fields for c, _, fields in definitions if c == code), None)
 
 
-def load_user_providers(user_id: int) -> dict[str, dict[str, str]]:
-    """返回 {provider_code: {field_key: value}} 供模板展示。"""
-    raw = get_all(user_id)  # {service: {key_value, extra}}
-    out: dict[str, dict[str, str]] = {}
-    for code, _, fields in USER_LEVEL_PROVIDERS:
-        entry = raw.get(code) or {}
-        field_values: dict[str, str] = {"key_value": entry.get("key_value", "")}
-        extra = entry.get("extra") or {}
-        for fname, _, _ in fields:
-            if fname != "key_value":
-                field_values[fname] = extra.get(fname, "")
-        out[code] = field_values
+def _load_compat_provider(code: str, fields: list[tuple[str, str, str]]) -> dict[str, str]:
+    provider_code = _COMPAT_PROVIDER_MAP[code]
+    cfg = get_provider_config(provider_code)
+    out: dict[str, str] = {}
+    for fname, _, _ in fields:
+        if fname == "key_value":
+            out[fname] = (cfg.api_key if cfg else "") or ""
+        elif fname == "base_url":
+            out[fname] = (cfg.base_url if cfg else "") or ""
+        elif fname == "model_id":
+            out[fname] = (cfg.model_id if cfg else "") or ""
+        else:
+            out[fname] = ""
     return out
 
 
-def save_user_provider(user_id: int, code: str, fields: dict[str, str]) -> None:
-    matched = next((f for c, _, f in USER_LEVEL_PROVIDERS if c == code), None)
+def _save_compat_provider(
+    *,
+    user_id: int,
+    code: str,
+    fields: dict[str, str],
+    definitions: list[tuple[str, str, list[tuple[str, str, str]]]],
+) -> None:
+    matched = _fields_for(code, definitions)
     if matched is None:
         raise ValueError(f"unknown provider: {code}")
-    key_value = (fields.get("key_value") or "").strip()
-    extra: dict[str, str] = {}
-    for fname, _, _ in matched:
-        if fname == "key_value":
-            continue
-        v = (fields.get(fname) or "").strip()
-        if v:
-            extra[fname] = v
-    set_key(user_id, code, key_value, extra or None)
+    provider_code = _COMPAT_PROVIDER_MAP[code]
+    updates: dict[str, str] = {}
+    if "key_value" in fields:
+        updates["api_key"] = (fields.get("key_value") or "").strip()
+    if "base_url" in fields:
+        updates["base_url"] = (fields.get("base_url") or "").strip()
+    if "model_id" in fields:
+        updates["model_id"] = (fields.get("model_id") or "").strip()
+    save_provider_config(provider_code, updates, updated_by=user_id)
+
+
+def load_user_providers(user_id: int) -> dict[str, dict[str, str]]:
+    return {
+        code: _load_compat_provider(code, fields)
+        for code, _, fields in USER_LEVEL_PROVIDERS
+    }
+
+
+def save_user_provider(user_id: int, code: str, fields: dict[str, str]) -> None:
+    _save_compat_provider(
+        user_id=user_id,
+        code=code,
+        fields=fields,
+        definitions=USER_LEVEL_PROVIDERS,
+    )
 
 
 def load_global_providers() -> dict[str, dict[str, str]]:
     return {
-        "volc_asr": {"api_key": get_setting(_VOLC_ASR_KEY) or ""},
+        code: _load_compat_provider(code, fields)
+        for code, _, fields in GLOBAL_PROVIDERS
     }
 
 
-def save_global_provider(code: str, fields: dict[str, str]) -> None:
-    if code == "volc_asr":
-        set_setting(_VOLC_ASR_KEY, (fields.get("api_key") or "").strip())
-    else:
+def save_global_provider(code: str, fields: dict[str, str], *, user_id: int | None = None) -> None:
+    matched = _fields_for(code, GLOBAL_PROVIDERS)
+    if matched is None:
         raise ValueError(f"unknown global provider: {code}")
+    _save_compat_provider(
+        user_id=user_id or 0,
+        code=code,
+        fields=fields,
+        definitions=GLOBAL_PROVIDERS,
+    )

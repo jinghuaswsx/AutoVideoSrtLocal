@@ -21,7 +21,7 @@ USER_SCOPED_SERVICES = {"jianying"}
 _NON_PROVIDER_ADMIN_SERVICES = {"jianying", "translate_pref"}
 
 # Legacy service 名 → llm_provider_configs.provider_code（默认走 *_text）
-# 旧调用 `resolve_key(user_id, "openrouter", "OPENROUTER_API_KEY")` 经此映射后
+# 旧调用 `resolve_key(user_id, "openrouter", env_var=...)` 经此映射后
 # 直接命中 DB 行；不再有 env fallback。
 _LEGACY_SERVICE_MAP: dict[str, str] = {
     "openrouter": "openrouter_text",
@@ -43,7 +43,8 @@ _LEGACY_SERVICE_MAP: dict[str, str] = {
 def _admin_config_user_id() -> int | None:
     """返回当前唯一超级管理员的 user id（用于读取 admin 级别的非供应商偏好行）。"""
     row = query_one(
-        "SELECT id FROM users WHERE role = 'superadmin' AND is_active = 1 LIMIT 1",
+        "SELECT id FROM users WHERE username = %s AND is_active = 1 LIMIT 1",
+        ("admin",),
     )
     if not row:
         return None
@@ -57,10 +58,10 @@ def _is_admin_config_user(user_id: int | None) -> bool:
     if user_id is None:
         return False
     row = query_one(
-        "SELECT role FROM users WHERE id = %s AND is_active = 1",
+        "SELECT username, role FROM users WHERE id = %s AND is_active = 1",
         (user_id,),
     )
-    return bool(row and row.get("role") == "superadmin")
+    return bool(row and row.get("username") == "admin")
 
 
 def can_manage_api_config_user(user) -> bool:

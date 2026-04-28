@@ -33,6 +33,10 @@ from pipeline.voice_library_sync import (  # noqa: E402
 )
 from appcore import medias  # noqa: E402
 from appcore.db import query  # noqa: E402
+from appcore.llm_provider_configs import (  # noqa: E402
+    ProviderConfigError,
+    require_provider_api_key,
+)
 
 FALLBACK_LANGUAGES: list[str] = ["en", "de", "fr", "es", "it", "ja", "nl", "pt", "sv", "fi"]
 MAX_VOICES_PER_LANGUAGE = 1000
@@ -88,6 +92,13 @@ def _target_languages() -> list[str]:
     except Exception as exc:
         log.warning("failed to load enabled media languages, fallback: %s", exc)
         return list(FALLBACK_LANGUAGES)
+
+
+def _get_api_key() -> str:
+    try:
+        return require_provider_api_key("elevenlabs_tts")
+    except ProviderConfigError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _summary_row(lang: str) -> dict:
@@ -226,17 +237,10 @@ def _sync_language(lang: str, api_key: str, state: dict) -> None:
 
 def main() -> int:
     _setup_logging()
-    api_key = os.getenv("ELEVENLABS_API_KEY") or ""
-    if not api_key:
-        # 退回读项目 .env
-        env_path = ROOT / ".env"
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("ELEVENLABS_API_KEY="):
-                    api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    break
-    if not api_key:
-        log.error("ELEVENLABS_API_KEY missing")
+    try:
+        api_key = _get_api_key()
+    except RuntimeError as exc:
+        log.error("%s", exc)
         return 2
 
     state = _load_state()

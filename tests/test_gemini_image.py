@@ -1,8 +1,6 @@
 """gemini_image 凭据解析现在全部走 llm_provider_configs DAO。
 
-旧测试 mock 了 `resolve_config` / `OPENROUTER_API_KEY` / `APIMART_IMAGE_API_KEY` /
-`GEMINI_CLOUD_API_KEY` / `_resolve_doubao_credentials` 等已删除的 attribute；
-新测试改为 patch 新引入的 helper：
+旧测试曾 mock 已删除的 env/config attribute；新测试改为 patch 新引入的 helper：
   - _resolve_seedream_credentials
   - _resolve_apimart_api_key
   - _resolve_openrouter_image_credentials
@@ -794,6 +792,48 @@ def test_generate_via_apimart_success():
     assert raw == poll_mock.json.return_value
 
 
+def test_generate_via_apimart_uses_configured_base_url():
+    from appcore import gemini_image
+
+    submit_mock = MagicMock()
+    submit_mock.status_code = 200
+    submit_mock.json.return_value = {
+        "code": 200,
+        "data": [{"status": "submitted", "task_id": "task_custom_base"}],
+    }
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://example.com/img.png"]}]},
+        },
+    }
+    img_mock = MagicMock()
+    img_mock.status_code = 200
+    img_mock.content = b"PNG"
+    called_urls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        called_urls.append(url)
+        return poll_mock if "/v1/tasks/" in url else img_mock
+
+    with patch("appcore.gemini_image.requests.post", return_value=submit_mock) as m_post, \
+         patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep"):
+        gemini_image._generate_via_apimart(
+            "prompt",
+            b"RAW",
+            "image/png",
+            api_key="key",
+            base_url="https://apimart.proxy.example/root/",
+        )
+
+    assert m_post.call_args.args[0] == "https://apimart.proxy.example/root/v1/images/generations"
+    assert called_urls[0] == "https://apimart.proxy.example/root/v1/tasks/task_custom_base"
+
+
 def test_generate_via_apimart_task_failed():
     from appcore import gemini_image
 
@@ -860,6 +900,46 @@ def test_generate_image_apimart_channel_dispatches_correctly():
     assert log_kwargs["units_type"] == "images"
 
 
+def test_generate_image_apimart_uses_db_base_url_and_model_when_model_blank():
+    from appcore import gemini_image
+
+    class FakeConfig:
+        provider_code = "apimart_image"
+        display_name = "APIMART"
+        api_key = "db-apimart-key"
+        base_url = "https://db.apimart.example"
+        model_id = "db-image-model"
+        extra_config = {}
+
+        def require_api_key(self):
+            return self.api_key
+
+        def require_base_url(self, default=None):
+            return self.base_url or default
+
+    with patch.object(gemini_image, "_resolve_channel", return_value="apimart"), \
+         patch.object(gemini_image, "require_provider_config", return_value=FakeConfig()), \
+         patch.object(
+             gemini_image, "_generate_via_apimart",
+             return_value=(b"OK", "image/png", {}),
+         ) as m_gen, \
+         patch.object(gemini_image.ai_billing, "log_request"):
+        out, mime = gemini_image.generate_image(
+            prompt="翻译",
+            source_image=b"RAW",
+            source_mime="image/png",
+            model="",
+            user_id=7,
+            project_id="proj-db",
+        )
+
+    assert out == b"OK"
+    assert mime == "image/png"
+    assert m_gen.call_args.kwargs["api_key"] == "db-apimart-key"
+    assert m_gen.call_args.kwargs["base_url"] == "https://db.apimart.example"
+    assert m_gen.call_args.kwargs["model_id"] == "db-image-model"
+
+
 def test_poll_apimart_task_returns_result_for_completed():
     from appcore import gemini_image
 
@@ -889,6 +969,39 @@ def test_poll_apimart_task_returns_result_for_completed():
     assert mime == "image/png"
     for call in m_sleep.call_args_list:
         assert call.args[0] != gemini_image._APIMART_INITIAL_WAIT
+
+
+def test_poll_apimart_task_uses_configured_base_url():
+    from appcore import gemini_image
+
+    poll_mock = MagicMock()
+    poll_mock.status_code = 200
+    poll_mock.json.return_value = {
+        "code": 200,
+        "data": {
+            "status": "completed",
+            "result": {"images": [{"url": ["https://example.com/img.png"]}]},
+        },
+    }
+    img_mock = MagicMock()
+    img_mock.status_code = 200
+    img_mock.content = b"RESUMED"
+    called_urls: list[str] = []
+
+    def fake_get(url, **kwargs):
+        called_urls.append(url)
+        return poll_mock if "/v1/tasks/" in url else img_mock
+
+    with patch("appcore.gemini_image.requests.get", side_effect=fake_get), \
+         patch("appcore.gemini_image.time.sleep"):
+        gemini_image.poll_apimart_task(
+            "task_custom_poll",
+            api_key="key",
+            base_url="https://poll.apimart.example",
+            initial_wait=False,
+        )
+
+    assert called_urls[0] == "https://poll.apimart.example/v1/tasks/task_custom_poll"
 
 
 def test_poll_apimart_task_raises_on_failed_status():

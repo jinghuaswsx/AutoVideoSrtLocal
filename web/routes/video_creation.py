@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from appcore import ai_billing
-from appcore.api_keys import resolve_key
+from appcore.llm_provider_configs import ProviderConfigError, require_provider_config
 from appcore.task_recovery import (
     recover_all_interrupted_tasks,
     recover_project_if_needed,
@@ -19,7 +19,7 @@ from appcore.task_recovery import (
 )
 from appcore.settings import get_retention_hours
 from appcore.db import query as db_query, query_one as db_query_one, execute as db_execute
-from config import UPLOAD_DIR, OUTPUT_DIR
+from config import DOUBAO_LLM_BASE_URL_DEFAULT, UPLOAD_DIR, OUTPUT_DIR
 from pipeline.storage import upload_file as public_exchange_upload
 from web.background import start_background_task
 from web.extensions import socketio
@@ -27,6 +27,7 @@ from web.extensions import socketio
 log = logging.getLogger(__name__)
 
 bp = Blueprint("video_creation", __name__)
+_DEFAULT_SEEDANCE_MODEL_ID = "doubao-seedance-2-0-260128"
 
 # Backward-compatible alias used by older tests/patch points.
 tos_upload = public_exchange_upload
@@ -99,7 +100,9 @@ def _log_video_creation_billing(
     request_payload: dict | None = None,
     response_payload: dict | None = None,
     error: Exception | None = None,
+    model_id: str | None = None,
 ) -> None:
+    resolved_model = (model_id or _DEFAULT_SEEDANCE_MODEL_ID).strip()
     extra = {}
     if seedance_task_id:
         extra["seedance_task_id"] = seedance_task_id
@@ -110,7 +113,7 @@ def _log_video_creation_billing(
         user_id=state.get("user_id"),
         project_id=task_id,
         provider="doubao",
-        model="doubao-seedance-2-0-260128",
+        model=resolved_model,
         request_units=int(state.get("duration") or 0) or 1,
         units_type="seconds",
         success=success,
@@ -118,7 +121,7 @@ def _log_video_creation_billing(
         request_payload=request_payload or {
             "type": "video_generation",
             "provider": "doubao",
-            "model": "doubao-seedance-2-0-260128",
+            "model": resolved_model,
             "prompt": state.get("prompt"),
             "video_path": state.get("video_path"),
             "image_paths": state.get("image_paths") or [],
@@ -132,6 +135,18 @@ def _log_video_creation_billing(
             {"error": str(error)[:500]} if error is not None else None
         ),
     )
+
+
+def _resolve_seedance_config() -> dict[str, str]:
+    try:
+        cfg = require_provider_config("seedance_video")
+        return {
+            "api_key": cfg.require_api_key(),
+            "base_url": cfg.require_base_url(default=DOUBAO_LLM_BASE_URL_DEFAULT),
+            "model_id": cfg.resolved_model_id(_DEFAULT_SEEDANCE_MODEL_ID) or _DEFAULT_SEEDANCE_MODEL_ID,
+        }
+    except ProviderConfigError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 # ── 页面路由 ──
@@ -279,22 +294,38 @@ def upload():
     )
 
     # 异步生成
-    api_key = resolve_key(current_user.id, "seedance", "SEEDANCE_API_KEY")
-    if not api_key:
-        return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
+    try:
+        seedance_cfg = _resolve_seedance_config()
+    except RuntimeError as exc:
+        return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
 
     register_active_task("video_creation", task_id)
-    start_background_task(_run_generate_with_tracking, task_id, api_key, state)
+    start_background_task(
+        _run_generate_with_tracking,
+        task_id,
+        seedance_cfg["api_key"],
+        state,
+        seedance_cfg["base_url"],
+        seedance_cfg["model_id"],
+    )
 
     return jsonify({"id": task_id}), 201
 
 
-def _do_generate_v2(task_id: str, api_key: str, state: dict):
+def _do_generate_v2(
+    task_id: str,
+    api_key: str,
+    state: dict,
+    *,
+    base_url: str | None = None,
+    model_id: str | None = None,
+):
     """异步执行 Seedance 2.0 视频生成。"""
     from pipeline.seedance import generate_video_v2
 
     task_dir = state.get("task_dir", "")
     billing_logged = False
+    resolved_model = (model_id or _DEFAULT_SEEDANCE_MODEL_ID).strip()
 
     try:
         _update_state(task_id, {"steps.generate": "running"})
@@ -345,6 +376,8 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
             duration=state.get("duration", 5),
             generate_audio=state.get("generate_audio", True),
             watermark=state.get("watermark", False),
+            model=resolved_model,
+            base_url=base_url,
             on_progress=on_progress,
         )
 
@@ -355,10 +388,11 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
             state,
             success=True,
             seedance_task_id=seedance_task_id,
+            model_id=resolved_model,
             request_payload={
                 "type": "video_generation",
                 "provider": "doubao",
-                "model": "doubao-seedance-2-0-260128",
+                "model": resolved_model,
                 "prompt": state["prompt"],
                 "video_url": video_url,
                 "image_urls": image_urls,
@@ -397,17 +431,31 @@ def _do_generate_v2(task_id: str, api_key: str, state: dict):
 
     except Exception as e:
         if not billing_logged:
-            _log_video_creation_billing(task_id, state, success=False, error=e)
+            _log_video_creation_billing(
+                task_id, state, success=False, error=e, model_id=resolved_model,
+            )
         log.exception("[VC] 视频生成失败: %s", task_id)
         _update_state(task_id, {"steps.generate": "error"})
         db_execute("UPDATE projects SET status = 'error' WHERE id = %s", (task_id,))
         _emit_to_task(task_id, EVT_VC_ERROR, {"message": f"视频生成失败: {e}"})
 
 
-def _run_generate_with_tracking(task_id: str, api_key: str, state: dict):
+def _run_generate_with_tracking(
+    task_id: str,
+    api_key: str,
+    state: dict,
+    base_url: str | None = None,
+    model_id: str | None = None,
+):
     register_active_task("video_creation", task_id)
     try:
-        return _do_generate_v2(task_id, api_key, state)
+        return _do_generate_v2(
+            task_id,
+            api_key,
+            state,
+            base_url=base_url,
+            model_id=model_id,
+        )
     finally:
         unregister_active_task("video_creation", task_id)
 
@@ -599,9 +647,10 @@ def regenerate(task_id: str):
     if state.get("steps", {}).get("generate") == "running":
         return jsonify(error="生成进行中"), 400
 
-    api_key = resolve_key(current_user.id, "seedance", "SEEDANCE_API_KEY")
-    if not api_key:
-        return jsonify(error="请先在 API 配置中设置 Seedance API Key"), 400
+    try:
+        seedance_cfg = _resolve_seedance_config()
+    except RuntimeError as exc:
+        return jsonify(error=str(exc) or "请先在 API 配置中设置 Seedance API Key"), 400
 
     # 重置状态
     state.setdefault("steps", {})["generate"] = "pending"
@@ -614,7 +663,14 @@ def regenerate(task_id: str):
     )
 
     register_active_task("video_creation", task_id)
-    start_background_task(_run_generate_with_tracking, task_id, api_key, state)
+    start_background_task(
+        _run_generate_with_tracking,
+        task_id,
+        seedance_cfg["api_key"],
+        state,
+        seedance_cfg["base_url"],
+        seedance_cfg["model_id"],
+    )
     return jsonify({"status": "ok"})
 
 

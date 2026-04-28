@@ -2,27 +2,32 @@
 from __future__ import annotations
 
 import importlib
-import os
-
 import pytest
 
 from web.app import create_app
 
 
-@pytest.fixture(scope="module")
-def client():
-    os.environ["FLASK_SECRET_KEY"] = "demo-secret"
-    os.environ["OPENAPI_MEDIA_API_KEY"] = "demo-key"
-    os.environ["LOCAL_SERVER_BASE_URL"] = "http://local.test"
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "demo-secret")
+    monkeypatch.setenv("LOCAL_SERVER_BASE_URL", "http://local.test")
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+
+    class FakeProviderConfig:
+        api_key = "demo-key"
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.get_provider_config",
+        lambda provider_code: FakeProviderConfig()
+        if provider_code == "openapi_materials"
+        else None,
+    )
     import config as _config
 
     importlib.reload(_config)
-    import web.app as web_app
-
-    web_app._run_startup_recovery = lambda: None
-    web_app.recover_all_interrupted_tasks = lambda: None
-    web_app.mark_interrupted_bulk_translate_tasks = lambda: None
-    web_app._seed_default_prompts = lambda: None
     app = create_app()
     return app.test_client()
 

@@ -797,9 +797,52 @@ def test_video_creation_generate_logs_ai_billing(tmp_path, monkeypatch):
     assert logged[0]["project_id"] == "vc-billing-1"
     assert logged[0]["request_units"] == 8
     assert logged[0]["units_type"] == "seconds"
+
+
+def test_video_creation_generate_forwards_db_seedance_connection(tmp_path, monkeypatch):
+    from web.routes.video_creation import _do_generate_v2
+
+    state = {
+        "task_dir": str(tmp_path),
+        "prompt": "make video",
+        "ratio": "9:16",
+        "duration": 6,
+        "generate_audio": False,
+        "watermark": False,
+        "user_id": 3,
+    }
+    captured = {}
+    logged = []
+
+    monkeypatch.setattr("web.routes.video_creation._update_state", lambda task_id, updates: None)
+    monkeypatch.setattr("web.routes.video_creation.db_execute", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.video_creation._emit_to_task", lambda task_id, event, payload: None)
+
+    def fake_generate_video_v2(**kwargs):
+        captured.update(kwargs)
+        return {"task_id": "seed-db-task", "video_url": ""}
+
+    monkeypatch.setattr("pipeline.seedance.generate_video_v2", fake_generate_video_v2)
+    monkeypatch.setattr(
+        "web.routes.video_creation.ai_billing.log_request",
+        lambda **kwargs: logged.append(kwargs),
+    )
+
+    _do_generate_v2(
+        "vc-seedance-db",
+        "seedance-key",
+        state,
+        base_url="https://seedance.db.example/api/v3",
+        model_id="seedance-db-model",
+    )
+
+    assert captured["api_key"] == "seedance-key"
+    assert captured["base_url"] == "https://seedance.db.example/api/v3"
+    assert captured["model"] == "seedance-db-model"
     assert logged[0]["success"] is True
-    assert logged[0]["request_payload"]["prompt"] == "demo prompt"
-    assert logged[0]["response_payload"]["task_id"] == "seed-task-8"
+    assert logged[0]["model"] == "seedance-db-model"
+    assert logged[0]["request_payload"]["prompt"] == "make video"
+    assert logged[0]["response_payload"]["task_id"] == "seed-db-task"
 
 
 def test_start_route_defaults_interactive_review_to_false(authed_client_no_db, monkeypatch):

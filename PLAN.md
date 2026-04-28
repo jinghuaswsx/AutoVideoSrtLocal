@@ -326,10 +326,12 @@ AutoVideoSrt/
 
 | 服务 | 用途 | 凭证 | 配置位置 |
 |------|------|------|---------|
-| 火山引擎 豆包 ASR | 语音识别 | `VOLC_API_KEY` | config.py |
-| 火山引擎 TOS | 音频中转存储 | `TOS_ACCESS_KEY` + `TOS_SECRET_KEY` | config.py |
-| OpenRouter | Claude 翻译 | `OPENROUTER_API_KEY` | config.py |
-| ElevenLabs | TTS 语音 | `ELEVENLABS_API_KEY` | config.py |
+| 火山引擎 TOS | 音频/素材对象存储 | `TOS_ACCESS_KEY` + `TOS_SECRET_KEY` | `.env` / `config.py` |
+| 火山引擎 VOD | 视频点播/字幕擦除上传 | `VOD_ACCESS_KEY` + `VOD_SECRET_KEY` | `.env` / `config.py` |
+| 豆包 ASR / LLM / Seedream / Seedance | 语音识别、文本、图片、视频模型 | `api_key` / `base_url` / `model_id` | `llm_provider_configs`，admin 在 `/settings` 配置 |
+| OpenRouter / Gemini / APIMART | 文本/图片模型 | `api_key` / `base_url` / `model_id` | `llm_provider_configs`，admin 在 `/settings` 配置 |
+| ElevenLabs | TTS / 共享音色库 | `api_key` / `base_url` | `llm_provider_configs.elevenlabs_tts` |
+| OpenAPI / 字幕移除备用通道 | 外部素材接口、第三方字幕擦除 | `api_key` / `base_url` / `extra_config` | `llm_provider_configs` |
 
 **TOS Bucket**: `auto-video-srt` (上海区域)
 **TOS 用途**: 临时存放 ASR 音频文件，识别完成后自动删除

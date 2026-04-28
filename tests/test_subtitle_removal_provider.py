@@ -4,9 +4,49 @@ import importlib
 
 import pytest
 
+from appcore.llm_provider_configs import ProviderConfigError
+
+
+class FakeProviderConfig:
+    provider_code = "subtitle_removal"
+    display_name = "字幕移除"
+
+    def __init__(
+        self,
+        *,
+        api_key: str = "GOLDEN_demo",
+        base_url: str = "https://goodline.simplemokey.com/api/openAi",
+        notify_url: str = "",
+    ):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.extra_config = {"notify_url": notify_url} if notify_url else {}
+
+    def require_api_key(self) -> str:
+        if not self.api_key:
+            raise ProviderConfigError(
+                "缺少供应商配置 subtitle_removal.api_key，请在 /settings 填写。"
+            )
+        return self.api_key
+
+    def require_base_url(self, default: str | None = None) -> str:
+        value = (self.base_url or "").strip() or (default or "").strip()
+        if not value:
+            raise ProviderConfigError(
+                "缺少供应商配置 subtitle_removal.base_url，请在 /settings 填写。"
+            )
+        return value
+
+
+def configure_provider(monkeypatch, provider, **kwargs) -> FakeProviderConfig:
+    cfg = FakeProviderConfig(**kwargs)
+    monkeypatch.setattr(provider, "require_provider_config", lambda code: cfg)
+    return cfg
+
 
 def test_subtitle_removal_provider_submit_builds_expected_payload(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     captured = {}
 
@@ -25,9 +65,11 @@ def test_subtitle_removal_provider_submit_builds_expected_payload(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(provider.requests, "post", fake_post)
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_NOTIFY_URL", "https://example.test/notify")
+    configure_provider(
+        monkeypatch,
+        provider,
+        notify_url="https://example.test/notify",
+    )
 
     task_id = provider.submit_task(
         file_size_mb=2.094,
@@ -54,6 +96,7 @@ def test_subtitle_removal_provider_submit_builds_expected_payload(monkeypatch):
 
 def test_subtitle_removal_provider_progress_returns_first_item(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     class FakeResponse:
         def raise_for_status(self):
@@ -74,8 +117,7 @@ def test_subtitle_removal_provider_progress_returns_first_item(monkeypatch):
             }
 
     monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider)
 
     payload = provider.query_progress("provider-task-1")
 
@@ -87,10 +129,11 @@ def test_subtitle_removal_provider_progress_returns_first_item(monkeypatch):
 def test_subtitle_removal_provider_requires_token(monkeypatch):
     provider = importlib.import_module("appcore.subtitle_removal_provider")
     provider = importlib.reload(provider)
+    from appcore.llm_provider_configs import ProviderConfigError
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "")
+    configure_provider(monkeypatch, provider, api_key="")
 
-    with pytest.raises(provider.SubtitleRemovalProviderError, match="SUBTITLE_REMOVAL_PROVIDER_TOKEN"):
+    with pytest.raises(provider.SubtitleRemovalProviderError, match="subtitle_removal.api_key"):
         provider.submit_task(
             file_size_mb=1.0,
             duration_seconds=1.0,
@@ -102,25 +145,39 @@ def test_subtitle_removal_provider_requires_token(monkeypatch):
 
 def test_subtitle_removal_provider_rejects_blank_url(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "   ")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider, base_url="")
 
-    with pytest.raises(provider.SubtitleRemovalProviderError, match="SUBTITLE_REMOVAL_PROVIDER_URL"):
-        provider.submit_task(
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"code": 0, "msg": "ok", "data": {"taskId": "provider-task-1"}}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        return FakeResponse()
+
+    monkeypatch.setattr(provider.requests, "post", fake_post)
+    provider.submit_task(
             file_size_mb=1.0,
             duration_seconds=1.0,
             resolution="720x1280",
             video_name="demo",
             source_url="https://tos.example/source.mp4",
-        )
+    )
+    assert captured["url"] == "https://goodline.simplemokey.com/api/openAi"
 
 
 def test_subtitle_removal_provider_wraps_request_exceptions(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider)
 
     def fake_post(*args, **kwargs):
         raise provider.requests.RequestException("network down")
@@ -139,6 +196,7 @@ def test_subtitle_removal_provider_wraps_request_exceptions(monkeypatch):
 
 def test_subtitle_removal_provider_wraps_invalid_json(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     class FakeResponse:
         def raise_for_status(self):
@@ -147,8 +205,7 @@ def test_subtitle_removal_provider_wraps_invalid_json(monkeypatch):
         def json(self):
             raise ValueError("no json")
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider)
     monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
 
     with pytest.raises(provider.SubtitleRemovalProviderError, match="no json"):
@@ -163,6 +220,7 @@ def test_subtitle_removal_provider_wraps_invalid_json(monkeypatch):
 
 def test_subtitle_removal_provider_rejects_nonzero_code(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     class FakeResponse:
         def raise_for_status(self):
@@ -171,8 +229,7 @@ def test_subtitle_removal_provider_rejects_nonzero_code(monkeypatch):
         def json(self):
             return {"code": 1, "msg": "failed"}
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider)
     monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
 
     with pytest.raises(provider.SubtitleRemovalProviderError, match="failed"):
@@ -187,6 +244,7 @@ def test_subtitle_removal_provider_rejects_nonzero_code(monkeypatch):
 
 def test_subtitle_removal_provider_rejects_empty_progress_data(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     class FakeResponse:
         def raise_for_status(self):
@@ -195,8 +253,7 @@ def test_subtitle_removal_provider_rejects_empty_progress_data(monkeypatch):
         def json(self):
             return {"code": 0, "msg": "ok", "data": []}
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.simplemokey.com/api/openAi")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "GOLDEN_demo")
+    configure_provider(monkeypatch, provider)
     monkeypatch.setattr(provider.requests, "post", lambda *args, **kwargs: FakeResponse())
 
     with pytest.raises(provider.SubtitleRemovalProviderError, match="missing data"):
@@ -205,6 +262,7 @@ def test_subtitle_removal_provider_rejects_empty_progress_data(monkeypatch):
 
 def test_subtitle_removal_provider_subtitle_mode_omits_operation(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     captured = {}
 
@@ -220,9 +278,12 @@ def test_subtitle_removal_provider_subtitle_mode_omits_operation(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(provider.requests, "post", fake_post)
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.example/api")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "TOKEN")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_NOTIFY_URL", "")
+    configure_provider(
+        monkeypatch,
+        provider,
+        api_key="TOKEN",
+        base_url="https://goodline.example/api",
+    )
 
     provider.submit_task(
         file_size_mb=1.0,
@@ -238,6 +299,7 @@ def test_subtitle_removal_provider_subtitle_mode_omits_operation(monkeypatch):
 
 def test_subtitle_removal_provider_text_mode_adds_operation(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
     captured = {}
 
@@ -253,9 +315,12 @@ def test_subtitle_removal_provider_text_mode_adds_operation(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(provider.requests, "post", fake_post)
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.example/api")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "TOKEN")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_NOTIFY_URL", "")
+    configure_provider(
+        monkeypatch,
+        provider,
+        api_key="TOKEN",
+        base_url="https://goodline.example/api",
+    )
 
     provider.submit_task(
         file_size_mb=1.0,
@@ -281,9 +346,14 @@ def test_subtitle_removal_provider_text_mode_adds_operation(monkeypatch):
 
 def test_subtitle_removal_provider_rejects_invalid_erase_text_type(monkeypatch):
     import appcore.subtitle_removal_provider as provider
+    from appcore.llm_provider_configs import ProviderConfigError
 
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_URL", "https://goodline.example/api")
-    monkeypatch.setattr(provider.config, "SUBTITLE_REMOVAL_PROVIDER_TOKEN", "TOKEN")
+    configure_provider(
+        monkeypatch,
+        provider,
+        api_key="TOKEN",
+        base_url="https://goodline.example/api",
+    )
 
     with pytest.raises(ValueError, match="erase_text_type"):
         provider.submit_task(

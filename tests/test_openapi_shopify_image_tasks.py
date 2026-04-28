@@ -7,12 +7,21 @@ from web.app import create_app
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("OPENAPI_MEDIA_API_KEY", "demo-key")
     monkeypatch.setenv("LOCAL_SERVER_BASE_URL", "http://local.test")
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+
+    class FakeProviderConfig:
+        api_key = "demo-key"
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.get_provider_config",
+        lambda provider_code: FakeProviderConfig()
+        if provider_code == "openapi_materials"
+        else None,
+    )
     import config as _config
 
     importlib.reload(_config)

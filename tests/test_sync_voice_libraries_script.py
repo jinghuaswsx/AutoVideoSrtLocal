@@ -5,6 +5,16 @@ from unittest.mock import MagicMock
 import scripts.sync_voice_libraries as sync_driver
 
 
+def test_get_api_key_reads_elevenlabs_provider_config(monkeypatch):
+    monkeypatch.setattr(
+        sync_driver,
+        "require_provider_api_key",
+        lambda provider_code: f"db-key-for-{provider_code}",
+    )
+
+    assert sync_driver._get_api_key() == "db-key-for-elevenlabs_tts"
+
+
 def test_target_languages_default_to_enabled_media_languages(monkeypatch):
     monkeypatch.delenv("VOICE_SYNC_LANGUAGES", raising=False)
     monkeypatch.setattr(

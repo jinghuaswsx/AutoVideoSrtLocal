@@ -452,6 +452,25 @@ def _resolve_apimart_api_key() -> str:
         raise GeminiImageError(str(exc)) from exc
 
 
+def _resolve_apimart_base_url() -> str:
+    try:
+        cfg = require_provider_config("apimart_image")
+        return cfg.require_base_url(default=APIMART_BASE_URL_DEFAULT).rstrip("/")
+    except ProviderConfigError as exc:
+        raise GeminiImageError(str(exc)) from exc
+    except Exception:
+        # 仅用于不触库的单元测试和迁移边界；api_key 仍必须来自 DB。
+        return APIMART_BASE_URL_DEFAULT.rstrip("/")
+
+
+def _resolve_apimart_model_id() -> str | None:
+    try:
+        cfg = require_provider_config("apimart_image")
+    except Exception:
+        return None
+    return (cfg.model_id or "").strip() or None
+
+
 def _resolve_openrouter_image_credentials() -> tuple[str, str]:
     try:
         cfg = require_provider_config("openrouter_image")
@@ -671,7 +690,6 @@ def _generate_via_seedream(
     return image_bytes, "image/png", resp_json
 
 
-_APIMART_BASE_URL = "https://api.apimart.ai"
 _APIMART_POLL_INTERVAL = 5    # 秒
 _APIMART_POLL_TIMEOUT = 900   # 秒
 _APIMART_INITIAL_WAIT = 15    # 秒，提交后首次等待
@@ -681,6 +699,7 @@ def poll_apimart_task(
     task_id: str,
     *,
     api_key: str,
+    base_url: str | None = None,
     initial_wait: bool = True,
 ) -> tuple[bytes, str, Any]:
     """轮询已提交的 APIMART 任务，直到完成或失败。
@@ -694,6 +713,7 @@ def poll_apimart_task(
         )
     if not task_id:
         raise GeminiImageError("APIMART task_id 为空")
+    api_base = (base_url or _resolve_apimart_base_url()).rstrip("/")
 
     if initial_wait:
         time.sleep(_APIMART_INITIAL_WAIT)
@@ -702,7 +722,7 @@ def poll_apimart_task(
     while True:
         try:
             poll_resp = requests.get(
-                f"{_APIMART_BASE_URL}/v1/tasks/{task_id}",
+                f"{api_base}/v1/tasks/{task_id}",
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=15,
             )
@@ -758,6 +778,7 @@ def _generate_via_apimart(
     source_mime: str,
     *,
     api_key: str,
+    base_url: str | None = None,
     model_id: str = "gpt-image-2",
     size: str = "auto",
     resolution: str = "1k",
@@ -767,6 +788,7 @@ def _generate_via_apimart(
         raise GeminiImageError(
             "缺少供应商配置 apimart_image.api_key，请在 /settings 的「服务商接入」页填写。"
         )
+    api_base = (base_url or _resolve_apimart_base_url()).rstrip("/")
     mime = source_mime or "image/png"
     b64 = base64.b64encode(source_image).decode("ascii")
     data_url = f"data:{mime};base64,{b64}"
@@ -784,7 +806,7 @@ def _generate_via_apimart(
     }
     try:
         submit_resp = requests.post(
-            f"{_APIMART_BASE_URL}/v1/images/generations",
+            f"{api_base}/v1/images/generations",
             headers=headers,
             json=payload,
             timeout=30,
@@ -820,7 +842,12 @@ def _generate_via_apimart(
         except Exception:
             logger.exception("APIMART on_submitted callback failed for %s", task_id)
 
-    return poll_apimart_task(task_id, api_key=api_key, initial_wait=True)
+    return poll_apimart_task(
+        task_id,
+        api_key=api_key,
+        base_url=api_base,
+        initial_wait=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -878,11 +905,17 @@ def generate_image(
             response_cost_cny = None
         elif channel == "apimart":
             resolved_size, resolved_resolution = _resolve_apimart_output_params(source_image)
+            apimart_base_url = _resolve_apimart_base_url()
+            apimart_model = _resolve_apimart_model_id()
+            if apimart_model and not (model or "").strip():
+                model_id = apimart_model
+                req_payload["model"] = model_id
             image_bytes, mime, resp = _generate_via_apimart(
                 prompt,
                 source_image,
                 source_mime,
                 api_key=_resolve_apimart_api_key(),
+                base_url=apimart_base_url,
                 model_id=model_id,
                 size=apimart_size or resolved_size,
                 resolution=apimart_resolution or resolved_resolution,

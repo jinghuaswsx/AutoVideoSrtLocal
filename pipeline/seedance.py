@@ -10,14 +10,20 @@ import time
 
 import requests
 
+from config import DOUBAO_LLM_BASE_URL_DEFAULT
+
 log = logging.getLogger(__name__)
 
-API_BASE = "https://ark.cn-beijing.volces.com/api/v3"
+API_BASE = DOUBAO_LLM_BASE_URL_DEFAULT
 DEFAULT_MODEL = "doubao-seedance-1-5-pro-251215"
 
 # 轮询配置
 POLL_INTERVAL = 10     # 秒
 POLL_TIMEOUT = 1800    # 最长等待 30 分钟
+
+
+def _api_base(base_url: str | None = None) -> str:
+    return (base_url or API_BASE).rstrip("/")
 
 
 def create_video_task(
@@ -26,6 +32,7 @@ def create_video_task(
     image_url: str | None = None,
     duration: int = 5,
     model: str = DEFAULT_MODEL,
+    base_url: str | None = None,
 ) -> str:
     """提交视频生成任务，返回 task_id。
 
@@ -57,7 +64,7 @@ def create_video_task(
              model, full_prompt[:100], bool(image_url))
 
     resp = requests.post(
-        f"{API_BASE}/contents/generations/tasks",
+        f"{_api_base(base_url)}/contents/generations/tasks",
         json=payload,
         headers={
             "Content-Type": "application/json",
@@ -82,6 +89,7 @@ def poll_video_task(
     interval: int = POLL_INTERVAL,
     timeout: int = POLL_TIMEOUT,
     on_progress: callable = None,
+    base_url: str | None = None,
 ) -> dict:
     """轮询视频生成任务直到完成。
 
@@ -106,7 +114,7 @@ def poll_video_task(
             raise RuntimeError(f"Seedance 任务超时（{timeout}s）: {task_id}")
 
         resp = requests.get(
-            f"{API_BASE}/contents/generations/tasks/{task_id}",
+            f"{_api_base(base_url)}/contents/generations/tasks/{task_id}",
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=30,
         )
@@ -190,14 +198,19 @@ def generate_video(
     duration: int = 5,
     model: str = DEFAULT_MODEL,
     on_progress: callable = None,
+    base_url: str | None = None,
 ) -> dict:
     """一站式调用：提交任务 + 轮询等待 + 返回结果。
 
     Returns:
         dict: {"task_id": "...", "video_url": "...", "raw": {...}}
     """
-    task_id = create_video_task(api_key, prompt, image_url, duration, model)
-    result = poll_video_task(api_key, task_id, on_progress=on_progress)
+    task_id = create_video_task(
+        api_key, prompt, image_url, duration, model, base_url=base_url,
+    )
+    result = poll_video_task(
+        api_key, task_id, on_progress=on_progress, base_url=base_url,
+    )
     result["task_id"] = task_id
     return result
 
@@ -218,6 +231,7 @@ def create_video_task_v2(
     generate_audio: bool = True,
     watermark: bool = False,
     model: str = DEFAULT_MODEL_V2,
+    base_url: str | None = None,
 ) -> str:
     """提交 Seedance 2.0 视频生成任务，返回 task_id。
 
@@ -282,7 +296,7 @@ def create_video_task_v2(
     )
 
     resp = requests.post(
-        f"{API_BASE}/contents/generations/tasks",
+        f"{_api_base(base_url)}/contents/generations/tasks",
         json=payload,
         headers={
             "Content-Type": "application/json",
@@ -313,6 +327,7 @@ def generate_video_v2(
     watermark: bool = False,
     model: str = DEFAULT_MODEL_V2,
     on_progress: callable = None,
+    base_url: str | None = None,
 ) -> dict:
     """Seedance 2.0 一站式调用：提交任务 + 轮询等待 + 返回结果。
 
@@ -330,7 +345,10 @@ def generate_video_v2(
         generate_audio=generate_audio,
         watermark=watermark,
         model=model,
+        base_url=base_url,
     )
-    result = poll_video_task(api_key, task_id, on_progress=on_progress)
+    result = poll_video_task(
+        api_key, task_id, on_progress=on_progress, base_url=base_url,
+    )
     result["task_id"] = task_id
     return result

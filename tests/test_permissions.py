@@ -27,7 +27,7 @@ def test_permission_codes_no_duplicates_and_no_unknown_groups():
     assert len(codes) == len(set(codes)), "permission codes must be unique"
     for code in codes:
         meta = PERMISSION_META[code]
-        assert meta["group"] in {"business", "management", "system"}
+        assert meta["group"] in {"business", "management", "capability", "system"}
 
 
 def test_default_permissions_for_superadmin_is_all_true():
@@ -120,7 +120,7 @@ def test_is_valid_role():
 def test_grouped_permissions_groups_in_order():
     groups = grouped_permissions()
     group_codes = [g[0] for g in groups]
-    assert group_codes == ["business", "management", "system"]
+    assert group_codes == ["business", "management", "capability", "system"]
     # 每组都有 item
     for _, _, items in groups:
         assert len(items) > 0
@@ -147,6 +147,13 @@ def test_user_superadmin_full_access():
     assert u.is_admin is True
     for code in PERMISSION_CODES:
         assert u.has_permission(code)
+
+
+def test_user_superadmin_role_is_locked_to_admin_username():
+    u = User(_make_row(ROLE_SUPERADMIN, username="manager"))
+    assert u.is_superadmin is False
+    assert u.is_admin is False
+    assert u.has_permission("api_config") is False
 
 
 def test_user_admin_default_permissions():

@@ -11,12 +11,21 @@ from web.app import create_app
 @pytest.fixture
 def client(monkeypatch):
     """保证每个用例以一致的 apikey 启动应用。"""
-    monkeypatch.setenv("OPENAPI_MEDIA_API_KEY", "demo-key")
     monkeypatch.setenv("LOCAL_SERVER_BASE_URL", "http://local.test")
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
     monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+
+    class FakeProviderConfig:
+        api_key = "demo-key"
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.get_provider_config",
+        lambda provider_code: FakeProviderConfig()
+        if provider_code == "openapi_materials"
+        else None,
+    )
     import config as _config
     importlib.reload(_config)
     # create_app 内会读取 config 常量，reload 后下一次 create_app 生效
@@ -251,9 +260,9 @@ def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeyp
         lambda product_id: "",
     )
     monkeypatch.setattr(
-        "web.routes.openapi_materials.medias.list_shopify_localizer_images",
+        "web.routes.openapi_materials.medias.list_reference_images_for_lang",
         lambda product_id, lang: [
-            {"id": 1, "kind": "image", "filename": f"{lang}.jpg", "object_key": f"{lang}.jpg"}
+            {"id": 1, "kind": "detail", "filename": f"{lang}.jpg", "object_key": f"{lang}.jpg"}
         ],
     )
     monkeypatch.setattr(

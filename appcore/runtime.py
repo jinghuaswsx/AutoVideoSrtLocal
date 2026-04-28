@@ -218,7 +218,7 @@ def _seconds_to_request_units(audio_duration_seconds: float | None) -> int | Non
 
 
 _VALID_TRANSLATE_PREFS = (
-    # Vertex AI（Google Cloud Express Mode，复用图片翻译模块的 GEMINI_CLOUD_API_KEY）
+    # Vertex AI（Google Cloud Express Mode，凭据来自 llm_provider_configs.gemini_cloud_text）
     "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite-preview（默认）
     "vertex_gemini_3_flash",         # gemini-3-flash-preview
     "vertex_gemini_31_pro",          # gemini-3.1-pro-preview

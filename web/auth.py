@@ -52,16 +52,18 @@ class User(UserMixin):
 
     @property
     def is_superadmin(self) -> bool:
-        return self.role == ROLE_SUPERADMIN
+        return self.role == ROLE_SUPERADMIN and self.username == "admin"
 
     @property
     def is_admin(self) -> bool:
         """超管和管理员都视为 admin（向后兼容旧的 admin_required）。"""
-        return self.role in (ROLE_SUPERADMIN, ROLE_ADMIN)
+        return self.is_superadmin or self.role == ROLE_ADMIN
 
     def has_permission(self, code: str) -> bool:
-        if self.role == ROLE_SUPERADMIN:
+        if self.is_superadmin:
             return True
+        if self.role == ROLE_SUPERADMIN:
+            return False
         return bool(self._permissions.get(code, False))
 
     @property

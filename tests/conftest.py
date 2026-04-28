@@ -13,12 +13,8 @@ if str(ROOT) not in sys.path:
 @pytest.fixture(autouse=True)
 def _base_env(monkeypatch, tmp_path):
     monkeypatch.setenv("AUTOVIDEOSRT_DISABLE_DOTENV", "1")
-    monkeypatch.setenv("VOLC_API_KEY", "test-volc-key")
-    monkeypatch.setenv("VOLC_RESOURCE_ID", "volc.seedasr.auc")
     monkeypatch.setenv("TOS_ACCESS_KEY", "test-tos-ak")
     monkeypatch.setenv("TOS_SECRET_KEY", "test-tos-sk")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-elevenlabs-key")
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
     monkeypatch.setenv("WTF_CSRF_ENABLED", "0")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "output"))

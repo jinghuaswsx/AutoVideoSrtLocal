@@ -5,18 +5,25 @@ import os
 import sys
 import traceback
 
-os.environ.setdefault("GEMINI_BACKEND", "cloud")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import GEMINI_CLOUD_API_KEY, GEMINI_BACKEND
+from appcore.llm_provider_configs import require_provider_config
 from google import genai
 from google.genai import types as genai_types
 
-print(f"backend={GEMINI_BACKEND}  cloud_key_len={len(GEMINI_CLOUD_API_KEY)}")
-if not GEMINI_CLOUD_API_KEY:
-    sys.exit("no CLOUD key")
+cfg = require_provider_config("gemini_cloud_text")
+api_key = (cfg.api_key or "").strip()
+project = (cfg.extra_config or {}).get("project", "")
+location = (cfg.extra_config or {}).get("location", "global")
+print(f"provider=gemini_cloud_text key_len={len(api_key)} project={project!r} location={location!r}")
+if not api_key and not project:
+    sys.exit("no gemini_cloud_text api_key/project in llm_provider_configs")
 
-client = genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)
+client = (
+    genai.Client(vertexai=True, project=project, location=location)
+    if project
+    else genai.Client(vertexai=True, api_key=api_key)
+)
 
 TEXT_MODELS = [
     "gemini-3.1-pro-preview",

@@ -13,13 +13,23 @@ def _reload_gemini(monkeypatch):
     return config, gemini
 
 
-def test_cloud_project_location_initializes_vertex_client(monkeypatch):
-    monkeypatch.setenv("GEMINI_BACKEND", "cloud")
-    monkeypatch.setenv("GEMINI_CLOUD_PROJECT", "demo-project")
-    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "global")
-    monkeypatch.delenv("GEMINI_CLOUD_API_KEY", raising=False)
+def _cfg(api_key="", model_id="gemini-3.1-flash-lite-preview", extra=None):
+    return SimpleNamespace(
+        api_key=api_key,
+        model_id=model_id,
+        extra_config=extra or {},
+    )
 
+
+def test_cloud_project_location_initializes_vertex_client(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
+    monkeypatch.setattr(
+        gemini,
+        "get_provider_config",
+        lambda code: _cfg(extra={"project": "demo-project", "location": "global"})
+        if code == "gemini_cloud_text"
+        else None,
+    )
 
     created = {}
 
@@ -36,6 +46,7 @@ def test_cloud_project_location_initializes_vertex_client(monkeypatch):
     out = gemini.generate(
         "hello",
         model="gemini-3.1-flash-lite-preview",
+        service="gemini_cloud",
         max_retries=1,
     )
 
@@ -47,13 +58,15 @@ def test_cloud_project_location_initializes_vertex_client(monkeypatch):
     }
 
 
-def test_cloud_legacy_key_only_is_configured_and_generate_falls_back(monkeypatch):
-    monkeypatch.setenv("GEMINI_BACKEND", "cloud")
-    monkeypatch.delenv("GEMINI_CLOUD_PROJECT", raising=False)
-    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "global")
-    monkeypatch.setenv("GEMINI_CLOUD_API_KEY", "legacy-cloud-key")
-
+def test_cloud_db_api_key_only_generates_with_vertex_api_key(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
+    monkeypatch.setattr(
+        gemini,
+        "get_provider_config",
+        lambda code: _cfg(api_key="db-cloud-key")
+        if code == "gemini_cloud_text"
+        else None,
+    )
 
     created = {}
 
@@ -67,28 +80,29 @@ def test_cloud_legacy_key_only_is_configured_and_generate_falls_back(monkeypatch
 
     monkeypatch.setattr(gemini.genai, "Client", fake_client)
 
-    assert gemini.is_configured() is True
-
     out = gemini.generate(
         "hello",
         model="gemini-3.1-flash-lite-preview",
+        service="gemini_cloud",
         max_retries=1,
     )
 
     assert out == "ok"
     assert created == {
         "vertexai": True,
-        "api_key": "legacy-cloud-key",
+        "api_key": "db-cloud-key",
     }
 
 
-def test_cloud_legacy_key_only_generate_stream_falls_back(monkeypatch):
-    monkeypatch.setenv("GEMINI_BACKEND", "cloud")
-    monkeypatch.delenv("GEMINI_CLOUD_PROJECT", raising=False)
-    monkeypatch.setenv("GEMINI_CLOUD_LOCATION", "global")
-    monkeypatch.setenv("GEMINI_CLOUD_API_KEY", "legacy-cloud-key")
-
+def test_cloud_db_api_key_only_generate_stream_uses_vertex_api_key(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
+    monkeypatch.setattr(
+        gemini,
+        "get_provider_config",
+        lambda code: _cfg(api_key="db-cloud-key")
+        if code == "gemini_cloud_text"
+        else None,
+    )
 
     created = {}
 
@@ -106,16 +120,17 @@ def test_cloud_legacy_key_only_generate_stream_falls_back(monkeypatch):
     monkeypatch.setattr(gemini.genai, "Client", fake_client)
 
     chunks = list(
-        gemini.generate_stream(
-            "hello",
-            model="gemini-3.1-flash-lite-preview",
+            gemini.generate_stream(
+                "hello",
+                model="gemini-3.1-flash-lite-preview",
+                service="gemini_cloud",
+            )
         )
-    )
 
     assert chunks == ["he", "llo"]
     assert created == {
         "vertexai": True,
-        "api_key": "legacy-cloud-key",
+        "api_key": "db-cloud-key",
     }
 
 
@@ -135,8 +150,8 @@ def test_generate_logs_usage_via_ai_billing(monkeypatch):
     )
     billing_calls: list[dict] = []
 
-    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
-    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
     monkeypatch.setattr(gemini.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
 
     out = gemini.generate(
@@ -176,8 +191,8 @@ def test_generate_logs_request_and_response_payloads(monkeypatch, tmp_path):
     )
     billing_calls: list[dict] = []
 
-    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
-    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
     monkeypatch.setattr(gemini, "_build_contents", lambda client, prompt, media: ["parts"])
     monkeypatch.setattr(gemini.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
 
@@ -219,8 +234,8 @@ def test_generate_logs_failure_via_ai_billing(monkeypatch):
     )
     billing_calls: list[dict] = []
 
-    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
-    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
     monkeypatch.setattr(gemini.ai_billing, "log_request", lambda **kw: billing_calls.append(kw))
 
     with pytest.raises(gemini.GeminiError, match="boom"):
@@ -256,8 +271,8 @@ def test_generate_return_payload_includes_usage(monkeypatch):
         models=SimpleNamespace(generate_content=lambda **_: resp)
     )
 
-    monkeypatch.setattr(gemini, "resolve_config", lambda *a, **kw: ("api-key", "gemini-3.1-pro-preview"))
-    monkeypatch.setattr(gemini, "_get_client", lambda api_key: client)
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
     monkeypatch.setattr(gemini, "_log_gemini_usage", lambda **kwargs: None)
 
     payload = gemini.generate(

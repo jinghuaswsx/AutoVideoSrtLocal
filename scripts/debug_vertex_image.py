@@ -5,17 +5,24 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("GEMINI_BACKEND", "cloud")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import GEMINI_CLOUD_API_KEY
+from appcore.llm_provider_configs import require_provider_config
 from google import genai
 from google.genai import types as genai_types
 
-if not GEMINI_CLOUD_API_KEY:
-    sys.exit("no CLOUD key")
+cfg = require_provider_config("gemini_cloud_image")
+api_key = (cfg.api_key or "").strip()
+project = (cfg.extra_config or {}).get("project", "")
+location = (cfg.extra_config or {}).get("location", "global")
+if not api_key and not project:
+    sys.exit("no gemini_cloud_image api_key/project in llm_provider_configs")
 
-client = genai.Client(vertexai=True, api_key=GEMINI_CLOUD_API_KEY)
+client = (
+    genai.Client(vertexai=True, project=project, location=location)
+    if project
+    else genai.Client(vertexai=True, api_key=api_key)
+)
 out_dir = Path(__file__).resolve().parent.parent / "output" / "vertex_debug"
 out_dir.mkdir(parents=True, exist_ok=True)
 
