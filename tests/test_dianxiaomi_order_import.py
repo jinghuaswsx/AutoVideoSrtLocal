@@ -66,7 +66,9 @@ def test_run_import_dry_run_uses_fetchers_and_does_not_write(monkeypatch):
     written = []
     scope = mod.oa.DianxiaomiProductScope(
         by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
+        by_handle={},
         excluded_shopify_ids=set(),
+        excluded_handles=set(),
         requested_site_codes={"newjoy"},
     )
     monkeypatch.setattr(mod.oa, "build_dianxiaomi_product_scope", lambda sites: scope)
@@ -102,7 +104,9 @@ def test_run_import_scans_shipped_state_once_for_date_range(monkeypatch):
     calls = []
     scope = mod.oa.DianxiaomiProductScope(
         by_shopify_id={"111": {"product_id": 1, "product_code": "demo", "site_code": "newjoy", "shopifyid": "111"}},
+        by_handle={},
         excluded_shopify_ids=set(),
+        excluded_handles=set(),
         requested_site_codes={"newjoy"},
     )
     monkeypatch.setattr(mod.oa, "build_dianxiaomi_product_scope", lambda sites: scope)

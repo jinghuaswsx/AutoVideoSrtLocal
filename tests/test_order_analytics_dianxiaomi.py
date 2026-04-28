@@ -51,7 +51,9 @@ def test_build_dianxiaomi_product_scope_excludes_smartgearx(monkeypatch):
     assert set(scope.by_shopify_id) == {"111", "222"}
     assert scope.by_shopify_id["111"]["site_code"] == "newjoy"
     assert scope.by_shopify_id["222"]["site_code"] == "omurio"
+    assert set(scope.by_handle) == {"newjoy-demo", "omurio-demo"}
     assert scope.excluded_shopify_ids == {"333"}
+    assert scope.excluded_handles == {"smart-demo"}
 
 
 def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
@@ -64,7 +66,9 @@ def test_normalize_dianxiaomi_order_lines_keeps_requested_sites_and_amounts():
                 "shopifyid": "8560559554733",
             }
         },
+        by_handle={},
         excluded_shopify_ids=set(),
+        excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
     )
     order = {
@@ -125,7 +129,9 @@ def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
                 "shopifyid": "8560559554733",
             }
         },
+        by_handle={},
         excluded_shopify_ids=set(),
+        excluded_handles=set(),
         requested_site_codes={"newjoy"},
     )
     order = {
@@ -145,7 +151,9 @@ def test_normalize_dianxiaomi_order_parses_millisecond_timestamps():
 def test_normalize_dianxiaomi_order_keeps_requested_site_from_order_line_url():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},
+        by_handle={},
         excluded_shopify_ids=set(),
+        excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
     )
     order = {
@@ -168,10 +176,48 @@ def test_normalize_dianxiaomi_order_keeps_requested_site_from_order_line_url():
     assert rows[0]["shopify_product_id"] == "999"
 
 
+def test_normalize_dianxiaomi_order_matches_local_product_code_handle():
+    scope = oa.DianxiaomiProductScope(
+        by_shopify_id={},
+        by_handle={
+            "dino-glider-launcher-toy": {
+                "product_id": 5,
+                "product_code": "dino-glider-launcher-toy-rjc",
+                "site_code": "newjoy",
+                "shopifyid": "8552296546477",
+            }
+        },
+        excluded_shopify_ids=set(),
+        excluded_handles=set(),
+        requested_site_codes={"newjoy", "omurio"},
+    )
+    order = {
+        "id": "9004",
+        "productList": [
+            {
+                "productId": "44731721711663",
+                "productSku": "44731721711663",
+                "quantity": "1",
+                "price": "13.19",
+                "productUrl": "https://shoplarke.com/products/dino-glider-launcher-toy",
+            }
+        ],
+    }
+
+    rows, skipped = oa.normalize_dianxiaomi_order(order, scope, {})
+
+    assert skipped == 0
+    assert rows[0]["product_id"] == 5
+    assert rows[0]["product_code"] == "dino-glider-launcher-toy-rjc"
+    assert rows[0]["site_code"] == "newjoy"
+
+
 def test_normalize_dianxiaomi_order_skips_smartgearx_scope():
     scope = oa.DianxiaomiProductScope(
         by_shopify_id={},
+        by_handle={},
         excluded_shopify_ids={"333"},
+        excluded_handles=set(),
         requested_site_codes={"newjoy", "omurio"},
     )
     order = {

@@ -77,7 +77,9 @@ _DIANXIAOMI_EXCLUDED_DOMAINS = ("smartgearx.com", "smartgearx")
 @dataclass(frozen=True)
 class DianxiaomiProductScope:
     by_shopify_id: dict[str, dict[str, Any]]
+    by_handle: dict[str, dict[str, Any]]
     excluded_shopify_ids: set[str]
+    excluded_handles: set[str]
     requested_site_codes: set[str]
 
 
@@ -143,6 +145,28 @@ def extract_dianxiaomi_shopify_product_id(line: dict[str, Any]) -> str | None:
     return None
 
 
+def _canonical_product_handle(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if "/products/" in text:
+        text = text.split("/products/", 1)[1]
+    text = text.split("?", 1)[0].split("#", 1)[0].strip("/")
+    if not text:
+        return None
+    if text.endswith("-rjc"):
+        text = text[:-4]
+    return text or None
+
+
+def extract_dianxiaomi_product_handle(line: dict[str, Any]) -> str | None:
+    for key in ("productUrl", "sourceUrl"):
+        handle = _canonical_product_handle(line.get(key))
+        if handle:
+            return handle
+    return None
+
+
 def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductScope:
     requested = {str(code).strip().lower() for code in site_codes if str(code).strip()}
     rows = query(
@@ -151,32 +175,45 @@ def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductSc
         "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL AND shopifyid <> ''"
     )
     by_shopify_id: dict[str, dict[str, Any]] = {}
+    by_handle: dict[str, dict[str, Any]] = {}
     excluded_shopify_ids: set[str] = set()
+    excluded_handles: set[str] = set()
     for row in rows:
         shopifyid = str(row.get("shopifyid") or "").strip()
-        if not shopifyid:
+        product_code = str(row.get("product_code") or "").strip()
+        handle = _canonical_product_handle(product_code)
+        if not shopifyid and not handle:
             continue
         site_code = _infer_dianxiaomi_site_code_from_text(
             _combined_link_text(
-                row.get("product_code"),
+                product_code,
                 row.get("product_link"),
                 row.get("localized_links_json"),
             ),
             requested,
         )
         if site_code == "smartgearx":
-            excluded_shopify_ids.add(shopifyid)
+            if shopifyid:
+                excluded_shopify_ids.add(shopifyid)
+            if handle:
+                excluded_handles.add(handle)
             continue
         if site_code in requested:
-            by_shopify_id[shopifyid] = {
+            product = {
                 "product_id": row.get("id"),
-                "product_code": row.get("product_code"),
+                "product_code": product_code,
                 "site_code": site_code,
                 "shopifyid": shopifyid,
             }
+            if shopifyid:
+                by_shopify_id[shopifyid] = product
+            if handle:
+                by_handle[handle] = product
     return DianxiaomiProductScope(
         by_shopify_id=by_shopify_id,
+        by_handle=by_handle,
         excluded_shopify_ids=excluded_shopify_ids,
+        excluded_handles=excluded_handles,
         requested_site_codes=requested,
     )
 
@@ -195,11 +232,18 @@ def _resolve_dianxiaomi_line_product(
     shopify_product_id: str,
     scope: DianxiaomiProductScope,
 ) -> dict[str, Any] | None:
+    handle = extract_dianxiaomi_product_handle(line)
+    if handle in scope.excluded_handles:
+        return None
     if shopify_product_id in scope.excluded_shopify_ids:
         return None
     product = scope.by_shopify_id.get(shopify_product_id)
     if product:
         return product
+    if handle:
+        product = scope.by_handle.get(handle)
+        if product:
+            return product
     site_code = _infer_dianxiaomi_site_code_from_text(
         _combined_link_text(line.get("productUrl"), line.get("sourceUrl")),
         scope.requested_site_codes,
