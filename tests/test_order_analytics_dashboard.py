@@ -473,3 +473,50 @@ def test_get_enabled_country_columns_full_set(monkeypatch):
         "FI",
         "BR",
     ]
+
+
+def test_get_monthly_summary_returns_country_columns_and_media_counts(monkeypatch):
+    """get_monthly_summary 应返回固定 country_columns 与 media_counts 两个新字段。"""
+    # 模拟启用 en + de
+    monkeypatch.setattr(oa, "_load_enabled_lang_codes", lambda: ["en", "de"])
+    # 桩掉 DB 调用
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=None: _stub_monthly_query(sql),
+    )
+
+    result = oa.get_monthly_summary(2026, 4)
+
+    assert "country_columns" in result
+    assert result["country_columns"][0] == {"country": "US", "lang": "en"}
+    assert "media_counts" in result
+    # product_id=10 在 fixture 里有 en×3 + de×1
+    assert result["media_counts"][10] == {"en": 3, "de": 1}
+
+
+def _stub_monthly_query(sql: str):
+    """根据 SQL 关键字返回不同 fixture，模拟 4 类查询。"""
+    s = sql.lower()
+    if "from media_items" in s:
+        return [
+            {"product_id": 10, "lang": "en", "n": 3},
+            {"product_id": 10, "lang": "de", "n": 1},
+        ]
+    if "group by billing_country" in s:
+        return [{"billing_country": "US", "total_qty": 5, "order_count": 4}]
+    if "group by so.product_id, display_name, so.billing_country" in s:
+        return [
+            {"product_id": 10, "display_name": "P10", "billing_country": "US", "total_qty": 5},
+        ]
+    # products 汇总
+    return [
+        {
+            "product_id": 10,
+            "display_name": "P10",
+            "product_code": "PCK10",
+            "total_qty": 5,
+            "order_count": 4,
+            "total_revenue": Decimal("99.00"),
+        }
+    ]

@@ -857,12 +857,31 @@ def get_monthly_summary(year: int, month: int, product_id: int | None = None) ->
             product_order.append(dn)
         matrix[dn][mr["billing_country"] or "未知"] = mr["total_qty"]
 
+    # 素材数量：按 product × lang，复用 dashboard 已有的统计逻辑
+    media_counts_all = _count_media_items_by_product()
+    if product_id is not None:
+        media_counts = (
+            {product_id: media_counts_all[product_id]}
+            if product_id in media_counts_all
+            else {}
+        )
+    else:
+        # 仅保留本次查询里出现的产品，避免响应膨胀
+        active_pids = {p["product_id"] for p in products if p.get("product_id") is not None}
+        media_counts = {
+            pid: counts for pid, counts in media_counts_all.items() if pid in active_pids
+        }
+
+    country_columns = get_enabled_country_columns()
+
     return {
         "products": products,
         "countries": countries,
         "country_list": country_list,
         "matrix": matrix,
         "product_order": product_order,
+        "country_columns": country_columns,
+        "media_counts": media_counts,
     }
 
 
