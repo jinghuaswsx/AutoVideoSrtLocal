@@ -639,7 +639,8 @@ def apply_translated_detail_images_from_task(
     - allow_partial=False：任一 item 非 done → apply_status='skipped_failed'，不回填
     - allow_partial=True：忽略 failed，只回填 done；若仍有 pending/running → 拒绝（RuntimeError）
 
-    仅替换 origin_type='image_translate' 的旧条目，保留手动上传/链接下载的图。
+    每次回填会先清空目标语种下所有详情图（不论手动上传、链接下载还是上一轮翻译），
+    再把这次任务的成功项写入。同一小语种只保留最近一次翻译的结果，避免累积。
 
     返回 {applied_ids, skipped_failed_indices, apply_status}
     """
@@ -742,7 +743,7 @@ def apply_translated_detail_images_from_task(
             "image_translate_task_id": task["id"],
         })
 
-    created_ids = medias.replace_translated_detail_images_for_lang(
+    created_ids = medias.replace_detail_images_for_lang(
         product_id, target_lang, created_images,
     )
 

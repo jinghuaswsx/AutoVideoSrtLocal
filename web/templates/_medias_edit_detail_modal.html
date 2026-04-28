@@ -192,10 +192,22 @@
         </section>
 
         <section class="oc-section oc-section-card" id="edDetailImagesSection" hidden>
-          <div class="oc-section-title">
-            <span>商品详情图</span>
-            <span class="optional">(英文原始版，用于后续图片翻译)</span>
-            <span class="count" id="edDetailImagesBadge">0</span>
+          <div class="oc-section-head oc-section-head-between" style="margin-bottom:var(--oc-sp-3);">
+            <div class="oc-section-title" style="margin-bottom:0;">
+              <span>商品详情图</span>
+              <span class="optional">(英文原始版，用于后续图片翻译)</span>
+              <span class="count" id="edDetailImagesBadge">0</span>
+            </div>
+            <div class="oc-detail-header-actions" style="display:flex;gap:var(--oc-sp-2);flex-wrap:wrap;">
+              <button type="button" class="oc-btn ghost sm" id="edDetailImagesClearAllBtn" hidden
+                      style="color:var(--oc-danger-fg);border-color:var(--oc-danger);">
+                一键清空
+              </button>
+              <button type="button" class="oc-btn primary sm" id="edDetailImagesTranslateHeaderBtn" hidden>
+                <svg width="14" height="14"><use href="#ic-languages"/></svg>
+                <span>一键从英语翻译</span>
+              </button>
+            </div>
           </div>
           <div id="edDetailTranslateStatus" class="oc-hint" hidden
                style="margin-bottom:var(--oc-sp-3);padding:10px 12px;border:1px solid var(--oc-border);border-radius:10px;background:var(--oc-bg-subtle);color:var(--oc-fg);"></div>

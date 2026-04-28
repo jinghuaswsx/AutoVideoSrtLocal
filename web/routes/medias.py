@@ -2273,6 +2273,30 @@ def api_detail_images_delete(pid: int, image_id: int):
     return jsonify({"ok": True})
 
 
+@bp.route("/api/products/<int:pid>/detail-images/clear", methods=["POST"])
+@login_required
+def api_detail_images_clear_all(pid: int):
+    """Clear all detail images (manual / from-url / translated) for a target language."""
+    p = medias.get_product(pid)
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    lang, err = _parse_lang(body, default="")
+    if err:
+        return jsonify({"error": err}), 400
+    if lang == "en":
+        return jsonify({"error": "english detail images cannot be cleared via this endpoint"}), 400
+
+    rows = medias.list_detail_images(pid, lang)
+    cleared = medias.soft_delete_detail_images_by_lang(pid, lang)
+    for row in rows:
+        try:
+            _delete_media_object(row["object_key"])
+        except Exception:
+            pass
+    return jsonify({"ok": True, "cleared": cleared})
+
+
 @bp.route("/api/products/<int:pid>/detail-images/reorder", methods=["POST"])
 @login_required
 def api_detail_images_reorder(pid: int):

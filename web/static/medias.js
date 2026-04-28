@@ -2798,6 +2798,8 @@
     const status = $('edDetailTranslateStatus');
     const translateBtn = $('edDetailImagesTranslateBtn');
     const fromUrlBtn = $('edDetailImagesFromUrlBtn');
+    const headerTranslateBtn = $('edDetailImagesTranslateHeaderBtn');
+    const headerClearBtn = $('edDetailImagesClearAllBtn');
     const title = section && section.querySelector('.oc-section-title > span');
     const subtitle = section && section.querySelector('.oc-section-title .optional');
     const langName = langDisplayName(lang);
@@ -2810,6 +2812,12 @@
     }
     if (translateBtn) translateBtn.hidden = lang === 'en';
     if (fromUrlBtn) fromUrlBtn.hidden = lang !== 'en';
+    if (headerTranslateBtn) headerTranslateBtn.hidden = lang === 'en';
+    if (headerClearBtn) {
+      const hasItems = Array.isArray(detailItems) && detailItems.length > 0;
+      headerClearBtn.hidden = lang === 'en';
+      headerClearBtn.disabled = !hasItems;
+    }
     if (!status) return;
     if (lang === 'en') {
       status.hidden = true;
@@ -4050,6 +4058,38 @@
       edStartDetailTranslate().catch((err) => {
         console.error('[detail-images] start translate failed:', err);
       });
+    });
+    $('edDetailImagesTranslateHeaderBtn') && $('edDetailImagesTranslateHeaderBtn').addEventListener('click', () => {
+      edStartDetailTranslate().catch((err) => {
+        console.error('[detail-images] start translate (header) failed:', err);
+      });
+    });
+    $('edDetailImagesClearAllBtn') && $('edDetailImagesClearAllBtn').addEventListener('click', async () => {
+      const pid = edState.productData && edState.productData.product && edState.productData.product.id;
+      const lang = (edState.activeLang || '').trim().toLowerCase();
+      if (!pid || !lang || lang === 'en') return;
+      const ctrl = edDetailImagesCtrl;
+      const count = ctrl && ctrl.items ? ctrl.items().length : 0;
+      if (!count) return;
+      const ok = window.confirm(
+        `确定清空当前【${langDisplayName(lang)}】语种下全部 ${count} 张详情图？该操作不可撤销。`
+      );
+      if (!ok) return;
+      const btn = $('edDetailImagesClearAllBtn');
+      const orig = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = '清空中...'; }
+      try {
+        await fetchJSON(`/medias/api/products/${pid}/detail-images/clear`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lang }),
+        });
+        await edRefreshDetailImagesPanel(lang);
+      } catch (err) {
+        alert('清空失败：' + (err.message || err));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = orig || '一键清空'; }
+      }
     });
     $('edDetailTranslateStartBtn') && $('edDetailTranslateStartBtn').addEventListener('click', () => {
       edSubmitDetailTranslate().catch((err) => {

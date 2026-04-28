@@ -233,7 +233,7 @@ def test_runtime_downloads_media_bucket_source_and_auto_applies(tmp_path):
          patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
          patch.object(rt.tos_clients, "build_media_object_key", return_value="1/medias/100/de_1.png"), \
          patch.object(rt.gemini_image, "generate_image", return_value=(b"OUT", "image/png")), \
-         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
+         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=fake_replace):
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
     assert applied["replace"][0] == 100
@@ -382,7 +382,7 @@ def test_runtime_skips_auto_apply_when_any_item_failed():
 
     runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
     with patch.object(store, "update"), \
-         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=AssertionError("must not apply")):
+         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=AssertionError("must not apply")):
         runtime._finalize_auto_apply(task)
 
     assert task["medias_context"]["apply_status"] == "skipped_failed"
@@ -432,7 +432,7 @@ def _patch_tos_success(rt, applied: dict):
         patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes),
         patch.object(rt.tos_clients, "build_media_object_key",
                      side_effect=lambda uid, pid, fn: f"{uid}/medias/{pid}/{fn}"),
-        patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace),
+        patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=fake_replace),
     )
 
 
@@ -510,7 +510,7 @@ def test_apply_allow_partial_skips_done_gif_source_items():
          patch.object(rt.local_media_storage, "download_to", side_effect=fake_download), \
          patch.object(rt.local_media_storage, "write_bytes", side_effect=fake_write_bytes), \
          patch.object(rt.object_keys, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
-         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
+         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=fake_replace):
         result = rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
         )
@@ -532,7 +532,7 @@ def test_apply_allow_partial_false_skips_when_any_failed():
     task["items"][1]["error"] = "gemini rejected"
 
     with patch.object(store, "update"), \
-         patch.object(rt.medias, "replace_translated_detail_images_for_lang",
+         patch.object(rt.medias, "replace_detail_images_for_lang",
                       side_effect=AssertionError("must not apply")):
         result = rt.apply_translated_detail_images_from_task(
             task, allow_partial=False, user_id=1,
@@ -643,7 +643,7 @@ def test_apply_translated_detail_images_writes_local_media_store_instead_of_tos_
              side_effect=AssertionError("should not upload long-lived detail images back to TOS media"),
          ), \
          patch.object(rt.object_keys, "build_media_object_key", return_value="1/medias/100/detail_0.png"), \
-         patch.object(rt.medias, "replace_translated_detail_images_for_lang", side_effect=fake_replace):
+         patch.object(rt.medias, "replace_detail_images_for_lang", side_effect=fake_replace):
         result = rt.apply_translated_detail_images_from_task(
             task, allow_partial=True, user_id=1,
         )

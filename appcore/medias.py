@@ -1078,44 +1078,6 @@ def replace_detail_images_for_lang(product_id: int, lang: str, images: list[dict
     return created_ids
 
 
-def soft_delete_translated_detail_images_by_lang(product_id: int, lang: str) -> int:
-    return execute(
-        "UPDATE media_product_detail_images "
-        "SET deleted_at=NOW() "
-        "WHERE product_id=%s AND lang=%s "
-        "  AND origin_type='image_translate' AND deleted_at IS NULL",
-        (product_id, lang),
-    )
-
-
-def replace_translated_detail_images_for_lang(
-    product_id: int, lang: str, images: list[dict]
-) -> list[int]:
-    """Replace only image_translate-sourced details for a language, preserving manual uploads / link-downloaded images.
-
-    Why: 手动回填 / 自动回填要保留用户手动上传或从商品链接下载的图，
-    只替换上一次一键翻译留下的条目。
-    """
-    soft_delete_translated_detail_images_by_lang(product_id, lang)
-    created_ids: list[int] = []
-    for image in images:
-        created_ids.append(
-            add_detail_image(
-                product_id,
-                lang,
-                image["object_key"],
-                content_type=image.get("content_type"),
-                file_size=image.get("file_size"),
-                width=image.get("width"),
-                height=image.get("height"),
-                origin_type=image.get("origin_type") or "image_translate",
-                source_detail_image_id=image.get("source_detail_image_id"),
-                image_translate_task_id=image.get("image_translate_task_id"),
-            )
-        )
-    return created_ids
-
-
 def reorder_detail_images(product_id: int, lang: str, ids: list[int]) -> int:
     """按传入顺序更新 sort_order（0 起）。返回更新行数。"""
     if not ids:
