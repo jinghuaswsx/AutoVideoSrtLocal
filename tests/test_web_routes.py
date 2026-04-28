@@ -4,6 +4,8 @@ import json
 import io
 import subprocess
 
+import pytest
+
 from web import store
 from web.app import create_app
 from web.extensions import socketio
@@ -1686,6 +1688,14 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert payload["status"] == "speed_adjusted"
     assert payload["compose_stale"] is True
     assert payload["tts_duration"] == 1.95
+    payload_sentence = payload["task"]["variants"]["av"]["sentences"][0]
+    assert payload_sentence["duration_ratio"] == pytest.approx(
+        payload_sentence["tts_duration"] / payload_sentence["target_duration"]
+    )
+    assert 0.95 <= payload_sentence["speed"] <= 1.05
+    assert payload_sentence["speed"] != 1.12
+    assert payload_sentence["status"] != "warning_overshoot"
+    assert isinstance(payload_sentence["attempts"], list)
     assert generated and generated[0]["text"] == "Fresh new hook"
     assert rebuilt == [
         {
@@ -1785,7 +1795,9 @@ def test_av_rewrite_sentence_route_marks_long_warning_without_out_of_range_speed
     saved_sentence = store.get(task_id)["variants"]["av"]["sentences"][0]
     assert saved_sentence["status"] == "warning_long"
     assert saved_sentence["speed"] == 1.0
+    assert 0.95 <= saved_sentence["speed"] <= 1.05
     assert saved_sentence["duration_ratio"] == 1.2
+    assert isinstance(saved_sentence["attempts"], list)
     assert generated == [{"text": "Still too long", "speed": None}]
 
 
@@ -1852,8 +1864,11 @@ def test_av_rewrite_sentence_route_marks_short_warning_without_needs_expand(
     assert payload["status"] != "needs_expand"
     saved_sentence = store.get(task_id)["variants"]["av"]["sentences"][0]
     assert saved_sentence["status"] == "warning_short"
+    assert saved_sentence["status"] != "needs_expand"
     assert saved_sentence["speed"] == 1.0
+    assert 0.95 <= saved_sentence["speed"] <= 1.05
     assert saved_sentence["duration_ratio"] == 0.8
+    assert isinstance(saved_sentence["attempts"], list)
     assert generated == [{"text": "Still too short", "speed": None}]
 
 

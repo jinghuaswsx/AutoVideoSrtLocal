@@ -852,6 +852,8 @@ def av_rewrite_sentence(task_id):
     target_language = str(av_inputs.get("target_language") or "en").strip().lower() or "en"
 
     updated_sentence = dict(sentences[sentence_index])
+    attempts = updated_sentence.get("attempts")
+    updated_sentence["attempts"] = attempts if isinstance(attempts, list) else []
     segment_path = updated_sentence.get("tts_path") or os.path.join(
         task_dir,
         "tts_segments",
