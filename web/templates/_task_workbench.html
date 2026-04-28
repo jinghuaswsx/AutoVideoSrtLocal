@@ -802,6 +802,40 @@
   </div>
 </div>
 
+<div class="card hidden" id="avConvergencePanel">
+  <div class="av-convergence-head">
+    <div>
+      <h3>句级收敛</h3>
+      <p>展示 GPT-5.5 句级本土化、ElevenLabs 实测时长、重写轮次和 95%-105% 微调结果。</p>
+    </div>
+    <span class="av-convergence-model" id="avConvergenceModelBadge">GPT-5.5</span>
+  </div>
+  <div class="av-convergence-summary" id="avConvergenceSummary"></div>
+  <div class="av-convergence-table-wrap">
+    <table class="av-convergence-table">
+      <thead>
+        <tr>
+          <th>句号</th>
+          <th>原句</th>
+          <th>最终译文</th>
+          <th>目标时长</th>
+          <th>当前时长</th>
+          <th>偏差</th>
+          <th>speed</th>
+          <th>状态</th>
+          <th>轮次</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="avConvergenceRows">
+        <tr>
+          <td colspan="10"><p class="av-convergence-empty">等待句级收敛数据。</p></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="av-rewrite-overlay hidden" id="avRewriteModal" onclick="if (event.target === this) closeAvRewriteModal()">
   <div class="av-rewrite-modal" role="dialog" aria-modal="true" aria-labelledby="avRewriteTitle">
     <div class="av-rewrite-modal__header">

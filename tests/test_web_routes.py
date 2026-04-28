@@ -317,6 +317,69 @@ def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_
     assert "submitAvRewrite()" in body
 
 
+def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-av-convergence", "video.mp4", "output/task-project-av-convergence")
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        av_debug={
+            "model": "GPT-5.5",
+            "sentence_convergence": {
+                "model": "GPT-5.5",
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "attempts": [
+                            {"round": 1, "text": "Try one", "tts_duration": 1.42, "delta_pct": 18.3},
+                            {"round": 2, "text": "Final", "tts_duration": 1.22, "delta_pct": 1.7},
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+    store.update_variant(
+        task["id"],
+        "av",
+        sentences=[
+            {
+                "asr_index": 0,
+                "source_text": "这款精华很清爽",
+                "final_text": "This serum feels fresh.",
+                "target_duration": 1.2,
+                "tts_duration": 1.22,
+                "speed": 1.03,
+                "status": "converged",
+                "attempts": [{"round": 1, "tts_duration": 1.42}, {"round": 2, "tts_duration": 1.22}],
+            }
+        ],
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "video.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-av-convergence")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="avConvergencePanel"' in body
+    assert "句级收敛" in body
+    assert "目标时长" in body
+    assert "偏差" in body
+    assert "GPT-5.5" in body
+    assert "renderAvConvergence()" in body
+
+
 def test_av_rewrite_warning_filter_includes_warning_long():
     scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
         encoding="utf-8"

@@ -810,6 +810,7 @@
       _setAudioBtns(_previewAudioGid, true);
     }
     renderAvInsights();
+    renderAvConvergence();
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
@@ -2003,6 +2004,162 @@
     `;
 
     panel.classList.remove("hidden");
+  }
+
+  function renderAvConvergence() {
+    const panel = document.getElementById("avConvergencePanel");
+    const modelBadge = document.getElementById("avConvergenceModelBadge");
+    const summary = document.getElementById("avConvergenceSummary");
+    const rows = document.getElementById("avConvergenceRows");
+    if (!panel || !modelBadge || !summary || !rows) return;
+
+    if (!currentTask || !isAvSyncTask(currentTask)) {
+      panel.classList.add("hidden");
+      summary.innerHTML = "";
+      rows.innerHTML = "";
+      return;
+    }
+
+    const av = currentTask.variants?.av || {};
+    const avDebug = currentTask.av_debug || av.av_debug || {};
+    const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
+    const debugSentences = Array.isArray(convergenceDebug.sentences)
+      ? convergenceDebug.sentences
+      : (Array.isArray(avDebug.sentences) ? avDebug.sentences : []);
+    const debugByIndex = new Map(debugSentences.map(item => [String(item.asr_index ?? item.index ?? ""), item]));
+    const sentences = Array.isArray(av.sentences) ? av.sentences : [];
+
+    if (!sentences.length && !debugSentences.length) {
+      panel.classList.add("hidden");
+      summary.innerHTML = "";
+      rows.innerHTML = "";
+      return;
+    }
+
+    const model = convergenceDebug.model || avDebug.model || av.model || "GPT-5.5";
+    modelBadge.textContent = model;
+    const allRows = sentences.length ? sentences : debugSentences;
+    const convergedCount = allRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
+    const reviewCount = Math.max(allRows.length - convergedCount, 0);
+    summary.innerHTML = [
+      renderAvConvergenceMetric("模型", model),
+      renderAvConvergenceMetric("共几句", allRows.length),
+      renderAvConvergenceMetric("已收敛", convergedCount),
+      renderAvConvergenceMetric("需校对", reviewCount),
+    ].join("");
+
+    rows.innerHTML = allRows.map((sentence, rowIndex) => {
+      const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      const targetDuration = numberOrNull(sentence.target_duration ?? debug.target_duration);
+      const ttsDuration = numberOrNull(sentence.tts_duration ?? sentence.current_duration ?? debug.tts_duration ?? debug.current_duration);
+      const deltaPct = numberOrNull(sentence.delta_pct ?? sentence.deviation_pct ?? debug.delta_pct ?? debug.deviation_pct);
+      const computedDelta = deltaPct != null
+        ? deltaPct
+        : (targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null);
+      const status = sentence.status || debug.status || (isAvSentenceConverged(sentence, debugByIndex) ? "converged" : "needs_review");
+      const sourceText = sentence.source_text || sentence.original_text || debug.source_text || debug.original_text || "";
+      const finalText = sentence.final_text || sentence.text || debug.final_text || debug.text || "";
+      const asrIndex = sentence.asr_index ?? debug.asr_index ?? rowIndex;
+      const statusLabel = avConvergenceStatusLabel(status, computedDelta);
+      const attemptsDetail = attempts.length ? renderAvAttemptsDetail(attempts) : "";
+
+      return `
+        <tr>
+          <td>${escapeHtml(asrIndex)}</td>
+          <td><div class="av-convergence-text">${escapeHtml(sourceText || "--")}</div></td>
+          <td><div class="av-convergence-text">${escapeHtml(finalText || "--")}</div></td>
+          <td>${formatAvDuration(targetDuration)}</td>
+          <td>${formatAvDuration(ttsDuration)}</td>
+          <td>${formatAvDelta(computedDelta)}</td>
+          <td>${formatAvSpeed(sentence.speed ?? debug.speed)}</td>
+          <td><span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span></td>
+          <td>${attempts.length}</td>
+          <td class="av-warning-actions">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openAvRewriteModal(${Number(asrIndex)})">重写</button>
+          </td>
+        </tr>
+        ${attemptsDetail ? `<tr class="av-convergence-attempt-row"><td></td><td colspan="9">${attemptsDetail}</td></tr>` : ""}
+      `;
+    }).join("");
+
+    panel.classList.remove("hidden");
+  }
+
+  function renderAvConvergenceMetric(label, value) {
+    return `
+      <div class="av-convergence-metric">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `;
+  }
+
+  function normalizeAvAttempts(sentence, debug) {
+    const attempts = Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : []);
+    return attempts.filter(Boolean);
+  }
+
+  function isAvSentenceConverged(sentence, debugByIndex) {
+    const debug = debugByIndex instanceof Map
+      ? (debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? "")) || {})
+      : (debugByIndex || {});
+    const status = sentence?.status || debug.status || "";
+    if (status === "converged" || status === "done" || status === "ok") return true;
+    const targetDuration = numberOrNull(sentence?.target_duration ?? debug.target_duration);
+    const ttsDuration = numberOrNull(sentence?.tts_duration ?? sentence?.current_duration ?? debug.tts_duration ?? debug.current_duration);
+    if (!targetDuration || ttsDuration == null) return false;
+    const ratio = ttsDuration / targetDuration;
+    return ratio >= 0.95 && ratio <= 1.05;
+  }
+
+  function renderAvAttemptsDetail(attempts) {
+    const bits = attempts.map((attempt, index) => {
+      const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
+      const duration = numberOrNull(attempt.tts_duration ?? attempt.duration ?? attempt.current_duration);
+      const delta = numberOrNull(attempt.delta_pct ?? attempt.deviation_pct);
+      const text = attempt.text || attempt.final_text || "";
+      const meta = [formatAvDuration(duration), formatAvDelta(delta)].filter(item => item !== "--").join(" · ");
+      return `R${escapeHtml(round)}${meta ? ` ${escapeHtml(meta)}` : ""}${text ? `：${escapeHtml(text)}` : ""}`;
+    });
+    return `<div class="av-convergence-attempts">轮次详情：${bits.join(" / ")}</div>`;
+  }
+
+  function numberOrNull(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function formatAvDuration(value) {
+    const numeric = numberOrNull(value);
+    return numeric == null ? "--" : fmtTime(numeric);
+  }
+
+  function formatAvDelta(value) {
+    const numeric = numberOrNull(value);
+    if (numeric == null) return "--";
+    const sign = numeric > 0 ? "+" : "";
+    return `${sign}${numeric.toFixed(1)}%`;
+  }
+
+  function formatAvSpeed(value) {
+    const numeric = numberOrNull(value);
+    return numeric == null ? "--" : numeric.toFixed(2);
+  }
+
+  function avConvergenceStatusLabel(status, deltaPct) {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "converged" || normalized === "done" || normalized === "ok") {
+      return { label: "已收敛", className: "av-convergence-status--ok" };
+    }
+    if (normalized.includes("short")) return { label: "偏短", className: "av-convergence-status--warn" };
+    if (normalized.includes("long") || normalized.includes("overshoot")) return { label: "超时", className: "av-convergence-status--warn" };
+    const numeric = numberOrNull(deltaPct);
+    if (numeric != null && Math.abs(numeric) <= 5) {
+      return { label: "已收敛", className: "av-convergence-status--ok" };
+    }
+    return { label: "需校对", className: "av-convergence-status--review" };
   }
 
   function openAvRewriteModal(asrIndex) {
