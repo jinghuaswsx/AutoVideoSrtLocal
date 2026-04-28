@@ -2322,6 +2322,33 @@ def _build_av_tts_segments(sentences: list[dict]) -> list[dict]:
     return segments
 
 
+def _rebuild_tts_full_audio_from_segments(task_dir: str, segments: list[dict], variant: str = "av") -> str:
+    seg_dir = os.path.join(task_dir, "tts_segments", variant) if variant else os.path.join(task_dir, "tts_segments")
+    os.makedirs(seg_dir, exist_ok=True)
+    concat_list_path = os.path.join(seg_dir, "concat.rewrite.txt")
+    with open(concat_list_path, "w", encoding="utf-8") as concat_file:
+        for segment in segments or []:
+            segment_path = os.path.abspath(str(segment.get("tts_path") or ""))
+            if not segment_path or not os.path.exists(segment_path):
+                raise FileNotFoundError(f"找不到配音片段: {segment_path}")
+            escaped_segment_path = segment_path.replace("\\", "/").replace("'", "'\\''")
+            concat_file.write(f"file '{escaped_segment_path}'\n")
+
+    full_audio_name = f"tts_full.{variant}.mp3" if variant else "tts_full.mp3"
+    full_audio_path = os.path.join(task_dir, full_audio_name)
+
+    import subprocess
+
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path, "-c", "copy", full_audio_path],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"音频拼接失败: {result.stderr}")
+    return full_audio_path
+
+
 def _build_av_debug_state(sentences: list[dict], model: str = "openai/gpt-5.5") -> dict:
     ok_statuses = {"ok", "rewritten_ok", "speed_adjusted"}
     total = len(sentences or [])
@@ -2546,8 +2573,9 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         av_debug = _build_av_debug_state(final_sentences)
         final_localized_translation = _build_av_localized_translation(final_sentences)
         final_tts_segments = _build_av_tts_segments(final_sentences)
+        final_full_audio_path = _rebuild_tts_full_audio_from_segments(task_dir, final_tts_segments, variant=variant)
         final_tts_output = {
-            "full_audio_path": (tts_output or {}).get("full_audio_path", ""),
+            "full_audio_path": final_full_audio_path,
             "segments": final_tts_segments,
         }
         task = task_state.get(task_id) or task

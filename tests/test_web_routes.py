@@ -330,8 +330,28 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
                     {
                         "asr_index": 0,
                         "attempts": [
-                            {"round": 1, "text": "Try one", "tts_duration": 1.42, "delta_pct": 18.3},
-                            {"round": 2, "text": "Final", "tts_duration": 1.22, "delta_pct": 1.7},
+                            {
+                                "round": 1,
+                                "action": "rewrite",
+                                "status": "too_long",
+                                "reason": "too slow",
+                                "before_text": "Try one",
+                                "after_text": "Try shorter",
+                                "target_duration": 1.2,
+                                "tts_duration": 1.42,
+                                "duration_ratio": 1.18,
+                            },
+                            {
+                                "round": 2,
+                                "action": "speed_adjust",
+                                "status": "ok",
+                                "reason": "within tolerance",
+                                "before_text": "Try shorter",
+                                "after_text": "Final",
+                                "target_duration": 1.2,
+                                "tts_duration": 1.22,
+                                "duration_ratio": 1.02,
+                            },
                         ],
                     }
                 ],
@@ -378,6 +398,14 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "偏差" in body
     assert "GPT-5.5" in body
     assert "renderAvConvergence()" in body
+
+    scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8"
+    )
+    assert "before_text" in scripts
+    assert "after_text" in scripts
+    assert "duration_ratio" in scripts
+    assert "reason" in scripts
 
 
 def test_av_rewrite_warning_filter_includes_warning_long():

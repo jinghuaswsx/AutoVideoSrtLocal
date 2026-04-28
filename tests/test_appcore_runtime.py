@@ -463,24 +463,41 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
         "pipeline.duration_reconcile.reconcile_duration",
         lambda **kwargs: call_order.append("reconcile") or final_sentences,
     )
+    import appcore.runtime as runtime
+
+    rebuilt_audio_path = str(tmp_path / "tts_full.rebuilt.av.mp3")
+    rebuild_calls = []
+    monkeypatch.setattr(
+        runtime,
+        "_rebuild_tts_full_audio_from_segments",
+        lambda task_dir, segments, variant="av": rebuild_calls.append(
+            {"task_dir": task_dir, "segments": segments, "variant": variant}
+        ) or rebuilt_audio_path,
+        raising=False,
+    )
     monkeypatch.setattr(
         "pipeline.subtitle.build_srt_from_tts",
         lambda segments: call_order.append("subtitle") or "1\n00:00:00,000 --> 00:00:01,000\nFirst line\n",
     )
 
-    import appcore.runtime as runtime
-
     runtime.run_av_localize(task_id, runner=runner)
 
     saved = task_state.get(task_id)
     assert call_order == ["shot_notes", "av_translate", "tts", "reconcile", "subtitle"]
+    final_tts_segments = saved["variants"]["av"]["tts_result"]["segments"]
+    assert rebuild_calls == [
+        {"task_dir": str(tmp_path), "segments": final_tts_segments, "variant": "av"}
+    ]
     assert saved["steps"]["translate"] == "done"
     assert saved["steps"]["tts"] == "done"
     assert saved["steps"]["subtitle"] == "done"
     assert saved["shot_notes"]["global"]["overall_theme"] == "海边场景"
     assert saved["variants"]["av"]["voice_id"] == "voice-1"
     assert saved["variants"]["av"]["sentences"][1]["status"] == "speed_adjusted"
-    assert saved["variants"]["av"]["tts_audio_path"].endswith("tts_full.av.mp3")
+    assert saved["variants"]["av"]["tts_audio_path"] == rebuilt_audio_path
+    assert saved["tts_audio_path"] == rebuilt_audio_path
+    assert saved["variants"]["av"]["tts_result"]["full_audio_path"] == rebuilt_audio_path
+    assert final_tts_segments == saved["segments"]
     assert saved["variants"]["av"]["srt_path"].endswith("subtitle.av.srt")
     av_state = saved["variants"]["av"]
     assert av_state["av_debug"]["model"] == "openai/gpt-5.5"

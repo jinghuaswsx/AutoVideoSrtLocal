@@ -2116,11 +2116,33 @@
   function renderAvAttemptsDetail(attempts) {
     const bits = attempts.map((attempt, index) => {
       const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
-      const duration = numberOrNull(attempt.tts_duration ?? attempt.duration ?? attempt.current_duration);
+      const action = attempt.action || attempt.operation || "";
+      const status = attempt.status || "";
+      const reason = attempt.reason || "";
+      const targetDuration = numberOrNull(attempt.target_duration ?? attempt.target);
+      const ttsDuration = numberOrNull(attempt.tts_duration ?? attempt.duration ?? attempt.current_duration);
+      const durationRatio = numberOrNull(attempt.duration_ratio ?? attempt.ratio);
       const delta = numberOrNull(attempt.delta_pct ?? attempt.deviation_pct);
-      const text = attempt.text || attempt.final_text || "";
-      const meta = [formatAvDuration(duration), formatAvDelta(delta)].filter(item => item !== "--").join(" · ");
-      return `R${escapeHtml(round)}${meta ? ` ${escapeHtml(meta)}` : ""}${text ? `：${escapeHtml(text)}` : ""}`;
+      const computedDelta = delta != null
+        ? delta
+        : (durationRatio != null ? (durationRatio - 1) * 100 : (
+          targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null
+        ));
+      const beforeText = attempt.before_text || attempt.text || "";
+      const afterText = attempt.after_text || attempt.final_text || "";
+      const meta = [
+        action ? `动作 ${action}` : "",
+        status ? `状态 ${status}` : "",
+        reason ? `原因 ${reason}` : "",
+        `目标 ${formatAvDuration(targetDuration)}`,
+        `当前 ${formatAvDuration(ttsDuration)}`,
+        `偏差 ${formatAvDelta(computedDelta)}`,
+      ].filter(Boolean).join(" · ");
+      const textParts = [
+        beforeText ? `前：${beforeText}` : "",
+        afterText ? `后：${afterText}` : "",
+      ].filter(Boolean).join(" / ");
+      return `R${escapeHtml(round)} ${escapeHtml(meta)}${textParts ? `｜${escapeHtml(textParts)}` : ""}`;
     });
     return `<div class="av-convergence-attempts">轮次详情：${bits.join(" / ")}</div>`;
   }
