@@ -525,6 +525,10 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "tts_path": str(tmp_path / "seg0.mp3"),
             "speed": 1.0,
             "rewrite_rounds": 0,
+            "text_rewrite_attempts": 1,
+            "tts_regenerate_attempts": 1,
+            "speed_adjustment_attempts": 0,
+            "selected_attempt_round": 1,
             "duration_ratio": 1.0,
             "attempts": [{"round": 1, "status": "ok"}],
             "status": "ok",
@@ -542,6 +546,10 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
             "tts_path": str(tmp_path / "seg1.mp3"),
             "speed": 1.02,
             "rewrite_rounds": 0,
+            "text_rewrite_attempts": 2,
+            "tts_regenerate_attempts": 2,
+            "speed_adjustment_attempts": 1,
+            "selected_attempt_round": 2,
             "duration_ratio": 0.92,
             "attempts": [{"round": 1, "status": "ok"}, {"round": 2, "status": "speed_adjusted"}],
             "status": "speed_adjusted",
@@ -623,6 +631,10 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     assert av_state["av_debug"]["summary"]["total_sentences"] == len(av_state["sentences"])
     assert av_state["av_debug"]["summary"]["ok_sentences"] == 2
     assert av_state["av_debug"]["summary"]["warning_sentences"] == 0
+    assert av_state["av_debug"]["summary"]["text_rewrite_attempts"] == 3
+    assert av_state["av_debug"]["summary"]["tts_regenerate_attempts"] == 3
+    assert av_state["av_debug"]["summary"]["speed_adjustment_attempts"] == 1
+    assert av_state["av_debug"]["sentence_convergence"]["sentences"] == av_state["sentences"]
     step_codes = [step["code"] for step in av_state["av_debug"]["steps"]]
     assert step_codes == [
         "sentence_localize",

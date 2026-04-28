@@ -437,6 +437,9 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "字幕编排" in body
     assert "目标时长" in body
     assert "偏差" in body
+    assert "文案尝试" in body
+    assert "TTS 重生成" in body
+    assert "调速" in body
     assert "GPT-5.5" in body
     assert "renderAvConvergence()" in body
     assert "renderAvSubtitleUnits()" in body
@@ -448,6 +451,11 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     assert "after_text" in scripts
     assert "duration_ratio" in scripts
     assert "reason" in scripts
+    assert "text_rewrite_attempts" in scripts
+    assert "tts_regenerate_attempts" in scripts
+    assert "speed_adjustment_attempts" in scripts
+    assert "selected_attempt_round" in scripts
+    assert "最佳候选" in scripts
     assert "avSyncGranularity" in scripts
     assert "subtitle_units" in scripts
 

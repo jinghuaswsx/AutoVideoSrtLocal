@@ -27,6 +27,105 @@ def test_speed_adjustment_clamped_to_five_percent():
     assert compute_speed_for_target(5.0, 4.6) is None
 
 
+def test_reconcile_duration_speed_adjustment_does_not_consume_audio_retry(monkeypatch):
+    durations = iter([5.0])
+    regenerate_calls = []
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (50, 60),
+                    "text": "Already close enough",
+                    "est_chars": 20,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 5.2}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+    )
+
+    assert result[0]["status"] == "speed_adjusted"
+    assert result[0]["text_rewrite_attempts"] == 0
+    assert result[0]["tts_regenerate_attempts"] == 0
+    assert result[0]["speed_adjustment_attempts"] == 1
+    assert result[0]["max_text_rewrite_attempts"] == 10
+    assert result[0]["max_tts_regenerate_attempts"] == 10
+    assert regenerate_calls == [{"text": "Already close enough", "speed": pytest.approx(1.04)}]
+
+
+def test_reconcile_duration_runs_ten_attempts_and_keeps_closest_candidate(monkeypatch):
+    durations = iter([6.0, 5.9, 5.7, 5.5, 5.4, 5.35, 5.31, 5.28, 5.26, 5.251])
+    rewrite_calls = []
+    regenerate_calls = []
+
+    def fake_rewrite_one(**kwargs):
+        rewrite_calls.append(kwargs)
+        return f"Candidate {kwargs['attempt_number']}"
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        regenerate_calls.append({"text": text, "speed": kwargs.get("speed")})
+        return output_path
+
+    monkeypatch.setattr("pipeline.duration_reconcile.av_translate.rewrite_one", fake_rewrite_one)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("pipeline.duration_reconcile.tts.get_audio_duration", lambda path: next(durations))
+
+    result = reconcile_duration(
+        task={},
+        av_output={
+            "sentences": [
+                {
+                    "asr_index": 0,
+                    "start_time": 0.0,
+                    "end_time": 5.0,
+                    "target_duration": 5.0,
+                    "target_chars_range": (60, 70),
+                    "text": "A very long line that needs many rewrites",
+                    "est_chars": 42,
+                }
+            ]
+        },
+        tts_output={"segments": [{"asr_index": 0, "tts_path": "/tmp/seg0.mp3", "tts_duration": 6.2}]},
+        voice_id="voice-1",
+        target_language="en",
+        av_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        shot_notes={"global": {}, "sentences": []},
+        script_segments=[{"index": 0, "start_time": 0.0, "end_time": 5.0, "text": "source"}],
+    )
+
+    sentence = result[0]
+    assert sentence["status"] == "warning_long"
+    assert sentence["text"] == "Candidate 10"
+    assert sentence["tts_duration"] == pytest.approx(5.251)
+    assert sentence["duration_ratio"] == pytest.approx(1.0502)
+    assert sentence["text_rewrite_attempts"] == 10
+    assert sentence["tts_regenerate_attempts"] == 10
+    assert sentence["speed_adjustment_attempts"] == 0
+    assert sentence["selected_attempt_round"] == 10
+    assert len(sentence["attempts"]) == 10
+    assert sentence["attempts"][-1]["selected"] is True
+    assert [call["attempt_number"] for call in rewrite_calls] == list(range(1, 11))
+    assert all(call["previous_attempts"] == sentence["attempts"][: index] for index, call in enumerate(rewrite_calls))
+    assert regenerate_calls == [{"text": f"Candidate {index}", "speed": None} for index in range(1, 11)]
+
+
 def test_reconcile_duration_rewrite_success(monkeypatch):
     durations = iter([5.0])
     regenerate_calls = []
@@ -79,19 +178,22 @@ def test_reconcile_duration_rewrite_success(monkeypatch):
     assert result[0]["text"] == "Short rewrite"
     assert result[0]["tts_duration"] == 5.0
     assert result[0]["duration_ratio"] == pytest.approx(1.0)
-    assert result[0]["attempts"] == [
-        {
-            "round": 1,
-            "action": "shorten",
-            "before_text": "A very long line that needs rewrite",
-            "after_text": "Short rewrite",
-            "target_duration": 5.0,
-            "tts_duration": 5.0,
-            "duration_ratio": 1.0,
-            "status": "ok",
-            "reason": "within_duration_ratio",
-        }
-    ]
+    assert len(result[0]["attempts"]) == 1
+    assert result[0]["attempts"][0] | {
+        "round": 1,
+        "action": "shorten",
+        "before_text": "A very long line that needs rewrite",
+        "after_text": "Short rewrite",
+        "target_duration": 5.0,
+        "tts_duration": 5.0,
+        "duration_ratio": 1.0,
+        "status": "ok",
+        "reason": "within_duration_ratio",
+        "selected": True,
+    } == result[0]["attempts"][0]
+    assert result[0]["text_rewrite_attempts"] == 1
+    assert result[0]["tts_regenerate_attempts"] == 1
+    assert result[0]["speed_adjustment_attempts"] == 0
     assert regenerate_calls == [{"text": "Short rewrite", "speed": None}]
 
 

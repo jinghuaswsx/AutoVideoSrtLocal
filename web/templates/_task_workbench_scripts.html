@@ -2047,16 +2047,35 @@
     const allRows = sentences.length ? sentences : debugSentences;
     const convergedCount = allRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
     const reviewCount = Math.max(allRows.length - convergedCount, 0);
+    const totals = allRows.reduce((acc, sentence, rowIndex) => {
+      const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      acc.text += avAttemptCount(sentence, debug, attempts, "text_rewrite_attempts", "text_attempt");
+      acc.tts += avAttemptCount(sentence, debug, attempts, "tts_regenerate_attempts", "tts_attempt");
+      acc.speed += avSpeedAdjustmentCount(sentence, debug, attempts);
+      if (sentence.best_effort || debug.best_effort) acc.bestEffort += 1;
+      return acc;
+    }, { text: 0, tts: 0, speed: 0, bestEffort: 0 });
     summary.innerHTML = [
       renderAvConvergenceMetric("模型", model),
       renderAvConvergenceMetric("共几句", allRows.length),
       renderAvConvergenceMetric("已收敛", convergedCount),
       renderAvConvergenceMetric("需校对", reviewCount),
+      renderAvConvergenceMetric("文案尝试", totals.text),
+      renderAvConvergenceMetric("TTS 重生成", totals.tts),
+      renderAvConvergenceMetric("调速", totals.speed),
+      renderAvConvergenceMetric("最佳候选", totals.bestEffort),
     ].join("");
 
     rows.innerHTML = allRows.map((sentence, rowIndex) => {
       const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
       const attempts = normalizeAvAttempts(sentence, debug);
+      const textAttempts = avAttemptCount(sentence, debug, attempts, "text_rewrite_attempts", "text_attempt");
+      const ttsAttempts = avAttemptCount(sentence, debug, attempts, "tts_regenerate_attempts", "tts_attempt");
+      const speedAdjustments = avSpeedAdjustmentCount(sentence, debug, attempts);
+      const selectedRound = numberOrNull(sentence.selected_attempt_round ?? debug.selected_attempt_round);
+      const textAttemptMax = numberOrNull(sentence.max_text_rewrite_attempts ?? debug.max_text_rewrite_attempts);
+      const ttsAttemptMax = numberOrNull(sentence.max_tts_regenerate_attempts ?? debug.max_tts_regenerate_attempts);
       const targetDuration = numberOrNull(sentence.target_duration ?? debug.target_duration);
       const ttsDuration = numberOrNull(sentence.tts_duration ?? sentence.current_duration ?? debug.tts_duration ?? debug.current_duration);
       const deltaPct = numberOrNull(sentence.delta_pct ?? sentence.deviation_pct ?? debug.delta_pct ?? debug.deviation_pct);
@@ -2081,11 +2100,15 @@
           <td>${formatAvSpeed(sentence.speed ?? debug.speed)}</td>
           <td><span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span></td>
           <td>${attempts.length}</td>
+          <td>${formatAvCounter(textAttempts, textAttemptMax)}</td>
+          <td>${formatAvCounter(ttsAttempts, ttsAttemptMax)}</td>
+          <td>${escapeHtml(speedAdjustments)}</td>
+          <td>${renderAvSelectedCandidate(selectedRound, sentence.best_effort || debug.best_effort)}</td>
           <td class="av-warning-actions">
             <button type="button" class="btn btn-ghost btn-sm" onclick="openAvRewriteModal(${Number(asrIndex)})">重写</button>
           </td>
         </tr>
-        ${attemptsDetail ? `<tr class="av-convergence-attempt-row"><td></td><td colspan="9">${attemptsDetail}</td></tr>` : ""}
+        ${attemptsDetail ? `<tr class="av-convergence-attempt-row"><td></td><td colspan="13">${attemptsDetail}</td></tr>` : ""}
       `;
     }).join("");
 
@@ -2104,6 +2127,22 @@
   function normalizeAvAttempts(sentence, debug) {
     const attempts = Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : []);
     return attempts.filter(Boolean);
+  }
+
+  function avAttemptCount(sentence, debug, attempts, fieldName, attemptFieldName) {
+    const explicit = numberOrNull(sentence?.[fieldName] ?? debug?.[fieldName]);
+    if (explicit != null) return explicit;
+    const fromAttempts = attempts
+      .map(attempt => numberOrNull(attempt?.[attemptFieldName]))
+      .filter(value => value != null);
+    if (fromAttempts.length) return Math.max(...fromAttempts);
+    return attempts.filter(attempt => String(attempt?.action || "").toLowerCase() !== "speed_adjust").length;
+  }
+
+  function avSpeedAdjustmentCount(sentence, debug, attempts) {
+    const explicit = numberOrNull(sentence?.speed_adjustment_attempts ?? debug?.speed_adjustment_attempts);
+    if (explicit != null) return explicit;
+    return attempts.filter(attempt => String(attempt?.action || "").toLowerCase().includes("speed")).length;
   }
 
   function isAvSentenceConverged(sentence, debugByIndex) {
@@ -2125,6 +2164,10 @@
       const action = attempt.action || attempt.operation || "";
       const status = attempt.status || "";
       const reason = attempt.reason || "";
+      const textAttempt = numberOrNull(attempt.text_attempt);
+      const ttsAttempt = numberOrNull(attempt.tts_attempt);
+      const temperature = numberOrNull(attempt.temperature);
+      const selected = Boolean(attempt.selected);
       const targetDuration = numberOrNull(attempt.target_duration ?? attempt.target);
       const ttsDuration = numberOrNull(attempt.tts_duration ?? attempt.duration ?? attempt.current_duration);
       const durationRatio = numberOrNull(attempt.duration_ratio ?? attempt.ratio);
@@ -2140,6 +2183,10 @@
         action ? `动作 ${action}` : "",
         status ? `状态 ${status}` : "",
         reason ? `原因 ${reason}` : "",
+        textAttempt != null ? `文案 #${textAttempt}` : "",
+        ttsAttempt != null ? `TTS #${ttsAttempt}` : "",
+        temperature != null ? `温度 ${temperature.toFixed(2)}` : "",
+        selected ? "最佳候选" : "",
         `目标 ${formatAvDuration(targetDuration)}`,
         `当前 ${formatAvDuration(ttsDuration)}`,
         `偏差 ${formatAvDelta(computedDelta)}`,
@@ -2151,6 +2198,21 @@
       return `R${escapeHtml(round)} ${escapeHtml(meta)}${textParts ? `｜${escapeHtml(textParts)}` : ""}`;
     });
     return `<div class="av-convergence-attempts">轮次详情：${bits.join(" / ")}</div>`;
+  }
+
+  function formatAvCounter(value, maxValue) {
+    const numeric = numberOrNull(value);
+    const maxNumeric = numberOrNull(maxValue);
+    if (numeric == null && maxNumeric == null) return "--";
+    if (maxNumeric != null) return `${numeric == null ? 0 : numeric}/${maxNumeric}`;
+    return String(numeric);
+  }
+
+  function renderAvSelectedCandidate(selectedRound, bestEffort) {
+    if (selectedRound == null) return bestEffort ? '<span class="av-convergence-chip">最佳候选</span>' : "--";
+    const roundLabel = Number(selectedRound) === 0 ? "初始" : `R${selectedRound}`;
+    const label = bestEffort ? `最佳候选 ${roundLabel}` : roundLabel;
+    return `<span class="av-convergence-chip ${bestEffort ? "is-best-effort" : ""}">${escapeHtml(label)}</span>`;
   }
 
   function numberOrNull(value) {
