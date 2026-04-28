@@ -69,7 +69,7 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom(authed_client_no_db):
 
     lab_group_marker = '<details class="sidebar-group sidebar-lab-group"'
     lab_group_idx = nav_html.index(lab_group_marker)
-    video_translate_idx = nav_html.index('href="/"')
+    video_translate_idx = nav_html.index('href="/projects"')
     order_analytics_idx = nav_html.index('href="/order-analytics"')
     voice_library_idx = nav_html.index('href="/voice-library"')
     prompt_library_idx = nav_html.index('href="/prompt-library"')

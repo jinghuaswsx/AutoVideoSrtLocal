@@ -36,8 +36,9 @@ from appcore.task_recovery import recover_task_if_needed
 from pipeline.alignment import build_script_segments
 from pipeline.capcut import deploy_capcut_project
 from pipeline import tts
-from pipeline.duration_reconcile import classify_overshoot
-from pipeline.subtitle import build_srt_from_tts, save_srt
+from pipeline.av_subtitle_units import build_subtitle_units_from_sentences
+from pipeline.duration_reconcile import classify_overshoot, compute_speed_for_target, duration_ratio
+from pipeline.subtitle import build_srt_from_chunks, save_srt
 from web.preview_artifacts import (
     build_alignment_artifact,
     build_subtitle_artifact,
@@ -97,6 +98,7 @@ def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None
         "target_language": data.get("target_language", nested_inputs.get("target_language")),
         "target_language_name": data.get("target_language_name", nested_inputs.get("target_language_name")),
         "target_market": data.get("target_market", nested_inputs.get("target_market")),
+        "sync_granularity": data.get("sync_granularity", nested_inputs.get("sync_granularity")),
         "product_overrides": override_inputs,
     }
     return normalize_av_translate_inputs(raw_inputs, base=current_inputs)
@@ -852,6 +854,8 @@ def av_rewrite_sentence(task_id):
     target_language = str(av_inputs.get("target_language") or "en").strip().lower() or "en"
 
     updated_sentence = dict(sentences[sentence_index])
+    attempts = updated_sentence.get("attempts")
+    updated_sentence["attempts"] = attempts if isinstance(attempts, list) else []
     segment_path = updated_sentence.get("tts_path") or os.path.join(
         task_dir,
         "tts_segments",
@@ -869,38 +873,42 @@ def av_rewrite_sentence(task_id):
         language_code=target_language,
     )
     tts_duration = float(tts.get_audio_duration(segment_path) or 0.0)
-    status, speed = classify_overshoot(float(updated_sentence.get("target_duration", 0.0) or 0.0), tts_duration)
+    target_duration = float(updated_sentence.get("target_duration", 0.0) or 0.0)
+    status, _speed = classify_overshoot(target_duration, tts_duration)
     updated_sentence["tts_duration"] = tts_duration
     updated_sentence["status"] = status
-    updated_sentence["speed"] = speed
+    updated_sentence["speed"] = 1.0
+    updated_sentence["duration_ratio"] = duration_ratio(target_duration, tts_duration)
 
-    if status == "speed_adjusted":
-        tts.generate_segment_audio(
-            text=new_text,
-            voice_id=elevenlabs_voice_id,
-            output_path=segment_path,
-            language_code=target_language,
-            speed=speed,
-        )
-        updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+    if status == "ok":
+        speed = compute_speed_for_target(target_duration, tts_duration)
+        if speed is not None and speed != 1.0:
+            tts.generate_segment_audio(
+                text=new_text,
+                voice_id=elevenlabs_voice_id,
+                output_path=segment_path,
+                language_code=target_language,
+                speed=speed,
+            )
+            updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+            updated_sentence["duration_ratio"] = duration_ratio(target_duration, updated_sentence["tts_duration"])
+            updated_sentence["status"] = "speed_adjusted"
+            updated_sentence["speed"] = speed
     elif status == "needs_rewrite":
-        updated_sentence["status"] = "warning_overshoot"
-        updated_sentence["speed"] = 1.12
-        tts.generate_segment_audio(
-            text=new_text,
-            voice_id=elevenlabs_voice_id,
-            output_path=segment_path,
-            language_code=target_language,
-            speed=updated_sentence["speed"],
-        )
-        updated_sentence["tts_duration"] = float(tts.get_audio_duration(segment_path) or 0.0)
+        updated_sentence["status"] = "warning_long"
+        updated_sentence["speed"] = 1.0
+    elif status == "needs_expand":
+        updated_sentence["status"] = "warning_short"
+        updated_sentence["speed"] = 1.0
 
     sentences[sentence_index] = updated_sentence
     localized_translation = _build_av_localized_translation(sentences)
     tts_segments = _build_av_tts_segments(sentences)
     full_audio_path = _rebuild_tts_full_audio(task_dir, tts_segments, variant)
 
-    srt_content = build_srt_from_tts(tts_segments)
+    sync_granularity = str((av_inputs or {}).get("sync_granularity") or "hybrid")
+    subtitle_units = build_subtitle_units_from_sentences(sentences, mode=sync_granularity)
+    srt_content = build_srt_from_chunks(subtitle_units)
     srt_path = save_srt(srt_content, os.path.join(task_dir, f"subtitle.{variant}.srt"))
 
     (
@@ -944,8 +952,9 @@ def av_rewrite_sentence(task_id):
             "localized_translation": localized_translation,
             "tts_result": {"full_audio_path": full_audio_path, "segments": tts_segments},
             "tts_audio_path": full_audio_path,
+            "subtitle_units": subtitle_units,
             "srt_path": srt_path,
-            "corrected_subtitle": {"srt_content": srt_content},
+            "corrected_subtitle": {"chunks": subtitle_units, "srt_content": srt_content},
             "result": variant_result,
             "exports": variant_exports,
             "artifacts": variant_artifacts,
@@ -965,7 +974,7 @@ def av_rewrite_sentence(task_id):
         localized_translation=localized_translation,
         tts_audio_path=full_audio_path,
         srt_path=srt_path,
-        corrected_subtitle={"srt_content": srt_content},
+        corrected_subtitle={"chunks": subtitle_units, "srt_content": srt_content},
         result=result,
         exports=exports,
         artifacts=artifacts,

@@ -66,6 +66,40 @@ AV_INPUTS = {
 }
 
 
+def test_build_translate_messages_uses_sentence_localization_contract(monkeypatch):
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    messages, _sentence_inputs, _global_context = av_translate._build_translate_messages(
+        SCRIPT_SEGMENTS,
+        SHOT_NOTES,
+        AV_INPUTS,
+        "voice-1",
+    )
+
+    system_prompt = messages[0]["content"]
+    assert "one target-language sentence for every source sentence" in system_prompt
+    assert "Do not merge, split, reorder, or skip sentences" in system_prompt
+    assert "native short-video spoken line" in system_prompt
+    assert "target_chars_range" in system_prompt
+    assert "Do not invent facts" in system_prompt
+    assert "ElevenLabs" in system_prompt
+
+
+def test_av_translate_response_schema_requires_sentence_metadata():
+    sentence_schema = av_translate.AV_TRANSLATE_RESPONSE_FORMAT["json_schema"]["schema"]["properties"]["sentences"][
+        "items"
+    ]
+    properties = sentence_schema["properties"]
+    required = sentence_schema["required"]
+
+    assert "localization_note" in properties
+    assert "duration_risk" in properties
+    assert "source_intent" in properties
+    assert "localization_note" in required
+    assert "duration_risk" in required
+    assert "source_intent" in required
+
+
 def test_compute_target_chars_range_uses_speech_rate_model(monkeypatch):
     monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
     assert av_translate.compute_target_chars_range(2.0, "voice-1", "en") == (18, 22)
@@ -139,8 +173,22 @@ def test_generate_av_localized_translation_happy(monkeypatch):
         return {
             "json": {
                 "sentences": [
-                    {"asr_index": 0, "text": "Meet your leakproof bottle.", "est_chars": 27},
-                    {"asr_index": 1, "text": "It stays hot and never spills.", "est_chars": 30},
+                    {
+                        "asr_index": 0,
+                        "text": "Meet your leakproof bottle.",
+                        "est_chars": 27,
+                        "source_intent": "hook the shopper with the product",
+                        "localization_note": "native US commerce phrasing",
+                        "duration_risk": "ok",
+                    },
+                    {
+                        "asr_index": 1,
+                        "text": "It stays hot and never spills.",
+                        "est_chars": 30,
+                        "source_intent": "demonstrate the leakproof benefit",
+                        "localization_note": "keeps the claim concise",
+                        "duration_risk": "may_be_long",
+                    },
                 ]
             }
         }
@@ -176,7 +224,28 @@ def test_generate_av_retries_on_failure(monkeypatch):
         calls["count"] += 1
         if calls["count"] == 1:
             raise RuntimeError("temporary failure")
-        return {"json": {"sentences": [{"asr_index": 0, "text": "A", "est_chars": 1}, {"asr_index": 1, "text": "B", "est_chars": 1}]}}
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "text": "A",
+                        "est_chars": 1,
+                        "source_intent": "hook",
+                        "localization_note": "",
+                        "duration_risk": "may_be_short",
+                    },
+                    {
+                        "asr_index": 1,
+                        "text": "B",
+                        "est_chars": 1,
+                        "source_intent": "demo",
+                        "localization_note": "",
+                        "duration_risk": "may_be_short",
+                    },
+                ]
+            }
+        }
 
     monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
 
@@ -198,7 +267,20 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
     def fake_invoke_chat(use_case_code, **kwargs):
         captured["use_case_code"] = use_case_code
         captured["kwargs"] = kwargs
-        return {"json": {"sentences": [{"asr_index": 1, "text": "Shorter copy", "est_chars": 12}]}}
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "Shorter copy",
+                        "est_chars": 12,
+                        "source_intent": "demo",
+                        "localization_note": "shortened for timing",
+                        "duration_risk": "ok",
+                    }
+                ]
+            }
+        }
 
     monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
 
@@ -206,6 +288,7 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
         asr_index=1,
         prev_text="This one is definitely too long for the slot",
         overshoot_sec=0.8,
+        direction="shorten",
         new_target_chars_range=(12, 16),
         script_segments=SCRIPT_SEGMENTS,
         shot_notes=SHOT_NOTES,
@@ -217,7 +300,55 @@ def test_rewrite_one_includes_overshoot_in_prompt(monkeypatch):
 
     assert text == "Shorter copy"
     assert captured["use_case_code"] == "video_translate.av_rewrite"
+    system_prompt = captured["kwargs"]["messages"][0]["content"]
+    assert "rewrite only the focus_sentence" in system_prompt
+    assert "return exactly one sentence object" in system_prompt
+    assert "one target-language sentence for every source sentence" not in system_prompt
     user_prompt = captured["kwargs"]["messages"][1]["content"]
     assert "0.8" in user_prompt
     assert "12-16" in user_prompt
     assert "This one is definitely too long for the slot" in user_prompt
+
+
+def test_rewrite_one_expand_prompt_avoids_shorten_language(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(av_translate.speech_rate_model, "get_rate", lambda voice_id, language: 10.0)
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "sentences": [
+                    {
+                        "asr_index": 1,
+                        "text": "Expanded natural copy",
+                        "est_chars": 21,
+                        "source_intent": "demo",
+                        "localization_note": "expanded naturally for timing",
+                        "duration_risk": "ok",
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(av_translate.llm_client, "invoke_chat", fake_invoke_chat)
+
+    text = av_translate.rewrite_one(
+        asr_index=1,
+        prev_text="Too brief",
+        overshoot_sec=0.0,
+        direction="expand",
+        new_target_chars_range=(20, 24),
+        script_segments=SCRIPT_SEGMENTS,
+        shot_notes=SHOT_NOTES,
+        av_inputs=AV_INPUTS,
+        voice_id="voice-1",
+    )
+
+    assert text == "Expanded natural copy"
+    user_prompt = captured["kwargs"]["messages"][1]["content"].lower()
+    assert "expand" in user_prompt
+    assert "shorter than target" in user_prompt
+    assert "cannot add new facts" in user_prompt
+    assert "shorten" not in user_prompt
+    assert "trim" not in user_prompt

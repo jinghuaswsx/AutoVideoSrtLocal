@@ -34,9 +34,21 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
                             "asr_index": {"type": "integer"},
                             "text": {"type": "string"},
                             "est_chars": {"type": "integer"},
-                            "notes": {"type": "string"},
+                            "source_intent": {"type": "string"},
+                            "localization_note": {"type": "string"},
+                            "duration_risk": {
+                                "type": "string",
+                                "enum": ["ok", "may_be_short", "may_be_long"],
+                            },
                         },
-                        "required": ["asr_index", "text", "est_chars"],
+                        "required": [
+                            "asr_index",
+                            "text",
+                            "est_chars",
+                            "source_intent",
+                            "localization_note",
+                            "duration_risk",
+                        ],
                     },
                 }
             },
@@ -45,16 +57,41 @@ AV_TRANSLATE_RESPONSE_FORMAT: dict[str, Any] = {
     },
 }
 
-SYSTEM_PROMPT_TEMPLATE = """你是专业的 {target_market} 市场带货短视频本地化配音师。
-规则：
-1. 服从原视频的 Hook / 卖点 / CTA 骨架顺序，不重排。
-2. 每句译文必须对应提供的 shot_context（此刻画面）。
-3. 每句字符数必须落在给定的 target_chars_range 内，这是一条硬约束。
-4. 带货语气要口语化、钩子化、痛点化，静音看字幕也能看懂。
-5. 产品特写镜头优先说产品名或卖点；无产品画面时讲故事、痛点或证据。
-6. 文化专有梗不要硬翻，要改成目标市场习惯表达。
+SYSTEM_PROMPT_TEMPLATE = """You are a senior localization writer for {target_market} short-form commerce videos.
 
-目标语言：{target_language}"""
+Your job is sentence-level AV-sync localization into {target_language}.
+
+Hard rules:
+1. Return exactly one target-language sentence for every source sentence.
+2. Do not merge, split, reorder, or skip sentences.
+3. Preserve each source sentence's sales intent, emotional function, and information points.
+4. Make every line sound like a native short-video spoken line in the target market, not translated copy.
+5. Preserve the sentence role when provided: hook, pain point, demo, proof, or CTA.
+6. Do not invent facts, prices, materials, certifications, claims, discounts, or guarantees.
+7. Respect target_chars_range as closely as possible. If the range is tight, remove decoration before removing meaning.
+8. Write for ElevenLabs TTS: short clauses, clear rhythm, no dense subordinate clauses, no stacked adjectives.
+9. Prefer natural local idioms only when they preserve the source meaning and fit the video frame.
+10. Mark duration_risk as may_be_long or may_be_short when the line may be hard to fit.
+
+For each sentence object:
+- source_intent: briefly describe the source sentence's sales intent or emotional function.
+- localization_note: briefly explain the localization choice, especially timing, idiom, or frame fit.
+"""
+
+REWRITE_SYSTEM_PROMPT_TEMPLATE = """You are a senior localization writer for {target_market} short-form commerce videos.
+
+Your job is targeted AV-sync rewrite into {target_language}.
+
+Hard rules:
+1. rewrite only the focus_sentence.
+2. return exactly one sentence object in `sentences`.
+3. Keep the same asr_index as the focus_sentence.
+4. Preserve the source meaning, sales intent, emotional function, and frame fit.
+5. Shorten or expand based on the rewrite_instruction and target_chars_range.
+6. Do not invent facts, prices, materials, certifications, claims, discounts, or guarantees.
+7. Fit the ElevenLabs duration target with short clauses, clear rhythm, and natural spoken pacing.
+8. Fill source_intent, localization_note, and duration_risk for the returned sentence object.
+"""
 
 
 def _segment_index(segment: dict, fallback_index: int) -> int:
@@ -186,6 +223,16 @@ def _build_translate_messages(script_segments: list[dict], shot_notes: dict, av_
     return messages, sentence_inputs, global_context
 
 
+def _build_rewrite_system_message(av_inputs: dict) -> dict:
+    return {
+        "role": "system",
+        "content": REWRITE_SYSTEM_PROMPT_TEMPLATE.format(
+            target_market=av_inputs["target_market"],
+            target_language=av_inputs["target_language_name"] or av_inputs["target_language"],
+        ),
+    }
+
+
 def _extract_response_json(response: dict) -> dict:
     if isinstance(response, dict):
         if isinstance(response.get("json"), dict):
@@ -222,6 +269,9 @@ def _merge_output_sentences(raw_sentences: list[dict], sentence_inputs: list[dic
                 "text": text,
                 "est_chars": int(raw_item.get("est_chars", len(text))),
                 "notes": raw_item.get("notes"),
+                "source_intent": raw_item.get("source_intent", ""),
+                "localization_note": raw_item.get("localization_note", raw_item.get("notes", "")),
+                "duration_risk": raw_item.get("duration_risk", "ok"),
             }
         )
     return merged
@@ -272,6 +322,7 @@ def rewrite_one(
     asr_index: int,
     prev_text: str,
     overshoot_sec: float,
+    direction: str | None = None,
     new_target_chars_range: tuple[int, int],
     script_segments: list[dict],
     shot_notes: dict,
@@ -290,20 +341,35 @@ def rewrite_one(
     if focus_sentence is None:
         raise KeyError(f"unknown asr_index: {asr_index}")
 
+    rewrite_direction = (direction or ("shorten" if overshoot_sec > 0 else "expand")).strip().lower()
+    if rewrite_direction == "expand":
+        rewrite_instruction = (
+            f'Previous translation: "{prev_text}". '
+            "Current TTS is shorter than target. "
+            f"Naturally expand it to {new_target_chars_range[0]}-{new_target_chars_range[1]} characters. "
+            "Keep the sales intent and fit the visual scene. "
+            "Cannot add new facts; only make the existing claim feel more complete and natural."
+        )
+    else:
+        rewrite_direction = "shorten"
+        rewrite_instruction = (
+            f'Previous translation: "{prev_text}". '
+            f"TTS exceeded the target by {overshoot_sec} seconds. "
+            f"Rewrite it to {new_target_chars_range[0]}-{new_target_chars_range[1]} characters. "
+            "Keep the sales intent and fit the visual scene. "
+            "Trim modifiers, fillers, emotional padding, and repetition first; do not change the Hook/CTA intent."
+        )
+
     rewrite_payload = {
         "global_context": global_context,
         "target_language": av_inputs["target_language"],
         "target_market": av_inputs["target_market"],
         "focus_sentence": focus_sentence,
-        "rewrite_instruction": (
-            f'上一版译文:"{prev_text}"。'
-            f"TTS 实测超出目标 {overshoot_sec} 秒。"
-            f"请重写到 {new_target_chars_range[0]}-{new_target_chars_range[1]} 字符，"
-            "保留卖点和画面贴合，优先砍修饰词、感叹和重复，不改 Hook/CTA 意图。"
-        ),
+        "rewrite_direction": rewrite_direction,
+        "rewrite_instruction": rewrite_instruction,
     }
     rewrite_messages = [
-        messages[0],
+        _build_rewrite_system_message(av_inputs),
         {"role": "user", "content": json.dumps(rewrite_payload, ensure_ascii=False, indent=2)},
     ]
     response = llm_client.invoke_chat(

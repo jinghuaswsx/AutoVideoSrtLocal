@@ -312,6 +312,7 @@
     const targetLanguage = (document.getElementById("avTargetLanguage")?.value || defaults.target_language || "en").trim();
     const languageOption = (TASK_WORKBENCH_CONFIG.avTargetLanguages || []).find(item => item.code === targetLanguage);
     const targetMarket = (document.getElementById("avTargetMarket")?.value || defaults.target_market || "US").trim();
+    const syncGranularity = (document.getElementById("avSyncGranularity")?.value || defaults.sync_granularity || "hybrid").trim();
     const sellingPointsRaw = document.getElementById("avOverrideSellingPoints")?.value || "";
     const sellingPoints = sellingPointsRaw
       .split(/\r?\n/)
@@ -322,6 +323,7 @@
       target_language: targetLanguage,
       target_language_name: (languageOption && languageOption.name) || defaults.target_language_name || targetLanguage,
       target_market: targetMarket,
+      sync_granularity: syncGranularity,
       product_overrides: {
         product_name: (document.getElementById("avOverrideProductName")?.value || "").trim() || null,
         brand: (document.getElementById("avOverrideBrand")?.value || "").trim() || null,
@@ -339,11 +341,14 @@
     const overrides = currentInputs.product_overrides || {};
     const targetLanguage = currentInputs.target_language || defaults.target_language || "en";
     const targetMarket = currentInputs.target_market || defaults.target_market || "US";
+    const syncGranularity = currentInputs.sync_granularity || defaults.sync_granularity || "hybrid";
 
     const languageSelect = document.getElementById("avTargetLanguage");
     const marketSelect = document.getElementById("avTargetMarket");
+    const granularitySelect = document.getElementById("avSyncGranularity");
     if (languageSelect) languageSelect.value = targetLanguage;
     if (marketSelect) marketSelect.value = targetMarket;
+    if (granularitySelect) granularitySelect.value = syncGranularity;
 
     const productNameInput = document.getElementById("avOverrideProductName");
     const brandInput = document.getElementById("avOverrideBrand");
@@ -810,6 +815,8 @@
       _setAudioBtns(_previewAudioGid, true);
     }
     renderAvInsights();
+    renderAvConvergence();
+    renderAvSubtitleUnits();
     renderResultPanelFromTask();
     updateStartButtonState();
     updateResumeButtons(currentTask);
@@ -1895,7 +1902,7 @@
     const avSentences = Array.isArray(currentTask.variants?.av?.sentences) ? currentTask.variants.av.sentences : [];
     const warningSentences = avSentences.filter(sentence => {
       const status = sentence?.status || "";
-      return status === "warning_overshoot" || status === "warning_short";
+      return status === "warning_overshoot" || status === "warning_long" || status === "warning_short";
     });
 
     const ranges = [
@@ -2002,6 +2009,231 @@
       ` : '<p class="av-insight-empty">当前没有时长 warning，句子时长已在可接受范围内。</p>'}
     `;
 
+    panel.classList.remove("hidden");
+  }
+
+  function renderAvConvergence() {
+    const panel = document.getElementById("avConvergencePanel");
+    const modelBadge = document.getElementById("avConvergenceModelBadge");
+    const summary = document.getElementById("avConvergenceSummary");
+    const rows = document.getElementById("avConvergenceRows");
+    if (!panel || !modelBadge || !summary || !rows) return;
+
+    if (!currentTask || !isAvSyncTask(currentTask)) {
+      panel.classList.add("hidden");
+      summary.innerHTML = "";
+      rows.innerHTML = "";
+      return;
+    }
+
+    const av = currentTask.variants?.av || {};
+    const avDebug = currentTask.av_debug || av.av_debug || {};
+    const convergenceDebug = avDebug.sentence_convergence || avDebug.convergence || {};
+    const debugSentences = Array.isArray(convergenceDebug.sentences)
+      ? convergenceDebug.sentences
+      : (Array.isArray(avDebug.sentences) ? avDebug.sentences : []);
+    const debugByIndex = new Map(debugSentences.map(item => [String(item.asr_index ?? item.index ?? ""), item]));
+    const sentences = Array.isArray(av.sentences) ? av.sentences : [];
+
+    if (!sentences.length && !debugSentences.length) {
+      panel.classList.add("hidden");
+      summary.innerHTML = "";
+      rows.innerHTML = "";
+      return;
+    }
+
+    const model = convergenceDebug.model || avDebug.model || av.model || "GPT-5.5";
+    modelBadge.textContent = model;
+    const allRows = sentences.length ? sentences : debugSentences;
+    const convergedCount = allRows.filter(sentence => isAvSentenceConverged(sentence, debugByIndex)).length;
+    const reviewCount = Math.max(allRows.length - convergedCount, 0);
+    summary.innerHTML = [
+      renderAvConvergenceMetric("模型", model),
+      renderAvConvergenceMetric("共几句", allRows.length),
+      renderAvConvergenceMetric("已收敛", convergedCount),
+      renderAvConvergenceMetric("需校对", reviewCount),
+    ].join("");
+
+    rows.innerHTML = allRows.map((sentence, rowIndex) => {
+      const debug = debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? rowIndex)) || {};
+      const attempts = normalizeAvAttempts(sentence, debug);
+      const targetDuration = numberOrNull(sentence.target_duration ?? debug.target_duration);
+      const ttsDuration = numberOrNull(sentence.tts_duration ?? sentence.current_duration ?? debug.tts_duration ?? debug.current_duration);
+      const deltaPct = numberOrNull(sentence.delta_pct ?? sentence.deviation_pct ?? debug.delta_pct ?? debug.deviation_pct);
+      const computedDelta = deltaPct != null
+        ? deltaPct
+        : (targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null);
+      const status = sentence.status || debug.status || (isAvSentenceConverged(sentence, debugByIndex) ? "converged" : "needs_review");
+      const sourceText = sentence.source_text || sentence.original_text || debug.source_text || debug.original_text || "";
+      const finalText = sentence.final_text || sentence.text || debug.final_text || debug.text || "";
+      const asrIndex = sentence.asr_index ?? debug.asr_index ?? rowIndex;
+      const statusLabel = avConvergenceStatusLabel(status, computedDelta);
+      const attemptsDetail = attempts.length ? renderAvAttemptsDetail(attempts) : "";
+
+      return `
+        <tr>
+          <td>${escapeHtml(asrIndex)}</td>
+          <td><div class="av-convergence-text">${escapeHtml(sourceText || "--")}</div></td>
+          <td><div class="av-convergence-text">${escapeHtml(finalText || "--")}</div></td>
+          <td>${formatAvDuration(targetDuration)}</td>
+          <td>${formatAvDuration(ttsDuration)}</td>
+          <td>${formatAvDelta(computedDelta)}</td>
+          <td>${formatAvSpeed(sentence.speed ?? debug.speed)}</td>
+          <td><span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span></td>
+          <td>${attempts.length}</td>
+          <td class="av-warning-actions">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openAvRewriteModal(${Number(asrIndex)})">重写</button>
+          </td>
+        </tr>
+        ${attemptsDetail ? `<tr class="av-convergence-attempt-row"><td></td><td colspan="9">${attemptsDetail}</td></tr>` : ""}
+      `;
+    }).join("");
+
+    panel.classList.remove("hidden");
+  }
+
+  function renderAvConvergenceMetric(label, value) {
+    return `
+      <div class="av-convergence-metric">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `;
+  }
+
+  function normalizeAvAttempts(sentence, debug) {
+    const attempts = Array.isArray(sentence?.attempts) ? sentence.attempts : (Array.isArray(debug?.attempts) ? debug.attempts : []);
+    return attempts.filter(Boolean);
+  }
+
+  function isAvSentenceConverged(sentence, debugByIndex) {
+    const debug = debugByIndex instanceof Map
+      ? (debugByIndex.get(String(sentence.asr_index ?? sentence.index ?? "")) || {})
+      : (debugByIndex || {});
+    const status = sentence?.status || debug.status || "";
+    if (status === "converged" || status === "done" || status === "ok") return true;
+    const targetDuration = numberOrNull(sentence?.target_duration ?? debug.target_duration);
+    const ttsDuration = numberOrNull(sentence?.tts_duration ?? sentence?.current_duration ?? debug.tts_duration ?? debug.current_duration);
+    if (!targetDuration || ttsDuration == null) return false;
+    const ratio = ttsDuration / targetDuration;
+    return ratio >= 0.95 && ratio <= 1.05;
+  }
+
+  function renderAvAttemptsDetail(attempts) {
+    const bits = attempts.map((attempt, index) => {
+      const round = attempt.round ?? attempt.rewrite_round ?? index + 1;
+      const action = attempt.action || attempt.operation || "";
+      const status = attempt.status || "";
+      const reason = attempt.reason || "";
+      const targetDuration = numberOrNull(attempt.target_duration ?? attempt.target);
+      const ttsDuration = numberOrNull(attempt.tts_duration ?? attempt.duration ?? attempt.current_duration);
+      const durationRatio = numberOrNull(attempt.duration_ratio ?? attempt.ratio);
+      const delta = numberOrNull(attempt.delta_pct ?? attempt.deviation_pct);
+      const computedDelta = delta != null
+        ? delta
+        : (durationRatio != null ? (durationRatio - 1) * 100 : (
+          targetDuration && ttsDuration != null ? ((ttsDuration - targetDuration) / targetDuration) * 100 : null
+        ));
+      const beforeText = attempt.before_text || attempt.text || "";
+      const afterText = attempt.after_text || attempt.final_text || "";
+      const meta = [
+        action ? `动作 ${action}` : "",
+        status ? `状态 ${status}` : "",
+        reason ? `原因 ${reason}` : "",
+        `目标 ${formatAvDuration(targetDuration)}`,
+        `当前 ${formatAvDuration(ttsDuration)}`,
+        `偏差 ${formatAvDelta(computedDelta)}`,
+      ].filter(Boolean).join(" · ");
+      const textParts = [
+        beforeText ? `前：${beforeText}` : "",
+        afterText ? `后：${afterText}` : "",
+      ].filter(Boolean).join(" / ");
+      return `R${escapeHtml(round)} ${escapeHtml(meta)}${textParts ? `｜${escapeHtml(textParts)}` : ""}`;
+    });
+    return `<div class="av-convergence-attempts">轮次详情：${bits.join(" / ")}</div>`;
+  }
+
+  function numberOrNull(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function formatAvDuration(value) {
+    const numeric = numberOrNull(value);
+    return numeric == null ? "--" : fmtTime(numeric);
+  }
+
+  function formatAvDelta(value) {
+    const numeric = numberOrNull(value);
+    if (numeric == null) return "--";
+    const sign = numeric > 0 ? "+" : "";
+    return `${sign}${numeric.toFixed(1)}%`;
+  }
+
+  function formatAvSpeed(value) {
+    const numeric = numberOrNull(value);
+    return numeric == null ? "--" : numeric.toFixed(2);
+  }
+
+  function avConvergenceStatusLabel(status, deltaPct) {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "converged" || normalized === "done" || normalized === "ok") {
+      return { label: "已收敛", className: "av-convergence-status--ok" };
+    }
+    if (normalized.includes("short")) return { label: "偏短", className: "av-convergence-status--warn" };
+    if (normalized.includes("long") || normalized.includes("overshoot")) return { label: "超时", className: "av-convergence-status--warn" };
+    const numeric = numberOrNull(deltaPct);
+    if (numeric != null && Math.abs(numeric) <= 5) {
+      return { label: "已收敛", className: "av-convergence-status--ok" };
+    }
+    return { label: "需校对", className: "av-convergence-status--review" };
+  }
+
+  function renderAvSubtitleUnits() {
+    const panel = document.getElementById("avSubtitleUnitsPanel");
+    const rows = document.getElementById("avSubtitleUnitsRows");
+    if (!panel || !rows) return;
+
+    if (!currentTask || !isAvSyncTask(currentTask)) {
+      panel.classList.add("hidden");
+      rows.innerHTML = "";
+      return;
+    }
+
+    const av = currentTask.variants?.av || {};
+    const correctedChunks = currentTask.corrected_subtitle?.chunks || av.corrected_subtitle?.chunks || [];
+    const units = Array.isArray(av.subtitle_units) && av.subtitle_units.length
+      ? av.subtitle_units
+      : (Array.isArray(correctedChunks) ? correctedChunks : []);
+
+    if (!units.length) {
+      panel.classList.add("hidden");
+      rows.innerHTML = "";
+      return;
+    }
+
+    rows.innerHTML = units.map((unit, index) => {
+      const asrIndices = Array.isArray(unit.asr_indices)
+        ? unit.asr_indices
+        : (Array.isArray(unit.sentence_indices) ? unit.sentence_indices : []);
+      const start = numberOrNull(unit.start_time);
+      const end = numberOrNull(unit.end_time);
+      const duration = numberOrNull(unit.tts_duration ?? (start != null && end != null ? end - start : null));
+      const statusLabel = avConvergenceStatusLabel(unit.status || "ok", null);
+      return `
+        <tr>
+          <td>#${escapeHtml(unit.unit_index ?? index)}</td>
+          <td>${escapeHtml(asrIndices.join(", ") || "--")}</td>
+          <td><div class="av-convergence-text">${escapeHtml(unit.source_text || "--")}</div></td>
+          <td><div class="av-convergence-text">${escapeHtml(unit.text || "--")}</div></td>
+          <td>${formatAvDuration(start)}</td>
+          <td>${formatAvDuration(end)}</td>
+          <td>${formatAvDuration(duration)}</td>
+          <td><span class="av-convergence-status ${statusLabel.className}">${statusLabel.label}</span></td>
+        </tr>
+      `;
+    }).join("");
     panel.classList.remove("hidden");
   }
 
@@ -2568,7 +2800,8 @@
 </script>
 
 {# 翻译质量评估卡片脚本：脚本自带 DOMContentLoaded 自动初始化（按 #quality-assessment-card 上的 data-* 读取参数）。 #}
-{% if not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
+{% set _has_project_context = project is defined and project %}
+{% if _has_project_context and not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
 <script src="{{ url_for('static', filename='js/quality_assessment_card.js') }}"></script>
 {% endif %}
 

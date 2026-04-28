@@ -356,6 +356,13 @@
               {% endfor %}
             </select>
           </div>
+          <div class="av-field">
+            <label for="avSyncGranularity">同步粒度</label>
+            <select id="avSyncGranularity">
+              <option value="hybrid">混合：字幕级编排 + 句级收敛</option>
+              <option value="sentence">句子级：一句一条字幕</option>
+            </select>
+          </div>
         </div>
         <details class="av-overrides" id="avOverridesPanel">
           <summary>带货资料微调</summary>
@@ -611,7 +618,8 @@
       <div class="step-preview" id="preview-subtitle"></div>
     </div>
     {# 翻译质量评估：异步评估，不阻塞主流水线，呈现在「字幕生成」之后、「视频合成」之前 #}
-    {% if not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
+    {% set _has_project_context = project is defined and project %}
+    {% if _has_project_context and not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/quality_assessment_card.css') }}">
     <div id="quality-assessment-card" class="step qa-step"
          data-task-id="{{ project.id }}"
@@ -798,6 +806,70 @@
   <div class="av-insights-grid">
     <section class="av-insight-card" id="avShotNotesCard"></section>
     <section class="av-insight-card" id="avWarningsCard"></section>
+  </div>
+</div>
+
+<div class="card hidden" id="avConvergencePanel">
+  <div class="av-convergence-head">
+    <div>
+      <h3>句级收敛</h3>
+      <p>展示 GPT-5.5 句级本土化、ElevenLabs 实测时长、重写轮次和 95%-105% 微调结果。</p>
+    </div>
+    <span class="av-convergence-model" id="avConvergenceModelBadge">GPT-5.5</span>
+  </div>
+  <div class="av-convergence-summary" id="avConvergenceSummary"></div>
+  <div class="av-convergence-table-wrap">
+    <table class="av-convergence-table">
+      <thead>
+        <tr>
+          <th>句号</th>
+          <th>原句</th>
+          <th>最终译文</th>
+          <th>目标时长</th>
+          <th>当前时长</th>
+          <th>偏差</th>
+          <th>speed</th>
+          <th>状态</th>
+          <th>轮次</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="avConvergenceRows">
+        <tr>
+          <td colspan="10"><p class="av-convergence-empty">等待句级收敛数据。</p></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card hidden" id="avSubtitleUnitsPanel">
+  <div class="av-convergence-head">
+    <div>
+      <h3>字幕编排</h3>
+      <p>展示最终字幕 unit 与句子、音频片段之间的对应关系。</p>
+    </div>
+  </div>
+  <div class="av-convergence-table-wrap">
+    <table class="av-subtitle-units-table">
+      <thead>
+        <tr>
+          <th>字幕</th>
+          <th>覆盖句号</th>
+          <th>原文摘要</th>
+          <th>字幕文本</th>
+          <th>开始</th>
+          <th>结束</th>
+          <th>时长</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="avSubtitleUnitsRows">
+        <tr>
+          <td colspan="8"><p class="av-convergence-empty">等待字幕编排数据。</p></td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </div>
 

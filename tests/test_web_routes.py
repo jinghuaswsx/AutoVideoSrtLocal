@@ -4,6 +4,8 @@ import json
 import io
 import subprocess
 
+import pytest
+
 from web import store
 from web.app import create_app
 from web.extensions import socketio
@@ -313,6 +315,124 @@ def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_
     assert 'id="avRewriteModal"' in body
     assert "renderAvInsights()" in body
     assert "submitAvRewrite()" in body
+
+
+def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-av-convergence", "video.mp4", "output/task-project-av-convergence")
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        av_debug={
+            "model": "GPT-5.5",
+            "sentence_convergence": {
+                "model": "GPT-5.5",
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "attempts": [
+                            {
+                                "round": 1,
+                                "action": "rewrite",
+                                "status": "too_long",
+                                "reason": "too slow",
+                                "before_text": "Try one",
+                                "after_text": "Try shorter",
+                                "target_duration": 1.2,
+                                "tts_duration": 1.42,
+                                "duration_ratio": 1.18,
+                            },
+                            {
+                                "round": 2,
+                                "action": "speed_adjust",
+                                "status": "ok",
+                                "reason": "within tolerance",
+                                "before_text": "Try shorter",
+                                "after_text": "Final",
+                                "target_duration": 1.2,
+                                "tts_duration": 1.22,
+                                "duration_ratio": 1.02,
+                            },
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+    store.update_variant(
+        task["id"],
+        "av",
+        subtitle_units=[
+            {
+                "unit_index": 0,
+                "asr_indices": [0],
+                "start_time": 0.0,
+                "end_time": 1.22,
+                "text": "This serum feels fresh.",
+                "source_text": "这款精华很清爽",
+                "status": "ok",
+            }
+        ],
+        sentences=[
+            {
+                "asr_index": 0,
+                "source_text": "这款精华很清爽",
+                "final_text": "This serum feels fresh.",
+                "target_duration": 1.2,
+                "tts_duration": 1.22,
+                "speed": 1.03,
+                "status": "converged",
+                "attempts": [{"round": 1, "tts_duration": 1.42}, {"round": 2, "tts_duration": 1.22}],
+            }
+        ],
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "original_filename": "video.mp4",
+        "status": "done",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-av-convergence")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="avConvergencePanel"' in body
+    assert 'id="avSubtitleUnitsPanel"' in body
+    assert "句级收敛" in body
+    assert "字幕编排" in body
+    assert "目标时长" in body
+    assert "偏差" in body
+    assert "GPT-5.5" in body
+    assert "renderAvConvergence()" in body
+    assert "renderAvSubtitleUnits()" in body
+
+    scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8"
+    )
+    assert "before_text" in scripts
+    assert "after_text" in scripts
+    assert "duration_ratio" in scripts
+    assert "reason" in scripts
+    assert "avSyncGranularity" in scripts
+    assert "subtitle_units" in scripts
+
+
+def test_av_rewrite_warning_filter_includes_warning_long():
+    scripts = (Path(__file__).resolve().parents[1] / "web" / "templates" / "_task_workbench_scripts.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'status === "warning_long"' in scripts
+    assert 'status === "warning_short"' in scripts
+    assert 'status === "warning_overshoot"' in scripts
+    assert 'const statusLabel = isShort ? "偏短" : "超时";' in scripts
 
 
 def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db, monkeypatch):
@@ -1454,6 +1574,7 @@ def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path,
             "voice_id": "auto",
             "target_language": "ja",
             "target_market": "JP",
+            "sync_granularity": "sentence",
             "override_product_name": "Glow Serum",
             "override_brand": "Ocean Lab",
             "override_selling_points": "轻薄不黏腻\n夜间修护",
@@ -1470,6 +1591,7 @@ def test_start_route_persists_av_translate_inputs_and_pipeline_version(tmp_path,
     assert task["av_translate_inputs"]["target_language"] == "ja"
     assert task["av_translate_inputs"]["target_language_name"] == "Japanese"
     assert task["av_translate_inputs"]["target_market"] == "JP"
+    assert task["av_translate_inputs"]["sync_granularity"] == "sentence"
     assert task["av_translate_inputs"]["product_overrides"] == {
         "product_name": "Glow Serum",
         "brand": "Ocean Lab",
@@ -1514,6 +1636,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
             "target_language": "en",
             "target_language_name": "English",
             "target_market": "US",
+            "sync_granularity": "hybrid",
             "product_overrides": {},
         },
         shot_notes={
@@ -1663,6 +1786,13 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
         return str(full_audio_path)
 
     monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", fake_rebuild_full_audio)
+    built_chunks = []
+
+    def fake_build_srt_from_chunks(chunks):
+        built_chunks.append(chunks)
+        return "1\n00:00:00,000 --> 00:00:03,150\nFresh new hook Keep this one\n"
+
+    monkeypatch.setattr("web.routes.task.build_srt_from_chunks", fake_build_srt_from_chunks, raising=False)
 
     response = authed_client_no_db.post(
         f"/api/tasks/{task_id}/av/rewrite_sentence",
@@ -1672,9 +1802,17 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
-    assert payload["status"] == "ok"
+    assert payload["status"] == "speed_adjusted"
     assert payload["compose_stale"] is True
     assert payload["tts_duration"] == 1.95
+    payload_sentence = payload["task"]["variants"]["av"]["sentences"][0]
+    assert payload_sentence["duration_ratio"] == pytest.approx(
+        payload_sentence["tts_duration"] / payload_sentence["target_duration"]
+    )
+    assert 0.95 <= payload_sentence["speed"] <= 1.05
+    assert payload_sentence["speed"] != 1.12
+    assert payload_sentence["status"] != "warning_overshoot"
+    assert isinstance(payload_sentence["attempts"], list)
     assert generated and generated[0]["text"] == "Fresh new hook"
     assert rebuilt == [
         {
@@ -1690,6 +1828,7 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert saved["tts_audio_path"] == str(full_audio_path)
     assert saved["srt_path"] == str(srt_path)
     assert "Fresh new hook" in saved["corrected_subtitle"]["srt_content"]
+    assert saved["corrected_subtitle"]["chunks"][0]["text"] == "Fresh new hook Keep this one"
     assert saved["steps"]["compose"] == "done"
     assert saved["steps"]["export"] == "done"
     assert "请从此步继续" in saved["step_messages"]["compose"]
@@ -1701,13 +1840,157 @@ def test_av_rewrite_sentence_route_updates_outputs_and_invalidates_compose(
     assert saved["tos_uploads"] == {}
     av_variant = saved["variants"]["av"]
     assert av_variant["sentences"][0]["text"] == "Fresh new hook"
-    assert av_variant["sentences"][0]["status"] == "ok"
+    assert av_variant["sentences"][0]["status"] == "speed_adjusted"
+    assert av_variant["sentences"][0]["speed"] == 0.975
     assert av_variant["sentences"][0]["tts_duration"] == 1.95
     assert av_variant["tts_audio_path"] == str(full_audio_path)
     assert av_variant["srt_path"] == str(srt_path)
+    assert av_variant["subtitle_units"][0]["asr_indices"] == [0, 1]
+    assert av_variant["subtitle_units"][0]["text"] == "Fresh new hook Keep this one"
+    assert built_chunks and built_chunks[0] == av_variant["subtitle_units"]
     assert av_variant["result"] == {}
     assert av_variant["exports"] == {}
     assert "hard_video" not in av_variant["preview_files"]
+
+
+def test_av_rewrite_sentence_route_marks_long_warning_without_out_of_range_speed(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "task-av-rewrite-long-warning"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    segment_path = task_dir / "seg_0000.mp3"
+    segment_path.write_bytes(b"old-seg")
+
+    store.create(task_id, str(tmp_path / "video.mp4"), str(task_dir), user_id=1)
+    store.update(
+        task_id,
+        status="done",
+        pipeline_version="av",
+        av_translate_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        steps={"tts": "done", "subtitle": "done", "compose": "done", "export": "done"},
+        step_messages={},
+    )
+    store.update_variant(
+        task_id,
+        "av",
+        voice_id="voice-db-id",
+        sentences=[
+            {
+                "asr_index": 0,
+                "target_duration": 2.0,
+                "text": "Old line",
+                "tts_path": str(segment_path),
+                "tts_duration": 2.4,
+                "speed": 1.0,
+                "status": "warning_long",
+            }
+        ],
+    )
+
+    generated = []
+    monkeypatch.setattr(
+        "web.routes.task.tts.get_voice_by_id",
+        lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
+    )
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        generated.append({"text": text, "speed": kwargs.get("speed")})
+        Path(output_path).write_bytes(b"audio")
+        return output_path
+
+    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 2.4)
+    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+
+    response = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/av/rewrite_sentence",
+        json={"asr_index": 0, "text": "Still too long"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "warning_long"
+    saved_sentence = store.get(task_id)["variants"]["av"]["sentences"][0]
+    assert saved_sentence["status"] == "warning_long"
+    assert saved_sentence["speed"] == 1.0
+    assert 0.95 <= saved_sentence["speed"] <= 1.05
+    assert saved_sentence["duration_ratio"] == 1.2
+    assert isinstance(saved_sentence["attempts"], list)
+    assert generated == [{"text": "Still too long", "speed": None}]
+
+
+def test_av_rewrite_sentence_route_marks_short_warning_without_needs_expand(
+    tmp_path,
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "task-av-rewrite-short-warning"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    segment_path = task_dir / "seg_0000.mp3"
+    segment_path.write_bytes(b"old-seg")
+
+    store.create(task_id, str(tmp_path / "video.mp4"), str(task_dir), user_id=1)
+    store.update(
+        task_id,
+        status="done",
+        pipeline_version="av",
+        av_translate_inputs={"target_language": "en", "target_market": "US", "product_overrides": {}},
+        steps={"tts": "done", "subtitle": "done", "compose": "done", "export": "done"},
+        step_messages={},
+    )
+    store.update_variant(
+        task_id,
+        "av",
+        voice_id="voice-db-id",
+        sentences=[
+            {
+                "asr_index": 0,
+                "target_duration": 2.0,
+                "text": "Old line",
+                "tts_path": str(segment_path),
+                "tts_duration": 1.6,
+                "speed": 1.0,
+                "status": "warning_short",
+            }
+        ],
+    )
+
+    generated = []
+    monkeypatch.setattr(
+        "web.routes.task.tts.get_voice_by_id",
+        lambda voice_id, user_id: {"id": voice_id, "elevenlabs_voice_id": "voice-el-id"},
+    )
+
+    def fake_generate_segment_audio(text, voice_id, output_path, **kwargs):
+        generated.append({"text": text, "speed": kwargs.get("speed")})
+        Path(output_path).write_bytes(b"audio")
+        return output_path
+
+    monkeypatch.setattr("web.routes.task.tts.generate_segment_audio", fake_generate_segment_audio)
+    monkeypatch.setattr("web.routes.task.tts.get_audio_duration", lambda path: 1.6)
+    monkeypatch.setattr("web.routes.task._rebuild_tts_full_audio", lambda task_dir_arg, segments, variant: str(task_dir / "full.mp3"))
+
+    response = authed_client_no_db.post(
+        f"/api/tasks/{task_id}/av/rewrite_sentence",
+        json={"asr_index": 0, "text": "Still too short"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "warning_short"
+    assert payload["status"] != "needs_expand"
+    saved_sentence = store.get(task_id)["variants"]["av"]["sentences"][0]
+    assert saved_sentence["status"] == "warning_short"
+    assert saved_sentence["status"] != "needs_expand"
+    assert saved_sentence["speed"] == 1.0
+    assert 0.95 <= saved_sentence["speed"] <= 1.05
+    assert saved_sentence["duration_ratio"] == 0.8
+    assert isinstance(saved_sentence["attempts"], list)
+    assert generated == [{"text": "Still too short", "speed": None}]
 
 
 def test_rename_route_updates_task_state_for_future_capcut_downloads(tmp_path, authed_client_no_db, monkeypatch):
