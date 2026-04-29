@@ -381,6 +381,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "copywriting_translate.audit": _uc(
+        "copywriting_translate.audit",
+        "text_translate",
+        "文案翻译合规审核",
+        "用 Gemini Flash-Lite 二次确认已存在文案翻译是否符合 title_translate 规则",
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 提示词库
     "prompt_library.generate": _uc(
         "prompt_library.generate",
