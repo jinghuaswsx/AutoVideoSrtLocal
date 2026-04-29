@@ -381,9 +381,24 @@ def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_cl
     assert "escapeOadHtml(p.product_name || '(no name)')" in body
     assert "escapeOadHtml(p.product_code || '')" in body
     assert "escapeOadHtml(p.product_id)" in body
+    assert "escapeOadHtml(String(entry[0] || '').toUpperCase())" in body
     assert "escapeOadHtml(entry[1])" in body
     assert "+ (p.product_name ||" not in body
     assert "+ (p.product_code ||" not in body
     assert "function setDxmPaginationDisabled(disabled)" in body
-    assert "setDxmPaginationDisabled(true);" in body
-    assert "setDxmPaginationDisabled(false);" in body
+
+    load_start = body.index("function loadDxmOrders(page)")
+    params_start = body.index("var params = new URLSearchParams", load_start)
+    render_start = body.index("function renderDxmOrderAnalysis(data)", load_start)
+    catch_start = body.index(".catch(function(err)", load_start)
+    pagination_helper_start = body.index("function setDxmPaginationDisabled(disabled)", render_start)
+
+    loading_segment = body[load_start:params_start]
+    catch_segment = body[catch_start:render_start]
+    render_segment = body[render_start:pagination_helper_start]
+
+    assert "setDxmPaginationDisabled(true);" in loading_segment
+    assert "setDxmPaginationDisabled(true);" in catch_segment
+    assert "setDxmPaginationDisabled(false);" in render_segment
+    assert "prev.disabled = dxmOrderState.page <= 1" in render_segment
+    assert "next.disabled = dxmOrderState.page >= dxmOrderState.totalPages" in render_segment
