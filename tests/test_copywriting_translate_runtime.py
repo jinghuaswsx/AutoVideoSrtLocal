@@ -83,30 +83,129 @@ def test_translate_copy_text_strips_nested_localized_title_label(monkeypatch):
     assert tokens == 42
 
 
+def _patch_llm_client(monkeypatch, fake_invoke):
+    from appcore import copywriting_translate_runtime as mod
+
+    class _Stub:
+        @staticmethod
+        def invoke_chat(*args, **kwargs):
+            return fake_invoke(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "llm_client", _Stub)
+    return mod
+
+
+def _patch_get_prompt(monkeypatch, fn):
+    from appcore import copywriting_translate_runtime as mod
+
+    class _Stub:
+        @staticmethod
+        def get_prompt(code):
+            return fn(code)
+
+    monkeypatch.setattr(mod, "title_translate_settings", _Stub)
+    return mod
+
+
 def test_llm_translate_sums_input_and_output_tokens(monkeypatch):
     """内部 _llm_translate 把 input + output tokens 合成总数。"""
-    def fake_translate_text(text, src, tgt, **kw):
-        return {"text": "Willkommen", "input_tokens": 40, "output_tokens": 12}
+    def fake_invoke(use_case_code, **kwargs):
+        assert use_case_code == "title_translate.generate"
+        return {
+            "text": "标题: Willkommen\n文案: -\n描述: -",
+            "usage": {"input_tokens": 40, "output_tokens": 12},
+        }
 
-    from appcore import copywriting_translate_runtime as mod
-    monkeypatch.setattr(mod, "translate_text", fake_translate_text)
+    _patch_get_prompt(monkeypatch, lambda code: "PROMPT_FOR_" + code + " {{SOURCE_TEXT}}")
+    mod = _patch_llm_client(monkeypatch, fake_invoke)
 
     text, tokens = mod._llm_translate("Welcome", "en", "de")
+    # 单字段输入会被包成三段式，模型返回的也是三段式，从 `标题:` 槽位取出。
     assert text == "Willkommen"
     assert tokens == 52   # 40 + 12
 
 
 def test_llm_translate_handles_missing_token_keys(monkeypatch):
-    """pipeline 返回里缺 token 字段也不应崩溃。"""
-    def fake_translate_text(text, src, tgt, **kw):
-        return {"text": "Willkommen"}
+    """LLM 返回里缺 usage 字段也不应崩溃。"""
+    def fake_invoke(*args, **kwargs):
+        return {"text": "标题: Willkommen\n文案: -\n描述: -"}
 
-    from appcore import copywriting_translate_runtime as mod
-    monkeypatch.setattr(mod, "translate_text", fake_translate_text)
+    _patch_get_prompt(monkeypatch, lambda code: "PROMPT {{SOURCE_TEXT}}")
+    mod = _patch_llm_client(monkeypatch, fake_invoke)
 
     text, tokens = mod._llm_translate("Welcome", "en", "de")
     assert text == "Willkommen"
     assert tokens == 0
+
+
+def test_llm_translate_uses_title_translate_use_case_with_per_lang_prompt(monkeypatch):
+    """关键不回归：bulk 翻译路径必须走 title_translate.generate use case，
+    并通过 title_translate_settings.get_prompt(target_lang) 拼出强约束 prompt。
+    避免回到旧的 text_translate.generate 路径，让 ja 复现「標題:」嵌套 bug。"""
+    captured = {}
+
+    def fake_get_prompt(code):
+        captured["code"] = code
+        return f"<PROMPT-{code}>\n{{{{SOURCE_TEXT}}}}\n<END>"
+
+    def fake_invoke(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["messages"] = kwargs.get("messages")
+        captured["temperature"] = kwargs.get("temperature")
+        return {
+            "text": "标题: タイトル訳\n文案: 本文訳\n描述: 説明訳",
+            "usage": {"input_tokens": 1, "output_tokens": 2},
+        }
+
+    _patch_get_prompt(monkeypatch, fake_get_prompt)
+    mod = _patch_llm_client(monkeypatch, fake_invoke)
+
+    src = "标题: What's on Your Keychain?\n文案: Mine opens bottles.\n描述: Discover the 3-in-1"
+    text, tokens = mod._llm_translate(src, "en", "ja")
+
+    assert captured["use_case_code"] == "title_translate.generate"
+    assert captured["code"] == "ja"
+    assert captured["temperature"] == 0.0
+    assert len(captured["messages"]) == 1
+    assert captured["messages"][0]["role"] == "user"
+    # 三段式输入应原样塞进 prompt 的 {{SOURCE_TEXT}} 占位符。
+    assert "What's on Your Keychain?" in captured["messages"][0]["content"]
+    assert "<PROMPT-ja>" in captured["messages"][0]["content"]
+    assert "{{SOURCE_TEXT}}" not in captured["messages"][0]["content"]
+
+    # 三段式输出原样透传（由调用方 _normalize_copywriting_translation 再做行首规整）。
+    assert text == "标题: タイトル訳\n文案: 本文訳\n描述: 説明訳"
+    assert tokens == 3
+
+
+def test_llm_translate_wraps_single_field_into_block_and_extracts_title(monkeypatch):
+    """非三段式输入（例如 title 字段单独一行 'Welcome'）必须被包成三段式发送，
+    解析模型返回的「标题:」槽位作为译文返回——防止把整段三段式塞进 title 列。"""
+    captured = {}
+
+    def fake_get_prompt(code):
+        return "PROMPT_" + code + " {{SOURCE_TEXT}}"
+
+    def fake_invoke(use_case_code, **kwargs):
+        captured["content"] = kwargs["messages"][0]["content"]
+        return {
+            "text": "标题: Willkommen\n文案: -\n描述: -",
+            "usage": {"input_tokens": 5, "output_tokens": 5},
+        }
+
+    _patch_get_prompt(monkeypatch, fake_get_prompt)
+    mod = _patch_llm_client(monkeypatch, fake_invoke)
+
+    text, tokens = mod._llm_translate("Welcome", "en", "de")
+
+    # 单字段被包成三段式：标题位是原文，其它位用 "-" 占位。
+    assert "标题: Welcome" in captured["content"]
+    assert "文案: -" in captured["content"]
+    assert "描述: -" in captured["content"]
+
+    # 仅返回标题槽位的译文。
+    assert text == "Willkommen"
+    assert tokens == 10
 
 
 # ============================================================
