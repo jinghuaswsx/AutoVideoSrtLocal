@@ -805,7 +805,7 @@
 
   function switchPeriod(p) {
     oad.state.period = p;
-    document.querySelectorAll('.oad-seg').forEach(function(b) {
+    document.querySelectorAll('.oad-seg[data-period]').forEach(function(b) {
       b.classList.toggle('is-active', b.dataset.period === p);
     });
     document.querySelectorAll('[data-period-input]').forEach(function(d) {
@@ -998,7 +998,7 @@
     fillYearMonth();
     fillWeekYearAndWeeks();
     fillDateInput();
-    document.querySelectorAll('.oad-seg').forEach(function(b) {
+    document.querySelectorAll('.oad-seg[data-period]').forEach(function(b) {
       b.addEventListener('click', function() { switchPeriod(b.dataset.period); });
     });
     ['oadYear','oadMonth','oadWeekYear','oadWeek','oadDate'].forEach(function(id) {

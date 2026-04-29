@@ -346,3 +346,5 @@ def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db)
     assert 'data-tab="dxmOrders"' in body
     assert 'id="panelDxmOrders"' in body
     assert body.index('data-tab="countryDashboard"') < body.index('data-tab="trueRoas"')
+    assert "querySelectorAll('.oad-seg')" not in body
+    assert "querySelectorAll('.oad-seg[data-period]')" in body
