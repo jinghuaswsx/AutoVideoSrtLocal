@@ -691,6 +691,7 @@ def test_detail_images_from_url_background_worker_uses_captured_user_id(
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: [])
     monkeypatch.setattr("appcore.link_check_fetcher.LinkCheckFetcher", DummyFetcher)
     monkeypatch.setattr(r.requests, "get", lambda *args, **kwargs: DummyImageResponse())
     monkeypatch.setattr(
@@ -1187,6 +1188,7 @@ def test_detail_images_upload_bootstrap_accepts_image_gif(authed_client_no_db, m
     monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "镜片清洁器"})
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: [])
     monkeypatch.setattr(r.object_keys, "build_media_object_key", lambda *a, **kw: "1/medias/1/anim.gif")
 
     resp = authed_client_no_db.post(
@@ -1250,6 +1252,7 @@ def _run_from_url_worker(monkeypatch, *, body_json):
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: [])
     monkeypatch.setattr("appcore.link_check_fetcher.LinkCheckFetcher", DummyFetcher)
     monkeypatch.setattr(r.requests, "get", lambda *args, **kwargs: DummyImageResponse())
     monkeypatch.setattr(
@@ -1326,6 +1329,7 @@ def test_detail_images_bootstrap_uses_local_upload_when_tos_media_bucket_disable
     )
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
     monkeypatch.setattr(r.medias, "is_valid_language", lambda code: code == "en")
+    monkeypatch.setattr(r.medias, "list_detail_images", lambda pid, lang: [])
     monkeypatch.setattr(
         r.object_keys,
         "build_media_object_key",
