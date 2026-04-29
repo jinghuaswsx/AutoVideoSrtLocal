@@ -1535,7 +1535,19 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 
 /* ────────── ROAS modal ────────── */
-.oc-roas-modal { width:min(960px, calc(100vw - 24px)); }
+#roasModalMask {
+  inset:0 0 0 220px;
+  align-items:stretch;
+  justify-content:stretch;
+  padding:0;
+}
+.oc-roas-modal {
+  width:100%;
+  height:100%;
+  max-width:none;
+  max-height:none;
+  border-radius:0;
+}
 .oc-roas-product {
   display:grid;
   grid-template-columns:96px minmax(0, 1fr);
@@ -1567,11 +1579,26 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-roas-meta dt { font-size:12px; color:var(--oc-fg-subtle); margin:0; }
 .oc-roas-meta dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.oc-roas-layout {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(280px, 0.88fr);
+  gap:var(--oc-sp-4);
+  align-items:start;
+}
+.oc-roas-column {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-4);
+  max-height:min(60vh, 640px);
+  overflow-y:auto;
+  padding-right:2px;
+}
 .oc-roas-section {
   border:1px solid var(--oc-border);
   border-radius:var(--oc-r-lg);
   padding:var(--oc-sp-4);
-  margin-bottom:var(--oc-sp-4);
+  margin-bottom:0;
 }
 .oc-roas-section h4 {
   margin:0 0 var(--oc-sp-3);
@@ -1579,10 +1606,36 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   font-weight:600;
   color:var(--oc-fg);
 }
+.oc-roas-section-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--oc-sp-3);
+  margin-bottom:var(--oc-sp-3);
+}
+.oc-roas-section-head h4 { margin:0; }
+.oc-roas-calc-btn {
+  height:30px;
+  padding:0 var(--oc-sp-4);
+  border:none;
+  border-radius:var(--oc-r-full);
+  background:var(--oc-accent);
+  color:var(--oc-accent-fg);
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background-color var(--oc-dur-fast);
+}
+.oc-roas-calc-btn:hover { background:var(--oc-accent-hover); }
 .oc-roas-grid {
   display:grid;
   grid-template-columns:repeat(3, minmax(0, 1fr));
   gap:var(--oc-sp-4);
+}
+.oc-roas-field-list {
+  display:grid;
+  grid-template-columns:1fr;
+  gap:var(--oc-sp-3);
 }
 .oc-roas-field label {
   display:block;
@@ -1623,10 +1676,13 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-roas-result.active .value { color:var(--oc-accent); }
 .oc-roas-note { margin-top:var(--oc-sp-3); font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
 @media (max-width: 760px) {
+  .oc-roas-layout,
   .oc-roas-product,
   .oc-roas-grid,
   .oc-roas-results,
   .oc-roas-meta { grid-template-columns:1fr; }
+  .oc-roas-column { max-height:none; overflow:visible; padding-right:0; }
+  #roasModalMask { inset:0; }
 }
 {% endblock %}
 
@@ -1705,6 +1761,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   <div class="oc-pager" id="pager"></div>
 </div>
 <script>
+window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojson }};
 (function() {
   var TOPBAR = 56;
   function updateStickyOffsets() {
@@ -1745,36 +1802,46 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         </dl>
       </div>
       <form id="roasForm">
-        <section class="oc-roas-section">
-          <h4>独立站必填项</h4>
-          <div class="oc-roas-grid">
-            <div class="oc-roas-field"><label for="roasPurchasePrice">采购价格</label><input id="roasPurchasePrice" data-roas-field="purchase_price" type="number" min="0" step="0.01" required></div>
-            <div class="oc-roas-field"><label for="roasPacketEstimated">预估小包成本</label><input id="roasPacketEstimated" data-roas-field="packet_cost_estimated" type="number" min="0" step="0.01" required></div>
-            <div class="oc-roas-field"><label for="roasPacketActual">实际小包成本</label><input id="roasPacketActual" data-roas-field="packet_cost_actual" type="number" min="0" step="0.01"></div>
-            <div class="oc-roas-field"><label for="roasLength">长 (cm)</label><input id="roasLength" data-roas-field="package_length_cm" type="number" min="0" step="0.01" required></div>
-            <div class="oc-roas-field"><label for="roasWidth">宽 (cm)</label><input id="roasWidth" data-roas-field="package_width_cm" type="number" min="0" step="0.01" required></div>
-            <div class="oc-roas-field"><label for="roasHeight">高 (cm)</label><input id="roasHeight" data-roas-field="package_height_cm" type="number" min="0" step="0.01" required></div>
-            <div class="oc-roas-field"><label for="roasStandalonePrice">独立站售价</label><input id="roasStandalonePrice" data-roas-field="standalone_price" type="number" min="0" step="0.01" required></div>
+        <div class="oc-roas-layout">
+          <div class="oc-roas-column">
+            <section id="roasSiteSection" class="oc-roas-section oc-roas-site-section">
+              <h4>独立站信息</h4>
+              <div class="oc-roas-field-list">
+                <div class="oc-roas-field"><label for="roas1688Url">1688 采购链接</label><input id="roas1688Url" data-roas-field="purchase_1688_url" type="url"></div>
+                <div class="oc-roas-field"><label for="roasPurchasePrice">采购价格 (RMB)</label><input id="roasPurchasePrice" data-roas-field="purchase_price" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasStandalonePrice">独立站售价 (USD)</label><input id="roasStandalonePrice" data-roas-field="standalone_price" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasStandaloneShipping">运费 (USD)</label><input id="roasStandaloneShipping" data-roas-field="standalone_shipping_fee" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasLength">长 (cm)</label><input id="roasLength" data-roas-field="package_length_cm" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasWidth">宽 (cm)</label><input id="roasWidth" data-roas-field="package_width_cm" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasHeight">高 (cm)</label><input id="roasHeight" data-roas-field="package_height_cm" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasPacketEstimated">预估小包成本 (RMB)</label><input id="roasPacketEstimated" data-roas-field="packet_cost_estimated" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasPacketActual">实际小包成本 (RMB)</label><input id="roasPacketActual" data-roas-field="packet_cost_actual" type="number" min="0" step="0.01"></div>
+              </div>
+            </section>
+            <section class="oc-roas-section">
+              <div class="oc-roas-section-head">
+                <h4>计算结果</h4>
+                <button type="button" id="roasCalculateBtn" class="oc-roas-calc-btn">计算 ROAS</button>
+              </div>
+              <div class="oc-roas-results">
+                <div id="roasEstimatedBox" class="oc-roas-result"><div class="label">预估保本 ROAS</div><div id="roasEstimatedValue" class="value">—</div></div>
+                <div id="roasActualBox" class="oc-roas-result"><div class="label">实际保本 ROAS</div><div id="roasActualValue" class="value">—</div></div>
+                <div id="roasEffectiveBox" class="oc-roas-result active"><div class="label">当前采用值</div><div id="roasEffectiveValue" class="value">—</div></div>
+              </div>
+              <p id="roasNote" class="oc-roas-note">采购价格和小包成本按 1 USD = {{ roas_rmb_per_usd or material_roas_rmb_per_usd or 6.83 }} RMB 换算；手续费按独立站售价 + 运费的 10% 计算。</p>
+            </section>
           </div>
-        </section>
-        <section class="oc-roas-section">
-          <h4>计算结果</h4>
-          <div class="oc-roas-results">
-            <div id="roasEstimatedBox" class="oc-roas-result"><div class="label">预估保本 ROAS</div><div id="roasEstimatedValue" class="value">—</div></div>
-            <div id="roasActualBox" class="oc-roas-result"><div class="label">实际保本 ROAS</div><div id="roasActualValue" class="value">—</div></div>
-            <div id="roasEffectiveBox" class="oc-roas-result active"><div class="label">当前采用值</div><div id="roasEffectiveValue" class="value">—</div></div>
+          <div class="oc-roas-column">
+            <section id="roasTkSection" class="oc-roas-section oc-roas-tk-section">
+              <h4>TK 可选项</h4>
+              <div class="oc-roas-field-list">
+                <div class="oc-roas-field"><label for="roasTkSea">TK 海运成本</label><input id="roasTkSea" data-roas-field="tk_sea_cost" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasTkAir">TK 空运成本</label><input id="roasTkAir" data-roas-field="tk_air_cost" type="number" min="0" step="0.01"></div>
+                <div class="oc-roas-field"><label for="roasTkSale">TK 售卖定价</label><input id="roasTkSale" data-roas-field="tk_sale_price" type="number" min="0" step="0.01"></div>
+              </div>
+            </section>
           </div>
-          <p id="roasNote" class="oc-roas-note">手续费按售价 10% 计算；填写实际小包成本后，当前采用值自动切换为实际保本 ROAS。</p>
-        </section>
-        <section class="oc-roas-section">
-          <h4>TK 可选项</h4>
-          <div class="oc-roas-grid">
-            <div class="oc-roas-field"><label for="roas1688Url">1688 采购链接</label><input id="roas1688Url" data-roas-field="purchase_1688_url" type="url"></div>
-            <div class="oc-roas-field"><label for="roasTkSea">TK 海运成本</label><input id="roasTkSea" data-roas-field="tk_sea_cost" type="number" min="0" step="0.01"></div>
-            <div class="oc-roas-field"><label for="roasTkAir">TK 空运成本</label><input id="roasTkAir" data-roas-field="tk_air_cost" type="number" min="0" step="0.01"></div>
-            <div class="oc-roas-field"><label for="roasTkSale">TK 售卖定价</label><input id="roasTkSale" data-roas-field="tk_sale_price" type="number" min="0" step="0.01"></div>
-          </div>
-        </section>
+        </div>
       </form>
     </div>
     <div class="oc-modal-foot">

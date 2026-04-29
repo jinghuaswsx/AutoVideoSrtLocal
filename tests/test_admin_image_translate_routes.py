@@ -178,6 +178,42 @@ def test_admin_settings_default_change_skips_per_type_adjust_for_default_types(
     assert len(default_calls) == 1
 
 
+def test_admin_settings_shows_and_saves_material_roas_exchange_rate(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import admin as r
+
+    store = {"material_roas_rmb_per_usd": "6.83"}
+
+    monkeypatch.setattr(r, "PROJECT_TYPE_LABELS", {})
+    monkeypatch.setattr(r, "get_all_retention_settings", lambda: {"default": 168})
+    monkeypatch.setattr(r, "get_retention_hours", lambda project_type: 168)
+    monkeypatch.setattr(r, "has_retention_override", lambda project_type: False)
+    monkeypatch.setattr(r.medias, "list_languages_for_admin", lambda: [])
+    monkeypatch.setattr(
+        r.product_roas,
+        "get_configured_rmb_per_usd",
+        lambda: store["material_roas_rmb_per_usd"],
+    )
+    monkeypatch.setattr(r, "set_setting", lambda key, value: store.update({key: value}))
+    monkeypatch.setattr(r, "adjust_expires_for_default", lambda *args, **kwargs: 0)
+
+    page = authed_client_no_db.get("/admin/settings")
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert 'name="material_roas_rmb_per_usd"' in body
+    assert 'value="6.83"' in body
+
+    resp = authed_client_no_db.post(
+        "/admin/settings",
+        data={"retention_default_days": "7", "material_roas_rmb_per_usd": "6.9"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert store["material_roas_rmb_per_usd"] == "6.9"
+
+
 def test_admin_post_prompt_accepts_dynamic_language(authed_client_no_db, monkeypatch):
     from appcore import image_translate_settings as its
 

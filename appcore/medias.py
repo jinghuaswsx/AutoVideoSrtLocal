@@ -417,11 +417,11 @@ def update_product(product_id: int, **fields) -> int:
                "npr_decision_status", "npr_decided_countries",
                "npr_decided_at", "npr_decided_by",
                "npr_rejected_reason", "npr_eval_clip_path",
-               "purchase_1688_url", "purchase_price",
-               "packet_cost_estimated", "packet_cost_actual",
-               "package_length_cm", "package_width_cm", "package_height_cm",
-               "tk_sea_cost", "tk_air_cost", "tk_sale_price",
-               "standalone_price"}
+                "purchase_1688_url", "purchase_price",
+                "packet_cost_estimated", "packet_cost_actual",
+                "package_length_cm", "package_width_cm", "package_height_cm",
+                "tk_sea_cost", "tk_air_cost", "tk_sale_price",
+                "standalone_price", "standalone_shipping_fee"}
     # mk_id 归一化：空串 / 全空白 → NULL；否则必须是 1-8 位纯数字
     if "mk_id" in fields:
         v = fields["mk_id"]
@@ -469,6 +469,7 @@ def update_product(product_id: int, **fields) -> int:
         "tk_air_cost",
         "tk_sale_price",
         "standalone_price",
+        "standalone_shipping_fee",
     }
     for number_key in roas_number_keys:
         if number_key in fields:
