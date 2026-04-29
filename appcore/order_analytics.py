@@ -1212,7 +1212,6 @@ def _sort_order_dashboard_rows(rows: list[dict], *, name_key: str) -> list[dict]
 
 def get_country_dashboard(
     period: str,
-    *,
     year: int | None = None,
     month: int | None = None,
     week: int | None = None,
@@ -1243,6 +1242,7 @@ def get_country_dashboard(
         (start, end),
     )
 
+    unknown_display_name = "未知"
     countries = []
     for row in rows:
         product_net_sales = _money(row.get("product_net_sales"))
@@ -1252,7 +1252,7 @@ def get_country_dashboard(
         display_name = (
             f"{country_name} / {country_code}"
             if country_name and country_code
-            else country_name or country_code or "未知"
+            else country_name or country_code or unknown_display_name
         )
         countries.append({
             "buyer_country": country_code,

@@ -157,3 +157,32 @@ def test_get_country_dashboard_rejects_invalid_period():
             assert "period must be one of day/week/month" in str(exc)
         else:
             raise AssertionError(f"expected ValueError for period={period!r}")
+
+
+def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(monkeypatch):
+    monkeypatch.setattr(
+        oa,
+        "query",
+        lambda sql, args=(): [
+            {
+                "buyer_country": "",
+                "buyer_country_name": "",
+                "order_count": 1,
+                "units": 2,
+                "product_net_sales": 20.0,
+                "shipping": 3.0,
+            },
+        ],
+    )
+
+    result = oa.get_country_dashboard(
+        "month",
+        2026,
+        4,
+        None,
+        None,
+        oa._parse_meta_date("2026-04-29"),
+    )
+
+    assert result["period"]["type"] == "month"
+    assert result["countries"][0]["display_name"] == "未知"
