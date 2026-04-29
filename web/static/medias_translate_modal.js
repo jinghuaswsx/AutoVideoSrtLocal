@@ -312,24 +312,32 @@
     setPreviewMessage(message || '默认会加载当前商品的第一条英文视频，方便直接预览字幕效果。', 'note');
   }
 
-  async function loadPreviewVideo() {
-    const items = (((state.product || {}).items) || []).filter((item) => String(item.lang || '').trim().toLowerCase() === 'en');
-    if (!items.length) {
-      setPreviewIdle('当前商品还没有英文视频，暂时只能预览字幕样式，无法叠加到真实视频上。');
+  function pickPreviewRawSource() {
+    const sources = state.rawSources || [];
+    if (!sources.length) return null;
+    if (state.selectedRawIds.size) {
+      return sources.find((raw) => state.selectedRawIds.has(Number(raw.id))) || null;
+    }
+    return sources[0];
+  }
+
+  function applyRawPreview() {
+    const raw = pickPreviewRawSource();
+    if (!raw) {
+      setPreviewIdle('当前商品还没有原始视频素材，暂时只能预览字幕样式。');
       return;
     }
-
-    const previewItem = items[0];
-    try {
-      const payload = await requestJSON(`/medias/api/items/${previewItem.id}/play_url`);
-      if (!payload.url) throw new Error('预览地址为空');
-      previewVideo.src = payload.url;
+    if (!raw.video_url) {
+      setPreviewIdle(`原始视频「${raw.display_name || `#${raw.id}`}」缺少可播放地址，仅能预览字幕样式。`);
+      return;
+    }
+    if (previewVideo.getAttribute('src') !== raw.video_url) {
+      previewVideo.pause();
+      previewVideo.src = raw.video_url;
       previewVideo.currentTime = 0;
       previewVideo.load();
-      setPreviewMessage(`已加载英文视频「${previewItem.display_name || previewItem.filename || `视频 #${previewItem.id}` }」，字幕会直接叠加在画面上。`, 'success');
-    } catch (error) {
-      setPreviewIdle(`英文视频预览加载失败：${error.message || error}`);
     }
+    setPreviewMessage(`已加载原始视频「${raw.display_name || `原始视频 #${raw.id}`}」，字幕会直接叠加在画面上。`, 'success');
   }
 
   function collectExistingDefaults() {
@@ -417,7 +425,7 @@
     videoFont.value = state.videoFont;
     renderSizeButtons();
     setSubtitlePositionY(0.68);
-    setPreviewIdle('默认会加载当前商品的第一条英文视频，方便直接预览字幕效果。');
+    setPreviewIdle('默认会加载所选第一条原始视频，方便直接预览字幕效果。');
     switchTab('create');
   }
 
@@ -432,7 +440,7 @@
     state.product = productData || {};
     collectExistingDefaults();
     renderAll();
-    await loadPreviewVideo();
+    applyRawPreview();
   }
 
   async function openModal(productId, productName, initialTab) {
@@ -828,6 +836,7 @@
     renderLanguages();
     renderSummary();
     updateSubmitState();
+    applyRawPreview();
   });
 
   langList.addEventListener('change', () => {
