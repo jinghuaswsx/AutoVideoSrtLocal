@@ -257,3 +257,60 @@ def test_country_dashboard_endpoint_returns_json(authed_client_no_db, monkeypatc
     assert captured["year"] == 2026
     assert captured["week"] == 17
     assert response.get_json()["period"]["type"] == "week"
+
+
+def test_dianxiaomi_orders_endpoint_returns_400_for_non_integer_page(authed_client_no_db, monkeypatch):
+    called = False
+
+    def fake_analysis(*args, **kwargs):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-01&end_date=2026-04-30&page=abc"
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_param"
+    assert called is False
+
+
+def test_dianxiaomi_orders_endpoint_500_does_not_leak_exception_detail(
+    authed_client_no_db,
+    monkeypatch,
+):
+    def fake_analysis(*args, **kwargs):
+        raise RuntimeError("secret db detail")
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-01&end_date=2026-04-30"
+    )
+
+    assert response.status_code == 500
+    data = response.get_json()
+    assert data["error"] == "internal_error"
+    assert "secret db detail" not in data["detail"]
+
+
+def test_country_dashboard_endpoint_500_does_not_leak_exception_detail(
+    authed_client_no_db,
+    monkeypatch,
+):
+    def fake_country_dashboard(**kwargs):
+        raise RuntimeError("secret db detail")
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_country_dashboard", fake_country_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/country-dashboard?period=week&year=2026&week=17"
+    )
+
+    assert response.status_code == 500
+    data = response.get_json()
+    assert data["error"] == "internal_error"
+    assert "secret db detail" not in data["detail"]

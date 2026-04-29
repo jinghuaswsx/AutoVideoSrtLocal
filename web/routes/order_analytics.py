@@ -192,17 +192,22 @@ def dianxiaomi_orders():
     if not start_date or not end_date:
         return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
     try:
+        page = int(request.args["page"]) if "page" in request.args else 1
+        page_size = int(request.args["page_size"]) if "page_size" in request.args else 50
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_param", detail="page and page_size must be integers"), 400
+    try:
         return jsonify(_json_safe(oa.get_dianxiaomi_order_analysis(
             start_date,
             end_date,
-            page=request.args.get("page", 1, type=int),
-            page_size=request.args.get("page_size", 50, type=int),
+            page=page,
+            page_size=page_size,
         )))
     except ValueError as exc:
         return jsonify(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
         log.exception("dianxiaomi order analysis query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return jsonify(error="internal_error", detail="dianxiaomi order analysis query failed"), 500
 
 
 @bp.route("/order-analytics/country-dashboard")
@@ -224,7 +229,7 @@ def country_dashboard():
         return jsonify(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
         log.exception("country dashboard query failed: %s", exc)
-        return jsonify(error="internal_error", detail=str(exc)), 500
+        return jsonify(error="internal_error", detail="country dashboard query failed"), 500
 
 
 @bp.route("/order-analytics/dianxiaomi-import-batches")
