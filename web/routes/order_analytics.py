@@ -189,6 +189,7 @@ def true_roas():
 def dianxiaomi_orders():
     start_date = (request.args.get("start_date") or "").strip()
     end_date = (request.args.get("end_date") or "").strip()
+    store = (request.args.get("store") or "").strip() or None
     if not start_date or not end_date:
         return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
     try:
@@ -197,11 +198,13 @@ def dianxiaomi_orders():
     except (TypeError, ValueError):
         return jsonify(error="invalid_param", detail="page and page_size must be integers"), 400
     try:
+        query_kwargs = {"page": page, "page_size": page_size}
+        if store:
+            query_kwargs["store"] = store
         return jsonify(_json_safe(oa.get_dianxiaomi_order_analysis(
             start_date,
             end_date,
-            page=page,
-            page_size=page_size,
+            **query_kwargs,
         )))
     except ValueError as exc:
         return jsonify(error="invalid_param", detail=str(exc)), 400

@@ -1141,6 +1141,7 @@ def get_dianxiaomi_order_analysis(
     *,
     page: int = 1,
     page_size: int = 50,
+    store: str | None = None,
 ) -> dict:
     start = _parse_iso_date_param(start_date, "start_date")
     end = _parse_iso_date_param(end_date, "end_date")
@@ -1151,19 +1152,31 @@ def get_dianxiaomi_order_analysis(
     page_size = max(10, min(int(page_size or 50), 200))
     offset = (page - 1) * page_size
 
-    where_sql = "FROM dianxiaomi_order_lines WHERE meta_business_date >= %s AND meta_business_date <= %s"
-    where_args = (start, end)
+    store_code = str(store or "").strip().lower()
+    if store_code == "all":
+        store_code = ""
+
+    where_clauses = [
+        "meta_business_date >= %s",
+        "meta_business_date <= %s",
+    ]
+    where_args: list[Any] = [start, end]
+    if store_code:
+        where_clauses.append("site_code = %s")
+        where_args.append(store_code)
+    where_sql = "FROM dianxiaomi_order_lines WHERE " + " AND ".join(where_clauses)
+    where_args_tuple = tuple(where_args)
     summary_row = query_one(
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "SUM(COALESCE(quantity, 0)) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping "
         + where_sql,
-        where_args,
+        where_args_tuple,
     ) or {}
     total_row = query_one(
         "SELECT COUNT(*) AS total " + where_sql,
-        where_args,
+        where_args_tuple,
     ) or {}
 
     order_time_expr = _dianxiaomi_order_time_expr()
@@ -1175,7 +1188,7 @@ def get_dianxiaomi_order_analysis(
         "ship_amount, order_currency "
         + where_sql + " "
         "ORDER BY order_time DESC, dxm_package_id DESC, id DESC LIMIT %s OFFSET %s",
-        where_args + (page_size, offset),
+        where_args_tuple + (page_size, offset),
     )
 
     total = int(total_row.get("total") or 0)
@@ -1187,6 +1200,9 @@ def get_dianxiaomi_order_analysis(
             "end_date": end,
             "date_field": "meta_business_date",
             "timezone": META_ATTRIBUTION_TIMEZONE,
+        },
+        "filters": {
+            "store": store_code,
         },
         "summary": {
             "total_sales": _revenue_with_shipping(product_net_sales, shipping),

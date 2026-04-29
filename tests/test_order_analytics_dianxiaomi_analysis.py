@@ -88,6 +88,44 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
     assert any("FROM dianxiaomi_order_lines" in sql for _kind, sql, _args in calls)
 
 
+def test_get_dianxiaomi_order_analysis_filters_by_store(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append(("one", sql, args))
+        if "COUNT(DISTINCT dxm_package_id)" in sql:
+            return {
+                "order_count": 1,
+                "units": 2,
+                "product_net_sales": 30.0,
+                "shipping": 4.0,
+            }
+        if "COUNT(*) AS total" in sql:
+            return {"total": 1}
+        return {}
+
+    def fake_query(sql, args=()):
+        calls.append(("many", sql, args))
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_dianxiaomi_order_analysis(
+        "2026-04-01",
+        "2026-04-30",
+        store="newjoy",
+    )
+
+    assert result["filters"]["store"] == "newjoy"
+    assert all("site_code = %s" in sql for _kind, sql, _args in calls)
+    assert calls[0][2] == (
+        oa._parse_meta_date("2026-04-01"),
+        oa._parse_meta_date("2026-04-30"),
+        "newjoy",
+    )
+
+
 def test_get_dianxiaomi_order_analysis_rejects_reversed_range():
     try:
         oa.get_dianxiaomi_order_analysis("2026-04-30", "2026-04-01", page=1, page_size=50)
@@ -244,6 +282,34 @@ def test_dianxiaomi_orders_endpoint_returns_json(authed_client_no_db, monkeypatc
         "page_size": 25,
     }
     assert response.get_json()["summary"]["total_sales"] == 1.0
+
+
+def test_dianxiaomi_orders_endpoint_passes_store_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_analysis(start_date, end_date, page=1, page_size=50, store=None):
+        captured.update({
+            "start_date": start_date,
+            "end_date": end_date,
+            "page": page,
+            "page_size": page_size,
+            "store": store,
+        })
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"total_sales": 0},
+            "pagination": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
+            "rows": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-01&end_date=2026-04-30&store=omurio"
+    )
+
+    assert response.status_code == 200
+    assert captured["store"] == "omurio"
 
 
 def test_dianxiaomi_orders_endpoint_returns_400_for_invalid_date(authed_client_no_db, monkeypatch):
@@ -428,6 +494,22 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "setCountryRange('today'" in body
     assert "start_date: start" in body
     assert "end_date: end" in body
+
+
+def test_data_analysis_page_has_dianxiaomi_store_filter_below_dates(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'id="dxmDateFilterRow"' in body
+    assert 'id="dxmStoreFilterRow"' in body
+    assert 'id="dxmStoreFilter"' in body
+    assert 'value="newjoy"' in body
+    assert 'value="omurio"' in body
+    assert body.index('id="dxmDateFilterRow"') < body.index('id="dxmStoreFilterRow"')
+    assert body.index('id="dxmStoreFilter"') < body.index('id="dxmOrderRefresh"')
+    assert "var store = document.getElementById('dxmStoreFilter').value;" in body
+    assert "params.set('store', store);" in body
 
 
 def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):

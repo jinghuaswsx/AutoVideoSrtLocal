@@ -336,12 +336,29 @@
   display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
 }
 .oa-controls label { font-size: 13px; color: var(--fg-muted); font-weight: 500; }
-.oa-controls select, .oa-controls input[type="number"] {
+.oa-controls select, .oa-controls input[type="number"], .oa-controls input[type="date"] {
   height: 32px; padding: 0 10px; border: 1px solid var(--border-strong);
   border-radius: var(--radius); font-size: 13px; background: var(--bg-card); color: var(--fg);
 }
 .oa-controls select:focus, .oa-controls input:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oa-filter-stack {
+  display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-5);
+}
+.oa-filter-stack .oa-controls {
+  margin-bottom: 0;
+}
+.oa-filter-row {
+  width: 100%;
+}
+.oa-filter-field {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+}
+@media (max-width: 768px) {
+  .oa-filter-field { width: 100%; align-items: flex-start; flex-direction: column; }
+  .oa-filter-field select, .oa-filter-field input[type="date"] { width: 100%; }
+  .oa-filter-row .btn { width: 100%; justify-content: center; }
 }
 .oa-search-box {
   position: relative; flex: 1; min-width: 200px; max-width: 320px;
@@ -1422,18 +1439,30 @@
     <span id="dxmOrderRangeLabel">本月</span>
   </div>
 
-  <div class="oa-controls">
-    <label>开始日期：</label>
-    <input type="date" id="dxmStartDate">
-    <label>结束日期：</label>
-    <input type="date" id="dxmEndDate">
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="today">今天</button>
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="yesterday">昨天</button>
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisWeek">本周</button>
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastWeek">上周</button>
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisMonth">本月</button>
-    <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastMonth">上月</button>
-    <button type="button" class="btn btn-primary btn-sm" id="dxmOrderRefresh">查询</button>
+  <div class="oa-filter-stack">
+    <div class="oa-controls oa-filter-row" id="dxmDateFilterRow">
+      <label>开始日期：</label>
+      <input type="date" id="dxmStartDate">
+      <label>结束日期：</label>
+      <input type="date" id="dxmEndDate">
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="today">今天</button>
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="yesterday">昨天</button>
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisWeek">本周</button>
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastWeek">上周</button>
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisMonth">本月</button>
+      <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastMonth">上月</button>
+    </div>
+    <div class="oa-controls oa-filter-row" id="dxmStoreFilterRow">
+      <div class="oa-filter-field">
+        <label for="dxmStoreFilter">店铺：</label>
+        <select id="dxmStoreFilter">
+          <option value="">全部店铺</option>
+          <option value="newjoy">NewJoy</option>
+          <option value="omurio">Omurio</option>
+        </select>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" id="dxmOrderRefresh">查询</button>
+    </div>
   </div>
 
   <div class="oa-stats" id="dxmOrderSummary"></div>
@@ -1916,6 +1945,7 @@
   function loadDxmOrders(page) {
     var start = document.getElementById('dxmStartDate').value;
     var end = document.getElementById('dxmEndDate').value;
+    var store = document.getElementById('dxmStoreFilter').value;
     var summaryEl = document.getElementById('dxmOrderSummary');
     var bodyEl = document.getElementById('dxmOrderBody');
     var pageInfo = document.getElementById('dxmOrderPageInfo');
@@ -1932,6 +1962,9 @@
       page: String(dxmOrderState.page),
       page_size: String(dxmOrderState.pageSize)
     });
+    if (store) {
+      params.set('store', store);
+    }
     var url = "/order-analytics/dianxiaomi-orders?" + params.toString();
     fetch(url)
       .then(function(r) {
