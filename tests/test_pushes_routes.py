@@ -492,6 +492,90 @@ def test_payload_preview_prefers_item_cover_over_stale_thumbnail(
     assert resp.get_json()["preview_cover_url"] == "/medias/item-cover/903"
 
 
+def test_payload_endpoint_includes_product_links_push_preview(
+    authed_client_no_db, monkeypatch,
+):
+    item = {
+        "id": 904,
+        "product_id": 317,
+        "lang": "de",
+        "filename": "de-demo.mp4",
+        "display_name": "de-demo.mp4",
+        "object_key": "79/medias/317/video.mp4",
+        "cover_object_key": "79/medias/317/cover.png",
+        "pushed_at": None,
+    }
+    product = {
+        "id": 317,
+        "name": "Sonic Lens Refresher",
+        "product_code": "sonic-lens-refresher-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "ad_supported_langs": "de",
+        "selling_points": "",
+        "importance": 3,
+        "listing_status": "上架",
+    }
+    product_links_preview = {
+        "target_url": "https://os.wedev.vip/dify/shopify/medias/links",
+        "payload": {
+            "handle": "sonic-lens-refresher-rjc",
+            "product_links": ["https://newjoyloo.com/de/products/sonic-lens-refresher-rjc"],
+        },
+        "links": [
+            {
+                "lang": "de",
+                "language_name": "德语",
+                "url": "https://newjoyloo.com/de/products/sonic-lens-refresher-rjc",
+            },
+        ],
+    }
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item_arg, product_arg: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_link",
+        lambda lang, code: "https://example.test/de/p",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item_arg, product_arg: {"videos": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "https://push.example.test",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_localized_text_payload",
+        lambda item_arg: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item_arg: {"texts": []},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.build_localized_texts_target_url", lambda mk_id: "")
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_links_push_preview",
+        lambda product_arg: product_links_preview,
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items/904/payload")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["product_links_push"] == product_links_preview
+
+
 def test_mark_pushed_updates_state(logged_in_client, seeded_item):
     pid, item_id = seeded_item
     resp = logged_in_client.post(
@@ -776,6 +860,47 @@ def test_push_localized_texts_success(logged_in_client, seeded_item, monkeypatch
     assert captured["url"] == f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts"
     assert captured["headers"]["Authorization"] == "Bearer sometoken"
     assert isinstance(captured["json"]["texts"], list) and captured["json"]["texts"]
+
+
+def test_push_product_links_from_pushes_modal_success(
+    authed_client_no_db, monkeypatch,
+):
+    item = {"id": 905, "product_id": 318, "pushed_at": None}
+    product = {
+        "id": 318,
+        "name": "Sonic Lens Refresher",
+        "product_code": "sonic-lens-refresher-rjc",
+    }
+    result = {
+        "ok": True,
+        "upstream_status": 200,
+        "response_body": "{\"code\":0}",
+        "target_url": "https://os.wedev.vip/dify/shopify/medias/links",
+    }
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr("web.routes.pushes.pushes.push_product_links", lambda product_arg: result)
+
+    resp = authed_client_no_db.post("/pushes/api/items/905/product-links-push")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == result
+
+
+def test_pushes_assets_include_product_link_push_tabs():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "PRODUCT_LINKS: 'product-links'" in script
+    assert "PRODUCT_LINKS_JSON: 'product-links-json'" in script
+    assert "label: '推送'" in script
+    assert "label: '链接生成预览'" in script
+    assert "label: '推送链接'" in script
+    assert "renderProductLinksPane" in script
+    assert "product_links_push" in script
+    assert "product-links-push" in script
 
 
 # ================================================================
