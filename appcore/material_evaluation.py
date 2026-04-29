@@ -55,6 +55,8 @@ def resolve_evaluation_llm_config() -> dict:
         logger.debug("resolve material evaluation LLM binding failed; using defaults", exc_info=True)
         binding = {"provider": EVALUATION_PROVIDER, "model": EVALUATION_MODEL}
     provider = str(binding.get("provider") or EVALUATION_PROVIDER).strip() or EVALUATION_PROVIDER
+    if provider == "gemini_vertex":
+        provider = "gemini_aistudio"
     if provider not in _SUPPORTED_EVALUATION_PROVIDERS:
         raise ValueError(
             f"素材评估仅支持 openrouter 或 gemini_aistudio，当前配置为 {provider}"

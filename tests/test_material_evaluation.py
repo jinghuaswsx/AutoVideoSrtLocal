@@ -347,6 +347,26 @@ def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypa
     assert detail["search_tools"] == [{"google_search": {}}]
 
 
+def test_resolve_evaluation_llm_config_maps_legacy_vertex_binding_to_aistudio(monkeypatch):
+    from appcore import material_evaluation
+
+    monkeypatch.setattr(
+        material_evaluation,
+        "llm_bindings",
+        SimpleNamespace(resolve=lambda code: {
+            "provider": "gemini_vertex",
+            "model": "google/gemini-3.1-pro-preview",
+        }),
+        raising=False,
+    )
+
+    config = material_evaluation.resolve_evaluation_llm_config()
+
+    assert config["provider"] == "gemini_aistudio"
+    assert config["model"] == "gemini-3.1-pro-preview"
+    assert config["search_tools"] == [{"google_search": {}}]
+
+
 def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):
     from appcore import material_evaluation
 
