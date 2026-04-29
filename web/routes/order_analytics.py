@@ -183,6 +183,55 @@ def true_roas():
         return jsonify(error="internal_error", detail=str(exc)), 500
 
 
+@bp.route("/order-analytics/dianxiaomi-orders")
+@login_required
+@admin_required
+def dianxiaomi_orders():
+    start_date = (request.args.get("start_date") or "").strip()
+    end_date = (request.args.get("end_date") or "").strip()
+    if not start_date or not end_date:
+        return jsonify(error="missing_date", detail="start_date and end_date are required"), 400
+    try:
+        page = int(request.args["page"]) if "page" in request.args else 1
+        page_size = int(request.args["page_size"]) if "page_size" in request.args else 50
+    except (TypeError, ValueError):
+        return jsonify(error="invalid_param", detail="page and page_size must be integers"), 400
+    try:
+        return jsonify(_json_safe(oa.get_dianxiaomi_order_analysis(
+            start_date,
+            end_date,
+            page=page,
+            page_size=page_size,
+        )))
+    except ValueError as exc:
+        return jsonify(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("dianxiaomi order analysis query failed: %s", exc)
+        return jsonify(error="internal_error", detail="dianxiaomi order analysis query failed"), 500
+
+
+@bp.route("/order-analytics/country-dashboard")
+@login_required
+@admin_required
+def country_dashboard():
+    period = (request.args.get("period") or "month").strip().lower()
+    if period not in ("day", "week", "month"):
+        return jsonify(error="invalid_period", detail="period must be one of day/week/month"), 400
+    try:
+        return jsonify(_json_safe(oa.get_country_dashboard(
+            period=period,
+            year=request.args.get("year", type=int),
+            month=request.args.get("month", type=int),
+            week=request.args.get("week", type=int),
+            date_str=request.args.get("date") or None,
+        )))
+    except ValueError as exc:
+        return jsonify(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("country dashboard query failed: %s", exc)
+        return jsonify(error="internal_error", detail="country dashboard query failed"), 500
+
+
 @bp.route("/order-analytics/dianxiaomi-import-batches")
 @login_required
 @admin_required

@@ -1131,6 +1131,182 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     }
 
 
+def _dianxiaomi_order_time_expr() -> str:
+    return "COALESCE(order_paid_at, paid_at, order_created_at, shipped_at, attribution_time_at)"
+
+
+def get_dianxiaomi_order_analysis(
+    start_date: str,
+    end_date: str,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    start = _parse_iso_date_param(start_date, "start_date")
+    end = _parse_iso_date_param(end_date, "end_date")
+    if end < start:
+        raise ValueError("end_date must be >= start_date")
+
+    page = max(1, int(page or 1))
+    page_size = max(10, min(int(page_size or 50), 200))
+    offset = (page - 1) * page_size
+
+    where_sql = "FROM dianxiaomi_order_lines WHERE meta_business_date >= %s AND meta_business_date <= %s"
+    where_args = (start, end)
+    summary_row = query_one(
+        "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping "
+        + where_sql,
+        where_args,
+    ) or {}
+    total_row = query_one(
+        "SELECT COUNT(*) AS total " + where_sql,
+        where_args,
+    ) or {}
+
+    order_time_expr = _dianxiaomi_order_time_expr()
+    rows = query(
+        "SELECT id, site_code, dxm_shop_name, dxm_package_id, dxm_order_id, extended_order_id, "
+        "package_number, order_state, buyer_country, buyer_country_name, "
+        + order_time_expr + " AS order_time, meta_business_date, product_name, product_sku, "
+        "product_sub_sku, product_display_sku, variant_text, quantity, unit_price, line_amount, "
+        "ship_amount, order_currency "
+        + where_sql + " "
+        "ORDER BY order_time DESC, dxm_package_id DESC, id DESC LIMIT %s OFFSET %s",
+        where_args + (page_size, offset),
+    )
+
+    total = int(total_row.get("total") or 0)
+    product_net_sales = _money(summary_row.get("product_net_sales"))
+    shipping = _money(summary_row.get("shipping"))
+    return {
+        "period": {
+            "start_date": start,
+            "end_date": end,
+            "date_field": "meta_business_date",
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+        },
+        "summary": {
+            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+            "order_count": int(summary_row.get("order_count") or 0),
+            "units": int(summary_row.get("units") or 0),
+            "shipping": shipping,
+            "product_net_sales": product_net_sales,
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        },
+        "rows": [
+            {
+                **row,
+                "quantity": int(row.get("quantity") or 0),
+                "unit_price": _money(row.get("unit_price")),
+                "line_amount": _money(row.get("line_amount")),
+                "ship_amount": _money(row.get("ship_amount")),
+                "total_sales": _revenue_with_shipping(
+                    _money(row.get("line_amount")),
+                    _money(row.get("ship_amount")),
+                ),
+            }
+            for row in rows
+        ],
+    }
+
+
+def _sort_order_dashboard_rows(rows: list[dict], *, name_key: str) -> list[dict]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            -(int(row.get("orders") or row.get("order_count") or 0)),
+            -(float(row.get("revenue") or row.get("total_sales") or 0)),
+            str(row.get(name_key) or "").lower(),
+        ),
+    )
+
+
+def get_country_dashboard(
+    period: str,
+    year: int | None = None,
+    month: int | None = None,
+    week: int | None = None,
+    date_str: str | None = None,
+    today: date | None = None,
+) -> dict:
+    period = str(period or "").strip().lower()
+    if period not in ("day", "week", "month"):
+        raise ValueError("period must be one of day/week/month")
+    start, end = _resolve_period_range(
+        period,
+        year=year,
+        month=month,
+        week=week,
+        date_str=date_str,
+        today=today,
+    )
+
+    rows = query(
+        "SELECT buyer_country, buyer_country_name, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping "
+        "FROM dianxiaomi_order_lines "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY buyer_country, buyer_country_name",
+        (start, end),
+    )
+
+    unknown_display_name = "未知"
+    countries = []
+    for row in rows:
+        product_net_sales = _money(row.get("product_net_sales"))
+        shipping = _money(row.get("shipping"))
+        country_code = (row.get("buyer_country") or "").strip()
+        country_name = (row.get("buyer_country_name") or "").strip()
+        display_name = (
+            f"{country_name} / {country_code}"
+            if country_name and country_code
+            else country_name or country_code or unknown_display_name
+        )
+        countries.append({
+            "buyer_country": country_code,
+            "buyer_country_name": country_name,
+            "display_name": display_name,
+            "order_count": int(row.get("order_count") or 0),
+            "units": int(row.get("units") or 0),
+            "product_net_sales": product_net_sales,
+            "shipping": shipping,
+            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+        })
+
+    countries = _sort_order_dashboard_rows(countries, name_key="display_name")
+    summary = {
+        "country_count": len(countries),
+        "total_orders": sum(row["order_count"] for row in countries),
+        "total_units": sum(row["units"] for row in countries),
+        "total_sales": round(sum(row["total_sales"] for row in countries), 2),
+        "shipping": round(sum(row["shipping"] for row in countries), 2),
+        "product_net_sales": round(sum(row["product_net_sales"] for row in countries), 2),
+    }
+    return {
+        "period": {
+            "type": period,
+            "start": start,
+            "end": end,
+            "label": _format_period_label(start, end, period),
+            "date_field": "meta_business_date",
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+        },
+        "summary": summary,
+        "countries": countries,
+    }
+
+
 def _coerce_ad_frequency(value: str | None) -> str:
     normalized = (value or "custom").strip().lower()
     if normalized not in {"weekly", "monthly", "custom"}:
@@ -2261,11 +2437,24 @@ def get_dashboard(
     )
 
     # 排序
-    sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else (
-        "spend" if ad_data_available else "revenue"
-    )
+    sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else "orders"
     reverse = (sort_dir.lower() == "desc")
-    rows.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0), reverse=reverse)
+    if sort_by in _DASHBOARD_SORT_FIELDS:
+        def explicit_sort_key(r: dict) -> tuple:
+            return (
+                r.get(sort_key) or 0,
+                r.get("orders") or 0,
+                r.get("revenue") or 0,
+                str(r.get("product_name") or "").lower(),
+            )
+
+        non_null_rows = [r for r in rows if r.get(sort_key) is not None]
+        null_rows = [r for r in rows if r.get(sort_key) is None]
+        non_null_rows.sort(key=explicit_sort_key, reverse=reverse)
+        null_rows.sort(key=explicit_sort_key, reverse=reverse)
+        rows = non_null_rows + null_rows
+    else:
+        rows = _sort_order_dashboard_rows(rows, name_key="product_name")
 
     summary = _summarize_dashboard(rows, ad_data_available)
 
