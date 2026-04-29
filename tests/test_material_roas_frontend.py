@@ -131,6 +131,7 @@ def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
 
     assert 'class="oc-roas-column oc-roas-tk-column"' in html
     assert 'id="roasAverageShippingSection"' in html
+    assert ">平均运费计算器</h4>" in html
     assert 'id="roasAverageShippingInput"' in html
     assert 'id="roasAverageShippingResult"' in html
     assert 'id="roasAverageShippingMeta"' in html
