@@ -193,6 +193,7 @@ class SubtitleRemovalRuntime:
         task_state.update(
             task_id,
             provider_task_id=provider_task_id,
+            provider_task_submitted_at=time.time(),
             provider_status="waiting",
             provider_emsg="已提交到字幕移除服务",
         )

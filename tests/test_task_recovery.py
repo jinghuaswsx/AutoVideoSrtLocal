@@ -561,7 +561,54 @@ def test_recover_all_interrupted_tasks_auto_starts_resumable_image_translate():
     m_start.assert_called_once_with("t-resumable", 42)
 
 
-def test_recover_project_state_marks_subtitle_removal_as_interrupted():
+def test_recover_all_interrupted_tasks_picks_up_interrupted_subtitle_removal_rows(monkeypatch):
+    from appcore import task_recovery
+
+    row = {
+        "id": "sr-boot",
+        "type": "subtitle_removal",
+        "status": "interrupted",
+        "state_json": json.dumps(
+            {
+                "type": "subtitle_removal",
+                "status": "interrupted",
+                "provider_task_id": "run-boot",
+                "steps": {
+                    "prepare": "done",
+                    "submit": "done",
+                    "poll": "interrupted",
+                    "download_result": "pending",
+                    "upload_result": "pending",
+                },
+            },
+            ensure_ascii=False,
+        ),
+    }
+    persisted = []
+
+    def fake_db_query(sql, args=()):
+        assert "'subtitle_removal'" in sql
+        assert "'interrupted'" in sql
+        return [row]
+
+    monkeypatch.setattr(task_recovery, "db_query", fake_db_query)
+    monkeypatch.setattr(task_recovery, "is_task_active", lambda project_type, task_id: False)
+    monkeypatch.setattr(
+        task_recovery,
+        "_persist_project_recovery",
+        lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
+    )
+
+    recovered = task_recovery.recover_all_interrupted_tasks()
+
+    assert recovered == 1
+    assert persisted[0][0] == "sr-boot"
+    assert persisted[0][2] == "running"
+    assert persisted[0][1]["status"] == "running"
+    assert persisted[0][1]["steps"]["poll"] == "running"
+
+
+def test_recover_project_state_keeps_subtitle_removal_provider_task_running():
     from appcore import task_recovery
 
     changed, recovered, status = task_recovery.recover_project_state(
@@ -570,6 +617,7 @@ def test_recover_project_state_marks_subtitle_removal_as_interrupted():
         state={
             "type": "subtitle_removal",
             "status": "running",
+            "provider_task_id": "run-1",
             "steps": {
                 "prepare": "done",
                 "submit": "done",
@@ -581,9 +629,36 @@ def test_recover_project_state_marks_subtitle_removal_as_interrupted():
     )
 
     assert changed is True
+    assert status == "running"
+    assert recovered["status"] == "running"
+    assert recovered["provider_task_id"] == "run-1"
+    assert recovered["steps"]["poll"] == "running"
+    assert recovered["error"] == ""
+
+
+def test_recover_project_state_marks_subtitle_removal_without_provider_task_interrupted():
+    from appcore import task_recovery
+
+    changed, recovered, status = task_recovery.recover_project_state(
+        project_type="subtitle_removal",
+        task_id="sr-orphan-unsubmitted",
+        state={
+            "type": "subtitle_removal",
+            "status": "running",
+            "steps": {
+                "prepare": "done",
+                "submit": "running",
+                "poll": "pending",
+                "download_result": "pending",
+            },
+        },
+        active=False,
+    )
+
+    assert changed is True
     assert status == "interrupted"
     assert recovered["status"] == "interrupted"
-    assert recovered["steps"]["poll"] == "interrupted"
+    assert recovered["steps"]["submit"] == "interrupted"
     assert "中断" in recovered["error"]
 
 

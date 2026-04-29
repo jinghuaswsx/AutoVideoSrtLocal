@@ -27,8 +27,8 @@ log = logging.getLogger(__name__)
 
 def _iter_pending_vod_tasks():
     rows = db_query(
-        "SELECT id, state_json FROM projects "
-        "WHERE type = 'subtitle_removal' AND status IN ('queued', 'running') AND deleted_at IS NULL"
+        "SELECT id, user_id, state_json FROM projects "
+        "WHERE type = 'subtitle_removal' AND status IN ('queued', 'running', 'interrupted') AND deleted_at IS NULL"
     )
     for row in rows or []:
         state = {}
@@ -44,6 +44,17 @@ def _iter_pending_vod_tasks():
         # provider_task_id（RunId）或 vod_result_vid 任一存在即可推进
         if not (state.get("provider_task_id") or state.get("vod_result_vid")):
             continue
+        state.setdefault("id", row["id"])
+        state.setdefault("_user_id", row.get("user_id"))
+        if (state.get("status") or "").strip().lower() == "interrupted":
+            state["status"] = "running"
+            state["error"] = ""
+        if (state.get("provider_task_id") or "").strip() and (steps.get("poll") or "") != "done":
+            steps["submit"] = "done"
+            steps["poll"] = "running"
+        with task_state._lock:
+            task_state._tasks[row["id"]] = state
+        task_state.update(row["id"], status=state.get("status") or "running", steps=steps, error=state.get("error") or "")
         yield row["id"], state
 
 

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from datetime import datetime
 
@@ -202,12 +203,73 @@ def _release_upload_bootstrap(task_id: str) -> None:
 
 
 def _cleanup_result_artifacts(task: dict) -> None:
+    result_tos_key = (task.get("result_tos_key") or "").strip()
+    if result_tos_key:
+        try:
+            tos_clients.delete_object(result_tos_key)
+        except Exception:
+            pass
     result_video_path = (task.get("result_video_path") or "").strip()
     if result_video_path and os.path.isfile(result_video_path):
         try:
             os.remove(result_video_path)
         except Exception:
             pass
+
+
+def _coerce_timestamp_seconds(value) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.timestamp()
+    raw = str(value or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _submission_age_seconds(task_id: str, task: dict) -> float:
+    submitted_at = _coerce_timestamp_seconds(task.get("provider_task_submitted_at"))
+    if submitted_at <= 0:
+        try:
+            row = db_query_one("SELECT created_at FROM projects WHERE id = %s", (task_id,))
+        except Exception:
+            row = None
+        if row:
+            submitted_at = _coerce_timestamp_seconds(row.get("created_at"))
+    if submitted_at <= 0:
+        return 0.0
+    return max(0.0, time.time() - submitted_at)
+
+
+def _resume_existing_provider_poll(task_id: str, task: dict, user_id: int) -> bool:
+    steps = dict(task.get("steps") or {})
+    step_messages = dict(task.get("step_messages") or {})
+    if (task.get("provider_task_id") or "").strip():
+        steps["submit"] = "done"
+        if steps.get("poll") != "done":
+            steps["poll"] = "running"
+            step_messages["poll"] = "正在重新查询已提交的字幕移除任务结果"
+    if (task.get("vod_result_vid") or "").strip():
+        steps["poll"] = "done"
+        if steps.get("download_result") != "done":
+            steps["download_result"] = "running"
+            step_messages["download_result"] = "正在重新获取字幕移除结果播放地址"
+    store.update(
+        task_id,
+        status="running",
+        error="",
+        steps=steps,
+        step_messages=step_messages,
+    )
+    return bool(subtitle_removal_runner.start(task_id, user_id=user_id))
 
 def _ensure_public_source_url(task_id: str, task: dict) -> str:
     source_tos_key = (task.get("source_tos_key") or "").strip()
@@ -781,6 +843,13 @@ def _result_response(task: dict, *, as_attachment: bool = False):
         except Exception:
             log.exception("[subtitle_removal] refresh vod play url failed task_id=%s vid=%s", task_id, vod_vid)
 
+    result_tos_key = (task.get("result_tos_key") or "").strip()
+    if result_tos_key:
+        try:
+            return redirect(tos_clients.generate_signed_download_url(result_tos_key, expires=3600))
+        except Exception:
+            log.exception("[subtitle_removal] result TOS signed url failed task_id=%s", task_id)
+
     provider_result_url = (task.get("provider_result_url") or "").strip()
     if provider_result_url.startswith("http://") or provider_result_url.startswith("https://"):
         return redirect(provider_result_url)
@@ -825,8 +894,18 @@ def resubmit(task_id: str):
 
     try:
         task = _get_owned_task(task_id)
-        if (task.get("status") or "").strip() in {"queued", "running"}:
+        task_status = (task.get("status") or "").strip()
+        if task_status in {"queued", "running"}:
             return jsonify({"error": "task is already running"}), 409
+        provider_task_id = (task.get("provider_task_id") or "").strip()
+        if task_status not in {"done", "ready"} and provider_task_id:
+            age_seconds = _submission_age_seconds(task_id, task)
+            window_seconds = int(getattr(config, "SUBTITLE_REMOVAL_RESUBMIT_POLL_WINDOW_SECONDS", 1800) or 1800)
+            if age_seconds <= window_seconds:
+                if subtitle_removal_runner.is_running(task_id):
+                    return jsonify({"error": "task is already running"}), 409
+                _resume_existing_provider_poll(task_id, task, current_user.id)
+                return jsonify({"task_id": task_id, "status": "running"}), 202
         _cleanup_result_artifacts(task)
         body = request.get_json(silent=True) or {}
         return _submit_locked(task_id, task, body)

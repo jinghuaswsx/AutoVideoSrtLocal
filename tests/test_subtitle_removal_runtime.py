@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from appcore.events import EventBus
 from appcore import task_state
 
@@ -625,3 +627,46 @@ def test_vod_runtime_uses_backup_tos_signed_source_url(monkeypatch, tmp_path):
     assert captured["source_url"] == (
         "https://backup.example/FILES/test/subtitle_removal/uploads/1/sr-vod-backup-source/source.mp4"
     )
+
+
+def test_vod_scheduler_tick_persists_play_url_for_cold_db_task(monkeypatch):
+    from appcore import subtitle_removal_vod_scheduler as scheduler
+
+    with task_state._lock:
+        task_state._tasks.pop("sr-vod-cold", None)
+
+    state = {
+        "id": "sr-vod-cold",
+        "type": "subtitle_removal",
+        "status": "running",
+        "_user_id": 1,
+        "provider_task_id": "run-1",
+        "vod_result_vid": "vid-1",
+        "vod_result_file_name": "cleaned.mp4",
+        "steps": {
+            "prepare": "done",
+            "submit": "done",
+            "poll": "done",
+            "download_result": "running",
+            "upload_result": "pending",
+        },
+    }
+
+    monkeypatch.setattr("config.SUBTITLE_REMOVAL_PROVIDER", "vod")
+    monkeypatch.setattr(
+        scheduler,
+        "db_query",
+        lambda sql, args=(): [{"id": "sr-vod-cold", "user_id": 1, "state_json": json.dumps(state)}],
+    )
+    monkeypatch.setattr(
+        scheduler,
+        "get_play_info",
+        lambda vid: {"PlayInfoList": [{"MainPlayUrl": "https://vod.example/result.mp4"}]},
+    )
+
+    scheduler.tick_once()
+
+    saved = task_state._tasks["sr-vod-cold"]
+    assert saved["status"] == "done"
+    assert saved["provider_result_url"] == "https://vod.example/result.mp4"
+    assert saved["steps"]["download_result"] == "done"

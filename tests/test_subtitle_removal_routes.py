@@ -493,6 +493,7 @@ def test_subtitle_removal_submit_supports_full_mode(authed_client_no_db, monkeyp
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    _mock_public_source_stage(monkeypatch)
     monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
 
     response = authed_client_no_db.post(
@@ -818,6 +819,7 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
         result_video_path=str(result_path),
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 3600)
     _mock_public_source_stage(monkeypatch)
     started = {}
     deleted = []
@@ -845,6 +847,63 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
     assert saved["remove_mode"] == "full"
     assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
     assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+
+
+def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new_submit(
+    authed_client_no_db, monkeypatch, tmp_path
+):
+    result_path = tmp_path / "result.cleaned.mp4"
+    result_path.write_bytes(b"old-result")
+    store.create_subtitle_removal(
+        "sr-resubmit-recent",
+        "uploads/source.mp4",
+        "output/sr-resubmit-recent",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-resubmit-recent",
+        status="interrupted",
+        provider_task_id="provider-task-recent",
+        provider_task_submitted_at=1234.0,
+        result_tos_key="artifacts/1/sr-resubmit-recent/subtitle_removal/result.cleaned.mp4",
+        result_video_path=str(result_path),
+        steps={
+            "prepare": "done",
+            "submit": "done",
+            "poll": "interrupted",
+            "download_result": "pending",
+            "upload_result": "pending",
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 60)
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal._ensure_public_source_url",
+        lambda task_id, task: (_ for _ in ()).throw(AssertionError("recent resubmit should not stage a new source")),
+    )
+    deleted = []
+    started = []
+    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append((task_id, user_id)) or True,
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-resubmit-recent/resubmit",
+        json={"remove_mode": "full"},
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["status"] == "running"
+    assert started == [("sr-resubmit-recent", 1)]
+    assert deleted == []
+    assert result_path.exists()
+    saved = store.get("sr-resubmit-recent")
+    assert saved["provider_task_id"] == "provider-task-recent"
+    assert saved["result_tos_key"] == "artifacts/1/sr-resubmit-recent/subtitle_removal/result.cleaned.mp4"
+    assert saved["steps"]["poll"] == "running"
 
 
 def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task(authed_client_no_db, monkeypatch):

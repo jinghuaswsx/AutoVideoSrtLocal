@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -113,6 +114,7 @@ class SubtitleRemovalVodRuntime:
         task_state.update(
             task_id,
             provider_task_id=run_id,
+            provider_task_submitted_at=time.time(),
             provider_status="running",
             provider_emsg="VOD 字幕擦除任务已提交",
         )

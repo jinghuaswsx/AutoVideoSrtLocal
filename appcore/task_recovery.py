@@ -27,7 +27,7 @@ RECOVERABLE_PROJECT_TYPES = (
 )
 LINK_CHECK_STARTUP_RECOVERY_STATUSES = ("locking_locale", "downloading", "analyzing", "summarizing")
 IMAGE_TRANSLATE_STARTUP_RECOVERY_STATUSES = ("queued", "running")
-SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES = ("queued", "running", "submitted")
+SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES = ("queued", "running", "submitted", "interrupted")
 
 _active_tasks: set[tuple[str, str]] = set()
 _active_lock = threading.Lock()
@@ -75,6 +75,35 @@ def _mark_inflight_steps_as_interrupted(state: dict) -> bool:
 def _has_waiting_steps(state: dict) -> bool:
     steps = state.get("steps", {}) or {}
     return any(status == "waiting" for status in steps.values())
+
+
+def _recover_subtitle_removal_state(state: dict) -> tuple[bool, dict, str]:
+    steps = state.setdefault("steps", {})
+    provider_task_id = (state.get("provider_task_id") or "").strip()
+    vod_result_vid = (state.get("vod_result_vid") or "").strip()
+    result_video_path = (state.get("result_video_path") or "").strip()
+
+    if provider_task_id or vod_result_vid or result_video_path:
+        if provider_task_id:
+            steps["submit"] = "done"
+        if vod_result_vid:
+            steps["poll"] = "done"
+            if steps.get("download_result") != "done":
+                steps["download_result"] = "running"
+        elif provider_task_id and steps.get("poll") != "done":
+            steps["poll"] = "running"
+        if result_video_path and steps.get("download_result") == "done" and steps.get("upload_result") != "done":
+            steps["upload_result"] = "running"
+        state["status"] = "running"
+        state["error"] = ""
+        return True, state, "running"
+
+    changed = _mark_inflight_steps_as_interrupted(state)
+    if not changed:
+        changed = True
+    state["status"] = "interrupted"
+    state["error"] = RECOVERY_INTERRUPTED_MESSAGE
+    return True, state, "interrupted"
 
 
 def recover_project_state(project_type: str, task_id: str, state: dict | None, active: bool | None = None) -> tuple[bool, dict, str | None]:
@@ -185,12 +214,7 @@ def recover_project_state(project_type: str, task_id: str, state: dict | None, a
         recovered["error"] = IMAGE_TRANSLATE_INTERRUPTED_MESSAGE
         return True, recovered, "interrupted"
     elif project_type == "subtitle_removal" and recovered.get("status") in SUBTITLE_REMOVAL_STARTUP_RECOVERY_STATUSES:
-        changed = _mark_inflight_steps_as_interrupted(recovered)
-        if not changed:
-            changed = True
-        recovered["status"] = "interrupted"
-        recovered["error"] = RECOVERY_INTERRUPTED_MESSAGE
-        return True, recovered, "interrupted"
+        return _recover_subtitle_removal_state(recovered)
     elif project_type in INTERRUPTED_PIPELINE_PROJECT_TYPES:
         if _has_waiting_steps(recovered):
             return False, recovered, None
