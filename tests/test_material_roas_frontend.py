@@ -104,6 +104,27 @@ def test_roas_modal_fills_main_area_outside_sidebar():
     assert "height:100%" in roas_modal_css
 
 
+def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    form_css = html.split("#roasForm {", 1)[1].split("}", 1)[0]
+    layout_css = html.split(".oc-roas-layout {", 1)[1].split("}", 1)[0]
+    column_css = html.split(".oc-roas-column {", 1)[1].split("}", 1)[0]
+    field_list_css = html.split(".oc-roas-field-list {", 1)[1].split("}", 1)[0]
+    field_label_css = html.split(".oc-roas-field label {", 1)[1].split("}", 1)[0]
+
+    assert "display:flex" in form_css
+    assert "flex:1 1 auto" in form_css
+    assert "min-height:0" in form_css
+    assert "height:100%" in layout_css
+    assert "align-items:stretch" in layout_css
+    assert "overflow-y:auto" in column_css
+    assert "height:100%" in column_css
+    assert "max-height:min(60vh, 640px)" not in column_css
+    assert "gap:var(--oc-sp-2)" in field_list_css
+    assert "margin-bottom:3px" in field_label_css
+
+
 def test_roas_button_is_after_ai_evaluate_button():
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     row_actions = js.split('<div class="oc-row-actions">', 1)[1].split("</div>", 1)[0]
