@@ -440,6 +440,9 @@
         <span class="nav-icon">📋</span> 任务中心
       </a>
       {% endif %}
+      <a href="{{ url_for('tools.index') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/tools') %}class="active"{% endif %}>
+        <span class="nav-icon">∑</span> 小工具
+      </a>
       {% if has_permission('raw_video_pool') %}
       <a href="/raw-video-pool/" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/raw-video-pool/') %}class="active"{% endif %}>
         <span class="nav-icon">🎬</span> 原始素材任务库
