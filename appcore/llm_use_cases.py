@@ -309,6 +309,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "push_quality.check": _uc(
+        "push_quality.check",
+        "material",
+        "推送内容质量检查",
+        "推送前检查小语种文案、封面图和视频前 5 秒是否纯净匹配目标语种",
+        "openrouter",
+        "google/gemini-3.1-flash-lite-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 图片与链接
     "image_translate.detect": _uc(
         "image_translate.detect",

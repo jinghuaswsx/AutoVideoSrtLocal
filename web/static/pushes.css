@@ -415,6 +415,105 @@
   word-break: break-word;
 }
 
+.pm-quality-section {
+  padding: var(--oc-sp-4);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-lg);
+  background: var(--oc-bg-subtle);
+}
+.pm-quality-panel {
+  display: grid;
+  gap: var(--oc-sp-3);
+}
+.pm-quality-head {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-sp-3);
+}
+.pm-quality-head > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pm-quality-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--oc-fg);
+}
+.pm-quality-subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--oc-fg-muted);
+  line-height: 1.45;
+}
+.pm-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--oc-sp-3);
+}
+.pm-quality-card {
+  min-height: 104px;
+  padding: var(--oc-sp-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-bg);
+}
+.pm-quality-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--oc-sp-2);
+}
+.pm-quality-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--oc-fg);
+}
+.pm-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--oc-sp-2);
+  border-radius: var(--oc-r-md);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pm-quality-badge.is-passed {
+  background: var(--oc-success-bg);
+  color: var(--oc-success-fg);
+}
+.pm-quality-badge.is-warning,
+.pm-quality-badge.is-running {
+  background: var(--oc-warning-bg);
+  color: var(--oc-warning-fg);
+}
+.pm-quality-badge.is-failed,
+.pm-quality-badge.is-error {
+  background: var(--oc-danger-bg);
+  color: var(--oc-danger-fg);
+}
+.pm-quality-badge.is-pending {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-muted);
+}
+.pm-quality-summary {
+  margin: var(--oc-sp-2) 0 0;
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pm-quality-issues,
+.pm-quality-reasons {
+  margin: var(--oc-sp-2) 0 0;
+  padding-left: 18px;
+  color: var(--oc-danger-fg);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pm-quality-retry {
+  flex: 0 0 auto;
+}
+
 /* ---------- 语种圆片 ---------- */
 .lang-pill {
   display: inline-block;
@@ -823,4 +922,6 @@
   .pm-overlay { padding: 24px var(--oc-sp-3); }
   .pm-kv { grid-template-columns: 100px 1fr; }
   .pm-thumb { width: 100%; }
+  .pm-quality-head { align-items: flex-start; flex-wrap: wrap; }
+  .pm-quality-grid { grid-template-columns: 1fr; }
 }

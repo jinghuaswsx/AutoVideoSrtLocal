@@ -14,6 +14,8 @@ def get_scheduler() -> BackgroundScheduler:
         subtitle_removal_vod_scheduler.register(_scheduler)
         from appcore import material_evaluation_scheduler
         material_evaluation_scheduler.register(_scheduler)
+        from appcore import push_quality_check_scheduler
+        push_quality_check_scheduler.register(_scheduler)
         from appcore import product_cover_backfill_scheduler
         product_cover_backfill_scheduler.register(_scheduler)
         from appcore import tos_backup_job
