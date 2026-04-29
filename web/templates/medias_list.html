@@ -1816,7 +1816,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   display:flex;
   flex-direction:column;
   gap:var(--oc-sp-4);
-  overflow:hidden;
+  overflow-y:auto;
 }
 .oc-product-links-meta {
   margin:4px 0 0;
@@ -1853,14 +1853,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
 .oc-product-links-active-area {
-  min-height:240px;
-  max-height:min(460px, max(240px, calc(100vh - 380px)));
-  overflow:hidden;
+  overflow:visible;
 }
 .oc-product-links-panel[hidden] { display:none !important; }
 .oc-product-links-panel {
   min-width:0;
-  height:100%;
 }
 .oc-product-links-panel h4 {
   margin:0 0 var(--oc-sp-3);

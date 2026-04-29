@@ -1806,6 +1806,12 @@
     }
   }
 
+  window.setProductLinksPushActiveTab = setProductLinksPushActiveTab;
+  window.submitProductLinksPush = submitProductLinksPush;
+  window.closeProductLinksPushModal = closeProductLinksPushModal;
+  window.submitProductCopyPush = submitProductCopyPush;
+  window.closeProductCopyPushModal = closeProductCopyPushModal;
+
   async function startMkIdInlineEdit(td) {
     if (td.dataset.editing === '1') return;
     td.dataset.editing = '1';
@@ -6153,19 +6159,19 @@
     const productLinksTab = event.target.closest('[data-product-links-tab]');
     if (productLinksTab) {
       event.preventDefault();
-      setProductLinksPushActiveTab(productLinksTab.dataset.productLinksTab);
+      window.setProductLinksPushActiveTab(productLinksTab.dataset.productLinksTab);
       return;
     }
 
     if (event.target.closest('#productLinksPushSubmit')) {
       event.preventDefault();
-      await submitProductLinksPush();
+      await window.submitProductLinksPush();
       return;
     }
 
     if (event.target.closest('#productCopyPushSubmit')) {
       event.preventDefault();
-      await submitProductCopyPush();
+      await window.submitProductCopyPush();
       return;
     }
 
@@ -6173,7 +6179,7 @@
       event.target === $('productLinksPushModalMask')
       || event.target.closest('#productLinksPushClose')
     ) {
-      closeProductLinksPushModal();
+      window.closeProductLinksPushModal();
       return;
     }
 
@@ -6182,7 +6188,7 @@
       || event.target.closest('#productCopyPushClose')
       || event.target.closest('#productCopyPushCancel')
     ) {
-      closeProductCopyPushModal();
+      window.closeProductCopyPushModal();
       return;
     }
 

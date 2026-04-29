@@ -232,8 +232,15 @@ def test_medias_product_links_push_modal_uses_tabs_and_centered_footer():
     assert ".oc-product-links-footer" in template
     assert ".oc-pl-response.success" in template
     assert ".oc-pl-response.danger" in template
+    assert ".oc-product-links-active-area {\n  overflow:visible;" in template
+    assert "max-height:min(460px, max(240px, calc(100vh - 380px)))" not in template
+    assert ".oc-product-links-modal .oc-modal-body" in template
+    assert "overflow-y:auto;" in template
 
     assert "setProductLinksPushActiveTab" in script
+    assert "window.setProductLinksPushActiveTab = setProductLinksPushActiveTab" in script
+    assert "window.closeProductLinksPushModal = closeProductLinksPushModal" in script
+    assert "window.submitProductLinksPush = submitProductLinksPush" in script
     assert "data-product-links-tab" in script
     assert "productLinksPushIsSuccess" in script
     assert "productLinksPushRenderResponse" in script
