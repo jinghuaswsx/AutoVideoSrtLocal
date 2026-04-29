@@ -2008,7 +2008,17 @@ def api_list_languages():
 # 绗竴杞彧鍦ㄨ嫳璇绉嶆毚闇插叆鍙ｏ紝鍏朵粬璇鐨勭増鏈皢鐢卞悗缁浘鐗囩炕璇戦泦鎴愯嚜鍔ㄧ敓鎴愩€?
 # ======================================================================
 
-_DETAIL_IMAGES_MAX_BATCH = 20
+_DETAIL_IMAGES_STATIC_MAX = 50
+_DETAIL_IMAGES_GIF_MAX = 20
+_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES = _DETAIL_IMAGES_STATIC_MAX + _DETAIL_IMAGES_GIF_MAX
+_DETAIL_IMAGE_LIMITS = {
+    "static": _DETAIL_IMAGES_STATIC_MAX,
+    "gif": _DETAIL_IMAGES_GIF_MAX,
+}
+_DETAIL_IMAGE_KIND_LABELS = {
+    "static": "static detail images",
+    "gif": "GIF detail images",
+}
 
 _DETAIL_IMAGES_ARCHIVE_COUNTRY_PREFIXES = {
     "de": "德国",
@@ -2058,6 +2068,66 @@ def _detail_images_archive_product_code(product: dict, pid: int) -> str:
 
 def _detail_images_is_gif(row: dict) -> bool:
     return medias.detail_image_is_gif(row)
+
+
+def _detail_image_kind_from_payload(item: dict) -> str:
+    content_type = str((item or {}).get("content_type") or "").split(";")[0].strip().lower()
+    raw_key = str(
+        (item or {}).get("object_key")
+        or (item or {}).get("filename")
+        or (item or {}).get("source_url")
+        or ""
+    ).strip().lower()
+    path = urlparse(raw_key).path.lower()
+    if content_type == "image/gif" or path.endswith(".gif") or raw_key.endswith(".gif"):
+        return "gif"
+    return "static"
+
+
+def _detail_image_kind_from_download_ext(ext: str | None) -> str:
+    return "gif" if str(ext or "").lower() == ".gif" else "static"
+
+
+def _detail_image_empty_counts() -> dict[str, int]:
+    return {"static": 0, "gif": 0}
+
+
+def _detail_image_existing_counts(pid: int, lang: str) -> dict[str, int]:
+    counts = _detail_image_empty_counts()
+    for row in medias.list_detail_images(pid, lang):
+        kind = "gif" if _detail_images_is_gif(row) else "static"
+        counts[kind] += 1
+    return counts
+
+
+def _detail_image_incoming_counts(items: list[dict]) -> dict[str, int]:
+    counts = _detail_image_empty_counts()
+    for item in items:
+        counts[_detail_image_kind_from_payload(item)] += 1
+    return counts
+
+
+def _detail_image_limit_error(
+    pid: int,
+    lang: str,
+    incoming_items: list[dict],
+    *,
+    existing_counts: dict[str, int] | None = None,
+) -> str | None:
+    existing = existing_counts if existing_counts is not None else _detail_image_existing_counts(pid, lang)
+    incoming = _detail_image_incoming_counts(incoming_items)
+    for kind, max_count in _DETAIL_IMAGE_LIMITS.items():
+        label = _DETAIL_IMAGE_KIND_LABELS[kind]
+        if incoming[kind] > max_count:
+            return f"too many {label} (max {max_count})"
+        current = int(existing.get(kind) or 0)
+        total = current + incoming[kind]
+        if total > max_count:
+            return (
+                f"too many {label} "
+                f"(max {max_count}, current {current}, incoming {incoming[kind]})"
+            )
+    return None
 
 
 def _detail_images_archive_part(value: str, fallback: str) -> str:
@@ -2253,8 +2323,8 @@ def api_detail_images_from_url(pid: int):
                    error="no images found",
                    message="no carousel/detail images detected on the page")
             return
-        if len(images) > _DETAIL_IMAGES_MAX_BATCH:
-            images = images[:_DETAIL_IMAGES_MAX_BATCH]
+        if len(images) > _DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES:
+            images = images[:_DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES]
 
         if clear_existing:
             try:
@@ -2263,9 +2333,11 @@ def api_detail_images_from_url(pid: int):
                 update(status="failed", error=str(exc),
                        message=f"failed to clear existing detail images: {exc}")
                 return
+            limit_counts = _detail_image_empty_counts()
             update(status="downloading", total=len(images),
                    message=f"cleared {cleared} existing detail images; found {len(images)} images, starting download")
         else:
+            limit_counts = _detail_image_existing_counts(pid, lang)
             update(status="downloading", total=len(images),
                    message=f"found {len(images)} images, starting download")
 
@@ -2277,17 +2349,25 @@ def api_detail_images_from_url(pid: int):
                    message=f"downloading image {idx + 1}/{len(images)}")
             filename = f"from_url_{lang}_{idx:02d}"
             try:
-                obj_key, data, err = _download_image_to_local_media(
+                obj_key, data, ext = _download_image_to_local_media(
                     src, pid, filename, user_id=uid,
                 )
-                if err and not obj_key:
-                    errors.append(f"{src}: {err}")
+                if ext and not obj_key:
+                    errors.append(f"{src}: {ext}")
+                    continue
+                kind = _detail_image_kind_from_download_ext(ext)
+                if limit_counts[kind] >= _DETAIL_IMAGE_LIMITS[kind]:
+                    errors.append(
+                        f"{src}: skipped, {_DETAIL_IMAGE_KIND_LABELS[kind]} limit reached "
+                        f"(max {_DETAIL_IMAGE_LIMITS[kind]})"
+                    )
                     continue
                 new_id = medias.add_detail_image(
                     pid, lang, obj_key,
                     content_type=None, file_size=len(data) if data else None,
                     origin_type="from_url",
                 )
+                limit_counts[kind] += 1
                 row = medias.get_detail_image(new_id)
                 if row:
                     created.append(_serialize_detail_image(row))
@@ -2333,10 +2413,8 @@ def api_detail_images_bootstrap(pid: int):
     files = body.get("files") or []
     if not isinstance(files, list) or not files:
         return jsonify({"error": "files required"}), 400
-    if len(files) > _DETAIL_IMAGES_MAX_BATCH:
-        return jsonify({"error": f"too many files (max {_DETAIL_IMAGES_MAX_BATCH})"}), 400
 
-    uploads = []
+    validated_files: list[dict] = []
     for idx, f in enumerate(files):
         if not isinstance(f, dict):
             return jsonify({"error": f"files[{idx}] must be an object"}), 400
@@ -2356,13 +2434,25 @@ def api_detail_images_bootstrap(pid: int):
         if size and size > _MAX_IMAGE_BYTES:
             return jsonify({"error": f"files[{idx}] exceeds 15MB"}), 400
 
+        validated_files.append({
+            "filename": filename,
+            "content_type": ct,
+            "size": size,
+        })
+
+    limit_error = _detail_image_limit_error(pid, lang, validated_files)
+    if limit_error:
+        return jsonify({"error": limit_error}), 400
+
+    uploads = []
+    for idx, f in enumerate(validated_files):
         object_key = object_keys.build_media_object_key(
-            current_user.id, pid, f"detail_{lang}_{idx:02d}_{filename}",
+            current_user.id, pid, f"detail_{lang}_{idx:02d}_{f['filename']}",
         )
         uploads.append({
             "idx": idx,
             "object_key": object_key,
-                "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
+            "upload_url": _reserve_local_media_upload(object_key)["upload_url"],
         })
 
     return jsonify({
@@ -2386,10 +2476,8 @@ def api_detail_images_complete(pid: int):
     images = body.get("images") or []
     if not isinstance(images, list) or not images:
         return jsonify({"error": "images required"}), 400
-    if len(images) > _DETAIL_IMAGES_MAX_BATCH:
-        return jsonify({"error": f"too many images (max {_DETAIL_IMAGES_MAX_BATCH})"}), 400
 
-    created: list[dict] = []
+    validated_images: list[dict] = []
     for idx, img in enumerate(images):
         if not isinstance(img, dict):
             return jsonify({"error": f"images[{idx}] must be an object"}), 400
@@ -2398,6 +2486,17 @@ def api_detail_images_complete(pid: int):
             return jsonify({"error": f"images[{idx}].object_key required"}), 400
         if not _is_media_available(object_key):
             return jsonify({"error": f"images[{idx}] object missing: {object_key}"}), 400
+        normalized = dict(img)
+        normalized["object_key"] = object_key
+        normalized["content_type"] = (img.get("content_type") or "").strip().lower()
+        validated_images.append(normalized)
+
+    limit_error = _detail_image_limit_error(pid, lang, validated_images)
+    if limit_error:
+        return jsonify({"error": limit_error}), 400
+
+    created: list[dict] = []
+    for img in validated_images:
 
         def _opt_int(v):
             try:
@@ -2406,8 +2505,8 @@ def api_detail_images_complete(pid: int):
                 return None
 
         new_id = medias.add_detail_image(
-            pid, lang, object_key,
-            content_type=(img.get("content_type") or "").strip().lower() or None,
+            pid, lang, img["object_key"],
+            content_type=img.get("content_type") or None,
             file_size=_opt_int(img.get("file_size") or img.get("size")),
             width=_opt_int(img.get("width")),
             height=_opt_int(img.get("height")),
