@@ -109,6 +109,56 @@ def test_pushes_api_items_includes_language_specific_product_page_url(
     )
 
 
+def test_pushes_api_items_prefers_item_cover_over_stale_thumbnail(
+    authed_client_no_db, monkeypatch,
+):
+    row = {
+        "id": 903,
+        "product_id": 316,
+        "product_name": "Sonic Lens Refresher",
+        "product_code": "sonic-lens-refresher-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "lang": "it",
+        "filename": "it-demo.mp4",
+        "display_name": "it-demo.mp4",
+        "duration_seconds": 12.0,
+        "file_size": 123456,
+        "created_at": datetime(2026, 4, 29, 11, 43, 51),
+        "pushed_at": None,
+        "cover_object_key": "79/medias/316/new-cover.png",
+        "thumbnail_path": "media_thumbs/316/903.jpg",
+        "ad_supported_langs": "it",
+        "selling_points": "",
+        "importance": 3,
+    }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        lambda **kwargs: ([row], 1),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item, product: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_status",
+        lambda item, product: "pending",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items?page=1")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"][0]["cover_url"] == "/medias/item-cover/903"
+
+
 def test_pushes_api_items_includes_product_ai_review_fields(
     authed_client_no_db, monkeypatch,
 ):
@@ -359,6 +409,87 @@ def test_payload_success(logged_in_client, seeded_item, monkeypatch):
     assert "payload" in data
     assert "push_url" in data
     assert data["payload"]["videos"][0]["url"].startswith("https://signed/")
+
+
+def test_payload_preview_prefers_item_cover_over_stale_thumbnail(
+    authed_client_no_db, monkeypatch,
+):
+    item = {
+        "id": 903,
+        "product_id": 316,
+        "lang": "it",
+        "filename": "it-demo.mp4",
+        "display_name": "it-demo.mp4",
+        "object_key": "79/medias/316/video.mp4",
+        "cover_object_key": "79/medias/316/new-cover.png",
+        "thumbnail_path": "media_thumbs/316/903.jpg",
+        "pushed_at": None,
+    }
+    product = {
+        "id": 316,
+        "name": "Sonic Lens Refresher",
+        "product_code": "sonic-lens-refresher-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "ad_supported_langs": "it",
+        "selling_points": "",
+        "importance": 3,
+        "listing_status": "上架",
+    }
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: item,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: product,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item_arg, product_arg: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.probe_ad_url",
+        lambda url: (True, None),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_link",
+        lambda lang, code: "https://example.test/it/p",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item_arg, product_arg: {
+            "videos": [{"image_url": "http://local/medias/obj/new-cover.png"}],
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "https://push.example.test",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_localized_text_payload",
+        lambda item_arg: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item_arg: {"texts": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_target_url",
+        lambda mk_id: "",
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items/903/payload")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["preview_cover_url"] == "/medias/item-cover/903"
 
 
 def test_mark_pushed_updates_state(logged_in_client, seeded_item):

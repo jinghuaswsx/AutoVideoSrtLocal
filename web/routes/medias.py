@@ -1757,21 +1757,7 @@ def item_cover(item_id: int):
     p = medias.get_product(it["product_id"])
     if not _can_access_product(p):
         abort(404)
-    product_dir = THUMB_DIR / str(it["product_id"])
-    for ext in (".jpg", ".jpeg", ".png", ".webp"):
-        f = product_dir / f"item_cover_{item_id}{ext}"
-        if f.exists():
-            mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
-            return send_file(str(f), mimetype=mime)
-    try:
-        product_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(it["cover_object_key"]).suffix or ".jpg"
-        local = product_dir / f"item_cover_{item_id}{ext}"
-        _download_media_object(it["cover_object_key"], str(local))
-        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext[1:]}"
-        return send_file(str(local), mimetype=mime)
-    except Exception:
-        abort(404)
+    return _send_media_object(it["cover_object_key"])
 
 
 @bp.route("/raw-sources/<int:rid>/video", methods=["GET"])

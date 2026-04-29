@@ -51,6 +51,12 @@ def _serialize_ai_score(value):
         return value
 
 
+def _item_cover_url(item_id: int, item: dict) -> str | None:
+    if (item or {}).get("cover_object_key"):
+        return f"/medias/item-cover/{item_id}"
+    return None
+
+
 def _serialize_row(row: dict) -> dict:
     item_shape = dict(row)
     product_shape = {
@@ -71,15 +77,7 @@ def _serialize_row(row: dict) -> dict:
     readiness = pushes.compute_readiness(item_shape, product_shape)
     status = pushes.compute_status(item_shape, product_shape)
     item_id = row["id"]
-    # 与素材管理页保持一致：优先用入库生成的 thumbnail_path（本地必然存在），
-    # 回退到 item-cover（端点自带懒加载）。/medias/obj 严格要求本地已回填，
-    # 老素材经常缺，导致推送列表缩略图大面积 404。
-    if row.get("thumbnail_path"):
-        cover_url = f"/medias/thumb/{item_id}"
-    elif row.get("cover_object_key"):
-        cover_url = f"/medias/item-cover/{item_id}"
-    else:
-        cover_url = None
+    cover_url = _item_cover_url(item_id, row)
     return {
         "id": item_id,
         "product_id": row["product_id"],
@@ -182,14 +180,7 @@ def api_build_payload(item_id: int):
     mk_id = product.get("mk_id")
     localized_text = pushes.resolve_localized_text_payload(item)
     localized_texts_request = pushes.build_localized_texts_request(item)
-    # UI 专用的预览封面：优先本地 thumbnail_path（入库即生成，必有），
-    # 回退 item-cover（带懒加载）。不放进 payload.videos[]，避免污染 JSON 预览和下游。
-    if item.get("thumbnail_path"):
-        preview_cover_url = f"/medias/thumb/{item_id}"
-    elif item.get("cover_object_key"):
-        preview_cover_url = f"/medias/item-cover/{item_id}"
-    else:
-        preview_cover_url = None
+    preview_cover_url = _item_cover_url(item_id, item)
     return jsonify({
         "payload": payload,
         "push_url": pushes.get_push_target_url(),
