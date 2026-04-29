@@ -1462,6 +1462,59 @@ def test_get_product_api_includes_shopifyid(
     assert data["product"]["shopifyid"] == "8560559554733"
 
 
+def test_medias_index_q_sets_initial_search_query(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.product_roas, "get_configured_rmb_per_usd", lambda: 6.83)
+    monkeypatch.setattr(r.shopify_image_localizer_release, "get_release_info", lambda: {})
+
+    resp = authed_client_no_db.get("/medias/?q=rotary-lock-metal-box-cutter-rjc")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "window.MEDIAS_LIST_INITIAL_QUERY" in html
+    assert "rotary-lock-metal-box-cutter-rjc" in html
+
+
+def test_product_code_route_renders_full_page_detail_config(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    product = {
+        "id": 77,
+        "user_id": 1,
+        "name": "Rotary Lock Metal Box Cutter",
+        "product_code": "rotary-lock-metal-box-cutter-rjc",
+    }
+    monkeypatch.setattr(r.medias, "get_product_by_code", lambda code: product if code == product["product_code"] else None)
+    monkeypatch.setattr(r, "_can_access_product", lambda item: item is product)
+    monkeypatch.setattr(r.product_roas, "get_configured_rmb_per_usd", lambda: 6.83)
+    monkeypatch.setattr(r.shopify_image_localizer_release, "get_release_info", lambda: {})
+
+    resp = authed_client_no_db.get("/medias/rotary-lock-metal-box-cutter-rjc")
+
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "oc-product-detail-page" in html
+    assert "productDetailLoading" in html
+    assert "window.MEDIAS_PRODUCT_DETAIL" in html
+    assert '"productId": 77' in html
+    assert "rotary-lock-metal-box-cutter-rjc" in html
+
+
+def test_product_code_route_returns_404_when_product_missing(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product_by_code", lambda code: None)
+
+    resp = authed_client_no_db.get("/medias/missing-product-rjc")
+
+    assert resp.status_code == 404
+
+
 def _stub_update_product_target(monkeypatch):
     from web.routes import medias as r
 

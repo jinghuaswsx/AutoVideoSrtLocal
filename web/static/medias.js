@@ -5,6 +5,52 @@
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const $ = (id) => document.getElementById(id);
 
+  function productDetailConfig() {
+    return window.MEDIAS_PRODUCT_DETAIL || null;
+  }
+
+  function isProductDetailPage() {
+    const cfg = productDetailConfig();
+    return !!(cfg && cfg.productId);
+  }
+
+  function productDetailSearchUrl() {
+    const cfg = productDetailConfig() || {};
+    const code = String(cfg.productCode || '').trim();
+    return code ? `/medias?q=${encodeURIComponent(code)}` : '/medias/';
+  }
+
+  function hideProductDetailLoading() {
+    const loading = $('productDetailLoading');
+    if (loading) loading.hidden = true;
+  }
+
+  function showProductDetailError(message) {
+    const loading = $('productDetailLoading');
+    if (!loading) return;
+    loading.hidden = false;
+    loading.innerHTML = `
+      <div class="icon">${icon('alert', 28)}</div>
+      <p class="title">产品编辑页加载失败</p>
+      <p class="desc">${escapeHtml(message || '请稍后重试')}</p>
+      <a class="oc-btn ghost" href="${productDetailSearchUrl()}">${icon('search', 14)}<span>返回搜索结果</span></a>
+    `;
+  }
+
+  function syncProductDetailRoute(product) {
+    const cfg = productDetailConfig();
+    if (!cfg || !product) return;
+    const code = String(product.product_code || cfg.productCode || '').trim();
+    if (!code) return;
+    cfg.productId = product.id || cfg.productId;
+    cfg.productCode = code;
+    window.MEDIAS_LIST_INITIAL_QUERY = code;
+    const nextPath = `/medias/${encodeURIComponent(code)}`;
+    if (window.location.pathname !== nextPath && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', nextPath);
+    }
+  }
+
   let LANGUAGES = [];
   let liveSearchTimer = null;
 
@@ -1264,8 +1310,12 @@
 
   // ---------- List ----------
   async function loadList() {
+    const kwInput = $('kw');
+    const grid = $('grid');
+    const pager = $('pager');
+    if (!kwInput || !grid || !pager) return;
     const requestSeq = ++state.listRequestSeq;
-    const kw = $('kw').value.trim();
+    const kw = kwInput.value.trim();
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
     renderSkeleton();
@@ -2504,6 +2554,10 @@
       alert('素材上传中，请等待完成后再关闭');
       return;
     }
+    if (isProductDetailPage()) {
+      window.location.href = productDetailSearchUrl();
+      return;
+    }
     edCloseLinkCheckModal();
     edStopLinkCheckPoll();
     $('edMask').hidden = true;
@@ -3012,9 +3066,15 @@
       $('edUploadProgress').innerHTML = '';
       edResetNewItemForm();
       edShow();
+      syncProductDetailRoute(data.product);
       edRenderLangTabs();
       await edRenderActiveLangView();
+      hideProductDetailLoading();
     } catch (e) {
+      if (isProductDetailPage()) {
+        showProductDetailError(e.message || e);
+        return;
+      }
       alert('加载失败：' + (e.message || e));
     }
   }
@@ -4685,6 +4745,25 @@
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (isProductDetailPage()) {
+        const full = await fetchJSON('/medias/api/products/' + pid);
+        edSetProductData(full);
+        syncProductDetailRoute(full.product);
+        if (full.product) {
+          $('edName').value = full.product.name || '';
+          $('edCode').value = full.product.product_code || '';
+          $('edMkId').value = (full.product.mk_id === null || full.product.mk_id === undefined)
+            ? '' : String(full.product.mk_id);
+          if ($('edShopifyId')) {
+            $('edShopifyId').value = (full.product.shopifyid === null || full.product.shopifyid === undefined)
+              ? '' : String(full.product.shopifyid);
+          }
+          edRenderAdSupportedLangs(full.product.ad_supported_langs || '');
+        }
+        edRenderLangTabs();
+        await edRenderActiveLangView();
+        return;
+      }
       edHide();
       loadList();
     } catch (e) {
@@ -4708,9 +4787,14 @@
   document.addEventListener('DOMContentLoaded', () => {
     const searchBtn = $('searchBtn');
     const kwInput = $('kw');
-    searchBtn.addEventListener('click', runSearchNow);
-    kwInput.addEventListener('input', scheduleLiveSearch);
-    kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow(); } });
+    if (kwInput && window.MEDIAS_LIST_INITIAL_QUERY && !kwInput.value) {
+      kwInput.value = String(window.MEDIAS_LIST_INITIAL_QUERY || '');
+    }
+    if (searchBtn && kwInput) {
+      searchBtn.addEventListener('click', runSearchNow);
+      kwInput.addEventListener('input', scheduleLiveSearch);
+      kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow(); } });
+    }
 
     const syncChip = (chipId, inputId) => {
       const chip = $(chipId), inp = $(inputId);
@@ -4720,7 +4804,7 @@
       sync();
     };
 
-    $('createBtn').addEventListener('click', openCreate);
+    $('createBtn') && $('createBtn').addEventListener('click', openCreate);
     $('modalClose').addEventListener('click', hideModal);
     $('cancelBtn').addEventListener('click', hideModal);
     $('saveBtn').addEventListener('click', save);
@@ -4842,7 +4926,7 @@
         edCloseLinkCheckModal();
         return;
       }
-      if (!$('edMask').hidden) edHide();
+      if (!isProductDetailPage() && !$('edMask').hidden) edHide();
     });
 
     // 产品链接：输入变化时 flush 到内存；产品 ID 改了需刷新 placeholder/hint
@@ -5230,7 +5314,11 @@
     // ===== 新增素材大框：提交按钮 =====
     $('edItemSubmitBtn') && $('edItemSubmitBtn').addEventListener('click', edSubmitNewItem);
 
-    loadList();
+    if (isProductDetailPage()) {
+      openEditDetail(Number(productDetailConfig().productId));
+    } else {
+      loadList();
+    }
   });
 })();
 

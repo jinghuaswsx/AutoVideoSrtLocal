@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
-{% block title %}素材管理 - AutoVideoSrt{% endblock %}
-{% block page_title %}素材管理{% endblock %}
+{% set is_product_detail_page = medias_product_detail|default(false) %}
+{% block title %}{% if is_product_detail_page %}{{ medias_product_code }} - 素材管理{% else %}素材管理 - AutoVideoSrt{% endif %}{% endblock %}
+{% block page_title %}{% if is_product_detail_page %}{{ medias_product_name or medias_product_code }}{% else %}素材管理{% endif %}{% endblock %}
 {% block extra_style %}
 /* ────────── Ocean Blue tokens (page-scoped) ────────── */
 .oc {
@@ -2022,10 +2023,43 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
     max-height:max(220px, calc(100vh - 360px));
   }
 }
+.oc-product-detail-page .oc-header,
+.oc-product-detail-page .oc-toolbar,
+.oc-product-detail-page .oc-list,
+.oc-product-detail-page .oc-pager {
+  display:none;
+}
+.oc-product-detail-page #edMask {
+  position:static;
+  inset:auto;
+  display:flex;
+  align-items:stretch;
+  justify-content:stretch;
+  min-height:calc(100vh - 112px);
+  padding:0;
+  background:transparent;
+  animation:none;
+  z-index:auto;
+}
+.oc-product-detail-page #edMask > .oc-modal-edit {
+  width:100%;
+  max-width:none;
+  max-height:none;
+  min-height:calc(100vh - 112px);
+  border-radius:var(--oc-r-lg);
+  box-shadow:none;
+  animation:none;
+}
+.oc-product-detail-page #edMask > .oc-modal-edit > .oc-modal-body {
+  overflow:visible;
+}
+.oc-product-detail-loading {
+  min-height:calc(100vh - 112px);
+}
 {% endblock %}
 
 {% block content %}
-<div class="oc">
+<div class="oc{% if is_product_detail_page %} oc-product-detail-page{% endif %}">
   <!-- SVG sprite（Lucide 线性图标） -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
@@ -2046,6 +2080,14 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <symbol id="ic-users"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
     </defs>
   </svg>
+
+  {% if is_product_detail_page %}
+  <div id="productDetailLoading" class="oc-state oc-product-detail-loading">
+    <div class="icon"><svg width="28" height="28"><use href="#ic-package"/></svg></div>
+    <p class="title">正在加载产品编辑页</p>
+    <p class="desc">{{ medias_product_code }}</p>
+  </div>
+  {% endif %}
 
   <!-- Page header -->
   <header class="oc-header">
@@ -2101,6 +2143,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 </div>
 <script>
 window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojson }};
+window.MEDIAS_LIST_INITIAL_QUERY = {{ (medias_initial_query or "") | tojson }};
+window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
+  "productId": medias_product_id,
+  "productCode": medias_product_code,
+} | tojson }}{% else %}null{% endif %};
 (function() {
   var TOPBAR = 56;
   function updateStickyOffsets() {
