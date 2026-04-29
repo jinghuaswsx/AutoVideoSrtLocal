@@ -159,6 +159,31 @@ def test_get_country_dashboard_rejects_invalid_period():
             raise AssertionError(f"expected ValueError for period={period!r}")
 
 
+def test_get_country_dashboard_accepts_explicit_date_range(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_country_dashboard(
+        "range",
+        start_date="2026-04-01",
+        end_date="2026-04-18",
+    )
+
+    assert captured["args"] == (
+        oa._parse_meta_date("2026-04-01"),
+        oa._parse_meta_date("2026-04-18"),
+    )
+    assert result["period"]["type"] == "range"
+    assert result["period"]["start"] == oa._parse_meta_date("2026-04-01")
+    assert result["period"]["end"] == oa._parse_meta_date("2026-04-18")
+    assert result["period"]["label"] == "2026-04-01 ~ 2026-04-18"
+
+
 def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(monkeypatch):
     monkeypatch.setattr(
         oa,
@@ -257,6 +282,31 @@ def test_country_dashboard_endpoint_returns_json(authed_client_no_db, monkeypatc
     assert captured["year"] == 2026
     assert captured["week"] == 17
     assert response.get_json()["period"]["type"] == "week"
+
+
+def test_country_dashboard_endpoint_accepts_date_range(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_country_dashboard(**kwargs):
+        captured.update(kwargs)
+        return {
+            "period": {"type": kwargs["period"], "start": "2026-04-01", "end": "2026-04-18"},
+            "summary": {"total_orders": 0},
+            "countries": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_country_dashboard", fake_country_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/country-dashboard?start_date=2026-04-01&end_date=2026-04-18"
+    )
+
+    assert response.status_code == 200
+    assert captured["period"] == "range"
+    assert captured["start_date"] == "2026-04-01"
+    assert captured["end_date"] == "2026-04-18"
+    assert "year" not in captured
+    assert response.get_json()["period"]["type"] == "range"
 
 
 def test_dianxiaomi_orders_endpoint_returns_400_for_non_integer_page(authed_client_no_db, monkeypatch):
@@ -366,6 +416,17 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "setDxmRange('thisMonth')" in body
     assert "renderCountryDashboard(data)" in body
     assert "sort_by: 'orders'" in body
+    assert 'data-country-range="today"' in body
+    assert 'data-country-range="yesterday"' in body
+    assert 'data-country-range="thisWeek"' in body
+    assert 'data-country-range="lastWeek"' in body
+    assert 'data-country-range="thisMonth"' in body
+    assert 'data-country-range="lastMonth"' in body
+    assert 'id="countryStartDate"' in body
+    assert 'id="countryEndDate"' in body
+    assert "setCountryRange('today'" in body
+    assert "start_date: start" in body
+    assert "end_date: end" in body
 
 
 def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):

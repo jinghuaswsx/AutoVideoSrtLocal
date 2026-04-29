@@ -788,11 +788,21 @@
   .oad-seg:hover { background: var(--bg-card); border-color: var(--border); color: var(--fg); }
   .oad-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
   .oad-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .oad-range-presets { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
   .oad-datepicker > div { display: flex; gap: var(--space-2); }
   .oad-datepicker select, .oad-datepicker input,
   #oadCountry, #oadSearch { height: 32px; padding: 0 10px;
                             border: 1px solid var(--border-strong); border-radius: var(--radius);
                             font-size: var(--text-sm); background: var(--bg-card); color: var(--fg); }
+  .oad-date-range-field { min-height: 32px; display: inline-flex; align-items: center; gap: var(--space-2);
+                          padding: 0 var(--space-2); border: 1px solid var(--border-strong);
+                          border-radius: var(--radius); background: var(--bg-card); }
+  .oad-date-range-field:focus-within { border-color: var(--accent);
+                                       box-shadow: 0 0 0 2px var(--accent-ring); }
+  .oad-date-range-field input { width: 130px; height: 30px; padding: 0;
+                                border: 0; border-radius: 0; background: transparent; }
+  .oad-date-range-field input:focus-visible { outline: none; box-shadow: none; }
+  .oad-date-range-sep { color: var(--fg-subtle); font-size: var(--text-sm); }
   #oadSearch { min-width: 200px; }
   .oad-btn-primary { height: 32px; padding: 0 16px; background: var(--accent);
                      color: var(--accent-fg); border: 0; border-radius: var(--radius);
@@ -1151,23 +1161,18 @@
 <section class="oa-panel" id="panelCountryDashboard">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
-      <div class="oad-segmented" role="tablist" aria-label="国家看板时间粒度">
-        <button class="oad-seg is-active" data-country-period="month">月</button>
-        <button class="oad-seg" data-country-period="week">周</button>
-        <button class="oad-seg" data-country-period="day">日</button>
+      <div class="oad-range-presets" role="group" aria-label="国家看板时间范围">
+        <button type="button" class="oad-seg is-active" data-country-range="today" aria-pressed="true">今天</button>
+        <button type="button" class="oad-seg" data-country-range="yesterday" aria-pressed="false">昨天</button>
+        <button type="button" class="oad-seg" data-country-range="thisWeek" aria-pressed="false">本周</button>
+        <button type="button" class="oad-seg" data-country-range="lastWeek" aria-pressed="false">上周</button>
+        <button type="button" class="oad-seg" data-country-range="thisMonth" aria-pressed="false">本月</button>
+        <button type="button" class="oad-seg" data-country-range="lastMonth" aria-pressed="false">上月</button>
       </div>
-      <div class="oad-datepicker">
-        <div data-country-period-input="month">
-          <select id="countryYear"></select>
-          <select id="countryMonth"></select>
-        </div>
-        <div data-country-period-input="week" hidden>
-          <select id="countryWeekYear"></select>
-          <select id="countryWeek"></select>
-        </div>
-        <div data-country-period-input="day" hidden>
-          <input type="date" id="countryDate">
-        </div>
+      <div class="oad-date-range-field" role="group" aria-label="国家看板自定义日期范围">
+        <input type="date" id="countryStartDate" aria-label="开始日期">
+        <span class="oad-date-range-sep">至</span>
+        <input type="date" id="countryEndDate" aria-label="结束日期">
       </div>
       <button type="button" class="oad-btn-primary" id="countryRefresh">刷新</button>
     </div>
@@ -1571,7 +1576,7 @@
 
   var countryDashboardInited = false;
   var countryDashboardState = {
-    period: 'month'
+    range: 'today'
   };
 
   var dxmOrdersInited = false;
@@ -1585,10 +1590,14 @@
     if (!countryDashboardInited) {
       countryDashboardInited = true;
       initCountryControls();
-      document.querySelectorAll('[data-country-period]').forEach(function(btn) {
+      document.querySelectorAll('[data-country-range]').forEach(function(btn) {
         btn.addEventListener('click', function() {
-          switchCountryPeriod(btn.dataset.countryPeriod);
+          setCountryRange(btn.dataset.countryRange);
         });
+      });
+      ['countryStartDate', 'countryEndDate'].forEach(function(id) {
+        var input = document.getElementById(id);
+        if (input) input.addEventListener('change', syncCountryRangeSelection);
       });
       var refresh = document.getElementById('countryRefresh');
       if (refresh) refresh.addEventListener('click', loadCountryDashboard);
@@ -1621,69 +1630,83 @@
   }
 
   function initCountryControls() {
-    var now = new Date();
-    fillYearSelect('countryYear', now.getFullYear());
-    fillMonthSelect('countryMonth', now.getMonth() + 1);
-    fillYearSelect('countryWeekYear', now.getFullYear());
-    fillWeekSelect('countryWeek', getISOWeek(now));
-    var date = document.getElementById('countryDate');
-    if (date) date.value = formatDateInput(now);
-    switchCountryPeriod('month', true);
+    setCountryRange('today', true);
   }
 
-  function fillYearSelect(id, selectedYear) {
-    var el = document.getElementById(id);
-    if (!el || el.options.length) return;
-    var cur = new Date().getFullYear();
-    for (var y = cur - 2; y <= cur + 1; y++) {
-      var opt = new Option(String(y), y);
-      if (y === selectedYear) opt.selected = true;
-      el.add(opt);
-    }
-  }
-
-  function fillMonthSelect(id, selectedMonth) {
-    var el = document.getElementById(id);
-    if (!el || el.options.length) return;
-    for (var m = 1; m <= 12; m++) {
-      var opt = new Option(String(m), m);
-      if (m === selectedMonth) opt.selected = true;
-      el.add(opt);
-    }
-  }
-
-  function fillWeekSelect(id, selectedWeek) {
-    var el = document.getElementById(id);
-    if (!el || el.options.length) return;
-    for (var w = 1; w <= 53; w++) {
-      var opt = new Option(String(w), w);
-      if (w === selectedWeek) opt.selected = true;
-      el.add(opt);
-    }
-  }
-
-  function switchCountryPeriod(period, skipLoad) {
-    countryDashboardState.period = period || 'month';
-    document.querySelectorAll('[data-country-period]').forEach(function(btn) {
-      btn.classList.toggle('is-active', btn.dataset.countryPeriod === countryDashboardState.period);
-    });
-    document.querySelectorAll('[data-country-period-input]').forEach(function(item) {
-      item.hidden = item.dataset.countryPeriodInput !== countryDashboardState.period;
-    });
+  function setCountryRange(range, skipLoad) {
+    var bounds = resolveCountryRange(range || 'today');
+    countryDashboardState.range = range || 'today';
+    setInputValue('countryStartDate', formatDateInput(bounds.start));
+    setInputValue('countryEndDate', formatDateInput(bounds.end));
+    syncCountryRangeSelection();
     if (!skipLoad) loadCountryDashboard();
   }
 
-  function buildCountryDashboardUrl() {
-    var params = new URLSearchParams({period: countryDashboardState.period});
-    if (countryDashboardState.period === 'week') {
-      params.set('year', document.getElementById('countryWeekYear').value);
-      params.set('week', document.getElementById('countryWeek').value);
-    } else if (countryDashboardState.period === 'day') {
-      params.set('date', document.getElementById('countryDate').value);
-    } else {
-      params.set('year', document.getElementById('countryYear').value);
-      params.set('month', document.getElementById('countryMonth').value);
+  function resolveCountryRange(range) {
+    var now = new Date();
+    var start = new Date(now);
+    var end = new Date(now);
+    if (range === 'yesterday') {
+      start = addDays(now, -1);
+      end = addDays(now, -1);
+    } else if (range === 'thisWeek') {
+      start = startOfWeek(now);
+      end = endOfWeek(now);
+    } else if (range === 'lastWeek') {
+      start = addDays(startOfWeek(now), -7);
+      end = addDays(endOfWeek(now), -7);
+    } else if (range === 'thisMonth') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (range === 'lastMonth') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
     }
+    return {start: start, end: end};
+  }
+
+  function syncCountryRangeSelection() {
+    var start = document.getElementById('countryStartDate');
+    var end = document.getElementById('countryEndDate');
+    var currentStart = start ? start.value : '';
+    var currentEnd = end ? end.value : '';
+    var matchedRange = '';
+    ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'].some(function(range) {
+      var bounds = resolveCountryRange(range);
+      if (currentStart === formatDateInput(bounds.start) && currentEnd === formatDateInput(bounds.end)) {
+        matchedRange = range;
+        return true;
+      }
+      return false;
+    });
+    countryDashboardState.range = matchedRange || 'custom';
+    document.querySelectorAll('[data-country-range]').forEach(function(btn) {
+      var isActive = btn.dataset.countryRange === matchedRange;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function getCountryDateRange() {
+    var start = document.getElementById('countryStartDate').value;
+    var end = document.getElementById('countryEndDate').value;
+    if (!start || !end) {
+      throw new Error('请选择开始日期和结束日期');
+    }
+    if (end < start) {
+      throw new Error('结束日期不能早于开始日期');
+    }
+    return {start: start, end: end};
+  }
+
+  function buildCountryDashboardUrl() {
+    var range = getCountryDateRange();
+    var start = range.start;
+    var end = range.end;
+    var params = new URLSearchParams({
+      start_date: start,
+      end_date: end
+    });
     return "/order-analytics/country-dashboard?" + params.toString();
   }
 
@@ -1693,7 +1716,14 @@
     if (!summaryEl || !tableEl) return;
     summaryEl.innerHTML = '';
     tableEl.innerHTML = '<div class="oad-loading">加载中...</div>';
-    fetch(buildCountryDashboardUrl())
+    var url = '';
+    try {
+      url = buildCountryDashboardUrl();
+    } catch (err) {
+      tableEl.innerHTML = '<div class="oad-error">' + escapeHtml(err.message || String(err)) + '</div>';
+      return;
+    }
+    fetch(url)
       .then(function(r) {
         if (!r.ok) {
           return r.json().then(function(j) { throw new Error(j.detail || j.error || ('HTTP ' + r.status)); },
