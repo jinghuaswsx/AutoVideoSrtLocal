@@ -1760,12 +1760,76 @@
       + `</div>`;
   }
 
+  function renderProductCopyPushInfo(data, product) {
+    const payload = data && data.payload ? data.payload : {};
+    const texts = Array.isArray(payload.texts)
+      ? payload.texts
+      : (Array.isArray(data?.texts) ? data.texts : []);
+    const mkId = data?.mk_id ?? product?.mk_id ?? '';
+    const rows = [
+      ['产品', `${product?.name || ''} · ${product?.product_code || ''}`],
+      ['明空 ID', mkId || '—'],
+      ['接口地址', data?.target_url || '—'],
+      ['方法', 'POST'],
+      ['Content-Type', 'application/json'],
+      ['鉴权方式', 'HTTP Basic Auth'],
+      ['文案数量', String(texts.length)],
+    ];
+    return `<div class="oc-pl-info-block">
+      <h4>接口信息</h4>
+      <dl class="oc-pl-info-list">
+        ${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}
+      </dl>
+    </div>`;
+  }
+
   function productCopyPushPreviewJson(data) {
-    return JSON.stringify({
-      target_url: data.target_url || '',
-      mk_id: data.mk_id || '',
-      request_payload: data.payload || { texts: data.texts || [] },
-    }, null, 2);
+    return JSON.stringify(data.payload || { texts: data.texts || [] }, null, 2);
+  }
+
+  function setProductCopyPushActiveTab(nextTab) {
+    const tab = nextTab === 'json' ? 'json' : 'texts';
+    document.querySelectorAll('[data-product-copy-tab]').forEach((btn) => {
+      const active = btn.dataset.productCopyTab === tab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-product-copy-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.productCopyPanel !== tab;
+    });
+  }
+
+  function resetProductCopyPushResponse() {
+    const resp = $('productCopyPushResponse');
+    const respPre = $('productCopyPushResponseBody');
+    const respTitle = $('productCopyPushResponseTitle');
+    if (resp) {
+      resp.hidden = true;
+      resp.classList.remove('success', 'danger');
+    }
+    if (respTitle) respTitle.textContent = '推送响应';
+    if (respPre) {
+      respPre.classList.remove('danger');
+      respPre.textContent = '';
+    }
+  }
+
+  function productCopyPushRenderResponse(data, forceSuccess) {
+    const resp = $('productCopyPushResponse');
+    const respPre = $('productCopyPushResponseBody');
+    const respTitle = $('productCopyPushResponseTitle');
+    if (!resp || !respPre) return false;
+    const success = typeof forceSuccess === 'boolean' ? forceSuccess : productLinksPushIsSuccess(data);
+    resp.hidden = false;
+    resp.classList.toggle('success', success);
+    resp.classList.toggle('danger', !success);
+    respPre.classList.remove('danger');
+    if (respTitle) respTitle.textContent = success ? '推送成功' : '推送失败';
+    const displayData = productLinksPushResponseJson(data);
+    respPre.textContent = typeof displayData === 'string'
+      ? displayData
+      : JSON.stringify(displayData || {}, null, 2);
+    return success;
   }
 
   async function openProductCopyPushModal(product) {
@@ -1773,35 +1837,37 @@
     const mask = $('productCopyPushModalMask');
     const title = $('productCopyPushTitle');
     const meta = $('productCopyPushMeta');
+    const info = $('productCopyPushInfo');
     const list = $('productCopyPushList');
     const jsonPre = $('productCopyPushJson');
-    const resp = $('productCopyPushResponse');
-    const respPre = $('productCopyPushResponseBody');
     const submit = $('productCopyPushSubmit');
     if (!mask || !list || !jsonPre || !submit) return;
 
     mask.hidden = false;
     mask.dataset.pid = String(product.id);
+    setProductCopyPushActiveTab('texts');
+    resetProductCopyPushResponse();
     if (title) title.textContent = '推送产品文案';
     if (meta) {
       const mkId = product.mk_id === null || product.mk_id === undefined ? '' : String(product.mk_id);
       meta.textContent = `${product.name || ''} · ${product.product_code || ''} · mk_id ${mkId || '—'}`;
     }
+    if (info) info.innerHTML = '<div class="oc-pl-empty">加载接口信息中…</div>';
     list.innerHTML = '<div class="oc-pl-empty">加载小语种文案中…</div>';
     jsonPre.textContent = '加载中…';
-    if (resp) resp.hidden = true;
-    if (respPre) respPre.textContent = '';
     submit.disabled = true;
     submit.textContent = '推送';
 
     try {
       const data = await fetchJSON(`/medias/api/products/${product.id}/product-localized-texts-push/payload`);
       mask._productCopyPreview = data;
+      if (info) info.innerHTML = renderProductCopyPushInfo(data, product);
       list.innerHTML = renderProductCopyPushList(data.texts || []);
       jsonPre.textContent = productCopyPushPreviewJson(data);
       submit.disabled = !data.payload || !(data.payload.texts || []).length;
     } catch (err) {
       const message = err.message || '加载失败';
+      if (info) info.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
       list.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
       jsonPre.textContent = JSON.stringify({ error: message }, null, 2);
       submit.disabled = true;
@@ -1814,6 +1880,7 @@
     mask.hidden = true;
     mask.dataset.pid = '';
     mask._productCopyPreview = null;
+    resetProductCopyPushResponse();
   }
 
   async function submitProductCopyPush() {
@@ -1821,34 +1888,49 @@
     const submit = $('productCopyPushSubmit');
     const resp = $('productCopyPushResponse');
     const respPre = $('productCopyPushResponseBody');
+    const respTitle = $('productCopyPushResponseTitle');
     const pid = mask && mask.dataset.pid;
     if (!mask || !pid || !submit) return;
     submit.disabled = true;
     submit.textContent = '推送中…';
-    if (resp) resp.hidden = true;
+    if (resp) {
+      resp.hidden = false;
+      resp.classList.remove('success', 'danger');
+    }
+    if (respTitle) respTitle.textContent = '推送中';
+    if (respPre) {
+      respPre.classList.remove('danger');
+      respPre.textContent = '等待下游返回数据…';
+    }
     try {
       const data = await fetchJSON(`/medias/api/products/${pid}/product-localized-texts-push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-      if (resp) resp.hidden = false;
-      if (respPre) {
-        respPre.classList.remove('danger');
-        respPre.textContent = JSON.stringify(data, null, 2);
+      const success = productCopyPushRenderResponse(data);
+      if (success) {
+        submit.textContent = '已推送';
+      } else {
+        submit.disabled = false;
+        submit.textContent = '推送';
       }
-      submit.textContent = '已推送';
     } catch (err) {
-      if (resp) resp.hidden = false;
-      if (respPre) {
-        respPre.classList.add('danger');
-        respPre.textContent = err.message || '推送失败';
-      }
+      productCopyPushRenderResponse({
+        error: err.error || 'request_failed',
+        message: err.message || '推送失败',
+        upstream_status: err.upstream_status,
+        upstream_code: err.upstream_code,
+        response_body: err.response_body,
+        downstream_response: err.downstream_response,
+        detail: err.detail,
+      }, false);
       submit.disabled = false;
       submit.textContent = '推送';
     }
   }
 
   window.setProductLinksPushActiveTab = setProductLinksPushActiveTab;
+  window.setProductCopyPushActiveTab = setProductCopyPushActiveTab;
   window.submitProductLinksPush = submitProductLinksPush;
   window.closeProductLinksPushModal = closeProductLinksPushModal;
   window.submitProductCopyPush = submitProductCopyPush;
@@ -6205,6 +6287,13 @@
       return;
     }
 
+    const productCopyTab = event.target.closest('[data-product-copy-tab]');
+    if (productCopyTab) {
+      event.preventDefault();
+      window.setProductCopyPushActiveTab(productCopyTab.dataset.productCopyTab);
+      return;
+    }
+
     if (event.target.closest('#productLinksPushSubmit')) {
       event.preventDefault();
       await window.submitProductLinksPush();
@@ -6228,7 +6317,6 @@
     if (
       event.target === $('productCopyPushModalMask')
       || event.target.closest('#productCopyPushClose')
-      || event.target.closest('#productCopyPushCancel')
     ) {
       window.closeProductCopyPushModal();
       return;
