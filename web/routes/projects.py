@@ -3,9 +3,9 @@ import json
 from flask import Blueprint, render_template, abort, redirect, url_for, request
 from flask_login import login_required, current_user
 from appcore.av_translate_inputs import (
-    AV_TARGET_LANGUAGE_OPTIONS,
     AV_TARGET_MARKET_OPTIONS,
-    build_default_av_translate_inputs,
+    build_available_av_translate_inputs,
+    list_available_av_target_language_options,
 )
 from appcore.db import query, query_one
 from appcore.task_recovery import recover_all_interrupted_tasks, recover_project_if_needed
@@ -61,7 +61,8 @@ def av_sync_page():
 def sentence_translate_page():
     from datetime import datetime
 
-    filter_langs = tuple(item["code"] for item in AV_TARGET_LANGUAGE_OPTIONS)
+    av_target_languages = list_available_av_target_language_options()
+    filter_langs = tuple(item["code"] for item in av_target_languages)
     current_lang = request.args.get("lang", "").strip().lower()
     if current_lang and current_lang not in filter_langs:
         current_lang = ""
@@ -116,9 +117,9 @@ def sentence_translate_page():
         module_storage_key="avSyncViewMode",
         module_icon="🎬",
         module_kind="av_sync",
-        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_languages=av_target_languages,
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
-        av_translate_defaults=build_default_av_translate_inputs(),
+        av_translate_defaults=build_available_av_translate_inputs(),
     )
 
 
@@ -155,9 +156,9 @@ def _render_av_sync_detail(row: dict, state: dict):
         initial_task_json=json.dumps(state, ensure_ascii=False),
         translate_pref=translate_pref,
         target_lang=target_lang,
-        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_languages=list_available_av_target_language_options(),
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
-        av_translate_defaults=build_default_av_translate_inputs(),
+        av_translate_defaults=build_available_av_translate_inputs(),
     )
 
 
@@ -192,9 +193,9 @@ def detail(task_id: str):
         state=state,
         initial_task_json=json.dumps(state, ensure_ascii=False),
         translate_pref=translate_pref,
-        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_languages=list_available_av_target_language_options(),
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
-        av_translate_defaults=build_default_av_translate_inputs(),
+        av_translate_defaults=build_available_av_translate_inputs(),
     )
 
 
