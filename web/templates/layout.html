@@ -6,7 +6,9 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}AutoVideoSrt{% endblock %}</title>
   <script>
+    {% set medias_admin_query = 'a=1' if request.args.get('a') == '1' or request.args.get('admin') == '1' else '' %}
     window.IS_ADMIN = {{ 'true' if current_user.is_authenticated and current_user.is_admin else 'false' }};
+    window.MEDIAS_ADMIN_QUERY = {{ medias_admin_query|tojson }};
   </script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
@@ -656,6 +658,70 @@
           localStorage.setItem(key, '1');
           alertBox.hidden = true;
         });
+      }
+    })();
+  </script>
+  <script>
+    (function persistMediasAdminQuery() {
+      if (window.MEDIAS_ADMIN_QUERY !== 'a=1') return;
+
+      function shouldSkip(raw) {
+        if (!raw) return true;
+        var text = String(raw).trim();
+        if (!text || text.charAt(0) === '#') return true;
+        var lowered = text.toLowerCase();
+        return lowered.indexOf('javascript:') === 0
+          || lowered.indexOf('mailto:') === 0
+          || lowered.indexOf('tel:') === 0
+          || lowered.indexOf('blob:') === 0
+          || lowered.indexOf('data:') === 0;
+      }
+
+      function withMediasAdminQuery(raw) {
+        if (shouldSkip(raw)) return raw;
+        try {
+          var url = new URL(raw, window.location.origin);
+          if (url.origin !== window.location.origin) return raw;
+          url.searchParams.delete('admin');
+          url.searchParams.set('a', '1');
+          return url.pathname + url.search + url.hash;
+        } catch (err) {
+          return raw;
+        }
+      }
+
+      window.withMediasAdminQuery = withMediasAdminQuery;
+
+      function decorate(anchor) {
+        if (!anchor || !anchor.getAttribute) return;
+        var raw = anchor.getAttribute('href');
+        var next = withMediasAdminQuery(raw);
+        if (next && next !== raw) anchor.setAttribute('href', next);
+      }
+
+      function decorateAll(root) {
+        if (!root || !root.querySelectorAll) return;
+        root.querySelectorAll('a[href]').forEach(decorate);
+      }
+
+      var originalOpen = window.open;
+      window.open = function(url, target, features) {
+        return originalOpen.call(window, withMediasAdminQuery(url), target, features);
+      };
+
+      document.addEventListener('click', function(event) {
+        var anchor = event.target && event.target.closest
+          ? event.target.closest('a[href]')
+          : null;
+        decorate(anchor);
+      }, true);
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+          decorateAll(document);
+        });
+      } else {
+        decorateAll(document);
       }
     })();
   </script>
