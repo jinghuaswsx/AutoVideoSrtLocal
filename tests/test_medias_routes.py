@@ -1510,8 +1510,17 @@ def test_product_code_route_renders_full_page_detail_config(
         "#edMask.oc-product-detail-mask > .oc-modal-edit {", 1
     )[0]
     assert "position:fixed;" in detail_mask_css
+    assert "--oc-product-detail-panel-left:220px;" in detail_mask_css
+    assert "--oc-product-detail-panel-top:56px;" in detail_mask_css
     assert "inset:var(--oc-product-detail-panel-top) 0 0 var(--oc-product-detail-panel-left);" in detail_mask_css
-    assert "height:calc(100vh - var(--oc-product-detail-panel-top));" in detail_mask_css
+    assert "align-items:center;" in detail_mask_css
+    assert "justify-content:center;" in detail_mask_css
+    assert "background:var(--bg-body,#f2f4f8);" in detail_mask_css
+    edit_modal_css = html.split("#edMask.oc-product-detail-mask > .oc-modal-edit {", 1)[1].split(
+        "#edMask.oc-product-detail-mask > .oc-modal-edit > .oc-modal-body {", 1
+    )[0]
+    assert "width:min(1344px, calc(100vw - var(--oc-product-detail-panel-left) - 48px));" in edit_modal_css
+    assert "max-height:calc(100vh - var(--oc-product-detail-panel-top) - 48px);" in edit_modal_css
     body_css = html.split("#edMask.oc-product-detail-mask > .oc-modal-edit > .oc-modal-body {", 1)[1].split(
         ".oc-product-detail-loading {", 1
     )[0]
