@@ -1466,31 +1466,32 @@ def import_meta_ad_rows(
 
 
 def match_meta_ads_to_products() -> int:
-    rows = query(
-        "SELECT id, campaign_name FROM meta_ad_campaign_metrics "
-        "WHERE product_id IS NULL OR matched_product_code IS NULL",
-    )
     affected = 0
-    for row in rows:
-        product = resolve_ad_product_match(row.get("campaign_name") or "")
-        if not product:
-            continue
-        affected += execute(
-            "UPDATE meta_ad_campaign_metrics SET product_id=%s, matched_product_code=%s WHERE id=%s",
-            (product["id"], product["product_code"], row["id"]),
+    for table_name in ("meta_ad_campaign_metrics", "meta_ad_daily_campaign_metrics"):
+        rows = query(
+            f"SELECT id, campaign_name FROM {table_name} "
+            "WHERE product_id IS NULL OR matched_product_code IS NULL",
         )
+        for row in rows:
+            product = resolve_ad_product_match(row.get("campaign_name") or "")
+            if not product:
+                continue
+            affected += execute(
+                f"UPDATE {table_name} SET product_id=%s, matched_product_code=%s WHERE id=%s",
+                (product["id"], product["product_code"], row["id"]),
+            )
     return affected
 
 
 def get_meta_ad_stats() -> dict:
     row = query_one(
         "SELECT COUNT(*) AS total_rows, "
-        "COUNT(DISTINCT CONCAT(report_start_date, '|', report_end_date)) AS period_count, "
-        "MIN(report_start_date) AS min_date, MAX(report_end_date) AS max_date, "
+        "COUNT(DISTINCT meta_business_date) AS period_count, "
+        "MIN(meta_business_date) AS min_date, MAX(meta_business_date) AS max_date, "
         "SUM(CASE WHEN product_id IS NOT NULL THEN 1 ELSE 0 END) AS matched_rows, "
         "SUM(spend_usd) AS total_spend_usd, "
         "SUM(purchase_value_usd) AS total_purchase_value_usd "
-        "FROM meta_ad_campaign_metrics"
+        "FROM meta_ad_daily_campaign_metrics"
     )
     return row or {}
 
@@ -1610,18 +1611,38 @@ def get_meta_ad_summary(
     report_start, report_end, resolved_batch_id = _resolve_meta_ad_period(batch_id, start_date, end_date)
     if not report_start or not report_end:
         return {"period": None, "rows": [], "unmatched": []}
+    if report_end < report_start:
+        raise ValueError("end_date must be greater than or equal to start_date")
 
-    metric_rows = query(
-        "SELECT m.id, m.product_id, mp.name AS product_name, mp.product_code AS media_product_code, "
-        "m.matched_product_code, m.campaign_name, m.result_count, m.spend_usd, "
-        "m.purchase_value_usd, m.link_clicks, m.add_to_cart_count, "
-        "m.initiate_checkout_count, m.impressions "
-        "FROM meta_ad_campaign_metrics m "
-        "LEFT JOIN media_products mp ON mp.id = m.product_id "
-        "WHERE m.report_start_date=%s AND m.report_end_date=%s "
-        "ORDER BY m.spend_usd DESC",
-        (report_start, report_end),
-    )
+    use_daily_metrics = not batch_id and bool(start_date and end_date)
+    if use_daily_metrics:
+        metric_rows = query(
+            "SELECT MIN(m.id) AS id, m.product_id, mp.name AS product_name, "
+            "mp.product_code AS media_product_code, "
+            "COALESCE(m.matched_product_code, m.product_code) AS matched_product_code, "
+            "m.campaign_name, SUM(m.result_count) AS result_count, "
+            "SUM(m.spend_usd) AS spend_usd, SUM(m.purchase_value_usd) AS purchase_value_usd, "
+            "0 AS link_clicks, 0 AS add_to_cart_count, 0 AS initiate_checkout_count, 0 AS impressions "
+            "FROM meta_ad_daily_campaign_metrics m "
+            "LEFT JOIN media_products mp ON mp.id = m.product_id "
+            "WHERE m.meta_business_date >= %s AND m.meta_business_date <= %s "
+            "GROUP BY m.product_id, mp.name, mp.product_code, "
+            "COALESCE(m.matched_product_code, m.product_code), m.campaign_name "
+            "ORDER BY spend_usd DESC",
+            (report_start, report_end),
+        )
+    else:
+        metric_rows = query(
+            "SELECT m.id, m.product_id, mp.name AS product_name, mp.product_code AS media_product_code, "
+            "m.matched_product_code, m.campaign_name, m.result_count, m.spend_usd, "
+            "m.purchase_value_usd, m.link_clicks, m.add_to_cart_count, "
+            "m.initiate_checkout_count, m.impressions "
+            "FROM meta_ad_campaign_metrics m "
+            "LEFT JOIN media_products mp ON mp.id = m.product_id "
+            "WHERE m.report_start_date=%s AND m.report_end_date=%s "
+            "ORDER BY m.spend_usd DESC",
+            (report_start, report_end),
+        )
     rows = _aggregate_meta_ad_summary_rows(metric_rows)
 
     product_ids = [int(row["product_id"]) for row in rows if row.get("product_id")]
@@ -1645,18 +1666,31 @@ def get_meta_ad_summary(
         row["shopify_quantity"] = order_metrics.get("shopify_quantity") or 0
         row["shopify_revenue"] = order_metrics.get("shopify_revenue") or 0
 
-    unmatched = query(
-        "SELECT id, campaign_name, normalized_campaign_code, spend_usd, result_count, purchase_value_usd "
-        "FROM meta_ad_campaign_metrics "
-        "WHERE report_start_date=%s AND report_end_date=%s AND product_id IS NULL "
-        "ORDER BY spend_usd DESC",
-        (report_start, report_end),
-    )
+    if use_daily_metrics:
+        unmatched = query(
+            "SELECT MIN(id) AS id, campaign_name, normalized_campaign_code, "
+            "SUM(spend_usd) AS spend_usd, SUM(result_count) AS result_count, "
+            "SUM(purchase_value_usd) AS purchase_value_usd "
+            "FROM meta_ad_daily_campaign_metrics "
+            "WHERE meta_business_date >= %s AND meta_business_date <= %s AND product_id IS NULL "
+            "GROUP BY campaign_name, normalized_campaign_code "
+            "ORDER BY spend_usd DESC",
+            (report_start, report_end),
+        )
+    else:
+        unmatched = query(
+            "SELECT id, campaign_name, normalized_campaign_code, spend_usd, result_count, purchase_value_usd "
+            "FROM meta_ad_campaign_metrics "
+            "WHERE report_start_date=%s AND report_end_date=%s AND product_id IS NULL "
+            "ORDER BY spend_usd DESC",
+            (report_start, report_end),
+        )
     return {
         "period": {
             "batch_id": resolved_batch_id,
             "report_start_date": report_start,
             "report_end_date": report_end,
+            "source": "meta_ad_daily_campaign_metrics" if use_daily_metrics else "meta_ad_campaign_metrics",
         },
         "rows": rows,
         "unmatched": unmatched,
@@ -2246,6 +2280,10 @@ def _resolve_compare_range(start: date, end: date, period: str) -> tuple[date, d
         prev = start - timedelta(days=1)
         return prev, prev
 
+    if period == "range":
+        prev_end = start - timedelta(days=1)
+        return prev_end - (end - start), prev_end
+
     raise ValueError(f"invalid period: {period}")
 
 
@@ -2282,16 +2320,14 @@ def _aggregate_orders_by_product(
 
 
 def _aggregate_ads_by_product(start: date, end: date) -> dict[int, dict]:
-    """按产品聚合广告。仅纳入 [report_start_date, report_end_date] 完全
-    被 [start, end] 覆盖的报表（决策 #7）。
-    返回 {product_id: {spend, purchases, purchase_value}}。"""
+    """按产品聚合每日 Meta 广告数据。返回 {product_id: {spend, purchases, purchase_value}}。"""
     sql = (
         "SELECT product_id, "
         "SUM(spend_usd) AS spend, "
         "SUM(result_count) AS purchases, "
         "SUM(purchase_value_usd) AS purchase_value "
-        "FROM meta_ad_campaign_metrics "
-        "WHERE report_start_date >= %s AND report_end_date <= %s "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
         "GROUP BY product_id"
     )
     rows = query(sql, (start, end))
@@ -2410,6 +2446,8 @@ def get_dashboard(
     month: int | None = None,
     week: int | None = None,
     date_str: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     country: str | None = None,
     sort_by: str | None = None,
     sort_dir: str = "desc",
@@ -2419,13 +2457,21 @@ def get_dashboard(
 ) -> dict:
     """产品看板查询主入口。详见 spec。"""
     today = today or date.today()
-    start, end = _resolve_period_range(
-        period, year=year, month=month, week=week, date_str=date_str, today=today
-    )
+    period_type = period
+    if start_date and end_date:
+        start = _parse_iso_date_param(start_date, "start_date")
+        end = _parse_iso_date_param(end_date, "end_date")
+        if end < start:
+            raise ValueError("end_date must be greater than or equal to start_date")
+        period_type = "range"
+    else:
+        start, end = _resolve_period_range(
+            period, year=year, month=month, week=week, date_str=date_str, today=today
+        )
 
     # 周/月支持广告；日视图不查广告（决策 #3）
     # 国家筛选启用时广告整列降级（meta_ad 表无 country 字段）
-    ad_data_available = period in ("week", "month") and not country
+    ad_data_available = period_type in ("week", "month", "range") and not country
 
     orders_now = _aggregate_orders_by_product(start, end, country=country)
     ads_now = _aggregate_ads_by_product(start, end) if ad_data_available else {}
@@ -2434,13 +2480,13 @@ def get_dashboard(
     ads_prev: dict[int, dict] = {}
     compare_period = None
     if compare:
-        prev_start, prev_end = _resolve_compare_range(start, end, period)
+        prev_start, prev_end = _resolve_compare_range(start, end, period_type)
         orders_prev = _aggregate_orders_by_product(prev_start, prev_end, country=country)
         ads_prev = _aggregate_ads_by_product(prev_start, prev_end) if ad_data_available else {}
         compare_period = {
             "start": prev_start.isoformat(),
             "end": prev_end.isoformat(),
-            "label": _format_period_label(prev_start, prev_end, period),
+            "label": _format_period_label(prev_start, prev_end, period_type),
         }
 
     items = _count_media_items_by_product()
@@ -2482,7 +2528,7 @@ def get_dashboard(
         "period": {
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "label": _format_period_label(start, end, period),
+            "label": _format_period_label(start, end, period_type),
         },
         "compare_period": compare_period,
         "country": country,
