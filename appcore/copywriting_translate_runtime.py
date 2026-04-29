@@ -13,10 +13,10 @@ import json
 import logging
 import re
 
+from appcore import llm_client, title_translate_settings
 from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, query_one
 from appcore.events import Event, EventBus, EVT_CT_PROGRESS
-from pipeline.text_translate import translate_text
 
 log = logging.getLogger(__name__)
 
@@ -132,15 +132,55 @@ def _normalize_copywriting_translation(source_text: str, translated_text: str) -
     )
 
 
+_PLAIN_FIELD_WRAP_TEMPLATE = "标题: {value}\n文案: -\n描述: -"
+
+
+def _wrap_plain_text_as_block(text: str) -> str:
+    """把单字段（标题/描述/广告字段）原文包成三段式输入，给 title_translate 用。
+
+    文案/正文之外的字段在 DB 里通常是单行明文，不带「标题:/文案:/描述:」前缀；
+    title_translate prompt 只接受三段式输入，所以这里塞到 `标题:` 槽位、其它槽位填占位。
+    """
+    return _PLAIN_FIELD_WRAP_TEMPLATE.format(value=text.strip())
+
+
+def _extract_title_field(translated_block: str, fallback: str) -> str:
+    """从模型返回的三段式输出里取出「标题:」对应的值；解析不到就回退到原始返回。"""
+    parsed = _parse_copywriting_fields(translated_block)
+    if parsed and parsed.get("title"):
+        return parsed["title"]
+    return fallback.strip()
+
+
 def _llm_translate(source_text: str, source_lang: str, target_lang: str) -> tuple[str, int]:
     """调用 LLM 翻译,返回 (译文, token 总数)。
 
     作为独立函数是为了让上层测试可以 monkeypatch 此处,
-    无需 mock 到 pipeline 层。
+    无需 mock 到下游 SDK 层。
+
+    路由：统一走 `title_translate.generate` use case + per-language 的强约束 prompt，
+    与素材编辑页"一键从英语文案翻译"按钮使用同一条链路（防止 ja 出现「標題:」嵌套、
+    防止 sv/it/pt 等语种短英文标题被原样保留）。
     """
-    r = translate_text(source_text, source_lang, target_lang)
-    total_tokens = (r.get("input_tokens") or 0) + (r.get("output_tokens") or 0)
-    return r["text"], total_tokens
+    is_block_input = _parse_copywriting_fields(source_text) is not None
+    request_text = source_text if is_block_input else _wrap_plain_text_as_block(source_text)
+
+    prompt = title_translate_settings.get_prompt(target_lang).replace(
+        "{{SOURCE_TEXT}}", request_text
+    )
+    response = llm_client.invoke_chat(
+        "title_translate.generate",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0,
+        max_tokens=2048,
+    )
+    raw = (response.get("text") or "").strip()
+    usage = response.get("usage") or {}
+    total_tokens = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+
+    if is_block_input:
+        return raw, total_tokens
+    return _extract_title_field(raw, fallback=raw), total_tokens
 
 
 def translate_copy_text(source_text: str, source_lang: str, target_lang: str) -> tuple[str, int]:
