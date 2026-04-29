@@ -107,5 +107,5 @@ fonts/*.otf
 !fonts/Oswald-Variable.ttf
 !fonts/Poppins-Bold.ttf
 
-# Shopify Image Localizer batch test run artifacts
-dual-auto-fuse-tester-puller-rjc/
+# Shopify Image Localizer batch/run workspaces
+/*-rjc/
