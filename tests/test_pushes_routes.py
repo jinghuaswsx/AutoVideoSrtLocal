@@ -1041,12 +1041,20 @@ def test_pushes_assets_include_quality_check_panel():
     assert "pm-quality-copy-preview" in script
     assert "pm-quality-cover-preview" in script
     assert "pm-quality-video-preview" in script
+    assert "renderQualitySummaryRows" in script
+    assert "pm-quality-summary-row" in script
+    assert "文案：" in script
+    assert "视频封面：" in script
+    assert "视频：" in script
+    assert "..." in script
     assert "quality-check/retry" in script
     assert "重新评估" in script
     assert ".pm-shell" in style
     assert ".pm-main" in style
     assert ".pm-quality-side" in style
     assert ".pm-quality-detail-block" in style
+    assert ".pm-quality-summary-row" in style
+    assert "text-overflow: ellipsis" in style
     assert "width: 80vw" in style
     assert "height: 80vh" in style
 

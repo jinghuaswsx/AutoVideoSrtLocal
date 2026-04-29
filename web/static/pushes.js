@@ -540,6 +540,44 @@
     return { text: '待评估', cls: 'pending', score: null };
   }
 
+  const QUALITY_SUMMARY_LINE_LIMIT = 120;
+
+  function normalizeQualitySummary(result) {
+    const data = result || {};
+    if (data.summary) return String(data.summary).replace(/\s+/g, ' ').trim();
+    if (Array.isArray(data.issues) && data.issues.length) {
+      return data.issues.map(issue => String(issue)).join('；').replace(/\s+/g, ' ').trim();
+    }
+    const meta = qualityScoreMeta(data.status);
+    if (meta.cls === 'running') return '评估中';
+    if (meta.cls === 'pending') return '暂无检查结果';
+    return '-';
+  }
+
+  function truncateQualitySummaryText(value, limit = QUALITY_SUMMARY_LINE_LIMIT) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '暂无检查结果';
+    if (text.length <= limit) return text;
+    return `${text.slice(0, Math.max(0, limit - 3)).trimEnd()}...`;
+  }
+
+  function renderQualitySummaryRows(qualityCheck) {
+    const data = qualityCheck || {};
+    const root = el('div', { class: 'pm-quality-summary-rows' });
+    [
+      ['文案：', data.copy_result],
+      ['视频封面：', data.cover_result],
+      ['视频：', data.video_result],
+    ].forEach(([label, result]) => {
+      const fullText = normalizeQualitySummary(result);
+      root.appendChild(el('div', { class: 'pm-quality-summary-row', title: `${label}${fullText}` }, [
+        el('span', { class: 'pm-quality-summary-label' }, label),
+        el('span', { class: 'pm-quality-summary-text' }, truncateQualitySummaryText(fullText)),
+      ]));
+    });
+    return root;
+  }
+
   function renderQualityResultCard(label, result) {
     const data = result || {};
     const meta = qualityScoreMeta(data.status);
@@ -565,7 +603,7 @@
     const head = el('div', { class: 'pm-quality-head' });
     head.appendChild(el('div', {}, [
       el('div', { class: 'pm-quality-title' }, '推送前质量检查'),
-      el('div', { class: 'pm-quality-subtitle' }, qualityCheck?.summary || '暂无检查记录'),
+      el('div', { class: 'pm-quality-subtitle' }, renderQualitySummaryRows(qualityCheck)),
     ]));
     head.appendChild(el('span', { class: `pm-quality-badge is-${statusMeta.cls}` }, statusMeta.text));
     head.appendChild(el('button', {
@@ -676,7 +714,7 @@
     const head = el('div', { class: 'pm-quality-side-head' });
     head.appendChild(el('div', {}, [
       el('div', { class: 'pm-quality-title' }, '推送前质量检查'),
-      el('div', { class: 'pm-quality-subtitle' }, qualityCheck?.summary || '暂无检查记录'),
+      el('div', { class: 'pm-quality-subtitle' }, renderQualitySummaryRows(qualityCheck)),
     ]));
     head.appendChild(el('span', { class: `pm-quality-score is-${statusMeta.cls}` }, statusMeta.text));
     head.appendChild(el('button', {
