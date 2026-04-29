@@ -43,12 +43,16 @@
 .scheduled-control-pill.readonly { background:#e0f2fe; color:#075985; border-color:#bae6fd; }
 .scheduled-control-pill.unknown { background:#fef3c7; color:#92400e; border-color:#fde68a; }
 .scheduled-action-form { display:inline-flex; margin:0; }
+.scheduled-action-block { display:flex; align-items:flex-start; gap:8px; min-width:300px; }
 .scheduled-action-pill { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:0 13px; border-radius:999px; border:1px solid var(--border-main); background:#fff; color:#0f5ea8; font-size:12px; font-weight:800; cursor:pointer; transition:background-color .12s ease, border-color .12s ease, color .12s ease; }
 .scheduled-action-pill:hover { border-color:var(--primary-color); background:#f8fbff; }
 .scheduled-action-pill.disable { color:#b91c1c; border-color:#fecaca; background:#fff7f7; }
 .scheduled-action-pill.disable:hover { background:#fee2e2; }
+.scheduled-action-pill:disabled, .scheduled-action-pill.unavailable { color:#94a3b8; border-color:#e2e8f0; background:#f8fafc; cursor:not-allowed; }
+.scheduled-action-pill:disabled:hover, .scheduled-action-pill.unavailable:hover { color:#94a3b8; border-color:#e2e8f0; background:#f8fafc; }
 .scheduled-readonly-action { color:#64748b; background:#f8fafc; border-color:#e2e8f0; }
 .scheduled-control-note { margin-top:6px; color:#64748b; font-size:12px; line-height:1.45; max-width:240px; }
+.scheduled-unavailable-reason { color:#64748b; font-size:12px; line-height:1.45; max-width:300px; }
 .scheduled-error { color:#b91c1c; max-width:360px; line-height:1.45; white-space:pre-wrap; }
 .scheduled-output { color:#0f5ea8; font-weight:650; word-break:break-word; }
 .scheduled-kv { display:grid; grid-template-columns:max-content minmax(0, 1fr); gap:4px 10px; max-width:460px; }
@@ -211,7 +215,12 @@
                     <button type="submit" class="scheduled-action-pill {{ item.control_action }}">{{ item.control_action_label }}</button>
                   </form>
                 {% else %}
-                  <span class="scheduled-control-pill readonly scheduled-readonly-action">不可启停</span>
+                  <div class="scheduled-action-block">
+                    <button type="button" class="scheduled-action-pill unavailable" disabled>不可启停</button>
+                    {% if item.control_unavailable_reason %}
+                      <div class="scheduled-unavailable-reason">{{ item.control_unavailable_reason }}</div>
+                    {% endif %}
+                  </div>
                 {% endif %}
               </td>
               <td>{{ item.deployment }}</td>

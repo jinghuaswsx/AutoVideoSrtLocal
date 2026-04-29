@@ -41,7 +41,9 @@ def test_scheduled_tasks_page_has_log_and_management_capsules():
     assert "item.name" in source
     assert "scheduled-control-pill" in source
     assert "scheduled-action-pill" in source
+    assert "scheduled-unavailable-reason" in source
     assert "control_supported" in source
+    assert "control_unavailable_reason" in source
     assert "csrf_token()" in source
     assert "max-width:none" in source
 

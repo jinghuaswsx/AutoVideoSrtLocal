@@ -320,6 +320,10 @@ def test_management_tasks_adds_control_state_from_control_table(monkeypatch):
     assert tasks["shopifyid"]["control_state"] == "enabled"
     assert tasks["tts_convergence_stats"]["control_state"] == "enabled"
     assert tasks["tts_convergence_stats"]["control_supported"] is False
+    assert tasks["shopifyid_windows_daily"]["control_supported"] is False
+    assert "Windows" in tasks["shopifyid_windows_daily"]["control_unavailable_reason"]
+    assert tasks["meta_realtime_local_sync"]["control_supported"] is False
+    assert "Windows" in tasks["meta_realtime_local_sync"]["control_unavailable_reason"]
 
 
 def test_set_task_enabled_runs_systemctl_for_systemd_timer(monkeypatch):
@@ -361,7 +365,7 @@ def test_set_task_enabled_writes_guarded_subtask_without_external_command(monkey
     assert any(params[0] == "dianxiaomi_order_import" and params[1] == 0 for _, params in writes if params)
 
 
-def test_set_task_enabled_runs_schtasks_for_windows_task(monkeypatch):
+def test_set_task_enabled_rejects_local_windows_task(monkeypatch):
     from appcore import scheduled_tasks
 
     commands = []
@@ -373,18 +377,10 @@ def test_set_task_enabled_runs_schtasks_for_windows_task(monkeypatch):
     )
     monkeypatch.setattr(scheduled_tasks, "execute", lambda *args, **kwargs: 1)
 
-    result = scheduled_tasks.set_task_enabled("shopifyid_windows_daily", False, actor="admin")
+    with pytest.raises(ValueError, match="不支持"):
+        scheduled_tasks.set_task_enabled("shopifyid_windows_daily", False, actor="admin")
 
-    assert result["control_state"] == "disabled"
-    assert commands == [
-        [
-            "schtasks",
-            "/Change",
-            "/TN",
-            "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily",
-            "/DISABLE",
-        ]
-    ]
+    assert commands == []
 
 
 def test_set_task_enabled_rejects_readonly_cron_task(monkeypatch):

@@ -39,6 +39,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "本机运维任务",
         "log_table": "",
         "output_file": "output/shopifyid_dianxiaomi_sync/",
+        "default_enabled": False,
     },
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
@@ -209,6 +210,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "本地运维任务",
         "log_table": "",
         "output_file": "scratch/meta_realtime_local/logs/",
+        "default_enabled": False,
     },
 }
 
@@ -321,8 +323,10 @@ def _control_strategy(task: TaskDefinition) -> str:
     if explicit:
         return explicit
     source_type = str(task.get("source_type") or "").strip().lower()
-    if source_type in {"apscheduler", "systemd", "windows"}:
+    if source_type in {"apscheduler", "systemd"}:
         return source_type
+    if source_type == "windows":
+        return "windows_local"
     if source_type in {"subtask", "in_process"}:
         return "guard"
     return "readonly"
@@ -334,6 +338,24 @@ def _is_deprecated(task: TaskDefinition) -> bool:
 
 def _is_control_supported(task: TaskDefinition) -> bool:
     return (not _is_deprecated(task)) and _control_strategy(task) in CONTROLLABLE_STRATEGIES
+
+
+def _control_unavailable_reason(task: TaskDefinition) -> str:
+    if _is_deprecated(task):
+        return "该任务已标记为废弃，不再提供启停入口。"
+    strategy = _control_strategy(task)
+    if strategy in CONTROLLABLE_STRATEGIES:
+        return ""
+    source_type = str(task.get("source_type") or "").strip().lower()
+    if strategy == "windows_local" or source_type == "windows":
+        return (
+            "该任务运行在开发机 Windows 或本地 daemon 上，线上 Web 不能跨机器执行 "
+            "schtasks 或控制 Windows 服务；请在对应 Windows 机器上用任务计划程序、"
+            "服务管理器或管理员 PowerShell 手动启停。"
+        )
+    if source_type == "cron":
+        return "该任务由 crontab 外部调度，Web 后台只做登记；需要停用请登录对应服务器调整 crontab。"
+    return "该任务的触发器不在当前 Web 进程控制范围内，后台只做登记；需要在对应运行环境里手动启停。"
 
 
 def _default_enabled(task: TaskDefinition) -> bool:
@@ -373,6 +395,7 @@ def _with_control_state(task: TaskDefinition, control: dict[str, Any] | None = N
     item = dict(task)
     strategy = _control_strategy(item)
     supported = _is_control_supported(item)
+    unavailable_reason = "" if supported else _control_unavailable_reason(item)
     enabled = _is_truthy((control or {}).get("enabled"), default=_default_enabled(item))
     if _is_deprecated(item):
         state = "deprecated"
@@ -390,6 +413,7 @@ def _with_control_state(task: TaskDefinition, control: dict[str, Any] | None = N
         "control_class": state,
         "control_action": "disable" if enabled else "enable",
         "control_action_label": "停用" if enabled else "启用",
+        "control_unavailable_reason": unavailable_reason,
         "last_action_status": (control or {}).get("last_action_status") or "",
         "last_action_message": (control or {}).get("last_action_message") or "",
         "updated_by": (control or {}).get("updated_by") or "",
@@ -505,7 +529,9 @@ def set_task_enabled(task_code: str, enabled: bool, *, actor: str | None = None)
     if not task:
         raise ValueError("未知定时任务")
     if not _is_control_supported(task):
-        raise ValueError(f"{task['name']} 不支持从 Web 后台直接启停")
+        reason = _control_unavailable_reason(task)
+        suffix = f"：{reason}" if reason else ""
+        raise ValueError(f"{task['name']} 不支持从 Web 后台直接启停{suffix}")
     result = _apply_control_strategy(task, bool(enabled))
     if not result.get("ok"):
         current_enabled = is_task_enabled(code)
