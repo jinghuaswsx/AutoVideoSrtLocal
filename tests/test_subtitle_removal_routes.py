@@ -1122,3 +1122,43 @@ def test_subtitle_removal_list_returns_erase_text_type(authed_client_no_db, monk
     items = (response.get_json() or {}).get("items") or []
     assert items, "list 接口应返回至少一条"
     assert items[0]["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_list_prefers_submitter_chinese_name(authed_client_no_db, monkeypatch):
+    import json as _json
+
+    captured = {}
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args=None: {"ok": 1})
+
+    def fake_db_query(sql, args=None):
+        captured["sql"] = sql
+        return [
+            {
+                "id": "sr-list-submitter",
+                "user_id": 1,
+                "status": "done",
+                "state_json": _json.dumps({
+                    "display_name": "demo",
+                    "original_filename": "demo.mp4",
+                    "status": "done",
+                    "erase_text_type": "subtitle",
+                    "media_info": {"resolution": "720x1280", "duration": 10.0},
+                    "thumbnail_path": "",
+                    "provider_status": "success",
+                    "provider_result_url": "",
+                }),
+                "created_at": None,
+                "username": "admin",
+                "submitter_name": "张三",
+            }
+        ]
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query", fake_db_query)
+
+    response = authed_client_no_db.get("/api/subtitle-removal/list")
+
+    assert response.status_code == 200
+    items = (response.get_json() or {}).get("items") or []
+    assert "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username) AS submitter_name" in captured["sql"]
+    assert items[0]["created_by"] == "张三"

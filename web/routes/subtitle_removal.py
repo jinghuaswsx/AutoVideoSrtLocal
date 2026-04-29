@@ -41,6 +41,21 @@ def _default_display_name(original_filename: str) -> str:
     return name[:10] or "未命名"
 
 
+def _submitter_name_expr() -> str:
+    try:
+        row = db_query_one(
+            "SELECT 1 AS ok FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+            "AND COLUMN_NAME = 'xingming'"
+        )
+    except Exception:
+        log.warning("subtitle removal submitter name expr failed; fallback to username", exc_info=True)
+        return "u.username"
+    if row:
+        return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
+    return "u.username"
+
+
 def _get_task(task_id: str) -> dict:
     """字幕移除任务全局可见，不按 user_id 过滤。"""
     task = store.get(task_id)
@@ -429,8 +444,10 @@ def get_state(task_id: str):
 @login_required
 def list_tasks():
     """全局可见：所有字幕移除任务（不按 user_id 过滤）。"""
+    submitter_name_expr = _submitter_name_expr()
     rows = db_query(
-        "SELECT p.id, p.user_id, p.status, p.state_json, p.created_at, u.username "
+        f"SELECT p.id, p.user_id, p.status, p.state_json, p.created_at, "
+        f"u.username, {submitter_name_expr} AS submitter_name "
         "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
         "WHERE p.type = 'subtitle_removal' AND p.deleted_at IS NULL "
         "ORDER BY p.created_at DESC"
@@ -470,7 +487,7 @@ def list_tasks():
                 "detail_url": url_for("subtitle_removal.detail_page", task_id=row.get("id")),
                 "download_url": url_for("subtitle_removal.download_result", task_id=row.get("id")),
                 "created_at": row.get("created_at").isoformat() if row.get("created_at") else "",
-                "created_by": row.get("username") or "",
+                "created_by": row.get("submitter_name") or row.get("username") or "",
                 "elapsed_seconds": elapsed_seconds,
             }
         )
