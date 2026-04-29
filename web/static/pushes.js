@@ -568,11 +568,11 @@
     const pillRow = el('div', { class: 'pm-pills' });
     const pillDefs = [
       { mode: PUSH_MODAL_MODES.CONFIRM, label: '推送' },
-      { mode: PUSH_MODAL_MODES.JSON, label: 'JSON 预览' },
-      { mode: PUSH_MODAL_MODES.LOCALIZED_TEXT, label: '推送小语种文案' },
-      { mode: PUSH_MODAL_MODES.LOCALIZED_JSON, label: '小语种文案 JSON 预览' },
-      { mode: PUSH_MODAL_MODES.PRODUCT_LINKS_JSON, label: '链接生成预览' },
+      { mode: PUSH_MODAL_MODES.JSON, label: '推送JSON' },
+      { mode: PUSH_MODAL_MODES.LOCALIZED_TEXT, label: '推送文案' },
+      { mode: PUSH_MODAL_MODES.LOCALIZED_JSON, label: '推送文案JSON' },
       { mode: PUSH_MODAL_MODES.PRODUCT_LINKS, label: '推送链接' },
+      { mode: PUSH_MODAL_MODES.PRODUCT_LINKS_JSON, label: '推送链接JSON' },
     ];
     const pills = pillDefs.map(({ mode, label }) => el('button', {
       type: 'button', class: 'pm-pill', dataset: { mode },
@@ -713,6 +713,7 @@
       paneLocalizedJson.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_JSON;
       paneProductLinksJson.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
       paneProductLinks.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS;
+      auditCard.hidden = mode === PUSH_MODAL_MODES.PRODUCT_LINKS || mode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
       syncPushButton();
     }
 

@@ -889,15 +889,31 @@ def test_push_product_links_from_pushes_modal_success(
 
 
 def test_pushes_assets_include_product_link_push_tabs():
+    import re
     from pathlib import Path
 
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    pill_start = script.index("const pillDefs = [")
+    pill_end = script.index("];", pill_start)
+    pill_block = script[pill_start:pill_end]
+    pill_labels = re.findall(r"label: '([^']+)'", pill_block)
 
     assert "PRODUCT_LINKS: 'product-links'" in script
     assert "PRODUCT_LINKS_JSON: 'product-links-json'" in script
-    assert "label: '推送'" in script
-    assert "label: '链接生成预览'" in script
-    assert "label: '推送链接'" in script
+    assert pill_labels == [
+        "推送",
+        "推送JSON",
+        "推送文案",
+        "推送文案JSON",
+        "推送链接",
+        "推送链接JSON",
+    ]
+    assert "链接生成预览" not in pill_block
+    assert "JSON 预览" not in pill_block
+    assert (
+        "auditCard.hidden = mode === PUSH_MODAL_MODES.PRODUCT_LINKS"
+        " || mode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;"
+    ) in script
     assert "renderProductLinksPane" in script
     assert "product_links_push" in script
     assert "product-links-push" in script
