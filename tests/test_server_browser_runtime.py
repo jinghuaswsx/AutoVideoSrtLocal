@@ -8,12 +8,14 @@ def _read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_browser_runner_removes_display_specific_x_lock():
+def test_browser_runner_uses_real_desktop_chromium_cdp():
     source = _read("deploy/server_browser/run_server_browser.sh")
 
-    assert 'DISPLAY_LOCK="/tmp/.X${DISPLAY_NUM#:}-lock"' in source
-    assert 'rm -f "$DISPLAY_LOCK"' in source
-    assert "rm -f /tmp/.X99-lock" not in source
+    assert 'if [[ -z "${DISPLAY:-}" ]]; then' in source
+    assert "--remote-debugging-address=\"$CDP_HOST\"" in source
+    assert "--remote-debugging-port=\"$CDP_PORT\"" in source
+    assert "--start-maximized" in source
+    assert "Xvfb" not in source
 
 
 def test_mk_browser_service_uses_isolated_environment_file():
@@ -27,20 +29,61 @@ def test_mk_browser_service_uses_isolated_environment_file():
 def test_mk_browser_install_script_uses_separate_ports_and_profile():
     source = _read("deploy/server_browser/install_mk_browser.sh")
 
-    assert "BROWSER_DISPLAY=:100" in source
     assert "BROWSER_PROFILE_DIR=/data/autovideosrt/browser/profiles/mk-selection" in source
     assert "BROWSER_RUNTIME_DIR=/data/autovideosrt/browser/runtime-mk-selection" in source
     assert "BROWSER_START_URL=https://www.dianxiaomi.com/web/stat/salesStatistics" in source
+    assert "BROWSER_LOG_DIR=/data/autovideosrt/browser/logs/mk-selection" in source
     assert "BROWSER_CDP_PORT=9223" in source
-    assert "BROWSER_VNC_PORT=5902" in source
-    assert "BROWSER_NOVNC_PORT=6081" in source
     assert "autovideosrt-mk-browser.service" in source
 
 
 def test_mk_browser_tunnel_maps_to_mk_browser_ports():
     source = _read("tools/open_mk_server_browser_tunnel.ps1")
 
-    assert '[int]$NoVncPort = 6081' in source
     assert '[int]$CdpPort = 9223' in source
-    assert '"-L", "$NoVncPort`:127.0.0.1:6081"' in source
     assert '"-L", "$CdpPort`:127.0.0.1:9223"' in source
+    assert "Sunlogin" in source
+
+
+def test_browser_lock_script_records_timeout_and_fails_systemd_unit():
+    source = _read("deploy/server_browser/with_browser_lock.sh")
+
+    assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE" in source
+    assert "tools/record_scheduled_task_failure.py" in source
+    assert "exit 75" in source
+    assert "timeout" in source
+    assert "exit 0" not in source
+
+
+def test_shopifyid_and_roi_units_use_shared_browser_lock_with_alert_codes():
+    shopify = _read("deploy/server_browser/autovideosrt-shopifyid-sync.service")
+    roi = _read("deploy/server_browser/autovideosrt-roi-realtime-sync.service")
+
+    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in shopify
+    assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=shopifyid" in shopify
+    assert "/usr/bin/flock -n" not in shopify
+
+    assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in roi
+    assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=roi_hourly_sync" in roi
+    assert "META_REALTIME_SYNC_CHANNEL=browser" in roi
+    assert "META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222" in roi
+    assert "--meta-channel browser" in roi
+    assert "--skip-meta-fetch" not in roi
+
+
+def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
+    shopify = _read("deploy/server_browser/autovideosrt-shopifyid-sync.timer")
+    roi = _read("deploy/server_browser/autovideosrt-roi-realtime-sync.timer")
+
+    assert "OnCalendar=*-*-* 12:11:00" in shopify
+    assert "OnCalendar=*-*-* 12:10:00" not in shopify
+    assert "OnCalendar=*:02/20" in roi
+    assert "OnCalendar=*:00/20" not in roi
+
+
+def test_server_browser_installers_make_lock_script_executable():
+    install_browser = _read("deploy/server_browser/install_server_browser.sh")
+    install_timer = _read("deploy/server_browser/install_shopifyid_sync_timer.sh")
+
+    assert 'chmod 755 "deploy/server_browser/with_browser_lock.sh"' in install_browser
+    assert 'chmod 755 "$APP_DIR/deploy/server_browser/with_browser_lock.sh"' in install_timer

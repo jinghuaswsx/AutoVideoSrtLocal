@@ -1,16 +1,21 @@
 [Unit]
 Description=AutoVideoSrt real ROAS realtime day snapshot sync
 After=network-online.target autovideosrt-browser.service
-Wants=network-online.target
+Wants=network-online.target autovideosrt-browser.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/autovideosrt
 EnvironmentFile=-/opt/autovideosrt/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/roi_hourly_sync.py --lookback-hours 3 --max-scan-pages 40 --skip-meta-fetch
+Environment=META_REALTIME_SYNC_CHANNEL=browser
+Environment=META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222
+Environment=BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS=600
+Environment=BROWSER_AUTOMATION_LOCK_RETRY_SECONDS=10
+Environment=BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=roi_hourly_sync
+ExecStart=/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/roi_hourly_sync.py --lookback-hours 3 --max-scan-pages 40 --meta-channel browser
 User=root
 Group=root
 StandardOutput=journal
 StandardError=journal
-TimeoutStartSec=900
+TimeoutStartSec=1800

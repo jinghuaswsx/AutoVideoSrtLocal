@@ -54,6 +54,7 @@ EOF
 install -m 644 "deploy/server_browser/autovideosrt-browser.service" "$SERVICE_FILE"
 chmod 755 "deploy/server_browser/run_server_browser.sh"
 chmod 755 "deploy/server_browser/install_server_browser.sh"
+chmod 755 "deploy/server_browser/with_browser_lock.sh"
 chmod 755 "deploy/server_browser/install_shopifyid_sync_timer.sh" 2>/dev/null || true
 
 systemctl daemon-reload

@@ -257,3 +257,52 @@ def test_order_in_date_range_uses_payment_time_even_for_shipped_state():
     }
 
     assert mod._order_in_date_range(order, "shipped", date(2026, 4, 27), date(2026, 4, 27))
+
+
+def test_locked_server_browser_import_uses_shared_browser_lock(monkeypatch):
+    mod = _load_module()
+    calls = []
+
+    class FakeLock:
+        def __enter__(self):
+            calls.append(("enter",))
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append(("exit", exc_type))
+            return False
+
+    def fake_lock(**kwargs):
+        calls.append(("lock", kwargs))
+        return FakeLock()
+
+    def fake_run_import_from_server_browser(**kwargs):
+        calls.append(("run", kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(mod, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(mod, "run_import_from_server_browser", fake_run_import_from_server_browser)
+
+    result = mod.run_import_from_server_browser_locked(
+        start_date_text="2026-04-29",
+        end_date_text="2026-04-29",
+        site_codes=["newjoy"],
+        dry_run=True,
+        lock_timeout_seconds=17,
+        lock_retry_seconds=3,
+    )
+
+    assert result == {"ok": True}
+    assert calls[0] == (
+        "lock",
+        {
+            "task_code": "dianxiaomi_order_import",
+            "timeout_seconds": 17,
+            "retry_seconds": 3,
+            "command": "tools.dianxiaomi_order_import.run_import_from_server_browser",
+        },
+    )
+    assert calls[1] == ("enter",)
+    assert calls[2][0] == "run"
+    assert calls[2][1]["start_date_text"] == "2026-04-29"
+    assert calls[3] == ("exit", None)

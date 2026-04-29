@@ -186,7 +186,7 @@ python tools/shopifyid_dianxiaomi_sync.py --skip-login-prompt
 
 ### 10.5 每日定时任务安装方式
 
-如果要在当前电脑上安装“每天 12:10 自动执行一次”的 Windows 定时任务，运行：
+如果要在当前电脑上安装“每天 12:11 自动执行一次”的 Windows 定时任务，运行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_shopifyid_dianxiaomi_sync_task.ps1
@@ -195,7 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\register_shopifyid_dia
 安装完成后，系统会注册一个任务：
 
 - 任务名：`AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily`
-- 执行时间：每天 `12:10`
+- 执行时间：每天 `12:11`
 - 实际执行脚本：`tools\shopifyid_dianxiaomi_sync_daily.ps1`
 
 该定时脚本会自动：
@@ -353,7 +353,7 @@ python tools/shopifyid_dianxiaomi_sync.py \
 /data/autovideosrt/browser/profiles/shared
 ```
 
-每天 12:10 的服务端定时任务由 `autovideosrt-shopifyid-sync.timer` 触发。该任务使用 `/data/autovideosrt/browser/runtime/automation.lock` 加锁，避免后续多个依赖浏览器登录态的模块同时操作同一个 Chromium。
+每天 12:11 的服务端定时任务由 `autovideosrt-shopifyid-sync.timer` 触发。该任务使用 `/data/autovideosrt/browser/runtime/automation.lock` 加锁，避免后续多个依赖浏览器登录态的模块同时操作同一个 Chromium；ROI 实时同步错峰在每小时 `:02/:22/:42` 触发。
 
 ## 18. 2026-04-25 生产运行与失败告警更新
 
@@ -361,7 +361,7 @@ python tools/shopifyid_dianxiaomi_sync.py \
 
 - 浏览器服务：`autovideosrt-browser.service`
 - 定时同步任务：`autovideosrt-shopifyid-sync.timer`
-- 执行时间：每天 `12:10`
+- 执行时间：每天 `12:11`
 - 执行脚本：`/opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py`
 - 数据库：默认生产库 `auto_video`
 

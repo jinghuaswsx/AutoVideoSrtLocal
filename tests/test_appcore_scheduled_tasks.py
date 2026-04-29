@@ -56,6 +56,8 @@ def test_task_definitions_include_server_and_app_timers():
 
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
+    assert definitions["shopifyid"]["schedule"] == "每天 12:11（与 ROI :02/:22/:42 错峰）"
+    assert definitions["roi_hourly_sync"]["schedule"] == "每 20 分钟（每小时 :02/:22/:42）"
     assert definitions["shopifyid"]["source_ref"] == "autovideosrt-shopifyid-sync.timer"
     assert definitions["roi_hourly_sync"]["source_ref"] == "autovideosrt-roi-realtime-sync.timer"
     assert "autovideosrt-meta-daily-final-sync.timer" in definitions["meta_daily_final"]["source_ref"]
@@ -242,6 +244,40 @@ def test_list_runs_supports_meta_realtime_import_runs(monkeypatch):
     assert runs[0]["task_name"] == "Meta 实时广告导入"
     assert runs[0]["summary"]["business_date"] == "2026-04-29"
     assert runs[0]["summary"]["rows_imported"] == 0
+
+
+def test_list_runs_for_special_table_includes_scheduled_failure_fallback(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params):
+        if "FROM roi_hourly_sync_runs" in sql:
+            return []
+        if "FROM scheduled_task_runs" in sql and "WHERE task_code = %s" in sql:
+            assert params == ("roi_hourly_sync", 60)
+            return [
+                {
+                    "id": 12,
+                    "task_code": "roi_hourly_sync",
+                    "task_name": "ROI sync",
+                    "status": "failed",
+                    "scheduled_for": None,
+                    "started_at": datetime(2026, 4, 29, 20, 40),
+                    "finished_at": datetime(2026, 4, 29, 20, 50),
+                    "duration_seconds": 600,
+                    "summary_json": '{"reason": "browser_lock_timeout"}',
+                    "error_message": "browser automation lock timeout",
+                    "output_file": None,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    runs = scheduled_tasks.list_runs("roi_hourly_sync")
+
+    assert runs[0]["task_code"] == "roi_hourly_sync"
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["summary"]["reason"] == "browser_lock_timeout"
 
 
 def test_management_tasks_adds_control_state_from_control_table(monkeypatch):

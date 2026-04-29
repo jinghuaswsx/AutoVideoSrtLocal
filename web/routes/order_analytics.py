@@ -274,7 +274,7 @@ def dianxiaomi_import():
     try:
         from tools import dianxiaomi_order_import as dxm_import
 
-        result = dxm_import.run_import_from_server_browser(
+        result = dxm_import.run_import_from_server_browser_locked(
             start_date_text=start_date,
             end_date_text=end_date,
             site_codes=[str(code).strip().lower() for code in site_codes if str(code).strip()],

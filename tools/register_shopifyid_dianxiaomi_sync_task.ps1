@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$TaskName = "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily",
-    [string]$StartTime = "12:10"
+    [string]$StartTime = "12:11"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +16,7 @@ if (-not (Test-Path $runnerPath)) {
 try {
     $dailyAt = [datetime]::ParseExact($StartTime, "HH:mm", $null)
 } catch {
-    throw "StartTime must use HH:mm format, for example 12:10."
+    throw "StartTime must use HH:mm format, for example 12:11."
 }
 
 $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
@@ -31,7 +31,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
-$description = "Run the Dianxiaomi Shopify ID sync every day at 12:10 and backfill empty media_products.shopifyid values."
+$description = "Run the Dianxiaomi Shopify ID sync every day at 12:11 and backfill empty media_products.shopifyid values."
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false

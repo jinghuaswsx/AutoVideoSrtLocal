@@ -100,7 +100,7 @@ bash deploy/server_browser/install_shopifyid_sync_timer.sh
 - `autovideosrt-shopifyid-sync.service`
 - `autovideosrt-shopifyid-sync.timer`
 
-定时任务每天 `12:10` 执行一次，实际命令为：
+定时任务每天 `12:11` 执行一次，和 ROI 实时同步的 `:02/:22/:42` 触发点错开，实际命令为：
 
 ```bash
 /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/shopifyid_dianxiaomi_sync.py \
