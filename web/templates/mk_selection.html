@@ -1,6 +1,9 @@
 {% extends "layout.html" %}
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
-{% block page_title %}选品中心{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">选品中心</span>
+<span class="selection-center-title-note">店小秘近7天销量 Top300 &times; 明空素材消耗数据 <span class="count" id="totalCount">--</span></span>
+{% endblock %}
 {% block extra_style %}
 :root {
   --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
@@ -22,6 +25,7 @@
 }
 .oc * { box-sizing: border-box; }
 .oc-header { display:flex; align-items:center; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:var(--oc-sp-5); flex-wrap:wrap; }
+.oc-header--actions { justify-content:flex-end; margin-bottom:var(--oc-sp-4); }
 .oc-header .title { font-size:22px; font-weight:600; margin:0; }
 .oc-header .subtitle { font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; padding:2px 10px; border-radius:9999px; background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; }
@@ -105,26 +109,19 @@
 }
 .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
 .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
-.oc-page-tabs { display:flex; gap:4px; margin-bottom:var(--oc-sp-5); border-bottom:2px solid var(--oc-border); padding-bottom:0; }
-.oc-page-tab { display:inline-flex; align-items:center; padding:8px 16px; font-size:14px; font-weight:500; color:var(--oc-fg-muted); text-decoration:none; border-radius:var(--oc-r-md) var(--oc-r-md) 0 0; border:1px solid transparent; border-bottom:none; transition:color 120ms,background 120ms; margin-bottom:-2px; }
-.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg-muted); }
-.oc-page-tab.active { color:var(--oc-accent); background:var(--oc-bg); border-color:var(--oc-border); border-bottom-color:var(--oc-bg); font-weight:600; }
+.oc-page-tabs { display:inline-flex; align-items:center; gap:4px; margin-bottom:var(--oc-sp-5); padding:4px; border:1px solid var(--oc-border); border-radius:9999px; background:var(--oc-bg-subtle); }
+.oc-page-tab { display:inline-flex; align-items:center; justify-content:center; min-width:96px; height:34px; padding:0 18px; font-size:14px; font-weight:600; color:var(--oc-fg-muted); text-decoration:none; border-radius:9999px; border:1px solid transparent; transition:color 120ms,background 120ms,border-color 120ms; }
+.oc-page-tab:hover { color:var(--oc-fg); background:var(--oc-bg); }
+.oc-page-tab.active { color:#fff; background:var(--oc-accent); border-color:var(--oc-accent); }
 {% endblock %}
 
 {% block content %}
 <div class="oc">
-  <div class="oc-page-tabs">
-    <a class="oc-page-tab active" href="/medias/mk-selection">明空选品</a>
-    <a class="oc-page-tab" href="/new-product-review/">新品审核</a>
+  <div class="oc-page-tabs oc-page-tabs--pill" role="tablist" aria-label="选品中心类型">
+    <a class="oc-page-tab active" href="/medias/mk-selection" role="tab" aria-selected="true">明空选品</a>
+    <a class="oc-page-tab" href="/new-product-review/" role="tab" aria-selected="false">新品选择</a>
   </div>
-  <div class="oc-header">
-    <div>
-      <h1 class="title">选品中心</h1>
-      <div class="subtitle">
-        店小秘近7天销量 Top300 &times; 明空素材消耗数据
-        <span class="count" id="totalCount">--</span>
-      </div>
-    </div>
+  <div class="oc-header oc-header--actions">
     <div class="oc-search">
       <input id="searchInput" class="oc-input" type="text" placeholder="搜索产品名..." style="width:240px">
       <button class="oc-btn oc-btn--primary" onclick="loadData(1)">搜索</button>
