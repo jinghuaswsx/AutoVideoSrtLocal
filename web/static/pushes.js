@@ -19,6 +19,8 @@
     JSON: 'json',
     LOCALIZED_TEXT: 'localized-text',
     LOCALIZED_JSON: 'localized-json',
+    PRODUCT_LINKS_JSON: 'product-links-json',
+    PRODUCT_LINKS: 'product-links',
   };
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
@@ -370,7 +372,7 @@
     });
   }
 
-  // ---------- 弹窗 · 4 胶囊 ----------
+  // ---------- 弹窗 · 推送胶囊 ----------
 
   function renderPayloadView(payload, previewCoverUrl) {
     const root = el('div');
@@ -482,6 +484,52 @@
     return root;
   }
 
+  function renderProductLinksPane(preview) {
+    const root = el('div');
+    const data = preview || {};
+    const links = Array.isArray(data.links) ? data.links : [];
+    const payloadLinks = data.payload && Array.isArray(data.payload.product_links)
+      ? data.payload.product_links
+      : [];
+
+    const info = el('div', { class: 'pm-kv' });
+    info.appendChild(el('span', { class: 'k' }, '推送地址'));
+    info.appendChild(el('span', { class: 'v' }, [el('code', {}, data.target_url || '(未配置)')]));
+    info.appendChild(el('span', { class: 'k' }, 'handle'));
+    info.appendChild(el('span', { class: 'v' }, [el('code', {}, data.payload?.handle || '-')]));
+    info.appendChild(el('span', { class: 'k' }, '链接数量'));
+    info.appendChild(el('span', { class: 'v' }, String(payloadLinks.length || links.length || 0)));
+    root.appendChild(info);
+
+    if (data.error) {
+      root.appendChild(el('p', { class: 'pm-empty pm-error' }, data.message || data.error));
+      return root;
+    }
+
+    if (!links.length && !payloadLinks.length) {
+      root.appendChild(el('p', { class: 'pm-empty' }, '当前暂无可推送链接'));
+      return root;
+    }
+
+    const list = el('div', { class: 'pm-sub' }, [
+      el('div', { class: 'pm-sub-title' }, '推送链接'),
+    ]);
+    if (links.length) {
+      links.forEach(link => {
+        const kv = el('div', { class: 'pm-kv', style: 'margin-top:8px' });
+        kv.appendChild(el('span', { class: 'k' }, formatLanguageLabel(link.lang) || link.lang || '-'));
+        kv.appendChild(el('span', { class: 'v' }, [el('code', {}, link.url || '')]));
+        list.appendChild(kv);
+      });
+    } else {
+      const ul = el('ul', { class: 'pm-list' });
+      payloadLinks.forEach(link => ul.appendChild(el('li', {}, [el('code', {}, link)])));
+      list.appendChild(ul);
+    }
+    root.appendChild(list);
+    return root;
+  }
+
   function describeError(e) {
     let body = {};
     try { body = JSON.parse(e.body || '{}'); } catch (_) {}
@@ -519,10 +567,12 @@
     const header = el('div', { class: 'pm-header' });
     const pillRow = el('div', { class: 'pm-pills' });
     const pillDefs = [
-      { mode: PUSH_MODAL_MODES.CONFIRM, label: '推送确认' },
+      { mode: PUSH_MODAL_MODES.CONFIRM, label: '推送' },
       { mode: PUSH_MODAL_MODES.JSON, label: 'JSON 预览' },
       { mode: PUSH_MODAL_MODES.LOCALIZED_TEXT, label: '推送小语种文案' },
       { mode: PUSH_MODAL_MODES.LOCALIZED_JSON, label: '小语种文案 JSON 预览' },
+      { mode: PUSH_MODAL_MODES.PRODUCT_LINKS_JSON, label: '链接生成预览' },
+      { mode: PUSH_MODAL_MODES.PRODUCT_LINKS, label: '推送链接' },
     ];
     const pills = pillDefs.map(({ mode, label }) => el('button', {
       type: 'button', class: 'pm-pill', dataset: { mode },
@@ -576,11 +626,15 @@
     const paneJson = el('pre', { class: 'pm-pane pm-json', hidden: true });
     const paneLocalized = el('div', { class: 'pm-pane', hidden: true });
     const paneLocalizedJson = el('pre', { class: 'pm-pane pm-json', hidden: true });
+    const paneProductLinksJson = el('pre', { class: 'pm-pane pm-json', hidden: true });
+    const paneProductLinks = el('div', { class: 'pm-pane', hidden: true });
     contentCard.appendChild(loadingTip);
     contentCard.appendChild(paneConfirm);
     contentCard.appendChild(paneJson);
     contentCard.appendChild(paneLocalized);
     contentCard.appendChild(paneLocalizedJson);
+    contentCard.appendChild(paneProductLinksJson);
+    contentCard.appendChild(paneProductLinks);
     body.appendChild(contentCard);
 
     const respWrap = el('section', { class: 'pm-section pm-response', hidden: true });
@@ -604,8 +658,10 @@
     let mkId = null;
     let localizedTexts = [];
     let localizedTargetUrl = '';
+    let productLinksPreview = null;
     let materialPushed = item.status === 'pushed';
     let localizedPushed = false;
+    let productLinksPushed = false;
     let anyPushSucceeded = false;
 
     function isLocalizedMode(m = activeMode) {
@@ -613,6 +669,26 @@
     }
 
     function syncPushButton() {
+      if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON) {
+        btnPush.disabled = true;
+        btnPush.textContent = '预览无需推送';
+        return;
+      }
+      if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS) {
+        const linkPayload = productLinksPreview && productLinksPreview.payload;
+        const linkCount = linkPayload && Array.isArray(linkPayload.product_links)
+          ? linkPayload.product_links.length
+          : 0;
+        const noTarget = !productLinksPreview || !productLinksPreview.target_url;
+        const noLinks = !linkCount;
+        btnPush.disabled = productLinksPushed || !payloadData || noTarget || noLinks;
+        btnPush.textContent = productLinksPushed
+          ? '链接已推送'
+          : noTarget
+            ? '未配链接接口'
+            : noLinks ? '无可推送链接' : '推送链接';
+        return;
+      }
       if (isLocalizedMode()) {
         const noTarget = !mkId || !localizedTargetUrl;
         const noTexts = !localizedTexts.length;
@@ -635,6 +711,8 @@
       paneJson.hidden = mode !== PUSH_MODAL_MODES.JSON;
       paneLocalized.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_TEXT;
       paneLocalizedJson.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_JSON;
+      paneProductLinksJson.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
+      paneProductLinks.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS;
       syncPushButton();
     }
 
@@ -680,6 +758,7 @@
         mkId = data.mk_id || null;
         localizedTargetUrl = data.localized_push_target_url || '';
         localizedTexts = (data.localized_texts_request && data.localized_texts_request.texts) || [];
+        productLinksPreview = data.product_links_push || null;
 
         mkIdValue.textContent = mkId ? String(mkId) : '-';
 
@@ -702,6 +781,16 @@
           texts: localizedTexts,
         }, null, 2);
 
+        paneProductLinksJson.textContent = JSON.stringify(
+          productLinksPreview && productLinksPreview.payload
+            ? productLinksPreview.payload
+            : (productLinksPreview || {}),
+          null,
+          2,
+        );
+        clear(paneProductLinks);
+        paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
+
         loadingTip.remove();
         setMode(PUSH_MODAL_MODES.CONFIRM);
       } catch (err) {
@@ -716,7 +805,14 @@
       btnCancel.disabled = true;
       btnPush.textContent = '推送中…';
       try {
-        if (isLocalizedMode()) {
+        if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS) {
+          const body = await fetchJSON(`/pushes/api/items/${itemId}/product-links-push`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          showResponse(body, !body.ok, body.ok ? '推送链接响应' : '推送链接失败');
+          productLinksPushed = !!body.ok;
+        } else if (isLocalizedMode()) {
           const body = await fetchJSON(`/pushes/api/items/${itemId}/push-localized-texts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -752,7 +848,9 @@
         }
       } catch (err) {
         showResponse(describeError(err), true,
-          isLocalizedMode() ? '小语种文案推送失败' : '素材推送失败');
+          activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS
+            ? '推送链接失败'
+            : isLocalizedMode() ? '小语种文案推送失败' : '素材推送失败');
       } finally {
         btnCancel.disabled = false;
         syncPushButton();

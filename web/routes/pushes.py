@@ -27,6 +27,17 @@ def admin_required(fn):
     return _wrap
 
 
+def _product_links_push_error_response(exc: Exception):
+    message = str(exc)
+    if isinstance(exc, pushes.ProductNotListedError):
+        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}), 409
+    if isinstance(exc, pushes.ProductLinksPushConfigError):
+        return jsonify({"error": message or "push_product_links_config_missing"}), 500
+    if isinstance(exc, pushes.ProductLinksPayloadError):
+        return jsonify({"error": message or "product_links_payload_invalid"}), 400
+    return jsonify({"error": "product_links_push_failed", "message": message}), 500
+
+
 @bp.route("/")
 @login_required
 def index():
@@ -181,6 +192,16 @@ def api_build_payload(item_id: int):
     localized_text = pushes.resolve_localized_text_payload(item)
     localized_texts_request = pushes.build_localized_texts_request(item)
     preview_cover_url = _item_cover_url(item_id, item)
+    try:
+        product_links_push = pushes.build_product_links_push_preview(product)
+    except Exception as exc:
+        product_links_push = {
+            "error": type(exc).__name__,
+            "message": str(exc),
+            "target_url": "",
+            "payload": None,
+            "links": [],
+        }
     return jsonify({
         "payload": payload,
         "push_url": pushes.get_push_target_url(),
@@ -188,6 +209,7 @@ def api_build_payload(item_id: int):
         "localized_text": localized_text,
         "localized_texts_request": localized_texts_request,
         "localized_push_target_url": pushes.build_localized_texts_target_url(mk_id),
+        "product_links_push": product_links_push,
         "preview_cover_url": preview_cover_url,
     })
 
@@ -443,6 +465,24 @@ def api_push_localized_texts(item_id: int):
         "response_body": body_text[:4000],
         "target_url": target_url,
     }), 502
+
+
+@bp.route("/api/items/<int:item_id>/product-links-push", methods=["POST"])
+@login_required
+@admin_required
+def api_push_product_links(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return jsonify({"error": "item_not_found"}), 404
+    product = medias.get_product(item["product_id"])
+    if not product:
+        return jsonify({"error": "product_not_found"}), 404
+    try:
+        result = pushes.push_product_links(product)
+    except Exception as exc:
+        return _product_links_push_error_response(exc)
+    status = 200 if result.get("ok") else 502
+    return jsonify(result), status
 
 
 # ================================================================
