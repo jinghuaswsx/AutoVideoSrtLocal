@@ -192,6 +192,14 @@ class ProductLinksPushConfigError(Exception):
     """产品投放链接推送配置不完整。"""
 
 
+class ProductLocalizedTextsPayloadError(Exception):
+    """产品小语种文案推送报文无法组装。"""
+
+
+class ProductLocalizedTextsPushConfigError(Exception):
+    """产品小语种文案推送配置不完整。"""
+
+
 _COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
 _COPY_LABEL_TO_FIELD = {
     "标题": "title",
@@ -637,6 +645,82 @@ def resolve_localized_texts_payload(item: dict) -> list[dict[str, str]]:
 def build_localized_texts_request(item: dict) -> dict[str, list[dict[str, str]]]:
     return {
         "texts": resolve_localized_texts_payload(item),
+    }
+
+
+def build_product_localized_texts_push_preview(product: dict | None) -> dict:
+    """组装产品维度的小语种文案推送预览，复用推送管理的 texts 规则。"""
+    if not isinstance(product, dict):
+        raise ProductLocalizedTextsPayloadError("product_not_found")
+    if not medias.is_product_listed(product):
+        raise ProductNotListedError("product_not_listed")
+
+    try:
+        product_id = int(product.get("id") or 0)
+    except (TypeError, ValueError):
+        product_id = 0
+    if not product_id:
+        raise ProductLocalizedTextsPayloadError("product_not_found")
+
+    try:
+        mk_id = int(product.get("mk_id") or 0)
+    except (TypeError, ValueError):
+        mk_id = 0
+    if not mk_id:
+        raise ProductLocalizedTextsPayloadError("mk_id_missing")
+
+    target_url = build_localized_texts_target_url(mk_id)
+    if not target_url:
+        raise ProductLocalizedTextsPushConfigError("push_localized_texts_base_url_missing")
+
+    payload = build_localized_texts_request({"product_id": product_id})
+    texts = payload.get("texts") or []
+    if not texts:
+        raise ProductLocalizedTextsPayloadError("localized_texts_empty")
+
+    return {
+        "mk_id": mk_id,
+        "target_url": target_url,
+        "payload": payload,
+        "texts": texts,
+    }
+
+
+def push_product_localized_texts(product: dict | None) -> dict:
+    preview = build_product_localized_texts_push_preview(product)
+    headers = build_localized_texts_headers()
+    if "Authorization" not in headers and "Cookie" not in headers:
+        raise ProductLocalizedTextsPushConfigError("push_localized_texts_credentials_missing")
+
+    target_url = preview["target_url"]
+    payload = preview["payload"]
+    try:
+        resp = requests.post(target_url, json=payload, headers=headers, timeout=30)
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": "downstream_unreachable",
+            "detail": str(exc),
+            "target_url": target_url,
+            "payload": payload,
+        }
+
+    body_text = resp.text or ""
+    if resp.ok:
+        return {
+            "ok": True,
+            "upstream_status": resp.status_code,
+            "response_body": body_text[:4000],
+            "target_url": target_url,
+            "payload": payload,
+        }
+    return {
+        "ok": False,
+        "error": "downstream_error",
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+        "target_url": target_url,
+        "payload": payload,
     }
 
 

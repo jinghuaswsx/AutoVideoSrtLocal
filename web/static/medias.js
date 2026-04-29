@@ -1362,7 +1362,7 @@
           <th>语种覆盖</th>
           <th>修改时间</th>
           <th>备注说明</th>
-          <th>投放链接</th>
+          <th>投放推送</th>
           <th>操作</th>
         </tr>
         </thead>
@@ -1397,6 +1397,12 @@
         e.stopPropagation();
         const product = items.find(item => Number(item.id) === Number(b.dataset.productLinksPush));
         openProductLinksPushModal(product || null);
+      }));
+    grid.querySelectorAll('[data-product-copy-push]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.productCopyPush));
+        openProductCopyPushModal(product || null);
       }));
     grid.querySelectorAll('.oc-product-id-copy').forEach(b =>
       b.addEventListener('click', (e) => {
@@ -1454,10 +1460,15 @@
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
-        <td class="product-links-push-cell">
-          <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
-            ${icon('upload', 12)}<span>推送</span>
-          </button>
+        <td class="product-push-cell">
+          <div class="product-push-actions">
+            <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
+              ${icon('upload', 12)}<span>推送链接</span>
+            </button>
+            <button class="oc-btn sm ghost" data-product-copy-push="${p.id}" title="推送该产品的小语种文案">
+              ${icon('edit', 12)}<span>推送文案</span>
+            </button>
+          </div>
         </td>
         <td class="actions">
           <div class="oc-row-actions">
@@ -1555,6 +1566,110 @@
     if (resp) resp.hidden = true;
     try {
       const data = await fetchJSON(`/medias/api/products/${pid}/product-links-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (resp) resp.hidden = false;
+      if (respPre) {
+        respPre.classList.remove('danger');
+        respPre.textContent = JSON.stringify(data, null, 2);
+      }
+      submit.textContent = '已推送';
+    } catch (err) {
+      if (resp) resp.hidden = false;
+      if (respPre) {
+        respPre.classList.add('danger');
+        respPre.textContent = err.message || '推送失败';
+      }
+      submit.disabled = false;
+      submit.textContent = '推送';
+    }
+  }
+
+  function renderProductCopyPushList(texts) {
+    if (!Array.isArray(texts) || !texts.length) {
+      return '<div class="oc-pl-empty">暂无可推送小语种文案</div>';
+    }
+    return `<div class="oc-copy-list">`
+      + texts.map((item) => `<div class="oc-copy-row">
+        <div class="oc-copy-head">${escapeHtml(item.lang || '')}</div>
+        <dl class="oc-copy-kv">
+          <dt>标题</dt><dd>${escapeHtml(item.title || '')}</dd>
+          <dt>文案</dt><dd>${escapeHtml(item.message || '')}</dd>
+          <dt>描述</dt><dd>${escapeHtml(item.description || '')}</dd>
+        </dl>
+      </div>`).join('')
+      + `</div>`;
+  }
+
+  function productCopyPushPreviewJson(data) {
+    return JSON.stringify({
+      target_url: data.target_url || '',
+      mk_id: data.mk_id || '',
+      request_payload: data.payload || { texts: data.texts || [] },
+    }, null, 2);
+  }
+
+  async function openProductCopyPushModal(product) {
+    if (!product || !product.id) return;
+    const mask = $('productCopyPushModalMask');
+    const title = $('productCopyPushTitle');
+    const meta = $('productCopyPushMeta');
+    const list = $('productCopyPushList');
+    const jsonPre = $('productCopyPushJson');
+    const resp = $('productCopyPushResponse');
+    const respPre = $('productCopyPushResponseBody');
+    const submit = $('productCopyPushSubmit');
+    if (!mask || !list || !jsonPre || !submit) return;
+
+    mask.hidden = false;
+    mask.dataset.pid = String(product.id);
+    if (title) title.textContent = '推送产品文案';
+    if (meta) {
+      const mkId = product.mk_id === null || product.mk_id === undefined ? '' : String(product.mk_id);
+      meta.textContent = `${product.name || ''} · ${product.product_code || ''} · mk_id ${mkId || '—'}`;
+    }
+    list.innerHTML = '<div class="oc-pl-empty">加载小语种文案中…</div>';
+    jsonPre.textContent = '加载中…';
+    if (resp) resp.hidden = true;
+    if (respPre) respPre.textContent = '';
+    submit.disabled = true;
+    submit.textContent = '推送';
+
+    try {
+      const data = await fetchJSON(`/medias/api/products/${product.id}/product-localized-texts-push/payload`);
+      mask._productCopyPreview = data;
+      list.innerHTML = renderProductCopyPushList(data.texts || []);
+      jsonPre.textContent = productCopyPushPreviewJson(data);
+      submit.disabled = !data.payload || !(data.payload.texts || []).length;
+    } catch (err) {
+      const message = err.message || '加载失败';
+      list.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      jsonPre.textContent = JSON.stringify({ error: message }, null, 2);
+      submit.disabled = true;
+    }
+  }
+
+  function closeProductCopyPushModal() {
+    const mask = $('productCopyPushModalMask');
+    if (!mask) return;
+    mask.hidden = true;
+    mask.dataset.pid = '';
+    mask._productCopyPreview = null;
+  }
+
+  async function submitProductCopyPush() {
+    const mask = $('productCopyPushModalMask');
+    const submit = $('productCopyPushSubmit');
+    const resp = $('productCopyPushResponse');
+    const respPre = $('productCopyPushResponseBody');
+    const pid = mask && mask.dataset.pid;
+    if (!mask || !pid || !submit) return;
+    submit.disabled = true;
+    submit.textContent = '推送中…';
+    if (resp) resp.hidden = true;
+    try {
+      const data = await fetchJSON(`/medias/api/products/${pid}/product-localized-texts-push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -5863,12 +5978,27 @@
       return;
     }
 
+    if (event.target.closest('#productCopyPushSubmit')) {
+      event.preventDefault();
+      await submitProductCopyPush();
+      return;
+    }
+
     if (
       event.target === $('productLinksPushModalMask')
       || event.target.closest('#productLinksPushClose')
       || event.target.closest('#productLinksPushCancel')
     ) {
       closeProductLinksPushModal();
+      return;
+    }
+
+    if (
+      event.target === $('productCopyPushModalMask')
+      || event.target.closest('#productCopyPushClose')
+      || event.target.closest('#productCopyPushCancel')
+    ) {
+      closeProductCopyPushModal();
       return;
     }
 
