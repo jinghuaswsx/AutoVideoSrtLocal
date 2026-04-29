@@ -992,6 +992,17 @@ def _product_links_push_error_response(exc: Exception):
     return jsonify({"error": "product_links_push_failed", "message": message}), 500
 
 
+def _product_localized_texts_push_error_response(exc: Exception):
+    message = str(exc)
+    if isinstance(exc, pushes.ProductNotListedError):
+        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送小语种文案"}), 409
+    if isinstance(exc, pushes.ProductLocalizedTextsPushConfigError):
+        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
+    if isinstance(exc, pushes.ProductLocalizedTextsPayloadError):
+        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
+    return jsonify({"error": "product_localized_texts_push_failed", "message": message}), 500
+
+
 @bp.route("/api/products/<int:pid>/product-links-push/payload", methods=["GET"])
 @login_required
 def api_product_links_push_payload(pid: int):
@@ -1018,6 +1029,36 @@ def api_product_links_push(pid: int):
         result = pushes.push_product_links(product)
     except Exception as exc:
         return _product_links_push_error_response(exc)
+    status = 200 if result.get("ok") else 502
+    return jsonify(result), status
+
+
+@bp.route("/api/products/<int:pid>/product-localized-texts-push/payload", methods=["GET"])
+@login_required
+def api_product_localized_texts_push_payload(pid: int):
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可操作"}), 403
+    product = medias.get_product(pid)
+    if not _can_access_product(product):
+        abort(404)
+    try:
+        return jsonify(pushes.build_product_localized_texts_push_preview(product))
+    except Exception as exc:
+        return _product_localized_texts_push_error_response(exc)
+
+
+@bp.route("/api/products/<int:pid>/product-localized-texts-push", methods=["POST"])
+@login_required
+def api_product_localized_texts_push(pid: int):
+    if not _is_admin():
+        return jsonify({"error": "仅管理员可操作"}), 403
+    product = medias.get_product(pid)
+    if not _can_access_product(product):
+        abort(404)
+    try:
+        result = pushes.push_product_localized_texts(product)
+    except Exception as exc:
+        return _product_localized_texts_push_error_response(exc)
     status = 200 if result.get("ok") else 502
     return jsonify(result), status
 
