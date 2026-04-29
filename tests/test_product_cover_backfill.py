@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 
+def test_ensure_playwright_browser_path_uses_project_local_directory(tmp_path, monkeypatch):
+    from appcore import product_cover_backfill as pcb
+
+    browser_dir = tmp_path / ".playwright-browsers"
+    browser_dir.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+
+    pcb.ensure_playwright_browser_path()
+
+    assert pcb.os.environ["PLAYWRIGHT_BROWSERS_PATH"] == str(browser_dir)
+
+
 def test_find_missing_cover_products_returns_rows_without_en_cover(monkeypatch):
     from appcore import product_cover_backfill as pcb
 

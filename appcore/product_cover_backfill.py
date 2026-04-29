@@ -27,6 +27,19 @@ CAROUSEL_SELECTOR = (
 )
 
 
+def ensure_playwright_browser_path() -> None:
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return
+    candidates = [
+        Path.cwd() / ".playwright-browsers",
+        Path(__file__).resolve().parents[1] / ".playwright-browsers",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(candidate)
+            return
+
+
 def find_missing_cover_products(*, product_code: str | None = None) -> list[dict]:
     where = [
         "p.deleted_at IS NULL",
@@ -74,6 +87,8 @@ def pick_first_carousel_image(images: list[dict]) -> str:
 
 
 def fetch_carousel_images(product_url: str) -> list[dict]:
+    ensure_playwright_browser_path()
+
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
 
