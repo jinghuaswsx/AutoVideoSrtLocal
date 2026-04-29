@@ -215,3 +215,47 @@ def test_parse_args_basic():
     args = mod.parse_args(["--ids", "1,2,3", "--apply"])
     assert args.ids == "1,2,3"
     assert args.apply is True
+
+
+def test_translate_failure_marks_errored_and_continues():
+    """单条 id 翻译报错（如 disabled lang）不应中断后续 id。"""
+    db = _FakeDB({
+        ("by_id", 101): {
+            "id": 101, "product_id": 7, "lang": "fi", "idx": 1,
+            "title": "Old", "body": None, "description": None,
+            "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+        },
+        ("by_source", 7, 1): {
+            "id": 50, "title": "Hi", "body": None, "description": None,
+            "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+        },
+        ("by_id", 102): {
+            "id": 102, "product_id": 8, "lang": "ja", "idx": 1,
+            "title": "Old", "body": None, "description": None,
+            "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+        },
+        ("by_source", 8, 1): {
+            "id": 51, "title": "Bye", "body": None, "description": None,
+            "ad_carrier": None, "ad_copy": None, "ad_keywords": None,
+        },
+    })
+
+    def selective_translate(text: str, src: str, tgt: str) -> tuple[str, int]:
+        if tgt == "fi":
+            raise ValueError("unsupported language: fi")
+        return f"[{tgt}] {text}", 5
+
+    report = mod.retranslate_ids(
+        [101, 102],
+        query_one=db.query_one,
+        execute=db.execute,
+        translate_fn=selective_translate,
+        apply=True,
+    )
+    assert report["errored_ids"] == [101]
+    assert report["applied_ids"] == [102]
+    assert report["items"][0]["status"] == "error"
+    assert "unsupported language" in report["items"][0]["error"]
+    # 第二条仍正常 UPDATE
+    assert len(db.executes) == 1
+    assert db.executes[0][1][6] == 102

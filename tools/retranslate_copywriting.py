@@ -135,19 +135,28 @@ def retranslate_ids(
     translate_fn,
     apply: bool,
 ) -> dict[str, Any]:
-    """对一组 id 重译。dry_run（apply=False）时只产出 diff，不写 DB。"""
+    """对一组 id 重译。dry_run（apply=False）时只产出 diff，不写 DB。
+    单条 id 失败（语言未启用 / LLM 报错等）会被捕获并记录，不影响其它 id。
+    """
     items: list[dict[str, Any]] = []
     applied: list[int] = []
     skipped_unchanged: list[int] = []
     missing: list[int] = []
+    errored: list[int] = []
 
     for tid in target_ids:
-        result = _retranslate_one(
-            target_id=tid,
-            query_one=query_one,
-            execute=execute,
-            translate_fn=translate_fn,
-        )
+        try:
+            result = _retranslate_one(
+                target_id=tid,
+                query_one=query_one,
+                execute=execute,
+                translate_fn=translate_fn,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("retranslate id=%s failed: %s", tid, exc)
+            errored.append(tid)
+            items.append({"id": tid, "status": "error", "error": str(exc)[:200], "fields": {}})
+            continue
         if result["status"] == "missing":
             missing.append(tid)
             items.append({k: v for k, v in result.items() if k != "_pending_values"})
@@ -163,7 +172,14 @@ def retranslate_ids(
             continue
 
         if apply:
-            _apply_update(execute, tid, pending)
+            try:
+                _apply_update(execute, tid, pending)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("UPDATE id=%s failed: %s", tid, exc)
+                errored.append(tid)
+                items.append({"id": tid, "status": "update_error", "error": str(exc)[:200],
+                              "fields": result["fields"]})
+                continue
             applied.append(tid)
         items.append(result)
 
@@ -172,6 +188,7 @@ def retranslate_ids(
         "applied_ids": applied,
         "skipped_unchanged_ids": skipped_unchanged,
         "missing_ids": missing,
+        "errored_ids": errored,
         "total": len(target_ids),
         "items": items,
     }
@@ -222,10 +239,11 @@ def main(argv: list[str] | None = None) -> int:
         apply=args.apply,
     )
     log.info(
-        "applied=%d, unchanged=%d, missing=%d",
+        "applied=%d, unchanged=%d, missing=%d, errored=%d",
         len(report["applied_ids"]),
         len(report["skipped_unchanged_ids"]),
         len(report["missing_ids"]),
+        len(report["errored_ids"]),
     )
 
     payload = json.dumps(report, ensure_ascii=False, indent=2, default=str)
