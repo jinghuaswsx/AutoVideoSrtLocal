@@ -2061,29 +2061,37 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-product-detail-page .oc-pager {
   display:none;
 }
+.oc-product-detail-page {
+  --oc-product-detail-panel-left: 220px;
+  --oc-product-detail-panel-top: 56px;
+}
 .oc-product-detail-page #edMask {
-  position:static;
-  inset:auto;
+  position:fixed;
+  inset:var(--oc-product-detail-panel-top) 0 0 var(--oc-product-detail-panel-left);
   display:flex;
   align-items:stretch;
   justify-content:stretch;
-  min-height:calc(100vh - 112px);
+  width:auto;
+  height:calc(100vh - var(--oc-product-detail-panel-top));
+  min-height:0;
   padding:0;
   background:transparent;
   animation:none;
-  z-index:auto;
+  z-index:40;
 }
 .oc-product-detail-page #edMask > .oc-modal-edit {
   width:100%;
   max-width:none;
+  height:100%;
   max-height:none;
-  min-height:calc(100vh - 112px);
-  border-radius:var(--oc-r-lg);
+  min-height:0;
+  border-radius:var(--oc-r-lg) 0 0 0;
   box-shadow:none;
   animation:none;
 }
 .oc-product-detail-page #edMask > .oc-modal-edit > .oc-modal-body {
-  overflow:visible;
+  min-height:0;
+  overflow:auto;
 }
 .oc-product-detail-loading {
   min-height:calc(100vh - 112px);
