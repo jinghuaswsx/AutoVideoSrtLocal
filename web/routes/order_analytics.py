@@ -215,6 +215,20 @@ def dianxiaomi_orders():
 @admin_required
 def country_dashboard():
     period = (request.args.get("period") or "month").strip().lower()
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
+    if start_date or end_date:
+        try:
+            return jsonify(_json_safe(oa.get_country_dashboard(
+                period="range",
+                start_date=start_date,
+                end_date=end_date,
+            )))
+        except ValueError as exc:
+            return jsonify(error="invalid_param", detail=str(exc)), 400
+        except Exception as exc:
+            log.exception("country dashboard query failed: %s", exc)
+            return jsonify(error="internal_error", detail="country dashboard query failed"), 500
     if period not in ("day", "week", "month"):
         return jsonify(error="invalid_period", detail="period must be one of day/week/month"), 400
     try:

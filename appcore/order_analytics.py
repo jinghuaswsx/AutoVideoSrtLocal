@@ -1236,18 +1236,30 @@ def get_country_dashboard(
     week: int | None = None,
     date_str: str | None = None,
     today: date | None = None,
+    start_date: str | date | None = None,
+    end_date: str | date | None = None,
 ) -> dict:
     period = str(period or "").strip().lower()
-    if period not in ("day", "week", "month"):
-        raise ValueError("period must be one of day/week/month")
-    start, end = _resolve_period_range(
-        period,
-        year=year,
-        month=month,
-        week=week,
-        date_str=date_str,
-        today=today,
-    )
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise ValueError("start_date and end_date are required")
+        start = _coerce_country_dashboard_date(start_date, "start_date")
+        end = _coerce_country_dashboard_date(end_date, "end_date")
+        if end < start:
+            raise ValueError("end_date must be >= start_date")
+        period_type = "range"
+    else:
+        if period not in ("day", "week", "month"):
+            raise ValueError("period must be one of day/week/month")
+        start, end = _resolve_period_range(
+            period,
+            year=year,
+            month=month,
+            week=week,
+            date_str=date_str,
+            today=today,
+        )
+        period_type = period
 
     rows = query(
         "SELECT buyer_country, buyer_country_name, "
@@ -1295,16 +1307,24 @@ def get_country_dashboard(
     }
     return {
         "period": {
-            "type": period,
+            "type": period_type,
             "start": start,
             "end": end,
-            "label": _format_period_label(start, end, period),
+            "label": _format_period_label(start, end, period_type),
             "date_field": "meta_business_date",
             "timezone": META_ATTRIBUTION_TIMEZONE,
         },
         "summary": summary,
         "countries": countries,
     }
+
+
+def _coerce_country_dashboard_date(value: str | date, name: str) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return _parse_iso_date_param(str(value or ""), name)
 
 
 def _coerce_ad_frequency(value: str | None) -> str:
@@ -2477,6 +2497,10 @@ def _format_period_label(start: date, end: date, period: str) -> str:
             return f"{start.year} 年 {start.month} 月"
         return f"{start.year} 年 {start.month} 月（{start.day}-{end.day} 日）"
     if period == "week":
+        return f"{start.isoformat()} ~ {end.isoformat()}"
+    if period == "range":
+        if start == end:
+            return start.isoformat()
         return f"{start.isoformat()} ~ {end.isoformat()}"
     return start.isoformat()
 
