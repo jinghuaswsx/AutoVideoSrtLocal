@@ -1,20 +1,145 @@
 {% extends "layout.html" %}
 {% block title %}数据分析 — AutoVideoSrt{% endblock %}
-{% block page_title %}数据分析{% endblock %}
+{% block page_title %}
+<span class="oa-page-heading">数据分析</span>
+<span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
+  <button type="button" class="oa-tab active" data-tab="realtime" role="tab" aria-selected="true">实时大盘</button>
+  <button type="button" class="oa-tab" data-tab="dashboard" role="tab" aria-selected="false">产品看板</button>
+  <button type="button" class="oa-tab" data-tab="trueRoas" role="tab" aria-selected="false">真实 ROAS</button>
+  <button type="button" class="oa-tab" data-tab="import" role="tab" aria-selected="false">订单导入</button>
+  <button type="button" class="oa-tab" data-tab="analytics" role="tab" aria-selected="false">订单分析</button>
+  <button type="button" class="oa-tab" data-tab="ads" role="tab" aria-selected="false">广告分析</button>
+</span>
+{% endblock %}
 {% block extra_style %}
+:root {
+  --bg: oklch(99% 0.004 230);
+  --bg-card: oklch(99% 0.004 230);
+  --bg-subtle: oklch(97% 0.006 230);
+  --bg-muted: oklch(94% 0.010 230);
+  --border: oklch(91% 0.012 230);
+  --border-strong: oklch(84% 0.015 230);
+  --fg: oklch(22% 0.020 235);
+  --fg-muted: oklch(48% 0.018 230);
+  --fg-subtle: oklch(62% 0.015 230);
+  --accent: oklch(56% 0.16 230);
+  --accent-hover: oklch(50% 0.17 230);
+  --accent-active: oklch(45% 0.16 230);
+  --accent-fg: oklch(99% 0 0);
+  --accent-subtle: oklch(94% 0.04 225);
+  --accent-ring: oklch(56% 0.16 230 / 0.22);
+  --warning-bg: oklch(96% 0.05 85);
+  --warning-fg: oklch(42% 0.10 60);
+  --success: oklch(62% 0.13 165);
+  --success-bg: oklch(95% 0.04 165);
+  --success-fg: oklch(38% 0.09 165);
+  --danger: oklch(58% 0.18 25);
+  --danger-bg: oklch(96% 0.04 25);
+  --danger-fg: oklch(42% 0.14 25);
+  --info-bg: oklch(95% 0.04 230);
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-xl: 22px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --shadow-xs: 0 1px 2px 0 oklch(22% 0.02 235 / 0.04);
+  --shadow: 0 4px 8px -2px oklch(22% 0.02 235 / 0.08),
+            0 2px 4px -2px oklch(22% 0.02 235 / 0.05);
+  --shadow-lg: 0 12px 24px -4px oklch(22% 0.02 235 / 0.10),
+               0 4px 8px -2px oklch(22% 0.02 235 / 0.06);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-fast: 120ms;
+}
+
 /* ── Tab 导航 ─────────────────────────────────── */
+.topbar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.oa-page-heading { flex: 0 0 auto; }
 .oa-tabs {
-  display: flex; gap: 0; border-bottom: 2px solid var(--border);
-  margin-bottom: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  margin: 0;
 }
-.oa-tab {
-  padding: 10px 20px; font-size: 14px; font-weight: 500;
-  color: var(--fg-muted); cursor: pointer; border: none; background: none;
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
-  transition: color .15s, border-color .15s;
+.oa-tabs-topbar {
+  max-width: 58vw;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.oa-tab:hover { color: var(--fg); }
-.oa-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.oa-tabs-topbar::-webkit-scrollbar { display: none; }
+.oa-tab,
+.oa-pill,
+.oad-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.oa-tab:hover,
+.oa-pill:hover,
+.oad-row-action:hover {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.oa-tab:focus-visible,
+.oa-pill:focus-visible,
+.oad-row-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.oa-tab.active,
+.oa-pill.is-active,
+.oa-pill[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: var(--shadow-xs);
+}
+.oa-pill-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+}
 
 .oa-panel { display: none; }
 .oa-panel.active { display: block; }
@@ -285,12 +410,6 @@
   border-radius: var(--radius-md); padding: 16px 20px; color: var(--danger-fg); font-size: 14px;
   margin-bottom: 20px; display: none;
 }
-.oa-debug {
-  display: none; background: var(--bg-subtle); border: 1px solid var(--border);
-  border-radius: var(--radius-md); padding: 12px 16px; font-size: 12px; color: var(--fg-subtle);
-  font-family: var(--font-mono, monospace); white-space: pre-wrap;
-  margin-bottom: 16px; line-height: 1.6;
-}
 
 /* ── 产品搜索结果下拉 ─────────────────────────── */
 .oa-search-results {
@@ -484,17 +603,6 @@
 
 {% block content %}
 <div class="oa-error" id="errorBox"></div>
-<div class="oa-debug" id="debugBox"></div>
-
-<!-- Tab 导航 -->
-<div class="oa-tabs">
-  <button class="oa-tab active" data-tab="realtime">实时大盘</button>
-  <button class="oa-tab" data-tab="dashboard">产品看板</button>
-  <button class="oa-tab" data-tab="trueRoas">真实 ROAS</button>
-  <button class="oa-tab" data-tab="import">订单导入</button>
-  <button class="oa-tab" data-tab="analytics">订单分析</button>
-  <button class="oa-tab" data-tab="ads">广告分析</button>
-</div>
 
 <section class="oa-panel active" id="panelRealtime">
   <div class="oar-toolbar">
@@ -661,18 +769,24 @@
 <style>
   .oad-toolbar { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
-  .oad-segmented { display: inline-flex; border: 1px solid var(--border-strong);
-                   border-radius: var(--radius-md); overflow: hidden; }
-  .oad-seg { padding: 4px 12px; height: 28px; background: white; border: 0;
-             border-right: 1px solid var(--border); cursor: pointer;
-             font-size: var(--text-sm); }
-  .oad-seg:last-child { border-right: 0; }
-  .oad-seg.is-active { background: var(--accent); color: var(--accent-fg); }
+  .oad-segmented { display: inline-flex; align-items: center; gap: var(--space-1);
+                   padding: var(--space-1); border: 1px solid var(--border-strong);
+                   border-radius: var(--radius-full); background: var(--bg-subtle); }
+  .oad-seg { height: 30px; padding: 0 var(--space-3); background: transparent;
+             border: 1px solid transparent; border-radius: var(--radius-full);
+             color: var(--fg-muted); cursor: pointer; font-size: var(--text-sm);
+             font-weight: 600; white-space: nowrap;
+             transition: background-color var(--duration-fast) var(--ease),
+                         border-color var(--duration-fast) var(--ease),
+                         color var(--duration-fast) var(--ease); }
+  .oad-seg:hover { background: var(--bg-card); border-color: var(--border); color: var(--fg); }
+  .oad-seg.is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .oad-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
   .oad-datepicker > div { display: flex; gap: var(--space-2); }
   .oad-datepicker select, .oad-datepicker input,
   #oadCountry, #oadSearch { height: 32px; padding: 0 10px;
                             border: 1px solid var(--border-strong); border-radius: var(--radius);
-                            font-size: var(--text-sm); background: white; }
+                            font-size: var(--text-sm); background: var(--bg-card); color: var(--fg); }
   #oadSearch { min-width: 200px; }
   .oad-btn-primary { height: 32px; padding: 0 16px; background: var(--accent);
                      color: var(--accent-fg); border: 0; border-radius: var(--radius);
@@ -704,19 +818,19 @@
   .oad-items-tag { display: inline-block; padding: 2px 6px; border-radius: var(--radius-sm);
                     background: var(--bg-muted); font-size: var(--text-xs);
                     margin-right: 2px; }
-  .oad-row-actions { display: flex; gap: 4px; }
-  .oad-row-actions a { font-size: var(--text-xs); padding: 4px 8px;
-                        border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
-                        color: var(--accent); text-decoration: none; cursor: pointer; }
-  .oad-row-actions a:hover { background: var(--bg-muted); }
+  .oad-row-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+  .oad-row-action { height: 26px; padding: 0 10px; font-size: var(--text-xs);
+                    background: var(--bg-card); border-color: var(--border-strong);
+                    color: var(--accent); }
+  .oad-row-action:hover { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
 </style>
 
 <div id="dashboardToolbar" class="oad-toolbar">
   <div class="oad-toolbar-row">
     <div class="oad-segmented" role="tablist" aria-label="时间粒度">
-      <button class="oad-seg is-active" data-period="month">月</button>
-      <button class="oad-seg" data-period="week">周</button>
-      <button class="oad-seg" data-period="day">日</button>
+      <button type="button" class="oad-seg is-active" data-period="month" aria-pressed="true">月</button>
+      <button type="button" class="oad-seg" data-period="week" aria-pressed="false">周</button>
+      <button type="button" class="oad-seg" data-period="day" aria-pressed="false">日</button>
     </div>
 
     <div class="oad-datepicker">
@@ -805,6 +919,7 @@
     oad.state.period = p;
     document.querySelectorAll('.oad-seg').forEach(function(b) {
       b.classList.toggle('is-active', b.dataset.period === p);
+      b.setAttribute('aria-pressed', b.dataset.period === p ? 'true' : 'false');
     });
     document.querySelectorAll('[data-period-input]').forEach(function(d) {
       d.hidden = d.dataset.periodInput !== p;
@@ -908,9 +1023,9 @@
       cells.push(
         '<td>' + fmtItems(p.media_items_by_lang) + '</td>',
         '<td><div class="oad-row-actions" data-pid="' + p.product_id + '">' +
-          '<a href="#" data-action="orders">订单</a>' +
-          '<a href="#" data-action="ads">广告</a>' +
-          '<a href="#" data-action="medias">素材</a>' +
+          '<a href="#" class="oad-row-action" data-action="orders">订单</a>' +
+          '<a href="#" class="oad-row-action" data-action="ads">广告</a>' +
+          '<a href="#" class="oad-row-action" data-action="medias">素材</a>' +
         '</div></td>'
       );
       return '<tr>' + cells.join('') + '</tr>';
@@ -1114,10 +1229,11 @@
   <!-- 控件区 -->
   <div class="oa-controls">
     <label>视图：</label>
-    <select id="viewMode" onchange="onViewModeChange()">
-      <option value="month">月度</option>
-      <option value="week">周度</option>
-    </select>
+    <input type="hidden" id="viewMode" value="month">
+    <div class="oa-pill-group" role="group" aria-label="订单分析视图">
+      <button type="button" class="oa-pill is-active" data-view-mode="month" aria-pressed="true">月度</button>
+      <button type="button" class="oa-pill" data-view-mode="week" aria-pressed="false">周度</button>
+    </div>
 
     <div id="monthControls">
       <select id="monthSelect" onchange="loadAnalytics()"></select>
@@ -1241,11 +1357,12 @@
   <div class="oa-ad-layout">
     <div class="oa-controls">
       <label>导入类型：</label>
-      <select id="adFrequency">
-        <option value="weekly">周报</option>
-        <option value="monthly">月报</option>
-        <option value="custom">自定义周期</option>
-      </select>
+      <input type="hidden" id="adFrequency" value="weekly">
+      <div class="oa-pill-group" role="group" aria-label="广告报表导入类型">
+        <button type="button" class="oa-pill is-active" data-ad-frequency="weekly" aria-pressed="true">周报</button>
+        <button type="button" class="oa-pill" data-ad-frequency="monthly" aria-pressed="false">月报</button>
+        <button type="button" class="oa-pill" data-ad-frequency="custom" aria-pressed="false">自定义周期</button>
+      </div>
       <button class="btn btn-default btn-sm" onclick="matchAdProducts()">重新匹配产品</button>
     </div>
 
@@ -1322,10 +1439,16 @@
 
   // ── Tab 切换 ──────────────────────────────────────
   var tabs = document.querySelectorAll('.oa-tab');
+  function setActiveTab(activeTab) {
+    tabs.forEach(function(t) {
+      var isActive = t === activeTab;
+      t.classList.toggle('active', isActive);
+      t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+  }
   tabs.forEach(function(tab) {
     tab.addEventListener('click', function() {
-      tabs.forEach(function(t) { t.classList.remove('active'); });
-      tab.classList.add('active');
+      setActiveTab(tab);
       document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
       document.getElementById('panel' + capitalize(tab.dataset.tab)).classList.add('active');
 
@@ -1344,21 +1467,26 @@
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   window.switchToAnalytics = function() {
-    tabs.forEach(function(t) { t.classList.remove('active'); });
-    document.querySelector('[data-tab="analytics"]').classList.add('active');
+    var tab = document.querySelector('[data-tab="analytics"]');
+    if (tab) setActiveTab(tab);
     document.querySelectorAll('.oa-panel').forEach(function(p) { p.classList.remove('active'); });
     document.getElementById('panelAnalytics').classList.add('active');
     initAnalytics();
   };
 
   // ── 调试 ──────────────────────────────────────────
-  var debugBox = document.getElementById('debugBox');
   function debug(msg) {
-    debugBox.style.display = 'block';
-    debugBox.textContent += '\n[' + new Date().toLocaleTimeString() + '] ' + msg;
     console.log('[订单分析]', msg);
   }
-  debug('JS 已加载');
+
+  function setPillGroupValue(selector, activeButton, inputId, value) {
+    document.getElementById(inputId).value = value;
+    document.querySelectorAll(selector).forEach(function(btn) {
+      var isActive = btn === activeButton;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
 
   // ── 上传 ──────────────────────────────────────────
   var trueRoasRefresh = document.getElementById('trueRoasRefresh');
@@ -1823,6 +1951,11 @@
   var adsInited = false;
   var adZone = document.getElementById('adUploadZone');
   var adInput = document.getElementById('adFileInput');
+  document.querySelectorAll('[data-ad-frequency]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setPillGroupValue('[data-ad-frequency]', btn, 'adFrequency', btn.dataset.adFrequency);
+    });
+  });
 
   adInput.addEventListener('change', function() {
     if (adInput.files[0]) doAdUpload(adInput.files[0]);
@@ -2087,6 +2220,13 @@
     if (mode === 'month') loadMonthView();
     else loadWeekView();
   };
+
+  document.querySelectorAll('[data-view-mode]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setPillGroupValue('[data-view-mode]', btn, 'viewMode', btn.dataset.viewMode);
+      window.onViewModeChange();
+    });
+  });
 
   // ── 月度视图 ──────────────────────────────────────
   function loadMonthView() {
