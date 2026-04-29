@@ -278,6 +278,23 @@ def test_dianxiaomi_orders_endpoint_returns_400_for_non_integer_page(authed_clie
     assert called is False
 
 
+def test_dianxiaomi_orders_endpoint_returns_400_for_non_integer_page_size(
+    authed_client_no_db,
+    monkeypatch,
+):
+    def fake_analysis(*args, **kwargs):
+        raise AssertionError("DAO should not be called")
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-01&end_date=2026-04-30&page_size=abc"
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_param"
+
+
 def test_dianxiaomi_orders_endpoint_500_does_not_leak_exception_detail(
     authed_client_no_db,
     monkeypatch,
