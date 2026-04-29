@@ -1675,7 +1675,7 @@
         return r.json();
       })
       .then(function(data) {
-        renderDxmOrders(data);
+        renderDxmOrderAnalysis(data);
       })
       .catch(function(err) {
         bodyEl.innerHTML = '<tr><td colspan="13" class="oad-error">加载失败：' +
@@ -1684,7 +1684,7 @@
       });
   }
 
-  function renderDxmOrders(data) {
+  function renderDxmOrderAnalysis(data) {
     var summary = data.summary || {};
     var pagination = data.pagination || {};
     var rows = Array.isArray(data.rows) ? data.rows : [];
