@@ -1,0 +1,219 @@
+{% extends "layout.html" %}
+{% block title %}小工具 - AutoVideoSrt{% endblock %}
+{% block page_title %}小工具{% endblock %}
+{% block extra_style %}
+:root {
+  --tools-bg: oklch(99% 0.004 230);
+  --tools-bg-subtle: oklch(97% 0.006 230);
+  --tools-bg-muted: oklch(94% 0.010 230);
+  --tools-border: oklch(91% 0.012 230);
+  --tools-border-strong: oklch(84% 0.015 230);
+  --tools-fg: oklch(22% 0.020 235);
+  --tools-fg-muted: oklch(48% 0.018 230);
+  --tools-fg-subtle: oklch(62% 0.015 230);
+  --tools-accent: oklch(56% 0.16 230);
+  --tools-accent-hover: oklch(50% 0.17 230);
+  --tools-accent-subtle: oklch(94% 0.04 225);
+  --tools-accent-ring: oklch(56% 0.16 230 / 0.22);
+  --tools-radius: 6px;
+  --tools-radius-md: 8px;
+  --tools-radius-lg: 12px;
+  --tools-space-2: 8px;
+  --tools-space-3: 12px;
+  --tools-space-4: 16px;
+  --tools-space-5: 20px;
+  --tools-space-6: 24px;
+}
+.tools-page {
+  color: var(--tools-fg);
+  font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
+  max-width: 1040px;
+}
+.tools-page * { box-sizing: border-box; }
+.tools-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--tools-space-4);
+  margin-bottom: var(--tools-space-5);
+}
+.tools-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 650;
+}
+.tools-tabs {
+  display: flex;
+  gap: var(--tools-space-2);
+  border-bottom: 1px solid var(--tools-border);
+  margin-bottom: var(--tools-space-5);
+}
+.tools-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--tools-space-4);
+  color: var(--tools-fg-muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--tools-radius-md) var(--tools-radius-md) 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.tools-tab.is-active {
+  color: var(--tools-accent);
+  background: var(--tools-bg);
+  border-color: var(--tools-border);
+  box-shadow: inset 0 2px 0 var(--tools-accent);
+}
+.tools-panel {
+  background: var(--tools-bg);
+  border: 1px solid var(--tools-border);
+  border-radius: var(--tools-radius-lg);
+  padding: var(--tools-space-6);
+}
+.avg-result-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tools-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--tools-space-4);
+}
+.avg-result-label {
+  color: var(--tools-fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.avg-result {
+  color: var(--tools-accent);
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.avg-meta {
+  color: var(--tools-fg-subtle);
+  font-size: 13px;
+}
+.avg-field {
+  display: grid;
+  gap: var(--tools-space-2);
+}
+.avg-field label {
+  color: var(--tools-fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.avg-input {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  border: 1px solid var(--tools-border-strong);
+  border-radius: var(--tools-radius-md);
+  padding: var(--tools-space-4);
+  background: var(--tools-bg-subtle);
+  color: var(--tools-fg);
+  font: 14px/1.55 "JetBrains Mono", "Geist Mono", Consolas, monospace;
+}
+.avg-input:focus {
+  outline: 2px solid var(--tools-accent-ring);
+  border-color: var(--tools-accent);
+  background: var(--tools-bg);
+}
+.avg-input::placeholder { color: var(--tools-fg-subtle); }
+@media (max-width: 768px) {
+  .tools-page { max-width: none; }
+  .tools-panel { padding: var(--tools-space-4); }
+  .avg-result { font-size: 34px; }
+  .avg-input { min-height: 300px; }
+}
+{% endblock %}
+{% block content %}
+<div class="tools-page">
+  <div class="tools-head">
+    <h1 class="tools-title">小工具</h1>
+  </div>
+
+  <nav class="tools-tabs" aria-label="小工具分类">
+    <a class="tools-tab is-active" href="{{ url_for('tools.index') }}" aria-current="page">平均运费</a>
+  </nav>
+
+  <section class="tools-panel" aria-labelledby="averageShippingTitle">
+    <div class="avg-result-wrap">
+      <span class="avg-result-label" id="averageShippingTitle">平均运费</span>
+      <strong class="avg-result" id="averageShippingResult">--</strong>
+      <span class="avg-meta" id="averageShippingMeta">有效行数 0 · 合计 0.0</span>
+    </div>
+
+    <div class="avg-field">
+      <label for="averageShippingInput">原始运费列表</label>
+      <textarea
+        class="avg-input"
+        id="averageShippingInput"
+        spellcheck="false"
+        placeholder="预估运费&#10;￥35.1&#10;￥32.1&#10;￥49.07"
+      ></textarea>
+    </div>
+  </section>
+</div>
+
+<script id="averageShippingToolScript">
+(function () {
+  function parseValues(text) {
+    return String(text || "")
+      .split(/\r?\n/)
+      .map(function (line) {
+        var normalized = line.replace(/[￥¥,\s]/g, "");
+        var match = normalized.match(/[-+]?\d+(?:\.\d+)?/);
+        if (!match) return null;
+        var value = Number(match[0]);
+        return Number.isFinite(value) ? value : null;
+      })
+      .filter(function (value) { return value !== null; });
+  }
+
+  function averageText(text) {
+    var values = parseValues(text);
+    var total = values.reduce(function (sum, value) { return sum + value; }, 0);
+    if (!values.length) {
+      return { display: "--", count: 0, total: 0, average: null };
+    }
+    var average = total / values.length;
+    return {
+      display: average.toFixed(1),
+      count: values.length,
+      total: total,
+      average: average
+    };
+  }
+
+  function updateView(input, resultEl, metaEl) {
+    var result = averageText(input.value);
+    resultEl.textContent = result.display;
+    metaEl.textContent = "有效行数 " + result.count + " · 合计 " + result.total.toFixed(1);
+  }
+
+  var api = {
+    parseValues: parseValues,
+    averageText: averageText,
+    updateView: updateView
+  };
+  var target = typeof window !== "undefined" ? window : globalThis;
+  target.averageShippingTool = api;
+
+  if (typeof document !== "undefined") {
+    var input = document.getElementById("averageShippingInput");
+    var resultEl = document.getElementById("averageShippingResult");
+    var metaEl = document.getElementById("averageShippingMeta");
+    if (input && resultEl && metaEl) {
+      input.addEventListener("input", function () {
+        updateView(input, resultEl, metaEl);
+      });
+      updateView(input, resultEl, metaEl);
+    }
+  }
+})();
+</script>
+{% endblock %}
