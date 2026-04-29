@@ -556,6 +556,75 @@ def test_subtitle_removal_submit_stages_public_source_on_demand(tmp_path, authed
     assert uploaded == [(str(source_video), "uploads/1/sr-submit-public-source/demo.mp4")]
 
 
+def test_subtitle_removal_submit_stages_public_source_in_backup_tos_when_enabled(
+    tmp_path, authed_client_no_db, monkeypatch
+):
+    from appcore import tos_backup_storage
+
+    source_video = tmp_path / "source.mp4"
+    source_video.write_bytes(b"video")
+    store.create_subtitle_removal(
+        "sr-submit-backup-source",
+        str(source_video),
+        str(tmp_path / "task"),
+        original_filename="demo.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-submit-backup-source",
+        status="ready",
+        video_path=str(source_video),
+        source_tos_key="",
+        media_info={
+            "width": 1280,
+            "height": 720,
+            "resolution": "1280x720",
+            "duration": 8.0,
+            "file_size_mb": 2.09,
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    monkeypatch.setattr("web.routes.subtitle_removal.subtitle_removal_runner.start", lambda task_id, user_id=None: None)
+    monkeypatch.setattr(tos_backup_storage, "is_enabled", lambda: True)
+    monkeypatch.setattr(tos_backup_storage.config, "TOS_BACKUP_PREFIX", "FILES")
+    monkeypatch.setattr(tos_backup_storage.config, "TOS_BACKUP_ENV", "test")
+    backup_uploaded = []
+    legacy_uploaded = []
+    monkeypatch.setattr(
+        tos_backup_storage,
+        "upload_local_file",
+        lambda local_path, object_key=None: backup_uploaded.append((local_path, object_key)) or object_key,
+    )
+    monkeypatch.setattr(
+        tos_backup_storage,
+        "generate_signed_download_url",
+        lambda object_key, expires=86400: f"https://backup.example/{object_key}",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.upload_file",
+        lambda local_path, object_key: legacy_uploaded.append((local_path, object_key)),
+    )
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.tos_clients.generate_signed_download_url",
+        lambda object_key, expires=86400: f"https://legacy.example/{object_key}",
+    )
+
+    response = authed_client_no_db.post(
+        "/api/subtitle-removal/sr-submit-backup-source/submit",
+        json={"remove_mode": "full", "erase_text_type": "subtitle"},
+    )
+
+    expected_key = "FILES/test/subtitle_removal/uploads/1/sr-submit-backup-source/demo.mp4"
+    assert response.status_code == 202
+    saved = store.get("sr-submit-backup-source")
+    assert saved["source_tos_key"] == expected_key
+    assert saved["source_object_info"]["public_source_storage_backend"] == "tos_backup"
+    assert saved["source_object_info"]["public_source_key"] == expected_key
+    assert backup_uploaded == [(str(source_video), expected_key)]
+    assert legacy_uploaded == []
+
+
 def test_subtitle_removal_submit_rejects_duration_over_limit(authed_client_no_db, monkeypatch):
     store.create_subtitle_removal(
         "sr-submit-too-long",

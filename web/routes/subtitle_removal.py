@@ -11,7 +11,7 @@ import config
 from flask import Blueprint, render_template, abort, jsonify, request, redirect, send_file, url_for
 from flask_login import login_required, current_user
 
-from appcore import object_keys, task_state
+from appcore import object_keys, subtitle_removal_source_storage, task_state
 from appcore import tos_clients
 from appcore.db import execute as db_execute, query as db_query, query_one as db_query_one
 from appcore.vod_erase_provider import VodEraseError, get_play_info
@@ -172,10 +172,18 @@ def _ensure_public_source_url(task_id: str, task: dict) -> str:
             raise RuntimeError("source video is missing; cannot stage public source")
         user_id = task.get("_user_id")
         original_filename = (task.get("original_filename") or os.path.basename(video_path) or "source.mp4").strip()
-        source_tos_key = object_keys.build_source_object_key(user_id, task_id, original_filename)
-        tos_clients.upload_file(video_path, source_tos_key)
-        store.update(task_id, source_tos_key=source_tos_key)
-    return tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+        source_tos_key = subtitle_removal_source_storage.build_public_source_object_key(
+            user_id,
+            task_id,
+            original_filename,
+        )
+        backend = subtitle_removal_source_storage.upload_public_source(video_path, source_tos_key)
+        source_object_info = subtitle_removal_source_storage.with_public_source_info(task, backend, source_tos_key)
+        store.update(task_id, source_tos_key=source_tos_key, source_object_info=source_object_info)
+        task = dict(task)
+        task["source_tos_key"] = source_tos_key
+        task["source_object_info"] = source_object_info
+    return subtitle_removal_source_storage.generate_public_source_url(task, source_tos_key, expires=86400)
 
 
 def _task_needs_resume(task: dict) -> bool:

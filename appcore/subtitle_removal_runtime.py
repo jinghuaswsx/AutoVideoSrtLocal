@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 
 import config
-from appcore import task_state, tos_clients
+from appcore import subtitle_removal_source_storage, task_state
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
 from appcore.subtitle_removal_provider import SubtitleRemovalProviderError, query_progress, submit_task
 
@@ -169,7 +169,11 @@ class SubtitleRemovalRuntime:
         media_info = task.get("media_info") or {}
         selection = _box_bounds(task.get("selection_box") or task.get("position_payload"), media_info)
         video_name = f"sr_{task_id}_{selection['x1']}_{selection['y1']}_{selection['x2']}_{selection['y2']}"
-        source_url = tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+        source_url = subtitle_removal_source_storage.generate_public_source_url(
+            task,
+            source_tos_key,
+            expires=86400,
+        )
         erase_text_type = (task.get("erase_text_type") or "subtitle").strip().lower()
         if erase_text_type not in {"subtitle", "text"}:
             erase_text_type = "subtitle"

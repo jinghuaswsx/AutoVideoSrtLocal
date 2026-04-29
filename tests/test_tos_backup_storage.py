@@ -75,6 +75,25 @@ def test_no_proxy_contains_tos_domains(monkeypatch):
         assert "ivolces.com" in value
 
 
+def test_generate_signed_download_url_uses_backup_bucket_and_public_endpoint(monkeypatch):
+    backup = _reload_backup_storage(monkeypatch)
+    monkeypatch.setenv("NO_PROXY", "")
+    calls = []
+
+    class FakeSignedClient:
+        def pre_signed_url(self, method, bucket, object_key, expires=None):
+            calls.append((method, bucket, object_key, expires))
+            return types.SimpleNamespace(signed_url=f"https://public.tos.example.com/{bucket}/{object_key}")
+
+    monkeypatch.setattr(backup, "get_backup_public_client", lambda: FakeSignedClient(), raising=False)
+
+    url = backup.generate_signed_download_url("FILES/test/subtitle_removal/source.mp4", expires=86400)
+
+    assert url == "https://public.tos.example.com/autovideosrtlocal/FILES/test/subtitle_removal/source.mp4"
+    assert calls[0][1:] == ("autovideosrtlocal", "FILES/test/subtitle_removal/source.mp4", 86400)
+    assert ".volces.com" in os.environ["NO_PROXY"]
+
+
 class FakeBackupClient:
     def __init__(self, *, existing=None, payload=b"remote-payload"):
         self.existing = set(existing or [])

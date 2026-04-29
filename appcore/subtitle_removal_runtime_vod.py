@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import config
-from appcore import object_keys, task_state, tos_clients
+from appcore import subtitle_removal_source_storage, task_state
 from appcore.events import Event, EventBus, EVT_SR_DONE, EVT_SR_ERROR, EVT_SR_STEP_UPDATE
 from appcore.subtitle_removal_runtime import SubtitleRemovalTaskDeleted, _task_is_deleted
 from appcore.vod_erase_provider import (
@@ -28,14 +28,18 @@ def _ensure_public_source_url(task_id: str, task: dict, user_id: int | None = No
         if not video_path:
             raise RuntimeError("source_tos_key is missing")
         original_filename = (task.get("original_filename") or "source.mp4").strip() or "source.mp4"
-        source_tos_key = object_keys.build_source_object_key(
+        source_tos_key = subtitle_removal_source_storage.build_public_source_object_key(
             user_id if user_id is not None else task.get("_user_id"),
             task_id,
             original_filename,
         )
-        tos_clients.upload_file(video_path, source_tos_key)
-        task_state.update(task_id, source_tos_key=source_tos_key)
-    return tos_clients.generate_signed_download_url(source_tos_key, expires=86400)
+        backend = subtitle_removal_source_storage.upload_public_source(video_path, source_tos_key)
+        source_object_info = subtitle_removal_source_storage.with_public_source_info(task, backend, source_tos_key)
+        task_state.update(task_id, source_tos_key=source_tos_key, source_object_info=source_object_info)
+        task = dict(task)
+        task["source_tos_key"] = source_tos_key
+        task["source_object_info"] = source_object_info
+    return subtitle_removal_source_storage.generate_public_source_url(task, source_tos_key, expires=86400)
 
 
 class SubtitleRemovalVodRuntime:

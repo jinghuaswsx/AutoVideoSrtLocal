@@ -90,6 +90,21 @@ def db_backup_prefix() -> str:
     return f"{prefix}/{env}"
 
 
+def subtitle_removal_source_prefix() -> str:
+    prefix = (config.TOS_BACKUP_PREFIX or "FILES").strip("/")
+    env = (config.TOS_BACKUP_ENV or "test").strip("/")
+    return f"{prefix}/{env}/subtitle_removal/uploads"
+
+
+def subtitle_removal_source_object_key(
+    user_id: int | str | None,
+    task_id: str,
+    original_filename: str,
+) -> str:
+    filename = Path(original_filename or "source.mp4").name
+    return f"{subtitle_removal_source_prefix()}/{user_id}/{task_id}/{filename}"
+
+
 def _build_client(endpoint: str):
     ensure_tos_direct_no_proxy()
     import tos
@@ -118,6 +133,28 @@ def get_backup_client():
         client = _build_client(endpoint)
         _client_cache[endpoint] = client
     return client
+
+
+def get_backup_public_client():
+    endpoint = config.TOS_BACKUP_PUBLIC_ENDPOINT
+    client = _client_cache.get(endpoint)
+    if client is None:
+        client = _build_client(endpoint)
+        _client_cache[endpoint] = client
+    return client
+
+
+def generate_signed_download_url(object_key: str, expires: int | None = None) -> str:
+    ensure_tos_direct_no_proxy()
+    import tos
+
+    signed = get_backup_public_client().pre_signed_url(
+        tos.HttpMethodType.Http_Method_Get,
+        config.TOS_BACKUP_BUCKET,
+        object_key,
+        expires=expires or config.TOS_BACKUP_SIGNED_URL_EXPIRES,
+    )
+    return signed.signed_url
 
 
 def object_exists(object_key: str) -> bool:
