@@ -307,3 +307,42 @@ def test_medias_product_links_push_modal_uses_tabs_and_centered_footer():
     assert "return JSON.stringify(data.payload || {}, null, 2);" in script
     assert "productLinksPushIsSuccess" in script
     assert "productLinksPushRenderResponse" in script
+
+
+def test_medias_product_copy_push_modal_matches_links_push_tabs_and_footer():
+    from pathlib import Path
+
+    template = Path("web/templates/medias_list.html").read_text(encoding="utf-8")
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert 'id="productCopyPushModalMask" class="oc-modal-mask oc oc-product-links-mask"' in template
+    assert 'role="tablist" aria-label="小语种文案推送内容"' in template
+    assert 'data-product-copy-tab="texts"' in template
+    assert 'data-product-copy-tab="json"' in template
+    assert "推送小语种文案" in template
+    assert "小语种文案 JSON 预览" in template
+    assert 'id="productCopyPushPanelTexts"' in template
+    assert 'id="productCopyPushPanelJson"' in template
+    assert 'data-product-copy-panel="texts"' in template
+    assert 'data-product-copy-panel="json"' in template
+    assert 'id="productCopyPushInfo"' in template
+    assert 'id="productCopyPushResponseTitle"' in template
+    assert 'id="productCopyPushCancel"' not in template
+    assert template.index('id="productCopyPushResponse"') < template.index('id="productCopyPushSubmit"')
+    assert 'class="oc-modal-foot oc-product-links-footer"' in template
+    assert 'id="productCopyPushSubmit" class="oc-btn primary oc-product-links-submit"' in template
+    assert 'id="productLinksPushSubmit" class="oc-btn primary oc-product-links-submit"' in template
+    assert ".oc-product-links-footer .oc-product-links-submit" in template
+    assert "width:256px;" in template
+    assert "height:64px;" in template
+    assert "font-size:calc(var(--text-base, 14px) * 1.8);" in template
+    assert "align-items:center;" in template
+    assert "justify-content:center;" in template
+
+    assert "function setProductCopyPushActiveTab" in script
+    assert "setProductCopyPushActiveTab('texts')" in script
+    assert "window.setProductCopyPushActiveTab = setProductCopyPushActiveTab" in script
+    assert "data-product-copy-tab" in script
+    assert "data-product-copy-panel" in script
+    assert "renderProductCopyPushInfo" in script
+    assert "productCopyPushRenderResponse" in script
