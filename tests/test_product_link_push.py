@@ -198,7 +198,7 @@ def test_medias_assets_include_product_link_push_entry():
     assert "推送文案" in script
     assert "openProductLinksPushModal" in script
     assert "openProductCopyPushModal" in script
-    assert "产品链接 JSON 预览" in template
+    assert "投放链接 JSON 预览" in template
     assert "小语种文案 JSON 预览" in template
     assert "推送用户" in script
     assert "product-links-push/payload" in script
@@ -207,3 +207,33 @@ def test_medias_assets_include_product_link_push_entry():
     assert "product-localized-texts-push" in script
     assert "id=\"productLinksPushModalMask\"" in template
     assert "id=\"productCopyPushModalMask\"" in template
+
+
+
+def test_medias_product_links_push_modal_uses_tabs_and_centered_footer():
+    from pathlib import Path
+
+    template = Path("web/templates/medias_list.html").read_text(encoding="utf-8")
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "oc-product-links-mask" in template
+    assert ".oc-product-links-mask" in template
+    assert "padding-top:100px" in template
+    assert "width:min(1180px" in template
+    assert "data-product-links-tab=\"links\"" in template
+    assert "data-product-links-tab=\"json\"" in template
+    assert "推送投放链接" in template
+    assert "投放链接 JSON 预览" in template
+    assert "data-product-links-panel=\"links\"" in template
+    assert "data-product-links-panel=\"json\"" in template
+    assert "id=\"productLinksPushCancel\"" not in template
+    assert template.index("id=\"productLinksPushResponse\"") < template.index("id=\"productLinksPushSubmit\"")
+    assert "oc-product-links-footer" in template
+    assert ".oc-product-links-footer" in template
+    assert ".oc-pl-response.success" in template
+    assert ".oc-pl-response.danger" in template
+
+    assert "setProductLinksPushActiveTab" in script
+    assert "data-product-links-tab" in script
+    assert "productLinksPushIsSuccess" in script
+    assert "productLinksPushRenderResponse" in script
