@@ -59,7 +59,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 39
+    assert len(USE_CASES) == 40
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -68,6 +68,15 @@ def test_registry_count_and_new_units_types():
     assert "ja_translate.rewrite" in USE_CASES
     assert USE_CASES["copywriting_translate.generate"]["units_type"] == "tokens"
     assert USE_CASES["image_translate.generate"]["units_type"] == "images"
+
+
+def test_copywriting_translate_audit_uses_gemini_flash_lite():
+    """二次审核走 OpenRouter + Gemini 3.1 Flash-Lite，便宜且足以判断符合/不符合。"""
+    uc = USE_CASES["copywriting_translate.audit"]
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite-preview"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
 
 
 def test_material_evaluation_defaults_to_openrouter_gemini_pro():
