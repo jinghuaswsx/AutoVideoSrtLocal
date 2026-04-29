@@ -19,7 +19,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "shopifyid",
         "name": "Shopify ID 获取",
         "description": "每天从店小秘 Shopify 在线商品库抓取 shopifyProductId，并回填 media_products.shopifyid。",
-        "schedule": "每天 12:10",
+        "schedule": "每天 12:11（与 ROI :02/:22/:42 错峰）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-shopifyid-sync.timer",
@@ -31,7 +31,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "shopifyid_windows_daily",
         "name": "Shopify ID 获取（Windows 本机）",
         "description": "Windows 计划任务每天触发店小秘 Shopify ID 同步脚本，作为本机运行入口登记。",
-        "schedule": "每天 12:10",
+        "schedule": "已停用（原每天 12:10；如重新启用建议 12:11）",
         "source_type": "windows",
         "source_label": "Windows 计划任务",
         "source_ref": "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily",
@@ -44,7 +44,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
         "description": "每 20 分钟同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
-        "schedule": "每 20 分钟",
+        "schedule": "每 20 分钟（每小时 :02/:22/:42）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -56,7 +56,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "dianxiaomi_order_import",
         "name": "店小秘订单导入",
         "description": "ROI 实时同步中的店小秘订单导入子任务，记录订单抓取、明细入库和跳过数量。",
-        "schedule": "每 20 分钟（随 ROI 实时同步触发）",
+        "schedule": "每 20 分钟（随 ROI :02/:22/:42 触发）",
         "source_type": "subtask",
         "source_label": "ROI 同步子任务",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -68,7 +68,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",
         "description": "ROI 实时同步中的 Meta 实时广告导入子任务，记录导入行数、消耗金额和跳过状态。",
-        "schedule": "每 20 分钟（随 ROI 实时同步触发）",
+        "schedule": "每 20 分钟（随 ROI :02/:22/:42 触发）",
         "source_type": "subtask",
         "source_label": "ROI 同步子任务",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -823,11 +823,20 @@ def list_runs(task_code: str = "all", *, limit: int = 60) -> list[dict[str, Any]
     if task.get("log_table") == "scheduled_task_runs":
         return _scheduled_task_runs(code, limit=safe_limit)
     if task.get("log_table") == "roi_hourly_sync_runs":
-        return _roi_hourly_runs(limit=safe_limit)
+        return _sort_runs([
+            *_roi_hourly_runs(limit=safe_limit),
+            *_scheduled_task_runs(code, limit=safe_limit),
+        ])[:safe_limit]
     if task.get("log_table") == "dianxiaomi_order_import_batches":
-        return _dianxiaomi_order_import_runs(limit=safe_limit)
+        return _sort_runs([
+            *_dianxiaomi_order_import_runs(limit=safe_limit),
+            *_scheduled_task_runs(code, limit=safe_limit),
+        ])[:safe_limit]
     if task.get("log_table") == "meta_ad_realtime_import_runs":
-        return _meta_realtime_import_runs(limit=safe_limit)
+        return _sort_runs([
+            *_meta_realtime_import_runs(limit=safe_limit),
+            *_scheduled_task_runs(code, limit=safe_limit),
+        ])[:safe_limit]
     return []
 
 

@@ -12,6 +12,7 @@ if [[ ! -d "$APP_DIR" ]]; then
 fi
 
 install -d -m 755 /data/autovideosrt/browser/runtime
+chmod 755 "$APP_DIR/deploy/server_browser/with_browser_lock.sh"
 install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.service" "$SERVICE_FILE"
 install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.timer" "$TIMER_FILE"
 

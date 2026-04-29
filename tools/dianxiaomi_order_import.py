@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import order_analytics as oa
+from appcore.browser_automation_lock import browser_automation_lock
 
 ORDER_URL = "https://www.dianxiaomi.com/api/package/list.json"
 PROFIT_URL = "https://www.dianxiaomi.com/api/orderProfit/getOrderProfit.json"
@@ -540,6 +541,29 @@ def run_import_from_server_browser(
             pass
 
 
+def run_import_from_server_browser_locked(
+    *,
+    lock_timeout_seconds: int | None = None,
+    lock_retry_seconds: int | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    timeout = int(lock_timeout_seconds if lock_timeout_seconds is not None else os.environ.get(
+        "DXM_ORDER_BROWSER_LOCK_TIMEOUT_SECONDS",
+        os.environ.get("BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS", "600"),
+    ))
+    retry = int(lock_retry_seconds if lock_retry_seconds is not None else os.environ.get(
+        "BROWSER_AUTOMATION_LOCK_RETRY_SECONDS",
+        "10",
+    ))
+    with browser_automation_lock(
+        task_code="dianxiaomi_order_import",
+        timeout_seconds=timeout,
+        retry_seconds=retry,
+        command="tools.dianxiaomi_order_import.run_import_from_server_browser",
+    ):
+        return run_import_from_server_browser(**kwargs)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="从店小秘订单接口导入 NewJoy / omurio 订单明细")
     parser.add_argument("--start-date", required=True)
@@ -563,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.browser_mode not in ("auto", "server-cdp"):
         raise ValueError(f"Unsupported browser mode: {args.browser_mode}")
-    report = run_import_from_server_browser(
+    report = run_import_from_server_browser_locked(
         start_date_text=args.start_date,
         end_date_text=args.end_date,
         site_codes=_normalize_csv_list(args.sites),
