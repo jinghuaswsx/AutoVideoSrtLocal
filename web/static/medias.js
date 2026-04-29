@@ -540,7 +540,7 @@
     const style = document.createElement('style');
     style.id = 'aiEvaluationRequestModalStyle';
     style.textContent = `
-      .ect-modal--ai-evaluating { max-width:min(1420px, calc(100vw - 48px)); min-height:min(820px, calc(100vh - 48px)); }
+      .ect-modal--ai-evaluating { max-width:min(1560px, calc(100vw - 48px)); min-height:min(820px, calc(100vh - 48px)); }
       .ect-modal--ai-evaluating .ect-modal-body { display:flex; flex-direction:column; min-height:0; padding:0; overflow:hidden; }
       .ect-ai-topbar { display:flex; align-items:center; justify-content:center; gap:24px; min-height:96px; padding:24px 20px; border-bottom:1px solid var(--oc-border, oklch(91% 0.012 230)); background:var(--oc-bg-subtle, oklch(97% 0.006 230)); }
       .ect-ai-status { display:flex; align-items:center; justify-content:center; gap:16px; min-width:0; }
