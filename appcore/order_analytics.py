@@ -1112,6 +1112,93 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     }
 
 
+def _dianxiaomi_order_time_expr() -> str:
+    return "COALESCE(order_paid_at, paid_at, order_created_at, shipped_at, attribution_time_at)"
+
+
+def get_dianxiaomi_order_analysis(
+    start_date: str,
+    end_date: str,
+    *,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    start = _parse_iso_date_param(start_date, "start_date")
+    end = _parse_iso_date_param(end_date, "end_date")
+    if end < start:
+        raise ValueError("end_date must be >= start_date")
+
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 50), 200))
+    offset = (page - 1) * page_size
+
+    where_sql = "FROM dianxiaomi_order_lines WHERE meta_business_date >= %s AND meta_business_date <= %s"
+    where_args = (start, end)
+    summary_row = query_one(
+        "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping "
+        + where_sql,
+        where_args,
+    ) or {}
+    total_row = query_one(
+        "SELECT COUNT(*) AS total " + where_sql,
+        where_args,
+    ) or {}
+
+    order_time_expr = _dianxiaomi_order_time_expr()
+    rows = query(
+        "SELECT id, site_code, dxm_shop_name, dxm_package_id, dxm_order_id, extended_order_id, "
+        "package_number, order_state, buyer_country, buyer_country_name, "
+        + order_time_expr + " AS order_time, meta_business_date, product_name, product_sku, "
+        "product_sub_sku, product_display_sku, variant_text, quantity, unit_price, line_amount, "
+        "ship_amount, order_currency "
+        + where_sql + " "
+        "ORDER BY order_time DESC, dxm_package_id DESC, id DESC LIMIT %s OFFSET %s",
+        where_args + (page_size, offset),
+    )
+
+    total = int(total_row.get("total") or 0)
+    product_net_sales = _money(summary_row.get("product_net_sales"))
+    shipping = _money(summary_row.get("shipping"))
+    return {
+        "period": {
+            "start_date": start,
+            "end_date": end,
+            "date_field": "meta_business_date",
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+        },
+        "summary": {
+            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+            "order_count": int(summary_row.get("order_count") or 0),
+            "units": int(summary_row.get("units") or 0),
+            "shipping": shipping,
+            "product_net_sales": product_net_sales,
+        },
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        },
+        "rows": [
+            {
+                **row,
+                "quantity": int(row.get("quantity") or 0),
+                "unit_price": _money(row.get("unit_price")),
+                "line_amount": _money(row.get("line_amount")),
+                "ship_amount": _money(row.get("ship_amount")),
+                "total_sales": _revenue_with_shipping(
+                    _money(row.get("line_amount")),
+                    _money(row.get("ship_amount")),
+                ),
+            }
+            for row in rows
+        ],
+    }
+
+
 def _coerce_ad_frequency(value: str | None) -> str:
     normalized = (value or "custom").strip().lower()
     if normalized not in {"weekly", "monthly", "custom"}:
