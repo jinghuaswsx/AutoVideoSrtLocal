@@ -97,6 +97,7 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
                     "ad_spend": 1000.0,
                     "meta_purchase_value": 1200.0,
                     "meta_purchases": 12,
+                    "last_ad_updated_at": datetime(2026, 4, 29, 14, 5),
                 }
             ]
         return []
@@ -114,10 +115,50 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     assert result["summary"]["ad_spend"] == 1000.0
     assert result["summary"]["true_roas"] == 2.1
     assert result["summary"]["order_count"] == 2
+    assert result["freshness"]["last_ad_updated_at"] == datetime(2026, 4, 29, 14, 5)
     assert result["hourly"][13]["order_count"] == 2
     assert result["scope"]["stores"] == ["newjoy", "omurio"]
     assert result["scope"]["hourly_ad_ready"] is False
     assert any("site_code IN ('newjoy', 'omurio')" in sql for sql, _args in calls)
+
+
+def test_get_realtime_roas_overview_reports_snapshot_ad_updated_at(monkeypatch):
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "snapshot_at": datetime(2026, 4, 29, 15, 40),
+                    "order_revenue_usd": 10988.71,
+                    "shipping_revenue_usd": 3811.74,
+                    "ad_spend_usd": 10551.83,
+                    "last_order_at": datetime(2026, 4, 29, 15, 34),
+                    "order_count": 521,
+                    "line_count": 578,
+                    "units": 578,
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 4, 29, 15, 38)}]
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-04-29",
+        now=datetime(2026, 4, 29, 15, 45),
+    )
+
+    assert result["freshness"]["last_order_at"] == datetime(2026, 4, 29, 15, 34)
+    assert result["freshness"]["last_ad_updated_at"] == datetime(2026, 4, 29, 15, 38)
+    assert result["summary"]["ad_spend"] == 10551.83
 
 
 def test_realtime_roas_endpoint_returns_json(authed_client_no_db, monkeypatch):
@@ -171,3 +212,13 @@ def test_data_analysis_page_has_realtime_tab_first(authed_client_no_db):
     assert 'data-tab="realtime"' in body
     assert 'id="panelRealtime"' in body
     assert body.index('data-tab="realtime"') < body.index('data-tab="dashboard"')
+
+
+def test_realtime_tab_displays_ad_data_update_time(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "广告数据更新时间" in body
+    assert 'id="realtimeAdFreshness"' in body
+    assert "last_ad_updated_at" in body

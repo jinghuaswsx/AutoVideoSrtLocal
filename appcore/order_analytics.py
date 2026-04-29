@@ -814,6 +814,21 @@ def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -
     return campaigns
 
 
+def _get_realtime_ad_updated_at(target: date, snapshot_at: datetime | None) -> datetime | None:
+    if not snapshot_at:
+        return None
+    row = query(
+        "SELECT COALESCE(MAX(r.finished_at), MAX(m.updated_at), MAX(m.created_at)) AS last_ad_updated_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics m "
+        "LEFT JOIN meta_ad_realtime_import_runs r ON r.id=m.import_run_id "
+        "WHERE m.business_date=%s AND m.snapshot_at=%s AND m.data_completeness='realtime_partial'",
+        (target, snapshot_at),
+    )
+    if not row:
+        return None
+    return row[0].get("last_ad_updated_at")
+
+
 def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
     now = (now or _beijing_now()).replace(microsecond=0)
     target = _parse_iso_date_param(date_text, "date") if date_text else (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
@@ -873,6 +888,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         ad_spend = _money(snap.get("ad_spend_usd"))
         order_details = _get_realtime_order_details(target, day_start, snapshot_at)
         campaign_details = _get_realtime_campaign_details(target, snapshot_at)
+        last_ad_updated_at = _get_realtime_ad_updated_at(target, snapshot_at)
         return {
             "period": {
                 "date": target,
@@ -895,6 +911,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
             "freshness": {
                 "first_order_at": None,
                 "last_order_at": snap.get("last_order_at"),
+                "last_ad_updated_at": last_ad_updated_at,
             },
             "summary": {
                 "order_count": int(snap.get("order_count") or 0),
@@ -939,7 +956,8 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
     ad_rows = query(
         "SELECT SUM(spend_usd) AS ad_spend, "
         "SUM(purchase_value_usd) AS meta_purchase_value, "
-        "SUM(result_count) AS meta_purchases "
+        "SUM(result_count) AS meta_purchases, "
+        "MAX(updated_at) AS last_ad_updated_at "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE meta_business_date = %s",
         (target,),
@@ -1011,6 +1029,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         "freshness": {
             "first_order_at": first_order_at,
             "last_order_at": last_order_at,
+            "last_ad_updated_at": ad.get("last_ad_updated_at"),
         },
         "summary": summary,
         "hourly": hourly,

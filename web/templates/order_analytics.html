@@ -663,6 +663,10 @@
       <div class="oar-mini-value" id="realtimeFreshness">-</div>
     </div>
     <div class="oar-card">
+      <div class="oar-label">广告数据更新时间</div>
+      <div class="oar-mini-value" id="realtimeAdFreshness">-</div>
+    </div>
+    <div class="oar-card">
       <div class="oar-label">数据快照时间</div>
       <div class="oar-mini-value" id="realtimeSnapshotAt">-</div>
     </div>
@@ -1546,6 +1550,7 @@
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
         document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
+        document.getElementById('realtimeAdFreshness').textContent = formatShortDateTime((data.freshness || {}).last_ad_updated_at);
         document.getElementById('realtimeSnapshotAt').textContent = formatShortDateTime((data.period || {}).data_until_at);
         document.getElementById('realtimeWindow').textContent = '截止 ' + formatShortDateTime((data.period || {}).data_until_at);
         document.getElementById('realtimeTimeRule').textContent = formatTimeRule(data.period || {}, data.roas_points || []);
