@@ -2077,7 +2077,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   --oc-product-detail-panel-left: 220px;
   --oc-product-detail-panel-top: 56px;
 }
-.oc-product-detail-page #edMask {
+#edMask.oc-product-detail-mask {
   position:fixed;
   inset:var(--oc-product-detail-panel-top) 0 0 var(--oc-product-detail-panel-left);
   display:flex;
@@ -2091,7 +2091,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   animation:none;
   z-index:40;
 }
-.oc-product-detail-page #edMask > .oc-modal-edit {
+#edMask.oc-product-detail-mask > .oc-modal-edit {
   width:100%;
   max-width:none;
   height:100%;
@@ -2101,7 +2101,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   box-shadow:none;
   animation:none;
 }
-.oc-product-detail-page #edMask > .oc-modal-edit > .oc-modal-body {
+#edMask.oc-product-detail-mask > .oc-modal-edit > .oc-modal-body {
   min-height:0;
   overflow:auto;
 }

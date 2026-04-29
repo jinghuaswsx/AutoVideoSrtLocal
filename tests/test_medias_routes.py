@@ -1505,13 +1505,14 @@ def test_product_code_route_renders_full_page_detail_config(
     assert "window.MEDIAS_PRODUCT_DETAIL" in html
     assert '"productId": 77' in html
     assert "rotary-lock-metal-box-cutter-rjc" in html
-    detail_mask_css = html.split(".oc-product-detail-page #edMask {", 1)[1].split(
-        ".oc-product-detail-page #edMask > .oc-modal-edit {", 1
+    assert 'class="oc-modal-mask oc oc-product-detail-mask" id="edMask"' in html
+    detail_mask_css = html.split("#edMask.oc-product-detail-mask {", 1)[1].split(
+        "#edMask.oc-product-detail-mask > .oc-modal-edit {", 1
     )[0]
     assert "position:fixed;" in detail_mask_css
     assert "inset:var(--oc-product-detail-panel-top) 0 0 var(--oc-product-detail-panel-left);" in detail_mask_css
     assert "height:calc(100vh - var(--oc-product-detail-panel-top));" in detail_mask_css
-    body_css = html.split(".oc-product-detail-page #edMask > .oc-modal-edit > .oc-modal-body {", 1)[1].split(
+    body_css = html.split("#edMask.oc-product-detail-mask > .oc-modal-edit > .oc-modal-body {", 1)[1].split(
         ".oc-product-detail-loading {", 1
     )[0]
     assert "overflow:auto;" in body_css
