@@ -411,6 +411,108 @@ def test_payload_success(logged_in_client, seeded_item, monkeypatch):
     assert data["payload"]["videos"][0]["url"].startswith("https://signed/")
 
 
+def test_api_build_payload_includes_quality_check(authed_client_no_db, monkeypatch):
+    item = {
+        "id": 903,
+        "product_id": 316,
+        "lang": "de",
+        "filename": "de-demo.mp4",
+        "display_name": "de-demo.mp4",
+        "object_key": "79/medias/316/video.mp4",
+        "cover_object_key": "79/medias/316/cover.png",
+        "pushed_at": None,
+    }
+    product = {
+        "id": 316,
+        "name": "Demo",
+        "product_code": "demo-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "ad_supported_langs": "de",
+        "selling_points": "",
+        "importance": 3,
+        "listing_status": "上架",
+    }
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item_arg, product_arg: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_link",
+        lambda lang, code: "https://example.test/de/p",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item_arg, product_arg: {"videos": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "https://push.example.test",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_localized_text_payload",
+        lambda item_arg: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item_arg: {"texts": []},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.build_localized_texts_target_url", lambda mk_id: "")
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_links_push_preview",
+        lambda product_arg: {"target_url": "", "payload": None, "links": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.push_quality_checks.latest_for_item",
+        lambda item_id_arg: {
+            "id": 77,
+            "item_id": item_id_arg,
+            "status": "failed",
+            "summary": "文案混入英文",
+            "copy_result": {"status": "failed"},
+            "cover_result": {"status": "passed"},
+            "video_result": {"status": "passed"},
+            "failed_reasons": ["文案: 混入英文"],
+        },
+    )
+
+    resp = authed_client_no_db.get("/pushes/api/items/903/payload")
+
+    assert resp.status_code == 200
+    quality = resp.get_json()["quality_check"]
+    assert quality["status"] == "failed"
+    assert quality["copy_result"]["status"] == "failed"
+
+
+def test_api_quality_check_retry_runs_manual_evaluation(
+    authed_client_no_db, monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.pushes.push_quality_checks.evaluate_item",
+        lambda item_id, source="auto": {
+            "id": 88,
+            "item_id": item_id,
+            "status": "passed",
+            "attempt_source": source,
+        },
+    )
+
+    resp = authed_client_no_db.post("/pushes/api/items/903/quality-check/retry")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["attempt_source"] == "manual"
+
+
 def test_payload_preview_prefers_item_cover_over_stale_thumbnail(
     authed_client_no_db, monkeypatch,
 ):
@@ -901,6 +1003,18 @@ def test_pushes_assets_include_product_link_push_tabs():
     assert "renderProductLinksPane" in script
     assert "product_links_push" in script
     assert "product-links-push" in script
+
+
+def test_pushes_assets_include_quality_check_panel():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    style = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "renderQualityCheckPanel" in script
+    assert "quality-check/retry" in script
+    assert "重新评估" in script
+    assert ".pm-quality-grid" in style
 
 
 # ================================================================

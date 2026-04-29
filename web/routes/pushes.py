@@ -48,7 +48,7 @@ def index():
     )
 
 
-from appcore import medias, pushes
+from appcore import medias, push_quality_checks, pushes
 
 _PAGE_SIZE_DEFAULT = 20
 
@@ -66,6 +66,14 @@ def _item_cover_url(item_id: int, item: dict) -> str | None:
     if (item or {}).get("cover_object_key"):
         return f"/medias/item-cover/{item_id}"
     return None
+
+
+def _quality_check_for_item(item_id: int) -> dict | None:
+    try:
+        return push_quality_checks.latest_for_item(item_id)
+    except Exception:
+        log.debug("load push quality check failed item_id=%s", item_id, exc_info=True)
+        return None
 
 
 def _serialize_row(row: dict) -> dict:
@@ -115,6 +123,7 @@ def _serialize_row(row: dict) -> dict:
         "ai_evaluation_detail": row.get("ai_evaluation_detail") or "",
         "listing_status": row.get("listing_status") or "上架",
         "cover_url": cover_url,
+        "quality_check": _quality_check_for_item(item_id),
     }
 
 
@@ -211,7 +220,17 @@ def api_build_payload(item_id: int):
         "localized_push_target_url": pushes.build_localized_texts_target_url(mk_id),
         "product_links_push": product_links_push,
         "preview_cover_url": preview_cover_url,
+        "quality_check": _quality_check_for_item(item_id),
     })
+
+
+@bp.route("/api/items/<int:item_id>/quality-check/retry", methods=["POST"])
+@login_required
+@admin_required
+def api_retry_quality_check(item_id: int):
+    result = push_quality_checks.evaluate_item(item_id, source="manual")
+    status = 200 if result.get("status") != "error" else 500
+    return jsonify(result), status
 
 
 @bp.route("/api/items/<int:item_id>/push", methods=["POST"])

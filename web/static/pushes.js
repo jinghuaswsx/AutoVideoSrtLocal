@@ -530,6 +530,66 @@
     return root;
   }
 
+  function qualityStatusMeta(status) {
+    const value = String(status || '').toLowerCase();
+    if (value === 'passed') return { text: '通过', cls: 'passed' };
+    if (value === 'warning') return { text: '风险', cls: 'warning' };
+    if (value === 'failed') return { text: '失败', cls: 'failed' };
+    if (value === 'error') return { text: '异常', cls: 'error' };
+    if (value === 'running') return { text: '检查中', cls: 'running' };
+    return { text: '待检查', cls: 'pending' };
+  }
+
+  function renderQualityResultCard(label, result) {
+    const data = result || {};
+    const meta = qualityStatusMeta(data.status);
+    const issues = Array.isArray(data.issues) ? data.issues : [];
+    const summary = data.summary || (meta.cls === 'pending' ? '暂无检查结果' : '-');
+    const card = el('div', { class: `pm-quality-card is-${meta.cls}` });
+    card.appendChild(el('div', { class: 'pm-quality-card-head' }, [
+      el('span', { class: 'pm-quality-label' }, label),
+      el('span', { class: `pm-quality-badge is-${meta.cls}` }, meta.text),
+    ]));
+    card.appendChild(el('p', { class: 'pm-quality-summary' }, summary));
+    if (issues.length) {
+      const ul = el('ul', { class: 'pm-quality-issues' });
+      issues.slice(0, 3).forEach(issue => ul.appendChild(el('li', {}, String(issue))));
+      card.appendChild(ul);
+    }
+    return card;
+  }
+
+  function renderQualityCheckPanel(qualityCheck, onRetry, busy = false) {
+    const root = el('div', { class: 'pm-quality-panel' });
+    const statusMeta = qualityStatusMeta(qualityCheck && qualityCheck.status);
+    const head = el('div', { class: 'pm-quality-head' });
+    head.appendChild(el('div', {}, [
+      el('div', { class: 'pm-quality-title' }, '推送前质量检查'),
+      el('div', { class: 'pm-quality-subtitle' }, qualityCheck?.summary || '暂无检查记录'),
+    ]));
+    head.appendChild(el('span', { class: `pm-quality-badge is-${statusMeta.cls}` }, statusMeta.text));
+    head.appendChild(el('button', {
+      type: 'button',
+      class: 'btn-mini pm-quality-retry',
+      disabled: busy,
+      onclick: onRetry,
+    }, busy ? '评估中...' : '重新评估'));
+    root.appendChild(head);
+    root.appendChild(el('div', { class: 'pm-quality-grid' }, [
+      renderQualityResultCard('文案', qualityCheck && qualityCheck.copy_result),
+      renderQualityResultCard('封面图', qualityCheck && qualityCheck.cover_result),
+      renderQualityResultCard('视频', qualityCheck && qualityCheck.video_result),
+    ]));
+    if (Array.isArray(qualityCheck?.failed_reasons) && qualityCheck.failed_reasons.length) {
+      const reasons = el('ul', { class: 'pm-quality-reasons' });
+      qualityCheck.failed_reasons.slice(0, 5).forEach(reason => {
+        reasons.appendChild(el('li', {}, String(reason)));
+      });
+      root.appendChild(reasons);
+    }
+    return root;
+  }
+
   function describeError(e) {
     let body = {};
     try { body = JSON.parse(e.body || '{}'); } catch (_) {}
@@ -620,6 +680,13 @@
     auditCard.appendChild(auditKV);
     body.appendChild(auditCard);
 
+    const qualityCard = el('section', { class: 'pm-section pm-quality-section' }, [el('h4', {}, '大模型检查结果')]);
+    const qualityBody = el('div', {}, [
+      renderQualityCheckPanel(item.quality_check || null, retryQualityCheck),
+    ]);
+    qualityCard.appendChild(qualityBody);
+    body.appendChild(qualityCard);
+
     const contentCard = el('section', { class: 'pm-section' }, [el('h4', {}, '推送内容')]);
     const loadingTip = el('p', { class: 'pm-empty' }, '加载中…');
     const paneConfirm = el('div', { class: 'pm-pane' });
@@ -659,6 +726,7 @@
     let localizedTexts = [];
     let localizedTargetUrl = '';
     let productLinksPreview = null;
+    let qualityCheck = item.quality_check || null;
     let materialPushed = item.status === 'pushed';
     let localizedPushed = false;
     let productLinksPushed = false;
@@ -718,6 +786,33 @@
 
     pills.forEach(p => p.addEventListener('click', () => setMode(p.dataset.mode)));
 
+    function setQualityPanel(result, busy = false) {
+      qualityCheck = result || null;
+      clear(qualityBody);
+      qualityBody.appendChild(renderQualityCheckPanel(qualityCheck, retryQualityCheck, busy));
+    }
+
+    async function retryQualityCheck() {
+      setQualityPanel(qualityCheck, true);
+      try {
+        const result = await fetchJSON(`/pushes/api/items/${itemId}/quality-check/retry`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        setQualityPanel(result, false);
+      } catch (err) {
+        const message = describeError(err);
+        setQualityPanel({
+          status: 'error',
+          summary: message,
+          copy_result: qualityCheck && qualityCheck.copy_result,
+          cover_result: qualityCheck && qualityCheck.cover_result,
+          video_result: qualityCheck && qualityCheck.video_result,
+          failed_reasons: [message],
+        }, false);
+      }
+    }
+
     function showResponse(obj, isError, title) {
       respWrap.hidden = false;
       respTitle.textContent = title || '推送响应';
@@ -759,6 +854,7 @@
         localizedTargetUrl = data.localized_push_target_url || '';
         localizedTexts = (data.localized_texts_request && data.localized_texts_request.texts) || [];
         productLinksPreview = data.product_links_push || null;
+        setQualityPanel(data.quality_check || null);
 
         mkIdValue.textContent = mkId ? String(mkId) : '-';
 

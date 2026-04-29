@@ -109,6 +109,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "",
     },
+    "push_quality_check_tick": {
+        "code": "push_quality_check_tick",
+        "name": "推送内容质量检查",
+        "description": "扫描推送管理里待推送或重推且已就绪的非英语素材，对小语种文案、封面图、视频前 5 秒做一次大模型质量检查。",
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "push_quality_check_tick",
+        "runner": "appcore.push_quality_check_scheduler.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "tos_backup": {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",

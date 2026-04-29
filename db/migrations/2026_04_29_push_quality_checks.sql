@@ -1,0 +1,32 @@
+CREATE TABLE IF NOT EXISTS media_push_quality_checks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  item_id INT NOT NULL,
+  product_id INT NOT NULL,
+  lang VARCHAR(16) NOT NULL,
+  attempt_source ENUM('auto','manual') NOT NULL DEFAULT 'auto',
+  status ENUM('running','passed','warning','failed','error') NOT NULL DEFAULT 'running',
+  copy_fingerprint CHAR(64) NOT NULL,
+  cover_fingerprint CHAR(64) NOT NULL,
+  video_fingerprint CHAR(64) NOT NULL,
+  copy_result_json JSON NULL,
+  cover_result_json JSON NULL,
+  video_result_json JSON NULL,
+  summary VARCHAR(500) DEFAULT NULL,
+  failed_reasons JSON NULL,
+  provider VARCHAR(32) NOT NULL DEFAULT 'openrouter',
+  model VARCHAR(128) NOT NULL DEFAULT 'google/gemini-3.1-flash-lite-preview',
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_push_quality_attempt (
+    item_id,
+    copy_fingerprint,
+    cover_fingerprint,
+    video_fingerprint,
+    attempt_source
+  ),
+  KEY idx_push_quality_item_created (item_id, created_at),
+  KEY idx_push_quality_status (status, created_at),
+  KEY idx_push_quality_product_lang (product_id, lang)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
