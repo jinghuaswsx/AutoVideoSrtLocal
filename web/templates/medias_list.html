@@ -1608,6 +1608,16 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   overflow-y:auto;
   padding-right:2px;
 }
+.oc-roas-tk-column {
+  overflow:hidden;
+}
+.oc-roas-tk-column .oc-roas-section {
+  flex:1 1 0;
+  min-height:0;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
 .oc-roas-section {
   border:1px solid var(--oc-border);
   border-radius:var(--oc-r-lg);
@@ -1689,6 +1699,58 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-roas-result.active { background:var(--oc-accent-subtle); border-color:var(--oc-accent); }
 .oc-roas-result.active .value { color:var(--oc-accent); }
 .oc-roas-note { margin-top:var(--oc-sp-3); font-size:12px; line-height:1.55; color:var(--oc-fg-muted); }
+.oc-roas-avg-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--oc-sp-2);
+  margin-bottom:var(--oc-sp-2);
+}
+.oc-roas-avg-head h4 { margin:0; }
+.oc-roas-avg-summary { text-align:right; flex:0 0 auto; }
+.oc-roas-avg-result {
+  display:block;
+  font-size:20px;
+  line-height:1.2;
+  font-weight:700;
+  color:var(--oc-accent);
+  font-variant-numeric:tabular-nums;
+}
+.oc-roas-avg-meta {
+  margin-top:2px;
+  font-size:12px;
+  color:var(--oc-fg-muted);
+}
+.oc-roas-avg-field {
+  display:flex;
+  flex:1 1 auto;
+  min-height:0;
+  flex-direction:column;
+}
+.oc-roas-avg-field label {
+  margin-bottom:3px;
+  font-size:12px;
+  color:var(--oc-fg-muted);
+}
+.oc-roas-avg-input {
+  flex:1 1 auto;
+  min-height:96px;
+  width:100%;
+  resize:none;
+  padding:var(--oc-sp-2);
+  border:1px solid var(--oc-border-strong);
+  border-radius:var(--oc-r);
+  background:var(--oc-bg);
+  color:var(--oc-fg);
+  font:inherit;
+  font-size:13px;
+  line-height:1.45;
+  outline:none;
+}
+.oc-roas-avg-input:focus {
+  border-color:var(--oc-accent);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
 @media (max-width: 760px) {
   .oc-roas-layout,
   .oc-roas-product,
@@ -1699,6 +1761,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   #roasForm { display:block; }
   .oc-roas-layout { height:auto; }
   .oc-roas-column { height:auto; max-height:none; overflow:visible; padding-right:0; }
+  .oc-roas-tk-column { overflow:visible; }
+  .oc-roas-tk-column .oc-roas-section { flex:none; overflow:visible; }
+  .oc-roas-avg-input { min-height:160px; }
   #roasModalMask { inset:0; }
 }
 {% endblock %}
@@ -1848,13 +1913,26 @@ window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojs
               <p id="roasNote" class="oc-roas-note">采购价格和小包成本按 1 USD = {{ roas_rmb_per_usd or material_roas_rmb_per_usd or 6.83 }} RMB 换算；手续费按独立站售价 + 运费的 10% 计算。</p>
             </section>
           </div>
-          <div class="oc-roas-column">
+          <div class="oc-roas-column oc-roas-tk-column">
             <section id="roasTkSection" class="oc-roas-section oc-roas-tk-section">
               <h4>TK 可选项</h4>
               <div class="oc-roas-field-list">
                 <div class="oc-roas-field"><label for="roasTkSea">TK 海运成本</label><input id="roasTkSea" data-roas-field="tk_sea_cost" type="number" min="0" step="0.01"></div>
                 <div class="oc-roas-field"><label for="roasTkAir">TK 空运成本</label><input id="roasTkAir" data-roas-field="tk_air_cost" type="number" min="0" step="0.01"></div>
                 <div class="oc-roas-field"><label for="roasTkSale">TK 售卖定价</label><input id="roasTkSale" data-roas-field="tk_sale_price" type="number" min="0" step="0.01"></div>
+              </div>
+            </section>
+            <section id="roasAverageShippingSection" class="oc-roas-section oc-roas-average-shipping-section">
+              <div class="oc-roas-avg-head">
+                <h4>平均运费</h4>
+                <div class="oc-roas-avg-summary">
+                  <strong id="roasAverageShippingResult" class="oc-roas-avg-result">--</strong>
+                  <div id="roasAverageShippingMeta" class="oc-roas-avg-meta">有效行数 0 · 合计 0.0</div>
+                </div>
+              </div>
+              <div class="oc-roas-avg-field">
+                <label for="roasAverageShippingInput">原始运费列表</label>
+                <textarea id="roasAverageShippingInput" class="oc-roas-avg-input" spellcheck="false" placeholder="粘贴运费列表"></textarea>
               </div>
             </section>
           </div>

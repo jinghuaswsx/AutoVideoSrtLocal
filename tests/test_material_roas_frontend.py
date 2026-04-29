@@ -125,6 +125,33 @@ def test_roas_modal_uses_full_height_scroll_area_and_tighter_field_spacing():
     assert "margin-bottom:3px" in field_label_css
 
 
+def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert 'class="oc-roas-column oc-roas-tk-column"' in html
+    assert 'id="roasAverageShippingSection"' in html
+    assert 'id="roasAverageShippingInput"' in html
+    assert 'id="roasAverageShippingResult"' in html
+    assert 'id="roasAverageShippingMeta"' in html
+
+    tk_column = html.split('class="oc-roas-column oc-roas-tk-column"', 1)[1].split("</form>", 1)[0]
+    assert tk_column.index('id="roasTkSection"') < tk_column.index('id="roasAverageShippingSection"')
+
+    tk_column_css = html.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
+    half_section_css = html.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
+    avg_input_css = html.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
+    assert "overflow:hidden" in tk_column_css
+    assert "flex:1 1 0" in half_section_css
+    assert "min-height:0" in half_section_css
+    assert "flex:1 1 auto" in avg_input_css
+
+    assert "calculateAverageShippingText" in js
+    assert "updateRoasAverageShipping" in js
+    assert "roasAverageShippingInput" in js
+    assert "addEventListener('input', updateRoasAverageShipping)" in js
+
+
 def test_roas_button_is_after_ai_evaluate_button():
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     row_actions = js.split('<div class="oc-row-actions">', 1)[1].split("</div>", 1)[0]
