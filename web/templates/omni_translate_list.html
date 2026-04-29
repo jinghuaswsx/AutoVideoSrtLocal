@@ -154,7 +154,8 @@
 .modal-overlay {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.3); z-index: 200;
-  align-items: center; justify-content: center;
+  align-items: flex-start; justify-content: center;
+  padding: 100px 0 24px; box-sizing: border-box; overflow-y: auto;
 }
 .modal-overlay.open { display: flex; }
 .modal-box {
@@ -176,7 +177,7 @@
 
 /* ── 大号弹窗 ── */
 .modal-box.modal-box-wide {
-  width: 560px; max-width: 92vw; max-height: calc(100vh - 48px);
+  width: 560px; max-width: 92vw; max-height: calc(100vh - 124px);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .modal-box.modal-box-wide h3,
@@ -218,9 +219,9 @@
   background: oklch(56% 0.16 230); color: #fff; border-color: oklch(56% 0.16 230);
 }
 
-/* ── 视频拖拽区与预览（90x160） ── */
+/* ── 视频拖拽区与预览（180x320） ── */
 .video-dropzone {
-  width: 90px; height: 160px; margin: 0 auto;
+  width: 180px; height: 320px; margin: 0 auto; box-sizing: border-box;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; padding: 24px; text-align: center;
   border: 1.5px dashed var(--border-main); border-radius: 12px;
@@ -236,7 +237,7 @@
 .video-dropzone .dz-title { font-size: 14px; font-weight: 600; color: var(--text-main); }
 .video-dropzone .dz-hint { font-size: 12px; color: #9ca3af; }
 .video-preview-wrap {
-  width: 90px; height: 160px; margin: 0 auto; position: relative;
+  width: 180px; height: 320px; margin: 0 auto; position: relative;
   border-radius: 12px; overflow: hidden; background: #000;
 }
 .video-preview-wrap video {
@@ -253,7 +254,7 @@
 .video-preview-wrap .preview-clear:hover { background: rgba(0,0,0,0.85); }
 .video-preview-name {
   text-align: center; font-size: 12px; color: #6b7280;
-  margin: 8px auto 0; max-width: 90px; word-break: break-all;
+  margin: 8px auto 0; max-width: 180px; word-break: break-all;
 }
 {% endblock %}
 {% block content %}
@@ -400,7 +401,7 @@
           <div id="videoDropzone" class="video-dropzone" tabindex="0" role="button" aria-label="拖拽或点击选择视频">
             <div class="dz-icon">📹</div>
             <div class="dz-title">拖拽视频到这里</div>
-            <div class="dz-hint">或点击选择文件 · 90×160 预览</div>
+            <div class="dz-hint">或点击选择文件 · 180×320 预览</div>
           </div>
           <div id="videoPreviewWrap" class="video-preview-wrap" style="display:none">
             <video id="videoPreview" controls preload="metadata" playsinline></video>

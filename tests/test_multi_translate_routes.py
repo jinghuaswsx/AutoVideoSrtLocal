@@ -376,14 +376,16 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     # 隐藏 input 保留接口名称
     assert 'type="hidden" id="targetLangSelect" name="target_lang" value=""' in template
 
-    # 拖拽区与 270x480 预览
+    # 拖拽区与 180x320 预览
     assert 'id="videoDropzone"' in template
     assert "拖拽视频到这里" in template
     assert 'id="videoPreviewWrap"' in template
     assert 'id="videoPreview"' in template
-    assert "width: 90px; height: 160px" in template
+    assert "width: 180px; height: 320px" in template
+    assert "90×160 预览" not in template
     assert "width: 270px; height: 480px" not in template
-    assert "max-height: calc(100vh - 48px)" in template
+    assert "padding: 100px 0 24px" in template
+    assert "max-height: calc(100vh - 124px)" in template
     assert 'class="modal-scroll-body"' in template
     assert "overflow-y: auto" in template
 
@@ -404,6 +406,8 @@ def test_multi_translate_create_modal_uses_pill_buttons_and_dropzone():
     assert 'id="projectNameField"' in template
     assert 'id="projectName"' in template
     assert 'name="display_name"' in template
+    assert "上传后将自动识别原视频语言" not in template
+    assert "请明确指定视频原始语种" in template
     # 中文语言名映射
     assert "LANG_ZH_NAMES" in template
     assert "de: '德语'" in template
@@ -422,11 +426,15 @@ def test_omni_translate_create_modal_uses_compact_video_preview():
     assert 'id="videoDropzone"' in template
     assert 'id="videoPreviewWrap"' in template
     assert 'id="videoPreview"' in template
-    assert "width: 90px; height: 160px" in template
+    assert "width: 180px; height: 320px" in template
+    assert "90×160 预览" not in template
     assert "width: 270px; height: 480px" not in template
-    assert "max-height: calc(100vh - 48px)" in template
+    assert "padding: 100px 0 24px" in template
+    assert "max-height: calc(100vh - 124px)" in template
     assert 'class="modal-scroll-body"' in template
     assert "overflow-y: auto" in template
+    assert "上传后将自动识别原视频语言" not in template
+    assert "请明确指定视频原始语种" in template
 
 
 def test_multi_translate_start_uses_user_display_name(tmp_path, authed_client_no_db, monkeypatch):
@@ -922,11 +930,12 @@ def test_resume_from_asr_normalize_clears_stale_state(
 
 # ── Task 10: upload modal hint text ─────────────────────────────────────────
 
-def test_multi_translate_list_upload_modal_text_mentions_normalization():
+def test_multi_translate_list_upload_modal_text_requires_manual_source_language():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "multi_translate_list.html").read_text(encoding="utf-8")
-    assert "自动识别原视频语言并标准化" in template
+    assert "自动识别原视频语言并标准化" not in template
+    assert "请明确指定视频原始语种" in template
     assert "中文/英文" not in template  # 老文案被移除
 
 
