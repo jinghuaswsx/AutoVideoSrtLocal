@@ -400,6 +400,36 @@ def test_get_dashboard_default_sort_orders_desc_for_month(monkeypatch):
     assert [p["product_id"] for p in result["products"]] == [42, 99]
 
 
+def test_get_dashboard_explicit_roas_desc_keeps_none_last(monkeypatch):
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
+        42: {"orders": 10, "units": 10, "revenue": 500.0},
+        99: {"orders": 1, "units": 1, "revenue": 100.0},
+    })
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", lambda s, e: {
+        42: {"spend": 0.0, "purchases": 0, "purchase_value": 0.0},
+        99: {"spend": 100.0, "purchases": 1, "purchase_value": 100.0},
+    })
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}, 99: {"en": 1}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "No Roas", "product_code": "no-roas"},
+        {"id": 99, "name": "Has Roas", "product_code": "has-roas"},
+    ])
+
+    result = oa.get_dashboard(
+        period="month",
+        year=2026,
+        month=4,
+        sort_by="roas",
+        sort_dir="desc",
+        compare=False,
+        today=date(2026, 4, 26),
+    )
+
+    assert [p["product_id"] for p in result["products"]] == [99, 42]
+    assert result["products"][0]["roas"] == 1.0
+    assert result["products"][1]["roas"] is None
+
+
 def test_get_dashboard_load_products_filters_archived_and_deleted(monkeypatch):
     """回归：_load_products 始终过滤 archived/deleted_at。"""
     captured = {}

@@ -2421,16 +2421,19 @@ def get_dashboard(
     sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else "orders"
     reverse = (sort_dir.lower() == "desc")
     if sort_by in _DASHBOARD_SORT_FIELDS:
-        rows.sort(
-            key=lambda r: (
-                r.get(sort_key) is None,
+        def explicit_sort_key(r: dict) -> tuple:
+            return (
                 r.get(sort_key) or 0,
                 r.get("orders") or 0,
                 r.get("revenue") or 0,
                 str(r.get("product_name") or "").lower(),
-            ),
-            reverse=reverse,
-        )
+            )
+
+        non_null_rows = [r for r in rows if r.get(sort_key) is not None]
+        null_rows = [r for r in rows if r.get(sort_key) is None]
+        non_null_rows.sort(key=explicit_sort_key, reverse=reverse)
+        null_rows.sort(key=explicit_sort_key, reverse=reverse)
+        rows = non_null_rows + null_rows
     else:
         rows = _sort_order_dashboard_rows(rows, name_key="product_name")
 
