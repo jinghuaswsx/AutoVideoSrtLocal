@@ -26,11 +26,23 @@ def test_layout_only_shows_scheduled_tasks_to_admin_single_user():
     assert "scheduled-task-alert-dismissed:" in source
 
 
-def test_scheduled_tasks_page_has_shopifyid_tab_and_daily_result_table():
+def test_scheduled_tasks_page_has_log_and_management_capsules():
     source = _read("web/templates/scheduled_tasks.html")
 
     assert "定时任务" in source
+    assert "定时任务的运行日志" in source
+    assert "定时任务管理" in source
+    assert "log_filters" in source
     assert "最近状态" in source
-    assert "在线总数" in source
-    assert "新回填" in source
+    assert "触发来源" in source
+    assert "登记状态" in source
     assert "日志" in source
+
+
+def test_scheduled_tasks_route_uses_view_and_task_filters():
+    source = _read("web/routes/scheduled_tasks.py")
+
+    assert 'request.args.get("view")' in source
+    assert 'request.args.get("task")' in source
+    assert "log_filter_definitions" in source
+    assert "management_tasks" in source

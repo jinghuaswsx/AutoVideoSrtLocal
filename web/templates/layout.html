@@ -601,7 +601,7 @@
           最近一次执行 {{ scheduled_task_failure_alert.started_at }} 失败。{{ scheduled_task_failure_alert.error_message or "请进入定时任务查看详情。" }}
         </span>
       </div>
-      <a class="scheduled-failure-alert-link" href="{{ url_for('scheduled_tasks.page', tab=scheduled_task_failure_alert.task_code) }}" target="_blank" rel="noopener noreferrer">查看详情</a>
+      <a class="scheduled-failure-alert-link" href="{{ url_for('scheduled_tasks.page', view='logs', task=scheduled_task_failure_alert.task_code) }}" target="_blank" rel="noopener noreferrer">查看详情</a>
       <button class="scheduled-failure-alert-close" type="button" data-scheduled-alert-close aria-label="关闭定时任务失败提示">×</button>
     </div>
     {% endif %}

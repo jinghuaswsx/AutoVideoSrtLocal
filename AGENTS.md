@@ -13,6 +13,14 @@
 - `master` 只允许小范围 hotfix 和文档/配置级轻量维护；如果任务复杂度不确定，先暂停并询问用户是否创建 worktree。
 - 创建 worktree 时优先使用项目内 `.worktrees/`（已被 git ignore），并遵循 `superpowers:using-git-worktrees` 的忽略校验、环境准备和基线验证流程。
 
+## 定时任务归集规则（强制）
+
+- 整个项目只要新增、调整或部署定时任务，都必须同步归集到 Web 后台的“定时任务”模块中管理。
+- 这里的定时任务包括但不限于 APScheduler job、systemd timer/service、crontab、Windows 计划任务、后台常驻轮询服务、服务器运维脚本调度，以及由外部调度器触发的项目脚本。
+- 新增定时任务时，必须同步维护 `appcore/scheduled_tasks.py` 中的任务定义，至少登记任务名称、调度频率、触发来源、运行入口、部署位置和运行日志归属。
+- 如果任务有独立运行日志或状态表，应接入“定时任务的运行日志”；如果暂时只能写 systemd journal、crontab log 或脚本日志，也必须在“定时任务管理”里标明日志位置。
+- 不允许绕过“定时任务”模块新增隐形调度任务；发现服务器上已有但未登记的项目相关定时任务时，优先补登记和页面展示。
+
 ## 服务器环境使用规则（强制）
 
 - 服务器环境说明见 `docs/server-environments.md`。
