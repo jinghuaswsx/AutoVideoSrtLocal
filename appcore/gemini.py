@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import mimetypes
 import time
@@ -428,7 +429,6 @@ def generate(
                     if return_payload:
                         return {"text": None, "json": parsed, "raw": resp, "usage": usage}
                     return parsed
-                import json
                 payload = json.loads(resp.text)
                 _log_gemini_usage(
                     user_id=user_id, project_id=project_id, service=service,
@@ -451,7 +451,12 @@ def generate(
             return text
         except Exception as e:
             last_err = e
-            if attempt < max_retries - 1 and _is_retryable(e):
+            retryable_parse_error = (
+                response_schema is not None
+                and google_search
+                and isinstance(e, json.JSONDecodeError)
+            )
+            if attempt < max_retries - 1 and (_is_retryable(e) or retryable_parse_error):
                 delay = 2 ** attempt
                 logger.warning("Gemini 调用失败，%ds 后重试（%s/%s）：%s",
                                delay, attempt + 1, max_retries, e)

@@ -292,6 +292,51 @@ def test_build_config_uses_json_schema_when_search_and_structured_output(monkeyp
     assert cfg.tools[0].google_search is not None
 
 
+def test_generate_retries_search_structured_output_when_json_is_invalid(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+
+    responses = [
+        SimpleNamespace(
+            text='{"answer":',
+            parsed=None,
+            usage_metadata=SimpleNamespace(prompt_token_count=3, candidates_token_count=1),
+        ),
+        SimpleNamespace(
+            text='{"answer":"ok"}',
+            parsed=None,
+            usage_metadata=SimpleNamespace(prompt_token_count=3, candidates_token_count=4),
+        ),
+    ]
+    calls = []
+
+    def fake_generate_content(**kwargs):
+        calls.append(kwargs)
+        return responses.pop(0)
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=fake_generate_content))
+    monkeypatch.setattr(gemini, "_get_client_for_service", lambda service: (client, "gemini-3.1-pro-preview"))
+    monkeypatch.setattr(gemini, "_binding_lookup", lambda service: None)
+    monkeypatch.setattr(gemini, "_build_contents", lambda client, prompt, media: ["parts"])
+    monkeypatch.setattr(gemini, "_log_gemini_usage", lambda **kwargs: None)
+
+    payload = gemini.generate(
+        "hello",
+        model="gemini-3.1-pro-preview",
+        service="material_evaluation.evaluate",
+        response_schema={
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+        },
+        google_search=True,
+        max_retries=2,
+        return_payload=True,
+    )
+
+    assert payload["json"] == {"answer": "ok"}
+    assert len(calls) == 2
+
+
 def test_generate_logs_failure_via_ai_billing(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
 
