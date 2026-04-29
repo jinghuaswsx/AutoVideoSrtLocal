@@ -736,6 +736,10 @@
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON;
     }
 
+    function isAuditHiddenMode(m) {
+      return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON || m === PUSH_MODAL_MODES.PRODUCT_LINKS || m === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
+    }
+
     function syncPushButton() {
       if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON) {
         btnPush.disabled = true;
@@ -781,7 +785,7 @@
       paneLocalizedJson.hidden = mode !== PUSH_MODAL_MODES.LOCALIZED_JSON;
       paneProductLinksJson.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
       paneProductLinks.hidden = mode !== PUSH_MODAL_MODES.PRODUCT_LINKS;
-      auditCard.hidden = mode === PUSH_MODAL_MODES.PRODUCT_LINKS || mode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
+      auditCard.hidden = isAuditHiddenMode(mode);
       syncPushButton();
     }
 
