@@ -161,6 +161,26 @@ def test_openrouter_chat_raises_clear_error_when_response_has_no_choices(fake_pr
             OpenRouterAdapter().chat(model="x", messages=[{"role": "user", "content": "hi"}])
 
 
+def test_openrouter_chat_retries_retryable_response_without_choices(fake_provider_db):
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    bad_resp = MagicMock()
+    bad_resp.choices = None
+    bad_resp.error = {"message": "The operation was aborted", "code": 504}
+    good_resp = MagicMock()
+    good_resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+    good_resp.usage = MagicMock(prompt_tokens=2, completion_tokens=3, cost=None)
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai, \
+         patch("appcore.llm_providers.openrouter_adapter.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [bad_resp, good_resp]
+        m_openai.return_value = mock_client
+        result = OpenRouterAdapter().chat(model="x", messages=[{"role": "user", "content": "hi"}])
+
+    assert result["text"] == "ok"
+    assert mock_client.chat.completions.create.call_count == 2
+
+
 def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     fake_provider_db.seed("openrouter_text", api_key="k",
                           base_url="https://openrouter.ai/api/v1")

@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from config import (
 
 DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 120.0
 DEFAULT_OPENROUTER_MAX_RETRIES = 1
+_OPENROUTER_RETRYABLE_ERROR_CODES = {429, 500, 502, 503, 504}
 
 
 def _extra_float(extra: dict, key: str, default: float) -> float:
@@ -179,13 +181,22 @@ class OpenRouterAdapter(LLMAdapter):
             kwargs["max_tokens"] = max_tokens
         if body:
             kwargs["extra_body"] = body
-        resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
-        choices = getattr(resp, "choices", None)
-        if not choices:
+        attempts = _extra_int(creds.get("extra") or {}, "logical_max_retries",
+                              DEFAULT_OPENROUTER_MAX_RETRIES) + 1
+        resp = None
+        choices = None
+        for attempt in range(max(1, attempts)):
+            resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
+            choices = getattr(resp, "choices", None)
+            if choices:
+                break
             error = getattr(resp, "error", None)
+            code = error.get("code") if isinstance(error, dict) else None
+            if attempt < attempts - 1 and code in _OPENROUTER_RETRYABLE_ERROR_CODES:
+                time.sleep(2 ** attempt)
+                continue
             if isinstance(error, dict):
                 message = error.get("message") or "unknown error"
-                code = error.get("code")
                 suffix = f" (code {code})" if code is not None else ""
                 raise RuntimeError(f"OpenRouter response missing choices: {message}{suffix}")
             raise RuntimeError("OpenRouter response missing choices")
