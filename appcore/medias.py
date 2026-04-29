@@ -379,6 +379,8 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
         keyword_clauses = ["p.name LIKE %s", "p.product_code LIKE %s"]
         keyword_args: list[Any] = [like, like]
         if keyword.isdigit():
+            keyword_clauses.append("p.id=%s")
+            keyword_args.append(int(keyword))
             keyword_clauses.append("p.mk_id=%s")
             keyword_args.append(int(keyword))
         where.append(f"({' OR '.join(keyword_clauses)})")

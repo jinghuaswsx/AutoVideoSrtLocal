@@ -358,8 +358,35 @@ def test_list_products_matches_numeric_keyword_by_mk_id(monkeypatch):
 
     assert rows == []
     assert total == 0
-    assert "(p.name LIKE %s OR p.product_code LIKE %s OR p.mk_id=%s)" in captured["count_sql"]
-    assert captured["count_args"] == (0, "%12345%", "%12345%", 12345)
+    assert "(p.name LIKE %s OR p.product_code LIKE %s OR p.id=%s OR p.mk_id=%s)" in captured["count_sql"]
+    assert captured["count_args"] == (0, "%12345%", "%12345%", 12345, 12345)
+    assert captured["list_args"][:-2] == captured["count_args"]
+
+
+def test_list_products_matches_numeric_keyword_by_product_id(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args=()):
+        if "information_schema.COLUMNS" in sql:
+            return None
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return [{"id": 537536}]
+
+    monkeypatch.setattr(medias, "query_one", fake_query_one)
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    rows, total = medias.list_products(None, keyword="537536", archived=False, offset=0, limit=20)
+
+    assert rows == [{"id": 537536}]
+    assert total == 1
+    assert "p.id=%s" in captured["count_sql"]
+    assert captured["count_args"] == (0, "%537536%", "%537536%", 537536, 537536)
     assert captured["list_args"][:-2] == captured["count_args"]
 
 
