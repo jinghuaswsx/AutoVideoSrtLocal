@@ -28,7 +28,7 @@ META_CUTOVER_HOUR_BJ = 16
 META_AD_EXPORT_SCRIPT = REPO_ROOT / "scripts" / "run_meta_ads_backfill_range.py"
 META_AD_EXPORT_ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "2110407576446225")
 META_AD_EXPORT_BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
-META_AD_EXPORT_CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9224")
+META_AD_EXPORT_CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
 META_REALTIME_EXPORT_ROOT = Path(os.environ.get("META_REALTIME_EXPORT_DIR", REPO_ROOT / "output" / "meta_realtime_exports"))
 META_EXPORT_TIMEOUT_SECONDS = int(os.environ.get("META_AD_REALTIME_EXPORT_TIMEOUT_SECONDS", "600"))
 
@@ -674,6 +674,7 @@ def run_sync(
     lookback_hours: int = 3,
     max_scan_pages: int = 40,
     skip_dxm_fetch: bool = False,
+    skip_meta_fetch: bool = False,
 ) -> dict[str, Any]:
     now = now or _bj_now()
     snapshot_at = _snapshot_at_node(now)
@@ -698,7 +699,16 @@ def run_sync(
             dxm_report = _run_dxm_recent_import(business_window_start, snapshot_at, max_scan_pages=max_scan_pages)
             summary["dxm_import_batch_id"] = dxm_report.get("batch_id")
             summary["dxm_report"] = dxm_report
-        summary["meta_realtime_report"] = _sync_meta_realtime_daily(business_date, snapshot_at)
+        if skip_meta_fetch:
+            summary["meta_realtime_report"] = {
+                "business_date": business_date,
+                "snapshot_at": snapshot_at,
+                "status": "skipped",
+                "source": "local_browser_required",
+                "message": "Meta Ads Manager export depends on the operator local browser environment.",
+            }
+        else:
+            summary["meta_realtime_report"] = _sync_meta_realtime_daily(business_date, snapshot_at)
         summary["snapshot_id"] = _insert_daily_snapshot(run_id, snapshot_at)
         summary["snapshot_at"] = snapshot_at
         # Current requirement: only keep the real-time day-level board fresh.
@@ -717,6 +727,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lookback-hours", type=int, default=3)
     parser.add_argument("--max-scan-pages", type=int, default=40)
     parser.add_argument("--skip-dxm-fetch", action="store_true")
+    parser.add_argument("--skip-meta-fetch", action="store_true")
     return parser
 
 
@@ -727,6 +738,7 @@ def main(argv: list[str] | None = None) -> int:
         lookback_hours=max(1, args.lookback_hours),
         max_scan_pages=max(1, args.max_scan_pages),
         skip_dxm_fetch=args.skip_dxm_fetch,
+        skip_meta_fetch=args.skip_meta_fetch,
     )
     report["duration_seconds"] = round(time.time() - started, 2)
     print(json.dumps(report, ensure_ascii=False, indent=2, default=_json_default))

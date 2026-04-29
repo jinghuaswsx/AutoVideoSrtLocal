@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 
 ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", "2110407576446225")
 BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
-CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9224")
+CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
 LEVELS = [("campaigns", "campaigns"), ("ads", "ads")]
 AUTH_FAILED = "auth_failed"
 
