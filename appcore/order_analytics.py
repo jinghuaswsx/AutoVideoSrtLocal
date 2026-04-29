@@ -9,14 +9,19 @@ import json
 import logging
 import re
 import time
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, time as dt_time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
 from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
+
+META_ATTRIBUTION_CUTOVER_HOUR_BJ = 16
+META_ATTRIBUTION_TIMEZONE = "Asia/Shanghai"
 
 # Shopify CSV 列名映射
 _SHOPIFY_COLS = {
@@ -65,6 +70,493 @@ _META_AD_NUMERIC_FIELDS: dict[str, tuple[str, str]] = {
     "展示次数": ("impressions", "int"),
     "视频平均播放时长": ("video_avg_play_time", "float"),
 }
+
+_DIANXIAOMI_SITE_DOMAINS: dict[str, tuple[str, ...]] = {
+    "newjoy": ("newjoyloo.com",),
+    "omurio": ("omurio.com", "omurio"),
+}
+_DIANXIAOMI_EXCLUDED_DOMAINS = ("smartgearx.com", "smartgearx")
+
+
+@dataclass(frozen=True)
+class DianxiaomiProductScope:
+    by_shopify_id: dict[str, dict[str, Any]]
+    by_handle: dict[str, dict[str, Any]]
+    excluded_shopify_ids: set[str]
+    excluded_handles: set[str]
+    requested_site_codes: set[str]
+
+
+def _safe_decimal_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return round(float(str(value).replace(",", "").strip()), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_dianxiaomi_ts(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp = timestamp / 1000
+        try:
+            return datetime.fromtimestamp(timestamp).replace(microsecond=0)
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return _parse_dianxiaomi_ts(int(text))
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        candidate = text[:19] if fmt.endswith("%S") else text[:10]
+        try:
+            return datetime.strptime(candidate, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def compute_meta_business_window_bj(day_value: date) -> tuple[datetime, datetime]:
+    start = datetime(day_value.year, day_value.month, day_value.day, META_ATTRIBUTION_CUTOVER_HOUR_BJ, 0, 0)
+    return start, start + timedelta(days=1)
+
+
+def compute_order_meta_attribution(
+    *values: datetime | None,
+) -> dict[str, Any]:
+    attribution_time = next((value for value in values if value is not None), None)
+    if attribution_time is None:
+        return {
+            "attribution_time_at": None,
+            "attribution_source": None,
+            "attribution_timezone": META_ATTRIBUTION_TIMEZONE,
+            "meta_business_date": None,
+            "meta_window_start_at": None,
+            "meta_window_end_at": None,
+        }
+    business_date = (attribution_time - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    window_start, window_end = compute_meta_business_window_bj(business_date)
+    return {
+        "attribution_time_at": attribution_time,
+        "attribution_source": None,
+        "attribution_timezone": META_ATTRIBUTION_TIMEZONE,
+        "meta_business_date": business_date,
+        "meta_window_start_at": window_start,
+        "meta_window_end_at": window_end,
+    }
+
+
+def _combined_link_text(*values: Any) -> str:
+    return " ".join(str(value or "") for value in values).lower()
+
+
+def _infer_dianxiaomi_site_code_from_text(text: str, requested_site_codes: set[str]) -> str | None:
+    normalized = (text or "").lower()
+    if not normalized:
+        return None
+    if any(domain in normalized for domain in _DIANXIAOMI_EXCLUDED_DOMAINS):
+        return "smartgearx"
+    for site_code in sorted(requested_site_codes):
+        domains = _DIANXIAOMI_SITE_DOMAINS.get(site_code, (site_code,))
+        if any(domain in normalized for domain in domains):
+            return site_code
+    return None
+
+
+def extract_dianxiaomi_shopify_product_id(line: dict[str, Any]) -> str | None:
+    for key in ("productId", "shopifyProductId", "pid"):
+        value = str(line.get(key) or "").strip()
+        if value.isdigit():
+            return value
+    for key in ("productUrl", "sourceUrl"):
+        text = str(line.get(key) or "")
+        match = re.search(r"/products/(\d+)", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _canonical_product_handle(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if "/products/" in text:
+        text = text.split("/products/", 1)[1]
+    text = text.split("?", 1)[0].split("#", 1)[0].strip("/")
+    if not text:
+        return None
+    if text.endswith("-rjc"):
+        text = text[:-4]
+    return text or None
+
+
+def extract_dianxiaomi_product_handle(line: dict[str, Any]) -> str | None:
+    for key in ("productUrl", "sourceUrl"):
+        handle = _canonical_product_handle(line.get(key))
+        if handle:
+            return handle
+    return None
+
+
+def build_dianxiaomi_product_scope(site_codes: list[str]) -> DianxiaomiProductScope:
+    requested = {str(code).strip().lower() for code in site_codes if str(code).strip()}
+    rows = query(
+        "SELECT id, product_code, shopifyid, product_link, localized_links_json "
+        "FROM media_products "
+        "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL AND shopifyid <> ''"
+    )
+    by_shopify_id: dict[str, dict[str, Any]] = {}
+    by_handle: dict[str, dict[str, Any]] = {}
+    excluded_shopify_ids: set[str] = set()
+    excluded_handles: set[str] = set()
+    for row in rows:
+        shopifyid = str(row.get("shopifyid") or "").strip()
+        product_code = str(row.get("product_code") or "").strip()
+        handle = _canonical_product_handle(product_code)
+        if not shopifyid and not handle:
+            continue
+        site_code = _infer_dianxiaomi_site_code_from_text(
+            _combined_link_text(
+                product_code,
+                row.get("product_link"),
+                row.get("localized_links_json"),
+            ),
+            requested,
+        )
+        if site_code == "smartgearx":
+            if shopifyid:
+                excluded_shopify_ids.add(shopifyid)
+            if handle:
+                excluded_handles.add(handle)
+            continue
+        if site_code in requested:
+            product = {
+                "product_id": row.get("id"),
+                "product_code": product_code,
+                "site_code": site_code,
+                "shopifyid": shopifyid,
+            }
+            if shopifyid:
+                by_shopify_id[shopifyid] = product
+            if handle:
+                by_handle[handle] = product
+    return DianxiaomiProductScope(
+        by_shopify_id=by_shopify_id,
+        by_handle=by_handle,
+        excluded_shopify_ids=excluded_shopify_ids,
+        excluded_handles=excluded_handles,
+        requested_site_codes=requested,
+    )
+
+
+def _dianxiaomi_order_lines(order: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in ("productList", "cancelProductList"):
+        value = order.get(key) or []
+        if isinstance(value, list):
+            rows.extend(item for item in value if isinstance(item, dict))
+    return rows
+
+
+def _resolve_dianxiaomi_line_product(
+    line: dict[str, Any],
+    shopify_product_id: str,
+    scope: DianxiaomiProductScope,
+) -> dict[str, Any] | None:
+    handle = extract_dianxiaomi_product_handle(line)
+    if handle in scope.excluded_handles:
+        return None
+    if shopify_product_id in scope.excluded_shopify_ids:
+        return None
+    product = scope.by_shopify_id.get(shopify_product_id)
+    if product:
+        return product
+    if handle:
+        product = scope.by_handle.get(handle)
+        if product:
+            return product
+    site_code = _infer_dianxiaomi_site_code_from_text(
+        _combined_link_text(line.get("productUrl"), line.get("sourceUrl")),
+        scope.requested_site_codes,
+    )
+    if site_code == "smartgearx" or site_code not in scope.requested_site_codes:
+        return None
+    return {
+        "product_id": None,
+        "product_code": None,
+        "site_code": site_code,
+        "shopifyid": shopify_product_id,
+    }
+
+
+def normalize_dianxiaomi_order(
+    order: dict[str, Any],
+    scope: DianxiaomiProductScope,
+    profits_by_package_id: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    normalized: list[dict[str, Any]] = []
+    skipped = 0
+    package_id = str(order.get("id") or order.get("packageId") or "").strip()
+    profit = profits_by_package_id.get(package_id) or {}
+    for line in _dianxiaomi_order_lines(order):
+        shopify_product_id = extract_dianxiaomi_shopify_product_id(line)
+        if not shopify_product_id:
+            skipped += 1
+            continue
+        product = _resolve_dianxiaomi_line_product(line, shopify_product_id, scope)
+        if not product:
+            skipped += 1
+            continue
+        quantity = _safe_int(str(line.get("quantity") or line.get("productCount") or "1"), 1)
+        unit_price = _safe_decimal_float(line.get("price"))
+        line_amount = round((unit_price or 0) * quantity, 2) if unit_price is not None else None
+        addr = order.get("dxmPackageAddr") if isinstance(order.get("dxmPackageAddr"), dict) else {}
+        order_created_at = _parse_dianxiaomi_ts(order.get("orderCreateTime"))
+        order_paid_at = _parse_dianxiaomi_ts(order.get("orderPayTime"))
+        paid_at = _parse_dianxiaomi_ts(order.get("paidTime"))
+        shipped_at = _parse_dianxiaomi_ts(order.get("shippedTime"))
+        attribution = compute_order_meta_attribution(order_paid_at, paid_at, order_created_at, shipped_at)
+        attribution["attribution_source"] = (
+            "order_paid_at" if order_paid_at is not None else
+            "paid_at" if paid_at is not None else
+            "order_created_at" if order_created_at is not None else
+            "shipped_at" if shipped_at is not None else None
+        )
+        normalized.append({
+            "site_code": product["site_code"],
+            "product_id": product["product_id"],
+            "product_code": product["product_code"],
+            "shopify_product_id": shopify_product_id,
+            "dxm_shop_id": str(order.get("shopId") or "").strip() or None,
+            "dxm_shop_name": str(order.get("shopName") or "").strip() or None,
+            "dxm_package_id": package_id,
+            "dxm_order_id": str(order.get("orderId") or "").strip() or None,
+            "extended_order_id": str(order.get("extendedOrderId") or "").strip() or None,
+            "package_number": str(order.get("packageNumber") or "").strip() or None,
+            "platform": str(order.get("platform") or order.get("shopPlatform") or "").strip() or None,
+            "order_state": str(order.get("state") or "").strip() or None,
+            "buyer_name": str(order.get("buyerName") or "").strip() or None,
+            "buyer_account": str(order.get("buyerAccount") or "").strip() or None,
+            "product_name": str(line.get("productName") or "").strip()[:500] or None,
+            "product_sku": str(line.get("productSku") or "").strip()[:128] or None,
+            "product_sub_sku": str(line.get("productSubSku") or "").strip()[:128] or None,
+            "product_display_sku": str(line.get("productDisplaySku") or line.get("displaySku") or "").strip()[:128] or None,
+            "variant_text": str(line.get("attrListStr") or line.get("attrList") or "").strip()[:500] or None,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "line_amount": line_amount,
+            "order_amount": _safe_decimal_float(order.get("orderAmount")),
+            "order_currency": str(order.get("orderUnit") or "").strip() or None,
+            "ship_amount": _safe_decimal_float(order.get("shipAmount")),
+            "amount_with_shipping": _safe_decimal_float(order.get("orderAmount")),
+            "amount_cny": _safe_decimal_float(profit.get("amountCNY")),
+            "logistic_fee": _safe_decimal_float(profit.get("logisticFee")),
+            "profit": _safe_decimal_float(profit.get("profit")),
+            "refund_amount_usd": _safe_decimal_float(order.get("refundAmountUsd")),
+            "refund_amount": _safe_decimal_float(order.get("refundAmount")),
+            "buyer_country": str(order.get("buyerCountry") or addr.get("country") or "").strip() or None,
+            "buyer_country_name": str(order.get("countryCN") or "").strip() or None,
+            "province": str(addr.get("province") or "").strip() or None,
+            "city": str(addr.get("city") or "").strip() or None,
+            "order_created_at": order_created_at,
+            "order_paid_at": order_paid_at,
+            "paid_at": paid_at,
+            "shipped_at": shipped_at,
+            **attribution,
+            "raw_order_json": order,
+            "raw_line_json": line,
+            "profit_json": profit or None,
+        })
+    return normalized, skipped
+
+
+def start_dianxiaomi_order_import_batch(
+    date_from: str,
+    date_to: str,
+    site_codes: list[str],
+    included_shopify_ids_count: int,
+) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO dianxiaomi_order_import_batches "
+                "(date_from, date_to, requested_site_codes, included_shopify_ids_count) "
+                "VALUES (%s,%s,%s,%s)",
+                (date_from, date_to, ",".join(site_codes), included_shopify_ids_count),
+            )
+            batch_id = int(cur.lastrowid)
+        conn.commit()
+        return batch_id
+    finally:
+        conn.close()
+
+
+def finish_dianxiaomi_order_import_batch(
+    batch_id: int,
+    status: str,
+    summary: dict[str, Any],
+    error_message: str | None = None,
+) -> None:
+    execute(
+        "UPDATE dianxiaomi_order_import_batches SET status=%s, finished_at=NOW(), "
+        "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), "
+        "total_pages=%s, fetched_orders=%s, fetched_lines=%s, inserted_lines=%s, "
+        "updated_lines=%s, skipped_lines=%s, error_message=%s, summary_json=%s "
+        "WHERE id=%s",
+        (
+            status,
+            int(summary.get("total_pages") or 0),
+            int(summary.get("fetched_orders") or 0),
+            int(summary.get("fetched_lines") or 0),
+            int(summary.get("inserted_lines") or 0),
+            int(summary.get("updated_lines") or 0),
+            int(summary.get("skipped_lines") or 0),
+            error_message,
+            json.dumps(summary, ensure_ascii=False, default=str),
+            batch_id,
+        ),
+    )
+
+
+def _json_dumps_for_db(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+_DIANXIAOMI_ORDER_LINE_COLUMNS = [
+    "batch_id",
+    "site_code",
+    "product_id",
+    "product_code",
+    "shopify_product_id",
+    "dxm_shop_id",
+    "dxm_shop_name",
+    "dxm_package_id",
+    "dxm_order_id",
+    "extended_order_id",
+    "package_number",
+    "platform",
+    "order_state",
+    "buyer_name",
+    "buyer_account",
+    "product_name",
+    "product_sku",
+    "product_sub_sku",
+    "product_display_sku",
+    "variant_text",
+    "quantity",
+    "unit_price",
+    "line_amount",
+    "order_amount",
+    "order_currency",
+    "ship_amount",
+    "amount_with_shipping",
+    "amount_cny",
+    "logistic_fee",
+    "profit",
+    "refund_amount_usd",
+    "refund_amount",
+    "buyer_country",
+    "buyer_country_name",
+    "province",
+    "city",
+    "order_created_at",
+    "order_paid_at",
+    "paid_at",
+    "shipped_at",
+    "attribution_time_at",
+    "attribution_source",
+    "attribution_timezone",
+    "meta_business_date",
+    "meta_window_start_at",
+    "meta_window_end_at",
+    "raw_order_json",
+    "raw_line_json",
+    "profit_json",
+]
+
+
+def _dianxiaomi_order_line_values(batch_id: int, row: dict[str, Any]) -> tuple[Any, ...]:
+    enriched = dict(row)
+    enriched["batch_id"] = batch_id
+    enriched["raw_order_json"] = _json_dumps_for_db(row.get("raw_order_json"))
+    enriched["raw_line_json"] = _json_dumps_for_db(row.get("raw_line_json"))
+    enriched["profit_json"] = _json_dumps_for_db(row.get("profit_json"))
+    return tuple(enriched.get(column) for column in _DIANXIAOMI_ORDER_LINE_COLUMNS)
+
+
+def upsert_dianxiaomi_order_lines(batch_id: int, rows: list[dict[str, Any]]) -> dict[str, int]:
+    if not rows:
+        return {"affected": 0, "rows": 0}
+    columns_sql = ", ".join(_DIANXIAOMI_ORDER_LINE_COLUMNS)
+    placeholders = ", ".join(["%s"] * len(_DIANXIAOMI_ORDER_LINE_COLUMNS))
+    update_columns = [
+        "batch_id",
+        "site_code",
+        "product_id",
+        "product_code",
+        "quantity",
+        "unit_price",
+        "line_amount",
+        "order_amount",
+        "order_currency",
+        "ship_amount",
+        "amount_with_shipping",
+        "amount_cny",
+        "logistic_fee",
+        "profit",
+        "refund_amount_usd",
+        "refund_amount",
+        "buyer_country",
+        "buyer_country_name",
+        "province",
+        "city",
+        "order_created_at",
+        "order_paid_at",
+        "paid_at",
+        "shipped_at",
+        "attribution_time_at",
+        "attribution_source",
+        "attribution_timezone",
+        "meta_business_date",
+        "meta_window_start_at",
+        "meta_window_end_at",
+        "raw_order_json",
+        "raw_line_json",
+        "profit_json",
+    ]
+    updates_sql = ", ".join(f"{column}=VALUES({column})" for column in update_columns)
+    sql = (
+        f"INSERT INTO dianxiaomi_order_lines ({columns_sql}) "
+        f"VALUES ({placeholders}) "
+        f"ON DUPLICATE KEY UPDATE {updates_sql}, imported_at=NOW()"
+    )
+
+    affected = 0
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            for row in rows:
+                cur.execute(sql, _dianxiaomi_order_line_values(batch_id, row))
+                affected += int(cur.rowcount or 0)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"affected": affected, "rows": len(rows)}
+
+
+def get_dianxiaomi_order_import_batches(limit: int = 20) -> list[dict]:
+    limit = max(1, min(int(limit or 20), 100))
+    return query(
+        "SELECT * FROM dianxiaomi_order_import_batches "
+        "ORDER BY started_at DESC LIMIT %s",
+        (limit,),
+    )
 
 
 # ── 解析 ───────────────────────────────────────────────
@@ -215,6 +707,411 @@ def parse_meta_ad_file(file_stream, filename: str) -> list[dict]:
     ]
 
 
+def _parse_iso_date_param(value: str, name: str) -> date:
+    try:
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"{name} must be YYYY-MM-DD") from exc
+
+
+def _money(value: Any) -> float:
+    return round(float(value or 0), 2)
+
+
+def _roas(revenue: float, spend: float) -> float | None:
+    if spend <= 0:
+        return None
+    return round(revenue / spend, 4)
+
+
+def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
+    return round(float(order_revenue or 0) + float(shipping_revenue or 0), 2)
+
+
+def _beijing_now() -> datetime:
+    return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
+
+
+def _business_hour(value: datetime | None, day_start: datetime) -> int | None:
+    if not value:
+        return None
+    hour = int((value - day_start).total_seconds() // 3600)
+    return max(0, min(23, hour))
+
+
+def _get_realtime_order_details(target: date, day_start: datetime, data_until: datetime) -> list[dict[str, Any]]:
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    rows = query(
+        "SELECT site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
+        "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
+        "COUNT(*) AS line_count, SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS total_revenue, "
+        "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
+        "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        "GROUP BY site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
+        "buyer_country, buyer_country_name, " + order_time_expr + " "
+        "ORDER BY order_time DESC, dxm_package_id DESC",
+        (target, data_until),
+    )
+    details: list[dict[str, Any]] = []
+    for row in rows:
+        order_time = row.get("order_time")
+        details.append({
+            "order_time": order_time,
+            "business_hour": _business_hour(order_time, day_start),
+            "site_code": row.get("site_code"),
+            "dxm_package_id": row.get("dxm_package_id"),
+            "dxm_order_id": row.get("dxm_order_id"),
+            "package_number": row.get("package_number"),
+            "order_state": row.get("order_state"),
+            "buyer_country": row.get("buyer_country"),
+            "buyer_country_name": row.get("buyer_country_name"),
+            "line_count": int(row.get("line_count") or 0),
+            "units": int(row.get("units") or 0),
+            "product_revenue": _money(row.get("product_revenue")),
+            "shipping_revenue": _money(row.get("shipping_revenue")),
+            "total_revenue": _money(row.get("total_revenue")),
+            "skus": row.get("skus"),
+            "product_names": row.get("product_names"),
+        })
+    return details
+
+
+def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -> list[dict[str, Any]]:
+    if not snapshot_at:
+        return []
+    rows = query(
+        "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
+        "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial' "
+        "ORDER BY spend_usd DESC, campaign_name",
+        (target, snapshot_at),
+    )
+    campaigns: list[dict[str, Any]] = []
+    for row in rows:
+        spend = _money(row.get("spend_usd"))
+        purchase_value = _money(row.get("purchase_value_usd"))
+        campaigns.append({
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "campaign_id": row.get("campaign_id"),
+            "campaign_name": row.get("campaign_name"),
+            "normalized_campaign_code": row.get("normalized_campaign_code"),
+            "result_count": int(row.get("result_count") or 0),
+            "spend_usd": spend,
+            "purchase_value_usd": purchase_value,
+            "platform_roas": _roas(purchase_value, spend),
+            "impressions": int(row.get("impressions") or 0),
+            "clicks": int(row.get("clicks") or 0),
+        })
+    return campaigns
+
+
+def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
+    now = (now or _beijing_now()).replace(microsecond=0)
+    target = _parse_iso_date_param(date_text, "date") if date_text else (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    day_start, day_end = compute_meta_business_window_bj(target)
+    current_business_date = (now - timedelta(hours=META_ATTRIBUTION_CUTOVER_HOUR_BJ)).date()
+    if target == current_business_date:
+        data_until = min(now, day_end)
+        complete_hour_until = now.replace(minute=0, second=0, microsecond=0)
+    elif target < current_business_date:
+        data_until = day_end
+        complete_hour_until = day_end
+    else:
+        data_until = day_start
+        complete_hour_until = day_start
+
+    roas_node_rows = query(
+        "SELECT node_hour, node_at, order_count, units, order_revenue_usd, "
+        "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
+        "FROM roi_daily_roas_nodes "
+        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "ORDER BY node_hour",
+        (target,),
+    )
+    roas_nodes_by_hour = {int(row["node_hour"]): row for row in roas_node_rows if row.get("node_hour") is not None}
+    roas_points = [
+        {
+            "hour": hour,
+            "node_at": (roas_nodes_by_hour.get(hour) or {}).get("node_at"),
+            "order_count": int((roas_nodes_by_hour.get(hour) or {}).get("order_count") or 0),
+            "units": int((roas_nodes_by_hour.get(hour) or {}).get("units") or 0),
+            "order_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("order_revenue_usd")),
+            "shipping_revenue": _money((roas_nodes_by_hour.get(hour) or {}).get("shipping_revenue_usd")),
+            "ad_spend": _money((roas_nodes_by_hour.get(hour) or {}).get("ad_spend_usd")),
+            "true_roas": (
+                round(float((roas_nodes_by_hour.get(hour) or {}).get("true_roas")), 4)
+                if (roas_nodes_by_hour.get(hour) or {}).get("true_roas") is not None
+                else None
+            ),
+            "order_data_status": (roas_nodes_by_hour.get(hour) or {}).get("order_data_status"),
+            "ad_data_status": (roas_nodes_by_hour.get(hour) or {}).get("ad_data_status"),
+        }
+        for hour in range(24)
+    ]
+
+    latest_snapshot = query(
+        "SELECT * FROM roi_realtime_daily_snapshots "
+        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "ORDER BY CASE WHEN ad_data_status='ok' THEN 0 ELSE 1 END, snapshot_at DESC, id DESC LIMIT 1",
+        (target,),
+    )
+    if latest_snapshot:
+        snap = latest_snapshot[0]
+        snapshot_at = snap.get("snapshot_at") or data_until
+        order_revenue = _money(snap.get("order_revenue_usd"))
+        shipping_revenue = _money(snap.get("shipping_revenue_usd"))
+        revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
+        ad_spend = _money(snap.get("ad_spend_usd"))
+        order_details = _get_realtime_order_details(target, day_start, snapshot_at)
+        campaign_details = _get_realtime_campaign_details(target, snapshot_at)
+        return {
+            "period": {
+                "date": target,
+                "timezone": META_ATTRIBUTION_TIMEZONE,
+                "day_start_at": day_start,
+                "day_end_at": day_end,
+                "data_until_at": snapshot_at,
+                "complete_hour_until_at": complete_hour_until,
+                "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+                "day_definition": "meta_ad_platform_business_day",
+            },
+            "scope": {
+                "stores": ["newjoy", "omurio"],
+                "ad_platforms": ["meta"],
+                "order_source": "dianxiaomi",
+                "ad_source": "roi_realtime_daily_snapshots",
+                "ad_granularity": "day_realtime_snapshot",
+                "hourly_ad_ready": False,
+            },
+            "freshness": {
+                "first_order_at": None,
+                "last_order_at": snap.get("last_order_at"),
+            },
+            "summary": {
+                "order_count": int(snap.get("order_count") or 0),
+                "line_count": int(snap.get("line_count") or 0),
+                "units": int(snap.get("units") or 0),
+                "order_revenue": order_revenue,
+                "revenue_with_shipping": revenue_with_shipping,
+                "line_revenue": 0.0,
+                "shipping_revenue": shipping_revenue,
+                "ad_spend": ad_spend,
+                "meta_purchase_value": 0.0,
+                "meta_purchases": 0,
+                "true_roas": _roas(revenue_with_shipping, ad_spend),
+                "order_data_status": snap.get("order_data_status") or "ok",
+                "ad_data_status": snap.get("ad_data_status") or "pending_source",
+            },
+            "hourly": [],
+            "roas_points": roas_points,
+            "snapshots": [snap],
+            "order_details": order_details,
+            "campaigns": campaign_details,
+        }
+
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    order_rows = query(
+        "SELECT HOUR(" + order_time_expr + ") AS hour, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "MIN(" + order_time_expr + ") AS first_order_at, "
+        "MAX(" + order_time_expr + ") AS last_order_at "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        "GROUP BY HOUR(" + order_time_expr + ") "
+        "ORDER BY hour",
+        (day_start, day_end),
+    )
+    ad_rows = query(
+        "SELECT SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date = %s",
+        (target,),
+    )
+
+    orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
+    ad = ad_rows[0] if ad_rows else {}
+    summary = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+        "ad_spend": _money(ad.get("ad_spend")),
+        "meta_purchase_value": _money(ad.get("meta_purchase_value")),
+        "meta_purchases": int(ad.get("meta_purchases") or 0),
+    }
+    first_order_at = None
+    last_order_at = None
+    hourly: list[dict[str, Any]] = []
+    for hour in range(24):
+        row = orders_by_hour.get(hour, {})
+        order_revenue = _money(row.get("order_revenue"))
+        item = {
+            "hour": hour,
+            "window_start_at": day_start + timedelta(hours=hour),
+            "window_end_at": day_start + timedelta(hours=hour + 1),
+            "order_count": int(row.get("order_count") or 0),
+            "line_count": int(row.get("line_count") or 0),
+            "units": int(row.get("units") or 0),
+            "order_revenue": order_revenue,
+            "line_revenue": _money(row.get("line_revenue")),
+            "shipping_revenue": _money(row.get("shipping_revenue")),
+            "ad_spend": None,
+            "true_roas": None,
+        }
+        hourly.append(item)
+        for key in ("order_count", "line_count", "units"):
+            summary[key] += item[key]
+        for key in ("order_revenue", "line_revenue", "shipping_revenue"):
+            summary[key] = round(summary[key] + float(item[key]), 2)
+        if row.get("first_order_at") and (first_order_at is None or row["first_order_at"] < first_order_at):
+            first_order_at = row["first_order_at"]
+        if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
+            last_order_at = row["last_order_at"]
+
+    summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    return {
+        "period": {
+            "date": target,
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+            "day_start_at": day_start,
+            "day_end_at": day_end,
+            "data_until_at": data_until,
+            "complete_hour_until_at": complete_hour_until,
+            "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+            "day_definition": "meta_ad_platform_business_day",
+        },
+        "scope": {
+            "stores": ["newjoy", "omurio"],
+            "ad_platforms": ["meta"],
+            "order_source": "dianxiaomi",
+            "ad_source": "meta_ad_daily_campaign_metrics",
+            "ad_granularity": "daily",
+            "hourly_ad_ready": False,
+        },
+        "freshness": {
+            "first_order_at": first_order_at,
+            "last_order_at": last_order_at,
+        },
+        "summary": summary,
+        "hourly": hourly,
+        "roas_points": roas_points,
+        "order_details": _get_realtime_order_details(target, day_start, data_until),
+        "campaigns": [],
+    }
+
+
+def get_true_roas_summary(start_date: str, end_date: str) -> dict:
+    start = _parse_iso_date_param(start_date, "start_date")
+    end = _parse_iso_date_param(end_date, "end_date")
+    if end < start:
+        raise ValueError("end_date must be >= start_date")
+
+    order_rows = query(
+        "SELECT meta_business_date, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(quantity) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue "
+        "FROM dianxiaomi_order_lines "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+    ad_rows = query(
+        "SELECT meta_business_date, "
+        "SUM(spend_usd) AS ad_spend, "
+        "SUM(purchase_value_usd) AS meta_purchase_value, "
+        "SUM(result_count) AS meta_purchases "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY meta_business_date",
+        (start, end),
+    )
+
+    orders_by_day = {row["meta_business_date"]: row for row in order_rows}
+    ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
+    rows: list[dict[str, Any]] = []
+    totals = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+        "ad_spend": 0.0,
+        "meta_purchase_value": 0.0,
+        "meta_purchases": 0,
+    }
+
+    current = start
+    while current <= end:
+        order = orders_by_day.get(current, {})
+        ad = ads_by_day.get(current, {})
+        window_start, window_end = compute_meta_business_window_bj(current)
+        order_revenue = _money(order.get("order_revenue"))
+        shipping_revenue = _money(order.get("shipping_revenue"))
+        revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
+        ad_spend = _money(ad.get("ad_spend"))
+        item = {
+            "meta_business_date": current,
+            "window_start_at": window_start,
+            "window_end_at": window_end,
+            "order_count": int(order.get("order_count") or 0),
+            "line_count": int(order.get("line_count") or 0),
+            "units": int(order.get("units") or 0),
+            "order_revenue": order_revenue,
+            "line_revenue": _money(order.get("line_revenue")),
+            "shipping_revenue": shipping_revenue,
+            "revenue_with_shipping": revenue_with_shipping,
+            "ad_spend": ad_spend,
+            "true_roas": _roas(revenue_with_shipping, ad_spend),
+            "meta_purchase_value": _money(ad.get("meta_purchase_value")),
+            "meta_purchases": int(ad.get("meta_purchases") or 0),
+        }
+        rows.append(item)
+        for key in totals:
+            totals[key] += item[key]
+        current += timedelta(days=1)
+
+    for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
+        totals[key] = round(float(totals[key]), 2)
+    summary = dict(totals)
+    summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
+    return {
+        "period": {
+            "start": start,
+            "end": end,
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+            "cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
+        },
+        "summary": summary,
+        "rows": rows,
+    }
+
+
 def _coerce_ad_frequency(value: str | None) -> str:
     normalized = (value or "custom").strip().lower()
     if normalized not in {"weekly", "monthly", "custom"}:
@@ -257,6 +1154,12 @@ def import_meta_ad_rows(
                 matched_product_code = product.get("product_code") if product else None
                 if product_id:
                     matched += 1
+                meta_business_date = None
+                meta_window_start_at = None
+                meta_window_end_at = None
+                if row["report_start_date"] == row["report_end_date"]:
+                    meta_business_date = row["report_start_date"]
+                    meta_window_start_at, meta_window_end_at = compute_meta_business_window_bj(meta_business_date)
                 args = (
                     batch_id,
                     row["report_start_date"],
@@ -285,6 +1188,10 @@ def import_meta_ad_rows(
                     row.get("impressions") or 0,
                     row.get("video_avg_play_time"),
                     json.dumps(row.get("raw") or {}, ensure_ascii=False),
+                    meta_business_date,
+                    meta_window_start_at,
+                    meta_window_end_at,
+                    META_ATTRIBUTION_TIMEZONE,
                 )
                 cur.execute(
                     "INSERT INTO meta_ad_campaign_metrics "
@@ -294,8 +1201,9 @@ def import_meta_ad_rows(
                     "cpm_usd, unique_link_click_cost_usd, link_ctr, campaign_delivery, link_clicks, "
                     "add_to_cart_count, initiate_checkout_count, add_to_cart_cost_usd, "
                     "initiate_checkout_cost_usd, cost_per_result_usd, average_purchase_value_usd, "
-                    "impressions, video_avg_play_time, raw_json) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "impressions, video_avg_play_time, raw_json, "
+                    "meta_business_date, meta_window_start_at, meta_window_end_at, attribution_timezone) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                     "ON DUPLICATE KEY UPDATE "
                     "import_batch_id=VALUES(import_batch_id), import_frequency=VALUES(import_frequency), "
                     "normalized_campaign_code=VALUES(normalized_campaign_code), "
@@ -312,7 +1220,10 @@ def import_meta_ad_rows(
                     "cost_per_result_usd=VALUES(cost_per_result_usd), "
                     "average_purchase_value_usd=VALUES(average_purchase_value_usd), "
                     "impressions=VALUES(impressions), video_avg_play_time=VALUES(video_avg_play_time), "
-                    "raw_json=VALUES(raw_json)",
+                    "raw_json=VALUES(raw_json), meta_business_date=VALUES(meta_business_date), "
+                    "meta_window_start_at=VALUES(meta_window_start_at), "
+                    "meta_window_end_at=VALUES(meta_window_end_at), "
+                    "attribution_timezone=VALUES(attribution_timezone)",
                     args,
                 )
                 if cur.rowcount == 1:

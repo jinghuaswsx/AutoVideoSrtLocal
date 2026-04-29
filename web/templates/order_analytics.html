@@ -37,6 +37,24 @@
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: pointer;
 }
+.oa-dxm-panel {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  background: var(--bg-card); border: 1.5px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-5); margin-bottom: var(--space-6);
+}
+.oa-dxm-panel h3 { margin: 0 0 var(--space-1); font-size: var(--text-lg); color: var(--fg); }
+.oa-dxm-panel p { margin: 0; color: var(--fg-muted); font-size: var(--text-sm); line-height: var(--leading); }
+.oa-dxm-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: flex-end; }
+.oa-dxm-result {
+  display: none; background: var(--info-bg); border-radius: var(--radius-md);
+  padding: var(--space-4); margin-bottom: var(--space-6); color: var(--fg); font-size: var(--text-sm);
+}
+.oa-dxm-result strong { font-weight: 700; color: var(--accent); }
+.oa-dxm-batches { margin-top: var(--space-3); color: var(--fg-muted); font-size: var(--text-xs); }
+@media (max-width: 768px) {
+  .oa-dxm-panel { align-items: stretch; flex-direction: column; }
+  .oa-dxm-actions { justify-content: flex-start; }
+}
 
 /* ── 统计卡片 ─────────────────────────────────── */
 .oa-stats { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
@@ -105,6 +123,88 @@
 }
 
 /* ── 控件区 ───────────────────────────────────── */
+.oar-hero {
+  display: grid; grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: var(--space-4); margin-bottom: var(--space-5);
+}
+.oar-card {
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-6);
+}
+.oar-card.is-primary {
+  border-color: var(--accent); background: var(--accent-subtle);
+}
+.oar-label {
+  font-size: var(--text-sm); color: var(--fg-muted); font-weight: 600; margin-bottom: var(--space-2);
+}
+.oar-value {
+  font-size: 38px; line-height: 1.1; font-weight: 800; color: var(--accent);
+  font-family: var(--font-mono);
+}
+.oar-sub {
+  margin-top: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm);
+}
+.oar-subtabs {
+  display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;
+  margin: var(--space-5) 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.oar-subtab {
+  height: 34px; padding: 0 var(--space-4); border: 0; background: transparent;
+  color: var(--fg-muted); cursor: pointer; border-bottom: 2px solid transparent;
+  font-size: var(--text-sm); font-weight: 600; margin-bottom: -1px;
+}
+.oar-subtab:hover { color: var(--fg); }
+.oar-subtab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.oar-subpanel { display: none; }
+.oar-subpanel.is-active { display: block; }
+.oa-table.oar-compact-table { font-size: var(--text-sm); }
+.oa-table.oar-compact-table th, .oa-table.oar-compact-table td {
+  padding: 9px var(--space-3); vertical-align: top;
+}
+.oar-product-cell {
+  min-width: 280px; max-width: 520px; white-space: normal; word-break: break-word;
+}
+.oar-id-cell {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
+}
+.oar-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: var(--space-4); margin-bottom: var(--space-5);
+}
+.oar-mini-value {
+  font-size: var(--text-xl); font-weight: 700; color: var(--fg);
+  font-family: var(--font-mono);
+}
+.oar-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  margin-bottom: var(--space-4); flex-wrap: wrap;
+}
+.oar-toolbar input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--bg-card); color: var(--fg);
+}
+.oar-note {
+  color: var(--fg-muted); font-size: var(--text-sm);
+}
+.oar-time-rule {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  margin-bottom: var(--space-5); padding: var(--space-4) var(--space-5);
+  border: 1.5px solid var(--accent); border-radius: var(--radius-lg);
+  background: var(--accent-subtle); color: var(--fg);
+}
+.oar-time-rule strong {
+  color: var(--accent); font-size: var(--text-lg); font-weight: 800;
+}
+.oar-time-rule span {
+  color: var(--fg-muted); font-size: var(--text-sm);
+}
+@media (max-width: 980px) {
+  .oar-hero, .oar-grid { grid-template-columns: 1fr; }
+  .oar-value { font-size: 32px; }
+  .oar-time-rule { align-items: flex-start; flex-direction: column; }
+}
+
 .oa-controls {
   display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
 }
@@ -388,14 +488,176 @@
 
 <!-- Tab 导航 -->
 <div class="oa-tabs">
-  <button class="oa-tab active" data-tab="dashboard">产品看板</button>
+  <button class="oa-tab active" data-tab="realtime">实时大盘</button>
+  <button class="oa-tab" data-tab="dashboard">产品看板</button>
+  <button class="oa-tab" data-tab="trueRoas">真实 ROAS</button>
   <button class="oa-tab" data-tab="import">订单导入</button>
   <button class="oa-tab" data-tab="analytics">订单分析</button>
   <button class="oa-tab" data-tab="ads">广告分析</button>
 </div>
 
+<section class="oa-panel active" id="panelRealtime">
+  <div class="oar-toolbar">
+    <div class="oar-note">NewJoy + Omurio / 按 Meta 广告系统日期统计</div>
+    <div>
+      <input type="date" id="realtimeDate">
+      <button class="btn btn-primary btn-sm" id="realtimeRefresh">刷新</button>
+    </div>
+  </div>
+
+  <div class="oar-time-rule">
+    <div>
+      <strong>日期口径：Meta 广告系统日</strong>
+      <div class="oar-note">“今天”按广告后台日期归属统计，订单会换算到同一个广告系统日后再累计。</div>
+    </div>
+    <span id="realtimeTimeRule">当前广告系统日：-</span>
+  </div>
+
+  <div class="oar-hero">
+    <div class="oar-card is-primary">
+      <div class="oar-label">商品销售额</div>
+      <div class="oar-value" id="realtimeRevenue">$0.00</div>
+      <div class="oar-sub" id="realtimeRevenueSub">订单 0 单</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">运费</div>
+      <div class="oar-value" id="realtimeShipping">$0.00</div>
+      <div class="oar-sub">订单收取的运费</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">总销售额</div>
+      <div class="oar-value" id="realtimeRevenueWithShipping">$0.00</div>
+      <div class="oar-sub">商品销售额 + 运费</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">广告消耗费用</div>
+      <div class="oar-value" id="realtimeSpend">$0.00</div>
+      <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">整体 ROAS</div>
+      <div class="oar-value" id="realtimeRoas">-</div>
+      <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
+    </div>
+  </div>
+
+  <div class="oar-grid">
+    <div class="oar-card">
+      <div class="oar-label">订单数</div>
+      <div class="oar-mini-value" id="realtimeOrderCount">0</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">商品件数</div>
+      <div class="oar-mini-value" id="realtimeUnits">0</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">订单最新时间</div>
+      <div class="oar-mini-value" id="realtimeFreshness">-</div>
+    </div>
+    <div class="oar-card">
+      <div class="oar-label">数据快照时间</div>
+      <div class="oar-mini-value" id="realtimeSnapshotAt">-</div>
+    </div>
+  </div>
+
+  <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
+    <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
+  </div>
+
+  <div class="oar-subpanel is-active" id="realtimeSubOrders">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">今天订单明细</div>
+        <div class="oar-note">按订单时间倒序，从最新订单一直回看到广告系统日 0 点</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>订单时间</th>
+              <th>广告日小时</th>
+              <th>店铺</th>
+              <th>订单号</th>
+              <th>国家</th>
+              <th>商品</th>
+              <th>件数</th>
+              <th>商品销售额</th>
+              <th>运费</th>
+              <th>总销售额</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeOrderBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubCampaigns">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">广告计划实时数据</div>
+        <div class="oar-note">来自本机 ADS Power 90 导出的 Meta 实时快照，按消耗倒序</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>广告计划</th>
+              <th>账户</th>
+              <th>消耗</th>
+              <th>结果数</th>
+              <th>平台购买价值</th>
+              <th>平台 ROAS</th>
+              <th>展示</th>
+              <th>点击</th>
+              <th>计划 ID</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeCampaignBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubTrend">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">当天 ROAS 走势</div>
+        <div class="oar-note">0-23 点按 Meta 广告系统日计算，每个点是当日累计 ROAS</div>
+      </div>
+      <div id="realtimeRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
+    </div>
+
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">当日节点记录</div>
+        <div class="oar-note" id="realtimeGranularity">每 10 分钟刷新当天累计数据</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>小时</th>
+              <th>订单数</th>
+              <th>商品销售额</th>
+              <th>商品件数</th>
+              <th>运费</th>
+              <th>总销售额</th>
+              <th>广告费</th>
+              <th>ROAS</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeHourlyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ═══════ Tab 0: 产品看板 ═══════ -->
-<section class="oa-panel active" id="panelDashboard">
+<section class="oa-panel" id="panelDashboard">
 <style>
   .oad-toolbar { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
@@ -758,6 +1020,44 @@
 </script>
 </section>
 
+<!-- Tab: 真实 ROAS -->
+<div class="oa-panel" id="panelTrueRoas">
+  <div class="oa-controls">
+    <label>日期范围:</label>
+    <input type="date" id="trueRoasStart" value="2026-04-01">
+    <span>至</span>
+    <input type="date" id="trueRoasEnd" value="2026-04-30">
+    <button class="btn btn-primary btn-sm" id="trueRoasRefresh">查询</button>
+  </div>
+
+  <div id="trueRoasSummary" class="oa-stats"></div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">真实 ROAS 日报</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>归因日</th>
+            <th>北京时间窗口</th>
+            <th>订单数</th>
+            <th>商品销售额</th>
+            <th>运费</th>
+            <th>总销售额</th>
+            <th>广告费</th>
+            <th>真实 ROAS</th>
+            <th>Meta 转化价值</th>
+            <th>Meta 成效</th>
+          </tr>
+        </thead>
+        <tbody id="trueRoasTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -775,6 +1075,19 @@
       <div>正在解析并导入…</div>
     </div>
   </div>
+
+  <section class="oa-dxm-panel" id="dxmImportPanel">
+    <div>
+      <h3>店小秘订单明细</h3>
+      <p>NewJoy、omurio，默认 2026-01-01 至 2026-04-28，保留订单原始 JSON 和金额明细。</p>
+    </div>
+    <div class="oa-dxm-actions">
+      <button type="button" class="btn btn-default btn-sm" id="dxmDryRunBtn">试跑</button>
+      <button type="button" class="btn btn-primary btn-sm" id="dxmImportBtn">抓取并落库</button>
+    </div>
+  </section>
+
+  <div class="oa-dxm-result" id="dxmImportResult"></div>
 
   <div id="importResult" style="display:none;"></div>
 
@@ -1020,6 +1333,10 @@
         initAnalytics();
       } else if (tab.dataset.tab === 'ads') {
         initAds();
+      } else if (tab.dataset.tab === 'trueRoas') {
+        loadTrueRoas();
+      } else if (tab.dataset.tab === 'realtime') {
+        loadRealtimeOverview();
       }
     });
   });
@@ -1044,6 +1361,280 @@
   debug('JS 已加载');
 
   // ── 上传 ──────────────────────────────────────────
+  var trueRoasRefresh = document.getElementById('trueRoasRefresh');
+  if (trueRoasRefresh) trueRoasRefresh.addEventListener('click', loadTrueRoas);
+  var realtimeRefresh = document.getElementById('realtimeRefresh');
+  if (realtimeRefresh) realtimeRefresh.addEventListener('click', loadRealtimeOverview);
+  var realtimeDate = document.getElementById('realtimeDate');
+  document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
+        item.classList.toggle('is-active', item === btn);
+      });
+      document.querySelectorAll('.oar-subpanel').forEach(function(panel) {
+        panel.classList.toggle('is-active', panel.id === 'realtimeSub' + capitalize(btn.dataset.realtimeSubtab));
+      });
+    });
+  });
+  loadRealtimeOverview();
+
+  function localDateString(value) {
+    var y = value.getFullYear();
+    var m = String(value.getMonth() + 1).padStart(2, '0');
+    var d = String(value.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function loadRealtimeOverview() {
+    var dateInput = document.getElementById('realtimeDate');
+    var date = dateInput ? dateInput.value : '';
+    var hourlyBody = document.getElementById('realtimeHourlyBody');
+    var orderBody = document.getElementById('realtimeOrderBody');
+    var campaignBody = document.getElementById('realtimeCampaignBody');
+    if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
+    fetch('/order-analytics/realtime-overview?date=' + encodeURIComponent(date))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var s = data.summary || {};
+        var revenueWithShipping = Number(s.revenue_with_shipping);
+        if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {
+          revenueWithShipping = Number(s.order_revenue || 0) + Number(s.shipping_revenue || 0);
+        }
+        if (dateInput && !dateInput.value && (data.period || {}).date) {
+          dateInput.value = String((data.period || {}).date).slice(0, 10);
+        }
+        document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
+        document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
+        document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
+        document.getElementById('realtimeRevenueSub').textContent =
+          '订单 ' + fmtInt(s.order_count || 0) + ' 单';
+        document.getElementById('realtimeOrderCount').textContent = fmtInt(s.order_count || 0);
+        document.getElementById('realtimeUnits').textContent = s.units || 0;
+        document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
+        document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
+        document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
+        document.getElementById('realtimeSnapshotAt').textContent = formatShortDateTime((data.period || {}).data_until_at);
+        document.getElementById('realtimeWindow').textContent = '截止 ' + formatShortDateTime((data.period || {}).data_until_at);
+        document.getElementById('realtimeTimeRule').textContent = formatTimeRule(data.period || {}, data.roas_points || []);
+        document.getElementById('realtimeGranularity').textContent =
+          '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
+        renderRealtimeRoasChart(data.roas_points || []);
+        renderRealtimeOrders(data.order_details || []);
+        renderRealtimeCampaigns(data.campaigns || []);
+        hourlyBody.innerHTML = '';
+        var rows = data.hourly || [];
+        if (!rows.length && (data.snapshots || []).length) {
+          rows = (data.snapshots || []).map(function(snap) {
+            return {
+              hour: String(snap.snapshot_at || '').replace('T', ' ').slice(11, 16),
+              order_count: snap.order_count,
+              order_revenue: snap.order_revenue_usd,
+              units: snap.units,
+              shipping_revenue: snap.shipping_revenue_usd,
+              revenue_with_shipping: Number(snap.order_revenue_usd || 0) + Number(snap.shipping_revenue_usd || 0),
+              ad_spend: snap.ad_spend_usd,
+              true_roas: s.true_roas
+            };
+          });
+        }
+        rows.forEach(function(row) {
+          var tr = document.createElement('tr');
+          [
+            typeof row.hour === 'number' ? String(row.hour).padStart(2, '0') + ':00-' + String(row.hour + 1).padStart(2, '0') + ':00' : row.hour,
+            row.order_count || 0,
+            fmtMoney(row.order_revenue),
+            row.units || 0,
+            fmtMoney(row.shipping_revenue),
+            fmtMoney(row.revenue_with_shipping || (Number(row.order_revenue || 0) + Number(row.shipping_revenue || 0))),
+            row.ad_spend == null ? '-' : fmtMoney(row.ad_spend),
+            fmtRoasValue(row.true_roas)
+          ].forEach(function(value) {
+            var td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          hourlyBody.appendChild(tr);
+        });
+        if (!hourlyBody.children.length) {
+          hourlyBody.innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
+        }
+      })
+      .catch(function(err) {
+        if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+        if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+        if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  function renderRealtimeOrders(rows) {
+    var body = document.getElementById('realtimeOrderBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, formatShortDateTime(row.order_time));
+      addTextCell(tr, row.business_hour === null || row.business_hour === undefined ? '-' : String(row.business_hour).padStart(2, '0') + ':00');
+      addTextCell(tr, row.site_code || '-');
+      addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
+      addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.units || 0));
+      addTextCell(tr, fmtMoney(row.product_revenue));
+      addTextCell(tr, fmtMoney(row.shipping_revenue));
+      addTextCell(tr, fmtMoney(row.total_revenue));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+    }
+  }
+
+  function renderRealtimeCampaigns(rows) {
+    var body = document.getElementById('realtimeCampaignBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
+      addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
+      addTextCell(tr, fmtMoney(row.spend_usd));
+      addTextCell(tr, fmtInt(row.result_count || 0));
+      addTextCell(tr, fmtMoney(row.purchase_value_usd));
+      addTextCell(tr, fmtRoasValue(row.platform_roas));
+      addTextCell(tr, fmtInt(row.impressions || 0));
+      addTextCell(tr, fmtInt(row.clicks || 0));
+      addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="9">暂无广告计划数据</td></tr>';
+    }
+  }
+
+  function addTextCell(tr, value, className) {
+    var td = document.createElement('td');
+    if (className) td.className = className;
+    td.textContent = value === null || value === undefined || value === '' ? '-' : value;
+    tr.appendChild(td);
+  }
+
+  function renderRealtimeRoasChart(points) {
+    var el = document.getElementById('realtimeRoasChart');
+    if (!el) return;
+    var usable = (points || []).filter(function(p) { return p.true_roas !== null && p.true_roas !== undefined; });
+    if (!usable.length) {
+      el.innerHTML = '<div class="oar-note">暂无可绘制的 ROAS 节点；广告费同步到当天累计值后会自动出现走势。</div>';
+      return;
+    }
+    var maxRoas = Math.max.apply(null, usable.map(function(p) { return Number(p.true_roas) || 0; }));
+    maxRoas = Math.max(maxRoas, 1);
+    var width = 920, height = 240, padL = 42, padR = 18, padT = 20, padB = 34;
+    var innerW = width - padL - padR, innerH = height - padT - padB;
+    function x(hour) { return padL + (innerW * hour / 23); }
+    function y(v) { return padT + innerH - (innerH * (Number(v) || 0) / maxRoas); }
+    var path = usable.map(function(p, i) {
+      return (i ? 'L' : 'M') + x(p.hour).toFixed(1) + ' ' + y(p.true_roas).toFixed(1);
+    }).join(' ');
+    var dots = usable.map(function(p) {
+      return '<circle cx="' + x(p.hour).toFixed(1) + '" cy="' + y(p.true_roas).toFixed(1) +
+        '" r="4" fill="var(--accent)"><title>' + String(p.hour).padStart(2, '0') +
+        ':00 ROAS ' + fmtRoasValue(p.true_roas) + '</title></circle>';
+    }).join('');
+    var labels = [0, 6, 12, 18, 23].map(function(h) {
+      return '<text x="' + x(h).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" fill="var(--fg-muted)" font-size="12">广告' + h + ':00</text>';
+    }).join('');
+    el.innerHTML =
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="260" role="img" aria-label="当天 ROAS 走势">' +
+      '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" stroke="var(--border-strong)"/>' +
+      '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" stroke="var(--border-strong)"/>' +
+      '<text x="8" y="' + (padT + 4) + '" fill="var(--fg-muted)" font-size="12">' + maxRoas.toFixed(2) + '</text>' +
+      '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dots + labels + '</svg>';
+  }
+
+  function formatShortDateTime(value) {
+    if (!value) return '-';
+    return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function formatTimeRule(period, points) {
+    var synced = (points || []).filter(function(p) { return p.node_at && p.ad_data_status === 'ok'; });
+    var latest = synced.length ? synced.pop() : (points || []).filter(function(p) { return p.node_at; }).pop();
+    var nodeText = latest ? '广告系统第 ' + latest.hour + ' 点' : '暂无节点';
+    return '广告系统日 ' + (period.date || '-') + ' / 当前节点：' + nodeText;
+  }
+
+  function loadTrueRoas() {
+    var start = document.getElementById('trueRoasStart').value || '2026-04-01';
+    var end = document.getElementById('trueRoasEnd').value || start;
+    var summaryEl = document.getElementById('trueRoasSummary');
+    var body = document.getElementById('trueRoasTableBody');
+    summaryEl.innerHTML = '';
+    body.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    fetch('/order-analytics/true-roas?start_date=' + encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end))
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        var s = data.summary || {};
+        summaryEl.innerHTML =
+          statCard('商品销售额', fmtMoney(s.order_revenue)) +
+          statCard('运费', fmtMoney(s.shipping_revenue)) +
+          statCard('总销售额', fmtMoney(s.revenue_with_shipping)) +
+          statCard('广告费', fmtMoney(s.ad_spend)) +
+          statCard('真实 ROAS', fmtRoasValue(s.true_roas)) +
+          statCard('订单数', s.order_count || 0);
+        body.innerHTML = '';
+        (data.rows || []).forEach(function(row) {
+          var tr = document.createElement('tr');
+          [
+            row.meta_business_date,
+            formatRoasWindow(row.window_start_at, row.window_end_at),
+            row.order_count || 0,
+            fmtMoney(row.order_revenue),
+            fmtMoney(row.shipping_revenue),
+            fmtMoney(row.revenue_with_shipping),
+            fmtMoney(row.ad_spend),
+            fmtRoasValue(row.true_roas),
+            fmtMoney(row.meta_purchase_value),
+            row.meta_purchases || 0
+          ].forEach(function(value) {
+            var td = document.createElement('td');
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          body.appendChild(tr);
+        });
+        if (!body.children.length) {
+          body.innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
+        }
+      })
+      .catch(function(err) {
+        body.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  function fmtRoasValue(value) {
+    return value === null || value === undefined ? '-' : Number(value).toFixed(2);
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function(ch) {
+      return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[ch];
+    });
+  }
+
+  function formatRoasWindow(start, end) {
+    return String(start || '').replace('T', ' ').slice(0, 16) + ' ~ ' +
+           String(end || '').replace('T', ' ').slice(5, 16);
+  }
+
   var zone = document.getElementById('uploadZone');
   var input = document.getElementById('fileInput');
   var errorBox = document.getElementById('errorBox');
@@ -1106,6 +1697,79 @@
       '<span>新匹配 <strong>' + data.matched + '</strong> 条</span>' +
       '</div></div>';
     box.style.display = '';
+  }
+
+  var dxmDryRunBtn = document.getElementById('dxmDryRunBtn');
+  var dxmImportBtn = document.getElementById('dxmImportBtn');
+  if (dxmDryRunBtn) dxmDryRunBtn.addEventListener('click', function() { runDxmImport(true); });
+  if (dxmImportBtn) dxmImportBtn.addEventListener('click', function() { runDxmImport(false); });
+
+  function setDxmButtons(disabled) {
+    if (dxmDryRunBtn) dxmDryRunBtn.disabled = disabled;
+    if (dxmImportBtn) dxmImportBtn.disabled = disabled;
+  }
+
+  function runDxmImport(dryRun) {
+    var box = document.getElementById('dxmImportResult');
+    box.style.display = '';
+    box.innerHTML = dryRun ? '正在试跑店小秘订单抓取…' : '正在抓取并写入店小秘订单明细…';
+    setDxmButtons(true);
+    fetch('/order-analytics/dianxiaomi-import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        start_date: '2026-01-01',
+        end_date: '2026-04-28',
+        site_codes: ['newjoy', 'omurio'],
+        dry_run: dryRun
+      })
+    })
+      .then(function(r) {
+        return r.json().then(function(data) {
+          if (!r.ok) throw new Error(data.error || ('服务器返回 ' + r.status));
+          return data;
+        });
+      })
+      .then(function(data) {
+        renderDxmImportResult(data);
+        loadDxmImportBatches();
+      })
+      .catch(function(err) {
+        box.innerHTML = '<span style="color:var(--danger-fg)">店小秘导入失败：' + escHtml(err.message) + '</span>';
+      })
+      .finally(function() { setDxmButtons(false); });
+  }
+
+  function renderDxmImportResult(data) {
+    var summary = data.summary || {};
+    var box = document.getElementById('dxmImportResult');
+    box.innerHTML =
+      '<div><strong>' + (data.dry_run ? '试跑完成' : '导入完成') + '</strong></div>' +
+      '<div class="oa-import-row" style="margin-top:8px">' +
+      '<span>订单 <strong>' + (summary.fetched_orders || 0) + '</strong></span>' +
+      '<span>命中行 <strong>' + (summary.fetched_lines || 0) + '</strong></span>' +
+      '<span>写入/更新 <strong>' + (summary.inserted_lines || 0) + '</strong></span>' +
+      '<span>跳过 <strong>' + (summary.skipped_lines || 0) + '</strong></span>' +
+      '</div>' +
+      '<div class="oa-dxm-batches" id="dxmBatchList"></div>';
+    box.style.display = '';
+  }
+
+  function loadDxmImportBatches() {
+    fetch('/order-analytics/dianxiaomi-import-batches?limit=5')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var list = document.getElementById('dxmBatchList');
+        if (!list) return;
+        var rows = data.rows || [];
+        if (!rows.length) { list.textContent = '暂无历史批次'; return; }
+        list.innerHTML = rows.map(function(row) {
+          return '#' + row.id + ' ' + escHtml(row.status || '') + ' ' +
+            escHtml(String(row.date_from || '').slice(0, 10)) + ' ~ ' +
+            escHtml(String(row.date_to || '').slice(0, 10)) + '，行 ' +
+            (row.inserted_lines || 0);
+        }).join('<br>');
+      });
   }
 
   function loadDbStats() {
