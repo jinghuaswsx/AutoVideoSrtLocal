@@ -1886,6 +1886,36 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   text-decoration:none;
 }
 .oc-pl-url:hover { color:var(--oc-accent); text-decoration:underline; }
+.oc-pl-info { margin-bottom:var(--oc-sp-4); }
+.oc-pl-info-block {
+  padding:var(--oc-sp-4);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg);
+}
+.oc-pl-info-block h4 {
+  margin:0 0 var(--oc-sp-3);
+  font-size:14px;
+  color:var(--oc-fg);
+}
+.oc-pl-info-list {
+  display:grid;
+  grid-template-columns:96px minmax(0, 1fr);
+  gap:var(--oc-sp-2) var(--oc-sp-5);
+  margin:0;
+}
+.oc-pl-info-list dt {
+  color:var(--oc-fg-muted);
+  font-size:13px;
+  font-weight:600;
+}
+.oc-pl-info-list dd {
+  margin:0;
+  color:var(--oc-fg);
+  font-size:13px;
+  line-height:1.55;
+  word-break:break-word;
+}
 .oc-pl-json {
   min-height:300px;
   height:100%;
@@ -2023,9 +2053,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
     flex:1;
     padding:0 var(--oc-sp-2);
   }
-  .oc-product-links-active-area {
-    max-height:max(220px, calc(100vh - 360px));
-  }
+  .oc-pl-info-list { grid-template-columns:1fr; }
 }
 .oc-product-detail-page .oc-header,
 .oc-product-detail-page .oc-toolbar,
@@ -2198,6 +2226,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       <div class="oc-product-links-active-area">
         <section id="productLinksPushPanelLinks" class="oc-product-links-panel"
                  data-product-links-panel="links" role="tabpanel">
+          <div id="productLinksPushInfo" class="oc-pl-info"></div>
           <div id="productLinksPushList"></div>
         </section>
         <section id="productLinksPushPanelJson" class="oc-product-links-panel"

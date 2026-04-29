@@ -1557,12 +1557,27 @@
       + `</div>`;
   }
 
+  function renderProductLinksPushInfo(data, product) {
+    const payload = data && data.payload ? data.payload : {};
+    const links = Array.isArray(payload.product_links) ? payload.product_links : [];
+    const rows = [
+      ['产品', `${product?.name || ''} · ${payload.handle || product?.product_code || ''}`],
+      ['接口地址', data?.target_url || '—'],
+      ['方法', 'POST'],
+      ['Content-Type', 'application/json'],
+      ['鉴权方式', 'HTTP Basic Auth'],
+      ['链接数量', String(links.length)],
+    ];
+    return `<div class="oc-pl-info-block">
+      <h4>接口信息</h4>
+      <dl class="oc-pl-info-list">
+        ${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}
+      </dl>
+    </div>`;
+  }
+
   function productLinksPushPreviewJson(data) {
-    return JSON.stringify({
-      target_url: data.target_url || '',
-      推送用户: data.username || '',
-      request_payload: data.payload || {},
-    }, null, 2);
+    return JSON.stringify(data.payload || {}, null, 2);
   }
 
   function setProductLinksPushActiveTab(nextTab) {
@@ -1604,6 +1619,21 @@
     return false;
   }
 
+  function productLinksPushResponseJson(data) {
+    if (!data) return {};
+    if (data.downstream_response && typeof data.downstream_response === 'object') {
+      return data.downstream_response;
+    }
+    if (typeof data.response_body === 'string' && data.response_body.trim()) {
+      try {
+        return JSON.parse(data.response_body);
+      } catch (_) {
+        return data.response_body;
+      }
+    }
+    return data;
+  }
+
   function productLinksPushRenderResponse(data, forceSuccess) {
     const resp = $('productLinksPushResponse');
     const respPre = $('productLinksPushResponseBody');
@@ -1614,7 +1644,10 @@
     resp.classList.toggle('success', success);
     resp.classList.toggle('danger', !success);
     if (respTitle) respTitle.textContent = success ? '推送成功' : '推送失败';
-    respPre.textContent = typeof data === 'string' ? data : JSON.stringify(data || {}, null, 2);
+    const displayData = productLinksPushResponseJson(data);
+    respPre.textContent = typeof displayData === 'string'
+      ? displayData
+      : JSON.stringify(displayData || {}, null, 2);
     return success;
   }
 
@@ -1623,6 +1656,7 @@
     const mask = $('productLinksPushModalMask');
     const title = $('productLinksPushTitle');
     const meta = $('productLinksPushMeta');
+    const info = $('productLinksPushInfo');
     const list = $('productLinksPushList');
     const jsonPre = $('productLinksPushJson');
     const submit = $('productLinksPushSubmit');
@@ -1636,6 +1670,7 @@
     if (meta) {
       meta.textContent = `${product.name || ''} · ${product.product_code || ''}`;
     }
+    if (info) info.innerHTML = '<div class="oc-pl-empty">加载接口信息中…</div>';
     list.innerHTML = '<div class="oc-pl-empty">加载投放链接中…</div>';
     jsonPre.textContent = '加载中…';
     submit.disabled = true;
@@ -1644,11 +1679,13 @@
     try {
       const data = await fetchJSON(`/medias/api/products/${product.id}/product-links-push/payload`);
       mask._productLinksPreview = data;
+      if (info) info.innerHTML = renderProductLinksPushInfo(data, product);
       list.innerHTML = renderProductLinksPushList(data.links || []);
       jsonPre.textContent = productLinksPushPreviewJson(data);
       submit.disabled = !data.payload || !(data.payload.product_links || []).length;
     } catch (err) {
       const message = err.message || '加载失败';
+      if (info) info.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
       list.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
       jsonPre.textContent = JSON.stringify({ error: message }, null, 2);
       submit.disabled = true;
@@ -1694,8 +1731,13 @@
       }
     } catch (err) {
       productLinksPushRenderResponse({
-        error: 'request_failed',
+        error: err.error || 'request_failed',
         message: err.message || '推送失败',
+        upstream_status: err.upstream_status,
+        upstream_code: err.upstream_code,
+        response_body: err.response_body,
+        downstream_response: err.downstream_response,
+        detail: err.detail,
       }, false);
       submit.disabled = false;
       submit.textContent = '推送';

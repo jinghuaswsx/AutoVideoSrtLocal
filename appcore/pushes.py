@@ -1,6 +1,7 @@
 """推送管理：就绪判定、状态计算、payload 组装、探活、日志写入、状态变更。"""
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -72,6 +73,11 @@ def get_product_links_username() -> str:
 
 def get_product_links_password() -> str:
     return _get_push_setting("push_product_links_password")
+
+
+def _build_utf8_basic_auth_header(username: str, password: str) -> str:
+    token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
 
 
 def build_media_public_url(object_key: str | None) -> str | None:
@@ -447,7 +453,6 @@ def build_product_links_push_preview(product: dict | None) -> dict:
 
     return {
         "target_url": get_product_links_target_url(),
-        "username": get_product_links_username(),
         "payload": {
             "handle": handle,
             "product_links": links,
@@ -459,7 +464,7 @@ def build_product_links_push_preview(product: dict | None) -> dict:
 def push_product_links(product: dict | None) -> dict:
     preview = build_product_links_push_preview(product)
     target_url = preview.get("target_url") or ""
-    username = preview.get("username") or ""
+    username = get_product_links_username()
     password = get_product_links_password()
     if not target_url:
         raise ProductLinksPushConfigError("push_product_links_base_url_missing")
@@ -467,12 +472,15 @@ def push_product_links(product: dict | None) -> dict:
         raise ProductLinksPushConfigError("push_product_links_credentials_missing")
 
     payload = preview["payload"]
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": _build_utf8_basic_auth_header(username, password),
+    }
     try:
         resp = requests.post(
             target_url,
             json=payload,
-            headers={"Content-Type": "application/json"},
-            auth=(username, password),
+            headers=headers,
             timeout=30,
         )
     except requests.RequestException as exc:
@@ -480,8 +488,6 @@ def push_product_links(product: dict | None) -> dict:
             "ok": False,
             "error": "downstream_unreachable",
             "detail": str(exc),
-            "target_url": target_url,
-            "payload": payload,
         }
 
     body_text = resp.text or ""
@@ -498,9 +504,9 @@ def push_product_links(product: dict | None) -> dict:
         "ok": ok,
         "upstream_status": resp.status_code,
         "response_body": body_text[:4000],
-        "target_url": target_url,
-        "payload": payload,
     }
+    if parsed:
+        result["downstream_response"] = parsed
     if not ok:
         result["error"] = "downstream_error"
         result["message"] = parsed.get("message") or f"HTTP {resp.status_code}"

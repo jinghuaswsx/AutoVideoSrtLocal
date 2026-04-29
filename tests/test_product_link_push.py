@@ -1,4 +1,5 @@
 import json
+import base64
 
 
 def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypatch):
@@ -22,7 +23,7 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     preview = pushes.build_product_links_push_preview(product)
 
     assert preview["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
-    assert preview["username"] == "蔡靖华"
+    assert "username" not in preview
     assert preview["payload"] == {
         "handle": "demo-rjc",
         "product_links": [
@@ -48,7 +49,6 @@ def test_medias_product_links_push_payload_endpoint_returns_preview(
     }
     preview = {
         "target_url": "https://os.wedev.vip/dify/shopify/medias/links",
-        "username": "蔡靖华",
         "payload": {
             "handle": "demo-rjc",
             "product_links": ["https://newjoyloo.com/de/products/demo-rjc"],
@@ -73,6 +73,63 @@ def test_medias_product_links_push_payload_endpoint_returns_preview(
 
     assert resp.status_code == 200
     assert resp.get_json() == preview
+
+
+def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatch):
+    from appcore import pushes
+
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0,"message":"","data":null}'
+
+        def json(self):
+            return {"code": 0, "message": "", "data": None}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes.medias, "list_enabled_language_codes", lambda: ["en", "de"])
+    monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
+    monkeypatch.setattr(pushes.requests, "post", fake_post)
+
+    def fake_setting(key):
+        return {
+            "push_product_links_base_url": "https://os.wedev.vip",
+            "push_product_links_username": "蔡靖华",
+            "push_product_links_password": "你的密码",
+        }.get(key, "")
+
+    monkeypatch.setattr(pushes.system_settings, "get_setting", fake_setting)
+
+    result = pushes.push_product_links({
+        "id": 10,
+        "product_code": "demo-rjc",
+        "localized_links_json": json.dumps({
+            "de": "https://newjoyloo.com/de/products/demo-rjc",
+        }),
+    })
+
+    assert result["ok"] is True
+    assert captured["url"] == "https://os.wedev.vip/dify/shopify/medias/links"
+    assert captured["json"] == {
+        "handle": "demo-rjc",
+        "product_links": ["https://newjoyloo.com/de/products/demo-rjc"],
+    }
+    assert set(captured["json"]) == {"handle", "product_links"}
+    token = base64.b64encode("蔡靖华:你的密码".encode("utf-8")).decode("ascii")
+    assert captured["headers"] == {
+        "Content-Type": "application/json",
+        "Authorization": f"Basic {token}",
+    }
+    assert "auth" not in captured
+    assert "payload" not in result
+    assert "target_url" not in result
 
 
 def test_medias_product_links_push_endpoint_posts_to_downstream(
@@ -200,7 +257,10 @@ def test_medias_assets_include_product_link_push_entry():
     assert "openProductCopyPushModal" in script
     assert "投放链接 JSON 预览" in template
     assert "小语种文案 JSON 预览" in template
-    assert "推送用户" in script
+    assert "推送用户" not in script
+    link_preview_start = script.index("function productLinksPushPreviewJson")
+    link_preview_end = script.index("function setProductLinksPushActiveTab")
+    assert "request_payload" not in script[link_preview_start:link_preview_end]
     assert "product-links-push/payload" in script
     assert "product-links-push" in script
     assert "product-localized-texts-push/payload" in script
@@ -234,13 +294,16 @@ def test_medias_product_links_push_modal_uses_tabs_and_centered_footer():
     assert ".oc-pl-response.danger" in template
     assert ".oc-product-links-active-area {\n  overflow:visible;" in template
     assert "max-height:min(460px, max(240px, calc(100vh - 380px)))" not in template
+    assert ".oc-product-links-active-area {\n    max-height:" not in template
     assert ".oc-product-links-modal .oc-modal-body" in template
     assert "overflow-y:auto;" in template
+    assert "id=\"productLinksPushInfo\"" in template
 
     assert "setProductLinksPushActiveTab" in script
     assert "window.setProductLinksPushActiveTab = setProductLinksPushActiveTab" in script
     assert "window.closeProductLinksPushModal = closeProductLinksPushModal" in script
     assert "window.submitProductLinksPush = submitProductLinksPush" in script
     assert "data-product-links-tab" in script
+    assert "return JSON.stringify(data.payload || {}, null, 2);" in script
     assert "productLinksPushIsSuccess" in script
     assert "productLinksPushRenderResponse" in script
