@@ -35,6 +35,7 @@ DB_MODES = ("auto", "ssh", "local")
 TASK_CODE = "shopifyid"
 TASK_NAME = "Shopify ID 获取"
 IGNORED_PRODUCT_SYNC_FAILURE_STORES = {"SmartGearX"}
+PRODUCT_SYNC_TIMEOUT_SECONDS = 600
 REMOTE_ENVS = {
     "prod": {
         "db_name": "auto_video",
@@ -618,7 +619,7 @@ def _assert_shopify_product_sync_success(detail_text: str) -> None:
         raise RuntimeError(f"店小秘同步全部产品未完全成功：{detail_text}")
 
 
-def _sync_all_shopify_products(page, *, timeout_s: int = 180) -> dict[str, str]:
+def _sync_all_shopify_products(page, *, timeout_s: int = PRODUCT_SYNC_TIMEOUT_SECONDS) -> dict[str, str]:
     _close_shopify_product_sync_dialog(page)
     _dismiss_dianxiaomi_notice_overlays(page)
     _click_sync_products_button(page)

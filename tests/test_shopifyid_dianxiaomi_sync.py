@@ -371,6 +371,13 @@ def test_product_sync_success_ignores_smartgearx_store_failure():
     )
 
 
+def test_product_sync_waits_up_to_ten_minutes_by_default():
+    mod = _load_module()
+
+    assert mod.PRODUCT_SYNC_TIMEOUT_SECONDS == 600
+    assert mod._sync_all_shopify_products.__kwdefaults__["timeout_s"] == mod.PRODUCT_SYNC_TIMEOUT_SECONDS
+
+
 def test_product_sync_success_rejects_unignored_store_level_failure():
     mod = _load_module()
 
