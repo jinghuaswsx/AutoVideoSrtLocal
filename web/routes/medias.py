@@ -416,6 +416,7 @@ _ROAS_PRODUCT_FIELDS = (
     "tk_air_cost",
     "tk_sale_price",
     "standalone_price",
+    "standalone_shipping_fee",
 )
 
 
@@ -440,9 +441,12 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        items_filenames: list[str] | None = None,
                        lang_coverage: dict | None = None,
                        covers: dict[str, str] | None = None,
-                       raw_sources_count: int | None = None) -> dict:
+                       raw_sources_count: int | None = None,
+                       roas_rmb_per_usd=None) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
+    if roas_rmb_per_usd is None:
+        roas_rmb_per_usd = product_roas.DEFAULT_RMB_PER_USD
     has_en_cover = "en" in covers
     cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
         f"/medias/thumb/{cover_item_id}" if cover_item_id else None
@@ -500,11 +504,15 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "tk_air_cost": _json_number_or_none(p.get("tk_air_cost")),
         "tk_sale_price": _json_number_or_none(p.get("tk_sale_price")),
         "standalone_price": _json_number_or_none(p.get("standalone_price")),
+        "standalone_shipping_fee": _json_number_or_none(p.get("standalone_shipping_fee")),
+        "roas_rmb_per_usd": float(product_roas.normalize_rmb_per_usd(roas_rmb_per_usd)),
         "roas_calculation": product_roas.calculate_break_even_roas(
             purchase_price=p.get("purchase_price"),
             estimated_packet_cost=p.get("packet_cost_estimated"),
             actual_packet_cost=p.get("packet_cost_actual"),
             standalone_price=p.get("standalone_price"),
+            standalone_shipping_fee=p.get("standalone_shipping_fee"),
+            rmb_per_usd=roas_rmb_per_usd,
         ),
     }
 
@@ -640,9 +648,11 @@ def _collect_link_check_reference_images(pid: int, lang: str, task_dir: Path) ->
 @bp.route("/")
 @login_required
 def index():
+    roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
     return render_template(
         "medias_list.html",
         shopify_image_localizer_release=shopify_image_localizer_release.get_release_info(),
+        material_roas_rmb_per_usd=float(roas_rmb_per_usd),
     )
 
 
@@ -793,6 +803,7 @@ def api_list_products():
     filenames = medias.list_item_filenames_by_product(pids, limit_per=5)
     coverage = medias.lang_coverage_by_product(pids)
     covers_map = medias.get_product_covers_batch(pids)
+    roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
     data = [
         _serialize_product(
             r, counts.get(r["id"], 0), thumb_covers.get(r["id"]),
@@ -800,6 +811,7 @@ def api_list_products():
             lang_coverage=coverage.get(r["id"], {}),
             covers=covers_map.get(r["id"], {}),
             raw_sources_count=raw_counts.get(r["id"], 0),
+            roas_rmb_per_usd=roas_rmb_per_usd,
         )
         for r in rows
     ]
@@ -848,7 +860,12 @@ def api_get_product(pid: int):
             if row.get("id") is not None
         }
     return jsonify({
-        "product": _serialize_product(p, None, covers=covers),
+        "product": _serialize_product(
+            p,
+            None,
+            covers=covers,
+            roas_rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+        ),
         "covers": covers,
         "copywritings": medias.list_copywritings(pid),
         "items": [_serialize_item(i, raw_sources_by_id) for i in items],

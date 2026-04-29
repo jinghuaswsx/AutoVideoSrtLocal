@@ -86,6 +86,16 @@
         <div class="field-hint">所有模块的默认保留周期，项目完成后开始计算。</div>
       </div>
 
+      <div class="field-group">
+        <label>素材 ROAS 汇率</label>
+        <div class="field-row">
+          <input type="number" name="material_roas_rmb_per_usd" min="0.0001" step="0.0001"
+                 value="{{ roas_rmb_per_usd or '6.83' }}">
+          <span class="unit">RMB / USD</span>
+        </div>
+        <div class="field-hint">用于素材管理 ROAS 计算，采购价和小包成本按该汇率换算成 USD。</div>
+      </div>
+
       <div class="section-divider"></div>
 
       <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">按模块覆盖，留空表示使用全局默认。</p>

@@ -396,6 +396,7 @@
     'tk_air_cost',
     'tk_sale_price',
     'standalone_price',
+    'standalone_shipping_fee',
   ];
 
   function numberOrNull(value) {
@@ -409,16 +410,24 @@
     return Number.isFinite(value) ? value.toFixed(2) : '无法保本';
   }
 
+  function currentRoasRmbPerUsd() {
+    const parsed = Number(window.MATERIAL_ROAS_RMB_PER_USD || 6.83);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 6.83;
+  }
+
   function calculateRoasBreakEven(values) {
     const price = numberOrNull(values.standalone_price);
+    const shippingFee = numberOrNull(values.standalone_shipping_fee) || 0;
+    const revenue = price === null ? null : price + shippingFee;
+    const rmbPerUsd = currentRoasRmbPerUsd();
     const purchase = numberOrNull(values.purchase_price);
     const estimatedPacket = numberOrNull(values.packet_cost_estimated);
     const actualPacket = numberOrNull(values.packet_cost_actual);
     const calc = (packetCost) => {
-      if (price === null || purchase === null || packetCost === null) return null;
-      const available = price * 0.9 - purchase - packetCost;
+      if (revenue === null || purchase === null || packetCost === null) return null;
+      const available = revenue * 0.9 - (purchase / rmbPerUsd) - (packetCost / rmbPerUsd);
       if (available <= 0) return null;
-      return price / available;
+      return revenue / available;
     };
     const estimated = calc(estimatedPacket);
     const actual = calc(actualPacket);
@@ -428,6 +437,7 @@
       actual_roas: actual,
       effective_basis: useActual ? 'actual' : 'estimated',
       effective_roas: useActual ? actual : estimated,
+      rmb_per_usd: rmbPerUsd,
     };
   }
 
@@ -462,6 +472,15 @@
     if ($('roasActualBox')) $('roasActualBox').classList.toggle('active', result.effective_basis === 'actual');
   }
 
+  function markRoasResultDirty() {
+    if ($('roasEstimatedValue')) $('roasEstimatedValue').textContent = '待计算';
+    if ($('roasActualValue')) $('roasActualValue').textContent = '待计算';
+    if ($('roasEffectiveValue')) $('roasEffectiveValue').textContent = '待计算';
+    if ($('roasEffectiveBasis')) $('roasEffectiveBasis').textContent = '待计算';
+    if ($('roasEstimatedBox')) $('roasEstimatedBox').classList.remove('active');
+    if ($('roasActualBox')) $('roasActualBox').classList.remove('active');
+  }
+
   function openRoasModal(product) {
     if (!product) return;
     state.roasProduct = product;
@@ -478,7 +497,7 @@
     }
     setRoasFieldValues(product);
     if ($('roasSaveMsg')) $('roasSaveMsg').textContent = '';
-    renderRoasResult();
+    markRoasResultDirty();
     mask.hidden = false;
   }
 
@@ -492,7 +511,6 @@
     const product = state.roasProduct;
     const form = $('roasForm');
     if (!product || !form) return;
-    if (!form.reportValidity()) return;
     const btn = $('roasSaveBtn');
     const msg = $('roasSaveMsg');
     if (btn) btn.disabled = true;
@@ -4225,11 +4243,12 @@
     $('roasCloseBtn') && $('roasCloseBtn').addEventListener('click', closeRoasModal);
     $('roasCancelBtn') && $('roasCancelBtn').addEventListener('click', closeRoasModal);
     $('roasSaveBtn') && $('roasSaveBtn').addEventListener('click', saveRoas);
+    $('roasCalculateBtn') && $('roasCalculateBtn').addEventListener('click', renderRoasResult);
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
     });
     document.querySelectorAll('[data-roas-field]').forEach((input) => {
-      input.addEventListener('input', renderRoasResult);
+      input.addEventListener('input', markRoasResultDirty);
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();

@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
-from appcore import medias
+from appcore import medias, product_roas
 from appcore import voice_library_sync_task as vlst
 from appcore.users import (
     list_users, create_user, set_active, get_by_username,
@@ -179,6 +179,16 @@ def settings():
     if request.method == "POST":
         from appcore.db import execute as db_execute
 
+        raw_roas_rate = request.form.get("material_roas_rmb_per_usd", "").strip()
+        if not raw_roas_rate:
+            raw_roas_rate = product_roas.format_decimal(product_roas.DEFAULT_RMB_PER_USD)
+        try:
+            roas_rate = product_roas.validate_rmb_per_usd(raw_roas_rate)
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for("admin.settings"))
+        set_setting(product_roas.RMB_PER_USD_SETTING_KEY, product_roas.format_decimal(roas_rate))
+
         old_default = get_retention_hours("__nonexistent__")
         old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
         old_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
@@ -237,6 +247,7 @@ def settings():
         "admin_settings.html",
         project_types=PROJECT_TYPE_LABELS,
         current=current,
+        roas_rmb_per_usd=product_roas.format_decimal(product_roas.get_configured_rmb_per_usd()),
         media_languages=medias.list_languages_for_admin(),
     )
 
