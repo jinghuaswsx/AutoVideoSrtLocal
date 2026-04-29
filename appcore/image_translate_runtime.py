@@ -1,4 +1,4 @@
-"""图片翻译后台 runtime：串行处理 items，自动重试 3 次，失败不中断。"""
+"""图片翻译后台 runtime：按任务模式处理 items，自动重试 3 次，失败不中断。"""
 from __future__ import annotations
 
 import logging
@@ -10,7 +10,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from appcore import gemini_image, llm_client, local_media_storage, medias, object_keys
+from appcore import gemini_image, llm_client, local_media_storage, medias, object_keys, task_state
 from appcore.events import Event, EventBus
 from web import store
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 1.0  # 秒
-_BATCH_SIZE = 10  # 并行模式单批最大并发数
+_BATCH_SIZE = 15  # 并行模式单批最大并发数
 _TEXT_DETECT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -162,7 +162,10 @@ class ImageTranslateRuntime:
 
         circuit_msg = ""
         try:
-            mode = (task.get("concurrency_mode") or "sequential").strip().lower()
+            mode = (
+                task.get("concurrency_mode")
+                or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+            ).strip().lower()
             if mode == "parallel":
                 self._run_parallel(task, task_id)
             else:

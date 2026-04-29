@@ -654,7 +654,7 @@ def test_apply_translated_detail_images_writes_local_media_store_instead_of_tos_
 
 
 def test_create_image_translate_stores_concurrency_mode():
-    """task_state.create_image_translate 接受 concurrency_mode 并写入 state；默认 sequential。"""
+    """task_state.create_image_translate 接受 concurrency_mode 并写入 state；默认 parallel。"""
     from appcore import task_state as ts
     from unittest.mock import patch
 
@@ -666,7 +666,7 @@ def test_create_image_translate_stores_concurrency_mode():
             target_language_name="德语", model_id="gemini-x",
             prompt="p", items=[],
         )
-        assert t1["concurrency_mode"] == "sequential"
+        assert t1["concurrency_mode"] == "parallel"
 
         # 2) 显式 parallel
         t2 = ts.create_image_translate(
@@ -682,6 +682,20 @@ def test_create_image_translate_stores_concurrency_mode():
     with ts._lock:
         ts._tasks.pop("t-cm-1", None)
         ts._tasks.pop("t-cm-2", None)
+
+
+def test_create_image_translate_rejects_over_1000_items():
+    from appcore import task_state as ts
+    from unittest.mock import patch
+
+    with patch.object(ts, "_db_upsert"):
+        with pytest.raises(ValueError, match="max 1000"):
+            ts.create_image_translate(
+                "t-cm-too-many", "/tmp/x",
+                user_id=1, preset="cover", target_language="de",
+                target_language_name="德语", model_id="gemini-x",
+                prompt="p", items=[{"filename": f"{i}.jpg"} for i in range(1001)],
+            )
 
 
 def test_parallel_runs_all_items_and_is_faster_than_sequential(tmp_path):
@@ -715,14 +729,14 @@ def test_parallel_runs_all_items_and_is_faster_than_sequential(tmp_path):
         assert it["status"] == "done", (it["idx"], it)
 
 
-def test_parallel_runs_in_batches_of_10(tmp_path):
-    """21 个 item：前 10 个并发，第二批在第一批之后启动，第 21 个自成一批。"""
+def test_parallel_runs_in_batches_of_15(tmp_path):
+    """31 个 item：前 15 个并发，第二批在第一批之后启动，第 31 个自成一批。"""
     import time as _time
     import threading
     from appcore import image_translate_runtime as rt
     from web import store
 
-    task = _fake_task([_item(i) for i in range(21)])
+    task = _fake_task([_item(i) for i in range(31)])
     task["concurrency_mode"] = "parallel"
 
     starts = {}
@@ -746,9 +760,9 @@ def test_parallel_runs_in_batches_of_10(tmp_path):
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
     start_times = sorted(starts.keys())
-    assert len(start_times) == 21
-    assert start_times[9] - start_times[0] < 0.1, f"first batch spread: {start_times[9]-start_times[0]:.3f}s"
-    assert start_times[10] - start_times[0] > 0.08, f"batch 2 gap: {start_times[10]-start_times[0]:.3f}s"
+    assert len(start_times) == 31
+    assert start_times[14] - start_times[0] < 0.1, f"first batch spread: {start_times[14]-start_times[0]:.3f}s"
+    assert start_times[15] - start_times[0] > 0.08, f"batch 2 gap: {start_times[15]-start_times[0]:.3f}s"
     for it in task["items"]:
         assert it["status"] == "done"
 
@@ -845,12 +859,12 @@ def test_parallel_progress_is_consistent(tmp_path):
 
 
 def test_parallel_no_lost_updates_under_contention(tmp_path):
-    """20 个 item 并发 done，最终 items 列表每个 status=done，无丢失更新。"""
+    """30 个 item 分两批并发 done，最终 items 列表每个 status=done，无丢失更新。"""
     import time as _time
     from appcore import image_translate_runtime as rt
     from web import store
 
-    task = _fake_task([_item(i) for i in range(20)])
+    task = _fake_task([_item(i) for i in range(30)])
     task["concurrency_mode"] = "parallel"
 
     def fake_download(key, lp):
@@ -878,7 +892,7 @@ def test_parallel_no_lost_updates_under_contention(tmp_path):
     assert all(it["status"] == "done" for it in task["items"])
     for p in store_updates:
         assert p["done"] + p["failed"] + p["running"] <= p["total"], p
-    assert task["progress"]["done"] == 20
+    assert task["progress"]["done"] == 30
 
 
 def test_recovery_poll_resumes_existing_apimart_task_within_window():

@@ -46,11 +46,11 @@
     <div class="form-row">
       <label>处理模式</label>
       <div id="itConcurrencyPills" class="it-pill-group" role="radiogroup">
-        <button type="button" class="it-pill is-active" data-value="sequential" role="radio" aria-checked="true">串行（默认）</button>
-        <button type="button" class="it-pill" data-value="parallel" role="radio" aria-checked="false">并行</button>
+        <button type="button" class="it-pill" data-value="sequential" role="radio" aria-checked="false">串行</button>
+        <button type="button" class="it-pill is-active" data-value="parallel" role="radio" aria-checked="true">并行（默认）</button>
       </div>
-      <p class="hint">串行：一张一张跑，稳。并行：单批最多 10 张同时跑，快但对上游限流更敏感。</p>
-      <input type="hidden" id="itConcurrencyMode" value="sequential">
+      <p class="hint">串行：一张一张跑，稳。并行：单批最多 15 张同时跑，快但对上游限流更敏感。</p>
+      <input type="hidden" id="itConcurrencyMode" value="parallel">
     </div>
 
     <div class="form-row">
@@ -59,7 +59,7 @@
     </div>
 
     <div class="form-row">
-      <label>图片（最多 20 张）</label>
+      <label>图片（最多 1000 张）</label>
       <input id="itFileInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
       <div id="itThumbs" class="it-thumbs"></div>
     </div>
