@@ -445,6 +445,29 @@
   color: var(--oc-fg-muted);
   line-height: 1.45;
 }
+.pm-quality-summary-rows {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.pm-quality-summary-row {
+  display: flex;
+  min-width: 0;
+  color: var(--oc-fg-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pm-quality-summary-label {
+  flex: 0 0 auto;
+  color: var(--oc-fg);
+  font-weight: 700;
+}
+.pm-quality-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pm-quality-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
