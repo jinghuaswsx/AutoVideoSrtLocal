@@ -186,3 +186,74 @@ def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(
 
     assert result["period"]["type"] == "month"
     assert result["countries"][0]["display_name"] == "未知"
+
+
+def test_dianxiaomi_orders_endpoint_returns_json(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_analysis(start_date, end_date, page=1, page_size=50):
+        captured.update({
+            "start_date": start_date,
+            "end_date": end_date,
+            "page": page,
+            "page_size": page_size,
+        })
+        return {
+            "period": {"start_date": start_date, "end_date": end_date},
+            "summary": {"total_sales": 1.0},
+            "pagination": {"page": page, "page_size": page_size, "total": 0, "total_pages": 0},
+            "rows": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-01&end_date=2026-04-30&page=2&page_size=25"
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "start_date": "2026-04-01",
+        "end_date": "2026-04-30",
+        "page": 2,
+        "page_size": 25,
+    }
+    assert response.get_json()["summary"]["total_sales"] == 1.0
+
+
+def test_dianxiaomi_orders_endpoint_returns_400_for_invalid_date(authed_client_no_db, monkeypatch):
+    def fake_analysis(*args, **kwargs):
+        raise ValueError("end_date must be >= start_date")
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dianxiaomi_order_analysis", fake_analysis)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dianxiaomi-orders?start_date=2026-04-30&end_date=2026-04-01"
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_param"
+
+
+def test_country_dashboard_endpoint_returns_json(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_country_dashboard(**kwargs):
+        captured.update(kwargs)
+        return {
+            "period": {"type": kwargs["period"], "start": "2026-04-01", "end": "2026-04-30"},
+            "summary": {"total_orders": 0},
+            "countries": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_country_dashboard", fake_country_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/country-dashboard?period=week&year=2026&week=17"
+    )
+
+    assert response.status_code == 200
+    assert captured["period"] == "week"
+    assert captured["year"] == 2026
+    assert captured["week"] == 17
+    assert response.get_json()["period"]["type"] == "week"
