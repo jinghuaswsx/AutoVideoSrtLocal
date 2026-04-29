@@ -1004,6 +1004,8 @@
     const getLang   = opts.getLang   || (() => 'en');
     const ensurePid = opts.ensurePid || (async () => null);
     const onItemsChange = opts.onItemsChange || (() => {});
+    const staticLimit = 50;
+    const gifLimit = 20;
     let items = [];
 
     function show() { if (section) section.hidden = false; }
@@ -1114,7 +1116,7 @@
   async function uploadFiles(rawFiles) {
       if (!window.MEDIAS_UPLOAD_READY) { alert('本地上传未就绪，无法上传'); return; }
       const all = [...(rawFiles || [])];
-      const files = all.filter(f => !!resolveMime(f));
+      let files = all.filter(f => !!resolveMime(f));
       if (!files.length) {
         const debug = all.length
           ? all.map((f, i) => `[${i}] name=${f && f.name || '(空)'} · type=${f && f.type || '(空)'}`).join('\n')
@@ -1122,9 +1124,38 @@
         alert('请选择 JPG / PNG / WebP / GIF 图片\n\n调试信息：\n' + debug);
         return;
       }
-      if (files.length > 20) {
-        alert(`单次最多上传 20 张，当前选择了 ${files.length} 张，只取前 20 张`);
-        files.length = 20;
+      const currentStatic = items.filter(it => !isGifItem(it)).length;
+      const currentGif = items.filter(isGifItem).length;
+      let staticSlots = Math.max(0, staticLimit - currentStatic);
+      let gifSlots = Math.max(0, gifLimit - currentGif);
+      const kept = [];
+      let skippedStatic = 0;
+      let skippedGif = 0;
+      for (const f of files) {
+        if (resolveMime(f) === 'image/gif') {
+          if (gifSlots > 0) {
+            kept.push(f);
+            gifSlots -= 1;
+          } else {
+            skippedGif += 1;
+          }
+        } else if (staticSlots > 0) {
+          kept.push(f);
+          staticSlots -= 1;
+        } else {
+          skippedStatic += 1;
+        }
+      }
+      if (!kept.length) {
+        alert(`当前语种已达到数量上限：静态图最多 ${staticLimit} 张，GIF 最多 ${gifLimit} 张`);
+        return;
+      }
+      if (kept.length < files.length) {
+        const parts = [];
+        if (skippedStatic) parts.push(`静态图跳过 ${skippedStatic} 张`);
+        if (skippedGif) parts.push(`GIF 跳过 ${skippedGif} 张`);
+        alert(`当前语种数量上限：静态图最多 ${staticLimit} 张，GIF 最多 ${gifLimit} 张；${parts.join('，')}`);
+        files = kept;
       }
       const pid = await ensurePid({ allowCreate: true });
       if (!pid) return;
