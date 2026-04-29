@@ -11,6 +11,7 @@
 
   if (pageType === "image-translate-list") {
     var state = { files: [] };
+    var maxFiles = 1000;
 
     var productNameEl = document.getElementById("itProductName");
     var presetEl = document.getElementById("itPreset");
@@ -137,7 +138,7 @@
 
     fileInput.onchange = function(){
       var chosen = Array.prototype.slice.call(fileInput.files || []);
-      state.files = state.files.concat(chosen).slice(0, 20);
+      state.files = state.files.concat(chosen).slice(0, maxFiles);
       fileInput.value = "";
       renderThumbs();
     };
@@ -155,7 +156,7 @@
         wrap.appendChild(img); wrap.appendChild(btn);
         thumbsEl.appendChild(wrap);
       });
-      hintEl.textContent = "已选 " + state.files.length + " 张，最多 20 张";
+      hintEl.textContent = "已选 " + state.files.length + " 张，最多 " + maxFiles + " 张";
     }
 
     submitBtn.onclick = async function(){

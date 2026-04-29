@@ -21,8 +21,8 @@
       <div>
         <label>处理模式</label>
         <span id="itMetaConcurrencyMode"
-              class="it-pill it-mode-pill is-active is-{{ state.concurrency_mode or 'sequential' }}"
-              data-concurrency-mode="{{ state.concurrency_mode or 'sequential' }}">
+              class="it-pill it-mode-pill is-active is-{{ state.concurrency_mode or 'parallel' }}"
+              data-concurrency-mode="{{ state.concurrency_mode or 'parallel' }}">
           {{ state.concurrency_mode_label or ('并行' if state.concurrency_mode == 'parallel' else '串行') }}
         </span>
       </div>

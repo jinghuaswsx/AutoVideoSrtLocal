@@ -34,7 +34,7 @@ from web.services import image_translate_runner
 
 bp = Blueprint("image_translate", __name__)
 
-_MAX_ITEMS = 20
+_MAX_ITEMS = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 _PRODUCT_NAME_MAX_LEN = 60
 _PROJECT_NAME_ILLEGAL = set('\\/:*?"<>|\t\r\n')
@@ -70,7 +70,8 @@ def _compose_project_name(product_name: str, preset: str, lang_name: str) -> str
 
 
 def _normalize_concurrency_mode(value: str | None) -> str:
-    return "parallel" if (value or "").strip().lower() == "parallel" else "sequential"
+    raw = (value or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE).strip().lower()
+    return raw if raw in {"sequential", "parallel"} else task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
 
 
 def _concurrency_mode_label(value: str | None) -> str:
@@ -350,7 +351,10 @@ def api_upload_complete():
         return jsonify({"error": "product_name required"}), 400
     if len(product_name) > _PRODUCT_NAME_MAX_LEN:
         return jsonify({"error": f"product_name too long (max {_PRODUCT_NAME_MAX_LEN})"}), 400
-    mode_raw = (body.get("concurrency_mode") or "sequential").strip().lower()
+    mode_raw = (
+        body.get("concurrency_mode")
+        or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+    ).strip().lower()
     if mode_raw not in {"sequential", "parallel"}:
         return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
     if not uploaded:

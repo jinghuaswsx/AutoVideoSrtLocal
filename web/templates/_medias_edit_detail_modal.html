@@ -235,7 +235,7 @@
                 </svg>
                 <span>打包下载静态图</span>
               </button>
-              <span class="oc-hint">JPG / PNG / WebP 静态图最多 50 张；GIF 最多 20 张；单张 ≤ 15MB</span>
+              <span class="oc-hint">JPG / PNG / WebP 静态图最多 1000 张；GIF 最多 20 张；单张 ≤ 15MB</span>
             </div>
             <div style="display:flex;align-items:center;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);flex-wrap:wrap;">
               <button type="button" class="oc-btn ghost sm" id="edDetailImagesTranslateBtn" hidden>
@@ -405,10 +405,10 @@
               <div>
                 <div style="font-size:13px;font-weight:600;margin-bottom:var(--oc-sp-2);">处理模式</div>
                 <div id="edDetailTranslateModeGroup" style="display:flex;gap:var(--oc-sp-2);flex-wrap:wrap;">
-                  <button type="button" class="oc-chip on" data-mode="sequential" role="radio" aria-checked="true">串行（默认）</button>
-                  <button type="button" class="oc-chip" data-mode="parallel" role="radio" aria-checked="false">并行</button>
+                  <button type="button" class="oc-chip" data-mode="sequential" role="radio" aria-checked="false">串行</button>
+                  <button type="button" class="oc-chip on" data-mode="parallel" role="radio" aria-checked="true">并行（默认）</button>
                 </div>
-                <p class="oc-hint" style="margin-top:var(--oc-sp-2);">串行稳；并行单批 10 张同时跑，遇限流更容易熔断。</p>
+                <p class="oc-hint" style="margin-top:var(--oc-sp-2);">串行稳；并行单批 15 张同时跑，遇限流更容易熔断。</p>
               </div>
               <div style="display:flex;justify-content:flex-end;gap:var(--oc-sp-2);margin-top:var(--oc-sp-2);">
                 <button class="oc-btn ghost" id="edDetailTranslateCancelBtn">取消</button>

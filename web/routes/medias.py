@@ -2008,7 +2008,7 @@ def api_list_languages():
 # 绗竴杞彧鍦ㄨ嫳璇绉嶆毚闇插叆鍙ｏ紝鍏朵粬璇鐨勭増鏈皢鐢卞悗缁浘鐗囩炕璇戦泦鎴愯嚜鍔ㄧ敓鎴愩€?
 # ======================================================================
 
-_DETAIL_IMAGES_STATIC_MAX = 50
+_DETAIL_IMAGES_STATIC_MAX = task_state.IMAGE_TRANSLATE_MAX_ITEMS
 _DETAIL_IMAGES_GIF_MAX = 20
 _DETAIL_IMAGES_MAX_DOWNLOAD_CANDIDATES = _DETAIL_IMAGES_STATIC_MAX + _DETAIL_IMAGES_GIF_MAX
 _DETAIL_IMAGE_LIMITS = {
@@ -2598,7 +2598,10 @@ def api_detail_images_translate_from_en(pid: int):
         return jsonify({"error": err}), 400
     if lang == "en":
         return jsonify({"error": "english detail images do not need translate-from-en"}), 400
-    mode_raw = (body.get("concurrency_mode") or "sequential").strip().lower()
+    mode_raw = (
+        body.get("concurrency_mode")
+        or task_state.IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+    ).strip().lower()
     if mode_raw not in {"sequential", "parallel"}:
         return jsonify({"error": "concurrency_mode must be sequential or parallel"}), 400
 

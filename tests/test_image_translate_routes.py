@@ -396,11 +396,11 @@ def test_bootstrap_returns_local_upload_urls(authed_client_no_db, monkeypatch):
     assert "uploads/image_translate/1/" in data["uploads"][0]["object_key"]
 
 
-def test_bootstrap_rejects_over_20(authed_client_no_db, monkeypatch):
+def test_bootstrap_rejects_over_1000(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
-    files = [{"filename": f"{i}.jpg", "size": 1, "content_type": "image/jpeg"} for i in range(21)]
+    files = [{"filename": f"{i}.jpg", "size": 1, "content_type": "image/jpeg"} for i in range(1001)]
     resp = authed_client_no_db.post("/api/image-translate/upload/bootstrap",
-                                     json={"count": 21, "files": files})
+                                     json={"count": 1001, "files": files})
     assert resp.status_code == 400
 
 
@@ -1244,7 +1244,7 @@ def _post_complete(client, body_extra=None):
     return client.post("/api/image-translate/upload/complete", json=body)
 
 
-def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch):
+def test_upload_complete_defaults_to_parallel(authed_client_no_db, monkeypatch):
     _patch_tos_and_runner(monkeypatch)
     _patch_lang(monkeypatch)
     mem = _patch_task_state(monkeypatch)
@@ -1252,7 +1252,7 @@ def test_upload_complete_defaults_to_sequential(authed_client_no_db, monkeypatch
     resp = _post_complete(authed_client_no_db)
     assert resp.status_code == 201, resp.get_json()
     task_id = resp.get_json()["task_id"]
-    assert mem[task_id]["concurrency_mode"] == "sequential"
+    assert mem[task_id]["concurrency_mode"] == "parallel"
 
 
 def test_upload_complete_accepts_parallel(authed_client_no_db, monkeypatch):

@@ -1150,14 +1150,14 @@ def _setup_detail_translate(monkeypatch):
     return created
 
 
-def test_detail_translate_defaults_to_sequential(authed_client_no_db, monkeypatch):
+def test_detail_translate_defaults_to_parallel(authed_client_no_db, monkeypatch):
     created = _setup_detail_translate(monkeypatch)
     resp = authed_client_no_db.post(
         "/medias/api/products/1/detail-images/translate-from-en",
         json={"lang": "de"},
     )
     assert resp.status_code == 201, resp.get_json()
-    assert created["concurrency_mode"] == "sequential"
+    assert created["concurrency_mode"] == "parallel"
 
 
 def test_detail_translate_accepts_parallel(authed_client_no_db, monkeypatch):

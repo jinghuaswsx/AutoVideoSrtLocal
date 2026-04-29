@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 _tasks: dict = {}
 _lock = threading.Lock()
 
+IMAGE_TRANSLATE_MAX_ITEMS = 1000
+IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE = "parallel"
+
 AV_TRANSLATE_INPUTS_DEFAULT = {
     "target_language": None,
     "target_language_name": None,
@@ -556,8 +559,10 @@ def create_image_translate(task_id: str, task_dir: str, *,
                             product_name: str = "",
                             project_name: str = "",
                             medias_context: dict | None = None,
-                            concurrency_mode: str = "sequential") -> dict:
+                            concurrency_mode: str = IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE) -> dict:
     """创建图片翻译任务的初始状态。product_name/project_name 作为存档标识写入 state。"""
+    if len(items) > IMAGE_TRANSLATE_MAX_ITEMS:
+        raise ValueError(f"too many image translate items (max {IMAGE_TRANSLATE_MAX_ITEMS})")
     normalized_items = []
     for idx, raw in enumerate(items):
         normalized_items.append({
@@ -601,7 +606,11 @@ def create_image_translate(task_id: str, task_dir: str, *,
         },
         "items": normalized_items,
         "medias_context": dict(medias_context or {}),
-        "concurrency_mode": concurrency_mode if concurrency_mode in {"sequential", "parallel"} else "sequential",
+        "concurrency_mode": (
+            concurrency_mode
+            if concurrency_mode in {"sequential", "parallel"}
+            else IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE
+        ),
         "error": "",
         "_user_id": user_id,
     }

@@ -3520,7 +3520,7 @@
     const group = $('edDetailTranslateModeGroup');
     if (group) {
       group.querySelectorAll('.oc-chip').forEach(ch => {
-        const active = ch.dataset.mode === 'sequential';
+        const active = ch.dataset.mode === 'parallel';
         ch.classList.toggle('on', active);
         ch.setAttribute('aria-checked', active ? 'true' : 'false');
       });
@@ -3550,7 +3550,7 @@
     const langName = langDisplayName(lang);
     const group = $('edDetailTranslateModeGroup');
     const active = group ? group.querySelector('.oc-chip.on') : null;
-    const mode = active ? active.dataset.mode : 'sequential';
+    const mode = active ? active.dataset.mode : 'parallel';
 
     const config = $('edDetailTranslateTaskConfig');
     const result = $('edDetailTranslateTaskResult');
