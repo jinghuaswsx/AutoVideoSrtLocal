@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import order_analytics as oa
+from appcore import scheduled_tasks
 from appcore.db import execute, query, query_one
 
 TIMEZONE = "Asia/Shanghai"
@@ -822,11 +823,25 @@ def run_sync(
         business_window_start = _meta_business_window_start(business_date)
         summary["meta_business_date"] = business_date
         summary["meta_business_window_start_at"] = business_window_start
-        if not skip_dxm_fetch:
+        if not scheduled_tasks.is_task_enabled("dianxiaomi_order_import"):
+            summary["dxm_report"] = {
+                "status": "skipped",
+                "reason": "scheduled task disabled",
+                "task_code": "dianxiaomi_order_import",
+            }
+        elif not skip_dxm_fetch:
             dxm_report = _run_dxm_recent_import(business_window_start, snapshot_at, max_scan_pages=max_scan_pages)
             summary["dxm_import_batch_id"] = dxm_report.get("batch_id")
             summary["dxm_report"] = dxm_report
-        if skip_meta_fetch:
+        if not scheduled_tasks.is_task_enabled("meta_realtime_import"):
+            summary["meta_realtime_report"] = {
+                "business_date": business_date,
+                "snapshot_at": snapshot_at,
+                "status": "skipped",
+                "reason": "scheduled task disabled",
+                "task_code": "meta_realtime_import",
+            }
+        elif skip_meta_fetch:
             summary["meta_realtime_report"] = {
                 "business_date": business_date,
                 "snapshot_at": snapshot_at,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from appcore import material_evaluation
+from appcore import material_evaluation, scheduled_tasks
 
 logger = logging.getLogger(__name__)
 MATERIAL_EVALUATION_BATCH_LIMIT = 10
@@ -18,7 +18,9 @@ def tick_once(limit: int = MATERIAL_EVALUATION_BATCH_LIMIT) -> None:
 
 
 def register(scheduler) -> None:
-    scheduler.add_job(
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        "material_evaluation_tick",
         tick_once,
         "interval",
         minutes=5,

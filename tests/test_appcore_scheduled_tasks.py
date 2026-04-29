@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 
 def test_latest_failure_alert_only_returns_failed_latest_run(monkeypatch):
     from appcore import scheduled_tasks
@@ -240,3 +242,122 @@ def test_list_runs_supports_meta_realtime_import_runs(monkeypatch):
     assert runs[0]["task_name"] == "Meta 实时广告导入"
     assert runs[0]["summary"]["business_date"] == "2026-04-29"
     assert runs[0]["summary"]["rows_imported"] == 0
+
+
+def test_management_tasks_adds_control_state_from_control_table(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params=()):
+        if "scheduled_task_controls" in sql:
+            return [
+                {
+                    "task_code": "product_cover_backfill_tick",
+                    "enabled": 0,
+                    "last_action_status": "success",
+                    "last_action_message": "paused",
+                    "updated_by": "admin",
+                    "updated_at": datetime(2026, 4, 29, 21, 0),
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    tasks = {item["code"]: item for item in scheduled_tasks.management_tasks()}
+
+    assert tasks["product_cover_backfill_tick"]["control_state"] == "disabled"
+    assert tasks["product_cover_backfill_tick"]["control_label"] == "已停用"
+    assert tasks["product_cover_backfill_tick"]["control_supported"] is True
+    assert tasks["shopifyid"]["control_state"] == "enabled"
+    assert tasks["tts_convergence_stats"]["control_state"] == "enabled"
+    assert tasks["tts_convergence_stats"]["control_supported"] is False
+
+
+def test_set_task_enabled_runs_systemctl_for_systemd_timer(monkeypatch):
+    from appcore import scheduled_tasks
+
+    commands = []
+    writes = []
+
+    def fake_run_command(command):
+        commands.append(command)
+        return {"ok": True, "message": "ok", "command": " ".join(command)}
+
+    monkeypatch.setattr(scheduled_tasks, "_run_control_command", fake_run_command)
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda sql, params=(): writes.append((sql, params)) or 1)
+
+    result = scheduled_tasks.set_task_enabled("shopifyid", False, actor="admin")
+
+    assert result["control_state"] == "disabled"
+    assert commands == [["systemctl", "disable", "--now", "autovideosrt-shopifyid-sync.timer"]]
+    assert any(params[0] == "shopifyid" and params[1] == 0 for _, params in writes if params)
+
+
+def test_set_task_enabled_writes_guarded_subtask_without_external_command(monkeypatch):
+    from appcore import scheduled_tasks
+
+    writes = []
+
+    def fail_run_command(command):
+        raise AssertionError(f"guarded task should not run external command: {command}")
+
+    monkeypatch.setattr(scheduled_tasks, "_run_control_command", fail_run_command)
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda sql, params=(): writes.append((sql, params)) or 1)
+
+    result = scheduled_tasks.set_task_enabled("dianxiaomi_order_import", False, actor="admin")
+
+    assert result["control_state"] == "disabled"
+    assert result["last_action_status"] == "success"
+    assert "控制开关已写入" in result["last_action_message"]
+    assert any(params[0] == "dianxiaomi_order_import" and params[1] == 0 for _, params in writes if params)
+
+
+def test_set_task_enabled_runs_schtasks_for_windows_task(monkeypatch):
+    from appcore import scheduled_tasks
+
+    commands = []
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_run_control_command",
+        lambda command: commands.append(command) or {"ok": True, "message": "ok"},
+    )
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *args, **kwargs: 1)
+
+    result = scheduled_tasks.set_task_enabled("shopifyid_windows_daily", False, actor="admin")
+
+    assert result["control_state"] == "disabled"
+    assert commands == [
+        [
+            "schtasks",
+            "/Change",
+            "/TN",
+            "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily",
+            "/DISABLE",
+        ]
+    ]
+
+
+def test_set_task_enabled_rejects_readonly_cron_task(monkeypatch):
+    from appcore import scheduled_tasks
+
+    monkeypatch.setattr(scheduled_tasks, "execute", lambda *args, **kwargs: 1)
+
+    with pytest.raises(ValueError, match="不支持"):
+        scheduled_tasks.set_task_enabled("tts_convergence_stats", False, actor="admin")
+
+
+def test_run_if_enabled_skips_disabled_task(monkeypatch):
+    from appcore import scheduled_tasks
+
+    monkeypatch.setattr(scheduled_tasks, "is_task_enabled", lambda task_code: False)
+
+    def should_not_run():
+        raise AssertionError("disabled task should be skipped")
+
+    assert scheduled_tasks.run_if_enabled("product_cover_backfill_tick", should_not_run) == {
+        "skipped": True,
+        "reason": "scheduled task disabled",
+        "task_code": "product_cover_backfill_tick",
+    }

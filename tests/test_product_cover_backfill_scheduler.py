@@ -11,7 +11,7 @@ def test_product_cover_backfill_scheduler_registers_ten_minute_job():
 
     assert len(calls) == 1
     func, trigger, kwargs = calls[0]
-    assert func is product_cover_backfill_scheduler.tick_once
+    assert getattr(func, "__wrapped__", None) is product_cover_backfill_scheduler.tick_once
     assert trigger == "interval"
     assert kwargs["minutes"] == 10
     assert kwargs["id"] == "product_cover_backfill_tick"

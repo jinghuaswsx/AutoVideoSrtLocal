@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import subprocess
 from datetime import datetime
+from functools import wraps
 from typing import Any
 
 from appcore.db import execute, query
@@ -217,6 +220,27 @@ CREATE TABLE IF NOT EXISTS scheduled_task_runs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
+_CONTROL_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS scheduled_task_controls (
+  task_code VARCHAR(64) NOT NULL PRIMARY KEY,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  last_action_status VARCHAR(32) NULL,
+  last_action_message MEDIUMTEXT NULL,
+  updated_by VARCHAR(120) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+CONTROL_LABELS = {
+    "enabled": "启用中",
+    "disabled": "已停用",
+    "deprecated": "已废弃",
+    "readonly": "只读登记",
+    "unknown": "未知",
+}
+
+CONTROLLABLE_STRATEGIES = {"apscheduler", "systemd", "windows", "guard"}
+
 
 def task_definitions() -> list[TaskDefinition]:
     return [dict(item) for item in TASK_DEFINITIONS.values()]
@@ -235,7 +259,8 @@ def log_filter_definitions() -> list[TaskDefinition]:
 
 
 def management_tasks() -> list[TaskDefinition]:
-    return task_definitions()
+    controls = _control_rows_by_code()
+    return [_with_control_state(item, controls.get(item["code"])) for item in task_definitions()]
 
 
 def get_task_definition(task_code: str) -> TaskDefinition:
@@ -262,6 +287,285 @@ def is_known_task(task_code: str) -> bool:
 
 def ensure_runs_table() -> None:
     execute(_RUNS_TABLE_SQL)
+
+
+def ensure_control_table() -> None:
+    execute(_CONTROL_TABLE_SQL)
+
+
+def _is_truthy(value: Any, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return str(value).strip().lower() not in {"", "0", "false", "no", "off", "disabled"}
+
+
+def _control_strategy(task: TaskDefinition) -> str:
+    explicit = str(task.get("control_strategy") or "").strip()
+    if explicit:
+        return explicit
+    source_type = str(task.get("source_type") or "").strip().lower()
+    if source_type in {"apscheduler", "systemd", "windows"}:
+        return source_type
+    if source_type in {"subtask", "in_process"}:
+        return "guard"
+    return "readonly"
+
+
+def _is_deprecated(task: TaskDefinition) -> bool:
+    return str(task.get("lifecycle") or "active").strip().lower() == "deprecated"
+
+
+def _is_control_supported(task: TaskDefinition) -> bool:
+    return (not _is_deprecated(task)) and _control_strategy(task) in CONTROLLABLE_STRATEGIES
+
+
+def _default_enabled(task: TaskDefinition) -> bool:
+    if _is_deprecated(task):
+        return False
+    return _is_truthy(task.get("default_enabled"), default=True)
+
+
+def _control_rows_by_code() -> dict[str, dict[str, Any]]:
+    try:
+        ensure_control_table()
+        rows = query(
+            "SELECT task_code, enabled, last_action_status, last_action_message, "
+            "updated_by, updated_at FROM scheduled_task_controls"
+        )
+    except Exception:
+        log.warning("failed to load scheduled task controls", exc_info=True)
+        return {}
+    return {str(row.get("task_code") or ""): row for row in rows if row.get("task_code")}
+
+
+def _control_row(task_code: str) -> dict[str, Any] | None:
+    try:
+        ensure_control_table()
+        rows = query(
+            "SELECT task_code, enabled, last_action_status, last_action_message, "
+            "updated_by, updated_at FROM scheduled_task_controls WHERE task_code=%s",
+            (task_code,),
+        )
+    except Exception:
+        log.warning("failed to load scheduled task control task_code=%s", task_code, exc_info=True)
+        return None
+    return rows[0] if rows else None
+
+
+def _with_control_state(task: TaskDefinition, control: dict[str, Any] | None = None) -> TaskDefinition:
+    item = dict(task)
+    strategy = _control_strategy(item)
+    supported = _is_control_supported(item)
+    enabled = _is_truthy((control or {}).get("enabled"), default=_default_enabled(item))
+    if _is_deprecated(item):
+        state = "deprecated"
+        enabled = False
+    elif enabled:
+        state = "enabled"
+    else:
+        state = "disabled"
+    item.update({
+        "control_strategy": strategy,
+        "control_supported": supported,
+        "control_enabled": enabled,
+        "control_state": state,
+        "control_label": CONTROL_LABELS.get(state, CONTROL_LABELS["unknown"]),
+        "control_class": state,
+        "control_action": "disable" if enabled else "enable",
+        "control_action_label": "停用" if enabled else "启用",
+        "last_action_status": (control or {}).get("last_action_status") or "",
+        "last_action_message": (control or {}).get("last_action_message") or "",
+        "updated_by": (control or {}).get("updated_by") or "",
+        "control_updated_at": (control or {}).get("updated_at"),
+    })
+    return item
+
+
+def is_task_enabled(task_code: str) -> bool:
+    task = TASK_DEFINITIONS.get((task_code or "").strip())
+    if not task:
+        return False
+    row = _control_row(task["code"])
+    return bool(_with_control_state(task, row).get("control_enabled"))
+
+
+def _record_control_state(
+    task_code: str,
+    *,
+    enabled: bool,
+    action_status: str,
+    message: str,
+    actor: str | None = None,
+) -> None:
+    ensure_control_table()
+    execute(
+        "INSERT INTO scheduled_task_controls "
+        "(task_code, enabled, last_action_status, last_action_message, updated_by) "
+        "VALUES (%s, %s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE enabled=VALUES(enabled), "
+        "last_action_status=VALUES(last_action_status), "
+        "last_action_message=VALUES(last_action_message), "
+        "updated_by=VALUES(updated_by)",
+        (task_code, 1 if enabled else 0, action_status, message, actor),
+    )
+
+
+def _run_control_command(command: list[str]) -> dict[str, Any]:
+    if not command or not shutil.which(command[0]):
+        return {
+            "ok": False,
+            "message": f"控制命令不可用：{command[0] if command else '-'}",
+            "command": " ".join(command),
+        }
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    output = (completed.stdout or completed.stderr or "").strip()
+    return {
+        "ok": completed.returncode == 0,
+        "message": output or f"exit_code={completed.returncode}",
+        "command": " ".join(command),
+    }
+
+
+def _systemd_units(task: TaskDefinition) -> list[str]:
+    raw = str(task.get("source_ref") or "")
+    parts = raw.replace(",", "/").split("/")
+    units = [part.strip() for part in parts if part.strip().endswith((".timer", ".service"))]
+    return units or ([raw.strip()] if raw.strip() else [])
+
+
+def _apply_apscheduler_job_state(task_code: str, enabled: bool) -> dict[str, Any]:
+    try:
+        from appcore import scheduler as scheduler_module
+        scheduler = scheduler_module.current_scheduler()
+    except Exception:
+        scheduler = None
+    if scheduler is None:
+        return {"ok": True, "message": "控制开关已记录，Web 调度器启动后会应用。"}
+    try:
+        job = scheduler.get_job(task_code)
+        if not job:
+            return {"ok": True, "message": "控制开关已记录，当前进程未找到该 APScheduler job。"}
+        if enabled:
+            scheduler.resume_job(task_code)
+        else:
+            scheduler.pause_job(task_code)
+    except Exception as exc:
+        return {"ok": False, "message": f"APScheduler 控制失败：{exc}"}
+    return {"ok": True, "message": "APScheduler job 状态已更新。"}
+
+
+def _apply_control_strategy(task: TaskDefinition, enabled: bool) -> dict[str, Any]:
+    strategy = _control_strategy(task)
+    if strategy == "guard":
+        return {"ok": True, "message": "控制开关已写入；对应任务入口会在下一轮读取该状态。"}
+    if strategy == "apscheduler":
+        return _apply_apscheduler_job_state(task["code"], enabled)
+    if strategy == "systemd":
+        units = _systemd_units(task)
+        if not units:
+            return {"ok": False, "message": "未登记 systemd unit。"}
+        action = "enable" if enabled else "disable"
+        return _run_control_command(["systemctl", action, "--now", *units])
+    if strategy == "windows":
+        task_name = str(task.get("source_ref") or "").strip()
+        if not task_name:
+            return {"ok": False, "message": "未登记 Windows 计划任务名称。"}
+        action = "/ENABLE" if enabled else "/DISABLE"
+        return _run_control_command(["schtasks", "/Change", "/TN", task_name, action])
+    return {"ok": False, "message": "该任务来源暂不支持从 Web 后台直接启停。"}
+
+
+def set_task_enabled(task_code: str, enabled: bool, *, actor: str | None = None) -> TaskDefinition:
+    code = (task_code or "").strip()
+    task = TASK_DEFINITIONS.get(code)
+    if not task:
+        raise ValueError("未知定时任务")
+    if not _is_control_supported(task):
+        raise ValueError(f"{task['name']} 不支持从 Web 后台直接启停")
+    result = _apply_control_strategy(task, bool(enabled))
+    if not result.get("ok"):
+        current_enabled = is_task_enabled(code)
+        _record_control_state(
+            code,
+            enabled=current_enabled,
+            action_status="failed",
+            message=str(result.get("message") or "控制失败"),
+            actor=actor,
+        )
+        raise RuntimeError(str(result.get("message") or "控制失败"))
+    _record_control_state(
+        code,
+        enabled=bool(enabled),
+        action_status="success",
+        message=str(result.get("message") or "控制成功"),
+        actor=actor,
+    )
+    return _with_control_state(
+        task,
+        {
+            "task_code": code,
+            "enabled": 1 if enabled else 0,
+            "last_action_status": "success",
+            "last_action_message": str(result.get("message") or "控制成功"),
+            "updated_by": actor,
+            "updated_at": datetime.now(),
+        },
+    )
+
+
+def sync_scheduler_job_state(scheduler: Any, task_code: str) -> None:
+    task = TASK_DEFINITIONS.get(task_code)
+    if not task or _control_strategy(task) != "apscheduler":
+        return
+    if not all(hasattr(scheduler, name) for name in ("get_job", "pause_job", "resume_job")):
+        return
+    try:
+        if is_task_enabled(task_code):
+            scheduler.resume_job(task_code)
+        else:
+            scheduler.pause_job(task_code)
+    except Exception:
+        log.warning("failed to sync apscheduler job state task_code=%s", task_code, exc_info=True)
+
+
+def apply_scheduler_controls(scheduler: Any) -> None:
+    for task in TASK_DEFINITIONS.values():
+        if _control_strategy(task) == "apscheduler":
+            sync_scheduler_job_state(scheduler, task["code"])
+
+
+def run_if_enabled(task_code: str, func, *args, **kwargs):
+    if not is_task_enabled(task_code):
+        log.info("scheduled task skipped because it is disabled: %s", task_code)
+        return {
+            "skipped": True,
+            "reason": "scheduled task disabled",
+            "task_code": task_code,
+        }
+    return func(*args, **kwargs)
+
+
+def add_controlled_job(scheduler: Any, task_code: str, func, trigger: str, **kwargs):
+    @wraps(func)
+    def _controlled_job():
+        return run_if_enabled(task_code, func)
+
+    kwargs.setdefault("id", task_code)
+    job = scheduler.add_job(_controlled_job, trigger, **kwargs)
+    sync_scheduler_job_state(scheduler, task_code)
+    return job
 
 
 def _json_default(value: Any) -> str:

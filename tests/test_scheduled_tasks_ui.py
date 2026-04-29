@@ -39,6 +39,11 @@ def test_scheduled_tasks_page_has_log_and_management_capsules():
     assert "日志" in source
     assert "item.source_label" in source
     assert "item.name" in source
+    assert "scheduled-control-pill" in source
+    assert "scheduled-action-pill" in source
+    assert "control_supported" in source
+    assert "csrf_token()" in source
+    assert "max-width:none" in source
 
 
 def test_scheduled_tasks_route_uses_view_and_task_filters():
@@ -48,3 +53,5 @@ def test_scheduled_tasks_route_uses_view_and_task_filters():
     assert 'request.args.get("task")' in source
     assert "log_filter_definitions" in source
     assert "management_tasks" in source
+    assert '@bp.post("/<task_code>/control")' in source
+    assert "set_task_enabled" in source

@@ -11,7 +11,7 @@ def test_material_evaluation_scheduler_registers_interval_job():
 
     assert len(calls) == 1
     func, trigger, kwargs = calls[0]
-    assert func is material_evaluation_scheduler.tick_once
+    assert getattr(func, "__wrapped__", None) is material_evaluation_scheduler.tick_once
     assert trigger == "interval"
     assert kwargs["minutes"] == 5
     assert kwargs["id"] == "material_evaluation_tick"

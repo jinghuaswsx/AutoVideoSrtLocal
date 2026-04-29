@@ -9,9 +9,11 @@ def test_tos_backup_job_registers_daily_two_am_cron():
 
     tos_backup_job.register(FakeScheduler())
 
+    func = calls[0][0][0]
+    assert getattr(func, "__wrapped__", None) is tos_backup_job.run_scheduled_backup
     assert calls == [
         (
-            (tos_backup_job.run_scheduled_backup, "cron"),
+            (func, "cron"),
             {
                 "hour": 2,
                 "minute": 0,

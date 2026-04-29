@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import config
-from appcore import tos_backup_references, tos_backup_storage
+from appcore import scheduled_tasks, tos_backup_references, tos_backup_storage
 from appcore.db import execute
 
 
@@ -235,7 +235,9 @@ def run_scheduled_backup(*, scheduled_for: datetime | None = None) -> dict[str, 
 
 
 def register(scheduler) -> None:
-    scheduler.add_job(
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        TASK_CODE,
         run_scheduled_backup,
         "cron",
         hour=2,

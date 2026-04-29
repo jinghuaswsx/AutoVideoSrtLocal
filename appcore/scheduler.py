@@ -7,8 +7,9 @@ def get_scheduler() -> BackgroundScheduler:
     global _scheduler
     if _scheduler is None:
         _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+        from appcore import scheduled_tasks
         from appcore.cleanup import run_cleanup
-        _scheduler.add_job(run_cleanup, "interval", hours=1, id="cleanup")
+        scheduled_tasks.add_controlled_job(_scheduler, "cleanup", run_cleanup, "interval", hours=1, id="cleanup")
         from appcore import subtitle_removal_vod_scheduler
         subtitle_removal_vod_scheduler.register(_scheduler)
         from appcore import material_evaluation_scheduler
@@ -17,4 +18,9 @@ def get_scheduler() -> BackgroundScheduler:
         product_cover_backfill_scheduler.register(_scheduler)
         from appcore import tos_backup_job
         tos_backup_job.register(_scheduler)
+        scheduled_tasks.apply_scheduler_controls(_scheduler)
+    return _scheduler
+
+
+def current_scheduler() -> BackgroundScheduler | None:
     return _scheduler

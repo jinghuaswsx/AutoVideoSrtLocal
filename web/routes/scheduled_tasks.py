@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import scheduled_tasks
@@ -50,3 +50,24 @@ def page():
         latest_run=latest_run,
         runs=runs,
     )
+
+
+@bp.post("/<task_code>/control")
+@login_required
+def control(task_code: str):
+    if not _is_admin_single_user():
+        abort(403)
+    action = (request.form.get("action") or "").strip().lower()
+    if action not in {"enable", "disable"}:
+        abort(400)
+    enabled = action == "enable"
+    try:
+        task = scheduled_tasks.set_task_enabled(
+            task_code,
+            enabled,
+            actor=getattr(current_user, "username", "") or None,
+        )
+        flash(f"{task['name']} 已{'启用' if enabled else '停用'}")
+    except Exception as exc:
+        flash(f"定时任务控制失败：{exc}")
+    return redirect(url_for("scheduled_tasks.page", view="management"))

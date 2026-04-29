@@ -85,10 +85,12 @@ def _cleanup_expired() -> None:
 
 
 def _cleanup_loop() -> None:
+    from appcore import scheduled_tasks
+
     while True:
         time.sleep(_CLEANUP_INTERVAL)
         try:
-            _cleanup_expired()
+            scheduled_tasks.run_if_enabled("medias_detail_fetch_cleanup", _cleanup_expired)
         except Exception:
             log.warning("medias_detail_fetch TTL cleanup failed", exc_info=True)
 

@@ -13,7 +13,7 @@ import json
 import logging
 from datetime import datetime
 
-from appcore import task_state
+from appcore import scheduled_tasks, task_state
 from appcore.db import query as db_query
 from appcore.vod_erase_provider import (
     VodEraseError,
@@ -163,7 +163,9 @@ def tick_once() -> None:
 
 def register(scheduler) -> None:
     """注册到 APScheduler，每 60 秒执行一次。"""
-    scheduler.add_job(
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        "subtitle_removal_vod_tick",
         tick_once,
         "interval",
         seconds=60,

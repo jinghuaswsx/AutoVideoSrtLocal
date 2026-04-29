@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from appcore import product_cover_backfill
+from appcore import product_cover_backfill, scheduled_tasks
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +17,9 @@ def tick_once() -> None:
 
 
 def register(scheduler) -> None:
-    scheduler.add_job(
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        "product_cover_backfill_tick",
         tick_once,
         "interval",
         minutes=10,
