@@ -490,9 +490,11 @@
 <div class="oa-tabs">
   <button class="oa-tab active" data-tab="realtime">实时大盘</button>
   <button class="oa-tab" data-tab="dashboard">产品看板</button>
+  <button class="oa-tab" data-tab="countryDashboard">国家看板</button>
   <button class="oa-tab" data-tab="trueRoas">真实 ROAS</button>
-  <button class="oa-tab" data-tab="import">订单导入</button>
-  <button class="oa-tab" data-tab="analytics">订单分析</button>
+  <button class="oa-tab" data-tab="import">Shopify 订单导入</button>
+  <button class="oa-tab" data-tab="analytics">Shopify 订单分析</button>
+  <button class="oa-tab" data-tab="dxmOrders">订单分析</button>
   <button class="oa-tab" data-tab="ads">广告分析</button>
 </div>
 
@@ -1020,6 +1022,34 @@
 </script>
 </section>
 
+<section class="oa-panel" id="panelCountryDashboard">
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <div class="oad-segmented" role="tablist" aria-label="国家看板时间粒度">
+        <button class="oad-seg is-active" data-country-period="month">月</button>
+        <button class="oad-seg" data-country-period="week">周</button>
+        <button class="oad-seg" data-country-period="day">日</button>
+      </div>
+      <div class="oad-datepicker">
+        <div data-country-period-input="month">
+          <select id="countryYear"></select>
+          <select id="countryMonth"></select>
+        </div>
+        <div data-country-period-input="week" hidden>
+          <select id="countryWeekYear"></select>
+          <select id="countryWeek"></select>
+        </div>
+        <div data-country-period-input="day" hidden>
+          <input type="date" id="countryDate">
+        </div>
+      </div>
+      <button type="button" class="oad-btn-primary" id="countryRefresh">刷新</button>
+    </div>
+  </div>
+  <div id="countrySummary"></div>
+  <div id="countryTable"></div>
+</section>
+
 <!-- Tab: 真实 ROAS -->
 <div class="oa-panel" id="panelTrueRoas">
   <div class="oa-controls">
@@ -1218,6 +1248,64 @@
   </div>
 </div>
 
+<div class="oa-panel" id="panelDxmOrders">
+  <div class="oar-time-rule">
+    <div>
+      <strong>日期口径：广告系统日</strong>
+      <div class="oar-note">按店小秘订单的 meta_business_date 统计，与真实 ROAS 对齐。</div>
+    </div>
+    <span id="dxmOrderRangeLabel">本月</span>
+  </div>
+
+  <div class="oa-controls">
+    <label>开始日期：</label>
+    <input type="date" id="dxmStartDate">
+    <label>结束日期：</label>
+    <input type="date" id="dxmEndDate">
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="today">今天</button>
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="yesterday">昨天</button>
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisWeek">本周</button>
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastWeek">上周</button>
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="thisMonth">本月</button>
+    <button type="button" class="btn btn-default btn-sm" data-dxm-range="lastMonth">上月</button>
+    <button type="button" class="btn btn-primary btn-sm" id="dxmOrderRefresh">查询</button>
+  </div>
+
+  <div class="oa-stats" id="dxmOrderSummary"></div>
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">店小秘订单明细</div>
+      <div class="oar-note" id="dxmOrderPageInfo">第 1 页</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table oar-compact-table">
+        <thead>
+          <tr>
+            <th>订单时间</th>
+            <th>广告系统日</th>
+            <th>店铺</th>
+            <th>订单号</th>
+            <th>包裹号</th>
+            <th>国家</th>
+            <th>商品</th>
+            <th>SKU</th>
+            <th>件数</th>
+            <th>商品净销售额</th>
+            <th>运费</th>
+            <th>总销售额</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody id="dxmOrderBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="oa-actions">
+    <button type="button" class="btn btn-default btn-sm" id="dxmPrevPage">上一页</button>
+    <button type="button" class="btn btn-default btn-sm" id="dxmNextPage">下一页</button>
+  </div>
+</div>
+
 <!-- 查看素材详情弹窗 -->
 <div class="oam-modal-overlay" id="oamProductDetailModal" hidden>
   <div class="oam-modal-card" role="dialog" aria-labelledby="oamModalTitle">
@@ -1337,11 +1425,17 @@
         loadTrueRoas();
       } else if (tab.dataset.tab === 'realtime') {
         loadRealtimeOverview();
+      } else if (tab.dataset.tab === 'countryDashboard') {
+        initCountryDashboard();
+      } else if (tab.dataset.tab === 'dxmOrders') {
+        initDxmOrders();
       }
     });
   });
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function initCountryDashboard() {}
+  function initDxmOrders() {}
 
   window.switchToAnalytics = function() {
     tabs.forEach(function(t) { t.classList.remove('active'); });
