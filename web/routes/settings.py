@@ -204,6 +204,11 @@ def index():
         "push_localized_texts_cookie_present": bool(
             _pushes_mod.get_localized_texts_cookie()
         ),
+        "push_product_links_base_url": _pushes_mod.get_product_links_base_url(),
+        "push_product_links_username": _pushes_mod.get_product_links_username(),
+        "push_product_links_password_present": bool(
+            _pushes_mod.get_product_links_password()
+        ),
     }
 
     try:
@@ -377,6 +382,9 @@ def _handle_push_post() -> None:
         "push_localized_texts_base_url",
         "push_localized_texts_authorization",
         "push_localized_texts_cookie",
+        "push_product_links_base_url",
+        "push_product_links_username",
+        "push_product_links_password",
     )
     clear_keys = set((request.form.getlist("clear") or []))
     for key in field_keys:

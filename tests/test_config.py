@@ -75,11 +75,21 @@ def test_subtitle_removal_runtime_settings_defaults(monkeypatch):
 
 
 def test_push_management_config_defaults(monkeypatch):
-    for k in ["PUSH_TARGET_URL", "AD_URL_TEMPLATE", "AD_URL_PROBE_TIMEOUT"]:
+    for k in [
+        "PUSH_TARGET_URL",
+        "PUSH_PRODUCT_LINKS_BASE_URL",
+        "PUSH_PRODUCT_LINKS_USERNAME",
+        "PUSH_PRODUCT_LINKS_PASSWORD",
+        "AD_URL_TEMPLATE",
+        "AD_URL_PROBE_TIMEOUT",
+    ]:
         monkeypatch.delenv(k, raising=False)
     import config as cfg
     importlib.reload(cfg)
     assert cfg.PUSH_TARGET_URL == ""
+    assert cfg.PUSH_PRODUCT_LINKS_BASE_URL == "https://os.wedev.vip"
+    assert cfg.PUSH_PRODUCT_LINKS_USERNAME == "蔡靖华"
+    assert cfg.PUSH_PRODUCT_LINKS_PASSWORD == ""
     assert "{lang}" in cfg.AD_URL_TEMPLATE
     assert "{product_code}" in cfg.AD_URL_TEMPLATE
     assert cfg.AD_URL_PROBE_TIMEOUT == 5
@@ -87,10 +97,16 @@ def test_push_management_config_defaults(monkeypatch):
 
 def test_push_management_config_override(monkeypatch):
     monkeypatch.setenv("PUSH_TARGET_URL", "http://10.0.0.1/api/push")
+    monkeypatch.setenv("PUSH_PRODUCT_LINKS_BASE_URL", "https://links.example")
+    monkeypatch.setenv("PUSH_PRODUCT_LINKS_USERNAME", "user-a")
+    monkeypatch.setenv("PUSH_PRODUCT_LINKS_PASSWORD", "secret")
     monkeypatch.setenv("AD_URL_TEMPLATE", "https://x.com/{lang}/{product_code}")
     monkeypatch.setenv("AD_URL_PROBE_TIMEOUT", "8")
     import config as cfg
     importlib.reload(cfg)
     assert cfg.PUSH_TARGET_URL == "http://10.0.0.1/api/push"
+    assert cfg.PUSH_PRODUCT_LINKS_BASE_URL == "https://links.example"
+    assert cfg.PUSH_PRODUCT_LINKS_USERNAME == "user-a"
+    assert cfg.PUSH_PRODUCT_LINKS_PASSWORD == "secret"
     assert cfg.AD_URL_TEMPLATE == "https://x.com/{lang}/{product_code}"
     assert cfg.AD_URL_PROBE_TIMEOUT == 8

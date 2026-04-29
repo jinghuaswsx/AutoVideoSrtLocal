@@ -1793,6 +1793,76 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   border-color:var(--oc-accent);
   box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
+.oc-product-links-modal { width:min(980px, calc(100vw - 48px)); }
+.oc-product-links-meta {
+  margin:4px 0 0;
+  color:var(--oc-fg-muted);
+  font-size:13px;
+}
+.oc-product-links-grid {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+  gap:var(--oc-sp-5);
+}
+.oc-product-links-panel { min-width:0; }
+.oc-product-links-panel h4 {
+  margin:0 0 var(--oc-sp-3);
+  font-size:13px;
+  color:var(--oc-fg);
+}
+.oc-pl-list { display:flex; flex-direction:column; gap:var(--oc-sp-2); }
+.oc-pl-row {
+  padding:var(--oc-sp-3);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+}
+.oc-pl-lang {
+  margin-bottom:4px;
+  color:var(--oc-accent);
+  font-size:12px;
+  font-weight:700;
+}
+.oc-pl-url {
+  display:block;
+  color:var(--oc-fg);
+  font-family:var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size:12px;
+  word-break:break-all;
+  text-decoration:none;
+}
+.oc-pl-url:hover { color:var(--oc-accent); text-decoration:underline; }
+.oc-pl-json {
+  min-height:260px;
+  max-height:420px;
+  overflow:auto;
+  margin:0;
+  padding:var(--oc-sp-3);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg);
+  font-family:var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size:12px;
+  line-height:1.55;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.oc-pl-empty {
+  padding:var(--oc-sp-4);
+  border:1px dashed var(--oc-border-strong);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg-muted);
+  font-size:13px;
+}
+.oc-pl-empty.danger,
+.oc-pl-json.danger {
+  background:var(--oc-danger-bg);
+  color:var(--oc-danger-fg);
+}
+.oc-pl-response { margin-top:var(--oc-sp-4); }
+.product-links-push-cell { text-align:center; }
 @media (max-width: 760px) {
   .oc-roas-layout,
   .oc-roas-product,
@@ -1807,6 +1877,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-roas-tk-column .oc-roas-section { flex:none; overflow:visible; }
   .oc-roas-avg-input { min-height:160px; }
   #roasModalMask { inset:0; }
+  .oc-product-links-grid { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -1908,6 +1979,39 @@ window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojs
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
+<div id="productLinksPushModalMask" class="oc-modal-mask oc" hidden>
+  <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="productLinksPushTitle">
+    <div class="oc-modal-head">
+      <div>
+        <h3 id="productLinksPushTitle">推送产品链接</h3>
+        <p id="productLinksPushMeta" class="oc-product-links-meta">—</p>
+      </div>
+      <button type="button" id="productLinksPushClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body">
+      <div class="oc-product-links-grid">
+        <section class="oc-product-links-panel">
+          <h4>投放链接</h4>
+          <div id="productLinksPushList"></div>
+        </section>
+        <section class="oc-product-links-panel">
+          <h4>产品链接 JSON 预览</h4>
+          <pre id="productLinksPushJson" class="oc-pl-json"></pre>
+        </section>
+      </div>
+      <section id="productLinksPushResponse" class="oc-pl-response" hidden>
+        <h4>推送响应</h4>
+        <pre id="productLinksPushResponseBody" class="oc-pl-json"></pre>
+      </section>
+    </div>
+    <div class="oc-modal-foot">
+      <button type="button" id="productLinksPushCancel" class="oc-btn ghost">关闭</button>
+      <button type="button" id="productLinksPushSubmit" class="oc-btn primary">推送</button>
+    </div>
+  </div>
+</div>
 <div id="roasModalMask" class="oc-modal-mask oc" hidden>
   <div class="oc-modal oc-roas-modal" role="dialog" aria-modal="true" aria-labelledby="roasModalTitle">
     <div class="oc-modal-head">
