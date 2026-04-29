@@ -1032,9 +1032,23 @@ def test_pushes_assets_include_quality_check_panel():
     style = Path("web/static/pushes.css").read_text(encoding="utf-8")
 
     assert "renderQualityCheckPanel" in script
+    assert "renderQualitySidePanel" in script
+    assert "qualityScoreMeta" in script
+    assert "优质" in script
+    assert "中等" in script
+    assert "质量差" in script
+    assert "pm-quality-side" in script
+    assert "pm-quality-copy-preview" in script
+    assert "pm-quality-cover-preview" in script
+    assert "pm-quality-video-preview" in script
     assert "quality-check/retry" in script
     assert "重新评估" in script
-    assert ".pm-quality-grid" in style
+    assert ".pm-shell" in style
+    assert ".pm-main" in style
+    assert ".pm-quality-side" in style
+    assert ".pm-quality-detail-block" in style
+    assert "width: 80vw" in style
+    assert "height: 80vh" in style
 
 
 # ================================================================

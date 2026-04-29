@@ -530,19 +530,19 @@
     return root;
   }
 
-  function qualityStatusMeta(status) {
+  function qualityScoreMeta(status) {
     const value = String(status || '').toLowerCase();
-    if (value === 'passed') return { text: '通过', cls: 'passed' };
-    if (value === 'warning') return { text: '风险', cls: 'warning' };
-    if (value === 'failed') return { text: '失败', cls: 'failed' };
-    if (value === 'error') return { text: '异常', cls: 'error' };
-    if (value === 'running') return { text: '检查中', cls: 'running' };
-    return { text: '待检查', cls: 'pending' };
+    if (value === 'passed') return { text: '优质 (9.0)', cls: 'excellent', score: 9 };
+    if (value === 'warning') return { text: '中等 (6.5)', cls: 'medium', score: 6.5 };
+    if (value === 'failed') return { text: '质量差 (3.0)', cls: 'poor', score: 3 };
+    if (value === 'error') return { text: '质量差 (2.0)', cls: 'poor', score: 2 };
+    if (value === 'running') return { text: '评估中', cls: 'running', score: null };
+    return { text: '待评估', cls: 'pending', score: null };
   }
 
   function renderQualityResultCard(label, result) {
     const data = result || {};
-    const meta = qualityStatusMeta(data.status);
+    const meta = qualityScoreMeta(data.status);
     const issues = Array.isArray(data.issues) ? data.issues : [];
     const summary = data.summary || (meta.cls === 'pending' ? '暂无检查结果' : '-');
     const card = el('div', { class: `pm-quality-card is-${meta.cls}` });
@@ -561,7 +561,7 @@
 
   function renderQualityCheckPanel(qualityCheck, onRetry, busy = false) {
     const root = el('div', { class: 'pm-quality-panel' });
-    const statusMeta = qualityStatusMeta(qualityCheck && qualityCheck.status);
+    const statusMeta = qualityScoreMeta(qualityCheck && qualityCheck.status);
     const head = el('div', { class: 'pm-quality-head' });
     head.appendChild(el('div', {}, [
       el('div', { class: 'pm-quality-title' }, '推送前质量检查'),
@@ -580,6 +580,127 @@
       renderQualityResultCard('封面图', qualityCheck && qualityCheck.cover_result),
       renderQualityResultCard('视频', qualityCheck && qualityCheck.video_result),
     ]));
+    if (Array.isArray(qualityCheck?.failed_reasons) && qualityCheck.failed_reasons.length) {
+      const reasons = el('ul', { class: 'pm-quality-reasons' });
+      qualityCheck.failed_reasons.slice(0, 5).forEach(reason => {
+        reasons.appendChild(el('li', {}, String(reason)));
+      });
+      root.appendChild(reasons);
+    }
+    return root;
+  }
+
+  function firstPayloadVideo(payload) {
+    const videos = payload && Array.isArray(payload.videos) ? payload.videos : [];
+    return videos.length ? videos[0] : null;
+  }
+
+  function renderQualityIssues(result) {
+    const issues = result && Array.isArray(result.issues) ? result.issues : [];
+    if (!issues.length) return null;
+    const list = el('ul', { class: 'pm-quality-issues' });
+    issues.slice(0, 4).forEach(issue => list.appendChild(el('li', {}, String(issue))));
+    return list;
+  }
+
+  function renderQualityDetailBlock(label, result, previewNode) {
+    const data = result || {};
+    const meta = qualityScoreMeta(data.status);
+    const block = el('section', { class: `pm-quality-detail-block is-${meta.cls}` });
+    block.appendChild(el('div', { class: 'pm-quality-detail-head' }, [
+      el('h5', {}, label),
+      el('span', { class: `pm-quality-score is-${meta.cls}` }, meta.text),
+    ]));
+    if (previewNode) block.appendChild(previewNode);
+    block.appendChild(el('p', { class: 'pm-quality-summary' }, data.summary || '暂无检查结果'));
+    const issues = renderQualityIssues(data);
+    if (issues) block.appendChild(issues);
+    return block;
+  }
+
+  function renderQualityCopyPreview(localizedText) {
+    const text = localizedText || {};
+    const root = el('div', { class: 'pm-quality-copy-preview' });
+    const rows = [
+      ['语种', formatLanguageLabel(text.lang) || text.lang || '-'],
+      ['标题', text.title || '-'],
+      ['文案', text.message || '-'],
+      ['描述', text.description || '-'],
+    ];
+    rows.forEach(([k, v]) => {
+      root.appendChild(el('span', { class: 'k' }, k));
+      root.appendChild(el('span', { class: 'v' }, v));
+    });
+    return root;
+  }
+
+  function renderQualityCoverPreview(payload, previewCoverUrl) {
+    const video = firstPayloadVideo(payload);
+    const coverSrc = previewCoverUrl || (video && video.image_url) || '';
+    const root = el('div', { class: 'pm-quality-cover-preview' });
+    if (coverSrc) {
+      root.appendChild(el('img', { class: 'pm-quality-cover-img', src: coverSrc, alt: '封面图' }));
+    } else {
+      root.appendChild(el('p', { class: 'pm-empty' }, '暂无封面图预览'));
+    }
+    return root;
+  }
+
+  function renderQualityVideoPreview(payload, previewCoverUrl) {
+    const video = firstPayloadVideo(payload);
+    const root = el('div', { class: 'pm-quality-video-preview' });
+    if (video && video.url) {
+      root.appendChild(el('video', {
+        class: 'pm-quality-video',
+        src: video.url,
+        poster: previewCoverUrl || video.image_url || '',
+        controls: true,
+        preload: 'metadata',
+      }));
+    } else {
+      root.appendChild(el('p', { class: 'pm-empty' }, '暂无视频预览'));
+    }
+    return root;
+  }
+
+  function renderQualitySidePanel(
+    qualityCheck,
+    onRetry,
+    payload,
+    localizedText,
+    previewCoverUrl,
+    busy = false,
+  ) {
+    const root = el('aside', { class: 'pm-quality-side-panel' });
+    const statusMeta = qualityScoreMeta(qualityCheck && qualityCheck.status);
+    const head = el('div', { class: 'pm-quality-side-head' });
+    head.appendChild(el('div', {}, [
+      el('div', { class: 'pm-quality-title' }, '推送前质量检查'),
+      el('div', { class: 'pm-quality-subtitle' }, qualityCheck?.summary || '暂无检查记录'),
+    ]));
+    head.appendChild(el('span', { class: `pm-quality-score is-${statusMeta.cls}` }, statusMeta.text));
+    head.appendChild(el('button', {
+      type: 'button',
+      class: 'btn-mini pm-quality-retry',
+      disabled: busy,
+      onclick: onRetry,
+    }, busy ? '评估中...' : '重新评估'));
+    root.appendChild(head);
+    root.appendChild(renderQualityDetailBlock(
+      '文案',
+      qualityCheck && qualityCheck.copy_result,
+      renderQualityCopyPreview(localizedText),
+    ));
+    root.appendChild(renderQualityDetailBlock(
+      '封面图',
+      qualityCheck && qualityCheck.cover_result,
+      renderQualityCoverPreview(payload, previewCoverUrl),
+    ));
+    root.appendChild(renderQualityDetailBlock(
+      '视频',
+      qualityCheck && qualityCheck.video_result,
+      renderQualityVideoPreview(payload, previewCoverUrl),
+    ));
     if (Array.isArray(qualityCheck?.failed_reasons) && qualityCheck.failed_reasons.length) {
       const reasons = el('ul', { class: 'pm-quality-reasons' });
       qualityCheck.failed_reasons.slice(0, 5).forEach(reason => {
@@ -643,8 +764,14 @@
     header.appendChild(btnClose);
     modal.appendChild(header);
 
+    const shell = el('div', { class: 'pm-shell' });
+    const mainPanel = el('div', { class: 'pm-main' });
+    const qualitySide = el('div', { class: 'pm-quality-side' });
     const body = el('div', { class: 'pm-body' });
-    modal.appendChild(body);
+    mainPanel.appendChild(body);
+    shell.appendChild(mainPanel);
+    shell.appendChild(qualitySide);
+    modal.appendChild(shell);
 
     const infoCard = el('section', { class: 'pm-section' }, [el('h4', {}, '素材信息')]);
     const infoKV = el('div', { class: 'pm-kv' });
@@ -680,13 +807,6 @@
     auditCard.appendChild(auditKV);
     body.appendChild(auditCard);
 
-    const qualityCard = el('section', { class: 'pm-section pm-quality-section' }, [el('h4', {}, '大模型检查结果')]);
-    const qualityBody = el('div', {}, [
-      renderQualityCheckPanel(item.quality_check || null, retryQualityCheck),
-    ]);
-    qualityCard.appendChild(qualityBody);
-    body.appendChild(qualityCard);
-
     const contentCard = el('section', { class: 'pm-section' }, [el('h4', {}, '推送内容')]);
     const loadingTip = el('p', { class: 'pm-empty' }, '加载中…');
     const paneConfirm = el('div', { class: 'pm-pane' });
@@ -711,21 +831,23 @@
     respWrap.appendChild(respTitle);
     respWrap.appendChild(respPre);
     respWrap.appendChild(respMkIdTip);
-    modal.appendChild(respWrap);
+    mainPanel.appendChild(respWrap);
 
     const footer = el('div', { class: 'pm-footer' });
     const btnPush = el('button', { type: 'button', class: 'btn-push', disabled: true }, '推送');
     const btnCancel = el('button', { type: 'button', class: 'btn-mini' }, '关闭');
     footer.appendChild(btnPush);
     footer.appendChild(btnCancel);
-    modal.appendChild(footer);
+    mainPanel.appendChild(footer);
 
     let activeMode = PUSH_MODAL_MODES.CONFIRM;
     let payloadData = null;
     let mkId = null;
     let localizedTexts = [];
+    let localizedText = null;
     let localizedTargetUrl = '';
     let productLinksPreview = null;
+    let previewCoverUrl = null;
     let qualityCheck = item.quality_check || null;
     let materialPushed = item.status === 'pushed';
     let localizedPushed = false;
@@ -793,9 +915,17 @@
 
     function setQualityPanel(result, busy = false) {
       qualityCheck = result || null;
-      clear(qualityBody);
-      qualityBody.appendChild(renderQualityCheckPanel(qualityCheck, retryQualityCheck, busy));
+      clear(qualitySide);
+      qualitySide.appendChild(renderQualitySidePanel(
+        qualityCheck,
+        retryQualityCheck,
+        payloadData,
+        localizedText,
+        previewCoverUrl,
+        busy,
+      ));
     }
+    setQualityPanel(qualityCheck);
 
     async function retryQualityCheck() {
       setQualityPanel(qualityCheck, true);
@@ -856,6 +986,8 @@
         const data = await fetchJSON(`/pushes/api/items/${itemId}/payload`);
         payloadData = data.payload;
         mkId = data.mk_id || null;
+        localizedText = data.localized_text || null;
+        previewCoverUrl = data.preview_cover_url || null;
         localizedTargetUrl = data.localized_push_target_url || '';
         localizedTexts = (data.localized_texts_request && data.localized_texts_request.texts) || [];
         productLinksPreview = data.product_links_push || null;
