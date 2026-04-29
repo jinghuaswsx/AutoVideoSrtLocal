@@ -69,6 +69,50 @@ def build_default_av_translate_inputs() -> dict[str, Any]:
     }
 
 
+def list_available_av_target_language_options() -> list[dict[str, str]]:
+    """返回当前可新建 AV 翻译项目的目标语言。
+
+    静态列表表示管线支持能力；Media Language 的 enabled=1 表示当前业务允许创建。
+    如果数据库不可用，保留静态列表作为页面/测试环境兜底。
+    """
+    try:
+        from appcore import medias
+
+        enabled_codes = set(medias.list_enabled_language_codes())
+    except Exception:
+        return copy.deepcopy(AV_TARGET_LANGUAGE_OPTIONS)
+    return [
+        copy.deepcopy(item)
+        for item in AV_TARGET_LANGUAGE_OPTIONS
+        if item["code"] in enabled_codes
+    ]
+
+
+def available_av_target_language_codes() -> set[str]:
+    return {
+        item["code"]
+        for item in list_available_av_target_language_options()
+    }
+
+
+def build_available_av_translate_inputs() -> dict[str, Any]:
+    options = list_available_av_target_language_options()
+    if not options:
+        return build_default_av_translate_inputs()
+    target_language = (
+        DEFAULT_TARGET_LANGUAGE
+        if any(item["code"] == DEFAULT_TARGET_LANGUAGE for item in options)
+        else options[0]["code"]
+    )
+    defaults = build_default_av_translate_inputs()
+    defaults["target_language"] = target_language
+    defaults["target_language_name"] = AV_TARGET_LANGUAGE_NAME_MAP.get(
+        target_language,
+        target_language,
+    )
+    return defaults
+
+
 def _normalize_optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None

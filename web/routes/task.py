@@ -24,10 +24,11 @@ from appcore.runtime import (
 )
 from appcore.av_translate_inputs import (
     AV_TARGET_LANGUAGE_CODES,
-    AV_TARGET_LANGUAGE_OPTIONS,
     AV_TARGET_MARKET_CODES,
     AV_TARGET_MARKET_OPTIONS,
-    build_default_av_translate_inputs,
+    available_av_target_language_codes,
+    build_available_av_translate_inputs,
+    list_available_av_target_language_options,
     normalize_av_translate_inputs,
 )
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
@@ -151,7 +152,7 @@ def _collect_av_translate_inputs(payload: dict | None, current_task: dict | None
 
 def _validate_av_translate_inputs(av_inputs: dict) -> str | None:
     target_language = str(av_inputs.get("target_language") or "").strip().lower()
-    if target_language not in AV_TARGET_LANGUAGE_CODES:
+    if target_language not in available_av_target_language_codes():
         return "target_language 非法"
     target_market = str(av_inputs.get("target_market") or "").strip().upper()
     if target_market not in AV_TARGET_MARKET_CODES:
@@ -319,9 +320,9 @@ def upload_page():
     return render_template(
         "index.html",
         translate_pref=translate_pref,
-        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_languages=list_available_av_target_language_options(),
         av_target_markets=AV_TARGET_MARKET_OPTIONS,
-        av_translate_defaults=build_default_av_translate_inputs(),
+        av_translate_defaults=build_available_av_translate_inputs(),
     )
 
 

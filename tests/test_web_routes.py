@@ -146,6 +146,30 @@ def test_task_upload_route_accepts_av_sync_list_form_inputs(tmp_path, authed_cli
     assert response.get_json()["redirect_url"].startswith("/sentence_translate/")
 
 
+def test_task_upload_route_rejects_disabled_av_target_language(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.task.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.task.db_execute", lambda sql, args: None)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["en", "de", "fr", "ja", "es", "pt", "nl", "sv"],
+    )
+
+    response = authed_client_no_db.post(
+        "/api/tasks",
+        data={
+            "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
+            "target_lang": "fi",
+            "target_market": "US",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "target_language" in response.get_json().get("error", "")
+
+
 def test_task_upload_route_rejects_unsupported_av_source_language(tmp_path, authed_client_no_db, monkeypatch):
     monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
@@ -195,6 +219,23 @@ def test_sentence_translate_list_page_uses_sentence_translate_detail_links(authe
     body = response.get_data(as_text=True)
     assert 'href="/sentence_translate/task-sentence-list"' in body
     assert '"/sentence_translate" + \'/\' + data.task_id' in body
+
+
+def test_sentence_translate_create_modal_filters_disabled_media_languages(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.projects.query", lambda sql, args: [])
+    monkeypatch.setattr("web.routes.projects.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.routes.projects.get_retention_hours", lambda project_type: 24)
+    monkeypatch.setattr(
+        "appcore.medias.list_enabled_language_codes",
+        lambda: ["en", "de", "fr", "ja", "es", "pt", "nl", "sv"],
+    )
+
+    response = authed_client_no_db.get("/sentence_translate")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'data-lang="sv"' in body
+    assert 'data-lang="fi"' not in body
 
 
 def test_legacy_av_list_route_redirects_to_sentence_translate(authed_client_no_db):
