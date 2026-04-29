@@ -395,7 +395,15 @@ def _response_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["status", "is_clean", "summary", "issues"],
+        "required": [
+            "status",
+            "is_clean",
+            "summary",
+            "issues",
+            "target_language_match",
+            "detected_languages",
+            "evidence",
+        ],
         "properties": {
             "status": {"type": "string", "enum": ["passed", "warning", "failed"]},
             "is_clean": {"type": "boolean"},
@@ -404,8 +412,34 @@ def _response_schema() -> dict[str, Any]:
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "target_language_match": {"type": "boolean"},
+            "detected_languages": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "evidence": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "ocr_text": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "speech_language": {"type": "string"},
+            "subtitle_language": {"type": "string"},
+            "checked_scope": {"type": "string"},
         },
     }
+
+
+def _string_list(value: Any, *, limit: int = 8) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        items = value
+    else:
+        items = [value]
+    return [str(item).strip() for item in items if str(item).strip()][:limit]
 
 
 def _normalize_model_result(raw: Any) -> dict[str, Any]:
@@ -426,15 +460,28 @@ def _normalize_model_result(raw: Any) -> dict[str, Any]:
     issues = raw.get("issues") or []
     if not isinstance(issues, list):
         issues = [str(issues)]
-    return {
+    result = {
         "status": status,
         "is_clean": bool(raw.get("is_clean")) if "is_clean" in raw else status == "passed",
         "summary": str(raw.get("summary") or "").strip()[:300],
         "issues": [str(item).strip() for item in issues if str(item).strip()][:8],
+        "target_language_match": (
+            bool(raw.get("target_language_match"))
+            if "target_language_match" in raw
+            else status == "passed"
+        ),
+        "detected_languages": _string_list(raw.get("detected_languages")),
+        "evidence": _string_list(raw.get("evidence")),
         "checked_at": datetime.now(UTC).isoformat(),
         "provider": PROVIDER,
         "model": MODEL,
     }
+    for key in ("speech_language", "subtitle_language", "checked_scope"):
+        if key in raw:
+            result[key] = str(raw.get(key) or "").strip()[:200]
+    if "ocr_text" in raw:
+        result["ocr_text"] = _string_list(raw.get("ocr_text"), limit=20)
+    return result
 
 
 def _language_label(item: dict) -> str:
@@ -458,12 +505,16 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
         }
     lang_label = _language_label(item)
     prompt = (
-        "请检查跨境电商素材推送前的小语种文案是否纯净。"
+        "请检查跨境电商素材推送前的小语种文案是否纯净，并严格判断是否对应目标语种。"
         f"目标语种：{lang_label}。\n"
         f"商品：{product.get('name') or ''} / {product.get('product_code') or ''}\n"
-        "要求：标题、文案、描述必须主要是目标语种内容；不得夹杂无关英文、中文、乱码、模板残留或明显错语种内容。"
-        "品牌名、商品型号、URL、单位和不可翻译专有名词可以保留。"
-        "请只返回 JSON。"
+        "逐字段检查 title、message、description：每个字段里的可翻译营销文案必须是目标语种。"
+        "不得夹杂非目标语种营销文案、无关英文、中文、乱码、模板残留或明显错语种内容。"
+        "品牌名、商品型号、URL、计量单位、平台名和不可翻译专有名词可以保留。"
+        "如果 title/message/description 任一字段的主体不是目标语种，应判为 failed；"
+        "如果只有极少量可解释专有名词或证据不足，可判 warning。"
+        "请在 evidence 中列出你依据的原文片段或字段名，detected_languages 写检测到的语种，"
+        "target_language_match 表示所有可翻译营销文案是否匹配目标语种。请只返回 JSON。"
         f"\n待检查文案：{json.dumps(copy_payload, ensure_ascii=False)}"
     )
     response = llm_client.invoke_chat(
@@ -471,7 +522,7 @@ def check_copy(item: dict, product: dict, copy_payload: dict[str, Any] | None) -
         messages=[
             {
                 "role": "system",
-                "content": "你是小语种本地化质检员，只输出符合 schema 的 JSON。",
+                "content": "你是严格的小语种本地化质检员，只输出符合 schema 的 JSON。",
             },
             {"role": "user", "content": prompt},
         ],
@@ -516,12 +567,31 @@ def _mime_for_path(path: Path) -> str:
 
 
 def _visual_prompt(kind: str, item: dict, product: dict) -> str:
-    return (
-        f"请检查这个{kind}是否适合作为目标语种 {_language_label(item)} 的推送素材。"
+    lang_label = _language_label(item)
+    base = (
+        f"请检查这个{kind}是否适合作为目标语种 {lang_label} 的推送素材。"
         f"商品：{product.get('name') or ''} / {product.get('product_code') or ''}。"
-        "重点判断画面中文字、字幕、贴纸、包装或水印是否夹杂无关英文、中文、乱码、错语种内容，"
-        "以及画面是否明显与商品或该语种市场无关。品牌名、商品型号和少量不可翻译专有名词可接受。"
-        "请只输出 JSON。"
+    )
+    if "视频" in kind:
+        return (
+            base +
+            "必须同时检查：1) 语音、旁白、可听人声的主要语言是否为目标语种；"
+            "2) 字幕、画面文字、贴纸、包装或水印中的可读营销文案是否为目标语种；"
+            "3) 画面内容是否明显与商品或该语种市场无关。"
+            "非目标语种营销文案、中文、无关英文、乱码、模板残留或错语种字幕/旁白都应作为问题。"
+            "品牌名、商品型号、URL、计量单位、商标和不可翻译专有名词可以保留。"
+            "如果听不清语音、看不清字幕或片段证据不足，应判 warning，并在 evidence 说明不确定原因，不要默认通过。"
+            "请填写 speech_language、subtitle_language、ocr_text、detected_languages、target_language_match、checked_scope。"
+            "请只输出 JSON。"
+        )
+    return (
+        base +
+        "重点判断封面中的可读营销文案、字幕、贴纸、包装或水印是否为目标语种，"
+        "不得夹杂非目标语种营销文案、中文、无关英文、乱码、模板残留或错语种内容；"
+        "同时判断画面是否明显与商品或该语种市场无关。"
+        "品牌名、商品型号、URL、计量单位、商标和不可翻译专有名词可以保留。"
+        "如果文字太小、遮挡或证据不足，应判 warning，并在 evidence 说明不确定原因，不要默认通过。"
+        "请填写 ocr_text、detected_languages、target_language_match、checked_scope。请只输出 JSON。"
     )
 
 

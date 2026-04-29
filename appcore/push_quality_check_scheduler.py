@@ -8,7 +8,6 @@ from appcore import push_quality_checks, pushes, scheduled_tasks
 log = logging.getLogger(__name__)
 
 TASK_CODE = "push_quality_check_tick"
-PUSH_QUALITY_CHECK_BATCH_LIMIT = 5
 
 
 def _product_shape(row: dict[str, Any]) -> dict[str, Any]:
@@ -34,8 +33,8 @@ def _scan_candidates() -> list[dict[str, Any]]:
     return rows or []
 
 
-def _run_batch(limit: int) -> dict[str, Any]:
-    safe_limit = max(1, int(limit))
+def _run_batch(limit: int | None = None) -> dict[str, Any]:
+    safe_limit = max(1, int(limit)) if limit is not None else None
     summary = {
         "scanned": 0,
         "eligible": 0,
@@ -61,12 +60,12 @@ def _run_batch(limit: int) -> dict[str, Any]:
         except Exception:
             summary["errors"] += 1
             log.exception("push quality check tick failed item_id=%s", row.get("id"))
-        if summary["evaluated"] >= safe_limit:
+        if safe_limit is not None and summary["evaluated"] >= safe_limit:
             break
     return summary
 
 
-def tick_once(limit: int = PUSH_QUALITY_CHECK_BATCH_LIMIT) -> dict[str, Any]:
+def tick_once(limit: int | None = None) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(TASK_CODE)
@@ -97,7 +96,7 @@ def register(scheduler) -> None:
     scheduler.add_job(
         tick_once,
         "interval",
-        minutes=10,
+        minutes=5,
         id=TASK_CODE,
         replace_existing=True,
         max_instances=1,

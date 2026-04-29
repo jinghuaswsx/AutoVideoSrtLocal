@@ -57,7 +57,7 @@ def test_task_definitions_include_push_quality_check():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     task = definitions["push_quality_check_tick"]
-    assert task["schedule"] == "每 10 分钟"
+    assert task["schedule"] == "每 5 分钟"
     assert task["source_type"] == "apscheduler"
     assert task["runner"] == "appcore.push_quality_check_scheduler.tick_once"
     assert task["log_table"] == "scheduled_task_runs"

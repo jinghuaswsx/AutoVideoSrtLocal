@@ -281,6 +281,98 @@ def test_visual_checks_use_openrouter_gemini_flash_lite(monkeypatch, tmp_path):
     assert calls[1][1]["billing_extra"]["clip_seconds"] == 5
 
 
+def test_push_quality_schema_requires_language_evidence_fields():
+    from appcore import push_quality_checks as qc
+
+    schema = qc._response_schema()
+
+    assert "target_language_match" in schema["required"]
+    assert "detected_languages" in schema["required"]
+    assert "evidence" in schema["required"]
+    assert "speech_language" in schema["properties"]
+    assert "subtitle_language" in schema["properties"]
+    assert "ocr_text" in schema["properties"]
+    assert "checked_scope" in schema["properties"]
+
+
+def test_copy_prompt_demands_each_copy_field_target_language(monkeypatch):
+    from appcore import push_quality_checks as qc
+
+    captured = {}
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["messages"] = kwargs["messages"]
+        return {
+            "json": {
+                "status": "passed",
+                "is_clean": True,
+                "summary": "ok",
+                "issues": [],
+                "target_language_match": True,
+                "detected_languages": ["German"],
+                "evidence": ["title/message/description are German"],
+            }
+        }
+
+    monkeypatch.setattr(qc.llm_client, "invoke_chat", fake_invoke_chat)
+
+    qc.check_copy(
+        {"id": 7, "product_id": 3, "lang": "de"},
+        {"id": 3, "name": "Demo", "product_code": "demo-rjc"},
+        {"title": "Titel", "message": "Hallo Welt", "description": "Beschreibung"},
+    )
+
+    prompt = captured["messages"][-1]["content"]
+    assert "逐字段" in prompt
+    assert "title" in prompt
+    assert "message" in prompt
+    assert "description" in prompt
+    assert "非目标语种营销文案" in prompt
+
+
+def test_video_prompt_requires_speech_subtitle_and_visual_language_checks():
+    from appcore import push_quality_checks as qc
+
+    prompt = qc._visual_prompt(
+        "视频抽样片段",
+        {"id": 7, "product_id": 3, "lang": "de"},
+        {"id": 3, "name": "Demo", "product_code": "demo-rjc"},
+    )
+
+    assert "语音" in prompt
+    assert "旁白" in prompt
+    assert "字幕" in prompt
+    assert "画面文字" in prompt
+    assert "目标语种" in prompt
+    assert "不要默认通过" in prompt
+
+
+def test_normalize_model_result_preserves_language_evidence_fields():
+    from appcore import push_quality_checks as qc
+
+    result = qc._normalize_model_result({
+        "status": "warning",
+        "is_clean": False,
+        "summary": "视频语音不是目标语种",
+        "issues": ["旁白为英文"],
+        "target_language_match": False,
+        "detected_languages": ["English"],
+        "evidence": ["heard English narration"],
+        "speech_language": "English",
+        "subtitle_language": "German",
+        "ocr_text": ["Deutsch text"],
+        "checked_scope": "视频抽样片段",
+    })
+
+    assert result["target_language_match"] is False
+    assert result["detected_languages"] == ["English"]
+    assert result["evidence"] == ["heard English narration"]
+    assert result["speech_language"] == "English"
+    assert result["subtitle_language"] == "German"
+    assert result["ocr_text"] == ["Deutsch text"]
+    assert result["checked_scope"] == "视频抽样片段"
+
+
 def test_video_clip_uses_first_five_seconds(monkeypatch, tmp_path):
     from appcore import push_quality_checks as qc
 
