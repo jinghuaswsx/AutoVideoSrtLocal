@@ -140,10 +140,14 @@ def test_roas_modal_embeds_average_shipping_in_bottom_half_of_tk_column():
 
     tk_column_css = html.split(".oc-roas-tk-column {", 1)[1].split("}", 1)[0]
     half_section_css = html.split(".oc-roas-tk-column .oc-roas-section {", 1)[1].split("}", 1)[0]
+    avg_heading_css = html.split(".oc-roas-avg-head h4 {", 1)[1].split("}", 1)[0]
     avg_input_css = html.split(".oc-roas-avg-input {", 1)[1].split("}", 1)[0]
     assert "overflow:hidden" in tk_column_css
     assert "flex:1 1 0" in half_section_css
     assert "min-height:0" in half_section_css
+    assert "font-size:28px" in avg_heading_css
+    assert "font-weight:700" in avg_heading_css
+    assert "color:var(--oc-accent)" in avg_heading_css
     assert "flex:1 1 auto" in avg_input_css
 
     assert "calculateAverageShippingText" in js
