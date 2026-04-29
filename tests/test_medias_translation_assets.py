@@ -107,6 +107,26 @@ def test_medias_js_copy_translate_uses_validation_message():
     assert "alert(sourceValidation.message);" in script
 
 
+def test_medias_list_product_id_has_inline_copy_button():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert ".oc-product-id-cell" in template
+    assert ".oc-product-id-copy" in template
+    assert 'id="ic-copy"' in template
+    assert "function copyProductCode(btn)" in script
+    assert 'class="mono wrap oc-product-id-cell"' in script
+    assert 'class="oc-product-id-main"' in script
+    assert 'class="oc-btn text sm oc-product-id-copy"' in script
+    assert 'data-product-code="${escapeHtml(productCode)}"' in script
+    assert "${icon('copy', 12)}" in script
+    assert "grid.querySelectorAll('.oc-product-id-copy').forEach" in script
+    assert "copyProductCode(b)" in script
+    assert "copyText(code)" in script
+    assert "flashCopiedButton(btn)" in script
+
+
 def test_medias_edit_items_render_translation_source_badge():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")

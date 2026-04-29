@@ -1359,6 +1359,12 @@
         const product = items.find(item => Number(item.id) === Number(b.dataset.roas));
         openRoasModal(product || null);
       }));
+    grid.querySelectorAll('.oc-product-id-copy').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyProductCode(b);
+      }));
     grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
       a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
@@ -1376,6 +1382,7 @@
     const cover = p.cover_thumbnail_url
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
+    const productCode = (p.product_code === null || p.product_code === undefined) ? '' : String(p.product_code).trim();
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
@@ -1386,12 +1393,16 @@
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
+    const productCodeCell = productCode
+      ? `<div class="oc-product-id-main"><a href="https://newjoyloo.com/products/${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
+        + `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID">${icon('copy', 12)}<span>复制</span></button>`
+      : '<span class="muted">—</span>';
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${cover}</div></td>
         <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
-        <td class="mono wrap" title="${escapeHtml(p.product_code || '')}">${p.product_code ? `<a href="https://newjoyloo.com/products/${encodeURIComponent(p.product_code)}" target="_blank" rel="noopener noreferrer">${escapeHtml(p.product_code)}</a>` : '<span class="muted">—</span>'}</td>
+        <td class="mono wrap oc-product-id-cell" title="${escapeHtml(productCode)}">${productCodeCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
         <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">
@@ -2963,14 +2974,24 @@
   function flashCopiedButton(btn) {
     if (!btn) return;
     const original = btn.dataset.copyLabel || btn.textContent.trim() || '复制';
+    const originalHtml = btn.dataset.copyHtml || btn.innerHTML;
     btn.dataset.copyLabel = original;
+    btn.dataset.copyHtml = originalHtml;
     if (btn._copyTimer) window.clearTimeout(btn._copyTimer);
     btn.textContent = '已复制';
     btn.disabled = true;
     btn._copyTimer = window.setTimeout(() => {
-      btn.textContent = original;
+      btn.innerHTML = btn.dataset.copyHtml || original;
       btn.disabled = false;
     }, 1200);
+  }
+
+  function copyProductCode(btn) {
+    const code = btn && btn.dataset ? (btn.dataset.productCode || '').trim() : '';
+    if (!code) return;
+    copyText(code)
+      .then(() => flashCopiedButton(btn))
+      .catch(() => alert('复制失败，请手动复制'));
   }
 
   function edCopyProductId(btn) {
