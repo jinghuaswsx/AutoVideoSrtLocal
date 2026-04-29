@@ -451,14 +451,14 @@
   min-width: 0;
 }
 .pm-quality-summary-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
   min-width: 0;
   color: var(--oc-fg-muted);
   font-size: 12px;
   line-height: 1.45;
 }
 .pm-quality-summary-label {
-  flex: 0 0 auto;
   color: var(--oc-fg);
   font-weight: 700;
 }

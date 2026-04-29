@@ -1044,7 +1044,8 @@ def test_pushes_assets_include_quality_check_panel():
     assert "renderQualitySummaryRows" in script
     assert "pm-quality-summary-row" in script
     assert "文案：" in script
-    assert "视频封面：" in script
+    assert "封面：" in script
+    assert "视频封面：" not in script
     assert "视频：" in script
     assert "..." in script
     assert "quality-check/retry" in script
@@ -1054,6 +1055,7 @@ def test_pushes_assets_include_quality_check_panel():
     assert ".pm-quality-side" in style
     assert ".pm-quality-detail-block" in style
     assert ".pm-quality-summary-row" in style
+    assert "grid-template-columns: 44px minmax(0, 1fr)" in style
     assert "text-overflow: ellipsis" in style
     assert "width: 80vw" in style
     assert "height: 80vh" in style

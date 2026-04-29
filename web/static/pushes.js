@@ -566,7 +566,7 @@
     const root = el('div', { class: 'pm-quality-summary-rows' });
     [
       ['文案：', data.copy_result],
-      ['视频封面：', data.cover_result],
+      ['封面：', data.cover_result],
       ['视频：', data.video_result],
     ].forEach(([label, result]) => {
       const fullText = normalizeQualitySummary(result);
