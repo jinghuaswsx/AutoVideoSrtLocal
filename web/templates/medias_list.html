@@ -1548,6 +1548,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   max-height:none;
   border-radius:0;
 }
+.oc-roas-modal .oc-modal-body {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
 .oc-roas-product {
   display:grid;
   grid-template-columns:96px minmax(0, 1fr);
@@ -1579,18 +1585,26 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-roas-meta dt { font-size:12px; color:var(--oc-fg-subtle); margin:0; }
 .oc-roas-meta dd { font-size:13px; color:var(--oc-fg); margin:2px 0 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#roasForm {
+  display:flex;
+  flex:1 1 auto;
+  min-height:0;
+}
 .oc-roas-layout {
   display:grid;
   grid-template-columns:minmax(0, 1fr) minmax(280px, 0.88fr);
   gap:var(--oc-sp-4);
-  align-items:start;
+  align-items:stretch;
+  height:100%;
+  width:100%;
 }
 .oc-roas-column {
   min-width:0;
   display:flex;
   flex-direction:column;
-  gap:var(--oc-sp-4);
-  max-height:min(60vh, 640px);
+  gap:var(--oc-sp-2);
+  height:100%;
+  min-height:0;
   overflow-y:auto;
   padding-right:2px;
 }
@@ -1635,11 +1649,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-roas-field-list {
   display:grid;
   grid-template-columns:1fr;
-  gap:var(--oc-sp-3);
+  gap:var(--oc-sp-2);
 }
 .oc-roas-field label {
   display:block;
-  margin-bottom:6px;
+  margin-bottom:3px;
   font-size:12px;
   color:var(--oc-fg-muted);
 }
@@ -1681,7 +1695,10 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-roas-grid,
   .oc-roas-results,
   .oc-roas-meta { grid-template-columns:1fr; }
-  .oc-roas-column { max-height:none; overflow:visible; padding-right:0; }
+  .oc-roas-modal .oc-modal-body { overflow:auto; }
+  #roasForm { display:block; }
+  .oc-roas-layout { height:auto; }
+  .oc-roas-column { height:auto; max-height:none; overflow:visible; padding-right:0; }
   #roasModalMask { inset:0; }
 }
 {% endblock %}
