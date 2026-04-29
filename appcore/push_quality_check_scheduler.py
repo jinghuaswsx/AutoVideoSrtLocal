@@ -10,6 +10,10 @@ log = logging.getLogger(__name__)
 TASK_CODE = "push_quality_check_tick"
 
 
+def _eligible_statuses() -> set[str]:
+    return {pushes.STATUS_PENDING, pushes.STATUS_PUSHED}
+
+
 def _product_shape(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row.get("product_id"),
@@ -47,7 +51,7 @@ def _run_batch(limit: int | None = None) -> dict[str, Any]:
         summary["scanned"] += 1
         product = _product_shape(row)
         status = pushes.compute_status(row, product)
-        if status not in {pushes.STATUS_PENDING, pushes.STATUS_FAILED}:
+        if status not in _eligible_statuses():
             summary["skipped_status"] += 1
             continue
         summary["eligible"] += 1
@@ -93,10 +97,12 @@ def tick_once(limit: int | None = None) -> dict[str, Any]:
 
 
 def register(scheduler) -> None:
-    scheduler.add_job(
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        TASK_CODE,
         tick_once,
         "interval",
-        minutes=5,
+        minutes=10,
         id=TASK_CODE,
         replace_existing=True,
         max_instances=1,

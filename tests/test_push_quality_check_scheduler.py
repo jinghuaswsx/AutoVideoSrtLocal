@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-def test_push_quality_check_scheduler_registers_five_minute_job():
+def test_push_quality_check_scheduler_registers_ten_minute_controlled_job():
     from appcore import push_quality_check_scheduler
 
     calls = []
@@ -14,30 +14,33 @@ def test_push_quality_check_scheduler_registers_five_minute_job():
 
     assert len(calls) == 1
     func, trigger, kwargs = calls[0]
-    assert func is push_quality_check_scheduler.tick_once
+    assert getattr(func, "__wrapped__", None) is push_quality_check_scheduler.tick_once
     assert trigger == "interval"
-    assert kwargs["minutes"] == 5
+    assert kwargs["minutes"] == 10
     assert kwargs["id"] == "push_quality_check_tick"
     assert kwargs["replace_existing"] is True
     assert kwargs["max_instances"] == 1
 
 
-def test_push_quality_check_scheduler_tick_evaluates_ready_pending_items(monkeypatch):
+def test_push_quality_check_scheduler_tick_evaluates_ready_pending_and_pushed_items(monkeypatch):
     from appcore import push_quality_check_scheduler
 
-    item = {"id": 7, "product_id": 3, "lang": "de"}
+    items = [
+        {"id": 7, "product_id": 3, "lang": "de"},
+        {"id": 8, "product_id": 3, "lang": "fr"},
+    ]
     product = {"id": 3}
     evaluated = []
 
     monkeypatch.setattr(
         push_quality_check_scheduler.pushes,
         "list_items_for_push",
-        lambda limit=None: ([item], 1),
+        lambda limit=None: (items, len(items)),
     )
     monkeypatch.setattr(
         push_quality_check_scheduler.pushes,
         "compute_status",
-        lambda item_shape, product_shape: "pending",
+        lambda item_shape, product_shape: "pushed" if item_shape["id"] == 8 else "pending",
     )
     monkeypatch.setattr(
         push_quality_check_scheduler.push_quality_checks,
@@ -52,8 +55,41 @@ def test_push_quality_check_scheduler_tick_evaluates_ready_pending_items(monkeyp
 
     summary = push_quality_check_scheduler.tick_once()
 
-    assert evaluated == [(7, "auto")]
-    assert summary["evaluated"] == 1
+    assert evaluated == [(7, "auto"), (8, "auto")]
+    assert summary["evaluated"] == 2
+
+
+def test_push_quality_check_scheduler_tick_skips_failed_push_status(monkeypatch):
+    from appcore import push_quality_check_scheduler
+
+    item = {"id": 9, "product_id": 4, "lang": "es"}
+
+    monkeypatch.setattr(
+        push_quality_check_scheduler.pushes,
+        "list_items_for_push",
+        lambda limit=None: ([item], 1),
+    )
+    monkeypatch.setattr(
+        push_quality_check_scheduler.pushes,
+        "compute_status",
+        lambda item_shape, product_shape: "failed",
+    )
+    monkeypatch.setattr(
+        push_quality_check_scheduler.push_quality_checks,
+        "has_reusable_auto_result_for_item",
+        lambda item_shape, product_shape: (_ for _ in ()).throw(AssertionError("not eligible")),
+    )
+    monkeypatch.setattr(
+        push_quality_check_scheduler.push_quality_checks,
+        "evaluate_item",
+        lambda item_id, source="auto": (_ for _ in ()).throw(AssertionError("not eligible")),
+    )
+
+    summary = push_quality_check_scheduler.tick_once()
+
+    assert summary["eligible"] == 0
+    assert summary["skipped_status"] == 1
+    assert summary["evaluated"] == 0
 
 
 def test_push_quality_check_scheduler_tick_skips_existing_auto_result(monkeypatch):
