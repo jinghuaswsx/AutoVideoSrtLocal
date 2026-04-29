@@ -127,6 +127,7 @@ def test_task_upload_route_accepts_av_sync_list_form_inputs(tmp_path, authed_cli
             "target_lang": "de",
             "target_market": "OTHER",
             "sync_granularity": "sentence",
+            "source_language": "en",
             "display_name": "德语项目",
         },
         content_type="multipart/form-data",
@@ -140,6 +141,67 @@ def test_task_upload_route_accepts_av_sync_list_form_inputs(tmp_path, authed_cli
     assert task["av_translate_inputs"]["target_language_name"] == "German"
     assert task["av_translate_inputs"]["target_market"] == "OTHER"
     assert task["av_translate_inputs"]["sync_granularity"] == "sentence"
+    assert task["source_language"] == "en"
+    assert task["user_specified_source_language"] is True
+    assert response.get_json()["redirect_url"].startswith("/sentence_translate/")
+
+
+def test_task_upload_route_rejects_unsupported_av_source_language(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    response = authed_client_no_db.post(
+        "/api/tasks",
+        data={
+            "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
+            "target_lang": "de",
+            "target_market": "OTHER",
+            "source_language": "ru",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "source_language" in response.get_json().get("error", "")
+
+
+def test_sentence_translate_list_page_uses_sentence_translate_detail_links(authed_client_no_db, monkeypatch):
+    row = {
+        "id": "task-sentence-list",
+        "original_filename": "video.mp4",
+        "display_name": "德语项目",
+        "thumbnail_path": None,
+        "status": "uploaded",
+        "state_json": json.dumps(
+            {
+                "pipeline_version": "av",
+                "target_lang": "de",
+                "av_translate_inputs": {"target_language": "de"},
+            },
+            ensure_ascii=False,
+        ),
+        "created_at": datetime(2026, 4, 29, 12, 0),
+        "expires_at": None,
+        "deleted_at": None,
+        "creator_name": "tester",
+    }
+    monkeypatch.setattr("web.routes.projects.query", lambda sql, args: [row])
+    monkeypatch.setattr("web.routes.projects.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.routes.projects.get_retention_hours", lambda project_type: 24)
+
+    response = authed_client_no_db.get("/sentence_translate")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'href="/sentence_translate/task-sentence-list"' in body
+    assert '"/sentence_translate" + \'/\' + data.task_id' in body
+
+
+def test_legacy_av_list_route_redirects_to_sentence_translate(authed_client_no_db):
+    response = authed_client_no_db.get("/video-translate-av-sync", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/sentence_translate")
 
 
 def test_de_translate_list_page_uses_local_multipart_upload():
@@ -333,7 +395,7 @@ def test_project_detail_page_contains_av_insight_cards_and_rewrite_modal(authed_
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
     monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
 
-    response = authed_client_no_db.get("/projects/task-project-av-insights")
+    response = authed_client_no_db.get("/sentence_translate/task-project-av-insights")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -432,7 +494,7 @@ def test_project_detail_page_contains_av_convergence_panel(authed_client_no_db, 
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
     monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
 
-    response = authed_client_no_db.get("/projects/task-project-av-convergence")
+    response = authed_client_no_db.get("/sentence_translate/task-project-av-convergence")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -497,7 +559,7 @@ def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, m
     monkeypatch.setattr("appcore.api_keys.get_key", lambda user_id, service: "openrouter")
     monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
 
-    response = authed_client_no_db.get("/projects/task-project-av-shell")
+    response = authed_client_no_db.get("/sentence_translate/task-project-av-shell")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -509,7 +571,42 @@ def test_av_project_detail_uses_multilingual_detail_shell(authed_client_no_db, m
     assert 'apiBase: "/api/tasks"' in body
     assert 'detailMode: "av_sync"' in body
     assert 'voiceLanguage: "de"' in body
-    assert 'href="/video-translate-av-sync"' in body
+    assert 'detailUrlTemplate: "/sentence_translate/__TASK_ID__"' in body
+    assert 'href="/sentence_translate"' in body
+
+
+def test_legacy_projects_av_detail_redirects_to_sentence_translate(authed_client_no_db, monkeypatch):
+    task = store.create("task-project-av-redirect", "video.mp4", "output/task-project-av-redirect")
+    store.update(
+        task["id"],
+        pipeline_version="av",
+        type="av_translate",
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+    )
+    row = {
+        "id": task["id"],
+        "user_id": 1,
+        "display_name": "demo",
+        "original_filename": "video.mp4",
+        "status": "uploaded",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+        "state_json": json.dumps(store.get(task["id"]), ensure_ascii=False),
+    }
+    monkeypatch.setattr("web.routes.projects.recover_project_if_needed", lambda task_id, project_type: None)
+    monkeypatch.setattr("web.routes.projects.query_one", lambda sql, args: row)
+
+    response = authed_client_no_db.get("/projects/task-project-av-redirect", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/sentence_translate/task-project-av-redirect")
 
 
 def test_av_task_subtitle_preview_supports_shared_detail_shell(authed_client_no_db):
@@ -530,6 +627,64 @@ def test_av_task_subtitle_preview_supports_shared_detail_shell(authed_client_no_
     assert payload["subtitle_font"] == "Impact"
     assert payload["subtitle_size"] == 18
     assert payload["subtitle_position_y"] == 0.72
+
+
+def test_av_segments_route_updates_sentence_translate_variant_for_tts(authed_client_no_db, monkeypatch):
+    task_id = "task-av-segments-confirm"
+    store.create(task_id, "video.mp4", "output/task-av-segments-confirm", user_id=1)
+    store.update(
+        task_id,
+        pipeline_version="av",
+        target_lang="de",
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+        },
+        script_segments=[{"index": 0, "text": "Source", "start_time": 0.0, "end_time": 1.0}],
+        variants={
+            "av": {
+                "sentences": [
+                    {
+                        "asr_index": 0,
+                        "text": "Alter Text.",
+                        "start_time": 0.0,
+                        "end_time": 1.0,
+                        "target_duration": 1.0,
+                        "target_chars_range": [10, 16],
+                    }
+                ]
+            }
+        },
+    )
+    resumed = {}
+    monkeypatch.setattr(
+        "web.routes.task.pipeline_runner.resume",
+        lambda task_id, step, user_id=None: resumed.update({"task_id": task_id, "step": step, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.put(
+        f"/api/tasks/{task_id}/segments",
+        json={
+            "segments": [
+                {
+                    "index": 0,
+                    "asr_index": 0,
+                    "translated": "Frisch auf der Haut.",
+                    "text": "Source",
+                    "start_time": 0.0,
+                    "end_time": 1.0,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    updated = store.get(task_id)
+    assert updated["variants"]["av"]["sentences"][0]["text"] == "Frisch auf der Haut."
+    assert updated["variants"]["av"]["localized_translation"]["sentences"][0]["text"] == "Frisch auf der Haut."
+    assert resumed == {"task_id": task_id, "step": "tts", "user_id": 1}
 
 
 def test_av_task_voice_library_supports_shared_detail_shell(authed_client_no_db, monkeypatch):

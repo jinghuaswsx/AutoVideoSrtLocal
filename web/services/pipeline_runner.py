@@ -25,7 +25,7 @@ def _make_socketio_handler(task_id: str):
 def _project_type_for_task(task_id: str, fallback: str) -> str:
     task = task_state.get(task_id) or {}
     if str(task.get("pipeline_version") or "").strip() == "av":
-        return "av_translate"
+        return "sentence_translate"
     task_type = str(task.get("type") or "").strip()
     return task_type or fallback
 
@@ -33,7 +33,13 @@ def _project_type_for_task(task_id: str, fallback: str) -> str:
 def _make_runner(task_id: str, user_id: int | None) -> PipelineRunner:
     bus = EventBus()
     bus.subscribe(_make_socketio_handler(task_id))
-    runner = PipelineRunner(bus=bus, user_id=user_id)
+    task = task_state.get(task_id) or {}
+    if str(task.get("pipeline_version") or "").strip() == "av":
+        from appcore.runtime_sentence_translate import SentenceTranslateRunner
+
+        runner = SentenceTranslateRunner(bus=bus, user_id=user_id)
+    else:
+        runner = PipelineRunner(bus=bus, user_id=user_id)
     runner.project_type = _project_type_for_task(task_id, runner.project_type)
     return runner
 

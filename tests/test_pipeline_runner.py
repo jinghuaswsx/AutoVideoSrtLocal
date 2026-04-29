@@ -13,32 +13,51 @@ def _silent_bus():
     return EventBus()
 
 
-def test_av_pipeline_inserts_voice_match_before_alignment(tmp_path):
+def test_sentence_translate_runner_reuses_multi_translate_step_order(tmp_path):
+    from appcore.runtime_sentence_translate import SentenceTranslateRunner
+
     task_id = "task-av-voice-match-order"
     store.create(task_id, "video.mp4", str(tmp_path))
     store.update(
         task_id,
         pipeline_version="av",
-        av_translate_inputs={"target_language": "en", "target_market": "US"},
+        target_lang="de",
+        av_translate_inputs={"target_language": "de", "target_market": "DE"},
     )
 
-    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner = SentenceTranslateRunner(bus=_silent_bus())
     step_names = [
         name
         for name, _fn in runner._get_pipeline_steps(task_id, "video.mp4", str(tmp_path))
     ]
 
-    assert step_names[:5] == ["extract", "asr", "asr_normalize", "voice_match", "alignment"]
+    assert step_names == [
+        "extract",
+        "asr",
+        "asr_normalize",
+        "voice_match",
+        "alignment",
+        "translate",
+        "tts",
+        "subtitle",
+        "compose",
+        "export",
+    ]
 
 
-def test_web_pipeline_runner_tracks_av_tasks_as_av_translate(tmp_path):
+def test_web_pipeline_runner_uses_sentence_translate_runner_for_av_tasks(tmp_path):
     task_id = "task-av-runner-project-type"
     store.create(task_id, "video.mp4", str(tmp_path))
     store.update(task_id, pipeline_version="av")
 
     from web.services import pipeline_runner as service
+    from appcore.runtime_sentence_translate import SentenceTranslateRunner
 
-    assert service._project_type_for_task(task_id, "translation") == "av_translate"
+    runner = service._make_runner(task_id, user_id=1)
+
+    assert service._project_type_for_task(task_id, "translation") == "sentence_translate"
+    assert isinstance(runner, SentenceTranslateRunner)
+    assert runner.project_type == "sentence_translate"
 
 
 def test_av_voice_match_uses_video_parent_when_task_dir_missing(tmp_path, monkeypatch):
