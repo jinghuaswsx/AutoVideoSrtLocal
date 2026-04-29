@@ -380,7 +380,7 @@ def test_get_dashboard_search_filter(monkeypatch):
     assert "%glow%" in captured["args"]
 
 
-def test_get_dashboard_default_sort_spend_desc_for_month(monkeypatch):
+def test_get_dashboard_default_sort_orders_desc_for_month(monkeypatch):
     monkeypatch.setattr(oa, "_aggregate_orders_by_product", lambda s, e, *, country=None: {
         42: {"orders": 10, "units": 10, "revenue": 200.0},
         99: {"orders": 5, "units": 5, "revenue": 100.0},
@@ -396,8 +396,8 @@ def test_get_dashboard_default_sort_spend_desc_for_month(monkeypatch):
     ])
 
     result = oa.get_dashboard(period="month", year=2026, month=4, today=date(2026, 4, 26))
-    # 默认按花费降序 → 99 在前
-    assert [p["product_id"] for p in result["products"]] == [99, 42]
+    # 默认按订单量降序，广告花费不影响默认排序。
+    assert [p["product_id"] for p in result["products"]] == [42, 99]
 
 
 def test_get_dashboard_load_products_filters_archived_and_deleted(monkeypatch):
