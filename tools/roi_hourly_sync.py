@@ -10,6 +10,9 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,34 @@ META_AD_EXPORT_BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "47672
 META_AD_EXPORT_CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
 META_REALTIME_EXPORT_ROOT = Path(os.environ.get("META_REALTIME_EXPORT_DIR", REPO_ROOT / "output" / "meta_realtime_exports"))
 META_EXPORT_TIMEOUT_SECONDS = int(os.environ.get("META_AD_REALTIME_EXPORT_TIMEOUT_SECONDS", "600"))
+META_REALTIME_SYNC_CHANNEL = os.environ.get("META_REALTIME_SYNC_CHANNEL", "browser")
+META_MARKETING_API_BASE_URL = os.environ.get("META_MARKETING_API_BASE_URL", "https://graph.facebook.com")
+META_MARKETING_API_VERSION = os.environ.get("META_MARKETING_API_VERSION", "v25.0")
+META_MARKETING_API_LIMIT = int(os.environ.get("META_MARKETING_API_LIMIT", "500"))
+META_MARKETING_API_TIMEOUT_SECONDS = int(os.environ.get("META_MARKETING_API_TIMEOUT_SECONDS", "60"))
+META_MARKETING_API_MAX_PAGES = int(os.environ.get("META_MARKETING_API_MAX_PAGES", "200"))
+META_INSIGHTS_FIELDS = (
+    "account_id",
+    "account_name",
+    "account_currency",
+    "campaign_id",
+    "campaign_name",
+    "date_start",
+    "date_stop",
+    "spend",
+    "impressions",
+    "clicks",
+    "actions",
+    "action_values",
+)
+META_PURCHASE_ACTION_TYPES = (
+    "omni_purchase",
+    "offsite_conversion.fb_pixel_purchase",
+    "purchase",
+    "onsite_conversion.purchase",
+    "onsite_web_purchase",
+    "app_custom_event.fb_mobile_purchase",
+)
 
 
 def _bj_now() -> datetime:
@@ -114,12 +145,18 @@ def _run_dxm_recent_import(window_start: datetime, window_end: datetime, *, max_
     return report
 
 
-def _start_meta_run(business_date, snapshot_at: datetime, accounts: list[str]) -> int:
+def _start_meta_run(
+    business_date,
+    snapshot_at: datetime,
+    accounts: list[str],
+    *,
+    source_version: str = "ads_manager_csv",
+) -> int:
     return int(execute(
         "INSERT INTO meta_ad_realtime_import_runs "
         "(status, business_date, snapshot_at, graph_api_version, ad_account_ids) "
         "VALUES ('running', %s, %s, %s, %s)",
-        (business_date, snapshot_at, "ads_manager_csv", ",".join(accounts)),
+        (business_date, snapshot_at, source_version[:16], ",".join(accounts)),
     ))
 
 
@@ -204,6 +241,193 @@ def _fit_text(value: str, max_length: int) -> str:
     if len(value) <= max_length:
         return value
     return value[:max_length]
+
+
+def _normalize_meta_sync_channel(channel: str | None) -> str:
+    value = str(channel or META_REALTIME_SYNC_CHANNEL or "browser").strip().lower()
+    aliases = {
+        "ads_manager": "browser",
+        "csv": "browser",
+        "graph": "api",
+        "graph_api": "api",
+        "marketing_api": "api",
+        "skip": "none",
+        "disabled": "none",
+        "off": "none",
+    }
+    value = aliases.get(value, value)
+    if value not in {"browser", "api", "none"}:
+        raise ValueError(f"Unsupported Meta sync channel: {channel!r}")
+    return value
+
+
+def _meta_api_account_id() -> str:
+    value = (
+        os.environ.get("META_MARKETING_API_ACCOUNT_ID")
+        or os.environ.get("META_AD_ACCOUNT_ID")
+        or META_AD_EXPORT_ACCOUNT_ID
+    )
+    return str(value or "").strip().removeprefix("act_")
+
+
+def _meta_api_access_token() -> str:
+    return str(
+        os.environ.get("META_MARKETING_API_ACCESS_TOKEN")
+        or os.environ.get("META_ACCESS_TOKEN")
+        or ""
+    ).strip()
+
+
+def _build_meta_api_insights_params(business_date) -> dict[str, str]:
+    day = business_date.isoformat()
+    return {
+        "fields": ",".join(META_INSIGHTS_FIELDS),
+        "level": "campaign",
+        "time_range": json.dumps({"since": day, "until": day}, separators=(",", ":")),
+        "time_increment": "1",
+        "limit": str(max(1, META_MARKETING_API_LIMIT)),
+    }
+
+
+def _meta_api_insights_url(business_date, account_id: str) -> str:
+    version = META_MARKETING_API_VERSION.strip().lstrip("/")
+    params = urllib.parse.urlencode(_build_meta_api_insights_params(business_date))
+    return f"{META_MARKETING_API_BASE_URL.rstrip('/')}/{version}/act_{account_id}/insights?{params}"
+
+
+def _meta_api_get_json(url: str, token: str) -> tuple[dict[str, Any], dict[str, str]]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "AutoVideoSrtLocal/MetaRealtimeROAS",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=META_MARKETING_API_TIMEOUT_SECONDS) as response:
+            raw = response.read()
+            headers = {key.lower(): value for key, value in response.headers.items()}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Meta Marketing API HTTP {exc.code}: {body[:800]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Meta Marketing API request failed: {exc.reason}") from exc
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Meta Marketing API returned non-JSON response") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Meta Marketing API returned an unexpected response shape")
+    return payload, headers
+
+
+def _fetch_meta_marketing_api_insights(business_date, snapshot_at: datetime) -> dict[str, Any]:
+    token = _meta_api_access_token()
+    if not token:
+        raise RuntimeError(
+            "META_MARKETING_API_ACCESS_TOKEN is not configured; cannot use Meta API channel"
+        )
+
+    account_id = _meta_api_account_id()
+    next_url = _meta_api_insights_url(business_date, account_id)
+    rows: list[dict[str, Any]] = []
+    request_count = 0
+    rate_headers: dict[str, str] = {}
+    while next_url:
+        request_count += 1
+        if request_count > META_MARKETING_API_MAX_PAGES:
+            raise RuntimeError(
+                f"Meta Marketing API pagination exceeded {META_MARKETING_API_MAX_PAGES} pages"
+            )
+        payload, headers = _meta_api_get_json(next_url, token)
+        for header in ("x-app-usage", "x-ad-account-usage", "x-business-use-case-usage"):
+            if headers.get(header):
+                rate_headers[header] = headers[header]
+        data = payload.get("data") or []
+        if not isinstance(data, list):
+            raise RuntimeError("Meta Marketing API response data is not a list")
+        rows.extend([row for row in data if isinstance(row, dict)])
+        paging = payload.get("paging") if isinstance(payload.get("paging"), dict) else {}
+        next_url = str(paging.get("next") or "").strip()
+
+    return {
+        "business_date": business_date,
+        "snapshot_at": snapshot_at,
+        "account_id": account_id,
+        "api_version": META_MARKETING_API_VERSION,
+        "request_count": request_count,
+        "rows": rows,
+        "rate_limit_headers": rate_headers,
+    }
+
+
+def _extract_purchase_metric(actions: Any) -> float:
+    if not isinstance(actions, list):
+        return 0.0
+    values_by_type: dict[str, float] = {}
+    fallback: float | None = None
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+        action_type = str(item.get("action_type") or "").strip()
+        metric_value = _safe_report_number(item.get("value"))
+        if not action_type:
+            continue
+        values_by_type[action_type] = metric_value
+        if fallback is None and "purchase" in action_type.lower():
+            fallback = metric_value
+    for action_type in META_PURCHASE_ACTION_TYPES:
+        if action_type in values_by_type:
+            return values_by_type[action_type]
+    return fallback or 0.0
+
+
+def _insert_meta_realtime_campaign_metric(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    account_id: str,
+    account_name: str | None,
+    campaign_id: str,
+    campaign_name: str,
+    normalized_campaign_code: str,
+    result_count: int,
+    spend: float,
+    purchase_value: float,
+    impressions: int,
+    clicks: int,
+    raw: dict[str, Any],
+) -> None:
+    execute(
+        "INSERT INTO meta_ad_realtime_daily_campaign_metrics "
+        "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
+        "campaign_id, campaign_name, normalized_campaign_code, result_count, spend_usd, purchase_value_usd, "
+        "impressions, clicks, raw_json) "
+        "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
+        "ad_account_name=VALUES(ad_account_name), campaign_name=VALUES(campaign_name), "
+        "normalized_campaign_code=VALUES(normalized_campaign_code), result_count=VALUES(result_count), "
+        "spend_usd=VALUES(spend_usd), purchase_value_usd=VALUES(purchase_value_usd), "
+        "impressions=VALUES(impressions), clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
+        (
+            run_id,
+            business_date,
+            snapshot_at,
+            account_id,
+            account_name,
+            campaign_id,
+            campaign_name,
+            normalized_campaign_code,
+            result_count,
+            spend,
+            purchase_value,
+            impressions,
+            clicks,
+            json.dumps(raw, ensure_ascii=False),
+        ),
+    )
 
 
 def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[str, Any]:
@@ -440,20 +664,128 @@ def _import_meta_realtime_campaign_rows(
     return {"rows_imported": imported, "spend_usd": spend_total}
 
 
-def _sync_meta_realtime_daily(business_date, snapshot_at: datetime) -> dict[str, Any]:
-    accounts = [META_AD_EXPORT_ACCOUNT_ID]
+def _import_meta_realtime_api_rows(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    execute(
+        "DELETE FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
+        (business_date, snapshot_at),
+    )
+    imported = 0
+    spend_total = 0.0
+    currencies: set[str] = set()
+    for row in rows:
+        campaign_name_raw = str(row.get("campaign_name") or row.get("campaign_id") or "").strip()
+        if not campaign_name_raw:
+            continue
+        campaign_name = _fit_text(campaign_name_raw, 255)
+        account_id = str(row.get("account_id") or _meta_api_account_id()).strip().removeprefix("act_")
+        account_name = str(row.get("account_name") or "").strip() or None
+        campaign_id = _fit_report_identifier(
+            row.get("campaign_id"),
+            fallback=campaign_name_raw,
+            prefix="campaign",
+        )
+        spend = round(_safe_report_number(row.get("spend")), 4)
+        result_count = int(round(_extract_purchase_metric(row.get("actions"))))
+        purchase_value = round(_extract_purchase_metric(row.get("action_values")), 4)
+        impressions = int(round(_safe_report_number(row.get("impressions"))))
+        clicks = int(round(_safe_report_number(row.get("clicks"))))
+        currency = str(row.get("account_currency") or "").strip()
+        if currency:
+            currencies.add(currency)
+        _insert_meta_realtime_campaign_metric(
+            run_id=run_id,
+            business_date=business_date,
+            snapshot_at=snapshot_at,
+            account_id=account_id or _meta_api_account_id(),
+            account_name=account_name,
+            campaign_id=campaign_id,
+            campaign_name=campaign_name,
+            normalized_campaign_code=_fit_text(campaign_name_raw.lower(), 255),
+            result_count=result_count,
+            spend=spend,
+            purchase_value=purchase_value,
+            impressions=impressions,
+            clicks=clicks,
+            raw=row,
+        )
+        imported += 1
+        spend_total = round(spend_total + spend, 4)
+    return {
+        "rows_imported": imported,
+        "spend_usd": spend_total,
+        "account_currencies": sorted(currencies),
+    }
+
+
+def _sync_meta_realtime_daily(
+    business_date,
+    snapshot_at: datetime,
+    *,
+    meta_channel: str | None = None,
+) -> dict[str, Any]:
+    channel = _normalize_meta_sync_channel(meta_channel)
+    if channel == "none":
+        return {
+            "business_date": business_date,
+            "snapshot_at": snapshot_at,
+            "rows_imported": 0,
+            "spend_usd": 0.0,
+            "accounts": [],
+            "source": "disabled",
+            "channel": channel,
+            "data_completeness": "realtime_partial",
+            "status": "skipped",
+        }
+
+    accounts = [_meta_api_account_id() if channel == "api" else META_AD_EXPORT_ACCOUNT_ID]
+    source_version = (
+        f"api:{META_MARKETING_API_VERSION.strip()}"
+        if channel == "api"
+        else "ads_manager_csv"
+    )
     summary = {
         "business_date": business_date,
         "snapshot_at": snapshot_at,
         "rows_imported": 0,
         "spend_usd": 0.0,
         "accounts": accounts,
-        "source": "ads_manager_daily_export_script",
+        "source": "marketing_api_insights" if channel == "api" else "ads_manager_daily_export_script",
+        "channel": channel,
         "data_completeness": "realtime_partial",
     }
-    run_id = _start_meta_run(business_date, snapshot_at, accounts)
+    run_id = _start_meta_run(business_date, snapshot_at, accounts, source_version=source_version)
     summary["run_id"] = run_id
     try:
+        if channel == "api":
+            api_report = _fetch_meta_marketing_api_insights(business_date, snapshot_at)
+            rows = api_report.pop("rows")
+            summary["api_report"] = api_report
+            import_report = _import_meta_realtime_api_rows(
+                run_id=run_id,
+                business_date=business_date,
+                snapshot_at=snapshot_at,
+                rows=rows,
+            )
+            summary.update(import_report)
+            expected_currency = os.environ.get("META_MARKETING_API_EXPECTED_CURRENCY", "USD").strip().upper()
+            currencies = [str(value).upper() for value in summary.get("account_currencies") or []]
+            if expected_currency and currencies and any(value != expected_currency for value in currencies):
+                summary["currency_warning"] = {
+                    "expected": expected_currency,
+                    "seen": currencies,
+                    "message": "Spend was stored in spend_usd column but Meta returned a different account currency.",
+                }
+            _finish_meta_run(run_id, "success", summary)
+            summary["status"] = "success"
+            return summary
+
         export_report = _run_meta_ads_manager_export(business_date, snapshot_at)
         summary["export_report"] = export_report
         if int(export_report.get("returncode") or 0) != 0:
@@ -803,6 +1135,7 @@ def run_sync(
     max_scan_pages: int = 40,
     skip_dxm_fetch: bool = False,
     skip_meta_fetch: bool = False,
+    meta_channel: str | None = None,
 ) -> dict[str, Any]:
     now = now or _bj_now()
     snapshot_at = _snapshot_at_node(now)
@@ -846,11 +1179,16 @@ def run_sync(
                 "business_date": business_date,
                 "snapshot_at": snapshot_at,
                 "status": "skipped",
-                "source": "local_browser_required",
-                "message": "Meta Ads Manager export depends on the operator local browser environment.",
+                "source": "disabled",
+                "channel": "none",
+                "message": "Meta realtime fetch was skipped by command line flag.",
             }
         else:
-            summary["meta_realtime_report"] = _sync_meta_realtime_daily(business_date, snapshot_at)
+            summary["meta_realtime_report"] = _sync_meta_realtime_daily(
+                business_date,
+                snapshot_at,
+                meta_channel=meta_channel,
+            )
         summary["snapshot_id"] = _insert_daily_snapshot(run_id, snapshot_at)
         summary["snapshot_at"] = snapshot_at
         # Current requirement: only keep the real-time day-level board fresh.
@@ -869,12 +1207,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lookback-hours", type=int, default=3)
     parser.add_argument("--max-scan-pages", type=int, default=40)
     parser.add_argument("--skip-dxm-fetch", action="store_true")
+    parser.add_argument("--skip-meta-fetch", action="store_true")
     parser.add_argument(
         "--meta-channel",
-        choices=("browser",),
-        default=os.environ.get("META_REALTIME_SYNC_CHANNEL", "browser"),
+        choices=("browser", "api", "none"),
+        default=None,
+        help="Meta realtime sync channel. Defaults to META_REALTIME_SYNC_CHANNEL or browser.",
     )
-    parser.add_argument("--skip-meta-fetch", action="store_true")
     return parser
 
 
@@ -886,6 +1225,7 @@ def main(argv: list[str] | None = None) -> int:
         max_scan_pages=max(1, args.max_scan_pages),
         skip_dxm_fetch=args.skip_dxm_fetch,
         skip_meta_fetch=args.skip_meta_fetch,
+        meta_channel=args.meta_channel,
     )
     report["duration_seconds"] = round(time.time() - started, 2)
     print(json.dumps(report, ensure_ascii=False, indent=2, default=_json_default))

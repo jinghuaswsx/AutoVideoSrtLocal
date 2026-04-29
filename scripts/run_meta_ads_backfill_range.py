@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import time
 from datetime import date, datetime, timedelta
@@ -15,6 +16,7 @@ BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", "476723373113063")
 CDP_URL = os.environ.get("META_AD_EXPORT_CDP_URL", "http://127.0.0.1:9845")
 LEVELS = [("campaigns", "campaigns"), ("ads", "ads")]
 AUTH_FAILED = "auth_failed"
+DOWNLOAD_URL_PATTERN = "*download_report*"
 
 
 def parse_date(value: str) -> date:
@@ -59,6 +61,64 @@ def _is_login_page(page) -> bool:
     return "log into ads manager" in body or "log in with facebook" in body
 
 
+def _click_export_and_save(page, button, target: Path, *, timeout_ms: int = 150000) -> None:
+    """Save the Meta CSV from the download response before Chrome cancels it."""
+    state = {"done": False, "error": None}
+    cdp = page.context.new_cdp_session(page)
+
+    def on_request_paused(params):
+        request_id = params["requestId"]
+        url = params.get("request", {}).get("url", "")
+        status = int(params.get("responseStatusCode") or 0)
+        try:
+            body_info = cdp.send("Fetch.getResponseBody", {"requestId": request_id})
+            raw_body = body_info.get("body") or ""
+            data = (
+                base64.b64decode(raw_body)
+                if body_info.get("base64Encoded")
+                else raw_body.encode("utf-8")
+            )
+            content_type = ""
+            for header in params.get("responseHeaders") or []:
+                if str(header.get("name") or "").lower() == "content-type":
+                    content_type = str(header.get("value") or "")
+                    break
+            if status != 200 or b"<html" in data[:200].lower() or len(data) <= 100:
+                state["error"] = (
+                    f"download response invalid: status={status}, "
+                    f"content_type={content_type}, bytes={len(data)}, url={url[:200]}"
+                )
+            else:
+                target.write_bytes(data)
+                state["done"] = True
+                print("INTERCEPT_SAVED", target.name, len(data), flush=True)
+            cdp.send("Fetch.fulfillRequest", {"requestId": request_id, "responseCode": 204, "body": ""})
+        except Exception as exc:  # noqa: BLE001 - keep the original export retry loop in control.
+            state["error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+            try:
+                cdp.send("Fetch.continueRequest", {"requestId": request_id})
+            except Exception:
+                pass
+
+    cdp.on("Fetch.requestPaused", on_request_paused)
+    cdp.send("Fetch.enable", {"patterns": [{"urlPattern": DOWNLOAD_URL_PATTERN, "requestStage": "Response"}]})
+    try:
+        button.click(timeout=30000)
+        deadline = time.monotonic() + (timeout_ms / 1000)
+        while time.monotonic() < deadline:
+            if state["done"]:
+                return
+            if state["error"]:
+                raise RuntimeError(str(state["error"]))
+            page.wait_for_timeout(1000)
+        raise TimeoutError(f"Timed out waiting for Meta download response: {target.name}")
+    finally:
+        try:
+            cdp.send("Fetch.disable")
+        except Exception:
+            pass
+
+
 def export_one(
     page,
     out_dir: Path,
@@ -87,9 +147,7 @@ def export_one(
                 print("FAILED_AUTH", label, day.isoformat(), page.url[:300], flush=True)
                 return AUTH_FAILED
             button = _export_button(page)
-            with page.expect_download(timeout=150000) as download_info:
-                button.click(timeout=30000)
-            download_info.value.save_as(str(target))
+            _click_export_and_save(page, button, target)
             print("SAVED", target.name, target.stat().st_size, flush=True)
             return True
         except Exception as exc:  # noqa: BLE001 - backfill should keep moving after transient UI errors.

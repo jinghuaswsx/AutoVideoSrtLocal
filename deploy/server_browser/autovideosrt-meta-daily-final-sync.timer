@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Meta final daily ad data sync at 16:30 Beijing time
+
+[Timer]
+OnCalendar=*-*-* 16:30:00
+Persistent=true
+Unit=autovideosrt-meta-daily-final-sync.service
+
+[Install]
+WantedBy=timers.target

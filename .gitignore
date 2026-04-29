@@ -71,6 +71,7 @@ link_check_desktop_config.json
 
 # Local data exports and ad-hoc debugging artifacts
 *.csv
+*.backup_*
 /*.patch
 /test_*.js
 /README.MIMO.MD
@@ -93,6 +94,11 @@ link_check_desktop_config.json
 
 # 本地备份（服务器漂移/snapshot 等不入仓）
 backup/
+backups/
+.deploy-backups/
+.playwright-browsers/
+logs/
+web/static/downloads/
 
 # 个人调试 session（带硬编码 task_id 等）
 scripts/debug_workbench.mjs

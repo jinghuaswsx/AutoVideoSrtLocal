@@ -1,0 +1,22 @@
+[Unit]
+Description=AutoVideoSrt Meta final daily ad data success check and retry
+After=network-online.target autovideosrt-browser.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222
+Environment=BROWSER_AUTOMATION_LOCK_TIMEOUT_SECONDS=3600
+Environment=BROWSER_AUTOMATION_LOCK_RETRY_SECONDS=10
+Environment=BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=meta_daily_final
+Environment=BROWSER_AUTOMATION_APP_ROOT=/opt/autovideosrt
+Environment=BROWSER_AUTOMATION_PYTHON_BIN=/opt/autovideosrt/venv/bin/python
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/meta_daily_final_sync.py --mode check
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=5400

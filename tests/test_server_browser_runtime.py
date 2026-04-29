@@ -71,6 +71,23 @@ def test_shopifyid_and_roi_units_use_shared_browser_lock_with_alert_codes():
     assert "--skip-meta-fetch" not in roi
 
 
+def test_meta_daily_final_units_use_shared_browser_lock_and_staggered_timers():
+    sync_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-sync.service")
+    check_service = _read("deploy/server_browser/autovideosrt-meta-daily-final-check.service")
+    sync_timer = _read("deploy/server_browser/autovideosrt-meta-daily-final-sync.timer")
+    check_timer = _read("deploy/server_browser/autovideosrt-meta-daily-final-check.timer")
+
+    for service in (sync_service, check_service):
+        assert "/opt/autovideosrt/deploy/server_browser/with_browser_lock.sh" in service
+        assert "BROWSER_AUTOMATION_LOCK_ALERT_TASK_CODE=meta_daily_final" in service
+        assert "META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222" in service
+
+    assert "--mode run" in sync_service
+    assert "--mode check" in check_service
+    assert "OnCalendar=*-*-* 16:30:00" in sync_timer
+    assert "OnCalendar=*-*-* 17:00:00" in check_timer
+
+
 def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
     shopify = _read("deploy/server_browser/autovideosrt-shopifyid-sync.timer")
     roi = _read("deploy/server_browser/autovideosrt-roi-realtime-sync.timer")
