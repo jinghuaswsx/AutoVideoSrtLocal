@@ -854,6 +854,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lookback-hours", type=int, default=3)
     parser.add_argument("--max-scan-pages", type=int, default=40)
     parser.add_argument("--skip-dxm-fetch", action="store_true")
+    parser.add_argument(
+        "--meta-channel",
+        choices=("browser",),
+        default=os.environ.get("META_REALTIME_SYNC_CHANNEL", "browser"),
+    )
     parser.add_argument("--skip-meta-fetch", action="store_true")
     return parser
 
