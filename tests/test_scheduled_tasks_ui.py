@@ -37,6 +37,8 @@ def test_scheduled_tasks_page_has_log_and_management_capsules():
     assert "触发来源" in source
     assert "登记状态" in source
     assert "日志" in source
+    assert "item.source_label" in source
+    assert "item.name" in source
 
 
 def test_scheduled_tasks_route_uses_view_and_task_filters():

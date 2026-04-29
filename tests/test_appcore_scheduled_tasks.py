@@ -61,10 +61,68 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["tts_convergence_stats"]["source_type"] == "cron"
 
 
+def test_task_definitions_include_audited_external_and_in_process_timers():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    assert definitions["shopifyid_windows_daily"]["source_type"] == "windows"
+    assert (
+        definitions["shopifyid_windows_daily"]["source_ref"]
+        == "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily"
+    )
+    assert definitions["dianxiaomi_order_import"]["log_table"] == "dianxiaomi_order_import_batches"
+    assert definitions["meta_realtime_import"]["log_table"] == "meta_ad_realtime_import_runs"
+    assert definitions["medias_detail_fetch_cleanup"]["source_type"] == "in_process"
+    assert definitions["medias_detail_fetch_cleanup"]["schedule"] == "每 60 秒"
+    assert definitions["voice_match_cleanup"]["source_type"] == "in_process"
+    assert definitions["voice_match_cleanup"]["schedule"] == "每 60 秒"
+
+
 def test_list_runs_all_merges_scheduled_task_and_roi_tables(monkeypatch):
     from appcore import scheduled_tasks
 
     def fake_query(sql, params):
+        if "dianxiaomi_order_import_batches" in sql:
+            return [
+                {
+                    "id": 4,
+                    "status": "success",
+                    "started_at": datetime(2026, 4, 29, 19, 21),
+                    "finished_at": datetime(2026, 4, 29, 19, 22),
+                    "duration_seconds": 55,
+                    "summary_json": '{"fetched_orders": 12}',
+                    "error_message": None,
+                    "output_file": None,
+                    "date_from": "2026-04-29",
+                    "date_to": "2026-04-29",
+                    "total_pages": 2,
+                    "fetched_orders": 12,
+                    "fetched_lines": 18,
+                    "inserted_lines": 9,
+                    "updated_lines": 9,
+                    "skipped_lines": 0,
+                    "included_shopify_ids_count": 3,
+                }
+            ]
+        if "meta_ad_realtime_import_runs" in sql:
+            return [
+                {
+                    "id": 3,
+                    "status": "success",
+                    "started_at": datetime(2026, 4, 29, 19, 22),
+                    "finished_at": datetime(2026, 4, 29, 19, 23),
+                    "duration_seconds": 45,
+                    "summary_json": '{"rows_imported": 10}',
+                    "error_message": None,
+                    "output_file": None,
+                    "business_date": "2026-04-29",
+                    "snapshot_at": datetime(2026, 4, 29, 19, 20),
+                    "ad_account_ids": '["act_1"]',
+                    "rows_imported": 10,
+                    "spend_usd": "24.50",
+                }
+            ]
         if "roi_hourly_sync_runs" in sql:
             return [
                 {
@@ -99,6 +157,86 @@ def test_list_runs_all_merges_scheduled_task_and_roi_tables(monkeypatch):
 
     runs = scheduled_tasks.list_runs("all")
 
-    assert [run["task_code"] for run in runs] == ["roi_hourly_sync", "shopifyid"]
-    assert runs[0]["task_name"] == "店小秘订单与 ROAS 实时同步"
-    assert runs[0]["summary"] == {"order_hours_upserted": 3}
+    assert [run["task_code"] for run in runs] == [
+        "meta_realtime_import",
+        "dianxiaomi_order_import",
+        "roi_hourly_sync",
+        "shopifyid",
+    ]
+    assert runs[0]["task_name"] == "Meta 实时广告导入"
+    assert runs[0]["summary"]["rows_imported"] == 10
+    assert runs[1]["task_name"] == "店小秘订单导入"
+    assert runs[1]["summary"]["fetched_orders"] == 12
+    assert runs[2]["summary"] == {"order_hours_upserted": 3}
+
+
+def test_list_runs_supports_dianxiaomi_order_import_batches(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params):
+        assert "dianxiaomi_order_import_batches" in sql
+        assert params == (60,)
+        return [
+            {
+                "id": 8,
+                "status": "success",
+                "started_at": datetime(2026, 4, 29, 20, 20),
+                "finished_at": datetime(2026, 4, 29, 20, 21),
+                "duration_seconds": 40,
+                "summary_json": None,
+                "error_message": None,
+                "output_file": None,
+                "date_from": "2026-04-29",
+                "date_to": "2026-04-29",
+                "total_pages": 4,
+                "fetched_orders": 18,
+                "fetched_lines": 28,
+                "inserted_lines": 20,
+                "updated_lines": 8,
+                "skipped_lines": 0,
+                "included_shopify_ids_count": 5,
+            }
+        ]
+
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    runs = scheduled_tasks.list_runs("dianxiaomi_order_import")
+
+    assert runs[0]["task_code"] == "dianxiaomi_order_import"
+    assert runs[0]["task_name"] == "店小秘订单导入"
+    assert runs[0]["summary"]["fetched_lines"] == 28
+    assert runs[0]["summary"]["inserted_lines"] == 20
+
+
+def test_list_runs_supports_meta_realtime_import_runs(monkeypatch):
+    from appcore import scheduled_tasks
+
+    def fake_query(sql, params):
+        assert "meta_ad_realtime_import_runs" in sql
+        assert params == (60,)
+        return [
+            {
+                "id": 9,
+                "status": "skipped",
+                "started_at": datetime(2026, 4, 29, 20, 20),
+                "finished_at": datetime(2026, 4, 29, 20, 21),
+                "duration_seconds": 35,
+                "summary_json": None,
+                "error_message": None,
+                "output_file": None,
+                "business_date": "2026-04-29",
+                "snapshot_at": datetime(2026, 4, 29, 20, 20),
+                "ad_account_ids": '["act_1", "act_2"]',
+                "rows_imported": 0,
+                "spend_usd": "0.00",
+            }
+        ]
+
+    monkeypatch.setattr(scheduled_tasks, "query", fake_query)
+
+    runs = scheduled_tasks.list_runs("meta_realtime_import")
+
+    assert runs[0]["task_code"] == "meta_realtime_import"
+    assert runs[0]["task_name"] == "Meta 实时广告导入"
+    assert runs[0]["summary"]["business_date"] == "2026-04-29"
+    assert runs[0]["summary"]["rows_imported"] == 0

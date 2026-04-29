@@ -24,6 +24,19 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
+    "shopifyid_windows_daily": {
+        "code": "shopifyid_windows_daily",
+        "name": "Shopify ID 获取（Windows 本机）",
+        "description": "Windows 计划任务每天触发店小秘 Shopify ID 同步脚本，作为本机运行入口登记。",
+        "schedule": "每天 12:10",
+        "source_type": "windows",
+        "source_label": "Windows 计划任务",
+        "source_ref": "AutoVideoSrtLocal-ShopifyIdDianxiaomiSyncDaily",
+        "runner": "tools/shopifyid_dianxiaomi_sync_daily.ps1",
+        "deployment": "本机运维任务",
+        "log_table": "",
+        "output_file": "output/shopifyid_dianxiaomi_sync/",
+    },
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
@@ -35,6 +48,30 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "runner": "tools/roi_hourly_sync.py",
         "deployment": "线上已启用",
         "log_table": "roi_hourly_sync_runs",
+    },
+    "dianxiaomi_order_import": {
+        "code": "dianxiaomi_order_import",
+        "name": "店小秘订单导入",
+        "description": "ROI 实时同步中的店小秘订单导入子任务，记录订单抓取、明细入库和跳过数量。",
+        "schedule": "每 20 分钟（随 ROI 实时同步触发）",
+        "source_type": "subtask",
+        "source_label": "ROI 同步子任务",
+        "source_ref": "autovideosrt-roi-realtime-sync.timer",
+        "runner": "tools/dianxiaomi_order_import.py（由 tools/roi_hourly_sync.py 调用）",
+        "deployment": "线上已启用",
+        "log_table": "dianxiaomi_order_import_batches",
+    },
+    "meta_realtime_import": {
+        "code": "meta_realtime_import",
+        "name": "Meta 实时广告导入",
+        "description": "ROI 实时同步中的 Meta 实时广告导入子任务，记录导入行数、消耗金额和跳过状态。",
+        "schedule": "每 20 分钟（随 ROI 实时同步触发）",
+        "source_type": "subtask",
+        "source_label": "ROI 同步子任务",
+        "source_ref": "autovideosrt-roi-realtime-sync.timer",
+        "runner": "tools/roi_hourly_sync.py::_sync_meta_realtime_daily",
+        "deployment": "线上已启用",
+        "log_table": "meta_ad_realtime_import_runs",
     },
     "meta_daily_final": {
         "code": "meta_daily_final",
@@ -106,6 +143,30 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "source_ref": "cleanup",
         "runner": "appcore.cleanup.run_cleanup",
         "deployment": "Web 服务启动时注册",
+        "log_table": "",
+    },
+    "medias_detail_fetch_cleanup": {
+        "code": "medias_detail_fetch_cleanup",
+        "name": "素材详情抓取任务清理",
+        "description": "进程内维护任务，每 60 秒清理过期的素材详情抓取任务状态。",
+        "schedule": "每 60 秒",
+        "source_type": "in_process",
+        "source_label": "进程内维护任务",
+        "source_ref": "mdf-cleanup",
+        "runner": "appcore.medias_detail_fetch_tasks._cleanup_loop",
+        "deployment": "模块导入后后台线程启动",
+        "log_table": "",
+    },
+    "voice_match_cleanup": {
+        "code": "voice_match_cleanup",
+        "name": "音色匹配任务清理",
+        "description": "进程内维护任务，每 60 秒清理过期的音色匹配任务状态和临时文件。",
+        "schedule": "每 60 秒",
+        "source_type": "in_process",
+        "source_label": "进程内维护任务",
+        "source_ref": "vmt-cleanup",
+        "runner": "appcore.voice_match_tasks._cleanup_loop",
+        "deployment": "模块导入后后台线程启动",
         "log_table": "",
     },
     "tts_convergence_stats": {
@@ -271,11 +332,26 @@ def _decode_summary(value: Any) -> dict[str, Any]:
         return {}
 
 
+def _decode_json_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    if text[0] not in "[{":
+        return value
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return value
+
+
 def _normalize_row(
     row: dict[str, Any] | None,
     *,
     task_code: str | None = None,
     task_name: str | None = None,
+    summary_fields: tuple[str, ...] = (),
 ) -> dict[str, Any] | None:
     if not row:
         return None
@@ -284,7 +360,12 @@ def _normalize_row(
         item["task_code"] = task_code
     if task_name and not item.get("task_name"):
         item["task_name"] = task_name
-    item["summary"] = _decode_summary(item.pop("summary_json", None))
+    summary = _decode_summary(item.pop("summary_json", None))
+    for field in summary_fields:
+        value = item.get(field)
+        if value is not None and value != "":
+            summary.setdefault(field, _decode_json_value(value))
+    item["summary"] = summary
     return item
 
 
@@ -343,6 +424,75 @@ def _roi_hourly_runs(*, limit: int) -> list[dict[str, Any]]:
     ]
 
 
+def _dianxiaomi_order_import_runs(*, limit: int) -> list[dict[str, Any]]:
+    task = TASK_DEFINITIONS["dianxiaomi_order_import"]
+    rows = _safe_query_rows(
+        """
+        SELECT id, status, NULL AS scheduled_for,
+               started_at, finished_at, duration_seconds, summary_json,
+               error_message, NULL AS output_file, date_from, date_to,
+               total_pages, fetched_orders, fetched_lines, inserted_lines,
+               updated_lines, skipped_lines, included_shopify_ids_count
+        FROM dianxiaomi_order_import_batches
+        ORDER BY started_at DESC, id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    return [
+        _normalize_row(
+            row,
+            task_code=task["code"],
+            task_name=task["name"],
+            summary_fields=(
+                "date_from",
+                "date_to",
+                "total_pages",
+                "fetched_orders",
+                "fetched_lines",
+                "inserted_lines",
+                "updated_lines",
+                "skipped_lines",
+                "included_shopify_ids_count",
+            ),
+        )
+        for row in rows
+        if row
+    ]
+
+
+def _meta_realtime_import_runs(*, limit: int) -> list[dict[str, Any]]:
+    task = TASK_DEFINITIONS["meta_realtime_import"]
+    rows = _safe_query_rows(
+        """
+        SELECT id, status, NULL AS scheduled_for,
+               started_at, finished_at, duration_seconds, summary_json,
+               error_message, NULL AS output_file, business_date, snapshot_at,
+               ad_account_ids, rows_imported, spend_usd
+        FROM meta_ad_realtime_import_runs
+        ORDER BY started_at DESC, id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    return [
+        _normalize_row(
+            row,
+            task_code=task["code"],
+            task_name=task["name"],
+            summary_fields=(
+                "business_date",
+                "snapshot_at",
+                "ad_account_ids",
+                "rows_imported",
+                "spend_usd",
+            ),
+        )
+        for row in rows
+        if row
+    ]
+
+
 def _sort_runs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         rows,
@@ -359,6 +509,8 @@ def list_runs(task_code: str = "all", *, limit: int = 60) -> list[dict[str, Any]
         rows: list[dict[str, Any]] = []
         rows.extend(_scheduled_task_runs("all", limit=safe_limit))
         rows.extend(_roi_hourly_runs(limit=safe_limit))
+        rows.extend(_dianxiaomi_order_import_runs(limit=safe_limit))
+        rows.extend(_meta_realtime_import_runs(limit=safe_limit))
         return _sort_runs(rows)[:safe_limit]
 
     task = TASK_DEFINITIONS.get(code)
@@ -368,6 +520,10 @@ def list_runs(task_code: str = "all", *, limit: int = 60) -> list[dict[str, Any]
         return _scheduled_task_runs(code, limit=safe_limit)
     if task.get("log_table") == "roi_hourly_sync_runs":
         return _roi_hourly_runs(limit=safe_limit)
+    if task.get("log_table") == "dianxiaomi_order_import_batches":
+        return _dianxiaomi_order_import_runs(limit=safe_limit)
+    if task.get("log_table") == "meta_ad_realtime_import_runs":
+        return _meta_realtime_import_runs(limit=safe_limit)
     return []
 
 
