@@ -226,11 +226,11 @@
     ].join('');
   }
 
-  function showFilenameErrorModal(filename, errs, productName, langCode) {
+  function showFilenameErrorModal(filename, errs, productName, langCode, suggestedFilename) {
     const fn = String(filename || '');
     // 产品名对不对：文件名里是否包含完整的 productName
     const productOk = !!(productName && fn.includes(productName));
-    const suggestion = productOk ? buildSuggestedFilename(fn, productName, langCode) : '';
+    const suggestion = productOk ? (suggestedFilename || buildSuggestedFilename(fn, productName, langCode)) : '';
 
     const old = document.getElementById('filenameErrModal');
     if (old) old.remove();
@@ -355,15 +355,23 @@
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       let msg = '';
+      let data = null;
       if (text) {
         try {
-          const data = JSON.parse(text);
+          data = JSON.parse(text);
           msg = data.error || data.message || text;
         } catch {
           msg = text;
         }
       }
-      throw new Error(msg || `HTTP ${res.status}`);
+      const err = new Error(msg || `HTTP ${res.status}`);
+      err.status = res.status;
+      if (data && typeof data === 'object') {
+        Object.keys(data).forEach((key) => {
+          if (key !== 'message') err[key] = data[key];
+        });
+      }
+      throw err;
     }
     return res.json();
   }
@@ -4417,11 +4425,11 @@
         ? `<img src="${escapeHtml(cover)}?_=${Date.now()}" loading="lazy" alt="">`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
-      <div class="oc-vitem" data-item="${it.id}">
+      <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}">
         <div class="vname oc-vitem-name-editor">
-          <input class="oc-input sm vname-input" type="text" value="${name}"
-                 title="${name}" data-original="${name}" maxlength="255"
-                 aria-label="视频素材文件名" readonly>
+          <div class="vname-text" title="${name}">${name}</div>
+          <textarea class="oc-input sm vname-input" title="${name}" data-original="${name}"
+                    maxlength="255" rows="2" aria-label="视频素材文件名" hidden>${name}</textarea>
           <div class="vname-edit-actions">
             <button class="oc-btn text sm" type="button" data-act="name-edit">${icon('edit', 12)}<span>修改文件名</span></button>
             <button class="oc-btn primary sm" type="button" data-act="name-save" hidden>${icon('check', 12)}<span>保存</span></button>
@@ -4481,10 +4489,13 @@
 
   function edSetItemNameEditMode(card, editing) {
     const input = card.querySelector('.vname-input');
+    const display = card.querySelector('.vname-text');
     const editBtn = card.querySelector('[data-act="name-edit"]');
     const saveBtn = card.querySelector('[data-act="name-save"]');
     const cancelBtn = card.querySelector('[data-act="name-cancel"]');
-    if (!input || !editBtn || !saveBtn || !cancelBtn) return;
+    if (!input || !display || !editBtn || !saveBtn || !cancelBtn) return;
+    display.hidden = !!editing;
+    input.hidden = !editing;
     input.readOnly = !editing;
     editBtn.hidden = editing;
     saveBtn.hidden = !editing;
@@ -4528,6 +4539,14 @@
       edSetItemNameEditMode(card, false);
       return;
     }
+    await ensureLanguages();
+    const productName = edState.productData && edState.productData.product && edState.productData.product.name;
+    const lang = card.dataset.lang || edState.activeLang || 'en';
+    const effectiveLang = resolveMaterialFilenameLang(nextName, lang);
+    if (!assertMaterialFilenameOrAlert(nextName, productName, effectiveLang)) {
+      input.focus();
+      return;
+    }
 
     edSetItemNameSaving(card, true);
     try {
@@ -4538,12 +4557,25 @@
       });
       const updated = data.item || {};
       const savedName = updated.display_name || nextName;
+      const display = card.querySelector('.vname-text');
       input.value = savedName;
       input.dataset.original = savedName;
       input.title = savedName;
+      if (display) {
+        display.textContent = savedName;
+        display.title = savedName;
+      }
       edPatchItemNameInState(itemId, updated, savedName);
       edSetItemNameEditMode(card, false);
     } catch (e) {
+      if (e && e.error === 'filename_invalid') {
+        const productName = edState.productData && edState.productData.product && edState.productData.product.name;
+        const lang = e.effective_lang || resolveMaterialFilenameLang(nextName, card.dataset.lang || edState.activeLang || 'en');
+        const details = Array.isArray(e.details) && e.details.length ? e.details : [e.message || '文件名不符合命名规范'];
+        showFilenameErrorModal(nextName, details, productName, lang, e.suggested_filename || '');
+        input.focus();
+        return;
+      }
       alert('修改文件名失败：' + (e.message || ''));
       input.focus();
     } finally {

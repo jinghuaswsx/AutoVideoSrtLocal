@@ -137,6 +137,21 @@ def test_medias_edit_items_render_translation_source_badge():
     assert ".oc-vitem .vsource" in template
 
 
+def test_medias_edit_item_filename_uses_validation_modal_and_two_line_layout():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert 'class="vname-text"' in script
+    assert 'class="oc-input sm vname-input"' in script
+    assert ".oc-vitem .vname-text" in template
+    assert "min-height:calc(1.45em * 2);" in template
+    assert ".oc-vitem .vname-edit-actions" in template
+    assert "showFilenameErrorModal(" in script
+    assert "e.error === 'filename_invalid'" in script
+    assert "e.suggested_filename" in script
+
+
 def test_medias_translate_modal_marks_completed_raw_language_pairs():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias_translate_modal.js").read_text(encoding="utf-8")

@@ -1486,8 +1486,8 @@ def test_update_item_display_name_patches_existing_item(authed_client_no_db, mon
         "id": 44,
         "product_id": 123,
         "lang": "fr",
-        "filename": "2026.04.17-demo.mp4",
-        "display_name": "2026.04.17-demo.mp4",
+        "filename": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+        "display_name": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
         "object_key": "1/medias/123/2026.04.17-demo.mp4",
         "cover_object_key": None,
         "thumbnail_path": None,
@@ -1507,6 +1507,10 @@ def test_update_item_display_name_patches_existing_item(authed_client_no_db, mon
         "get_product",
         lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
     )
+    monkeypatch.setattr(r.medias, "list_languages", lambda: [
+        {"code": "en", "name_zh": "英语"},
+        {"code": "fr", "name_zh": "法语"},
+    ])
     monkeypatch.setattr(r, "_can_access_product", lambda product: True)
 
     def fake_update_item_display_name(item_id, display_name):
@@ -1518,17 +1522,59 @@ def test_update_item_display_name_patches_existing_item(authed_client_no_db, mon
 
     resp = authed_client_no_db.patch(
         "/medias/api/items/44",
-        json={"display_name": "2026.04.17-demo-renamed.mp4"},
+        json={"display_name": "2026.04.18-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4"},
     )
 
     assert resp.status_code == 200
     assert captured == {
         "item_id": 44,
-        "display_name": "2026.04.17-demo-renamed.mp4",
+        "display_name": "2026.04.18-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
     }
     data = resp.get_json()
     assert data["item"]["id"] == 44
-    assert data["item"]["display_name"] == "2026.04.17-demo-renamed.mp4"
+    assert data["item"]["display_name"] == "2026.04.18-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4"
+
+
+def test_update_item_display_name_rejects_invalid_name_with_suggestion(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 123,
+            "lang": "fr",
+            "filename": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+            "display_name": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+            "object_key": "1/medias/123/fr.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
+    )
+    monkeypatch.setattr(r.medias, "list_languages", lambda: [
+        {"code": "en", "name_zh": "英语"},
+        {"code": "fr", "name_zh": "法语"},
+    ])
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    update_calls = []
+    monkeypatch.setattr(r.medias, "update_item_display_name", lambda *args: update_calls.append(args))
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/items/44",
+        json={"display_name": "2026.04.17-测试商品-原素材-补充素材（法语）-C-指派-蔡靖华.mp4"},
+    )
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["error"] == "filename_invalid"
+    assert body["message"] == "文件名不符合命名规范"
+    assert body["effective_lang"] == "fr"
+    assert body["suggested_filename"] == "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4"
+    assert update_calls == []
 
 
 def test_update_item_display_name_rejects_blank_name(authed_client_no_db, monkeypatch):
