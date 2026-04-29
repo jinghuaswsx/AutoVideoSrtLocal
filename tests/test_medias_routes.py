@@ -192,6 +192,31 @@ def test_manual_ai_evaluate_returns_llm_error_to_frontend(authed_client_no_db, m
     assert body["result"]["status"] == "failed"
 
 
+def test_manual_ai_evaluate_returns_preflight_error_to_frontend(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1})
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    monkeypatch.setattr(
+        r.material_evaluation,
+        "evaluate_product_if_ready",
+        lambda pid, **kwargs: {
+            "status": "product_link_unavailable",
+            "product_id": pid,
+            "product_url": "https://newjoyloo.com/products/missing-rjc",
+            "error": "HTTP 404",
+        },
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/123/evaluate")
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["ok"] is False
+    assert "HTTP 404" in body["error"]
+    assert body["result"]["status"] == "product_link_unavailable"
+
+
 def test_manual_ai_evaluate_runs_synchronously_on_click(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

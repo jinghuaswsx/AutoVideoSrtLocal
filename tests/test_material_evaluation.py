@@ -2,6 +2,15 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _default_product_link_probe_ok(monkeypatch):
+    from appcore import material_evaluation
+
+    monkeypatch.setattr(material_evaluation.pushes, "probe_ad_url", lambda url: (True, None))
+
 
 def test_response_schema_requires_every_enabled_small_language():
     from appcore import material_evaluation
@@ -553,6 +562,226 @@ def test_auto_evaluation_skips_after_one_logged_attempt(monkeypatch, tmp_path):
         "attempts": 1,
     }
     assert invoked == []
+
+
+def test_evaluation_blocks_404_product_link_before_llm(monkeypatch):
+    from appcore import material_evaluation
+
+    calls = {"llm": 0, "updates": 0, "attempts": 0, "materialize": 0}
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Missing Shopify Product",
+            "product_code": "missing-product-rjc",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/missing-product-rjc",
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "probe_ad_url",
+        lambda url: (False, "HTTP 404"),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: calls.__setitem__("materialize", calls["materialize"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_start",
+        lambda *args, **kwargs: calls.__setitem__("attempts", calls["attempts"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: calls.__setitem__("llm", calls["llm"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: calls.__setitem__("updates", calls["updates"] + 1),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result["status"] == "product_link_unavailable"
+    assert result["product_id"] == 7
+    assert result["product_url"] == "https://newjoyloo.com/products/missing-product-rjc"
+    assert result["error"] == "HTTP 404"
+    assert calls == {"llm": 0, "updates": 0, "attempts": 0, "materialize": 0}
+
+
+def test_evaluation_blocks_missing_local_cover_before_llm(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    video = tmp_path / "promo.mp4"
+    video.write_bytes(b"video")
+    calls = {"llm": 0, "updates": 0, "attempts": 0}
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "No Cover Product",
+            "product_code": "no-cover-rjc",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/no-cover-rjc",
+    )
+    monkeypatch.setattr(material_evaluation.pushes, "probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+
+    def fake_materialize(object_key):
+        if object_key.endswith(".jpg"):
+            raise FileNotFoundError(object_key)
+        return video
+
+    monkeypatch.setattr(material_evaluation, "_materialize_media", fake_materialize)
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_start",
+        lambda *args, **kwargs: calls.__setitem__("attempts", calls["attempts"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: calls.__setitem__("llm", calls["llm"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: calls.__setitem__("updates", calls["updates"] + 1),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result == {
+        "status": "missing_cover_file",
+        "product_id": 7,
+        "object_key": "media/cover.jpg",
+    }
+    assert calls == {"llm": 0, "updates": 0, "attempts": 0}
+
+
+def test_evaluation_blocks_missing_local_video_before_llm(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    cover.write_bytes(b"cover")
+    calls = {"llm": 0, "updates": 0, "attempts": 0}
+
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "No Video Product",
+            "product_code": "no-video-rjc",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "en", "name": "English"}, {"code": "de", "name": "German"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/no-video-rjc",
+    )
+    monkeypatch.setattr(material_evaluation.pushes, "probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(material_evaluation, "_materialize_media", lambda object_key: cover)
+    monkeypatch.setattr(
+        material_evaluation,
+        "_make_eval_clip_15s",
+        lambda product_id, item: (_ for _ in ()).throw(FileNotFoundError(item["object_key"])),
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_record_attempt_start",
+        lambda *args, **kwargs: calls.__setitem__("attempts", calls["attempts"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: calls.__setitem__("llm", calls["llm"] + 1),
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: calls.__setitem__("updates", calls["updates"] + 1),
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result == {
+        "status": "missing_video_file",
+        "product_id": 7,
+        "object_key": "media/promo.mp4",
+    }
+    assert calls == {"llm": 0, "updates": 0, "attempts": 0}
 
 
 def test_manual_evaluation_bypasses_auto_attempt_limit(monkeypatch, tmp_path):

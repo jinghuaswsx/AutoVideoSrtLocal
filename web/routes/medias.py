@@ -80,10 +80,19 @@ def _material_evaluation_message(result: dict) -> str:
         return "未配置可评估语种，暂不能进行 AI 评估"
     if status == "missing_product_link":
         return "缺少英文商品链接，暂不能进行 AI 评估"
+    if status == "product_link_unavailable":
+        detail = str(result.get("error") or "").strip()
+        url = str(result.get("product_url") or "").strip()
+        suffix = f"：{detail}" if detail else ""
+        return f"商品链接不可用或返回 404，暂不能进行 AI 评估{suffix}" + (f"（{url}）" if url else "")
     if status == "missing_cover":
         return "缺少英文封面图，暂不能进行 AI 评估"
+    if status == "missing_cover_file":
+        return "商品主图本地文件不存在或为空，暂不能进行 AI 评估"
     if status == "missing_video":
         return "缺少英文视频素材，暂不能进行 AI 评估"
+    if status == "missing_video_file":
+        return "英文视频本地文件不存在或为空，暂不能进行 AI 评估"
     if status == "product_missing":
         return "商品不存在或已删除"
     if status == "auto_attempt_limit_reached":

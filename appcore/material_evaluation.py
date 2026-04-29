@@ -383,6 +383,90 @@ def _decision_from_score(score: float, is_suitable: bool) -> str:
     return "不适合推广"
 
 
+def _product_link_preflight_error(product_id: int, product_url: str) -> dict | None:
+    try:
+        ok, error = pushes.probe_ad_url(product_url)
+    except Exception as exc:
+        logger.info("material evaluation product link probe failed: %s", product_url, exc_info=True)
+        ok = False
+        error = str(exc) or exc.__class__.__name__
+    if ok:
+        return None
+    return {
+        "status": "product_link_unavailable",
+        "product_id": product_id,
+        "product_url": product_url,
+        "error": error or "product link unavailable",
+    }
+
+
+def _is_ready_local_file(path: Path | str | None) -> bool:
+    if path is None:
+        return False
+    try:
+        p = Path(path)
+        return p.is_file() and p.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _materialize_required_media(
+    product_id: int,
+    object_key: str,
+    *,
+    missing_status: str,
+) -> tuple[Path | None, dict | None]:
+    try:
+        path = _materialize_media(object_key)
+    except Exception:
+        logger.info(
+            "material evaluation preflight media materialize failed: product_id=%s object_key=%s",
+            product_id,
+            object_key,
+            exc_info=True,
+        )
+        return None, {
+            "status": missing_status,
+            "product_id": product_id,
+            "object_key": object_key,
+        }
+    if not _is_ready_local_file(path):
+        return None, {
+            "status": missing_status,
+            "product_id": product_id,
+            "object_key": object_key,
+        }
+    return Path(path), None
+
+
+def _materialize_required_eval_video(
+    product_id: int,
+    video: dict,
+) -> tuple[Path | None, dict | None]:
+    video_key = str(video.get("object_key") or "").strip()
+    try:
+        path = _make_eval_clip_15s(product_id, video)
+    except Exception:
+        logger.info(
+            "material evaluation preflight video materialize failed: product_id=%s object_key=%s",
+            product_id,
+            video_key,
+            exc_info=True,
+        )
+        return None, {
+            "status": "missing_video_file",
+            "product_id": product_id,
+            "object_key": video_key,
+        }
+    if not _is_ready_local_file(path):
+        return None, {
+            "status": "missing_video_file",
+            "product_id": product_id,
+            "object_key": video_key,
+        }
+    return Path(path), None
+
+
 def _debug_media_entry(
     *,
     role: str,
@@ -588,6 +672,9 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
     product_url = pushes.resolve_product_page_url("en", product)
     if not product_url:
         return {"status": "missing_product_link", "product_id": product_id}
+    link_error = _product_link_preflight_error(product_id, product_url)
+    if link_error:
+        return link_error
 
     cover_key = _resolve_product_cover_key(product_id, product)
     if not cover_key:
@@ -609,6 +696,17 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
                 "attempts": attempts,
             }
 
+    cover_path, media_error = _materialize_required_media(
+        product_id,
+        cover_key,
+        missing_status="missing_cover_file",
+    )
+    if media_error:
+        return media_error
+    video_path, media_error = _materialize_required_eval_video(product_id, video)
+    if media_error:
+        return media_error
+
     llm_config = {
         "provider": EVALUATION_PROVIDER,
         "model": EVALUATION_MODEL,
@@ -618,8 +716,6 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
     attempt_id = None
     try:
         llm_config = resolve_evaluation_llm_config()
-        cover_path = _materialize_media(cover_key)
-        video_path = _make_eval_clip_15s(product_id, video)
         attempt_id = _record_attempt_start(
             product_id,
             cover_key,
