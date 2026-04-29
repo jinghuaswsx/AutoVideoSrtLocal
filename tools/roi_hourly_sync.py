@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import os
@@ -178,6 +179,32 @@ def _safe_report_number(value: Any) -> float:
         return 0.0
 
 
+def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
+    return round(float(order_revenue or 0) + float(shipping_revenue or 0), 2)
+
+
+def _true_roas(order_revenue: float, shipping_revenue: float, spend: float, ad_status: str) -> float | None:
+    if spend <= 0 or ad_status != "ok":
+        return None
+    return round(_revenue_with_shipping(order_revenue, shipping_revenue) / spend, 6)
+
+
+def _fit_report_identifier(value: Any, *, fallback: str, prefix: str, max_length: int = 64) -> str:
+    candidate = str(value or "").strip()
+    if candidate and len(candidate) <= max_length:
+        return candidate
+    source = candidate or fallback
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()[:24]
+    return f"{prefix}:{digest}"
+
+
+def _fit_text(value: str, max_length: int) -> str:
+    value = str(value or "").strip()
+    if len(value) <= max_length:
+        return value
+    return value[:max_length]
+
+
 def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[str, Any]:
     if not META_AD_EXPORT_SCRIPT.exists():
         raise FileNotFoundError(f"Meta export script not found: {META_AD_EXPORT_SCRIPT}")
@@ -223,7 +250,7 @@ def _run_meta_ads_manager_export(business_date, snapshot_at: datetime) -> dict[s
     }
 
 
-def _import_meta_realtime_campaign_rows(
+def _import_meta_realtime_campaign_rows_legacy(
     *,
     run_id: int,
     business_date,
@@ -314,6 +341,104 @@ def _import_meta_realtime_campaign_rows(
     return {"rows_imported": imported, "spend_usd": spend_total}
 
 
+def _import_meta_realtime_campaign_rows(
+    *,
+    run_id: int,
+    business_date,
+    snapshot_at: datetime,
+    campaign_path: Path,
+) -> dict[str, Any]:
+    rows = _read_meta_report_rows(campaign_path)
+    execute(
+        "DELETE FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial'",
+        (business_date, snapshot_at),
+    )
+    imported = 0
+    spend_total = 0.0
+    for row in rows:
+        campaign_name_raw = str(_pick_value(
+            row,
+            ("广告系列名称", "Campaign name", "Campaign Name"),
+            (("广告系列", "名称"), ("campaign", "name")),
+        ) or "").strip()
+        if not campaign_name_raw:
+            continue
+        campaign_name = _fit_text(campaign_name_raw, 255)
+        campaign_id_value = _pick_value(
+            row,
+            ("广告系列编号", "Campaign ID", "Campaign id"),
+            (("广告系列", "编号"), ("campaign", "id")),
+        )
+        campaign_id = _fit_report_identifier(campaign_id_value, fallback=campaign_name_raw, prefix="campaign")
+        account_id = str(_pick_value(
+            row,
+            ("账户编号", "广告账户编号", "Account ID", "Ad account ID"),
+            (("account", "id"), ("账户", "编号")),
+        ) or META_AD_EXPORT_ACCOUNT_ID).strip().removeprefix("act_")
+        account_name = str(_pick_value(
+            row,
+            ("账户名称", "广告账户名称", "Account name", "Ad account name"),
+            (("account", "name"), ("账户", "名称")),
+        ) or "").strip() or None
+        spend = round(_safe_report_number(_pick_value(
+            row,
+            ("已花费金额 (USD)", "花费金额 (USD)", "Amount spent (USD)", "Amount spent", "Spend"),
+            (("amount", "spent"), ("花费",), ("spend",)),
+        )), 4)
+        result_count = int(round(_safe_report_number(_pick_value(
+            row,
+            ("成效", "Results"),
+            (("result",), ("成效",)),
+        ))))
+        purchase_value = round(_safe_report_number(_pick_value(
+            row,
+            ("购物转化价值", "购买转化价值", "Website purchases conversion value", "Purchase conversion value"),
+            (("purchase", "value"), ("购物", "价值"), ("购买", "价值")),
+        )), 4)
+        impressions = int(round(_safe_report_number(_pick_value(
+            row,
+            ("展示次数", "Impressions"),
+            (("impression",), ("展示",)),
+        ))))
+        clicks = int(round(_safe_report_number(_pick_value(
+            row,
+            ("链接点击量", "Clicks (all)", "Clicks", "Link clicks"),
+            (("click",), ("点击",)),
+        ))))
+        execute(
+            "INSERT INTO meta_ad_realtime_daily_campaign_metrics "
+            "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
+            "campaign_id, campaign_name, normalized_campaign_code, result_count, spend_usd, purchase_value_usd, "
+            "impressions, clicks, raw_json) "
+            "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
+            "ad_account_name=VALUES(ad_account_name), campaign_name=VALUES(campaign_name), "
+            "normalized_campaign_code=VALUES(normalized_campaign_code), result_count=VALUES(result_count), "
+            "spend_usd=VALUES(spend_usd), purchase_value_usd=VALUES(purchase_value_usd), "
+            "impressions=VALUES(impressions), clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
+            (
+                run_id,
+                business_date,
+                snapshot_at,
+                account_id or META_AD_EXPORT_ACCOUNT_ID,
+                account_name,
+                campaign_id,
+                campaign_name,
+                _fit_text(campaign_name_raw.lower(), 255),
+                result_count,
+                spend,
+                purchase_value,
+                impressions,
+                clicks,
+                json.dumps(row, ensure_ascii=False),
+            ),
+        )
+        imported += 1
+        spend_total = round(spend_total + spend, 4)
+    return {"rows_imported": imported, "spend_usd": spend_total}
+
+
 def _sync_meta_realtime_daily(business_date, snapshot_at: datetime) -> dict[str, Any]:
     accounts = [META_AD_EXPORT_ACCOUNT_ID]
     summary = {
@@ -378,7 +503,7 @@ def _upsert_order_hour(run_id: int, hour_start: datetime, hour_end: datetime) ->
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
-        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue_usd, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
         "SUM(COALESCE(line_amount, 0)) AS line_revenue_usd, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue_usd, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
@@ -450,9 +575,10 @@ def _upsert_overview_hour(run_id: int, hour_start: datetime, hour_end: datetime)
         (hour_start,),
     ) or {}
     revenue = round(float(order_row.get("order_revenue_usd") or 0), 2)
+    shipping = round(float(order_row.get("shipping_revenue_usd") or 0), 2)
     spend = round(float(meta_row.get("ad_spend_usd") or 0), 4)
     ad_status = str(meta_row.get("source_status") or "pending_source")
-    roas = round(revenue / spend, 6) if spend > 0 and ad_status == "ok" else None
+    roas = _true_roas(revenue, shipping, spend, ad_status)
     execute(
         "INSERT INTO roi_hourly_overview_facts "
         "(hour_start_at, hour_end_at, timezone, store_scope, ad_platform_scope, "
@@ -474,7 +600,7 @@ def _upsert_overview_hour(run_id: int, hour_start: datetime, hour_end: datetime)
             int(order_row.get("order_count") or 0),
             int(order_row.get("units") or 0),
             revenue,
-            round(float(order_row.get("shipping_revenue_usd") or 0), 2),
+            shipping,
             spend,
             roas,
             ad_status,
@@ -497,7 +623,7 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
         "SELECT COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
-        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue_usd, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue_usd, "
         "MAX(" + order_time_expr + ") AS last_order_at "
         "FROM dianxiaomi_order_lines "
@@ -566,9 +692,10 @@ def _upsert_daily_roas_node(snapshot_id: int, snapshot_at: datetime) -> int:
     if not snap:
         return 0
     revenue = round(float(snap.get("order_revenue_usd") or 0), 2)
+    shipping = round(float(snap.get("shipping_revenue_usd") or 0), 2)
     spend = round(float(snap.get("ad_spend_usd") or 0), 4)
     ad_status = str(snap.get("ad_data_status") or "pending_source")
-    roas = round(revenue / spend, 6) if spend > 0 and ad_status == "ok" else None
+    roas = _true_roas(revenue, shipping, spend, ad_status)
     execute(
         "INSERT INTO roi_daily_roas_nodes "
         "(business_date, node_hour, node_at, timezone, store_scope, ad_platform_scope, snapshot_id, "
@@ -591,7 +718,7 @@ def _upsert_daily_roas_node(snapshot_id: int, snapshot_at: datetime) -> int:
             int(snap.get("order_count") or 0),
             int(snap.get("units") or 0),
             revenue,
-            round(float(snap.get("shipping_revenue_usd") or 0), 2),
+            shipping,
             spend,
             roas,
             snap.get("order_data_status") or "ok",
@@ -633,7 +760,7 @@ def _derive_hour_delta(run_id: int, hour_start: datetime, hour_end: datetime) ->
     shipping = max(0.0, round(float(end_snapshot.get("shipping_revenue_usd") or 0) - float(start_snapshot.get("shipping_revenue_usd") or 0), 2))
     spend = max(0.0, round(float(end_snapshot.get("ad_spend_usd") or 0) - float(start_snapshot.get("ad_spend_usd") or 0), 4))
     ad_status = str(end_snapshot.get("ad_data_status") or "pending_source")
-    roas = round(revenue / spend, 6) if spend > 0 and ad_status == "ok" else None
+    roas = _true_roas(revenue, shipping, spend, ad_status)
     execute(
         "INSERT INTO roi_hourly_delta_facts "
         "(hour_start_at, hour_end_at, business_date, timezone, store_scope, ad_platform_scope, "

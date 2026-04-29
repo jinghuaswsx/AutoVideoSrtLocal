@@ -5,7 +5,7 @@ from datetime import datetime
 from appcore import order_analytics as oa
 
 
-def test_get_true_roas_summary_uses_order_revenue_over_ad_spend(monkeypatch):
+def test_get_true_roas_summary_uses_total_revenue_over_ad_spend(monkeypatch):
     calls = []
 
     def fake_query(sql, args=()):
@@ -38,9 +38,14 @@ def test_get_true_roas_summary_uses_order_revenue_over_ad_spend(monkeypatch):
     result = oa.get_true_roas_summary("2026-04-01", "2026-04-01")
 
     assert result["summary"]["order_revenue"] == 2000.0
+    assert result["summary"]["shipping_revenue"] == 200.0
+    assert result["summary"]["revenue_with_shipping"] == 2200.0
     assert result["summary"]["ad_spend"] == 1000.0
-    assert result["summary"]["true_roas"] == 2.0
-    assert result["rows"][0]["true_roas"] == 2.0
+    assert result["summary"]["true_roas"] == 2.2
+    assert result["rows"][0]["order_revenue"] == 2000.0
+    assert result["rows"][0]["shipping_revenue"] == 200.0
+    assert result["rows"][0]["revenue_with_shipping"] == 2200.0
+    assert result["rows"][0]["true_roas"] == 2.2
     assert result["rows"][0]["meta_purchase_value"] == 9999.0
     assert any("meta_business_date" in sql for sql, _args in calls)
 
@@ -104,8 +109,10 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     )
 
     assert result["summary"]["order_revenue"] == 2000.0
+    assert result["summary"]["shipping_revenue"] == 100.0
+    assert result["summary"]["revenue_with_shipping"] == 2100.0
     assert result["summary"]["ad_spend"] == 1000.0
-    assert result["summary"]["true_roas"] == 2.0
+    assert result["summary"]["true_roas"] == 2.1
     assert result["summary"]["order_count"] == 2
     assert result["hourly"][13]["order_count"] == 2
     assert result["scope"]["stores"] == ["newjoy", "omurio"]
@@ -141,6 +148,18 @@ def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
     assert "真实 ROAS" in body
     assert 'data-tab="trueRoas"' in body
     assert 'id="panelTrueRoas"' in body
+
+
+def test_true_roas_tab_displays_revenue_shipping_and_total_sales(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "statCard('商品销售额', fmtMoney(s.order_revenue))" in body
+    assert "statCard('运费', fmtMoney(s.shipping_revenue))" in body
+    assert "statCard('总销售额', fmtMoney(s.revenue_with_shipping))" in body
+    assert "fmtMoney(row.shipping_revenue)" in body
+    assert "fmtMoney(row.revenue_with_shipping)" in body
 
 
 def test_data_analysis_page_has_realtime_tab_first(authed_client_no_db):

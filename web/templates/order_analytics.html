@@ -124,7 +124,7 @@
 
 /* ── 控件区 ───────────────────────────────────── */
 .oar-hero {
-  display: grid; grid-template-columns: minmax(260px, 1.25fr) minmax(260px, 1fr) minmax(180px, .7fr);
+  display: grid; grid-template-columns: repeat(5, minmax(170px, 1fr));
   gap: var(--space-4); margin-bottom: var(--space-5);
 }
 .oar-card {
@@ -144,8 +144,32 @@
 .oar-sub {
   margin-top: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm);
 }
+.oar-subtabs {
+  display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap;
+  margin: var(--space-5) 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.oar-subtab {
+  height: 34px; padding: 0 var(--space-4); border: 0; background: transparent;
+  color: var(--fg-muted); cursor: pointer; border-bottom: 2px solid transparent;
+  font-size: var(--text-sm); font-weight: 600; margin-bottom: -1px;
+}
+.oar-subtab:hover { color: var(--fg); }
+.oar-subtab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.oar-subpanel { display: none; }
+.oar-subpanel.is-active { display: block; }
+.oa-table.oar-compact-table { font-size: var(--text-sm); }
+.oa-table.oar-compact-table th, .oa-table.oar-compact-table td {
+  padding: 9px var(--space-3); vertical-align: top;
+}
+.oar-product-cell {
+  min-width: 280px; max-width: 520px; white-space: normal; word-break: break-word;
+}
+.oar-id-cell {
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
+}
 .oar-grid {
-  display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr));
+  display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: var(--space-4); margin-bottom: var(--space-5);
 }
 .oar-mini-value {
@@ -491,65 +515,143 @@
 
   <div class="oar-hero">
     <div class="oar-card is-primary">
-      <div class="oar-label">大盘销售额</div>
+      <div class="oar-label">商品销售额</div>
       <div class="oar-value" id="realtimeRevenue">$0.00</div>
       <div class="oar-sub" id="realtimeRevenueSub">订单 0 单</div>
     </div>
     <div class="oar-card is-primary">
-      <div class="oar-label">大盘广告费消耗</div>
+      <div class="oar-label">运费</div>
+      <div class="oar-value" id="realtimeShipping">$0.00</div>
+      <div class="oar-sub">订单收取的运费</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">总销售额</div>
+      <div class="oar-value" id="realtimeRevenueWithShipping">$0.00</div>
+      <div class="oar-sub">商品销售额 + 运费</div>
+    </div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">广告消耗费用</div>
       <div class="oar-value" id="realtimeSpend">$0.00</div>
       <div class="oar-sub">Meta 实际消耗，包含无出单消耗</div>
     </div>
-    <div class="oar-card">
-      <div class="oar-label">真实 ROAS</div>
+    <div class="oar-card is-primary">
+      <div class="oar-label">整体 ROAS</div>
       <div class="oar-value" id="realtimeRoas">-</div>
-      <div class="oar-sub" id="realtimeWindow">今日实时</div>
+      <div class="oar-sub" id="realtimeWindow">公式: 总销售额 / 广告消耗费用</div>
     </div>
   </div>
 
   <div class="oar-grid">
     <div class="oar-card">
-      <div class="oar-label">商品件数</div>
-      <div class="oar-mini-value" id="realtimeUnits">0</div>
+      <div class="oar-label">订单数</div>
+      <div class="oar-mini-value" id="realtimeOrderCount">0</div>
     </div>
     <div class="oar-card">
-      <div class="oar-label">运费收入</div>
-      <div class="oar-mini-value" id="realtimeShipping">$0.00</div>
+      <div class="oar-label">商品件数</div>
+      <div class="oar-mini-value" id="realtimeUnits">0</div>
     </div>
     <div class="oar-card">
       <div class="oar-label">订单最新时间</div>
       <div class="oar-mini-value" id="realtimeFreshness">-</div>
     </div>
+    <div class="oar-card">
+      <div class="oar-label">数据快照时间</div>
+      <div class="oar-mini-value" id="realtimeSnapshotAt">-</div>
+    </div>
   </div>
 
-  <div class="oa-table-wrap">
-    <div class="oa-table-header">
-      <div class="oa-table-title">当天 ROAS 走势</div>
-      <div class="oar-note">0-23 点按 Meta 广告系统日计算，每个点是当日累计 ROAS</div>
-    </div>
-    <div id="realtimeRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
+  <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
+    <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
+    <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
   </div>
 
-  <div class="oa-table-wrap">
-    <div class="oa-table-header">
-      <div class="oa-table-title">当日节点记录</div>
-      <div class="oar-note" id="realtimeGranularity">每 10 分钟刷新当天累计数据</div>
+  <div class="oar-subpanel is-active" id="realtimeSubOrders">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">今天订单明细</div>
+        <div class="oar-note">按订单时间倒序，从最新订单一直回看到广告系统日 0 点</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>订单时间</th>
+              <th>广告日小时</th>
+              <th>店铺</th>
+              <th>订单号</th>
+              <th>国家</th>
+              <th>商品</th>
+              <th>件数</th>
+              <th>商品销售额</th>
+              <th>运费</th>
+              <th>总销售额</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeOrderBody"></tbody>
+        </table>
+      </div>
     </div>
-    <div class="oa-table-scroll">
-      <table class="oa-table">
-        <thead>
-          <tr>
-            <th>小时</th>
-            <th>订单数</th>
-            <th>销售额</th>
-            <th>商品件数</th>
-            <th>运费</th>
-            <th>广告费</th>
-            <th>ROAS</th>
-          </tr>
-        </thead>
-        <tbody id="realtimeHourlyBody"></tbody>
-      </table>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubCampaigns">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">广告计划实时数据</div>
+        <div class="oar-note">来自本机 ADS Power 90 导出的 Meta 实时快照，按消耗倒序</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>广告计划</th>
+              <th>账户</th>
+              <th>消耗</th>
+              <th>结果数</th>
+              <th>平台购买价值</th>
+              <th>平台 ROAS</th>
+              <th>展示</th>
+              <th>点击</th>
+              <th>计划 ID</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeCampaignBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="oar-subpanel" id="realtimeSubTrend">
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">当天 ROAS 走势</div>
+        <div class="oar-note">0-23 点按 Meta 广告系统日计算，每个点是当日累计 ROAS</div>
+      </div>
+      <div id="realtimeRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
+    </div>
+
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">当日节点记录</div>
+        <div class="oar-note" id="realtimeGranularity">每 10 分钟刷新当天累计数据</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>小时</th>
+              <th>订单数</th>
+              <th>商品销售额</th>
+              <th>商品件数</th>
+              <th>运费</th>
+              <th>总销售额</th>
+              <th>广告费</th>
+              <th>ROAS</th>
+            </tr>
+          </thead>
+          <tbody id="realtimeHourlyBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </section>
@@ -941,7 +1043,9 @@
             <th>归因日</th>
             <th>北京时间窗口</th>
             <th>订单数</th>
-            <th>销售额</th>
+            <th>商品销售额</th>
+            <th>运费</th>
+            <th>总销售额</th>
             <th>广告费</th>
             <th>真实 ROAS</th>
             <th>Meta 转化价值</th>
@@ -1262,9 +1366,16 @@
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) realtimeRefresh.addEventListener('click', loadRealtimeOverview);
   var realtimeDate = document.getElementById('realtimeDate');
-  if (realtimeDate && !realtimeDate.value) {
-    realtimeDate.value = localDateString(new Date());
-  }
+  document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
+        item.classList.toggle('is-active', item === btn);
+      });
+      document.querySelectorAll('.oar-subpanel').forEach(function(panel) {
+        panel.classList.toggle('is-active', panel.id === 'realtimeSub' + capitalize(btn.dataset.realtimeSubtab));
+      });
+    });
+  });
   loadRealtimeOverview();
 
   function localDateString(value) {
@@ -1277,8 +1388,12 @@
   function loadRealtimeOverview() {
     var dateInput = document.getElementById('realtimeDate');
     var date = dateInput ? dateInput.value : '';
-    var body = document.getElementById('realtimeHourlyBody');
-    if (body) body.innerHTML = '<tr><td colspan="7">加载中...</td></tr>';
+    var hourlyBody = document.getElementById('realtimeHourlyBody');
+    var orderBody = document.getElementById('realtimeOrderBody');
+    var campaignBody = document.getElementById('realtimeCampaignBody');
+    if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
+    if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">加载中...</td></tr>';
     fetch('/order-analytics/realtime-overview?date=' + encodeURIComponent(date))
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -1286,19 +1401,32 @@
       })
       .then(function(data) {
         var s = data.summary || {};
+        var revenueWithShipping = Number(s.revenue_with_shipping);
+        if (!Number.isFinite(revenueWithShipping) || revenueWithShipping === 0) {
+          revenueWithShipping = Number(s.order_revenue || 0) + Number(s.shipping_revenue || 0);
+        }
+        if (dateInput && !dateInput.value && (data.period || {}).date) {
+          dateInput.value = String((data.period || {}).date).slice(0, 10);
+        }
         document.getElementById('realtimeRevenue').textContent = fmtMoney(s.order_revenue);
         document.getElementById('realtimeSpend').textContent = fmtMoney(s.ad_spend);
         document.getElementById('realtimeRoas').textContent = fmtRoasValue(s.true_roas);
-        document.getElementById('realtimeRevenueSub').textContent = '订单 ' + (s.order_count || 0) + ' 单';
+        document.getElementById('realtimeRevenueSub').textContent =
+          '订单 ' + fmtInt(s.order_count || 0) + ' 单';
+        document.getElementById('realtimeOrderCount').textContent = fmtInt(s.order_count || 0);
         document.getElementById('realtimeUnits').textContent = s.units || 0;
         document.getElementById('realtimeShipping').textContent = fmtMoney(s.shipping_revenue);
+        document.getElementById('realtimeRevenueWithShipping').textContent = fmtMoney(revenueWithShipping);
         document.getElementById('realtimeFreshness').textContent = formatShortDateTime((data.freshness || {}).last_order_at);
-        document.getElementById('realtimeWindow').textContent = formatShortDateTime((data.period || {}).data_until_at) + ' 截止';
+        document.getElementById('realtimeSnapshotAt').textContent = formatShortDateTime((data.period || {}).data_until_at);
+        document.getElementById('realtimeWindow').textContent = '截止 ' + formatShortDateTime((data.period || {}).data_until_at);
         document.getElementById('realtimeTimeRule').textContent = formatTimeRule(data.period || {}, data.roas_points || []);
         document.getElementById('realtimeGranularity').textContent =
-          '每 10 分钟记录当天累计订单、销售额、广告费和 ROAS';
+          '每 10 分钟记录当天累计订单、商品销售额、运费、广告费和 ROAS；ROAS=总销售额/广告消耗费用';
         renderRealtimeRoasChart(data.roas_points || []);
-        body.innerHTML = '';
+        renderRealtimeOrders(data.order_details || []);
+        renderRealtimeCampaigns(data.campaigns || []);
+        hourlyBody.innerHTML = '';
         var rows = data.hourly || [];
         if (!rows.length && (data.snapshots || []).length) {
           rows = (data.snapshots || []).map(function(snap) {
@@ -1308,6 +1436,7 @@
               order_revenue: snap.order_revenue_usd,
               units: snap.units,
               shipping_revenue: snap.shipping_revenue_usd,
+              revenue_with_shipping: Number(snap.order_revenue_usd || 0) + Number(snap.shipping_revenue_usd || 0),
               ad_spend: snap.ad_spend_usd,
               true_roas: s.true_roas
             };
@@ -1321,6 +1450,7 @@
             fmtMoney(row.order_revenue),
             row.units || 0,
             fmtMoney(row.shipping_revenue),
+            fmtMoney(row.revenue_with_shipping || (Number(row.order_revenue || 0) + Number(row.shipping_revenue || 0))),
             row.ad_spend == null ? '-' : fmtMoney(row.ad_spend),
             fmtRoasValue(row.true_roas)
           ].forEach(function(value) {
@@ -1328,15 +1458,69 @@
             td.textContent = value;
             tr.appendChild(td);
           });
-          body.appendChild(tr);
+          hourlyBody.appendChild(tr);
         });
-        if (!body.children.length) {
-          body.innerHTML = '<tr><td colspan="7">暂无数据</td></tr>';
+        if (!hourlyBody.children.length) {
+          hourlyBody.innerHTML = '<tr><td colspan="8">暂无数据</td></tr>';
         }
       })
       .catch(function(err) {
-        if (body) body.innerHTML = '<tr><td colspan="7">' + escapeHtml(err.message) + '</td></tr>';
+        if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+        if (orderBody) orderBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+        if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       });
+  }
+
+  function renderRealtimeOrders(rows) {
+    var body = document.getElementById('realtimeOrderBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, formatShortDateTime(row.order_time));
+      addTextCell(tr, row.business_hour === null || row.business_hour === undefined ? '-' : String(row.business_hour).padStart(2, '0') + ':00');
+      addTextCell(tr, row.site_code || '-');
+      addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
+      addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
+      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addTextCell(tr, fmtInt(row.units || 0));
+      addTextCell(tr, fmtMoney(row.product_revenue));
+      addTextCell(tr, fmtMoney(row.shipping_revenue));
+      addTextCell(tr, fmtMoney(row.total_revenue));
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="10">暂无订单数据</td></tr>';
+    }
+  }
+
+  function renderRealtimeCampaigns(rows) {
+    var body = document.getElementById('realtimeCampaignBody');
+    if (!body) return;
+    body.innerHTML = '';
+    (rows || []).forEach(function(row) {
+      var tr = document.createElement('tr');
+      addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
+      addTextCell(tr, row.ad_account_name || row.ad_account_id || '-');
+      addTextCell(tr, fmtMoney(row.spend_usd));
+      addTextCell(tr, fmtInt(row.result_count || 0));
+      addTextCell(tr, fmtMoney(row.purchase_value_usd));
+      addTextCell(tr, fmtRoasValue(row.platform_roas));
+      addTextCell(tr, fmtInt(row.impressions || 0));
+      addTextCell(tr, fmtInt(row.clicks || 0));
+      addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      body.innerHTML = '<tr><td colspan="9">暂无广告计划数据</td></tr>';
+    }
+  }
+
+  function addTextCell(tr, value, className) {
+    var td = document.createElement('td');
+    if (className) td.className = className;
+    td.textContent = value === null || value === undefined || value === '' ? '-' : value;
+    tr.appendChild(td);
   }
 
   function renderRealtimeRoasChart(points) {
@@ -1379,7 +1563,8 @@
   }
 
   function formatTimeRule(period, points) {
-    var latest = (points || []).filter(function(p) { return p.node_at; }).pop();
+    var synced = (points || []).filter(function(p) { return p.node_at && p.ad_data_status === 'ok'; });
+    var latest = synced.length ? synced.pop() : (points || []).filter(function(p) { return p.node_at; }).pop();
     var nodeText = latest ? '广告系统第 ' + latest.hour + ' 点' : '暂无节点';
     return '广告系统日 ' + (period.date || '-') + ' / 当前节点：' + nodeText;
   }
@@ -1390,7 +1575,7 @@
     var summaryEl = document.getElementById('trueRoasSummary');
     var body = document.getElementById('trueRoasTableBody');
     summaryEl.innerHTML = '';
-    body.innerHTML = '<tr><td colspan="8">加载中...</td></tr>';
+    body.innerHTML = '<tr><td colspan="10">加载中...</td></tr>';
     fetch('/order-analytics/true-roas?start_date=' + encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end))
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -1399,7 +1584,9 @@
       .then(function(data) {
         var s = data.summary || {};
         summaryEl.innerHTML =
-          statCard('订单销售额', fmtMoney(s.order_revenue)) +
+          statCard('商品销售额', fmtMoney(s.order_revenue)) +
+          statCard('运费', fmtMoney(s.shipping_revenue)) +
+          statCard('总销售额', fmtMoney(s.revenue_with_shipping)) +
           statCard('广告费', fmtMoney(s.ad_spend)) +
           statCard('真实 ROAS', fmtRoasValue(s.true_roas)) +
           statCard('订单数', s.order_count || 0);
@@ -1411,6 +1598,8 @@
             formatRoasWindow(row.window_start_at, row.window_end_at),
             row.order_count || 0,
             fmtMoney(row.order_revenue),
+            fmtMoney(row.shipping_revenue),
+            fmtMoney(row.revenue_with_shipping),
             fmtMoney(row.ad_spend),
             fmtRoasValue(row.true_roas),
             fmtMoney(row.meta_purchase_value),

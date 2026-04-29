@@ -724,8 +724,94 @@ def _roas(revenue: float, spend: float) -> float | None:
     return round(revenue / spend, 4)
 
 
+def _revenue_with_shipping(order_revenue: float, shipping_revenue: float) -> float:
+    return round(float(order_revenue or 0) + float(shipping_revenue or 0), 2)
+
+
 def _beijing_now() -> datetime:
     return datetime.now(ZoneInfo(META_ATTRIBUTION_TIMEZONE)).replace(tzinfo=None)
+
+
+def _business_hour(value: datetime | None, day_start: datetime) -> int | None:
+    if not value:
+        return None
+    hour = int((value - day_start).total_seconds() // 3600)
+    return max(0, min(23, hour))
+
+
+def _get_realtime_order_details(target: date, day_start: datetime, data_until: datetime) -> list[dict[str, Any]]:
+    order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
+    rows = query(
+        "SELECT site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
+        "buyer_country, buyer_country_name, " + order_time_expr + " AS order_time, "
+        "COUNT(*) AS line_count, SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_revenue, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
+        "SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS total_revenue, "
+        "GROUP_CONCAT(DISTINCT NULLIF(product_sku, '') ORDER BY product_sku SEPARATOR ' / ') AS skus, "
+        "GROUP_CONCAT(DISTINCT NULLIF(product_name, '') ORDER BY product_name SEPARATOR ' / ') AS product_names "
+        "FROM dianxiaomi_order_lines "
+        "WHERE site_code IN ('newjoy', 'omurio') "
+        "AND meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        "GROUP BY site_code, dxm_package_id, dxm_order_id, package_number, order_state, "
+        "buyer_country, buyer_country_name, " + order_time_expr + " "
+        "ORDER BY order_time DESC, dxm_package_id DESC",
+        (target, data_until),
+    )
+    details: list[dict[str, Any]] = []
+    for row in rows:
+        order_time = row.get("order_time")
+        details.append({
+            "order_time": order_time,
+            "business_hour": _business_hour(order_time, day_start),
+            "site_code": row.get("site_code"),
+            "dxm_package_id": row.get("dxm_package_id"),
+            "dxm_order_id": row.get("dxm_order_id"),
+            "package_number": row.get("package_number"),
+            "order_state": row.get("order_state"),
+            "buyer_country": row.get("buyer_country"),
+            "buyer_country_name": row.get("buyer_country_name"),
+            "line_count": int(row.get("line_count") or 0),
+            "units": int(row.get("units") or 0),
+            "product_revenue": _money(row.get("product_revenue")),
+            "shipping_revenue": _money(row.get("shipping_revenue")),
+            "total_revenue": _money(row.get("total_revenue")),
+            "skus": row.get("skus"),
+            "product_names": row.get("product_names"),
+        })
+    return details
+
+
+def _get_realtime_campaign_details(target: date, snapshot_at: datetime | None) -> list[dict[str, Any]]:
+    if not snapshot_at:
+        return []
+    rows = query(
+        "SELECT ad_account_id, ad_account_name, campaign_id, campaign_name, normalized_campaign_code, "
+        "result_count, spend_usd, purchase_value_usd, impressions, clicks "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at=%s AND data_completeness='realtime_partial' "
+        "ORDER BY spend_usd DESC, campaign_name",
+        (target, snapshot_at),
+    )
+    campaigns: list[dict[str, Any]] = []
+    for row in rows:
+        spend = _money(row.get("spend_usd"))
+        purchase_value = _money(row.get("purchase_value_usd"))
+        campaigns.append({
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "campaign_id": row.get("campaign_id"),
+            "campaign_name": row.get("campaign_name"),
+            "normalized_campaign_code": row.get("normalized_campaign_code"),
+            "result_count": int(row.get("result_count") or 0),
+            "spend_usd": spend,
+            "purchase_value_usd": purchase_value,
+            "platform_roas": _roas(purchase_value, spend),
+            "impressions": int(row.get("impressions") or 0),
+            "clicks": int(row.get("clicks") or 0),
+        })
+    return campaigns
 
 
 def get_realtime_roas_overview(date_text: str | None = None, now: datetime | None = None) -> dict:
@@ -775,20 +861,25 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
         "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
-        "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
+        "ORDER BY CASE WHEN ad_data_status='ok' THEN 0 ELSE 1 END, snapshot_at DESC, id DESC LIMIT 1",
         (target,),
     )
     if latest_snapshot:
         snap = latest_snapshot[0]
+        snapshot_at = snap.get("snapshot_at") or data_until
         order_revenue = _money(snap.get("order_revenue_usd"))
+        shipping_revenue = _money(snap.get("shipping_revenue_usd"))
+        revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(snap.get("ad_spend_usd"))
+        order_details = _get_realtime_order_details(target, day_start, snapshot_at)
+        campaign_details = _get_realtime_campaign_details(target, snapshot_at)
         return {
             "period": {
                 "date": target,
                 "timezone": META_ATTRIBUTION_TIMEZONE,
                 "day_start_at": day_start,
                 "day_end_at": day_end,
-                "data_until_at": snap.get("snapshot_at") or data_until,
+                "data_until_at": snapshot_at,
                 "complete_hour_until_at": complete_hour_until,
                 "meta_cutover_hour_bj": META_ATTRIBUTION_CUTOVER_HOUR_BJ,
                 "day_definition": "meta_ad_platform_business_day",
@@ -810,18 +901,21 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
                 "line_count": int(snap.get("line_count") or 0),
                 "units": int(snap.get("units") or 0),
                 "order_revenue": order_revenue,
+                "revenue_with_shipping": revenue_with_shipping,
                 "line_revenue": 0.0,
-                "shipping_revenue": _money(snap.get("shipping_revenue_usd")),
+                "shipping_revenue": shipping_revenue,
                 "ad_spend": ad_spend,
                 "meta_purchase_value": 0.0,
                 "meta_purchases": 0,
-                "true_roas": _roas(order_revenue, ad_spend),
+                "true_roas": _roas(revenue_with_shipping, ad_spend),
                 "order_data_status": snap.get("order_data_status") or "ok",
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
             },
             "hourly": [],
             "roas_points": roas_points,
             "snapshots": [snap],
+            "order_details": order_details,
+            "campaigns": campaign_details,
         }
 
     order_time_expr = "COALESCE(order_paid_at, attribution_time_at, order_created_at)"
@@ -830,7 +924,7 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
-        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
         "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue, "
         "MIN(" + order_time_expr + ") AS first_order_at, "
@@ -893,7 +987,8 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
             last_order_at = row["last_order_at"]
 
-    summary["true_roas"] = _roas(summary["order_revenue"], summary["ad_spend"])
+    summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     return {
         "period": {
             "date": target,
@@ -920,6 +1015,8 @@ def get_realtime_roas_overview(date_text: str | None = None, now: datetime | Non
         "summary": summary,
         "hourly": hourly,
         "roas_points": roas_points,
+        "order_details": _get_realtime_order_details(target, day_start, data_until),
+        "campaigns": [],
     }
 
 
@@ -934,7 +1031,7 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(quantity) AS units, "
-        "SUM(COALESCE(amount_with_shipping, line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(line_amount, 0)) AS order_revenue, "
         "SUM(COALESCE(line_amount, 0)) AS line_revenue, "
         "SUM(COALESCE(ship_amount, 0)) AS shipping_revenue "
         "FROM dianxiaomi_order_lines "
@@ -974,6 +1071,8 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
         ad = ads_by_day.get(current, {})
         window_start, window_end = compute_meta_business_window_bj(current)
         order_revenue = _money(order.get("order_revenue"))
+        shipping_revenue = _money(order.get("shipping_revenue"))
+        revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(ad.get("ad_spend"))
         item = {
             "meta_business_date": current,
@@ -984,9 +1083,10 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
             "units": int(order.get("units") or 0),
             "order_revenue": order_revenue,
             "line_revenue": _money(order.get("line_revenue")),
-            "shipping_revenue": _money(order.get("shipping_revenue")),
+            "shipping_revenue": shipping_revenue,
+            "revenue_with_shipping": revenue_with_shipping,
             "ad_spend": ad_spend,
-            "true_roas": _roas(order_revenue, ad_spend),
+            "true_roas": _roas(revenue_with_shipping, ad_spend),
             "meta_purchase_value": _money(ad.get("meta_purchase_value")),
             "meta_purchases": int(ad.get("meta_purchases") or 0),
         }
@@ -998,7 +1098,8 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
         totals[key] = round(float(totals[key]), 2)
     summary = dict(totals)
-    summary["true_roas"] = _roas(summary["order_revenue"], summary["ad_spend"])
+    summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+    summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     return {
         "period": {
             "start": start,
