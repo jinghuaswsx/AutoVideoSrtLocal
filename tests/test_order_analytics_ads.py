@@ -277,6 +277,22 @@ def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     assert 'id="panelAds"' in body
 
 
+def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "JS 已加载" not in body
+    assert 'class="oa-tabs oa-tabs-topbar"' in body
+    assert 'data-view-mode="month"' in body
+    assert 'data-view-mode="week"' in body
+    assert 'data-ad-frequency="weekly"' in body
+    assert 'data-ad-frequency="monthly"' in body
+    assert 'class="oad-row-action"' in body
+    assert '<select id="viewMode"' not in body
+    assert '<select id="adFrequency"' not in body
+
+
 def test_ads_stats_card_shows_report_roas(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
