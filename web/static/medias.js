@@ -20,6 +20,11 @@
     return code ? `/medias?q=${encodeURIComponent(code)}` : '/medias/';
   }
 
+  function productDetailPath(productCode) {
+    const code = String(productCode || '').trim();
+    return code ? `/medias/${encodeURIComponent(code)}` : '';
+  }
+
   function hideProductDetailLoading() {
     const loading = $('productDetailLoading');
     if (loading) loading.hidden = true;
@@ -1468,8 +1473,6 @@
         e.stopPropagation();
         copyProductCode(b);
       }));
-    grid.querySelectorAll('tr[data-pid] .name a').forEach(a =>
-      a.addEventListener('click', (e) => { e.preventDefault(); openEdit(+a.dataset.pid); }));
     grid.querySelectorAll('td.mk-id-cell').forEach(td =>
       td.addEventListener('click', (e) => { e.stopPropagation(); startMkIdInlineEdit(td); }));
     grid.querySelectorAll('td.listing-status-cell').forEach(td =>
@@ -1486,6 +1489,13 @@
       ? `<img src="${escapeHtml(p.cover_thumbnail_url)}" alt="" loading="lazy">`
       : `<div class="cover-ph">${icon('film', 16)}</div>`;
     const productCode = (p.product_code === null || p.product_code === undefined) ? '' : String(p.product_code).trim();
+    const productDetailHref = productDetailPath(productCode);
+    const coverCell = productDetailHref
+      ? `<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>`
+      : cover;
+    const nameCell = productDetailHref
+      ? `<a href="${productDetailHref}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a>`
+      : `<span title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>`;
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
@@ -1503,8 +1513,8 @@
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
-        <td><div class="oc-thumb-sm">${cover}</div></td>
-        <td class="name wrap"><a href="#" data-pid="${p.id}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a></td>
+        <td><div class="oc-thumb-sm">${coverCell}</div></td>
+        <td class="name wrap">${nameCell}</td>
         <td class="mono wrap oc-product-id-cell" title="${escapeHtml(productCode)}">${productCodeCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>

@@ -705,8 +705,10 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-table-fixed { table-layout:fixed; }
 .oc-table-fixed td, .oc-table-fixed th { overflow:hidden; word-break:break-word; }
+.oc-thumb-sm .oc-thumb-link { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:inherit; text-decoration:none; }
+.oc-thumb-sm .oc-thumb-link:focus-visible { outline:2px solid var(--oc-accent); outline-offset:2px; }
 .oc-thumb-sm img { width:100%; height:100%; object-fit:cover; display:block; }
-.oc-thumb-sm .cover-ph { display:flex; align-items:center; justify-content:center; }
+.oc-thumb-sm .cover-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
 
 .oc-fn-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; max-width:280px; font-size:12px; line-height:1.45; }
 .oc-fn-list li { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--oc-fg); }

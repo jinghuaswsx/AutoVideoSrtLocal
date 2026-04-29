@@ -2979,6 +2979,17 @@ def test_medias_scripts_include_owner_column():
     assert "p.owner_name" in medias_js
 
 
+def test_medias_scripts_link_cover_and_name_to_product_detail_page():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function productDetailPath(productCode)" in medias_js
+    assert 'const productDetailHref = productDetailPath(productCode);' in medias_js
+    assert '<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>' in medias_js
+    assert '<a href="${productDetailHref}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a>' in medias_js
+    assert 'href="#" data-pid="${p.id}"' not in medias_js
+    assert "grid.querySelectorAll('tr[data-pid] .name a')" not in medias_js
+
+
 def test_medias_scripts_make_listing_status_inline_editable():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
