@@ -128,7 +128,7 @@ def test_get_country_dashboard_groups_by_country_and_sorts_by_orders(monkeypatch
     monkeypatch.setattr(oa, "query", fake_query)
 
     result = oa.get_country_dashboard(
-        period="month",
+        "month",
         year=2026,
         month=4,
         today=oa._parse_meta_date("2026-04-29"),
@@ -147,3 +147,13 @@ def test_get_country_dashboard_groups_by_country_and_sorts_by_orders(monkeypatch
         "shipping": 15.0,
         "product_net_sales": 140.0,
     }
+
+
+def test_get_country_dashboard_rejects_invalid_period():
+    for period in ("", "year"):
+        try:
+            oa.get_country_dashboard(period, today=oa._parse_meta_date("2026-04-29"))
+        except ValueError as exc:
+            assert "period must be one of day/week/month" in str(exc)
+        else:
+            raise AssertionError(f"expected ValueError for period={period!r}")

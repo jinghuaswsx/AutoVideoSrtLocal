@@ -1211,15 +1211,15 @@ def _sort_order_dashboard_rows(rows: list[dict], *, name_key: str) -> list[dict]
 
 
 def get_country_dashboard(
-    *,
     period: str,
+    *,
     year: int | None = None,
     month: int | None = None,
     week: int | None = None,
     date_str: str | None = None,
     today: date | None = None,
 ) -> dict:
-    period = (period or "month").strip().lower()
+    period = str(period or "").strip().lower()
     if period not in ("day", "week", "month"):
         raise ValueError("period must be one of day/week/month")
     start, end = _resolve_period_range(
