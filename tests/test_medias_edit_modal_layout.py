@@ -78,3 +78,20 @@ def test_medias_list_uses_two_column_grid_for_row_actions():
 
     assert ".oc-row-actions { display:grid;" in html
     assert "grid-template-columns:repeat(2, minmax(0, max-content));" in html
+
+
+def test_edit_video_material_cards_support_inline_filename_edit():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "oc-vitem-name-editor" in html
+    assert 'data-act="name-edit"' in script
+    assert 'data-act="name-save"' in script
+    assert 'data-act="name-cancel"' in script
+    assert "修改文件名" in script
+    assert "保存" in script
+    assert "取消" in script
+    assert "edStartItemNameEdit" in script
+    assert "edSaveItemNameEdit" in script
+    assert "edCancelItemNameEdit" in script
+    assert 'method: "PATCH"' in script or "method: 'PATCH'" in script

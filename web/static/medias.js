@@ -4144,7 +4144,8 @@
     const g = $('edItemsGrid');
     g.innerHTML = (items || []).map(it => {
       const cover = it.cover_url;
-      const name = escapeHtml(it.display_name || it.filename);
+      const rawName = it.display_name || it.filename || '';
+      const name = escapeHtml(rawName);
       const sourceLabel = itemSourceLabel(it);
       const sourceHtml = sourceLabel
         ? `<div class="vsource" title="${escapeHtml(sourceLabel)}">来源：${escapeHtml(sourceLabel)}</div>`
@@ -4154,7 +4155,16 @@
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
       return `
       <div class="oc-vitem" data-item="${it.id}">
-        <div class="vname" title="${name}">${name}</div>
+        <div class="vname oc-vitem-name-editor">
+          <input class="oc-input sm vname-input" type="text" value="${name}"
+                 title="${name}" data-original="${name}" maxlength="255"
+                 aria-label="视频素材文件名" readonly>
+          <div class="vname-edit-actions">
+            <button class="oc-btn text sm" type="button" data-act="name-edit">${icon('edit', 12)}<span>修改文件名</span></button>
+            <button class="oc-btn primary sm" type="button" data-act="name-save" hidden>${icon('check', 12)}<span>保存</span></button>
+            <button class="oc-btn ghost sm" type="button" data-act="name-cancel" hidden>${icon('close', 12)}<span>取消</span></button>
+          </div>
+        </div>
         ${sourceHtml}
         <div class="vtabs">
           <button type="button" class="vtab active" data-tab="img">图片</button>
@@ -4183,8 +4193,99 @@
       }));
       card.querySelector('[data-act="del"]').addEventListener('click', () => edRemoveItem(id, card));
       card.querySelector('[data-act="cover"]').addEventListener('click', () => edPickItemCover(id));
+      card.querySelector('[data-act="name-edit"]').addEventListener('click', () => edStartItemNameEdit(card));
+      card.querySelector('[data-act="name-save"]').addEventListener('click', () => edSaveItemNameEdit(id, card));
+      card.querySelector('[data-act="name-cancel"]').addEventListener('click', () => edCancelItemNameEdit(card));
+      card.querySelector('.vname-input').addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          edCancelItemNameEdit(card);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          edSaveItemNameEdit(id, card);
+        }
+      });
     });
     $('edItemsBadge').textContent = (items || []).length;
+  }
+
+  function edSetItemNameSaving(card, saving) {
+    const buttons = card.querySelectorAll('[data-act="name-edit"], [data-act="name-save"], [data-act="name-cancel"]');
+    buttons.forEach(btn => { btn.disabled = !!saving; });
+    const input = card.querySelector('.vname-input');
+    if (input) input.disabled = !!saving;
+  }
+
+  function edSetItemNameEditMode(card, editing) {
+    const input = card.querySelector('.vname-input');
+    const editBtn = card.querySelector('[data-act="name-edit"]');
+    const saveBtn = card.querySelector('[data-act="name-save"]');
+    const cancelBtn = card.querySelector('[data-act="name-cancel"]');
+    if (!input || !editBtn || !saveBtn || !cancelBtn) return;
+    input.readOnly = !editing;
+    editBtn.hidden = editing;
+    saveBtn.hidden = !editing;
+    cancelBtn.hidden = !editing;
+    card.classList.toggle('is-name-editing', editing);
+  }
+
+  function edStartItemNameEdit(card) {
+    const input = card.querySelector('.vname-input');
+    if (!input) return;
+    edSetItemNameEditMode(card, true);
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+  }
+
+  function edCancelItemNameEdit(card) {
+    const input = card.querySelector('.vname-input');
+    if (!input) return;
+    input.value = input.dataset.original || '';
+    edSetItemNameEditMode(card, false);
+  }
+
+  function edPatchItemNameInState(itemId, itemPayload, fallbackName) {
+    const items = (edState.productData && edState.productData.items) || [];
+    const target = items.find(it => Number(it.id) === Number(itemId));
+    if (!target) return;
+    target.display_name = (itemPayload && itemPayload.display_name) || fallbackName;
+  }
+
+  async function edSaveItemNameEdit(itemId, card) {
+    const input = card.querySelector('.vname-input');
+    if (!input) return;
+    const nextName = input.value.trim();
+    if (!nextName) {
+      alert('文件名不能为空');
+      input.focus();
+      return;
+    }
+    const oldName = input.dataset.original || '';
+    if (nextName === oldName) {
+      edSetItemNameEditMode(card, false);
+      return;
+    }
+
+    edSetItemNameSaving(card, true);
+    try {
+      const data = await fetchJSON(`/medias/api/items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: nextName }),
+      });
+      const updated = data.item || {};
+      const savedName = updated.display_name || nextName;
+      input.value = savedName;
+      input.dataset.original = savedName;
+      input.title = savedName;
+      edPatchItemNameInState(itemId, updated, savedName);
+      edSetItemNameEditMode(card, false);
+    } catch (e) {
+      alert('修改文件名失败：' + (e.message || ''));
+      input.focus();
+    } finally {
+      edSetItemNameSaving(card, false);
+    }
   }
 
   async function edEnsureVideoLoaded(card, itemId) {

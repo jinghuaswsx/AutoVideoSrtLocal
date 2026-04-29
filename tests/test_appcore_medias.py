@@ -287,6 +287,22 @@ def test_update_product_shopifyid_rejects_non_digits():
         medias.update_product(21, shopifyid="abc-123")
 
 
+def test_update_item_display_name_updates_only_display_name(monkeypatch):
+    captured = {}
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    medias.update_item_display_name(77, "new-video-name.mp4")
+
+    assert captured["sql"] == "UPDATE media_items SET display_name=%s WHERE id=%s"
+    assert captured["args"] == ("new-video-name.mp4", 77)
+
+
 def test_parse_link_check_tasks_json_handles_str_dict_and_none():
     assert medias.parse_link_check_tasks_json(None) == {}
     assert medias.parse_link_check_tasks_json("") == {}

@@ -705,6 +705,13 @@ def update_item_cover(item_id: int, cover_object_key: str | None) -> int:
     )
 
 
+def update_item_display_name(item_id: int, display_name: str) -> int:
+    return execute(
+        "UPDATE media_items SET display_name=%s WHERE id=%s",
+        (display_name, item_id),
+    )
+
+
 def list_items(product_id: int, lang: str | None = None) -> list[dict]:
     if lang:
         return query(

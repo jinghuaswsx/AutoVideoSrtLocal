@@ -1774,6 +1774,29 @@ def api_item_cover_set(item_id: int):
     return jsonify({"ok": True, "cover_url": f"/medias/item-cover/{item_id}"})
 
 
+@bp.route("/api/items/<int:item_id>", methods=["PATCH"])
+@login_required
+def api_update_item(item_id: int):
+    it = medias.get_item(item_id)
+    if not it:
+        abort(404)
+    p = medias.get_product(it["product_id"])
+    if not _can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    display_name = str(body.get("display_name") or "").strip()
+    if not display_name:
+        return jsonify({"error": "display_name required"}), 400
+    if len(display_name) > 255:
+        return jsonify({"error": "display_name too long"}), 400
+
+    medias.update_item_display_name(item_id, display_name)
+    updated = dict(it)
+    updated["display_name"] = display_name
+    fresh = medias.get_item(item_id) or updated
+    return jsonify({"item": _serialize_item(fresh)})
+
+
 @bp.route("/item-cover/<int:item_id>")
 @login_required
 def item_cover(item_id: int):
