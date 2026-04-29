@@ -265,7 +265,10 @@ def _build_config(
         kwargs["max_output_tokens"] = max_output_tokens
     if response_schema is not None:
         kwargs["response_mime_type"] = "application/json"
-        kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
+        if google_search:
+            kwargs["response_json_schema"] = response_schema
+        else:
+            kwargs["response_schema"] = _sanitize_schema_for_gemini(response_schema)
     if google_search:
         kwargs["tools"] = [genai_types.Tool(google_search=genai_types.GoogleSearch())]
     return genai_types.GenerateContentConfig(**kwargs)

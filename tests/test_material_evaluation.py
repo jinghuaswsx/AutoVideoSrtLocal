@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def test_response_schema_requires_every_enabled_small_language():
@@ -245,6 +246,105 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert detail["model"] == "google/gemini-3.1-pro-preview"
     assert detail["search_tools"] == [{"type": "openrouter:web_search"}]
     assert detail["countries"][0]["lang"] == "de"
+
+
+def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypatch, tmp_path):
+    from appcore import material_evaluation
+
+    cover = tmp_path / "cover.jpg"
+    video = tmp_path / "promo.mp4"
+    cover.write_bytes(b"cover")
+    video.write_bytes(b"video")
+    updates = {}
+    llm_calls = []
+
+    monkeypatch.setattr(
+        material_evaluation,
+        "llm_bindings",
+        SimpleNamespace(resolve=lambda code: {
+            "provider": "gemini_aistudio",
+            "model": "gemini-3.1-pro-preview",
+        }),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Tomato Clip",
+            "product_code": "tomato-clip",
+            "user_id": 9,
+            "ai_evaluation_result": None,
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_enabled_languages_kv",
+        lambda: [{"code": "de", "name": "德语"}],
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "resolve_cover",
+        lambda product_id, lang="en": "media/cover.jpg",
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "list_items",
+        lambda product_id, lang="en": [
+            {"id": 11, "lang": "en", "object_key": "media/promo.mp4"}
+        ],
+    )
+    monkeypatch.setattr(
+        material_evaluation.pushes,
+        "resolve_product_page_url",
+        lambda lang, product: "https://newjoyloo.com/products/tomato-clip",
+    )
+    monkeypatch.setattr(
+        material_evaluation,
+        "_materialize_media",
+        lambda object_key: cover if object_key.endswith(".jpg") else video,
+    )
+    monkeypatch.setattr(material_evaluation, "_automatic_attempt_count", lambda *args: 0)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_start", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(material_evaluation, "_record_attempt_finish", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        material_evaluation.llm_client,
+        "invoke_generate",
+        lambda *args, **kwargs: llm_calls.append((args, kwargs)) or {
+            "json": {
+                "countries": [
+                    {
+                        "lang": "de",
+                        "country": "德国",
+                        "is_suitable": True,
+                        "score": 90,
+                        "risk_level": "low",
+                        "decision": "适合推广",
+                        "reason": "春季园艺需求明确。",
+                        "suggestions": [],
+                    }
+                ]
+            }
+        },
+    )
+    monkeypatch.setattr(
+        material_evaluation.medias,
+        "update_product",
+        lambda product_id, **kwargs: updates.update(kwargs) or 1,
+    )
+
+    result = material_evaluation.evaluate_product_if_ready(7, force=True, manual=True)
+
+    assert result["status"] == "evaluated"
+    assert llm_calls[0][1]["provider_override"] == "gemini_aistudio"
+    assert llm_calls[0][1]["model_override"] == "gemini-3.1-pro-preview"
+    assert llm_calls[0][1]["google_search"] is True
+    assert llm_calls[0][1]["billing_extra"]["tools"] == [{"google_search": {}}]
+    detail = json.loads(updates["ai_evaluation_detail"])
+    assert detail["provider"] == "gemini_aistudio"
+    assert detail["model"] == "gemini-3.1-pro-preview"
+    assert detail["search_tools"] == [{"google_search": {}}]
 
 
 def test_evaluate_ready_product_sends_15s_clip_to_llm(monkeypatch, tmp_path):

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from appcore import llm_client, local_media_storage, medias, pushes, tos_clients
+from appcore import llm_bindings, llm_client, local_media_storage, medias, pushes, tos_clients
 from appcore.db import execute, query, query_one
 
 logger = logging.getLogger(__name__)
@@ -23,13 +23,52 @@ USE_CASE_CODE = "material_evaluation.evaluate"
 EVALUATION_PROVIDER = "openrouter"
 EVALUATION_MODEL = "google/gemini-3.1-pro-preview"
 EVALUATION_SEARCH_ENABLED = True
-EVALUATION_SEARCH_TOOLS = [{"type": "openrouter:web_search"}]
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
 _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+_SUPPORTED_EVALUATION_PROVIDERS = {"openrouter", "gemini_aistudio"}
+
+
+def _search_tools_for_provider(provider: str) -> list[dict]:
+    if (provider or "").strip().lower() == "openrouter":
+        return [{"type": "openrouter:web_search"}]
+    return [{"google_search": {}}]
+
+
+def _normalize_model_for_provider(provider: str, model: str) -> str:
+    provider = (provider or "").strip().lower()
+    model = (model or "").strip()
+    if provider == "openrouter" and model.startswith("gemini-"):
+        return f"google/{model}"
+    if provider == "gemini_aistudio" and model.startswith("google/"):
+        return model.split("/", 1)[1]
+    return model
+
+
+def resolve_evaluation_llm_config() -> dict:
+    try:
+        binding = llm_bindings.resolve(USE_CASE_CODE)
+    except Exception:
+        logger.debug("resolve material evaluation LLM binding failed; using defaults", exc_info=True)
+        binding = {"provider": EVALUATION_PROVIDER, "model": EVALUATION_MODEL}
+    provider = str(binding.get("provider") or EVALUATION_PROVIDER).strip() or EVALUATION_PROVIDER
+    if provider not in _SUPPORTED_EVALUATION_PROVIDERS:
+        raise ValueError(
+            f"素材评估仅支持 openrouter 或 gemini_aistudio，当前配置为 {provider}"
+        )
+    model = _normalize_model_for_provider(
+        provider,
+        str(binding.get("model") or EVALUATION_MODEL).strip() or EVALUATION_MODEL,
+    )
+    return {
+        "provider": provider,
+        "model": model,
+        "search_enabled": EVALUATION_SEARCH_ENABLED,
+        "search_tools": _search_tools_for_provider(provider),
+    }
 
 
 def _has_suffix(value: Any, suffixes: set[str]) -> bool:
@@ -403,6 +442,7 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
     system_prompt = build_system_prompt()
     user_prompt = build_prompt(product, product_url, languages)
     response_schema = build_response_schema(languages)
+    llm_config = resolve_evaluation_llm_config()
     media = [
         _debug_media_entry(
             role="product_cover",
@@ -424,8 +464,8 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
     ]
     request_payload = {
         "use_case": USE_CASE_CODE,
-        "provider": EVALUATION_PROVIDER,
-        "model": EVALUATION_MODEL,
+        "provider": llm_config["provider"],
+        "model": llm_config["model"],
         "system": system_prompt,
         "prompt": user_prompt,
         "media": [
@@ -443,8 +483,8 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
         "response_schema": response_schema,
         "temperature": 0.2,
         "max_output_tokens": 4096,
-        "google_search": EVALUATION_SEARCH_ENABLED,
-        "tools": EVALUATION_SEARCH_TOOLS,
+        "google_search": llm_config["search_enabled"],
+        "tools": llm_config["search_tools"],
     }
     return {
         "product": {
@@ -462,13 +502,13 @@ def build_request_debug_payload(product_id: int, *, include_base64: bool = False
         "response_schema": response_schema,
         "llm": {
             "use_case": USE_CASE_CODE,
-            "provider": EVALUATION_PROVIDER,
-            "model": EVALUATION_MODEL,
+            "provider": llm_config["provider"],
+            "model": llm_config["model"],
             "temperature": 0.2,
             "max_output_tokens": 4096,
             "project_id": f"media-product-{product_id}",
-            "google_search": EVALUATION_SEARCH_ENABLED,
-            "tools": EVALUATION_SEARCH_TOOLS,
+            "google_search": llm_config["search_enabled"],
+            "tools": llm_config["search_tools"],
         },
         "media": media,
         "request": request_payload,
@@ -567,8 +607,15 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
                 "attempts": attempts,
             }
 
+    llm_config = {
+        "provider": EVALUATION_PROVIDER,
+        "model": EVALUATION_MODEL,
+        "search_enabled": EVALUATION_SEARCH_ENABLED,
+        "search_tools": _search_tools_for_provider(EVALUATION_PROVIDER),
+    }
     attempt_id = None
     try:
+        llm_config = resolve_evaluation_llm_config()
         cover_path = _materialize_media(cover_key)
         video_path = _make_eval_clip_15s(product_id, video)
         attempt_id = _record_attempt_start(
@@ -588,10 +635,13 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             response_schema=build_response_schema(languages),
             temperature=0.2,
             max_output_tokens=4096,
-            provider_override=EVALUATION_PROVIDER,
-            model_override=EVALUATION_MODEL,
-            google_search=EVALUATION_SEARCH_ENABLED,
-            billing_extra={"google_search": EVALUATION_SEARCH_ENABLED, "tools": EVALUATION_SEARCH_TOOLS},
+            provider_override=llm_config["provider"],
+            model_override=llm_config["model"],
+            google_search=llm_config["search_enabled"],
+            billing_extra={
+                "google_search": llm_config["search_enabled"],
+                "tools": llm_config["search_tools"],
+            },
         )
         raw_json = llm_result.get("json")
         if raw_json is None:
@@ -600,10 +650,10 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
         detail = {
             "schema_version": 1,
             "use_case": USE_CASE_CODE,
-            "provider": EVALUATION_PROVIDER,
-            "model": EVALUATION_MODEL,
-            "search_enabled": EVALUATION_SEARCH_ENABLED,
-            "search_tools": EVALUATION_SEARCH_TOOLS,
+            "provider": llm_config["provider"],
+            "model": llm_config["model"],
+            "search_enabled": llm_config["search_enabled"],
+            "search_tools": llm_config["search_tools"],
             "evaluated_at": datetime.now(UTC).isoformat(),
             "product_id": product_id,
             "product_url": product_url,
@@ -634,6 +684,10 @@ def _evaluate_product_if_ready(product_id: int, *, force: bool = False,
             detail = {
                 "schema_version": 1,
                 "use_case": USE_CASE_CODE,
+                "provider": llm_config["provider"],
+                "model": llm_config["model"],
+                "search_enabled": llm_config["search_enabled"],
+                "search_tools": llm_config["search_tools"],
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "product_id": product_id,
                 "product_url": product_url,

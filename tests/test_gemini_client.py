@@ -268,6 +268,30 @@ def test_generate_enables_google_search_tool_and_logs_request(monkeypatch):
     assert billing_calls[0]["request_payload"]["tools"] == [{"google_search": {}}]
 
 
+def test_build_config_uses_json_schema_when_search_and_structured_output(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["answer"],
+        "properties": {"answer": {"type": "string"}},
+    }
+
+    cfg = gemini._build_config(
+        system="system",
+        temperature=0.2,
+        response_schema=schema,
+        max_output_tokens=512,
+        google_search=True,
+    )
+
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.response_json_schema == schema
+    assert cfg.response_schema is None
+    assert cfg.tools[0].google_search is not None
+
+
 def test_generate_logs_failure_via_ai_billing(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
 
