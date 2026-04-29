@@ -1793,18 +1793,67 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   border-color:var(--oc-accent);
   box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
-.oc-product-links-modal { width:min(980px, calc(100vw - 48px)); }
+.oc-product-links-mask {
+  align-items:flex-start;
+  padding-top:100px;
+  padding-bottom:var(--oc-sp-5);
+}
+.oc-product-links-modal {
+  width:min(1180px, calc(100vw - 64px));
+  max-height:calc(100vh - 124px);
+}
+.oc-product-links-modal .oc-modal-body {
+  flex:1;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-4);
+  overflow:hidden;
+}
 .oc-product-links-meta {
   margin:4px 0 0;
   color:var(--oc-fg-muted);
   font-size:13px;
 }
-.oc-product-links-grid {
-  display:grid;
-  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
-  gap:var(--oc-sp-5);
+.oc-product-links-tabs {
+  display:inline-flex;
+  align-self:flex-start;
+  gap:var(--oc-sp-1);
+  padding:4px;
+  border:1px solid var(--oc-border);
+  border-radius:9999px;
+  background:var(--oc-bg-subtle);
 }
-.oc-product-links-panel { min-width:0; }
+.oc-product-links-tab {
+  height:30px;
+  padding:0 var(--oc-sp-4);
+  border:0;
+  border-radius:9999px;
+  background:transparent;
+  color:var(--oc-fg-muted);
+  font:600 13px/1 var(--font-sans, inherit);
+  cursor:pointer;
+  transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-product-links-tab:hover { color:var(--oc-accent); }
+.oc-product-links-tab.active {
+  background:var(--oc-accent);
+  color:#fff;
+}
+.oc-product-links-tab:focus-visible {
+  outline:none;
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
+.oc-product-links-active-area {
+  min-height:240px;
+  max-height:min(460px, max(240px, calc(100vh - 380px)));
+  overflow:hidden;
+}
+.oc-product-links-panel[hidden] { display:none !important; }
+.oc-product-links-panel {
+  min-width:0;
+  height:100%;
+}
 .oc-product-links-panel h4 {
   margin:0 0 var(--oc-sp-3);
   font-size:13px;
@@ -1833,9 +1882,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-pl-url:hover { color:var(--oc-accent); text-decoration:underline; }
 .oc-pl-json {
-  min-height:260px;
-  max-height:420px;
-  overflow:auto;
+  min-height:300px;
+  height:100%;
+  overflow:hidden;
   margin:0;
   padding:var(--oc-sp-3);
   border:1px solid var(--oc-border);
@@ -1861,7 +1910,43 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   background:var(--oc-danger-bg);
   color:var(--oc-danger-fg);
 }
-.oc-pl-response { margin-top:var(--oc-sp-4); }
+.oc-pl-response {
+  margin:0;
+  padding:var(--oc-sp-3);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg-subtle);
+}
+.oc-pl-response h4 {
+  margin:0 0 var(--oc-sp-2);
+  font-size:13px;
+  color:var(--oc-fg);
+}
+.oc-pl-response .oc-pl-json {
+  min-height:96px;
+  height:auto;
+  border:0;
+  padding:0;
+  background:transparent;
+}
+.oc-pl-response.success {
+  border-color:var(--oc-accent);
+  background:var(--oc-accent-subtle);
+}
+.oc-pl-response.success h4,
+.oc-pl-response.success .oc-pl-json { color:var(--oc-accent); }
+.oc-pl-response.danger {
+  border-color:var(--oc-danger);
+  background:var(--oc-danger-bg);
+}
+.oc-pl-response.danger h4,
+.oc-pl-response.danger .oc-pl-json { color:var(--oc-danger-fg); }
+.oc-product-links-footer {
+  justify-content:center;
+}
+.oc-product-links-footer #productLinksPushSubmit {
+  min-width:128px;
+}
 .product-links-push-cell { text-align:center; }
 @media (max-width: 760px) {
   .oc-roas-layout,
@@ -1877,7 +1962,24 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-roas-tk-column .oc-roas-section { flex:none; overflow:visible; }
   .oc-roas-avg-input { min-height:160px; }
   #roasModalMask { inset:0; }
-  .oc-product-links-grid { grid-template-columns:1fr; }
+  .oc-product-links-mask {
+    padding-top:var(--oc-sp-5);
+    align-items:flex-start;
+  }
+  .oc-product-links-modal {
+    width:calc(100vw - 32px);
+    max-height:calc(100vh - 40px);
+  }
+  .oc-product-links-tabs {
+    width:100%;
+  }
+  .oc-product-links-tab {
+    flex:1;
+    padding:0 var(--oc-sp-2);
+  }
+  .oc-product-links-active-area {
+    max-height:max(220px, calc(100vh - 360px));
+  }
 }
 {% endblock %}
 
@@ -1979,7 +2081,7 @@ window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojs
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
-<div id="productLinksPushModalMask" class="oc-modal-mask oc" hidden>
+<div id="productLinksPushModalMask" class="oc-modal-mask oc oc-product-links-mask" hidden>
   <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="productLinksPushTitle">
     <div class="oc-modal-head">
       <div>
@@ -1991,23 +2093,32 @@ window.MATERIAL_ROAS_RMB_PER_USD = {{ (material_roas_rmb_per_usd or 6.83) | tojs
       </button>
     </div>
     <div class="oc-modal-body">
-      <div class="oc-product-links-grid">
-        <section class="oc-product-links-panel">
-          <h4>投放链接</h4>
+      <div class="oc-product-links-tabs" role="tablist" aria-label="投放链接推送内容">
+        <button type="button" class="oc-product-links-tab active" data-product-links-tab="links"
+                role="tab" aria-selected="true" aria-controls="productLinksPushPanelLinks">
+          推送投放链接
+        </button>
+        <button type="button" class="oc-product-links-tab" data-product-links-tab="json"
+                role="tab" aria-selected="false" aria-controls="productLinksPushPanelJson">
+          投放链接 JSON 预览
+        </button>
+      </div>
+      <div class="oc-product-links-active-area">
+        <section id="productLinksPushPanelLinks" class="oc-product-links-panel"
+                 data-product-links-panel="links" role="tabpanel">
           <div id="productLinksPushList"></div>
         </section>
-        <section class="oc-product-links-panel">
-          <h4>产品链接 JSON 预览</h4>
+        <section id="productLinksPushPanelJson" class="oc-product-links-panel"
+                 data-product-links-panel="json" role="tabpanel" hidden>
           <pre id="productLinksPushJson" class="oc-pl-json"></pre>
         </section>
       </div>
       <section id="productLinksPushResponse" class="oc-pl-response" hidden>
-        <h4>推送响应</h4>
+        <h4 id="productLinksPushResponseTitle">推送响应</h4>
         <pre id="productLinksPushResponseBody" class="oc-pl-json"></pre>
       </section>
     </div>
-    <div class="oc-modal-foot">
-      <button type="button" id="productLinksPushCancel" class="oc-btn ghost">关闭</button>
+    <div class="oc-modal-foot oc-product-links-footer">
       <button type="button" id="productLinksPushSubmit" class="oc-btn primary">推送</button>
     </div>
   </div>

@@ -1496,6 +1496,59 @@
     }, null, 2);
   }
 
+  function setProductLinksPushActiveTab(nextTab) {
+    const tab = nextTab === 'json' ? 'json' : 'links';
+    document.querySelectorAll('[data-product-links-tab]').forEach((btn) => {
+      const active = btn.dataset.productLinksTab === tab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-product-links-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.productLinksPanel !== tab;
+    });
+  }
+
+  function resetProductLinksPushResponse() {
+    const resp = $('productLinksPushResponse');
+    const respPre = $('productLinksPushResponseBody');
+    const respTitle = $('productLinksPushResponseTitle');
+    if (resp) {
+      resp.hidden = true;
+      resp.classList.remove('success', 'danger');
+    }
+    if (respTitle) respTitle.textContent = '推送响应';
+    if (respPre) respPre.textContent = '';
+  }
+
+  function productLinksPushIsSuccess(data) {
+    if (!data) return false;
+    if (data.ok === true) return true;
+    if (data.ok === false) return false;
+    if (typeof data.response_body === 'string' && data.response_body.trim()) {
+      try {
+        const parsed = JSON.parse(data.response_body);
+        return !!parsed && parsed.code === 0;
+      } catch (_) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function productLinksPushRenderResponse(data, forceSuccess) {
+    const resp = $('productLinksPushResponse');
+    const respPre = $('productLinksPushResponseBody');
+    const respTitle = $('productLinksPushResponseTitle');
+    if (!resp || !respPre) return false;
+    const success = typeof forceSuccess === 'boolean' ? forceSuccess : productLinksPushIsSuccess(data);
+    resp.hidden = false;
+    resp.classList.toggle('success', success);
+    resp.classList.toggle('danger', !success);
+    if (respTitle) respTitle.textContent = success ? '推送成功' : '推送失败';
+    respPre.textContent = typeof data === 'string' ? data : JSON.stringify(data || {}, null, 2);
+    return success;
+  }
+
   async function openProductLinksPushModal(product) {
     if (!product || !product.id) return;
     const mask = $('productLinksPushModalMask');
@@ -1503,21 +1556,19 @@
     const meta = $('productLinksPushMeta');
     const list = $('productLinksPushList');
     const jsonPre = $('productLinksPushJson');
-    const resp = $('productLinksPushResponse');
-    const respPre = $('productLinksPushResponseBody');
     const submit = $('productLinksPushSubmit');
     if (!mask || !list || !jsonPre || !submit) return;
 
     mask.hidden = false;
     mask.dataset.pid = String(product.id);
+    setProductLinksPushActiveTab('links');
+    resetProductLinksPushResponse();
     if (title) title.textContent = '推送产品链接';
     if (meta) {
       meta.textContent = `${product.name || ''} · ${product.product_code || ''}`;
     }
     list.innerHTML = '<div class="oc-pl-empty">加载投放链接中…</div>';
     jsonPre.textContent = '加载中…';
-    if (resp) resp.hidden = true;
-    if (respPre) respPre.textContent = '';
     submit.disabled = true;
     submit.textContent = '推送';
 
@@ -1541,6 +1592,7 @@
     mask.hidden = true;
     mask.dataset.pid = '';
     mask._productLinksPreview = null;
+    resetProductLinksPushResponse();
   }
 
   async function submitProductLinksPush() {
@@ -1548,28 +1600,34 @@
     const submit = $('productLinksPushSubmit');
     const resp = $('productLinksPushResponse');
     const respPre = $('productLinksPushResponseBody');
+    const respTitle = $('productLinksPushResponseTitle');
     const pid = mask && mask.dataset.pid;
     if (!mask || !pid || !submit) return;
     submit.disabled = true;
     submit.textContent = '推送中…';
-    if (resp) resp.hidden = true;
+    if (resp) {
+      resp.hidden = false;
+      resp.classList.remove('success', 'danger');
+    }
+    if (respTitle) respTitle.textContent = '推送中';
+    if (respPre) respPre.textContent = '等待下游返回数据…';
     try {
       const data = await fetchJSON(`/medias/api/products/${pid}/product-links-push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-      if (resp) resp.hidden = false;
-      if (respPre) {
-        respPre.classList.remove('danger');
-        respPre.textContent = JSON.stringify(data, null, 2);
+      const success = productLinksPushRenderResponse(data);
+      if (success) {
+        submit.textContent = '已推送';
+      } else {
+        submit.disabled = false;
+        submit.textContent = '推送';
       }
-      submit.textContent = '已推送';
     } catch (err) {
-      if (resp) resp.hidden = false;
-      if (respPre) {
-        respPre.classList.add('danger');
-        respPre.textContent = err.message || '推送失败';
-      }
+      productLinksPushRenderResponse({
+        error: 'request_failed',
+        message: err.message || '推送失败',
+      }, false);
       submit.disabled = false;
       submit.textContent = '推送';
     }
@@ -5857,6 +5915,13 @@
       return;
     }
 
+    const productLinksTab = event.target.closest('[data-product-links-tab]');
+    if (productLinksTab) {
+      event.preventDefault();
+      setProductLinksPushActiveTab(productLinksTab.dataset.productLinksTab);
+      return;
+    }
+
     if (event.target.closest('#productLinksPushSubmit')) {
       event.preventDefault();
       await submitProductLinksPush();
@@ -5866,7 +5931,6 @@
     if (
       event.target === $('productLinksPushModalMask')
       || event.target.closest('#productLinksPushClose')
-      || event.target.closest('#productLinksPushCancel')
     ) {
       closeProductLinksPushModal();
       return;
