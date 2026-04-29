@@ -2676,7 +2676,7 @@
       alertMkCopywritingFetchError(e);
     } finally {
       if (btn) btn.disabled = false;
-      if (label) label.textContent = originalLabel || '一键从明空系统获取';
+      if (label) label.textContent = originalLabel || '一键从明空后台获取英文文案';
     }
   }
 
@@ -3051,7 +3051,7 @@
         btn.className = 'oc-btn ghost sm';
         btn.type = 'button';
         btn.id = 'edMkCopyFetchBtn';
-        btn.innerHTML = `${icon('search', 14)}<span>一键从名控系统获取文案</span>`;
+        btn.innerHTML = `${icon('search', 14)}<span>一键从明空后台获取英文文案</span>`;
         btn.addEventListener('click', () => {
           edFillCopywritingFromMkSystem().catch((err) => {
             console.error('[copywriting] fetch from mk system failed:', err);
@@ -3127,7 +3127,7 @@
       alertMkCopywritingFetchError(e);
     } finally {
       if (btn) btn.disabled = false;
-      if (label) label.textContent = originalLabel || '一键从名控系统获取文案';
+      if (label) label.textContent = originalLabel || '一键从明空后台获取英文文案';
     }
   }
 
@@ -4619,7 +4619,16 @@
     const box = $('edCwList');
     box.innerHTML = '';
     (list || []).forEach((c, i) => box.appendChild(edCwCard(c, i + 1)));
+    box.querySelectorAll('textarea[data-field="body"]').forEach(edAutosizeCopywritingTextarea);
     $('edCwBadge').textContent = box.children.length;
+  }
+
+  function edAutosizeCopywritingTextarea(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const styles = window.getComputedStyle ? window.getComputedStyle(textarea) : null;
+    const minHeight = styles ? (parseFloat(styles.minHeight) || parseFloat(styles.height) || 0) : 0;
+    textarea.style.height = Math.max(textarea.scrollHeight, minHeight) + 'px';
   }
 
   function edCwCard(c, idx) {
@@ -4638,12 +4647,14 @@
       </div>
     `;
     const textarea = d.querySelector('[data-field="body"]');
-    textarea.rows = 3;
+    textarea.rows = 4;
     textarea.wrap = 'off';
     textarea.placeholder = '标题: \n文案: \n描述: ';
     textarea.value = edNormalizeCopywritingBody((c && c.body) || '');
+    textarea.addEventListener('input', () => edAutosizeCopywritingTextarea(textarea));
     textarea.addEventListener('blur', () => {
       textarea.value = edNormalizeCopywritingBody(textarea.value);
+      edAutosizeCopywritingTextarea(textarea);
     });
     d.querySelector('.rm').addEventListener('click', () => {
       d.remove();
@@ -5420,7 +5431,9 @@
     });
 
     $('edCwAddBtn').addEventListener('click', () => {
-      $('edCwList').appendChild(edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1));
+      const card = edCwCard({ lang: edState.activeLang }, $('edCwList').children.length + 1);
+      $('edCwList').appendChild(card);
+      edAutosizeCopywritingTextarea(card.querySelector('textarea[data-field="body"]'));
       $('edCwBadge').textContent = $('edCwList').children.length;
     });
     // 编辑弹窗封面事件由 edRenderCoverBlock() 动态绑定，此处不再静态绑定

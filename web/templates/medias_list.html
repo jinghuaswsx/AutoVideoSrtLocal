@@ -1413,11 +1413,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-cw-grid .oc-cw .idx { margin-bottom:var(--oc-sp-1); }
 .oc-cw-grid .oc-cw .stack { flex:1; }
 .oc-cw-grid .oc-cw textarea[data-field="body"] {
-  min-height:auto;
-  height:calc(1.55em * 3 + 16px);
+  min-height:calc(1.55em * 4 + 16px);
+  height:calc(1.55em * 4 + 16px);
   resize:none;
   white-space:pre;
-  overflow:auto;
+  overflow-x:auto;
+  overflow-y:hidden;
 }
 
 @media (max-width: 768px) {

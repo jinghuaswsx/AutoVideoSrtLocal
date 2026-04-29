@@ -73,6 +73,22 @@ def test_edit_modal_shopifyid_field_is_editable_input():
     assert 'aria-labelledby="edShopifyIdSectionTitle"' in section
 
 
+def test_edit_copywriting_textarea_autosizes_without_vertical_scroll():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    rule_start = html.index('.oc-cw-grid .oc-cw textarea[data-field="body"]')
+    rule_end = html.index("}", rule_start)
+    textarea_rule = html[rule_start:rule_end]
+
+    assert "height:calc(1.55em * 4 + 16px);" in textarea_rule
+    assert "overflow-x:auto;" in textarea_rule
+    assert "overflow-y:hidden;" in textarea_rule
+    assert "function edAutosizeCopywritingTextarea" in script
+    assert "textarea.rows = 4;" in script
+    assert "textarea.addEventListener('input', () => edAutosizeCopywritingTextarea(textarea));" in script
+
+
 def test_medias_list_uses_two_column_grid_for_row_actions():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
