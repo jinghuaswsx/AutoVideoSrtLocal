@@ -1907,6 +1907,15 @@ def api_update_item(item_id: int):
     if len(display_name) > 255:
         return jsonify({"error": "display_name too long"}), 400
 
+    validation, error_response = _validate_material_filename_for_product(
+        display_name,
+        p,
+        (it.get("lang") or "en"),
+    )
+    if error_response:
+        return error_response
+    display_name = os.path.basename(display_name)
+
     medias.update_item_display_name(item_id, display_name)
     updated = dict(it)
     updated["display_name"] = display_name
