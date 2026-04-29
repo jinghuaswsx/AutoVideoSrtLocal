@@ -1129,7 +1129,7 @@ def get_dianxiaomi_order_analysis(
         raise ValueError("end_date must be >= start_date")
 
     page = max(1, int(page or 1))
-    page_size = max(1, min(int(page_size or 50), 200))
+    page_size = max(10, min(int(page_size or 50), 200))
     offset = (page - 1) * page_size
 
     where_sql = "FROM dianxiaomi_order_lines WHERE meta_business_date >= %s AND meta_business_date <= %s"

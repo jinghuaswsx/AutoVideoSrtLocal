@@ -29,8 +29,8 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
         assert args == (
             oa._parse_meta_date("2026-04-01"),
             oa._parse_meta_date("2026-04-30"),
-            2,
-            2,
+            10,
+            10,
         )
         return [
             {
@@ -79,9 +79,9 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
     }
     assert result["pagination"] == {
         "page": 2,
-        "page_size": 2,
+        "page_size": 10,
         "total": 3,
-        "total_pages": 2,
+        "total_pages": 1,
     }
     assert result["rows"][0]["total_sales"] == 65.0
     assert result["rows"][0]["order_time"] == datetime(2026, 4, 20, 18, 30)
