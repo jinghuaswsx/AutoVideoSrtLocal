@@ -518,7 +518,13 @@
 
   function showAiEvaluationDetail(product) {
     if (window.EvalCountryTable && typeof window.EvalCountryTable.openModal === 'function') {
-      window.EvalCountryTable.openModal(product && product.ai_evaluation_detail);
+      ensureAiEvaluationRequestModalStyle();
+      const shell = window.EvalCountryTable.openModal(product && product.ai_evaluation_detail, {
+        withRequestTab: true,
+      });
+      if (shell && shell.requestPanel) {
+        loadAiEvaluationDetailRequestPreview(shell.requestPanel, product && product.id);
+      }
     }
   }
 
@@ -700,9 +706,43 @@
   function renderAiEvaluationRequestPreview(modalState) {
     const panel = modalState && modalState.body && modalState.body.querySelector('[data-ai-eval-panel="request"]');
     if (!panel) return;
-    const preview = modalState.preview;
-    if (modalState.previewError) {
-      panel.innerHTML = `<div class="ect-ai-empty">请求报文加载失败：${escapeHtml(modalState.previewError)}</div>`;
+    renderAiEvaluationRequestPreviewToPanel(panel, {
+      preview: modalState.preview,
+      previewError: modalState.previewError,
+      fullPayloadUrl: modalState.fullPayloadUrl,
+    });
+  }
+
+  async function loadAiEvaluationDetailRequestPreview(panel, pid) {
+    if (!panel) return;
+    if (!pid) {
+      renderAiEvaluationRequestPreviewToPanel(panel, {
+        previewError: '缺少产品 ID，无法加载请求报文',
+      });
+      return;
+    }
+    renderAiEvaluationRequestPreviewToPanel(panel, { preview: null });
+    try {
+      const data = await fetchJSON(AI_EVAL_REQUEST_PREVIEW_ENDPOINT(pid));
+      const preview = data.payload || null;
+      const fullPayloadUrl = preview && preview.full_payload_url
+        || `/medias/api/products/${pid}/evaluate/request-payload`;
+      renderAiEvaluationRequestPreviewToPanel(panel, {
+        preview: preview,
+        fullPayloadUrl: fullPayloadUrl,
+      });
+    } catch (err) {
+      renderAiEvaluationRequestPreviewToPanel(panel, {
+        previewError: err && err.message ? err.message : String(err || '加载请求报文失败'),
+      });
+    }
+  }
+
+  function renderAiEvaluationRequestPreviewToPanel(panel, opts) {
+    const options = opts || {};
+    const preview = options.preview;
+    if (options.previewError) {
+      panel.innerHTML = `<div class="ect-ai-empty">请求报文加载失败：${escapeHtml(options.previewError)}</div>`;
       return;
     }
     if (!preview) {
@@ -744,7 +784,9 @@
       </div>
       ${renderAiEvaluationPromptSections(preview)}`;
     const btn = panel.querySelector('[data-ai-full-payload]');
-    if (btn) btn.addEventListener('click', () => openAiEvaluationPayloadDetail(modalState));
+    if (btn) btn.addEventListener('click', () => openAiEvaluationPayloadDetail({
+      fullPayloadUrl: options.fullPayloadUrl || preview.full_payload_url,
+    }));
   }
 
   function renderAiEvaluationPromptSections(preview) {

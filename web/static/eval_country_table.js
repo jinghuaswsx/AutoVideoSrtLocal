@@ -155,6 +155,12 @@
     .ect-modal-button { height: 32px; padding: 0 14px; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r, 6px); background: var(--oc-bg); color: var(--oc-fg-muted); cursor: pointer; font: inherit; font-size: 13px; }
     .ect-modal-button:hover { background: var(--oc-bg-muted); color: var(--oc-fg); }
     .ect-modal-json { min-height: 180px; margin: 0; padding: var(--oc-sp-3, 12px); background: var(--oc-bg-subtle); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md, 8px); color: var(--oc-fg); font-family: var(--font-mono, "JetBrains Mono", ui-monospace, Consolas, monospace); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; overflow: auto; }
+    .ect-detail-tabs { display:flex; gap:8px; padding:0 0 var(--oc-sp-4, 16px); background:var(--oc-bg); }
+    .ect-detail-tab { height:32px; padding:0 14px; border:1px solid var(--oc-border-strong); border-radius:8px 8px 0 0; background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+    .ect-detail-tab.active { background:var(--oc-bg); color:var(--oc-accent); border-color:var(--oc-accent); }
+    .ect-detail-tab:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
+    .ect-detail-panels { min-height:0; }
+    .ect-detail-panel[hidden] { display:none !important; }
     @keyframes ect-fade-in { from { opacity: 0; } to { opacity: 1; } }
     @keyframes ect-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -515,7 +521,22 @@
     body.className = 'ect-modal-body';
     const parsed = parse(rawDetail);
     const hasTable = !!(parsed && Array.isArray(parsed.countries) && parsed.countries.length);
-    if (hasTable) {
+    if (opts.withRequestTab) {
+      const resultHtml = hasTable
+        ? render(rawDetail)
+        : `<pre class="ect-modal-json">${escapeHtml(formatDetail(rawDetail))}</pre>`;
+      body.innerHTML = `
+        <div class="ect-detail-tabs" role="tablist">
+          <button type="button" class="ect-detail-tab active" data-ect-detail-tab="result" aria-selected="true">结果</button>
+          <button type="button" class="ect-detail-tab" data-ect-detail-tab="request" aria-selected="false">请求报文</button>
+        </div>
+        <div class="ect-detail-panels">
+          <section class="ect-detail-panel" data-ect-detail-panel="result">${resultHtml}</section>
+          <section class="ect-detail-panel" data-ect-detail-panel="request" hidden>
+            <div class="ect-empty">正在加载请求报文、素材和提示词...</div>
+          </section>
+        </div>`;
+    } else if (hasTable) {
       body.innerHTML = render(rawDetail);
     } else {
       const pre = document.createElement('pre');
@@ -549,8 +570,32 @@
     closeTop.addEventListener('click', close);
     closeBottom.addEventListener('click', close);
 
+    function switchDetailTab(tab) {
+      const activeTab = tab === 'request' ? 'request' : 'result';
+      body.querySelectorAll('[data-ect-detail-tab]').forEach((btn) => {
+        const active = btn.dataset.ectDetailTab === activeTab;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      body.querySelectorAll('[data-ect-detail-panel]').forEach((panel) => {
+        panel.hidden = panel.dataset.ectDetailPanel !== activeTab;
+      });
+    }
+
+    body.querySelectorAll('[data-ect-detail-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => switchDetailTab(btn.dataset.ectDetailTab));
+    });
+
     document.body.appendChild(overlay);
-    return { close: close, overlay: overlay, modal: modal };
+    return {
+      close: close,
+      overlay: overlay,
+      modal: modal,
+      body: body,
+      resultPanel: body.querySelector('[data-ect-detail-panel="result"]'),
+      requestPanel: body.querySelector('[data-ect-detail-panel="request"]'),
+      setActiveTab: switchDetailTab,
+    };
   }
 
   window.EvalCountryTable = { render: render, parse: parse, openModal: openAiEvaluationDetailModal };
