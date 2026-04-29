@@ -49,7 +49,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("projects",              GROUP_BUSINESS,   "视频翻译",         True,  True),
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
     # B. 管理类
-    ("mk_selection",          GROUP_MANAGEMENT, "明空选品",         True,  False),
+    ("mk_selection",          GROUP_MANAGEMENT, "选品中心",         True,  False),
     ("bulk_translate_admin",  GROUP_MANAGEMENT, "批量翻译任务管理", True,  False),
     ("data_analytics",        GROUP_MANAGEMENT, "数据分析",         True,  False),
     ("lab",                   GROUP_MANAGEMENT, "实验室",           True,  False),

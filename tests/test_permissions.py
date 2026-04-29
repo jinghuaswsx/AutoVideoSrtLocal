@@ -30,6 +30,10 @@ def test_permission_codes_no_duplicates_and_no_unknown_groups():
         assert meta["group"] in {"business", "management", "capability", "system"}
 
 
+def test_mk_selection_permission_label_is_selection_center():
+    assert PERMISSION_META["mk_selection"]["label"] == "选品中心"
+
+
 def test_default_permissions_for_superadmin_is_all_true():
     perms = default_permissions_for_role(ROLE_SUPERADMIN)
     assert set(perms.keys()) == set(PERMISSION_CODES)

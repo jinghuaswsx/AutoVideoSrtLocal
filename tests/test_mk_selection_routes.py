@@ -3,6 +3,38 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/mk-selection")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '<span class="nav-icon">🔍</span> 选品中心' in body
+    assert "<title>选品中心 - AutoVideoSrt</title>" in body
+    assert "{% block page_title %}" not in body
+    assert '<h1 class="title">选品中心</h1>' in body
+    assert '<a class="oc-page-tab active" href="/medias/mk-selection">明空选品</a>' in body
+    assert '<a class="oc-page-tab" href="/new-product-review/">新品审核</a>' in body
+    assert "明控选品" not in body
+
+
+def test_selection_center_tabs_and_heading_on_related_pages():
+    mk_template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+    npr_template = Path("web/templates/new_product_review_list.html").read_text(encoding="utf-8")
+
+    assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in mk_template
+    assert "{% block page_title %}选品中心{% endblock %}" in mk_template
+    assert '<h1 class="title">选品中心</h1>' in mk_template
+    assert '<a class="oc-page-tab active" href="/medias/mk-selection">明空选品</a>' in mk_template
+    assert '<a class="oc-page-tab" href="/new-product-review/">新品审核</a>' in mk_template
+    assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in npr_template
+    assert "{% block page_title %}选品中心{% endblock %}" in npr_template
+    assert '<h1 class="title">选品中心</h1>' in npr_template
+    assert '<a class="oc-page-tab" href="/medias/mk-selection">明空选品</a>' in npr_template
+    assert '<a class="oc-page-tab active" href="/new-product-review/">新品审核</a>' in npr_template
+    assert "明控选品" not in mk_template
+    assert "明控选品" not in npr_template
+
+
 def test_mk_selection_video_cards_use_single_preview_with_metrics():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
