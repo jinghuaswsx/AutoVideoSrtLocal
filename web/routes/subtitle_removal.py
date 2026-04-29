@@ -36,9 +36,11 @@ _INFLIGHT_STEP_STATUSES = {
 }
 
 
-def _default_display_name(original_filename: str) -> str:
-    name = os.path.splitext(original_filename)[0] if original_filename else ""
-    return name[:10] or "未命名"
+def _default_display_name(original_filename: str, *, now: datetime | None = None) -> str:
+    basename = os.path.basename(original_filename or "")
+    name = os.path.splitext(basename)[0].strip() or "未命名"
+    timestamp = (now or datetime.now()).strftime("%m%d-%H%M%S")
+    return f"{name}-{timestamp}"
 
 
 def _submitter_name_expr() -> str:
@@ -54,6 +56,34 @@ def _submitter_name_expr() -> str:
     if row:
         return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
     return "u.username"
+
+
+def _list_submitter_options(submitter_name_expr: str) -> list[dict]:
+    try:
+        rows = db_query(
+            f"SELECT DISTINCT p.user_id, u.username, {submitter_name_expr} AS submitter_name "
+            "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
+            "WHERE p.type = 'subtitle_removal' AND p.deleted_at IS NULL "
+            "ORDER BY submitter_name ASC, p.user_id ASC",
+            (),
+        )
+    except Exception:
+        log.warning("subtitle removal submitter options failed", exc_info=True)
+        return []
+
+    options = []
+    seen = set()
+    for row in rows or []:
+        try:
+            user_id = int(row.get("user_id"))
+        except (TypeError, ValueError):
+            continue
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        name = (row.get("submitter_name") or row.get("username") or f"用户{user_id}").strip()
+        options.append({"id": user_id, "name": name})
+    return options
 
 
 def _get_task(task_id: str) -> dict:
@@ -445,12 +475,43 @@ def get_state(task_id: str):
 def list_tasks():
     """全局可见：所有字幕移除任务（不按 user_id 过滤）。"""
     submitter_name_expr = _submitter_name_expr()
+    submitter_options = _list_submitter_options(submitter_name_expr)
+
+    user_id_filter = None
+    user_id_raw = (request.args.get("user_id") or "").strip()
+    if user_id_raw:
+        try:
+            user_id_filter = int(user_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "user_id must be an integer"}), 400
+        if user_id_filter <= 0:
+            return jsonify({"error": "user_id must be positive"}), 400
+
+    query_text = (request.args.get("q") or "").strip().lower()
+    where_parts = ["p.type = 'subtitle_removal'", "p.deleted_at IS NULL"]
+    params: list = []
+    if user_id_filter is not None:
+        where_parts.append("p.user_id = %s")
+        params.append(user_id_filter)
+    if query_text:
+        like = f"%{query_text}%"
+        where_parts.append(
+            "("
+            "LOWER(COALESCE(p.display_name, '')) LIKE %s OR "
+            "LOWER(COALESCE(p.original_filename, '')) LIKE %s OR "
+            "LOWER(COALESCE(p.state_json, '')) LIKE %s"
+            ")"
+        )
+        params.extend([like, like, like])
+    where_sql = " AND ".join(where_parts)
+
     rows = db_query(
-        f"SELECT p.id, p.user_id, p.status, p.state_json, p.created_at, "
+        f"SELECT p.id, p.user_id, p.status, p.display_name, p.original_filename, p.state_json, p.created_at, "
         f"u.username, {submitter_name_expr} AS submitter_name "
         "FROM projects p LEFT JOIN users u ON u.id = p.user_id "
-        "WHERE p.type = 'subtitle_removal' AND p.deleted_at IS NULL "
-        "ORDER BY p.created_at DESC"
+        f"WHERE {where_sql} "
+        "ORDER BY p.created_at DESC",
+        tuple(params),
     )
     items = []
     for row in rows or []:
@@ -476,8 +537,14 @@ def list_tasks():
             {
                 "id": row.get("id"),
                 "status": status,
-                "display_name": state.get("display_name") or state.get("original_filename") or row.get("id"),
-                "original_filename": state.get("original_filename") or "",
+                "display_name": (
+                    state.get("display_name")
+                    or row.get("display_name")
+                    or state.get("original_filename")
+                    or row.get("original_filename")
+                    or row.get("id")
+                ),
+                "original_filename": state.get("original_filename") or row.get("original_filename") or "",
                 "resolution": media_info.get("resolution") or "",
                 "duration": media_info.get("duration") or 0,
                 "provider_status": state.get("provider_status") or "",
@@ -491,7 +558,7 @@ def list_tasks():
                 "elapsed_seconds": elapsed_seconds,
             }
         )
-    return jsonify({"items": items})
+    return jsonify({"items": items, "users": submitter_options})
 
 
 @bp.route("/api/subtitle-removal/upload/bootstrap", methods=["POST"])

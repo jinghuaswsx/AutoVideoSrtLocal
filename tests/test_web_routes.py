@@ -299,6 +299,17 @@ def test_subtitle_removal_list_page_uses_90x160_first_frame_thumbnails_with_cent
     assert ".sr-list-thumb { width: 90px; height: 160px;" in body
 
 
+def test_subtitle_removal_list_page_moves_hint_to_topbar_and_has_filters():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "subtitle_removal_list.html").read_text(encoding="utf-8")
+
+    assert "{% block page_title %}字幕移除 <span" in template
+    assert "<h1>字幕移除</h1>" not in template
+    assert 'id="srSubmitterFilter"' in template
+    assert 'id="srProjectSearch"' in template
+    assert "所有字幕移除任务（全局可见，任何登录用户都可提交和查看）" in template
+
+
 def test_subtitle_removal_scripts_normalize_persisted_selection_box_protocols():
     root = Path(__file__).resolve().parents[1]
     scripts = (root / "web" / "templates" / "_subtitle_removal_scripts.html").read_text(encoding="utf-8")

@@ -1091,6 +1091,17 @@ def test_subtitle_removal_state_api_returns_erase_text_type(authed_client_no_db,
     assert response.get_json().get("erase_text_type") == "text"
 
 
+def test_subtitle_removal_default_display_name_uses_original_stem_and_timestamp():
+    from datetime import datetime as _datetime
+
+    result = subtitle_removal._default_display_name(
+        "summer.product.video.mp4",
+        now=_datetime(2026, 4, 29, 18, 15, 30),
+    )
+
+    assert result == "summer.product.video-0429-181530"
+
+
 def test_subtitle_removal_list_returns_erase_text_type(authed_client_no_db, monkeypatch):
     import json as _json
     monkeypatch.setattr(
@@ -1122,6 +1133,34 @@ def test_subtitle_removal_list_returns_erase_text_type(authed_client_no_db, monk
     items = (response.get_json() or {}).get("items") or []
     assert items, "list 接口应返回至少一条"
     assert items[0]["erase_text_type"] == "text"
+
+
+def test_subtitle_removal_list_applies_submitter_and_project_search_filters(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query_one", lambda sql, args=None: {"ok": 1})
+
+    def fake_db_query(sql, args=None):
+        if "SELECT DISTINCT p.user_id" in sql:
+            return [
+                {"user_id": 2, "username": "guqian", "submitter_name": "guqian"},
+            ]
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("web.routes.subtitle_removal.db_query", fake_db_query)
+
+    response = authed_client_no_db.get("/api/subtitle-removal/list?user_id=2&q=Last")
+
+    assert response.status_code == 200
+    payload = response.get_json() or {}
+    assert payload["items"] == []
+    assert payload["users"] == [{"id": 2, "name": "guqian"}]
+    assert "p.user_id = %s" in captured["sql"]
+    assert "LOWER(COALESCE(p.display_name, '')) LIKE %s" in captured["sql"]
+    assert "LOWER(COALESCE(p.original_filename, '')) LIKE %s" in captured["sql"]
+    assert captured["args"] == (2, "%last%", "%last%", "%last%")
 
 
 def test_subtitle_removal_list_prefers_submitter_chinese_name(authed_client_no_db, monkeypatch):
