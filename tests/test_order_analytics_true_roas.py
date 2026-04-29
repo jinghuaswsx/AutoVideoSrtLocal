@@ -203,7 +203,7 @@ def test_true_roas_tab_displays_revenue_shipping_and_total_sales(authed_client_n
     assert "fmtMoney(row.revenue_with_shipping)" in body
 
 
-def test_data_analysis_page_has_realtime_tab_first(authed_client_no_db):
+def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
     assert response.status_code == 200
@@ -211,7 +211,13 @@ def test_data_analysis_page_has_realtime_tab_first(authed_client_no_db):
     assert "实时大盘" in body
     assert 'data-tab="realtime"' in body
     assert 'id="panelRealtime"' in body
-    assert body.index('data-tab="realtime"') < body.index('data-tab="dashboard"')
+    tab_order = [
+        body.index('data-tab="realtime"'),
+        body.index('data-tab="dxmOrders"'),
+        body.index('data-tab="ads"'),
+        body.index('data-tab="dashboard"'),
+    ]
+    assert tab_order == sorted(tab_order)
 
 
 def test_realtime_tab_displays_ad_data_update_time(authed_client_no_db):
