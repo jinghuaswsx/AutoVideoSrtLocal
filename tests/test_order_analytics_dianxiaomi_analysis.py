@@ -95,3 +95,55 @@ def test_get_dianxiaomi_order_analysis_rejects_reversed_range():
         assert "end_date must be >= start_date" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_get_country_dashboard_groups_by_country_and_sorts_by_orders(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        assert "meta_business_date >= %s" in sql
+        assert "meta_business_date <= %s" in sql
+        assert "GROUP BY buyer_country, buyer_country_name" in sql
+        return [
+            {
+                "buyer_country": "FR",
+                "buyer_country_name": "France",
+                "order_count": 2,
+                "units": 4,
+                "product_net_sales": 50.0,
+                "shipping": 5.0,
+            },
+            {
+                "buyer_country": "DE",
+                "buyer_country_name": "Germany",
+                "order_count": 5,
+                "units": 7,
+                "product_net_sales": 90.0,
+                "shipping": 10.0,
+            },
+        ]
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_country_dashboard(
+        period="month",
+        year=2026,
+        month=4,
+        today=oa._parse_meta_date("2026-04-29"),
+    )
+
+    assert result["period"]["type"] == "month"
+    assert result["period"]["start"] == date(2026, 4, 1)
+    assert result["period"]["end"] == date(2026, 4, 28)
+    assert result["countries"][0]["buyer_country"] == "DE"
+    assert result["countries"][0]["total_sales"] == 100.0
+    assert result["summary"] == {
+        "country_count": 2,
+        "total_orders": 7,
+        "total_units": 11,
+        "total_sales": 155.0,
+        "shipping": 15.0,
+        "product_net_sales": 140.0,
+    }

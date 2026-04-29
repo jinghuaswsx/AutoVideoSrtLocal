@@ -380,6 +380,33 @@ def test_dashboard_tab_is_default(authed_client_no_db):
     assert 'id="panelDashboard"' in body
 
 
+def test_get_dashboard_defaults_to_order_count_sort(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.order_analytics._resolve_period_range",
+        lambda *args, **kwargs: (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30")),
+    )
+    monkeypatch.setattr(
+        "appcore.order_analytics._aggregate_orders_by_product",
+        lambda start, end, country=None: {
+            1: {"orders": 1, "units": 1, "revenue": 500.0},
+            2: {"orders": 3, "units": 3, "revenue": 100.0},
+        },
+    )
+    monkeypatch.setattr("appcore.order_analytics._aggregate_ads_by_product", lambda start, end: {})
+    monkeypatch.setattr("appcore.order_analytics._count_media_items_by_product", lambda: {})
+    monkeypatch.setattr(
+        "appcore.order_analytics._load_products",
+        lambda ids, search=None: {
+            1: {"id": 1, "name": "Low Orders", "product_code": "low"},
+            2: {"id": 2, "name": "High Orders", "product_code": "high"},
+        },
+    )
+
+    result = oa.get_dashboard(period="day", date_str="2026-04-20", compare=False)
+
+    assert [row["product_id"] for row in result["products"]] == [2, 1]
+
+
 def test_dashboard_tab_label_chinese(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert "产品看板" in response.get_data(as_text=True)

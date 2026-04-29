@@ -1199,6 +1199,95 @@ def get_dianxiaomi_order_analysis(
     }
 
 
+def _sort_order_dashboard_rows(rows: list[dict], *, name_key: str) -> list[dict]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            -(int(row.get("orders") or row.get("order_count") or 0)),
+            -(float(row.get("revenue") or row.get("total_sales") or 0)),
+            str(row.get(name_key) or "").lower(),
+        ),
+    )
+
+
+def get_country_dashboard(
+    *,
+    period: str,
+    year: int | None = None,
+    month: int | None = None,
+    week: int | None = None,
+    date_str: str | None = None,
+    today: date | None = None,
+) -> dict:
+    period = (period or "month").strip().lower()
+    if period not in ("day", "week", "month"):
+        raise ValueError("period must be one of day/week/month")
+    start, end = _resolve_period_range(
+        period,
+        year=year,
+        month=month,
+        week=week,
+        date_str=date_str,
+        today=today,
+    )
+
+    rows = query(
+        "SELECT buyer_country, buyer_country_name, "
+        "COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "SUM(COALESCE(quantity, 0)) AS units, "
+        "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
+        "SUM(COALESCE(ship_amount, 0)) AS shipping "
+        "FROM dianxiaomi_order_lines "
+        "WHERE meta_business_date >= %s AND meta_business_date <= %s "
+        "GROUP BY buyer_country, buyer_country_name",
+        (start, end),
+    )
+
+    countries = []
+    for row in rows:
+        product_net_sales = _money(row.get("product_net_sales"))
+        shipping = _money(row.get("shipping"))
+        country_code = (row.get("buyer_country") or "").strip()
+        country_name = (row.get("buyer_country_name") or "").strip()
+        display_name = (
+            f"{country_name} / {country_code}"
+            if country_name and country_code
+            else country_name or country_code or "未知"
+        )
+        countries.append({
+            "buyer_country": country_code,
+            "buyer_country_name": country_name,
+            "display_name": display_name,
+            "order_count": int(row.get("order_count") or 0),
+            "units": int(row.get("units") or 0),
+            "product_net_sales": product_net_sales,
+            "shipping": shipping,
+            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+        })
+
+    countries = _sort_order_dashboard_rows(countries, name_key="display_name")
+    summary = {
+        "country_count": len(countries),
+        "total_orders": sum(row["order_count"] for row in countries),
+        "total_units": sum(row["units"] for row in countries),
+        "total_sales": round(sum(row["total_sales"] for row in countries), 2),
+        "shipping": round(sum(row["shipping"] for row in countries), 2),
+        "product_net_sales": round(sum(row["product_net_sales"] for row in countries), 2),
+    }
+    return {
+        "period": {
+            "type": period,
+            "start": start,
+            "end": end,
+            "label": _format_period_label(start, end, period),
+            "date_field": "meta_business_date",
+            "timezone": META_ATTRIBUTION_TIMEZONE,
+        },
+        "summary": summary,
+        "countries": countries,
+    }
+
+
 def _coerce_ad_frequency(value: str | None) -> str:
     normalized = (value or "custom").strip().lower()
     if normalized not in {"weekly", "monthly", "custom"}:
@@ -2329,11 +2418,21 @@ def get_dashboard(
     )
 
     # 排序
-    sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else (
-        "spend" if ad_data_available else "revenue"
-    )
+    sort_key = sort_by if sort_by in _DASHBOARD_SORT_FIELDS else "orders"
     reverse = (sort_dir.lower() == "desc")
-    rows.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key) or 0), reverse=reverse)
+    if sort_by in _DASHBOARD_SORT_FIELDS:
+        rows.sort(
+            key=lambda r: (
+                r.get(sort_key) is None,
+                r.get(sort_key) or 0,
+                r.get("orders") or 0,
+                r.get("revenue") or 0,
+                str(r.get("product_name") or "").lower(),
+            ),
+            reverse=reverse,
+        )
+    else:
+        rows = _sort_order_dashboard_rows(rows, name_key="product_name")
 
     summary = _summarize_dashboard(rows, ad_data_available)
 
