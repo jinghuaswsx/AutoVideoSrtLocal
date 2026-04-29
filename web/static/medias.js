@@ -441,6 +441,50 @@
     };
   }
 
+  function parseAverageShippingValues(text) {
+    return String(text || '')
+      .split(/\r?\n/)
+      .map((line) => {
+        const normalized = line.replace(/[￥¥,\s]/g, '');
+        const match = normalized.match(/[-+]?\d+(?:\.\d+)?/);
+        if (!match) return null;
+        const value = Number(match[0]);
+        return Number.isFinite(value) ? value : null;
+      })
+      .filter((value) => value !== null);
+  }
+
+  function calculateAverageShippingText(text) {
+    const values = parseAverageShippingValues(text);
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (!values.length) {
+      return { display: '--', count: 0, total: 0, average: null };
+    }
+    const average = total / values.length;
+    return {
+      display: average.toFixed(1),
+      count: values.length,
+      total,
+      average,
+    };
+  }
+
+  function updateRoasAverageShipping() {
+    const input = $('roasAverageShippingInput');
+    const resultEl = $('roasAverageShippingResult');
+    const metaEl = $('roasAverageShippingMeta');
+    if (!input || !resultEl || !metaEl) return;
+    const result = calculateAverageShippingText(input.value);
+    resultEl.textContent = result.display;
+    metaEl.textContent = `有效行数 ${result.count} · 合计 ${result.total.toFixed(1)}`;
+  }
+
+  window.roasAverageShippingTool = {
+    parseValues: parseAverageShippingValues,
+    averageText: calculateAverageShippingText,
+    updateView: updateRoasAverageShipping,
+  };
+
   function setRoasFieldValues(product) {
     ROAS_FIELDS.forEach((field) => {
       const input = document.querySelector(`[data-roas-field="${field}"]`);
@@ -4250,6 +4294,11 @@
     document.querySelectorAll('[data-roas-field]').forEach((input) => {
       input.addEventListener('input', markRoasResultDirty);
     });
+    const roasAverageShippingInput = $('roasAverageShippingInput');
+    if (roasAverageShippingInput) {
+      roasAverageShippingInput.addEventListener('input', updateRoasAverageShipping);
+      updateRoasAverageShipping();
+    }
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();
     });
