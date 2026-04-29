@@ -169,7 +169,7 @@
 {% endblock %}
 {% block content %}
 {% if detail_mode == 'av_sync' %}
-{% set detail_back_href = '/video-translate-av-sync' %}
+{% set detail_back_href = '/sentence_translate' %}
 {% set detail_back_label = '← 返回视频翻译音画同步' %}
 {% elif detail_mode == 'multi' %}
 {% if request.path.startswith('/omni-translate') %}

@@ -50,6 +50,15 @@ def index():
 @bp.route("/video-translate-av-sync")
 @login_required
 def av_sync_page():
+    target = url_for("projects.sentence_translate_page")
+    if request.query_string:
+        target = f"{target}?{request.query_string.decode('utf-8', errors='ignore')}"
+    return redirect(target)
+
+
+@bp.route("/sentence_translate")
+@login_required
+def sentence_translate_page():
     from datetime import datetime
 
     filter_langs = tuple(item["code"] for item in AV_TARGET_LANGUAGE_OPTIONS)
@@ -98,8 +107,8 @@ def av_sync_page():
         supported_langs=filter_langs,
         retention_hours=retention_hours,
         module_title="视频翻译音画同步",
-        module_list_path="/video-translate-av-sync",
-        module_detail_path="/projects",
+        module_list_path="/sentence_translate",
+        module_detail_path="/sentence_translate",
         module_start_api="/api/tasks",
         module_delete_api="/api/tasks",
         module_new_title="新建视频翻译音画同步项目",
@@ -113,10 +122,7 @@ def av_sync_page():
     )
 
 
-@bp.route("/projects/<task_id>")
-@login_required
-def detail(task_id: str):
-    recover_project_if_needed(task_id, "translation")
+def _load_project_row(task_id: str) -> tuple[dict, dict]:
     row = query_one(
         "SELECT * FROM projects WHERE id = %s AND user_id = %s",
         (task_id, current_user.id),
@@ -129,25 +135,56 @@ def detail(task_id: str):
             state = json.loads(row["state_json"])
         except Exception:
             pass
+    return row, state
+
+
+def _render_av_sync_detail(row: dict, state: dict):
+    from appcore.api_keys import get_key
+
+    try:
+        translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
+    except Exception:
+        translate_pref = "openrouter"
+    target_lang = _av_sync_target_lang(state)
+    state = dict(state)
+    state.setdefault("target_lang", target_lang)
+    return render_template(
+        "av_sync_detail.html",
+        project=row,
+        state=state,
+        initial_task_json=json.dumps(state, ensure_ascii=False),
+        translate_pref=translate_pref,
+        target_lang=target_lang,
+        av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
+        av_target_markets=AV_TARGET_MARKET_OPTIONS,
+        av_translate_defaults=build_default_av_translate_inputs(),
+    )
+
+
+@bp.route("/sentence_translate/<task_id>")
+@login_required
+def sentence_translate_detail(task_id: str):
+    recover_project_if_needed(task_id, "sentence_translate")
+    row, state = _load_project_row(task_id)
+    if not _is_av_sync_state(state):
+        abort(404)
+    return _render_av_sync_detail(row, state)
+
+
+@bp.route("/projects/<task_id>")
+@login_required
+def detail(task_id: str):
+    recover_project_if_needed(task_id, "translation")
+    row, state = _load_project_row(task_id)
     from appcore.api_keys import get_key
     try:
         translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
     except Exception:
         translate_pref = "openrouter"
     if _is_av_sync_state(state):
-        target_lang = _av_sync_target_lang(state)
-        state = dict(state)
-        state.setdefault("target_lang", target_lang)
-        return render_template(
-            "av_sync_detail.html",
-            project=row,
-            state=state,
-            initial_task_json=json.dumps(state, ensure_ascii=False),
-            translate_pref=translate_pref,
-            target_lang=target_lang,
-            av_target_languages=AV_TARGET_LANGUAGE_OPTIONS,
-            av_target_markets=AV_TARGET_MARKET_OPTIONS,
-            av_translate_defaults=build_default_av_translate_inputs(),
+        return redirect(
+            url_for("projects.sentence_translate_detail", task_id=task_id),
+            code=302,
         )
     return render_template(
         "project_detail.html",

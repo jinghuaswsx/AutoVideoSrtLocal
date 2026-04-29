@@ -73,6 +73,28 @@ AV_SYNC_STEPS = (
 )
 
 
+ALLOWED_SOURCE_LANGUAGES = (
+    "", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
+)
+
+
+def _collect_av_source_language(payload: dict | None, current_task: dict | None = None) -> tuple[dict, str | None]:
+    data = payload or {}
+    if "source_language" not in data and current_task:
+        return {
+            "source_language": current_task.get("source_language") or "zh",
+            "user_specified_source_language": bool(current_task.get("user_specified_source_language")),
+        }, None
+
+    raw_source_language = str(data.get("source_language") or "").strip().lower()
+    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+        return {}, f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
+    return {
+        "source_language": raw_source_language or "zh",
+        "user_specified_source_language": bool(raw_source_language),
+    }, None
+
+
 def _av_step_maps(status: str = "pending") -> tuple[dict, dict]:
     return {step: status for step in AV_SYNC_STEPS}, {step: "" for step in AV_SYNC_STEPS}
 
@@ -380,6 +402,9 @@ def upload():
     av_error = _validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
+    source_updates, source_error = _collect_av_source_language(form_payload)
+    if source_error:
+        return jsonify({"error": source_error}), 400
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -407,7 +432,8 @@ def upload():
         task_id,
         display_name=display_name,
         type="translation",
-        source_language="zh",
+        source_language=source_updates["source_language"],
+        user_specified_source_language=source_updates["user_specified_source_language"],
         pipeline_version="av",
         target_lang=av_inputs["target_language"],
         av_translate_inputs=av_inputs,
@@ -423,7 +449,7 @@ def upload():
         ),
         delivery_mode="local_primary",
     )
-    return jsonify({"task_id": task_id}), 201
+    return jsonify({"task_id": task_id, "redirect_url": f"/sentence_translate/{task_id}"}), 201
 
 
 @bp.route("/<task_id>", methods=["GET"])
@@ -717,12 +743,16 @@ def restart(task_id):
     av_error = _validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
+    source_updates, source_error = _collect_av_source_language(body, current_task=task)
+    if source_error:
+        return jsonify({"error": source_error}), 400
     store.update(
         task_id,
         type="translation",
         pipeline_version="av",
         target_lang=av_inputs["target_language"],
         av_translate_inputs=av_inputs,
+        **source_updates,
     )
     from web.services.task_restart import restart_task
     updated = restart_task(
@@ -755,6 +785,9 @@ def start(task_id):
     av_error = _validate_av_translate_inputs(av_inputs)
     if av_error:
         return jsonify({"error": av_error}), 400
+    source_updates, source_error = _collect_av_source_language(body, current_task=task)
+    if source_error:
+        return jsonify({"error": source_error}), 400
     current_steps = task.get("steps") or {}
     current_messages = task.get("step_messages") or {}
     av_steps = {step: current_steps.get(step, "pending") for step in AV_SYNC_STEPS}
@@ -772,6 +805,7 @@ def start(task_id):
         pipeline_version="av",
         av_translate_inputs=av_inputs,
         target_lang=av_inputs["target_language"],
+        **source_updates,
         steps=av_steps,
         step_messages=av_step_messages,
     )
@@ -1019,6 +1053,46 @@ def update_segments(task_id):
 
     store.confirm_segments(task_id, body["segments"])
     updated_task = store.get(task_id) or task
+    if str(updated_task.get("pipeline_version") or "").strip() == "av":
+        variant_state = dict((updated_task.get("variants") or {}).get("av") or {})
+        existing_sentences = [
+            dict(item)
+            for item in (variant_state.get("sentences") or [])
+            if isinstance(item, dict)
+        ]
+        existing_by_asr = {
+            int(sentence.get("asr_index", sentence.get("index", idx))): sentence
+            for idx, sentence in enumerate(existing_sentences)
+        }
+        av_sentences = []
+        for fallback_index, segment in enumerate(body["segments"]):
+            if not isinstance(segment, dict):
+                continue
+            asr_index = int(segment.get("asr_index", segment.get("index", fallback_index)))
+            base = dict(existing_by_asr.get(asr_index, {}))
+            translated = str(segment.get("translated") or segment.get("target_text") or segment.get("text") or "")
+            base.update(
+                {
+                    "asr_index": asr_index,
+                    "text": translated,
+                    "est_chars": len(translated),
+                    "start_time": float(segment.get("start_time", base.get("start_time", 0.0)) or 0.0),
+                    "end_time": float(segment.get("end_time", base.get("end_time", 0.0)) or 0.0),
+                    "source_text": str(segment.get("text") or base.get("source_text") or ""),
+                }
+            )
+            if "target_duration" not in base:
+                base["target_duration"] = max(0.0, base["end_time"] - base["start_time"])
+            av_sentences.append(base)
+        localized_translation = _build_av_localized_translation(av_sentences)
+        store.update_variant(
+            task_id,
+            "av",
+            sentences=av_sentences,
+            localized_translation=localized_translation,
+        )
+        store.update(task_id, localized_translation=localized_translation, segments=av_sentences)
+        updated_task = store.get(task_id) or updated_task
     store.set_artifact(task_id, "translate", _build_translate_compare_artifact(updated_task))
     store.set_current_review_step(task_id, "")
     store.set_step(task_id, "translate", "done")
