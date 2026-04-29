@@ -1479,6 +1479,85 @@ def _stub_update_product_target(monkeypatch):
     return r
 
 
+def test_update_item_display_name_patches_existing_item(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    item = {
+        "id": 44,
+        "product_id": 123,
+        "lang": "fr",
+        "filename": "2026.04.17-demo.mp4",
+        "display_name": "2026.04.17-demo.mp4",
+        "object_key": "1/medias/123/2026.04.17-demo.mp4",
+        "cover_object_key": None,
+        "thumbnail_path": None,
+        "duration_seconds": None,
+        "file_size": None,
+        "source_raw_id": None,
+        "source_ref_id": None,
+        "auto_translated": False,
+        "bulk_task_id": "",
+        "created_at": None,
+    }
+    captured = {}
+
+    monkeypatch.setattr(r.medias, "get_item", lambda item_id: item if item_id == 44 else None)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_update_item_display_name(item_id, display_name):
+        captured["item_id"] = item_id
+        captured["display_name"] = display_name
+        item["display_name"] = display_name
+
+    monkeypatch.setattr(r.medias, "update_item_display_name", fake_update_item_display_name)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/items/44",
+        json={"display_name": "2026.04.17-demo-renamed.mp4"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "item_id": 44,
+        "display_name": "2026.04.17-demo-renamed.mp4",
+    }
+    data = resp.get_json()
+    assert data["item"]["id"] == 44
+    assert data["item"]["display_name"] == "2026.04.17-demo-renamed.mp4"
+
+
+def test_update_item_display_name_rejects_blank_name(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 123,
+            "filename": "demo.mp4",
+            "display_name": "demo.mp4",
+            "object_key": "1/medias/123/demo.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
+    )
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    resp = authed_client_no_db.patch("/medias/api/items/44", json={"display_name": "   "})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "display_name required"
+
+
 def test_update_product_accepts_shopifyid(authed_client_no_db, monkeypatch):
     r = _stub_update_product_target(monkeypatch)
 

@@ -506,6 +506,38 @@
   overflow-wrap:anywhere;
   word-break:break-word;
 }
+.oc-vitem-name-editor {
+  display:grid;
+  gap:var(--oc-sp-2);
+}
+.oc-vitem .vname-input {
+  height:auto;
+  min-height:calc(1.45em * 2 + 10px);
+  padding:5px 8px;
+  font-size:12px;
+  font-weight:500;
+  line-height:1.45;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.oc-vitem .vname-input[readonly] {
+  padding-left:0;
+  padding-right:0;
+  border-color:transparent;
+  background:transparent;
+  box-shadow:none;
+  cursor:default;
+}
+.oc-vitem .vname-edit-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:var(--oc-sp-2);
+}
+.oc-vitem .vname-edit-actions .oc-btn {
+  height:24px;
+  padding:0 8px;
+  font-size:12px;
+}
 .oc-vitem .vsource {
   display:inline-flex;
   align-items:center;
