@@ -71,6 +71,39 @@ def test_resolve_ad_product_match_tries_suffix_variants(monkeypatch):
     assert calls == [("glow-go-insect-set",), ("glow-go-insect-set-rjc",)]
 
 
+def test_match_meta_ads_to_products_updates_report_and_daily_tables(monkeypatch):
+    queries = []
+    updates = []
+
+    def fake_query(sql, args=()):
+        queries.append(sql)
+        if "FROM meta_ad_campaign_metrics" in sql:
+            return [{"id": 1, "campaign_name": "Glow-Go-Insect-Set"}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"id": 2, "campaign_name": "Glow-Go-Insect-Set"}]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        oa,
+        "resolve_ad_product_match",
+        lambda campaign_name: {"id": 42, "product_code": "glow-go-insect-set-rjc"},
+    )
+    monkeypatch.setattr(
+        oa,
+        "execute",
+        lambda sql, args=(): updates.append((sql, args)) or 1,
+    )
+
+    assert oa.match_meta_ads_to_products() == 2
+    assert any("FROM meta_ad_campaign_metrics" in sql for sql in queries)
+    assert any("FROM meta_ad_daily_campaign_metrics" in sql for sql in queries)
+    assert any("UPDATE meta_ad_campaign_metrics" in sql for sql, _args in updates)
+    assert any("UPDATE meta_ad_daily_campaign_metrics" in sql for sql, _args in updates)
+    assert updates[0][1] == (42, "glow-go-insect-set-rjc", 1)
+    assert updates[1][1] == (42, "glow-go-insect-set-rjc", 2)
+
+
 def test_import_meta_ad_rows_creates_batch_and_upserts_metrics(monkeypatch):
     rows = [
         {
@@ -264,6 +297,70 @@ def test_get_meta_ad_summary_aggregates_metric_rows_in_python(monkeypatch):
     assert all("GROUP BY m.product_id, display_name, product_code" not in sql for sql in queries)
 
 
+def test_get_meta_ad_summary_uses_daily_metrics_for_explicit_range(monkeypatch):
+    report_start = oa._parse_meta_date("2026-04-01")
+    report_end = oa._parse_meta_date("2026-04-18")
+    queries = []
+
+    monkeypatch.setattr(
+        oa,
+        "query_one",
+        lambda sql, args=(): (_ for _ in ()).throw(AssertionError("batch lookup should not run")),
+    )
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM meta_ad_daily_campaign_metrics m" in sql and "LEFT JOIN media_products" in sql:
+            assert "m.meta_business_date >= %s" in sql
+            assert "m.meta_business_date <= %s" in sql
+            assert args == (report_start, report_end)
+            return [
+                {
+                    "product_id": 42,
+                    "product_name": "Glow Set",
+                    "media_product_code": "glow-set-rjc",
+                    "matched_product_code": "glow-set-rjc",
+                    "campaign_name": "Campaign A",
+                    "result_count": 6,
+                    "spend_usd": 15.0,
+                    "purchase_value_usd": 45.0,
+                    "link_clicks": 0,
+                    "add_to_cart_count": 0,
+                    "initiate_checkout_count": 0,
+                    "impressions": 0,
+                }
+            ]
+        if "FROM shopify_orders" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "product_id IS NULL" in sql:
+            assert "meta_business_date >= %s" in sql
+            assert "meta_business_date <= %s" in sql
+            return [
+                {
+                    "id": 7,
+                    "campaign_name": "Unmatched Campaign",
+                    "normalized_campaign_code": "unmatched-campaign",
+                    "spend_usd": 3.0,
+                    "result_count": 1,
+                    "purchase_value_usd": 0.0,
+                }
+            ]
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    summary = oa.get_meta_ad_summary(start_date="2026-04-01", end_date="2026-04-18")
+
+    assert summary["period"]["batch_id"] is None
+    assert summary["period"]["report_start_date"] == report_start
+    assert summary["period"]["report_end_date"] == report_end
+    assert summary["period"]["source"] == "meta_ad_daily_campaign_metrics"
+    assert summary["rows"][0]["product_id"] == 42
+    assert summary["rows"][0]["roas_purchase"] == 3.0
+    assert summary["unmatched"][0]["campaign_name"] == "Unmatched Campaign"
+    assert all("meta_ad_campaign_metrics" not in sql for sql, _args in queries)
+
+
 def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
 
@@ -291,6 +388,25 @@ def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_
     assert 'class="oad-row-action"' in body
     assert '<select id="viewMode"' not in body
     assert '<select id="adFrequency"' not in body
+
+
+def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    for key in ("today", "yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"):
+        assert f'data-dashboard-range="{key}"' in body
+        assert f'data-true-roas-range="{key}"' in body
+        assert f'data-ad-range="{key}"' in body
+    assert 'id="oadStartDate"' in body
+    assert 'id="oadEndDate"' in body
+    assert 'id="trueRoasStart"' in body
+    assert 'id="trueRoasEnd"' in body
+    assert 'id="adStartDate"' in body
+    assert 'id="adEndDate"' in body
+    assert 'id="adPeriodSelect"' not in body
+    assert '/order-analytics/ad-summary?start_date=' in body
 
 
 def test_ads_stats_card_shows_report_roas(authed_client_no_db):
@@ -364,6 +480,32 @@ def test_dashboard_endpoint_default_returns_json(authed_client_no_db, monkeypatc
     payload = response.get_json()
     assert payload["period"]["start"] == "2026-04-01"
     assert payload["products"] == []
+
+
+def test_dashboard_endpoint_passes_explicit_date_range(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_dashboard(**kwargs):
+        captured.update(kwargs)
+        return {
+            "period": {"start": "2026-04-01", "end": "2026-04-18", "label": "x"},
+            "compare_period": None,
+            "country": None,
+            "products": [],
+            "summary": {},
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_dashboard", fake_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/dashboard?start_date=2026-04-01&end_date=2026-04-18"
+    )
+
+    assert response.status_code == 200
+    assert captured["period"] == "range"
+    assert captured["start_date"] == "2026-04-01"
+    assert captured["end_date"] == "2026-04-18"
+    assert "year" not in captured or captured["year"] is None
 
 
 def test_dashboard_endpoint_invalid_period_returns_400(authed_client_no_db):

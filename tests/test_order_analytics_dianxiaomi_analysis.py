@@ -397,7 +397,8 @@ def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db)
     assert 'id="panelDxmOrders"' in body
     assert body.index('data-tab="countryDashboard"') < body.index('data-tab="trueRoas"')
     assert "querySelectorAll('.oad-seg')" not in body
-    assert "querySelectorAll('.oad-seg[data-period]')" in body
+    assert "querySelectorAll('[data-dashboard-range]')" in body
+    assert "querySelectorAll('[data-country-range]')" in body
 
 
 def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no_db):

@@ -408,8 +408,15 @@ def ad_match():
 @admin_required
 def dashboard():
     """产品看板：每日产品级订单 + 广告 + ROAS + 环比。"""
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
     period = (request.args.get("period") or "month").strip().lower()
-    if period not in ("day", "week", "month"):
+    if start_date or end_date:
+        if not start_date or not end_date:
+            return jsonify(error="invalid_param",
+                           detail="start_date and end_date are both required"), 400
+        period = "range"
+    elif period not in ("day", "week", "month"):
         return jsonify(error="invalid_period",
                        detail="period must be one of day/week/month"), 400
 
@@ -420,6 +427,8 @@ def dashboard():
             month=request.args.get("month", type=int),
             week=request.args.get("week", type=int),
             date_str=request.args.get("date") or None,
+            start_date=start_date,
+            end_date=end_date,
             country=(request.args.get("country") or "").strip() or None,
             sort_by=(request.args.get("sort_by") or "").strip() or None,
             sort_dir=(request.args.get("sort_dir") or "desc").strip().lower(),

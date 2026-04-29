@@ -168,7 +168,7 @@ def test_aggregate_orders_by_product_skips_null_product_id(monkeypatch):
     assert list(result.keys()) == [42]
 
 
-def test_aggregate_ads_by_product_full_coverage_only(monkeypatch):
+def test_aggregate_ads_by_product_uses_daily_meta_metrics(monkeypatch):
     """决策 #7：只纳入完全被 [start, end] 覆盖的广告报表。"""
     captured = {}
 
@@ -183,8 +183,9 @@ def test_aggregate_ads_by_product_full_coverage_only(monkeypatch):
     result = oa._aggregate_ads_by_product(date(2026, 4, 1), date(2026, 4, 30))
 
     # SQL 必须用 'report_start_date >= start AND report_end_date <= end'（完全覆盖语义）
-    assert "report_start_date >= %s" in captured["sql"]
-    assert "report_end_date <= %s" in captured["sql"]
+    assert "FROM meta_ad_daily_campaign_metrics" in captured["sql"]
+    assert "meta_business_date >= %s" in captured["sql"]
+    assert "meta_business_date <= %s" in captured["sql"]
     assert captured["args"] == (date(2026, 4, 1), date(2026, 4, 30))
     assert result[42]["spend"] == 1200.5
     assert result[42]["purchases"] == 130
@@ -319,6 +320,46 @@ def test_get_dashboard_month_view_happy_path(monkeypatch):
     assert result["country"] is None
     assert result["summary"]["total_orders"] == 10
     assert result["summary"]["total_revenue"] == 500.0
+    assert result["summary"]["total_spend"] == 100.0
+
+
+def test_get_dashboard_accepts_explicit_date_range(monkeypatch):
+    captured = {}
+
+    def fake_orders(start, end, *, country=None):
+        captured.setdefault("orders_ranges", []).append((start, end))
+        return {42: {"orders": 10, "units": 12, "revenue": 500.0}}
+
+    def fake_ads(start, end):
+        captured.setdefault("ads_ranges", []).append((start, end))
+        return {42: {"spend": 100.0, "purchases": 10, "purchase_value": 500.0}}
+
+    monkeypatch.setattr(oa, "_aggregate_orders_by_product", fake_orders)
+    monkeypatch.setattr(oa, "_aggregate_ads_by_product", fake_ads)
+    monkeypatch.setattr(oa, "_count_media_items_by_product", lambda: {42: {"en": 1}})
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [
+        {"id": 42, "name": "Glow Set", "product_code": "glow-rjc"}
+    ])
+
+    result = oa.get_dashboard(
+        period="range",
+        start_date="2026-04-01",
+        end_date="2026-04-18",
+        compare=True,
+        today=date(2026, 4, 26),
+    )
+
+    assert captured["orders_ranges"][0] == (date(2026, 4, 1), date(2026, 4, 18))
+    assert captured["orders_ranges"][1] == (date(2026, 3, 14), date(2026, 3, 31))
+    assert captured["ads_ranges"][0] == (date(2026, 4, 1), date(2026, 4, 18))
+    assert captured["ads_ranges"][1] == (date(2026, 3, 14), date(2026, 3, 31))
+    assert result["period"] == {
+        "start": "2026-04-01",
+        "end": "2026-04-18",
+        "label": "2026-04-01 ~ 2026-04-18",
+    }
+    assert result["compare_period"]["start"] == "2026-03-14"
+    assert result["compare_period"]["end"] == "2026-03-31"
     assert result["summary"]["total_spend"] == 100.0
 
 
