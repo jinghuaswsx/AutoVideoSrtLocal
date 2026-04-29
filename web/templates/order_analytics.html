@@ -759,7 +759,7 @@
       date: null,
       country: '',
       search: '',
-      sort_by: '',
+      sort_by: 'orders',
       sort_dir: 'desc',
     },
   };
@@ -1434,8 +1434,335 @@
   });
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-  function initCountryDashboard() {}
-  function initDxmOrders() {}
+
+  var countryDashboardInited = false;
+  var countryDashboardState = {
+    period: 'month'
+  };
+
+  var dxmOrdersInited = false;
+  var dxmOrderState = {
+    page: 1,
+    pageSize: 50,
+    totalPages: 1
+  };
+
+  function initCountryDashboard() {
+    if (!countryDashboardInited) {
+      countryDashboardInited = true;
+      initCountryControls();
+      document.querySelectorAll('[data-country-period]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          switchCountryPeriod(btn.dataset.countryPeriod);
+        });
+      });
+      var refresh = document.getElementById('countryRefresh');
+      if (refresh) refresh.addEventListener('click', loadCountryDashboard);
+    }
+    loadCountryDashboard();
+  }
+
+  function initDxmOrders() {
+    if (!dxmOrdersInited) {
+      dxmOrdersInited = true;
+      document.querySelectorAll('[data-dxm-range]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          setDxmRange(btn.dataset.dxmRange);
+        });
+      });
+      var refresh = document.getElementById('dxmOrderRefresh');
+      if (refresh) refresh.addEventListener('click', function() { loadDxmOrders(1); });
+      var prev = document.getElementById('dxmPrevPage');
+      if (prev) prev.addEventListener('click', function() {
+        if (dxmOrderState.page > 1) loadDxmOrders(dxmOrderState.page - 1);
+      });
+      var next = document.getElementById('dxmNextPage');
+      if (next) next.addEventListener('click', function() {
+        if (dxmOrderState.page < dxmOrderState.totalPages) loadDxmOrders(dxmOrderState.page + 1);
+      });
+      setDxmRange('thisMonth');
+    } else {
+      loadDxmOrders(dxmOrderState.page || 1);
+    }
+  }
+
+  function initCountryControls() {
+    var now = new Date();
+    fillYearSelect('countryYear', now.getFullYear());
+    fillMonthSelect('countryMonth', now.getMonth() + 1);
+    fillYearSelect('countryWeekYear', now.getFullYear());
+    fillWeekSelect('countryWeek', getISOWeek(now));
+    var date = document.getElementById('countryDate');
+    if (date) date.value = formatDateInput(now);
+    switchCountryPeriod('month', true);
+  }
+
+  function fillYearSelect(id, selectedYear) {
+    var el = document.getElementById(id);
+    if (!el || el.options.length) return;
+    var cur = new Date().getFullYear();
+    for (var y = cur - 2; y <= cur + 1; y++) {
+      var opt = new Option(String(y), y);
+      if (y === selectedYear) opt.selected = true;
+      el.add(opt);
+    }
+  }
+
+  function fillMonthSelect(id, selectedMonth) {
+    var el = document.getElementById(id);
+    if (!el || el.options.length) return;
+    for (var m = 1; m <= 12; m++) {
+      var opt = new Option(String(m), m);
+      if (m === selectedMonth) opt.selected = true;
+      el.add(opt);
+    }
+  }
+
+  function fillWeekSelect(id, selectedWeek) {
+    var el = document.getElementById(id);
+    if (!el || el.options.length) return;
+    for (var w = 1; w <= 53; w++) {
+      var opt = new Option(String(w), w);
+      if (w === selectedWeek) opt.selected = true;
+      el.add(opt);
+    }
+  }
+
+  function switchCountryPeriod(period, skipLoad) {
+    countryDashboardState.period = period || 'month';
+    document.querySelectorAll('[data-country-period]').forEach(function(btn) {
+      btn.classList.toggle('is-active', btn.dataset.countryPeriod === countryDashboardState.period);
+    });
+    document.querySelectorAll('[data-country-period-input]').forEach(function(item) {
+      item.hidden = item.dataset.countryPeriodInput !== countryDashboardState.period;
+    });
+    if (!skipLoad) loadCountryDashboard();
+  }
+
+  function buildCountryDashboardUrl() {
+    var params = new URLSearchParams({period: countryDashboardState.period});
+    if (countryDashboardState.period === 'week') {
+      params.set('year', document.getElementById('countryWeekYear').value);
+      params.set('week', document.getElementById('countryWeek').value);
+    } else if (countryDashboardState.period === 'day') {
+      params.set('date', document.getElementById('countryDate').value);
+    } else {
+      params.set('year', document.getElementById('countryYear').value);
+      params.set('month', document.getElementById('countryMonth').value);
+    }
+    return "/order-analytics/country-dashboard?" + params.toString();
+  }
+
+  function loadCountryDashboard() {
+    var summaryEl = document.getElementById('countrySummary');
+    var tableEl = document.getElementById('countryTable');
+    if (!summaryEl || !tableEl) return;
+    summaryEl.innerHTML = '';
+    tableEl.innerHTML = '<div class="oad-loading">加载中...</div>';
+    fetch(buildCountryDashboardUrl())
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.detail || j.error || ('HTTP ' + r.status)); },
+                               function() { throw new Error('HTTP ' + r.status); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        renderCountryDashboard(data);
+      })
+      .catch(function(err) {
+        tableEl.innerHTML = '<div class="oad-error">加载失败：' + escapeHtml(err.message || String(err)) + '</div>';
+      });
+  }
+
+  function renderCountryDashboard(data) {
+    var summaryEl = document.getElementById('countrySummary');
+    var tableEl = document.getElementById('countryTable');
+    var summary = data.summary || {};
+    summaryEl.innerHTML =
+      '<div class="oa-stats">' +
+        statCard('国家数', fmtInt(summary.country_count)) +
+        statCard('订单总量', fmtInt(summary.total_orders)) +
+        statCard('销售件数', fmtInt(summary.total_units)) +
+        statCard('总销售额', fmtMoney(summary.total_sales)) +
+        statCard('运费', fmtMoney(summary.shipping)) +
+        statCard('商品净销售额', fmtMoney(summary.product_net_sales)) +
+      '</div>';
+
+    var rows = Array.isArray(data.countries) ? data.countries : [];
+    if (!rows.length) {
+      tableEl.innerHTML = '<div class="oad-empty">暂无国家订单数据</div>';
+      return;
+    }
+    var body = rows.map(function(row) {
+      var name = row.display_name || row.buyer_country_name || row.buyer_country || '未知';
+      return '<tr>' +
+        '<td>' + escapeHtml(name) + '</td>' +
+        '<td>' + fmtInt(row.order_count) + '</td>' +
+        '<td>' + fmtInt(row.units) + '</td>' +
+        '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
+        '<td>' + fmtMoney(row.shipping) + '</td>' +
+        '<td>' + fmtMoney(row.total_sales) + '</td>' +
+      '</tr>';
+    }).join('');
+    tableEl.innerHTML =
+      '<div class="oa-table-wrap"><div class="oa-table-scroll">' +
+      '<table class="oa-table oar-compact-table"><thead><tr>' +
+      '<th>国家</th><th>订单量</th><th>销售件数</th><th>商品净销售额</th><th>运费</th><th>总销售额</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+  }
+
+  function setDxmRange(range) {
+    var now = new Date();
+    var start = new Date(now);
+    var end = new Date(now);
+    var label = '本月';
+    if (range === 'today') {
+      label = '今天';
+    } else if (range === 'yesterday') {
+      start = addDays(now, -1);
+      end = addDays(now, -1);
+      label = '昨天';
+    } else if (range === 'thisWeek') {
+      start = startOfWeek(now);
+      end = endOfWeek(now);
+      label = '本周';
+    } else if (range === 'lastWeek') {
+      start = addDays(startOfWeek(now), -7);
+      end = addDays(endOfWeek(now), -7);
+      label = '上周';
+    } else if (range === 'lastMonth') {
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+      label = '上月';
+    } else {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      label = '本月';
+    }
+    setInputValue('dxmStartDate', formatDateInput(start));
+    setInputValue('dxmEndDate', formatDateInput(end));
+    var labelEl = document.getElementById('dxmOrderRangeLabel');
+    if (labelEl) labelEl.textContent = label;
+    loadDxmOrders(1);
+  }
+
+  function loadDxmOrders(page) {
+    var start = document.getElementById('dxmStartDate').value;
+    var end = document.getElementById('dxmEndDate').value;
+    var summaryEl = document.getElementById('dxmOrderSummary');
+    var bodyEl = document.getElementById('dxmOrderBody');
+    var pageInfo = document.getElementById('dxmOrderPageInfo');
+    if (!summaryEl || !bodyEl) return;
+    dxmOrderState.page = page || 1;
+    summaryEl.innerHTML = '';
+    bodyEl.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
+    if (pageInfo) pageInfo.textContent = '加载中...';
+
+    var params = new URLSearchParams({
+      start_date: start,
+      end_date: end,
+      page: String(dxmOrderState.page),
+      page_size: String(dxmOrderState.pageSize)
+    });
+    var url = "/order-analytics/dianxiaomi-orders?" + params.toString();
+    fetch(url)
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json().then(function(j) { throw new Error(j.detail || j.error || ('HTTP ' + r.status)); },
+                               function() { throw new Error('HTTP ' + r.status); });
+        }
+        return r.json();
+      })
+      .then(function(data) {
+        renderDxmOrders(data);
+      })
+      .catch(function(err) {
+        bodyEl.innerHTML = '<tr><td colspan="13" class="oad-error">加载失败：' +
+          escapeHtml(err.message || String(err)) + '</td></tr>';
+        if (pageInfo) pageInfo.textContent = '加载失败';
+      });
+  }
+
+  function renderDxmOrders(data) {
+    var summary = data.summary || {};
+    var pagination = data.pagination || {};
+    var rows = Array.isArray(data.rows) ? data.rows : [];
+    dxmOrderState.page = parseInt(pagination.page, 10) || dxmOrderState.page || 1;
+    dxmOrderState.totalPages = parseInt(pagination.total_pages, 10) || 1;
+
+    document.getElementById('dxmOrderSummary').innerHTML =
+      statCard('总销售额', fmtMoney(summary.total_sales)) +
+      statCard('订单总量', fmtInt(summary.order_count)) +
+      statCard('销售件数', fmtInt(summary.units)) +
+      statCard('运费', fmtMoney(summary.shipping)) +
+      statCard('商品净销售额', fmtMoney(summary.product_net_sales));
+
+    var pageInfo = document.getElementById('dxmOrderPageInfo');
+    if (pageInfo) {
+      pageInfo.textContent = '第 ' + dxmOrderState.page + ' 页 / 共 ' + dxmOrderState.totalPages + ' 页';
+    }
+    var prev = document.getElementById('dxmPrevPage');
+    var next = document.getElementById('dxmNextPage');
+    if (prev) prev.disabled = dxmOrderState.page <= 1;
+    if (next) next.disabled = dxmOrderState.page >= dxmOrderState.totalPages;
+
+    var bodyEl = document.getElementById('dxmOrderBody');
+    if (!rows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="13" class="oad-empty">暂无店小秘订单数据</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = rows.map(function(row) {
+      var shop = row.dxm_shop_name || row.site_code || '';
+      var orderId = row.dxm_order_id || row.dxm_package_id || '';
+      var country = row.buyer_country_name || row.buyer_country || '';
+      var sku = row.product_display_sku || row.product_sku || row.product_sub_sku || '';
+      return '<tr>' +
+        '<td>' + escapeHtml(formatShortDateTime(row.order_time)) + '</td>' +
+        '<td>' + escapeHtml(row.meta_business_date || '') + '</td>' +
+        '<td>' + escapeHtml(shop) + '</td>' +
+        '<td>' + escapeHtml(orderId) + '</td>' +
+        '<td>' + escapeHtml(row.package_number || row.dxm_package_id || '') + '</td>' +
+        '<td>' + escapeHtml(country) + '</td>' +
+        '<td>' + escapeHtml(row.product_name || '') + '</td>' +
+        '<td>' + escapeHtml(sku) + '</td>' +
+        '<td>' + fmtInt(row.quantity) + '</td>' +
+        '<td>' + fmtMoney(row.line_amount) + '</td>' +
+        '<td>' + fmtMoney(row.ship_amount) + '</td>' +
+        '<td>' + fmtMoney(row.total_sales) + '</td>' +
+        '<td>' + escapeHtml(row.order_state || '') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function setInputValue(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.value = value;
+  }
+
+  function addDays(date, days) {
+    var next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  }
+
+  function startOfWeek(date) {
+    var d = new Date(date);
+    var day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d;
+  }
+
+  function endOfWeek(date) {
+    return addDays(startOfWeek(date), 6);
+  }
+
+  function formatDateInput(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
 
   window.switchToAnalytics = function() {
     tabs.forEach(function(t) { t.classList.remove('active'); });

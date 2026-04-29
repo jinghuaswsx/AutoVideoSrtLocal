@@ -348,3 +348,17 @@ def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db)
     assert body.index('data-tab="countryDashboard"') < body.index('data-tab="trueRoas"')
     assert "querySelectorAll('.oad-seg')" not in body
     assert "querySelectorAll('.oad-seg[data-period]')" in body
+
+
+def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert '"/order-analytics/dianxiaomi-orders?"' in body
+    assert '"/order-analytics/country-dashboard?"' in body
+    assert "function initDxmOrders()" in body
+    assert "function initCountryDashboard()" in body
+    assert "setDxmRange('thisMonth')" in body
+    assert "renderCountryDashboard(data)" in body
+    assert "sort_by: 'orders'" in body
