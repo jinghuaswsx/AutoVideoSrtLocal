@@ -366,3 +366,24 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "setDxmRange('thisMonth')" in body
     assert "renderCountryDashboard(data)" in body
     assert "sort_by: 'orders'" in body
+
+
+def test_data_analysis_page_hardens_dashboard_rendering_and_pagination(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "function escapeOadHtml(value)" in body
+    assert "escapeOadHtml(msg || '未知错误')" in body
+    assert "escapeOadHtml(data.period.label)" in body
+    assert "escapeOadHtml(data.compare_period.label)" in body
+    assert "escapeOadHtml(data.country)" in body
+    assert "escapeOadHtml(p.product_name || '(no name)')" in body
+    assert "escapeOadHtml(p.product_code || '')" in body
+    assert "escapeOadHtml(p.product_id)" in body
+    assert "escapeOadHtml(entry[1])" in body
+    assert "+ (p.product_name ||" not in body
+    assert "+ (p.product_code ||" not in body
+    assert "function setDxmPaginationDisabled(disabled)" in body
+    assert "setDxmPaginationDisabled(true);" in body
+    assert "setDxmPaginationDisabled(false);" in body
