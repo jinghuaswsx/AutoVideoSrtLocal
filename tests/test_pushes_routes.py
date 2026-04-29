@@ -898,6 +898,8 @@ def test_pushes_assets_include_product_link_push_tabs():
     assert "label: '推送'" in script
     assert "label: '链接生成预览'" in script
     assert "label: '推送链接'" in script
+    assert script.index("label: '推送链接'") < script.index("label: '链接生成预览'")
+    assert "auditCard.hidden = mode === PUSH_MODAL_MODES.PRODUCT_LINKS;" in script
     assert "renderProductLinksPane" in script
     assert "product_links_push" in script
     assert "product-links-push" in script
