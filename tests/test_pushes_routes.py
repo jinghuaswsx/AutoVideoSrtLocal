@@ -1012,10 +1012,14 @@ def test_pushes_assets_include_product_link_push_tabs():
     ]
     assert "链接生成预览" not in pill_block
     assert "JSON 预览" not in pill_block
+    assert "function isAuditHiddenMode" in script
     assert (
-        "auditCard.hidden = mode === PUSH_MODAL_MODES.PRODUCT_LINKS"
-        " || mode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;"
+        "return m === PUSH_MODAL_MODES.LOCALIZED_TEXT"
+        " || m === PUSH_MODAL_MODES.LOCALIZED_JSON"
+        " || m === PUSH_MODAL_MODES.PRODUCT_LINKS"
+        " || m === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;"
     ) in script
+    assert "auditCard.hidden = isAuditHiddenMode(mode);" in script
     assert "renderProductLinksPane" in script
     assert "product_links_push" in script
     assert "product-links-push" in script
