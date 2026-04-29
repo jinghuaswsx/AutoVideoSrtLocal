@@ -342,7 +342,8 @@
 
   function collectExistingDefaults() {
     state.selectedContentTypes = new Set(CONTENT_TYPES.map((item) => item.code));
-    state.selectedRawIds = new Set((state.rawSources || []).map((item) => Number(item.id)));
+    const sources = state.rawSources || [];
+    state.selectedRawIds = new Set(sources.length ? [Number(sources[0].id)] : []);
     state.selectedLangs = new Set();
 
     state.videoFont = 'Impact';
@@ -831,7 +832,15 @@
     applyPreviewStyles();
   });
 
-  rawList.addEventListener('change', () => {
+  rawList.addEventListener('change', (event) => {
+    const target = event.target;
+    if (target && target.type === 'checkbox' && target.checked) {
+      const checkedCount = rawList.querySelectorAll('input[type="checkbox"]:checked').length;
+      if (checkedCount > 1) {
+        target.checked = false;
+        window.alert('最多选一个视频，字幕设置只能针对一个视频。');
+      }
+    }
     state.selectedRawIds = collectCheckedValues(rawList, (input) => Number(input.value));
     renderLanguages();
     renderSummary();
