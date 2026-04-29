@@ -473,6 +473,9 @@ def api_get_push_credentials():
         "push_localized_texts_authorization_present": bool(auth),
         "push_localized_texts_cookie_masked": _mask_secret(cookie),
         "push_localized_texts_cookie_present": bool(cookie),
+        "push_product_links_base_url": pushes.get_product_links_base_url(),
+        "push_product_links_username": pushes.get_product_links_username(),
+        "push_product_links_password_present": bool(pushes.get_product_links_password()),
     })
 
 
@@ -481,6 +484,9 @@ _ALLOWED_PUSH_SETTING_KEYS = {
     "push_localized_texts_base_url",
     "push_localized_texts_authorization",
     "push_localized_texts_cookie",
+    "push_product_links_base_url",
+    "push_product_links_username",
+    "push_product_links_password",
 }
 
 

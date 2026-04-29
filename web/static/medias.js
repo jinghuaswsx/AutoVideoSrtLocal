@@ -1313,6 +1313,7 @@
         <col style="width:300px">
         <col style="width:92px">
         <col style="width:150px">
+        <col style="width:104px">
         <col style="width:200px">
       </colgroup>
       <thead>
@@ -1330,6 +1331,7 @@
           <th>语种覆盖</th>
           <th>修改时间</th>
           <th>备注说明</th>
+          <th>投放链接</th>
           <th>操作</th>
         </tr>
         </thead>
@@ -1358,6 +1360,12 @@
         e.stopPropagation();
         const product = items.find(item => Number(item.id) === Number(b.dataset.roas));
         openRoasModal(product || null);
+      }));
+    grid.querySelectorAll('[data-product-links-push]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.productLinksPush));
+        openProductLinksPushModal(product || null);
       }));
     grid.querySelectorAll('.oc-product-id-copy').forEach(b =>
       b.addEventListener('click', (e) => {
@@ -1415,6 +1423,11 @@
         <td>${renderLangBar(p.lang_coverage)}</td>
         <td class="muted">${fmtDate(p.updated_at)}</td>
         <td class="wrap material-remark" title="${escapeHtml(p.remark || '')}">${compactCellText(p.remark)}</td>
+        <td class="product-links-push-cell">
+          <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
+            ${icon('upload', 12)}<span>推送</span>
+          </button>
+        </td>
         <td class="actions">
           <div class="oc-row-actions">
             <button class="oc-btn sm ghost" data-edit="${p.id}">${icon('edit', 12)}<span>编辑</span></button>
@@ -1425,6 +1438,110 @@
           </div>
         </td>
       </tr>`;
+  }
+
+  function renderProductLinksPushList(links) {
+    if (!Array.isArray(links) || !links.length) {
+      return '<div class="oc-pl-empty">暂无可推送投放链接</div>';
+    }
+    return `<div class="oc-pl-list">`
+      + links.map((item) => {
+        const label = item.language_name
+          ? `${item.language_name} (${item.lang})`
+          : item.lang;
+        return `<div class="oc-pl-row">
+          <div class="oc-pl-lang">${escapeHtml(label || '')}</div>
+          <a class="oc-pl-url" href="${escapeHtml(item.url || '')}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url || '')}</a>
+        </div>`;
+      }).join('')
+      + `</div>`;
+  }
+
+  function productLinksPushPreviewJson(data) {
+    return JSON.stringify({
+      target_url: data.target_url || '',
+      推送用户: data.username || '',
+      request_payload: data.payload || {},
+    }, null, 2);
+  }
+
+  async function openProductLinksPushModal(product) {
+    if (!product || !product.id) return;
+    const mask = $('productLinksPushModalMask');
+    const title = $('productLinksPushTitle');
+    const meta = $('productLinksPushMeta');
+    const list = $('productLinksPushList');
+    const jsonPre = $('productLinksPushJson');
+    const resp = $('productLinksPushResponse');
+    const respPre = $('productLinksPushResponseBody');
+    const submit = $('productLinksPushSubmit');
+    if (!mask || !list || !jsonPre || !submit) return;
+
+    mask.hidden = false;
+    mask.dataset.pid = String(product.id);
+    if (title) title.textContent = '推送产品链接';
+    if (meta) {
+      meta.textContent = `${product.name || ''} · ${product.product_code || ''}`;
+    }
+    list.innerHTML = '<div class="oc-pl-empty">加载投放链接中…</div>';
+    jsonPre.textContent = '加载中…';
+    if (resp) resp.hidden = true;
+    if (respPre) respPre.textContent = '';
+    submit.disabled = true;
+    submit.textContent = '推送';
+
+    try {
+      const data = await fetchJSON(`/medias/api/products/${product.id}/product-links-push/payload`);
+      mask._productLinksPreview = data;
+      list.innerHTML = renderProductLinksPushList(data.links || []);
+      jsonPre.textContent = productLinksPushPreviewJson(data);
+      submit.disabled = !data.payload || !(data.payload.product_links || []).length;
+    } catch (err) {
+      const message = err.message || '加载失败';
+      list.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      jsonPre.textContent = JSON.stringify({ error: message }, null, 2);
+      submit.disabled = true;
+    }
+  }
+
+  function closeProductLinksPushModal() {
+    const mask = $('productLinksPushModalMask');
+    if (!mask) return;
+    mask.hidden = true;
+    mask.dataset.pid = '';
+    mask._productLinksPreview = null;
+  }
+
+  async function submitProductLinksPush() {
+    const mask = $('productLinksPushModalMask');
+    const submit = $('productLinksPushSubmit');
+    const resp = $('productLinksPushResponse');
+    const respPre = $('productLinksPushResponseBody');
+    const pid = mask && mask.dataset.pid;
+    if (!mask || !pid || !submit) return;
+    submit.disabled = true;
+    submit.textContent = '推送中…';
+    if (resp) resp.hidden = true;
+    try {
+      const data = await fetchJSON(`/medias/api/products/${pid}/product-links-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (resp) resp.hidden = false;
+      if (respPre) {
+        respPre.classList.remove('danger');
+        respPre.textContent = JSON.stringify(data, null, 2);
+      }
+      submit.textContent = '已推送';
+    } catch (err) {
+      if (resp) resp.hidden = false;
+      if (respPre) {
+        respPre.classList.add('danger');
+        respPre.textContent = err.message || '推送失败';
+      }
+      submit.disabled = false;
+      submit.textContent = '推送';
+    }
   }
 
   async function startMkIdInlineEdit(td) {
@@ -5605,6 +5722,21 @@
 
     if (event.target === translateMask || event.target.closest('#rstClose') || event.target.closest('#rstCancel')) {
       closeTranslateDialog();
+      return;
+    }
+
+    if (event.target.closest('#productLinksPushSubmit')) {
+      event.preventDefault();
+      await submitProductLinksPush();
+      return;
+    }
+
+    if (
+      event.target === $('productLinksPushModalMask')
+      || event.target.closest('#productLinksPushClose')
+      || event.target.closest('#productLinksPushCancel')
+    ) {
+      closeProductLinksPushModal();
       return;
     }
 

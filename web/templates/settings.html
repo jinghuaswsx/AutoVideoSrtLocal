@@ -568,6 +568,35 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   </div>
 
   <div class="settings-card">
+    <h2>产品投放链接推送（wedev）</h2>
+    <div class="step-desc">
+      调用 <code>{{ push_credentials_view.push_product_links_base_url or '(未设置 base_url)' }}/dify/shopify/medias/links</code>，
+      在「素材管理」产品行的“投放链接”列触发。鉴权方式为 HTTP Basic Auth。
+    </div>
+
+    <label for="push_product_links_base_url">Base URL</label>
+    <input type="text" id="push_product_links_base_url" name="push_product_links_base_url"
+           value="{{ push_credentials_view.push_product_links_base_url or '' }}"
+           placeholder="https://os.wedev.vip">
+
+    <label for="push_product_links_username">推送用户</label>
+    <input type="text" id="push_product_links_username" name="push_product_links_username"
+           value="{{ push_credentials_view.push_product_links_username or '' }}"
+           placeholder="蔡靖华">
+
+    <label for="push_product_links_password">Basic Auth 密码</label>
+    <input type="password" id="push_product_links_password" name="push_product_links_password"
+           value="" placeholder="{{ '已配置，留空不变' if push_credentials_view.push_product_links_password_present else '未配置' }}">
+    <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+      <label style="margin:0;text-transform:none;font-weight:400;display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" name="clear" value="push_product_links_password">
+        清空该字段
+      </label>
+      <span class="hint" style="margin:0">状态：{{ '已配置' if push_credentials_view.push_product_links_password_present else '未配置' }}</span>
+    </div>
+  </div>
+
+  <div class="settings-card">
     <h2>自动同步工具</h2>
     <div class="step-desc">
       想要一键从本地 Chrome 浏览器抓 wedev 的 Cookie + Bearer token？在本地运行：

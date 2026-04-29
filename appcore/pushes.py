@@ -24,7 +24,12 @@ _PUSH_SETTING_ENV_FALLBACK = {
     "push_localized_texts_base_url": "PUSH_LOCALIZED_TEXTS_BASE_URL",
     "push_localized_texts_authorization": "PUSH_LOCALIZED_TEXTS_AUTHORIZATION",
     "push_localized_texts_cookie": "PUSH_LOCALIZED_TEXTS_COOKIE",
+    "push_product_links_base_url": "PUSH_PRODUCT_LINKS_BASE_URL",
+    "push_product_links_username": "PUSH_PRODUCT_LINKS_USERNAME",
+    "push_product_links_password": "PUSH_PRODUCT_LINKS_PASSWORD",
 }
+
+_PRODUCT_LINKS_PUSH_PATH = "/dify/shopify/medias/links"
 
 
 def _get_push_setting(key: str) -> str:
@@ -48,6 +53,25 @@ def get_localized_texts_authorization() -> str:
 
 def get_localized_texts_cookie() -> str:
     return _get_push_setting("push_localized_texts_cookie")
+
+
+def get_product_links_base_url() -> str:
+    return _get_push_setting("push_product_links_base_url").rstrip("/")
+
+
+def get_product_links_target_url() -> str:
+    base = get_product_links_base_url()
+    if not base:
+        return ""
+    return f"{base}{_PRODUCT_LINKS_PUSH_PATH}"
+
+
+def get_product_links_username() -> str:
+    return _get_push_setting("push_product_links_username")
+
+
+def get_product_links_password() -> str:
+    return _get_push_setting("push_product_links_password")
 
 
 def build_media_public_url(object_key: str | None) -> str | None:
@@ -158,6 +182,14 @@ class CopywritingParseError(Exception):
 
 class ProductNotListedError(Exception):
     """产品已下架，不能推送。"""
+
+
+class ProductLinksPayloadError(Exception):
+    """产品投放链接推送报文无法组装。"""
+
+
+class ProductLinksPushConfigError(Exception):
+    """产品投放链接推送配置不完整。"""
 
 
 _COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")
@@ -356,6 +388,116 @@ def resolve_product_page_url(lang: str, product: dict | None) -> str:
     if override:
         return override
     return _default_product_page_url(lang_code, product.get("product_code") or "")
+
+
+def _enabled_product_link_langs() -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for code in medias.list_enabled_language_codes() or []:
+        lang = str(code or "").strip().lower()
+        if not lang or lang == "en" or lang in seen:
+            continue
+        seen.add(lang)
+        out.append(lang)
+    return out
+
+
+def build_product_links_push_preview(product: dict | None) -> dict:
+    """组装产品维度的投放链接补推预览。
+
+    `handle` 直接使用产品的 product_code，不额外拼接后缀。product_links
+    以 Media Language 中 enabled=1 的非英语语种为准。
+    """
+    if not isinstance(product, dict):
+        raise ProductLinksPayloadError("product_not_found")
+    if not medias.is_product_listed(product):
+        raise ProductNotListedError("product_not_listed")
+
+    handle = str(product.get("product_code") or "").strip()
+    if not handle:
+        raise ProductLinksPayloadError("missing_product_code")
+    if not handle.lower().endswith("-rjc"):
+        raise ProductLinksPayloadError("product_code_must_end_with_rjc")
+
+    rows: list[dict[str, str]] = []
+    links: list[str] = []
+    seen_links: set[str] = set()
+    for lang in _enabled_product_link_langs():
+        url = resolve_product_page_url(lang, product).strip()
+        if not url or url in seen_links:
+            continue
+        seen_links.add(url)
+        links.append(url)
+        rows.append({
+            "lang": lang,
+            "language_name": medias.get_language_name(lang),
+            "url": url,
+        })
+
+    if not links:
+        raise ProductLinksPayloadError("product_links_empty")
+
+    return {
+        "target_url": get_product_links_target_url(),
+        "username": get_product_links_username(),
+        "payload": {
+            "handle": handle,
+            "product_links": links,
+        },
+        "links": rows,
+    }
+
+
+def push_product_links(product: dict | None) -> dict:
+    preview = build_product_links_push_preview(product)
+    target_url = preview.get("target_url") or ""
+    username = preview.get("username") or ""
+    password = get_product_links_password()
+    if not target_url:
+        raise ProductLinksPushConfigError("push_product_links_base_url_missing")
+    if not username or not password:
+        raise ProductLinksPushConfigError("push_product_links_credentials_missing")
+
+    payload = preview["payload"]
+    try:
+        resp = requests.post(
+            target_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            auth=(username, password),
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": "downstream_unreachable",
+            "detail": str(exc),
+            "target_url": target_url,
+            "payload": payload,
+        }
+
+    body_text = resp.text or ""
+    parsed: dict[str, Any] = {}
+    try:
+        loaded = resp.json()
+        if isinstance(loaded, dict):
+            parsed = loaded
+    except ValueError:
+        parsed = {}
+
+    ok = bool(resp.ok and parsed.get("code") == 0)
+    result: dict[str, Any] = {
+        "ok": ok,
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+        "target_url": target_url,
+        "payload": payload,
+    }
+    if not ok:
+        result["error"] = "downstream_error"
+        result["message"] = parsed.get("message") or f"HTTP {resp.status_code}"
+        result["upstream_code"] = parsed.get("code")
+    return result
 
 
 def probe_ad_url(url: str) -> tuple[bool, str | None]:
