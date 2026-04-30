@@ -839,15 +839,15 @@ DEFAULTS: dict[tuple[str, str | None], dict] = {
         "content": _ASR_DETECT,
     },
     ("asr_normalize.translate_zh_en", ""): {
-        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "provider": "openrouter", "model": "google/gemini-3-flash-preview",
         "content": _ASR_TRANSLATE_ZH,
     },
     ("asr_normalize.translate_es_en", ""): {
-        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "provider": "openrouter", "model": "google/gemini-3-flash-preview",
         "content": _ASR_TRANSLATE_ES,
     },
     ("asr_normalize.translate_generic_en", ""): {
-        "provider": "openrouter", "model": "anthropic/claude-sonnet-4.6",
+        "provider": "openrouter", "model": "google/gemini-3-flash-preview",
         "content": _ASR_TRANSLATE_GENERIC,
     },
 }

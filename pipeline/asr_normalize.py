@@ -47,6 +47,19 @@ _USE_CASE_BY_ROUTE: dict[str, str] = {
     "generic_fallback_mixed": "asr_normalize.translate_generic_to_en",
 }
 
+
+def _resolve_model_id(use_case_code: str) -> str | None:
+    """读 binding 表实时返回 use_case 当前 model id；DB 异常时返回 None。
+
+    用途：artifact["model"] 字段的展示值不该硬编码——管理员在 /settings 切了
+    provider/model 之后，前端 UI 应当反映真实在用的模型。
+    """
+    try:
+        from appcore import llm_bindings
+        return llm_bindings.resolve(use_case_code).get("model")
+    except Exception:
+        return None
+
 _PROMPT_SLOT_BY_ROUTE: dict[str, str] = {
     "es_specialized": "asr_normalize.translate_es_en",
     "generic_fallback": "asr_normalize.translate_generic_en",
@@ -325,8 +338,11 @@ def run_asr_normalize(
         "tokens": {"detect": detect_tokens, "translate": translate_tokens},
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "model": {
-            "detect": "gemini-3.1-flash-lite-preview",
-            "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
+            "detect": _resolve_model_id("asr_normalize.detect_language"),
+            "translate": (
+                _resolve_model_id(_USE_CASE_BY_ROUTE[route])
+                if utterances_en and route in _USE_CASE_BY_ROUTE else None
+            ),
         },
         "asr_clean": purify_artifact,
     }
@@ -426,7 +442,10 @@ def run_user_specified(
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "model": {
             "detect": None,
-            "translate": "anthropic/claude-sonnet-4.6" if utterances_en else None,
+            "translate": (
+                _resolve_model_id(_USE_CASE_BY_ROUTE[route])
+                if utterances_en and route in _USE_CASE_BY_ROUTE else None
+            ),
         },
         "asr_clean": purify_artifact,
     }
