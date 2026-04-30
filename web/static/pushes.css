@@ -1063,6 +1063,23 @@
   padding: 1px 6px; border-radius: var(--oc-r-sm);
   color: var(--oc-fg); word-break: break-all;
 }
+.pm-inline-copy-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--oc-sp-2);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.pm-copy-btn {
+  flex: 0 0 auto;
+}
+.pm-tag-list {
+  display: grid;
+  gap: var(--oc-sp-2);
+}
+.pm-tag-row {
+  justify-content: flex-start;
+}
 .pm-sub { margin-top: var(--oc-sp-4); padding-top: var(--oc-sp-3); border-top: 1px dashed var(--oc-border); }
 .pm-sub-title { font-size: 12px; font-weight: 600; color: var(--oc-fg-muted); margin-bottom: var(--oc-sp-2); letter-spacing: 0.02em; }
 .pm-list { margin: 0; padding-left: 20px; font-size: 12px; }

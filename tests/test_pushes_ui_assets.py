@@ -21,6 +21,9 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "product-code-row" in script
     assert "mk_id" in script
     assert "data-copy-product-code" in script
+    assert "data-copy-modal-product-code" in script
+    assert "data-copy-payload-tag" in script
+    assert "renderTagList" in script
     assert "navigator.clipboard" in script
     assert "document.execCommand('copy')" in script
     assert "renderAuditCell" in script
@@ -41,6 +44,9 @@ def test_pushes_css_styles_product_link_and_copy_button():
     assert ".product-name-line" in css
     assert ".product-copy-btn" in css
     assert ".product-code-row" in css
+    assert ".pm-inline-copy-row" in css
+    assert ".pm-tag-list" in css
+    assert ".pm-copy-btn" in css
     assert ".audit-cell" in css
     assert ".audit-detail-pre" in css
 

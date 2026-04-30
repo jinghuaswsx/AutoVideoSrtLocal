@@ -114,6 +114,16 @@
     }, 1200);
   }
 
+  function createCopyButton(value, attrName) {
+    const btn = el('button', {
+      type: 'button',
+      class: 'product-copy-btn pm-copy-btn',
+      title: '复制',
+    }, '复制');
+    btn.setAttribute(attrName, String(value || ''));
+    return btn;
+  }
+
   // ---------- 筛选与列表 ----------
 
   async function loadLanguages() {
@@ -419,12 +429,13 @@
       ['source', payload.source],
       ['platforms', JSON.stringify(payload.platforms || [])],
       ['selling_point', payload.selling_point || '(空)'],
-      ['tags', JSON.stringify(payload.tags || [])],
     ];
     pairs.forEach(([k, v]) => {
       kv.appendChild(el('span', { class: 'k' }, k));
       kv.appendChild(el('span', { class: 'v' }, [el('code', {}, String(v ?? ''))]));
     });
+    kv.appendChild(el('span', { class: 'k' }, 'tags'));
+    kv.appendChild(el('div', { class: 'v' }, [renderTagList(payload.tags)]));
     root.appendChild(kv);
 
     if (Array.isArray(payload.product_links) && payload.product_links.length) {
@@ -484,6 +495,33 @@
     }
 
     return root;
+  }
+
+  function renderTagList(tags) {
+    const list = el('div', { class: 'pm-tag-list' });
+    (Array.isArray(tags) ? tags : []).forEach(tag => {
+      const value = String(tag ?? '').trim();
+      if (!value) return;
+      list.appendChild(el('div', { class: 'pm-inline-copy-row pm-tag-row' }, [
+        el('code', {}, value),
+        createCopyButton(value, 'data-copy-payload-tag'),
+      ]));
+    });
+    return list.childNodes.length ? list : el('code', {}, '[]');
+  }
+
+  function renderModalProductInfo(item) {
+    const row = el('span', { class: 'v pm-inline-copy-row' });
+    const productName = String(item.product_name || '').trim();
+    const productCode = String(item.product_code || '').trim();
+    if (productName) row.appendChild(document.createTextNode(productName));
+    if (productCode) {
+      if (productName) row.appendChild(document.createTextNode('  ·  '));
+      row.appendChild(el('code', {}, productCode));
+      row.appendChild(createCopyButton(productCode, 'data-copy-modal-product-code'));
+    }
+    if (!productName && !productCode) row.appendChild(document.createTextNode('-'));
+    return row;
   }
 
   function renderLocalizedPane(texts, targetUrl, mkId) {
@@ -869,7 +907,7 @@
       if (v instanceof Node) infoKV.appendChild(v);
       else infoKV.appendChild(el('span', { class: 'v' }, v));
     };
-    addKV('产品', `${item.product_name || ''}  ·  ${item.product_code || ''}`);
+    addKV('产品', renderModalProductInfo(item));
     addKV('语种', formatLanguageLabel(item.lang));
     addKV('文件', item.display_name || item.filename || '-');
     addKV('item_id', String(item.id));
@@ -1213,11 +1251,18 @@
 
   // ---------- 绑定 ----------
 
-  document.getElementById('push-tbody').addEventListener('click', async ev => {
-    const copyBtn = ev.target.closest('button[data-copy-product-code]');
+  document.addEventListener('click', async ev => {
+    const copyBtn = ev.target.closest(
+      'button[data-copy-product-code], button[data-copy-modal-product-code], button[data-copy-payload-tag]',
+    );
     if (!copyBtn) return;
     try {
-      await copyText(copyBtn.getAttribute('data-copy-product-code') || '');
+      await copyText(
+        copyBtn.getAttribute('data-copy-product-code')
+          || copyBtn.getAttribute('data-copy-modal-product-code')
+          || copyBtn.getAttribute('data-copy-payload-tag')
+          || '',
+      );
       flashCopyButton(copyBtn, '已复制');
     } catch (err) {
       flashCopyButton(copyBtn, '复制失败');
