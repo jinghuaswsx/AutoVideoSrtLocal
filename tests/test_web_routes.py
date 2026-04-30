@@ -1355,6 +1355,15 @@ def test_layout_contains_subtitle_removal_nav_icon(authed_client_no_db):
     assert '<span class="nav-icon">🧽</span>' in body
 
 
+def test_layout_uses_legacy_video_translate_nav_label(authed_client_no_db):
+    response = authed_client_no_db.get("/subtitle-removal")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "视频翻译传统" in body
+    assert '<span class="nav-icon">🎬</span> 视频翻译\n' not in body
+
+
 def test_layout_hides_api_config_nav_for_normal_user(authed_user_client_no_db):
     response = authed_user_client_no_db.get("/subtitle-removal")
 
