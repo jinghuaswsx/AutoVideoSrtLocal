@@ -126,3 +126,78 @@ def test_upsert_handles_null_user_id(monkeypatch):
     )
 
     assert captured[0][1][3] is None
+
+
+def test_finalize_writes_state_json_db_and_logger(monkeypatch, caplog):
+    """finalize 应该：1) update task_state；2) upsert DB；3) logger.info 蓝色总结。"""
+    from appcore import tts_generation_stats as stats_mod
+
+    state_updates: dict = {}
+
+    def fake_task_state_update(task_id, **fields):
+        state_updates[task_id] = fields
+
+    db_calls: list[tuple] = []
+
+    def fake_execute(sql, args=None):
+        db_calls.append((sql, args or ()))
+        return 1
+
+    monkeypatch.setattr(stats_mod, "task_state_update", fake_task_state_update)
+    monkeypatch.setattr(stats_mod, "execute", fake_execute)
+
+    rounds = [
+        {"audio_segments_total": 9},
+        {"rewrite_attempts": [1, 2, 3], "audio_segments_total": 9},
+    ]
+    task = {
+        "type": "multi_translate",
+        "target_lang": "it",
+        "user_id": 77,
+    }
+
+    import logging
+    caplog.set_level(logging.INFO, logger="appcore.tts_generation_stats")
+
+    stats_mod.finalize(task_id="task-z", task=task, rounds=rounds)
+
+    assert state_updates["task-z"]["tts_generation_summary"]["translate_calls"] == 4
+    assert state_updates["task-z"]["tts_generation_summary"]["audio_calls"] == 18
+    assert "finished_at" in state_updates["task-z"]["tts_generation_summary"]
+    assert len(db_calls) == 1
+    assert db_calls[0][1][0] == "task-z"
+    assert db_calls[0][1][4] == 4
+    assert db_calls[0][1][5] == 18
+    log_record = next((r for r in caplog.records if "次翻译" in r.message), None)
+    assert log_record is not None
+    assert "4 次翻译" in log_record.message
+    assert "18 次语音生成" in log_record.message
+
+
+def test_finalize_swallows_db_error_but_keeps_state_json_and_log(monkeypatch, caplog):
+    """DB 写失败不应让 _step_tts 整个崩溃。"""
+    from appcore import tts_generation_stats as stats_mod
+
+    state_updates: dict = {}
+    monkeypatch.setattr(
+        stats_mod, "task_state_update",
+        lambda task_id, **f: state_updates.setdefault(task_id, f),
+    )
+
+    def boom_execute(sql, args=None):
+        raise RuntimeError("DB unreachable")
+
+    monkeypatch.setattr(stats_mod, "execute", boom_execute)
+
+    import logging
+    caplog.set_level(logging.INFO, logger="appcore.tts_generation_stats")
+
+    rounds = [{"audio_segments_total": 5}]
+    task = {"type": "fr_translate", "target_lang": "fr", "user_id": None}
+
+    stats_mod.finalize(task_id="task-err", task=task, rounds=rounds)
+
+    assert "task-err" in state_updates
+    assert any("次翻译" in r.message for r in caplog.records)
+    assert any("DB unreachable" in r.message and r.levelname == "WARNING"
+               for r in caplog.records)
