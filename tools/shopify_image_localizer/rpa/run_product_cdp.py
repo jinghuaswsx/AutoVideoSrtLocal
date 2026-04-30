@@ -464,7 +464,7 @@ def download_visual_detail_sources(
     for idx, ref in enumerate(taa_cdp.extract_image_refs(detail_html)):
         src = _normalize_src(ref.get("src") or "")
         if is_payment_screenshot(src, ref.get("alt") or ""):
-            print(f"[detail] skipped payment screenshot visual fallback: {src}")
+            print(f"详情图：跳过收款截图视觉兜底：{src}")
             continue
         if src not in candidate_set:
             continue
@@ -582,18 +582,18 @@ def fetch_bootstrap_ready(
             )
             localized_count = len(payload.get("localized_images") or [])
             if localized_count > 0:
-                print(f"[bootstrap] READY attempt={attempt} localized={localized_count}")
+                print(f"bootstrap 已就绪（第 {attempt} 次尝试，本地化记录 {localized_count} 条）")
                 return payload
             last_error = RuntimeError("bootstrap returned no localized images")
         except api_client.ApiError as exc:
             last_error = exc
             error_code = str(exc.payload.get("error") or "")
-            print(f"[bootstrap] {exc.status_code} {error_code}: {exc}")
+            print(f"bootstrap 接口异常 {exc.status_code} {error_code}：{exc}")
             if error_code == "shopify_product_id_missing":
                 raise
         except Exception as exc:
             last_error = exc
-            print(f"[bootstrap] attempt={attempt} failed: {exc}")
+            print(f"bootstrap 第 {attempt} 次尝试失败：{exc}")
         if time.time() >= deadline:
             break
         cancellation.cancellable_sleep(cancel_token, 5)
@@ -609,7 +609,7 @@ def download_localized(
 ) -> tuple[storage.Workspace, list[dict]]:
     workspace = storage.create_workspace(product_code, lang)
     localized_images = bootstrap.get("localized_images") or []
-    print(f"[download] {len(localized_images)} image(s) -> {workspace.source_localized_dir}")
+    print(f"开始下载本地化图片 {len(localized_images)} 张到 {workspace.source_localized_dir}")
     downloaded = downloader.download_images(
         localized_images,
         workspace.source_localized_dir,
@@ -617,6 +617,7 @@ def download_localized(
         status_cb=print,
         cancel_token=cancel_token,
     )
+    print(f"本地化图片下载完成，共 {len(downloaded)} 张")
     return workspace, downloaded
 
 
@@ -640,7 +641,7 @@ def add_original_detail_fallbacks(
         cancellation.throw_if_cancelled(cancel_token)
         src = _normalize_src(ref.get("src") or "")
         if is_payment_screenshot(src, ref.get("alt") or ""):
-            print(f"[detail] skipped payment screenshot fallback: {src}")
+            print(f"详情图：跳过收款截图原图兜底：{src}")
             continue
         token = ez_cdp.md5_token(src)
         if not token or token in candidates_by_token:
@@ -650,7 +651,7 @@ def add_original_detail_fallbacks(
         ext = _extension_from_url(src)
         filename = f"fallback_original_from_url_en_{idx:02d}_{token}.{ext}"
         output_path = workspace.source_localized_dir / filename
-        print(f"[detail] fallback original image for token={token}: {src}")
+        print(f"详情图：使用原图兜底（token={token}）：{src}")
         request = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(request, timeout=30) as response:
             output_path.write_bytes(response.read())
@@ -701,7 +702,7 @@ def fetch_storefront_image_display_sizes(
     normalized_locale = str(locale or "").strip().strip("/")
     prefix = f"/{normalized_locale}" if normalized_locale else ""
     url = f"https://{store_domain}{prefix}/products/{product_code}"
-    ez_cdp.ensure_cdp_chrome(user_data_dir, url, port=port)
+    ez_cdp.ensure_cdp_chrome(user_data_dir, port=port)
     sizes: dict[str, dict[str, Any]] = {}
     with sync_playwright() as playwright:
         browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
@@ -740,6 +741,30 @@ def fetch_storefront_image_display_sizes(
                 pass
     cancellation.throw_if_cancelled(cancel_token)
     return sizes
+
+
+def _preload_chrome_tab_to_url(
+    *,
+    user_data_dir: str,
+    port: int,
+    target_url: str,
+    label: str,
+) -> None:
+    print(f"{label}：正在浏览器中打开目标页面 {target_url}")
+    try:
+        ez_cdp.ensure_cdp_chrome(user_data_dir, port=port)
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            pages = list(context.pages)
+            page = pages[0] if pages else context.new_page()
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+    except Exception as exc:
+        print(f"{label}：预先打开页面失败（不影响后续）：{exc}")
 
 
 def run(
@@ -795,7 +820,15 @@ def run(
     product_images = product_image_sources(source_product)
     if not args.skip_carousel:
         cancellation.throw_if_cancelled(cancel_token)
+        _preload_chrome_tab_to_url(
+            user_data_dir=cfg["browser_user_data_dir"],
+            port=args.port,
+            target_url=session.build_ez_url(product_id),
+            label="轮播图",
+        )
+        print("轮播图：正在按文件名/哈希比对位置与本地化图片")
         pairs = pair_carousel_images(downloaded, product_images)
+        print(f"轮播图：文件名匹配完成，共 {len(pairs)} 对")
         eligible_indices = [
             idx
             for idx, src in enumerate(product_images)
@@ -806,7 +839,8 @@ def run(
         visual_fallback_plan: dict[str, Any] = {"pairs": [], "confirmation_pairs": [], "review": [], "conflicts": []}
         if unmatched_indices and bootstrap.get("reference_images"):
             try:
-                print(f"[carousel] deterministic matched={len(pairs)}, visual fallback slots={unmatched_indices}")
+                print(f"轮播图：剩余 {len(unmatched_indices)} 个位置进入视觉兜底（位置 {unmatched_indices}）")
+                print(f"轮播图：视觉兜底——开始下载 {len(unmatched_indices)} 个位置的参考图")
                 visual_sources = download_visual_carousel_sources(
                     workspace=workspace,
                     product_images=product_images,
@@ -814,6 +848,7 @@ def run(
                     unmatched_slot_indices=unmatched_indices,
                     cancel_token=cancel_token,
                 )
+                print("轮播图：视觉识别中——正在用图像比对算法生成配对方案（耗时较长，请耐心等待）")
                 visual_fallback_plan = build_visual_carousel_pair_plan(
                     slot_images=visual_sources.get("slot_images") or [],
                     reference_images=visual_sources.get("reference_images") or [],
@@ -822,21 +857,22 @@ def run(
                 )
                 visual_pairs = list(visual_fallback_plan.get("pairs") or [])
                 if visual_pairs:
+                    print(f"轮播图：视觉识别完成，得到 {len(visual_pairs)} 对候选；等待用户确认配对")
                     confirm_visual_carousel_pairs(
                         list(visual_fallback_plan.get("confirmation_pairs") or []),
                         confirm_cb=visual_pair_confirm_cb,
                     )
                     pairs.extend(visual_pairs)
                     pairs.sort(key=lambda row: row[0])
-                    print(f"[carousel] visual fallback confirmed={len(visual_pairs)}")
+                    print(f"轮播图：视觉兜底已确认 {len(visual_pairs)} 对")
                 else:
-                    print(f"[carousel] visual fallback produced no pairs: {visual_fallback_plan.get('review')}")
+                    print(f"轮播图：视觉兜底未能生成可用配对：{visual_fallback_plan.get('review')}")
             except cancellation.OperationCancelled:
                 raise
             except Exception as exc:
-                print(f"[carousel] visual fallback unavailable: {exc}")
+                print(f"轮播图：视觉兜底不可用：{exc}")
         if not pairs:
-            print("[carousel] no matched image pairs; skipped carousel")
+            print("轮播图：未找到可替换的配对，跳过轮播图替换")
             result["carousel"] = {
                 "requested": 0,
                 "results": [],
@@ -847,7 +883,7 @@ def run(
                 "visual_review": visual_fallback_plan.get("review") or [],
             }
         else:
-            print(f"[carousel] replacing {len(pairs)} slot(s)")
+            print(f"轮播图：开始替换 {len(pairs)} 个位置")
             ez_url = session.build_ez_url(product_id)
             carousel_results = ez_cdp.replace_many(
                 ez_url=ez_url,
@@ -892,7 +928,7 @@ def run(
                 port=args.port,
                 cancel_token=cancel_token,
             )
-            print(f"[detail] captured display sizes for {len(display_size_by_src)} image(s)")
+            print(f"详情图：已采集 {len(display_size_by_src)} 张图片的显示尺寸")
         source_index_map = taa_cdp.parse_source_index_map(args.source_index_map)
         if not source_index_map:
             source_index_map = build_detail_source_index_map(
@@ -900,7 +936,16 @@ def run(
                 bootstrap.get("reference_images") or [],
                 carousel_image_count=len(product_images),
             )
-        print(f"[detail] source-index map={source_index_map}")
+        print(f"详情图：使用源图序号映射 {source_index_map}")
+        _preload_chrome_tab_to_url(
+            user_data_dir=cfg["browser_user_data_dir"],
+            port=args.port,
+            target_url=session.build_translate_url(
+                product_id,
+                getattr(args, "taa_shop_locale", args.shop_locale),
+            ),
+            label="详情图",
+        )
         detail_visual_plan: dict[str, Any] = {
             "forced_replacements_by_src": {},
             "confirmation_pairs": [],
@@ -926,11 +971,10 @@ def run(
             skipped_visual_missing = len(preliminary_detail_plan.get("skipped_missing") or []) - len(missing_detail_srcs)
             if skipped_visual_missing > 0:
                 print(
-                    "[detail] visual fallback skipped "
-                    f"{skipped_visual_missing} missing src(s) that are not auto-replace targets"
+                    f"详情图：视觉兜底跳过 {skipped_visual_missing} 张不参与自动替换的图片"
                 )
             if missing_detail_srcs and bootstrap.get("reference_images"):
-                print(f"[detail] visual fallback srcs={len(missing_detail_srcs)}")
+                print(f"详情图：视觉兜底——开始下载 {len(missing_detail_srcs)} 张位置参考图")
                 detail_visual_sources = download_visual_detail_sources(
                     workspace=workspace,
                     detail_html=detail_html,
@@ -938,6 +982,7 @@ def run(
                     candidate_srcs=missing_detail_srcs,
                     cancel_token=cancel_token,
                 )
+                print("详情图：视觉识别中——正在用图像比对算法生成替换方案（耗时较长，请耐心等待）")
                 detail_visual_plan = build_visual_detail_replacement_plan(
                     slot_images=detail_visual_sources.get("slot_images") or [],
                     reference_images=detail_visual_sources.get("reference_images") or [],
@@ -945,14 +990,15 @@ def run(
                 )
                 detail_confirmations = list(detail_visual_plan.get("confirmation_pairs") or [])
                 if detail_confirmations:
+                    print(f"详情图：视觉识别完成，得到 {len(detail_confirmations)} 对候选；等待用户确认配对")
                     confirm_visual_carousel_pairs(detail_confirmations, confirm_cb=visual_pair_confirm_cb)
-                    print(f"[detail] visual fallback confirmed={len(detail_confirmations)}")
+                    print(f"详情图：视觉兜底已确认 {len(detail_confirmations)} 对")
                 else:
-                    print(f"[detail] visual fallback produced no pairs: {detail_visual_plan.get('review')}")
+                    print(f"详情图：视觉兜底未能生成可用配对：{detail_visual_plan.get('review')}")
         except cancellation.OperationCancelled:
             raise
         except Exception as exc:
-            print(f"[detail] visual fallback unavailable: {exc}")
+            print(f"详情图：视觉兜底不可用：{exc}")
         detail_result = taa_cdp.replace_detail_images(
             product_id=product_id,
             shop_locale=getattr(args, "taa_shop_locale", args.shop_locale),
@@ -995,8 +1041,7 @@ def run(
 
     output_path = workspace.root / f"shopify_batch_{args.lang}_result.json"
     storage.write_json(output_path, result)
-    print(f"[result] {output_path}")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"已写入结果文件：{output_path}")
     return result
 
 
@@ -1035,10 +1080,10 @@ def main() -> None:
     try:
         run(args)
     except api_client.ApiError as exc:
-        print(f"[blocked] bootstrap API {exc.status_code}: {json.dumps(exc.payload, ensure_ascii=False)}")
+        print(f"已阻塞：bootstrap 接口 {exc.status_code}：{json.dumps(exc.payload, ensure_ascii=False)}")
         raise SystemExit(2) from exc
     except TimeoutError as exc:
-        print(f"[blocked] {exc}")
+        print(f"已阻塞：{exc}")
         raise SystemExit(2) from exc
 
 

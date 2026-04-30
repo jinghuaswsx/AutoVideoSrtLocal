@@ -28,6 +28,7 @@ from tools.shopify_image_localizer.browser import session
 DEFAULT_CDP_PORT = 7777
 ACTION_DELAY_MS = 1000
 UPLOAD_FILE_READY_TIMEOUT_MS = 20000
+STARTUP_URL = "https://www.google.com"
 
 
 def _timestamp() -> str:
@@ -49,14 +50,14 @@ def _run_step(
     detail: Callable[[object], str] | None = None,
 ) -> object:
     started_at = time.perf_counter()
-    _log(f"{scope} START {label}")
+    _log(f"{scope} 开始：{label}")
     try:
         result = action()
     except Exception as exc:
-        _log(f"{scope} END {label}: failed ({_duration_s(started_at)}) error={exc}")
+        _log(f"{scope} 失败：{label}（耗时 {_duration_s(started_at)}）错误={exc}")
         raise
     status = detail(result) if detail is not None else "ok"
-    _log(f"{scope} END {label}: {status} ({_duration_s(started_at)})")
+    _log(f"{scope} 完成：{label}（耗时 {_duration_s(started_at)}）{status}")
     return result
 
 
@@ -72,7 +73,7 @@ def _pause_after_action(
         frame.page.wait_for_timeout(ACTION_DELAY_MS)
         cancellation.throw_if_cancelled(cancel_token)
 
-    _run_step(scope, f"wait 1s after {label}", pause)
+    _run_step(scope, f"{label} 后等待 1 秒", pause)
 
 
 def _cdp_alive(port: int = DEFAULT_CDP_PORT) -> bool:
@@ -104,7 +105,7 @@ def _chrome_exe() -> str:
 
 def ensure_cdp_chrome(
     user_data_dir: str,
-    initial_url: str,
+    initial_url: str = STARTUP_URL,
     *,
     port: int = DEFAULT_CDP_PORT,
     proxy_server: str | None = None,
@@ -267,7 +268,7 @@ def verify_many_language_markers(
     port: int = DEFAULT_CDP_PORT,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
-    ensure_cdp_chrome(user_data_dir, ez_url, port=port, cancel_token=cancel_token)
+    ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token)
     with sync_playwright() as playwright:
         browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
         context = browser.contexts[0] if browser.contexts else browser.new_context()
@@ -387,7 +388,7 @@ def replace_slot(
     replace_existing: bool = True,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
-    scope = f"[carousel][slot {slot_idx}]"
+    scope = f"[轮播图][位置 {slot_idx}]"
     cancellation.throw_if_cancelled(cancel_token)
     local_path = Path(local_image_path)
     local_hash = md5_token(local_path.name)
@@ -395,77 +396,77 @@ def replace_slot(
     size = local_path.stat().st_size if exists else 0
     started_at = time.perf_counter()
     _log(
-        f"{scope} START replace path={local_image_path} file={local_path.name} "
-        f"exists={exists} size={size} language={language} hash={local_hash or '-'}"
+        f"{scope} 开始替换：路径={local_image_path} 文件={local_path.name} "
+        f"已存在={exists} 大小={size} 语言={language} 哈希={local_hash or '-'}"
     )
     try:
         open_info = _run_step(
             scope,
-            "open translation dialog",
+            "打开翻译对话框",
             lambda: _open_slot(frame, slot_idx, local_hash),
             lambda value: (
-                f"ok visible_buttons={dict(value).get('visible_buttons')} "
-                f"modal_hash={dict(value).get('modal_hash') or '-'}"
+                f"可见按钮数={dict(value).get('visible_buttons')} "
+                f"弹窗哈希={dict(value).get('modal_hash') or '-'}"
             ),
         )
-        _pause_after_action(frame, scope, "open translation dialog", cancel_token=cancel_token)
+        _pause_after_action(frame, scope, "打开翻译对话框", cancel_token=cancel_token)
 
         cancellation.throw_if_cancelled(cancel_token)
         target_exists = bool(_run_step(
             scope,
-            f"check existing {language} marker",
+            f"检查 {language} 语言标记是否已存在",
             lambda: _target_exists(frame, language),
-            lambda value: f"exists={bool(value)}",
+            lambda value: f"已存在={bool(value)}",
         ))
         if target_exists:
             _run_step(
                 scope,
-                "close dialog after skip",
+                "已存在，关闭对话框跳过",
                 lambda: _click_cancel(frame),
-                lambda value: f"closed={bool(value)}",
+                lambda value: f"已关闭={bool(value)}",
             )
-            _log(f"{scope} RESULT skipped reason={language} already exists total={_duration_s(started_at)}")
+            _log(f"{scope} 结果：跳过，原因={language} 已存在（总耗时 {_duration_s(started_at)}）")
             return {"slot": slot_idx, "status": "skipped", "reason": f"{language} already exists"}
 
         cancellation.throw_if_cancelled(cancel_token)
         language_info = _run_step(
             scope,
-            f"select language {language}",
+            f"选择语言 {language}",
             lambda: _select_language(frame, language),
-            lambda value: f"ok value={dict(value).get('value') or '-'}",
+            lambda value: f"选中值={dict(value).get('value') or '-'}",
         )
-        _pause_after_action(frame, scope, "select language", cancel_token=cancel_token)
+        _pause_after_action(frame, scope, "选择语言", cancel_token=cancel_token)
 
         cancellation.throw_if_cancelled(cancel_token)
         file_state = _run_step(
             scope,
-            "set upload file",
+            "设置上传文件",
             lambda: _set_upload_file(frame, local_image_path, cancel_token=cancel_token),
             lambda value: (
-                f"ok selected_files={','.join(dict(value).get('names') or []) or '-'} "
-                f"input_count={int(dict(value).get('count') or 0)} "
-                f"continued={bool(dict(value).get('continued'))}"
+                f"已选文件={','.join(dict(value).get('names') or []) or '-'} "
+                f"input 数量={int(dict(value).get('count') or 0)} "
+                f"已继续={bool(dict(value).get('continued'))}"
             ),
         )
-        _pause_after_action(frame, scope, "set upload file", cancel_token=cancel_token)
+        _pause_after_action(frame, scope, "设置上传文件", cancel_token=cancel_token)
 
         cancellation.throw_if_cancelled(cancel_token)
         save_info = _run_step(
             scope,
-            "click Save and wait dialog close",
+            "点击 Save 并等待对话框关闭",
             lambda: _click_save_and_wait(frame),
-            lambda value: f"ok dialog_closed={bool(dict(value).get('dialog_closed'))}",
+            lambda value: f"对话框已关闭={bool(dict(value).get('dialog_closed'))}",
         )
-        _pause_after_action(frame, scope, "save", cancel_token=cancel_token)
-        _log(f"{scope} RESULT ok total={_duration_s(started_at)}")
+        _pause_after_action(frame, scope, "保存", cancel_token=cancel_token)
+        _log(f"{scope} 结果：成功（总耗时 {_duration_s(started_at)}）")
         return {"slot": slot_idx, "status": "ok", "path": local_image_path}
     except Exception as exc:
-        _log(f"{scope} RESULT failed total={_duration_s(started_at)} error={exc}")
+        _log(f"{scope} 结果：失败（总耗时 {_duration_s(started_at)}）错误={exc}")
         _run_step(
             scope,
-            "close dialog after failure",
+            "失败后关闭对话框",
             lambda: _click_cancel(frame),
-            lambda value: f"closed={bool(value)}",
+            lambda value: f"已关闭={bool(value)}",
         )
         raise
 
@@ -484,23 +485,23 @@ def replace_many(
     started_at = time.perf_counter()
     selected_pairs = pairs[:limit] if limit is not None else pairs
     _log(
-        f"[carousel] START replace_many url={ez_url} language={language} "
-        f"requested={len(selected_pairs)} total_pairs={len(pairs)} limit={limit or 'all'}"
+        f"[轮播图] 开始批量替换：地址={ez_url} 语言={language} "
+        f"待处理={len(selected_pairs)} 总配对={len(pairs)} 限制={limit or '不限'}"
     )
     _run_step(
-        "[carousel]",
-        "ensure Chrome CDP",
-        lambda: ensure_cdp_chrome(user_data_dir, ez_url, port=port, cancel_token=cancel_token),
-        lambda value: f"ok started_new_chrome={bool(value)} port={port}",
+        "[轮播图]",
+        "准备 Chrome CDP",
+        lambda: ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token),
+        lambda value: f"是否新启动 Chrome={bool(value)} 端口={port}",
     )
     results: list[dict] = []
     try:
         with sync_playwright() as playwright:
             browser = _run_step(
-                "[carousel]",
-                "connect Chrome CDP",
+                "[轮播图]",
+                "连接 Chrome CDP",
                 lambda: playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port)),
-                lambda value: f"ok contexts={len(getattr(value, 'contexts', []) or [])}",
+                lambda value: f"context 数={len(getattr(value, 'contexts', []) or [])}",
             )
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             context.set_default_timeout(15000)
@@ -508,41 +509,41 @@ def replace_many(
             try:
                 cancellation.throw_if_cancelled(cancel_token)
                 _run_step(
-                    "[carousel]",
-                    "open EZ page",
+                    "[轮播图]",
+                    "打开 EZ 页面",
                     lambda: page.goto(ez_url, wait_until="domcontentloaded", timeout=30000),
-                    lambda _value: "ok wait_until=domcontentloaded",
+                    lambda _value: "DOM 加载完成",
                 )
                 frame = _run_step(
-                    "[carousel]",
-                    "wait EZ iframe and image buttons",
+                    "[轮播图]",
+                    "等待 EZ iframe 与图片按钮",
                     lambda: _wait_plugin_frame(page, cancel_token=cancel_token),
-                    lambda value: f"ok frame_url={getattr(value, 'url', '') or '-'}",
+                    lambda value: f"frame 地址={getattr(value, 'url', '') or '-'}",
                 )
                 scan_result = _run_step(
-                    "[carousel]",
-                    "scan existing language markers",
+                    "[轮播图]",
+                    "扫描已有语言标记",
                     lambda: filter_pairs_missing_language_markers(frame, selected_pairs, language),
-                    lambda value: f"ok skipped={len(value[0])} pending={len(value[1])}",
+                    lambda value: f"已跳过={len(value[0])} 待处理={len(value[1])}",
                 )
                 skipped_results, pending_pairs = scan_result
                 results.extend(skipped_results)
                 if skipped_results:
                     _log(
-                        f"[carousel] {len(skipped_results)} slot(s) already have {language}; "
-                        f"pending {len(pending_pairs)}"
+                        f"[轮播图] {len(skipped_results)} 个位置已有 {language}；"
+                        f"待处理 {len(pending_pairs)} 个"
                     )
                 if not pending_pairs and selected_pairs:
-                    _log(f"[carousel] all {len(selected_pairs)} slot(s) already have {language}; skipping upload")
+                    _log(f"[轮播图] 全部 {len(selected_pairs)} 个位置已有 {language}，跳过上传")
                 for slot_idx, path in pending_pairs:
                     cancellation.throw_if_cancelled(cancel_token)
-                    _log(f"[carousel][slot {slot_idx}] QUEUED path={path}")
+                    _log(f"[轮播图][位置 {slot_idx}] 已入队 路径={path}")
                     try:
                         frame = _run_step(
-                            f"[carousel][slot {slot_idx}]",
-                            "refresh EZ iframe before slot",
+                            f"[轮播图][位置 {slot_idx}]",
+                            "替换前刷新 EZ iframe",
                             lambda: _wait_plugin_frame(page, cancel_token=cancel_token),
-                            lambda value: f"ok frame_url={getattr(value, 'url', '') or '-'}",
+                            lambda value: f"frame 地址={getattr(value, 'url', '') or '-'}",
                         )
                         row = replace_slot(
                             frame,
@@ -553,11 +554,11 @@ def replace_many(
                             cancel_token=cancel_token,
                         )
                         results.append(row)
-                        _log(f"[carousel][slot {slot_idx}] FINAL status={row.get('status')} path={path}")
+                        _log(f"[轮播图][位置 {slot_idx}] 完成 状态={row.get('status')} 路径={path}")
                     except cancellation.OperationCancelled:
                         raise
                     except Exception as exc:
-                        _log(f"[carousel][slot {slot_idx}] FINAL status=failed error={exc} path={path}")
+                        _log(f"[轮播图][位置 {slot_idx}] 失败 错误={exc} 路径={path}")
                         results.append({
                             "slot": slot_idx,
                             "status": "failed",
@@ -566,21 +567,21 @@ def replace_many(
                         })
             finally:
                 try:
-                    _run_step("[carousel]", "close EZ automation page", page.close)
+                    _run_step("[轮播图]", "关闭 EZ 自动化页面", page.close)
                 except Exception:
                     pass
                 try:
-                    _run_step("[carousel]", "disconnect Chrome CDP", browser.close)
+                    _run_step("[轮播图]", "断开 Chrome CDP", browser.close)
                 except Exception:
                     pass
     except Exception as exc:
-        _log(f"[carousel] RESULT failed total={_duration_s(started_at)} error={exc}")
+        _log(f"[轮播图] 整体失败（总耗时 {_duration_s(started_at)}）错误={exc}")
         raise
     ok_count = sum(1 for row in results if row.get("status") == "ok")
     skipped_count = sum(1 for row in results if row.get("status") == "skipped")
     failed_count = sum(1 for row in results if row.get("status") not in {"ok", "skipped"})
     _log(
-        f"[carousel] RESULT done requested={len(selected_pairs)} ok={ok_count} "
-        f"skipped={skipped_count} failed={failed_count} total={_duration_s(started_at)}"
+        f"[轮播图] 整体完成：请求={len(selected_pairs)} 成功={ok_count} "
+        f"跳过={skipped_count} 失败={failed_count}（总耗时 {_duration_s(started_at)}）"
     )
     return results

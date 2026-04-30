@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 from tools.shopify_image_localizer import api_client, cancellation, controller, settings, storage, version
 
@@ -24,8 +25,14 @@ class ShopifyImageLocalizerApp:
 
         self.root = tk.Tk()
         self.root.title(f"Shopify 图片本地化替换 v{version.RELEASE_VERSION}")
-        self.root.geometry("920x760")
-        self.root.minsize(780, 620)
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        win_w = int(screen_w * 0.8)
+        win_h = int(screen_h * 0.8)
+        win_x = int(screen_w * 0.1)
+        win_y = int(screen_h * 0.1)
+        self.root.geometry(f"{win_w}x{win_h}+{win_x}+{win_y}")
+        self.root.minsize(960, 680)
         self.root.resizable(True, True)
 
         self.base_url_var = tk.StringVar(value=runtime_config["base_url"])
@@ -43,6 +50,13 @@ class ShopifyImageLocalizerApp:
         self._workspace_root = ""
         self._download_dir = ""
         self._current_cancel_token: cancellation.CancellationToken | None = None
+        self.progress_current_var = tk.StringVar(value="当前：等待启动")
+        self.progress_total_var = tk.StringVar(value="总耗时 00:00")
+        self._progress_started_at: float | None = None
+        self._progress_step_started_at: float | None = None
+        self._progress_current_iid: str | None = None
+        self._progress_tick_after_id: str | None = None
+        self._progress_running: bool = False
 
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True, padx=16, pady=16)
@@ -66,14 +80,20 @@ class ShopifyImageLocalizerApp:
             height=2,
         )
         self.login_shopify_button.pack(side="left")
+        self._login_shopify_tip_full_text = "第一次用或者店铺登录掉线，先点左侧按钮"
         self.login_shopify_tip_label = tk.Label(
             self.login_shopify_frame,
-            text="第一次使用或者店铺登录状态掉线，先从这里登录店铺，再操作后续",
+            text=self._login_shopify_tip_full_text,
             justify="left",
+            anchor="w",
             fg="red",
-            wraplength=620,
+            font=("TkDefaultFont", 27, "bold"),
         )
-        self.login_shopify_tip_label.pack(side="left", padx=(12, 0))
+        self.login_shopify_tip_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
+        self.login_shopify_tip_label.bind(
+            "<Configure>",
+            lambda _event: self._refresh_login_tip(),
+        )
 
         tk.Label(self.main_frame, text="商品 ID").pack(anchor="w")
         self.product_code_entry = tk.Entry(self.main_frame, textvariable=self.product_code_var, width=80)
@@ -189,9 +209,58 @@ class ShopifyImageLocalizerApp:
         self.status_label.pack(anchor="w", pady=(4, 8))
 
     def _build_summary(self) -> None:
-        tk.Label(self.main_frame, text="运行摘要", anchor="w").pack(anchor="w")
+        self.progress_summary_pane = tk.Frame(self.main_frame)
+        self.progress_summary_pane.pack(fill="x", pady=(0, 10))
+
+        progress_pane = tk.Frame(self.progress_summary_pane)
+        progress_pane.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        tk.Label(progress_pane, text="实时进度", anchor="w").pack(anchor="w")
+        progress_status_frame = tk.Frame(progress_pane)
+        progress_status_frame.pack(fill="x", pady=(2, 4))
+        tk.Label(
+            progress_status_frame,
+            textvariable=self.progress_current_var,
+            anchor="w",
+            justify="left",
+            fg="#0d47a1",
+            wraplength=420,
+        ).pack(side="left", fill="x", expand=True)
+        tk.Label(
+            progress_status_frame,
+            textvariable=self.progress_total_var,
+            anchor="e",
+            fg="#555",
+        ).pack(side="right")
+
+        progress_tree_frame = tk.Frame(progress_pane)
+        progress_tree_frame.pack(fill="both", expand=True)
+        self.progress_tree = ttk.Treeview(
+            progress_tree_frame,
+            columns=("time", "step", "elapsed"),
+            show="headings",
+            selectmode="none",
+            height=9,
+        )
+        self.progress_tree.heading("time", text="时间")
+        self.progress_tree.heading("step", text="步骤")
+        self.progress_tree.heading("elapsed", text="耗时")
+        self.progress_tree.column("time", width=70, anchor="w", stretch=False)
+        self.progress_tree.column("step", width=320, anchor="w", stretch=True)
+        self.progress_tree.column("elapsed", width=70, anchor="e", stretch=False)
+        self.progress_tree.tag_configure("running", background="#e3f2fd")
+        progress_scroll = ttk.Scrollbar(progress_tree_frame, orient="vertical", command=self.progress_tree.yview)
+        self.progress_tree.configure(yscrollcommand=progress_scroll.set)
+        self.progress_tree.pack(side="left", fill="both", expand=True)
+        progress_scroll.pack(side="right", fill="y")
+
+        summary_pane = tk.Frame(self.progress_summary_pane)
+        summary_pane.pack(side="right", fill="both", expand=True, padx=(8, 0))
+        tk.Label(summary_pane, text="运行摘要", anchor="w").pack(anchor="w")
+        tk.Frame(summary_pane, height=22).pack(fill="x", pady=(2, 4))
+        summary_tree_frame = tk.Frame(summary_pane)
+        summary_tree_frame.pack(fill="both", expand=True)
         self.summary_tree = ttk.Treeview(
-            self.main_frame,
+            summary_tree_frame,
             columns=("item", "value"),
             show="headings",
             selectmode="none",
@@ -199,13 +268,16 @@ class ShopifyImageLocalizerApp:
         )
         self.summary_tree.heading("item", text="项目")
         self.summary_tree.heading("value", text="结果")
-        self.summary_tree.column("item", width=180, anchor="w")
-        self.summary_tree.column("value", width=680, anchor="w")
-        self.summary_tree.pack(fill="x", pady=(4, 10))
+        self.summary_tree.column("item", width=140, anchor="w", stretch=False)
+        self.summary_tree.column("value", width=320, anchor="w", stretch=True)
+        summary_scroll = ttk.Scrollbar(summary_tree_frame, orient="vertical", command=self.summary_tree.yview)
+        self.summary_tree.configure(yscrollcommand=summary_scroll.set)
+        self.summary_tree.pack(side="left", fill="both", expand=True)
+        summary_scroll.pack(side="right", fill="y")
 
     def _build_log(self) -> None:
         tk.Label(self.main_frame, text="实时日志", anchor="w").pack(anchor="w")
-        self.log_widget = tk.Text(self.main_frame, height=12, width=110)
+        self.log_widget = tk.Text(self.main_frame, height=10, width=110)
         self.log_widget.pack(fill="both", expand=True, pady=(4, 0))
 
     def _append_log(self, message: str) -> None:
@@ -218,6 +290,151 @@ class ShopifyImageLocalizerApp:
 
     def _add_summary(self, item: str, value: object) -> None:
         self.summary_tree.insert("", "end", values=(item, "" if value is None else str(value)))
+
+    def _refresh_login_tip(self) -> None:
+        label = self.login_shopify_tip_label
+        full = self._login_shopify_tip_full_text
+        avail = label.winfo_width()
+        if avail <= 1:
+            return
+        font = tkfont.Font(font=label.cget("font"))
+        if font.measure(full) <= avail:
+            if label.cget("text") != full:
+                label.configure(text=full)
+            return
+        ellipsis = "…"
+        lo, hi = 0, len(full) - 1
+        best = 0
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            candidate = full[:mid] + ellipsis
+            if font.measure(candidate) <= avail:
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        truncated = (full[:best] + ellipsis) if best > 0 else ellipsis
+        if label.cget("text") != truncated:
+            label.configure(text=truncated)
+
+    @staticmethod
+    def _format_elapsed(seconds: float) -> str:
+        total = max(int(seconds), 0)
+        if total >= 3600:
+            hours, remainder = divmod(total, 3600)
+            minutes, secs = divmod(remainder, 60)
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        minutes, secs = divmod(total, 60)
+        return f"{minutes:02d}:{secs:02d}"
+
+    def _progress_clear(self) -> None:
+        if self._progress_tick_after_id is not None:
+            try:
+                self.root.after_cancel(self._progress_tick_after_id)
+            except Exception:
+                pass
+            self._progress_tick_after_id = None
+        for iid in self.progress_tree.get_children():
+            self.progress_tree.delete(iid)
+        self._progress_current_iid = None
+        self._progress_started_at = None
+        self._progress_step_started_at = None
+        self._progress_running = False
+        self.progress_current_var.set("当前：等待启动")
+        self.progress_total_var.set("总耗时 00:00")
+
+    def _progress_start(self, message: str) -> None:
+        self._progress_clear()
+        now = time.monotonic()
+        self._progress_started_at = now
+        self._progress_running = True
+        self._progress_record_step(message, _now=now)
+        self._progress_schedule_tick()
+
+    @staticmethod
+    def _is_meaningful_step(message: str) -> bool:
+        text = (message or "").strip()
+        if not text:
+            return False
+        if text in {"{", "}", "[", "]", "},", "],"}:
+            return False
+        if text.endswith(",") and text.startswith(("{", "[", '"')):
+            return False
+        if text.startswith('"') and '"' in text[1:] and ':' in text:
+            return False
+        first_token = text.split(None, 1)[0] if text else ""
+        if first_token.endswith(":") and first_token.startswith('"'):
+            return False
+        return True
+
+    def _progress_record_step(self, message: str, *, _now: float | None = None) -> None:
+        if not self._progress_running:
+            return
+        if not self._is_meaningful_step(message):
+            return
+        now = _now if _now is not None else time.monotonic()
+        if self._progress_current_iid is not None and self._progress_step_started_at is not None:
+            elapsed = self._format_elapsed(now - self._progress_step_started_at)
+            try:
+                self.progress_tree.set(self._progress_current_iid, "elapsed", elapsed)
+                self.progress_tree.item(self._progress_current_iid, tags=())
+            except tk.TclError:
+                pass
+        timestamp = time.strftime("%H:%M:%S")
+        iid = self.progress_tree.insert(
+            "",
+            "end",
+            values=(timestamp, message, "00:00"),
+            tags=("running",),
+        )
+        self.progress_tree.see(iid)
+        self._progress_current_iid = iid
+        self._progress_step_started_at = now
+        self.progress_current_var.set(f"当前：{message}")
+
+    def _progress_finish(self, final_message: str | None = None) -> None:
+        if not self._progress_running:
+            return
+        now = time.monotonic()
+        if self._progress_current_iid is not None and self._progress_step_started_at is not None:
+            elapsed = self._format_elapsed(now - self._progress_step_started_at)
+            try:
+                self.progress_tree.set(self._progress_current_iid, "elapsed", elapsed)
+                self.progress_tree.item(self._progress_current_iid, tags=())
+            except tk.TclError:
+                pass
+        if self._progress_started_at is not None:
+            self.progress_total_var.set(
+                f"总耗时 {self._format_elapsed(now - self._progress_started_at)}"
+            )
+        self.progress_current_var.set(f"当前：{final_message}" if final_message else "当前：已结束")
+        if self._progress_tick_after_id is not None:
+            try:
+                self.root.after_cancel(self._progress_tick_after_id)
+            except Exception:
+                pass
+            self._progress_tick_after_id = None
+        self._progress_running = False
+
+    def _progress_schedule_tick(self) -> None:
+        self._progress_tick_after_id = self.root.after(1000, self._progress_tick)
+
+    def _progress_tick(self) -> None:
+        self._progress_tick_after_id = None
+        if not self._progress_running:
+            return
+        now = time.monotonic()
+        if self._progress_current_iid is not None and self._progress_step_started_at is not None:
+            elapsed = self._format_elapsed(now - self._progress_step_started_at)
+            try:
+                self.progress_tree.set(self._progress_current_iid, "elapsed", elapsed)
+            except tk.TclError:
+                return
+        if self._progress_started_at is not None:
+            self.progress_total_var.set(
+                f"总耗时 {self._format_elapsed(now - self._progress_started_at)}"
+            )
+        self._progress_schedule_tick()
 
     def toggle_advanced(self) -> None:
         if self.advanced_visible:
@@ -241,6 +458,8 @@ class ShopifyImageLocalizerApp:
         self.product_code_entry.configure(state=state)
         self.shopify_product_id_entry.configure(state=state)
         self.language_box.configure(state="disabled" if running else "readonly")
+        if not running:
+            self._progress_finish()
 
     def request_stop(self) -> None:
         if self._current_cancel_token is None or self._current_cancel_token.is_cancelled():
@@ -376,6 +595,9 @@ class ShopifyImageLocalizerApp:
         self._current_cancel_token = cancel_token
         self._set_running_state(True, stoppable=True)
         self._clear_summary()
+        self._progress_start(
+            f"任务已启动：{product_code} / {lang_code}"
+        )
         workspace = storage.create_workspace(product_code, lang_code)
         self._workspace_root = str(workspace.root)
         self._download_dir = str(workspace.source_localized_dir)
@@ -428,6 +650,7 @@ class ShopifyImageLocalizerApp:
 
         target_name = "EZ 页面" if target == "ez" else "详情页"
         self._set_running_state(True)
+        self._progress_start(f"正在打开 {target_name}")
         self.status_var.set(f"正在打开 {target_name}")
         self._append_log(
             f"准备打开 {target_name}：product_code={product_code}, lang={lang_code}, "
@@ -449,6 +672,7 @@ class ShopifyImageLocalizerApp:
             return
 
         self._set_running_state(True)
+        self._progress_start("正在打开 Shopify 产品列表页")
         self.status_var.set("正在打开 Shopify 产品列表页")
         self._append_log("准备打开 Shopify 产品列表页用于店铺登录")
         threading.Thread(
@@ -483,6 +707,7 @@ class ShopifyImageLocalizerApp:
         self._add_summary("URL", result.get("url"))
         self.status_var.set("已打开 Shopify 产品列表页")
         self._append_log(f"已打开 Shopify 产品列表页，请在浏览器里手动登录店铺：{result.get('url')}")
+        self._progress_finish("已打开 Shopify 产品列表页")
 
     def _open_shopify_target_worker(
         self,
@@ -525,6 +750,7 @@ class ShopifyImageLocalizerApp:
         self._add_summary("URL", result.get("url"))
         self.status_var.set(f"已打开 {target_name}")
         self._append_log(f"已打开 {target_name}：{result.get('url')}")
+        self._progress_finish(f"已打开 {target_name}")
 
     def _run(
         self,
@@ -562,16 +788,20 @@ class ShopifyImageLocalizerApp:
             self.root.after(0, self._render_cancelled)
         except Exception as exc:
             self.root.after(0, self.status_var.set, "执行失败")
-            self.root.after(0, self._append_log, f"执行失败：{exc}")
-            self.root.after(0, messagebox.showerror, "执行失败", str(exc))
+            self.root.after(0, self._append_log, f"================ 任务已结束（执行失败）— 详情请看运行摘要 ================")
+            self.root.after(0, self._append_log, f"失败原因：{exc}")
+            self.root.after(0, self._add_summary, "任务状态", f"执行失败：{exc}")
+            self.root.after(0, messagebox.showerror, "任务失败", f"执行失败：{exc}\n\n详情请看运行摘要")
         finally:
             self._current_cancel_token = None
             self.root.after(0, self._set_running_state, False)
 
     def _render_cancelled(self) -> None:
         self.status_var.set("已停止")
-        self._append_log("任务已停止")
+        self._append_log("================ 任务已结束（用户取消）— 详情请看运行摘要 ================")
         self._add_summary("任务状态", "已停止")
+        self._progress_finish("任务已停止")
+        messagebox.showinfo("任务结束", "任务已停止，详情请看运行摘要", parent=self.root)
 
     def _render_result(self, result: dict) -> None:
         self._handle_shopify_product_id(result.get("shopify_product_id"))
@@ -629,11 +859,15 @@ class ShopifyImageLocalizerApp:
             )
 
         self.status_var.set("执行完成")
-        self._append_log("执行完成")
+        self._append_log("================ 任务已结束（执行完成）— 详情请看运行摘要 ================")
+        self._add_summary("任务状态", "已完成")
+        self._progress_finish("执行完成")
+        messagebox.showinfo("任务结束", "执行完成，详情请看运行摘要", parent=self.root)
 
     def _handle_status(self, message: str) -> None:
         self.status_var.set(message)
         self._append_log(message)
+        self._progress_record_step(message)
 
     def _handle_shopify_product_id(self, product_id: object) -> None:
         value = str(product_id or "").strip()

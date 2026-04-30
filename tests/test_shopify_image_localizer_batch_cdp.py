@@ -1288,9 +1288,10 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     assert ("replace_slot", 0, "C:/tmp/a.jpg", "German") not in calls
     assert ("replace_slot", 1, "C:/tmp/b.jpg", "German") in calls
     output = capsys.readouterr().out
-    assert "[carousel] START open EZ page" in output
-    assert "[carousel] END scan existing language markers: ok skipped=1 pending=1" in output
-    assert "[carousel] RESULT done requested=2 ok=1 skipped=1 failed=0" in output
+    assert "[轮播图] 开始：打开 EZ 页面" in output
+    assert "[轮播图] 完成：扫描已有语言标记" in output
+    assert "已跳过=1 待处理=1" in output
+    assert "[轮播图] 整体完成：请求=2 成功=1 跳过=1 失败=0" in output
 
 
 def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
@@ -1394,10 +1395,10 @@ def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch,
 
     output = capsys.readouterr().out
     assert result["status"] == "ok"
-    assert "[carousel][slot 0] START open translation dialog" in output
-    assert "[carousel][slot 0] END set upload file: ok" in output
-    assert "selected_files=loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg" in output
-    assert "[carousel][slot 0] RESULT ok" in output
+    assert "[轮播图][位置 0] 开始：打开翻译对话框" in output
+    assert "[轮播图][位置 0] 完成：设置上传文件" in output
+    assert "已选文件=loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg" in output
+    assert "[轮播图][位置 0] 结果：成功" in output
     assert ("wait_for_timeout", 1000) in calls
 
 

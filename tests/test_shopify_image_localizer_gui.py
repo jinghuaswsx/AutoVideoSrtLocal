@@ -12,6 +12,9 @@ from tools.shopify_image_localizer import cancellation, gui
 
 def _make_app(monkeypatch: pytest.MonkeyPatch) -> gui.ShopifyImageLocalizerApp:
     monkeypatch.setattr(gui.ShopifyImageLocalizerApp, "_load_languages_async", lambda self: None)
+    monkeypatch.setattr(gui.messagebox, "showinfo", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showerror", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *args, **kwargs: None)
     try:
         app = gui.ShopifyImageLocalizerApp(prompt_on_start=False)
     except tk.TclError as exc:
@@ -33,7 +36,7 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
         advanced_index = packed_widgets.index(app.advanced_frame)
 
         errors: list[str] = []
-        if advanced_index >= packed_widgets.index(app.summary_tree):
+        if advanced_index >= packed_widgets.index(app.progress_summary_pane):
             errors.append("advanced settings are packed below the summary table")
         if advanced_index >= packed_widgets.index(app.log_widget):
             errors.append("advanced settings are packed below the log widget")
@@ -103,7 +106,7 @@ def test_gui_login_shopify_button_opens_products_page(monkeypatch: pytest.Monkey
         assert app.login_shopify_tip_label["fg"] == "red"
         assert (
             app.login_shopify_tip_label["text"]
-            == "第一次使用或者店铺登录状态掉线，先从这里登录店铺，再操作后续"
+            == "第一次用或者店铺登录掉线，先点左侧按钮"
         )
 
         packed_widgets = app.main_frame.pack_slaves()
