@@ -955,6 +955,11 @@ def replace_detail_images(
                 "match_method": row.get("match_method"),
                 "candidate_sha": candidate_sha,
             })
+            # 节流：避免 Shopify CDN 短时间大量上传被限流（之前实测会触发
+            # WinError 10054 远程主机强迫关闭连接）。最后一张不需要等。
+            if upload_idx < total:
+                print(f"详情图：节流等待 1 秒，避免触发 Shopify CDN 上传限流")
+                cancellation.cancellable_sleep(cancel_token, 1.0)
         taa.close_modal()
 
         save_events: list[dict[str, Any]] = []
