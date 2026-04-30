@@ -514,6 +514,110 @@ def push_product_links(product: dict | None) -> dict:
     return result
 
 
+_UNSUITABLE_PRODUCT_TEXT = "这个产品有问题，不做，不要投放不要投放不要投放"
+_UNSUITABLE_PRODUCT_TYPE = "unsuitable_product"
+
+
+def build_unsuitable_product_push_preview(product: dict | None) -> dict:
+    """组装“不合适产品”投放推送预览。
+
+    该入口只推一条英语文案，不推任何商品链接。
+    """
+    if not isinstance(product, dict):
+        raise ProductLinksPayloadError("product_not_found")
+    if not medias.is_product_listed(product):
+        raise ProductNotListedError("product_not_listed")
+
+    source_handle = str(product.get("product_code") or "").strip()
+    target_url = get_push_target_url()
+    if not target_url:
+        raise ProductLinksPushConfigError("push_target_url_missing")
+
+    text_payload = {
+        "lang": "英语",
+        "title": _UNSUITABLE_PRODUCT_TEXT,
+        "message": _UNSUITABLE_PRODUCT_TEXT,
+        "description": _UNSUITABLE_PRODUCT_TEXT,
+    }
+    payload = {
+        "type": _UNSUITABLE_PRODUCT_TYPE,
+        "mode": "create",
+        "product_name": product.get("name") or "",
+        "texts": [text_payload],
+        "product_links": [],
+        "videos": [],
+        "source": 0,
+        "level": int(product.get("importance") or 3),
+        "author": _FIXED_AUTHOR,
+        "push_admin": _FIXED_AUTHOR,
+        "roas": 1.6,
+        "platforms": ["tiktok"],
+        "selling_point": product.get("selling_points") or "",
+        "tags": [],
+    }
+    structured = {
+        "type": _UNSUITABLE_PRODUCT_TYPE,
+        "source_handle": source_handle,
+        "language": "en",
+        "language_name": "英语",
+        "texts_count": 1,
+        "links_count": 0,
+        "text": _UNSUITABLE_PRODUCT_TEXT,
+    }
+    return {
+        "target_url": target_url,
+        "structured": structured,
+        "payload": payload,
+        "links": [],
+        "texts": [text_payload],
+    }
+
+
+def push_unsuitable_product(product: dict | None) -> dict:
+    preview = build_unsuitable_product_push_preview(product)
+    target_url = preview["target_url"]
+    payload = preview["payload"]
+    try:
+        resp = requests.post(
+            target_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        return {
+            "ok": False,
+            "error": "downstream_unreachable",
+            "detail": str(exc),
+            "target_url": target_url,
+            "payload": payload,
+        }
+
+    body_text = resp.text or ""
+    parsed: dict[str, Any] = {}
+    try:
+        loaded = resp.json()
+        if isinstance(loaded, dict):
+            parsed = loaded
+    except ValueError:
+        parsed = {}
+
+    result: dict[str, Any] = {
+        "ok": bool(resp.ok),
+        "upstream_status": resp.status_code,
+        "response_body": body_text[:4000],
+        "target_url": target_url,
+        "payload": payload,
+    }
+    if parsed:
+        result["downstream_response"] = parsed
+    if not resp.ok:
+        result["error"] = "downstream_error"
+        result["message"] = parsed.get("message") or f"HTTP {resp.status_code}"
+        result["upstream_code"] = parsed.get("code")
+    return result
+
+
 def probe_ad_url(url: str) -> tuple[bool, str | None]:
     """HEAD 请求探活。返回 (ok, error_message)。"""
     if not url:

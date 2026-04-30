@@ -39,6 +39,43 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     }
 
 
+def test_build_unsuitable_product_push_preview_uses_single_english_text_without_links(monkeypatch):
+    from appcore import pushes
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "get_push_target_url", lambda: "https://os.wedev.vip/dify/shopify/medias")
+
+    def fail_probe(url):
+        raise AssertionError("unsuitable push must not probe or push product links")
+
+    monkeypatch.setattr(pushes, "probe_ad_url", fail_probe)
+
+    preview = pushes.build_unsuitable_product_push_preview({
+        "id": 10,
+        "name": "Demo",
+        "product_code": "demo-rjc",
+        "importance": 2,
+        "selling_points": "point",
+    })
+
+    assert preview["target_url"] == "https://os.wedev.vip/dify/shopify/medias"
+    assert preview["structured"]["type"] == "unsuitable_product"
+    assert preview["structured"]["language"] == "en"
+    assert preview["structured"]["language_name"] == "英语"
+    assert preview["structured"]["links_count"] == 0
+    assert preview["links"] == []
+    assert preview["payload"]["type"] == "unsuitable_product"
+    assert preview["payload"]["product_links"] == []
+    assert len(preview["payload"]["texts"]) == 1
+    assert preview["payload"]["texts"][0] == {
+        "lang": "英语",
+        "title": "这个产品有问题，不做，不要投放不要投放不要投放",
+        "message": "这个产品有问题，不做，不要投放不要投放不要投放",
+        "description": "这个产品有问题，不做，不要投放不要投放不要投放",
+    }
+    assert preview["payload"]["videos"] == []
+
+
 def test_medias_product_links_push_payload_endpoint_returns_preview(
     authed_client_no_db, monkeypatch,
 ):
@@ -156,6 +193,55 @@ def test_medias_product_links_push_endpoint_posts_to_downstream(
     assert resp.get_json() == result
 
 
+def test_medias_unsuitable_product_push_payload_endpoint_returns_preview(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    preview = {
+        "target_url": "https://os.wedev.vip/dify/shopify/medias",
+        "structured": {"type": "unsuitable_product"},
+        "payload": {"type": "unsuitable_product", "product_links": [], "texts": [{"lang": "英语"}]},
+        "links": [],
+        "texts": [{"lang": "英语", "title": "T", "message": "M", "description": "D"}],
+    }
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr(
+        "web.routes.medias.pushes.build_unsuitable_product_push_preview",
+        lambda row: preview,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.get("/medias/api/products/10/product-unsuitable-push/payload")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == preview
+
+
+def test_medias_unsuitable_product_push_endpoint_posts_to_downstream(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    result = {
+        "ok": True,
+        "upstream_status": 200,
+        "response_body": '{"code":0}',
+        "target_url": "https://os.wedev.vip/dify/shopify/medias",
+    }
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+    monkeypatch.setattr(
+        "web.routes.medias.pushes.push_unsuitable_product",
+        lambda row: result,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post("/medias/api/products/10/product-unsuitable-push")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == result
+
+
 def test_build_product_localized_texts_push_preview_reuses_product_texts(monkeypatch):
     from appcore import pushes
 
@@ -267,6 +353,25 @@ def test_medias_assets_include_product_link_push_entry():
     assert "product-localized-texts-push" in script
     assert "id=\"productLinksPushModalMask\"" in template
     assert "id=\"productCopyPushModalMask\"" in template
+
+
+def test_medias_assets_include_unsuitable_product_push_entry():
+    from pathlib import Path
+
+    template = Path("web/templates/medias_list.html").read_text(encoding="utf-8")
+    script = Path("web/static/medias.js").read_text(encoding="utf-8")
+
+    assert "data-product-unsuitable-push" in script
+    assert "推送不合适" in script
+    assert "openProductUnsuitablePushModal" in script
+    assert "submitProductUnsuitablePush" in script
+    assert "product-unsuitable-push/payload" in script
+    assert "product-unsuitable-push" in script
+    assert "id=\"productUnsuitablePushModalMask\"" in template
+    assert "id=\"productUnsuitablePushInfo\"" in template
+    assert "id=\"productUnsuitablePushStructured\"" in template
+    assert "id=\"productUnsuitablePushJson\"" in template
+    assert "不合适产品 JSON 预览" in template
 
 
 
