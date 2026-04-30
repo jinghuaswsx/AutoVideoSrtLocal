@@ -505,7 +505,18 @@ def replace_many(
             )
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             context.set_default_timeout(15000)
-            page = context.new_page()
+            # 复用 _preload_chrome_tab_to_url 已经打开的 EZ tab（视觉识别期间预热的那个），
+            # 避免再 new_page 多开一个一模一样的 EZ 页面。找不到现成的才新建。
+            existing_ez_pages = [p for p in (getattr(context, "pages", None) or []) if "ez-product-image-translate" in (getattr(p, "url", "") or "")]
+            if existing_ez_pages:
+                page = existing_ez_pages[0]
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+                _log(f"[轮播图] 复用已有 EZ 页面 url={page.url}")
+            else:
+                page = context.new_page()
             try:
                 cancellation.throw_if_cancelled(cancel_token)
                 _run_step(

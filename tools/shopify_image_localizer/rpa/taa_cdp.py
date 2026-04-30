@@ -300,11 +300,20 @@ class TaaSession:
 
     def __enter__(self) -> "TaaSession":
         cancellation.throw_if_cancelled(self.cancel_token)
-        ez_cdp.ensure_cdp_chrome(self.user_data_dir, self.outer_url, port=self.port, cancel_token=self.cancel_token)
+        ez_cdp.ensure_cdp_chrome(self.user_data_dir, port=self.port, cancel_token=self.cancel_token)
         self._playwright = sync_playwright().start()
         self._browser = self._playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(self.port))
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-        self._page = context.new_page()
+        # 复用 _preload_chrome_tab_to_url 已经打开的 TAA tab，避免再 new_page 开重复窗口
+        existing_taa = [p for p in (getattr(context, "pages", None) or []) if "translate-and-adapt" in (getattr(p, "url", "") or "")]
+        if existing_taa:
+            self._page = existing_taa[0]
+            try:
+                self._page.bring_to_front()
+            except Exception:
+                pass
+        else:
+            self._page = context.new_page()
         cancellation.throw_if_cancelled(self.cancel_token)
         self._page.goto(self.outer_url, wait_until="domcontentloaded", timeout=30000)
         cancellation.throw_if_cancelled(self.cancel_token)
