@@ -505,30 +505,6 @@ def source_name_key(value: str) -> str | None:
     return f"name:{stem}" if stem else None
 
 
-def _shopify_safe_name(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", (value or "").lower()).strip("_")
-
-
-def is_already_localized_src(src: str, candidate: dict[str, Any]) -> bool:
-    if "cdn.shopify.com/s/files/" not in str(src or ""):
-        return False
-    filename = str(candidate.get("filename") or candidate.get("local_path") or "")
-    stem = Path(filename).stem
-    if stem and stem in src:
-        return True
-    src_token = ez_cdp.md5_token(src) or ""
-    candidate_token = str(candidate.get("token") or ez_cdp.md5_token(filename) or "")
-    if not src_token or not candidate_token or src_token != candidate_token:
-        return False
-    source_index = candidate.get("source_index")
-    source_index_match = source_index is None or f"from_url_en_{int(source_index):02d}" in src
-    if not source_index_match:
-        return False
-    safe_stem = _shopify_safe_name(stem)
-    safe_src = _shopify_safe_name(src)
-    return bool(safe_stem and safe_stem in safe_src)
-
-
 def build_localized_candidates(localized_images: list[dict]) -> dict[str, list[dict[str, Any]]]:
     candidates: dict[str, list[dict[str, Any]]] = {}
     for item in localized_images or []:
@@ -706,12 +682,11 @@ def plan_body_html_replacements(
             })
             continue
         is_shopify_cdn = "cdn.shopify.com/s/files/" in src
-        already_localized = is_already_localized_src(src, candidate)
-        if already_localized or (is_shopify_cdn and not replace_shopify_cdn):
+        if is_shopify_cdn and not replace_shopify_cdn:
             skipped_existing.append({
                 "token": token,
                 "src": src,
-                "reason": "already localized" if already_localized else "shopify cdn image skipped",
+                "reason": "shopify cdn image skipped",
                 "candidate": candidate,
             })
             continue
