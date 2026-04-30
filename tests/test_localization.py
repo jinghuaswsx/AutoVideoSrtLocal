@@ -5,6 +5,7 @@ import pytest
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_SYSTEM_PROMPT,
     TTS_SCRIPT_SYSTEM_PROMPT,
+    _derive_tts_script_indices,
     _subtitle_word_signature,
     build_localized_translation_messages,
     build_source_full_text_zh,
@@ -218,9 +219,9 @@ def test_validate_tts_script_balances_long_sentence_to_avoid_tiny_tail_chunks():
     assert all(5 <= count <= 10 for count in counts)
 
 
-def test_validate_tts_script_rejects_block_missing_source_segment_indices():
-    """LLM 偶尔漏返 source_segment_indices；早在 validate 阶段就给出明确 ValueError，
-    避免坏数据流到 build_tts_segments 抛 KeyError 弹 "错误：'source_segment_indices'"。"""
+def test_validate_tts_script_rejects_block_missing_source_segment_indices_when_no_sentences():
+    """没有传 sentences 时，validate 仍然按硬校验报 ValueError——保留作为最后防线，
+    避免坏数据无声进入 build_tts_segments。"""
     payload = {
         "full_text": "say it smooth.",
         "blocks": [
@@ -231,6 +232,149 @@ def test_validate_tts_script_rejects_block_missing_source_segment_indices():
 
     with pytest.raises(ValueError, match="source_segment_indices"):
         validate_tts_script(payload)
+
+
+def test_derive_tts_script_indices_fills_missing_source_segment_indices_from_sentence_indices():
+    """LLM 漏 source_segment_indices 但保留 sentence_indices 时，从 sentences 反查补齐。"""
+    sentences = [
+        {"index": 0, "text": "If your pants are too long.", "source_segment_indices": [0]},
+        {"index": 1, "text": "Stop paying tailors.", "source_segment_indices": [1, 2]},
+    ]
+    payload = {
+        "full_text": "If your pants are too long. Stop paying tailors.",
+        "blocks": [
+            {"index": 0, "text": "If your pants are too long.", "sentence_indices": [0]},
+            {"index": 1, "text": "Stop paying tailors.", "sentence_indices": [1]},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    derived = _derive_tts_script_indices(payload, sentences)
+
+    assert derived["blocks"][0]["source_segment_indices"] == [0]
+    assert derived["blocks"][1]["source_segment_indices"] == [1, 2]
+
+
+def test_derive_tts_script_indices_aligns_blocks_to_sentences_when_llm_omits_all_indices():
+    """LLM 同时漏 sentence_indices 和 source_segment_indices 时，
+    用 token-by-token 对齐把 block 文本归到对应 sentence。"""
+    sentences = [
+        {"index": 0, "text": "If your pants are too long.", "source_segment_indices": [0]},
+        {"index": 1, "text": "Stop paying tailors.", "source_segment_indices": [1]},
+    ]
+    payload = {
+        "full_text": "If your pants are too long. Stop paying tailors.",
+        "blocks": [
+            {"index": 0, "text": "If your pants are too long."},
+            {"index": 1, "text": "Stop paying tailors."},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    derived = _derive_tts_script_indices(payload, sentences)
+
+    assert derived["blocks"][0]["sentence_indices"] == [0]
+    assert derived["blocks"][0]["source_segment_indices"] == [0]
+    assert derived["blocks"][1]["sentence_indices"] == [1]
+    assert derived["blocks"][1]["source_segment_indices"] == [1]
+
+
+def test_derive_tts_script_indices_handles_block_spanning_multiple_sentences():
+    """block 一次合并多个 sentence 的内容时，sentence_indices 和 source_segment_indices 取 union。"""
+    sentences = [
+        {"index": 0, "text": "Hook line.", "source_segment_indices": [0]},
+        {"index": 1, "text": "Closing line.", "source_segment_indices": [1, 2]},
+    ]
+    payload = {
+        "full_text": "Hook line. Closing line.",
+        "blocks": [
+            {"index": 0, "text": "Hook line. Closing line."},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    derived = _derive_tts_script_indices(payload, sentences)
+
+    assert derived["blocks"][0]["sentence_indices"] == [0, 1]
+    assert derived["blocks"][0]["source_segment_indices"] == [0, 1, 2]
+
+
+def test_derive_tts_script_indices_infers_subtitle_chunks_from_blocks():
+    """subtitle_chunks 同样基于 blocks 反推所有派生索引，LLM 完全可以不输出 chunk-level indices。"""
+    sentences = [
+        {"index": 0, "text": "If your pants are too long are too long.",
+         "source_segment_indices": [0]},
+    ]
+    payload = {
+        "full_text": "If your pants are too long are too long.",
+        "blocks": [
+            {"index": 0, "text": "If your pants",
+             "sentence_indices": [0], "source_segment_indices": [0]},
+            {"index": 1, "text": "are too long are too long.",
+             "sentence_indices": [0], "source_segment_indices": [0]},
+        ],
+        "subtitle_chunks": [
+            {"index": 0, "text": "If your pants"},
+            {"index": 1, "text": "are too long"},
+            {"index": 2, "text": "are too long"},
+        ],
+    }
+
+    derived = _derive_tts_script_indices(payload, sentences)
+
+    assert derived["subtitle_chunks"][0]["block_indices"] == [0]
+    assert derived["subtitle_chunks"][0]["sentence_indices"] == [0]
+    assert derived["subtitle_chunks"][0]["source_segment_indices"] == [0]
+    assert derived["subtitle_chunks"][1]["block_indices"] == [1]
+    assert derived["subtitle_chunks"][2]["block_indices"] == [1]
+
+
+def test_derive_tts_script_indices_overrides_llm_indices_when_text_aligns():
+    """当 LLM 自己也返回了 indices 但与文本对齐结果不一致，应当以代码推断为准
+    (LLM 偶尔会写错索引——比如 block 实际属于 sentence 1 却写成 0)。"""
+    sentences = [
+        {"index": 0, "text": "Sentence A.", "source_segment_indices": [0]},
+        {"index": 1, "text": "Sentence B.", "source_segment_indices": [1]},
+    ]
+    payload = {
+        "full_text": "Sentence A. Sentence B.",
+        "blocks": [
+            {"index": 0, "text": "Sentence A.",
+             "sentence_indices": [1], "source_segment_indices": [1]},  # LLM 写错
+            {"index": 1, "text": "Sentence B.",
+             "sentence_indices": [0], "source_segment_indices": [0]},  # LLM 写错
+        ],
+        "subtitle_chunks": [],
+    }
+
+    derived = _derive_tts_script_indices(payload, sentences)
+
+    assert derived["blocks"][0]["sentence_indices"] == [0]
+    assert derived["blocks"][0]["source_segment_indices"] == [0]
+    assert derived["blocks"][1]["sentence_indices"] == [1]
+    assert derived["blocks"][1]["source_segment_indices"] == [1]
+
+
+def test_validate_tts_script_with_sentences_recovers_from_missing_indices():
+    """端到端：validate_tts_script 接收 sentences 时，先 derive 再校验。
+    LLM 漏 source_segment_indices 不再炸；这是修长文案 LLM 漏字段问题的根因解。"""
+    sentences = [
+        {"index": 0, "text": "If your pants are too long.", "source_segment_indices": [0]},
+        {"index": 1, "text": "Stop paying tailors.", "source_segment_indices": [1]},
+    ]
+    payload = {
+        "full_text": "If your pants are too long. Stop paying tailors.",
+        "blocks": [
+            {"index": 0, "text": "If your pants are too long."},
+            {"index": 1, "text": "Stop paying tailors."},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    validated = validate_tts_script(payload, sentences=sentences)
+
+    assert validated["blocks"][0]["source_segment_indices"] == [0]
+    assert validated["blocks"][1]["source_segment_indices"] == [1]
 
 
 def test_prompts_require_shorter_sentences_and_no_em_dash():

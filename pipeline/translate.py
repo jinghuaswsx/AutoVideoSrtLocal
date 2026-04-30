@@ -394,7 +394,13 @@ def generate_tts_script(
              type(payload).__name__,
              list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     validate_fn = validator or validate_tts_script
-    result = validate_fn(payload)
+    sentences = (localized_translation or {}).get("sentences") or []
+    try:
+        result = validate_fn(payload, sentences=sentences)
+    except TypeError:
+        # Custom validators (test injection / language overrides) may not accept the
+        # sentences kwarg yet. Fall back to the legacy single-arg call.
+        result = validate_fn(payload)
     if usage:
         result["_usage"] = usage
         log.info("tts_script token usage: input=%s, output=%s",

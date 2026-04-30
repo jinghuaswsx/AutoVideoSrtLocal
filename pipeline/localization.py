@@ -386,6 +386,91 @@ def build_tts_script_messages(localized_translation: dict) -> list[dict]:
     ]
 
 
+def _derive_tts_script_indices(payload: dict, sentences: list[dict]) -> dict:
+    """Re-derive blocks/subtitle_chunks index fields (sentence_indices,
+    source_segment_indices, block_indices) by aligning their text against
+    sentences. Long-prompt LLM responses occasionally drop or mis-fill these
+    nested fields; since they are deterministic metadata derivable from the
+    text alone, recompute them on the Python side instead of trusting the
+    model. Mutates payload in place and returns it."""
+    if not isinstance(payload, dict) or not sentences:
+        return payload
+
+    blocks = payload.get("blocks") or []
+    chunks = payload.get("subtitle_chunks") or []
+    if not blocks and not chunks:
+        return payload
+
+    sentence_to_source = {
+        i: sorted(set(int(x) for x in (s.get("source_segment_indices") or [])))
+        for i, s in enumerate(sentences)
+    }
+
+    def _flatten_tokens(items, text_key="text"):
+        flat_tokens: list[str] = []
+        flat_origins: list[int] = []
+        for idx, item in enumerate(items):
+            for tok in _subtitle_word_signature(item.get(text_key, "")):
+                flat_tokens.append(tok)
+                flat_origins.append(idx)
+        return flat_tokens, flat_origins
+
+    def _consume(target_tokens, source_tokens, source_origins, cursor):
+        collected: set[int] = set()
+        for tok in target_tokens:
+            matched = False
+            while cursor < len(source_tokens):
+                if source_tokens[cursor] == tok:
+                    collected.add(source_origins[cursor])
+                    cursor += 1
+                    matched = True
+                    break
+                cursor += 1
+            if not matched:
+                break
+        return sorted(collected), cursor
+
+    # Align blocks against sentences
+    sentence_tokens, sentence_origins = _flatten_tokens(sentences)
+    cursor = 0
+    for block in blocks:
+        block_tokens = _subtitle_word_signature(block.get("text", ""))
+        s_indices, cursor = _consume(block_tokens, sentence_tokens, sentence_origins, cursor)
+        if s_indices:
+            block["sentence_indices"] = s_indices
+            collected_src: set[int] = set()
+            for s in s_indices:
+                collected_src.update(sentence_to_source.get(s, []))
+            block["source_segment_indices"] = sorted(collected_src)
+
+    # Align subtitle_chunks against blocks (using already-derived block indices)
+    if chunks and blocks:
+        block_tokens_flat, block_origins_flat = _flatten_tokens(blocks)
+        cursor = 0
+        for chunk in chunks:
+            chunk_tokens = _subtitle_word_signature(chunk.get("text", ""))
+            b_indices, cursor = _consume(
+                chunk_tokens, block_tokens_flat, block_origins_flat, cursor,
+            )
+            if not b_indices:
+                continue
+            chunk["block_indices"] = b_indices
+            sent_collected: set[int] = set()
+            src_collected: set[int] = set()
+            for b_idx in b_indices:
+                if 0 <= b_idx < len(blocks):
+                    sent_collected.update(
+                        int(x) for x in (blocks[b_idx].get("sentence_indices") or [])
+                    )
+                    src_collected.update(
+                        int(x) for x in (blocks[b_idx].get("source_segment_indices") or [])
+                    )
+            chunk["sentence_indices"] = sorted(sent_collected)
+            chunk["source_segment_indices"] = sorted(src_collected)
+
+    return payload
+
+
 def build_tts_segments(tts_script: dict, script_segments: list[dict]) -> list[dict]:
     segments_by_index = {segment["index"]: segment for segment in script_segments}
     if not segments_by_index:
@@ -436,10 +521,15 @@ def validate_localized_translation(payload) -> dict:
     return {"full_text": full_text, "sentences": sentences}
 
 
-def validate_tts_script(payload, max_words: int = 10) -> dict:
+def validate_tts_script(payload, sentences: list[dict] | None = None,
+                        max_words: int = 10) -> dict:
     # 兼容模型直接返回 list（如豆包）
     if isinstance(payload, list):
         payload = {"blocks": payload, "full_text": ""}
+    # 优先用 sentences 重新派生 blocks/subtitle_chunks 的索引字段，避免长 prompt 下
+    # LLM 漏返/错填 source_segment_indices 等派生数据导致整条流水线失败。
+    if sentences:
+        payload = _derive_tts_script_indices(payload, sentences)
     blocks = _sanitize_text_items(payload.get("blocks") or [], "text")
     full_text = _sanitize_model_text(payload.get("full_text") or "")
     if not blocks:
