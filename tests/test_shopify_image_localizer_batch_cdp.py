@@ -799,7 +799,7 @@ def test_apply_uploaded_replacements_preserves_display_width():
     assert "height: auto" in updated
 
 
-def test_plan_body_html_replacements_treats_sanitized_shopify_upload_as_existing():
+def test_plan_body_html_replacements_re_replaces_same_filename_when_replace_shopify_cdn_true():
     token = "dddddddddddddddddddddddddddddddd"
     src = (
         "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/"
@@ -816,9 +816,31 @@ def test_plan_body_html_replacements_treats_sanitized_shopify_upload_as_existing
         replace_shopify_cdn=True,
     )
 
+    assert plan["skipped_existing"] == []
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["old"] == src
+
+
+def test_plan_body_html_replacements_skips_shopify_cdn_when_replace_disabled():
+    token = "dddddddddddddddddddddddddddddddd"
+    src = (
+        "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/"
+        f"20260424_abcd_from_url_en_19_{token}_webp_1234.png?v=1"
+    )
+    html = f'<p><img src="{src}"></p>'
+    localized_images = [
+        _localized(f"20260424_abcd_from_url_en_19_{token}.webp.png"),
+    ]
+
+    plan = taa_cdp.plan_body_html_replacements(
+        html,
+        localized_images,
+        replace_shopify_cdn=False,
+    )
+
     assert plan["replacements"] == []
     assert len(plan["skipped_existing"]) == 1
-    assert plan["skipped_existing"][0]["reason"] == "already localized"
+    assert plan["skipped_existing"][0]["reason"] == "shopify cdn image skipped"
 
 
 def test_plan_body_html_replacements_skips_detail_image_without_server_candidate():
