@@ -39,41 +39,121 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     }
 
 
-def test_build_unsuitable_product_push_preview_uses_single_english_text_without_links(monkeypatch):
+def test_build_unsuitable_product_push_preview_uses_text_and_link_types(monkeypatch):
     from appcore import pushes
 
     monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
-    monkeypatch.setattr(pushes, "get_push_target_url", lambda: "https://os.wedev.vip/dify/shopify/medias")
+    monkeypatch.setattr(
+        pushes,
+        "build_localized_texts_target_url",
+        lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
+    )
+    monkeypatch.setattr(
+        pushes,
+        "get_product_links_target_url",
+        lambda: "https://os.wedev.vip/dify/shopify/medias/links",
+    )
 
-    def fail_probe(url):
-        raise AssertionError("unsuitable push must not probe or push product links")
+    def fail_material_target():
+        raise AssertionError("unsuitable push must not use material push target")
 
-    monkeypatch.setattr(pushes, "probe_ad_url", fail_probe)
+    monkeypatch.setattr(pushes, "get_push_target_url", fail_material_target)
 
     preview = pushes.build_unsuitable_product_push_preview({
         "id": 10,
         "name": "Demo",
         "product_code": "demo-rjc",
+        "mk_id": 3836,
         "importance": 2,
         "selling_points": "point",
     })
 
-    assert preview["target_url"] == "https://os.wedev.vip/dify/shopify/medias"
     assert preview["structured"]["type"] == "unsuitable_product"
-    assert preview["structured"]["language"] == "en"
-    assert preview["structured"]["language_name"] == "英语"
-    assert preview["structured"]["links_count"] == 0
-    assert preview["links"] == []
-    assert preview["payload"]["type"] == "unsuitable_product"
-    assert preview["payload"]["product_links"] == []
-    assert len(preview["payload"]["texts"]) == 1
-    assert preview["payload"]["texts"][0] == {
+    assert [item["type"] for item in preview["types"]] == ["copy", "links"]
+    copy_type = preview["types"][0]
+    link_type = preview["types"][1]
+    assert copy_type["label"] == "推送文案"
+    assert copy_type["target_url"] == "https://os.wedev.vip/api/marketing/medias/3836/texts"
+    assert copy_type["payload"] == {"texts": [{
         "lang": "英语",
         "title": "这个产品有问题，不做，不要投放不要投放不要投放",
         "message": "这个产品有问题，不做，不要投放不要投放不要投放",
         "description": "这个产品有问题，不做，不要投放不要投放不要投放",
+    }]}
+    assert link_type["label"] == "推送链接"
+    assert link_type["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
+    assert link_type["payload"] == {
+        "handle": "demo-error-rjc",
+        "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
     }
-    assert preview["payload"]["videos"] == []
+    assert preview["payload"] == {
+        "types": [
+            {"type": "copy", "payload": copy_type["payload"]},
+            {"type": "links", "payload": link_type["payload"]},
+        ],
+    }
+
+
+def test_push_unsuitable_product_posts_to_text_and_link_endpoints(monkeypatch):
+    from appcore import pushes
+
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0,"message":"","data":null}'
+
+        def json(self):
+            return {"code": 0, "message": "", "data": None}
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(
+        pushes,
+        "build_localized_texts_target_url",
+        lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
+    )
+    monkeypatch.setattr(pushes, "build_localized_texts_headers", lambda: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer token",
+    })
+    monkeypatch.setattr(pushes, "get_product_links_target_url", lambda: "https://os.wedev.vip/dify/shopify/medias/links")
+    monkeypatch.setattr(pushes, "get_product_links_username", lambda: "蔡靖华")
+    monkeypatch.setattr(pushes, "get_product_links_password", lambda: "你的密码")
+    monkeypatch.setattr(pushes.requests, "post", fake_post)
+    monkeypatch.setattr(
+        pushes,
+        "get_push_target_url",
+        lambda: (_ for _ in ()).throw(AssertionError("must not use material push target")),
+    )
+
+    result = pushes.push_unsuitable_product({
+        "id": 10,
+        "name": "Demo",
+        "product_code": "demo-rjc",
+        "mk_id": 3836,
+    })
+
+    assert result["ok"] is True
+    assert [item["type"] for item in result["results"]] == ["copy", "links"]
+    assert [call["url"] for call in calls] == [
+        "https://os.wedev.vip/api/marketing/medias/3836/texts",
+        "https://os.wedev.vip/dify/shopify/medias/links",
+    ]
+    assert calls[0]["json"] == {"texts": [{
+        "lang": "英语",
+        "title": "这个产品有问题，不做，不要投放不要投放不要投放",
+        "message": "这个产品有问题，不做，不要投放不要投放不要投放",
+        "description": "这个产品有问题，不做，不要投放不要投放不要投放",
+    }]}
+    assert calls[1]["json"] == {
+        "handle": "demo-error-rjc",
+        "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
+    }
 
 
 def test_medias_product_links_push_payload_endpoint_returns_preview(
@@ -198,10 +278,13 @@ def test_medias_unsuitable_product_push_payload_endpoint_returns_preview(
 ):
     product = {"id": 10, "product_code": "demo-rjc"}
     preview = {
-        "target_url": "https://os.wedev.vip/dify/shopify/medias",
+        "target_url": "",
         "structured": {"type": "unsuitable_product"},
-        "payload": {"type": "unsuitable_product", "product_links": [], "texts": [{"lang": "英语"}]},
-        "links": [],
+        "payload": {"types": []},
+        "types": [
+            {"type": "copy", "label": "推送文案", "payload": {"texts": [{"lang": "英语"}]}},
+            {"type": "links", "label": "推送链接", "payload": {"product_links": ["https://newjoyloo.com/products/demo-error-rjc"]}},
+        ],
         "texts": [{"lang": "英语", "title": "T", "message": "M", "description": "D"}],
     }
 
@@ -224,9 +307,10 @@ def test_medias_unsuitable_product_push_endpoint_posts_to_downstream(
     product = {"id": 10, "product_code": "demo-rjc"}
     result = {
         "ok": True,
-        "upstream_status": 200,
-        "response_body": '{"code":0}',
-        "target_url": "https://os.wedev.vip/dify/shopify/medias",
+        "results": [
+            {"type": "copy", "ok": True, "upstream_status": 200},
+            {"type": "links", "ok": True, "upstream_status": 200},
+        ],
     }
 
     monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
@@ -371,6 +455,7 @@ def test_medias_assets_include_unsuitable_product_push_entry():
     assert "id=\"productUnsuitablePushInfo\"" in template
     assert "id=\"productUnsuitablePushStructured\"" in template
     assert "id=\"productUnsuitablePushJson\"" in template
+    assert "renderProductUnsuitablePushTypeList" in script
     assert "不合适产品 JSON 预览" in template
 
 
