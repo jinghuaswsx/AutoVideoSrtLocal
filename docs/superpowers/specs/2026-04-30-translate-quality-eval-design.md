@@ -12,7 +12,7 @@
 
 ## 2. 目标
 
-- 对比 **Claude Sonnet 4.6 / Gemini 3.1 Pro / Gemini 3.1 Flash** 三个模型在 localize 步骤的翻译质量
+- 对比 **Claude Sonnet 4.6 / Gemini 3.1 Pro / Gemini 3 Flash** 三个模型在 localize 步骤的翻译质量
 - 覆盖系统当前启用的全部 9 个目标语种（de / en / es / fr / it / ja / nl / pt / sv）
 - 输出可决策的对比报告：要不要切换、切到哪个、有什么 trade-off
 
@@ -42,7 +42,7 @@
 |---|---|---|
 | 中文原稿目标语种 | de, en, es, fr, it, ja, nl, pt, sv | 9 |
 | 英文原稿目标语种 | de, es, fr, it, ja, nl, pt, sv（排除自身） | 8 |
-| 模型 | Claude Sonnet 4.6 / Gemini 3.1 Pro / Gemini 3.1 Flash | 3 |
+| 模型 | Claude Sonnet 4.6 / Gemini 3.1 Pro / Gemini 3 Flash | 3 |
 | **总翻译次数** | (9+8) × 3 | **51** |
 
 ### 4.3 三个候选模型
@@ -51,9 +51,9 @@
 |---|---|---|
 | Claude Sonnet 4.6 | openrouter / anthropic/claude-sonnet-4.6 | $3 / $15 |
 | Gemini 3.1 Pro | openrouter / google/gemini-3.1-pro-preview | $1.25 / $10 |
-| Gemini 3.1 Flash | openrouter / google/gemini-3.1-flash-preview | $0.30 / $2.50 |
+| Gemini 3 Flash | openrouter / google/gemini-3-flash-preview | $0.30 / $2.50 |
 
-> Gemini 3.1 Flash 在系统里也可走 `gemini_vertex` channel；但为对照公平，三家都走 OpenRouter。
+> Gemini 3 Flash 在系统里也可走 `gemini_vertex` channel；但为对照公平，三家都走 OpenRouter。
 
 ### 4.4 实施
 
@@ -125,13 +125,12 @@ python -m tools.translate_quality_eval \
 |---|---|---|
 | Claude Sonnet 4.6 | 17 | ¥1.0 |
 | Gemini 3.1 Pro | 17 | ¥3.0 |
-| Gemini 3.1 Flash | 17 | ¥0.5 |
+| Gemini 3 Flash | 17 | ¥0.5 |
 | 我评估的 token | ~25k | ¥1.5 |
 | **合计** | | **¥6** |
 
 ## 7. 风险
 
-- **Gemini 3.1 Flash 模型 ID** 需要核对：仓库 `llm_use_cases.py` 里出现过 `gemini-3-flash-preview` 但 OpenRouter 官方目录可能是 `google/gemini-3.1-flash-preview` 或别的名字。脚本启动前先发一条最便宜的请求 ping 一下确认。
 - **Schema 校验**：`generate_localized_translation` 内部用 JSON schema 校验，Gemini 系列偶尔返非合规 JSON。已计入错误处理。
 - **评估主观性**：我打的 4 维分数本身有主观性，但**横向对比**（同一原稿同一目标语下三家比较）能降低主观偏差影响。
 
