@@ -49,3 +49,19 @@ def test_compute_summary_empty_rounds():
     summary = compute_summary([])
     assert summary["translate_calls"] == 0
     assert summary["audio_calls"] == 0
+
+
+def test_format_log_line_contains_counts_and_ansi():
+    from appcore.tts_generation_stats import format_log_line
+    line = format_log_line({"translate_calls": 4, "audio_calls": 27})
+    assert "\033[1;34m" in line
+    assert "\033[0m" in line
+    assert "4 次翻译" in line
+    assert "27 次语音生成" in line
+
+
+def test_format_log_line_zero_counts():
+    from appcore.tts_generation_stats import format_log_line
+    line = format_log_line({"translate_calls": 0, "audio_calls": 0})
+    assert "0 次翻译" in line
+    assert "0 次语音生成" in line
