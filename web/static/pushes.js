@@ -30,6 +30,7 @@
     product: '',
     keyword: '',
     owner_id: '',
+    audit_result: '',
     date_from: '',
     date_to: '',
     sort: 'created_at_desc',
@@ -206,11 +207,13 @@
     const statusSel = document.getElementById('f-status');
     const langSel = document.getElementById('f-lang');
     const ownerSel = document.getElementById('f-owner');
+    const auditResultSel = document.getElementById('f-audit-result');
     const sortSel = document.getElementById('f-sort');
 
     setSelectValue(statusSel, paramValue(params, 'status', DEFAULT_FILTERS.status), DEFAULT_FILTERS.status);
     setSelectValue(langSel, paramValue(params, 'lang', DEFAULT_FILTERS.lang), DEFAULT_FILTERS.lang);
     setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
+    setSelectValue(auditResultSel, paramValue(params, 'audit_result', DEFAULT_FILTERS.audit_result), DEFAULT_FILTERS.audit_result);
     setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
     document.getElementById('f-product').value = paramValue(params, 'product', DEFAULT_FILTERS.product);
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
@@ -231,6 +234,8 @@
     params.set('keyword', keyword);
     const ownerSel = document.getElementById('f-owner');
     params.set('owner_id', ownerSel ? ownerSel.value : '');
+    const auditResultSel = document.getElementById('f-audit-result');
+    params.set('audit_result', auditResultSel ? auditResultSel.value : '');
     const df = document.getElementById('f-date-from').value;
     params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
@@ -503,6 +508,7 @@
       document.getElementById('f-status').value = 'pending';
       document.getElementById('f-lang').value = '';
       document.getElementById('f-owner').value = '';
+      document.getElementById('f-audit-result').value = '';
       document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });

@@ -549,6 +549,34 @@ def test_list_items_for_push_filter_by_owner_id(monkeypatch):
     assert 42 in captured["args"]
 
 
+def test_list_items_for_push_filter_by_audit_result(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(
+        audit_result="部分适合推广",
+        offset=0,
+        limit=20,
+    )
+
+    assert rows == []
+    assert total == 0
+    assert "p.ai_evaluation_result = %s" in captured["sql"]
+    assert "部分适合推广" in captured["args"]
+
+
 def test_list_items_for_push_sorts_by_created_at_asc(monkeypatch):
     captured = {}
 

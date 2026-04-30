@@ -51,6 +51,26 @@ def test_pushes_api_items_filter_status(logged_in_client):
         assert it["status"] == "pending"
 
 
+def test_pushes_api_items_passes_audit_result_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_items_for_push(**kwargs):
+        captured["kwargs"] = kwargs
+        return [], 0
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        fake_list_items_for_push,
+    )
+
+    resp = authed_client_no_db.get(
+        "/pushes/api/items?audit_result=不适合推广&page=1",
+    )
+
+    assert resp.status_code == 200
+    assert captured["kwargs"]["audit_result"] == "不适合推广"
+
+
 def test_pushes_api_items_includes_language_specific_product_page_url(
     authed_client_no_db, monkeypatch,
 ):

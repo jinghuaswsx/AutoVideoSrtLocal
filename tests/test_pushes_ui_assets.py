@@ -11,6 +11,16 @@ def test_pushes_template_contains_mk_id_column():
     assert 'id="f-owner"' in template
 
 
+def test_pushes_template_contains_audit_result_filter():
+    template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
+
+    assert 'for="f-audit-result"' in template
+    assert 'id="f-audit-result"' in template
+    assert '<option value="适合推广">适合推广</option>' in template
+    assert '<option value="部分适合推广">部分适合推广</option>' in template
+    assert '<option value="不适合推广">不适合推广</option>' in template
+
+
 def test_pushes_template_contains_created_at_sort_control():
     template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
 
@@ -57,6 +67,7 @@ def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     assert "params.set('product', product);" in script
     assert "params.set('keyword', keyword);" in script
     assert "params.set('owner_id', ownerSel ? ownerSel.value : '');" in script
+    assert "params.set('audit_result', auditResultSel ? auditResultSel.value : '');" in script
     assert "params.set('date_from', df);" in script
     assert "params.set('date_to', dt);" in script
     assert "params.set('sort', sortSel.value || 'created_at_desc');" in script

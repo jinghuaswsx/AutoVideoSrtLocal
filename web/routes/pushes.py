@@ -51,6 +51,7 @@ def index():
 from appcore import medias, push_quality_checks, pushes
 
 _PAGE_SIZE_DEFAULT = 20
+_AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
 
 
 def _serialize_ai_score(value):
@@ -135,6 +136,9 @@ def api_list():
     keyword = (request.args.get("keyword") or "").strip()
     product_term = (request.args.get("product") or "").strip()
     owner_id_raw = (request.args.get("owner_id") or "").strip()
+    audit_result = (request.args.get("audit_result") or "").strip()
+    if audit_result not in _AUDIT_RESULT_FILTERS:
+        audit_result = ""
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
     sort = (request.args.get("sort") or "created_at_desc").strip()
@@ -158,6 +162,7 @@ def api_list():
         keyword=keyword,
         product_term=product_term,
         owner_id=owner_id,
+        audit_result=audit_result,
         date_from=date_from,
         date_to=date_to,
         sort=sort,
