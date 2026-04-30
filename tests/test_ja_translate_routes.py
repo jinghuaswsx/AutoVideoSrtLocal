@@ -76,12 +76,11 @@ def test_multi_translate_start_keeps_ja_on_multi_module(tmp_path, authed_client_
     assert started["task_id"] == payload["task_id"]
 
 
-def test_layout_contains_ja_translate_menu_entry():
+def test_layout_hides_ja_translate_menu_entry():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
 
-    assert 'href="/ja-translate"' in template
-    assert "视频翻译（日语）" in template
+    assert 'href="/ja-translate"' not in template
 
 
 def test_ja_translate_detail_falls_back_to_in_memory_task_when_db_type_is_stale(

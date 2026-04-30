@@ -1,5 +1,6 @@
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 
 
 class _SidebarNavParser(HTMLParser):
@@ -72,15 +73,14 @@ def test_dashboard_sidebar_prioritizes_primary_translation_entries(
     assert subtitle_removal_idx < pushes_idx
 
 
-def test_dashboard_sidebar_moves_lab_group_to_bottom(authed_client_no_db):
-    resp = authed_client_no_db.get("/video-translate-av-sync")
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    nav_html = html[html.index('<nav class="sidebar-nav">'):html.index("</nav>")]
+def test_dashboard_sidebar_moves_lab_group_to_bottom():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
+    nav_html = template[template.index('<nav class="sidebar-nav">'):template.index("</nav>")]
 
     lab_group_marker = '<details class="sidebar-group sidebar-lab-group"'
     lab_group_idx = nav_html.index(lab_group_marker)
-    video_translate_idx = nav_html.index('href="/projects"')
+    video_translate_idx = nav_html.index("url_for('projects.index')")
     order_analytics_idx = nav_html.index('href="/order-analytics"')
     voice_library_idx = nav_html.index('href="/voice-library"')
     prompt_library_idx = nav_html.index('href="/prompt-library"')
@@ -88,21 +88,28 @@ def test_dashboard_sidebar_moves_lab_group_to_bottom(authed_client_no_db):
     text_translate_idx = nav_html.index('href="/text-translate"')
     video_creation_idx = nav_html.index('href="/video-creation"')
     video_review_idx = nav_html.index('href="/video-review"')
-    link_check_idx = nav_html.index('href="/link-check"')
-    translate_lab_idx = nav_html.index('href="/translate-lab"')
-    ja_translate_idx = nav_html.index('href="/ja-translate"')
-    av_sync_idx = nav_html.index('href="/video-translate-av-sync"')
+    link_check_idx = nav_html.index("url_for('link_check.page')")
+    av_sync_idx = nav_html.index("url_for('projects.av_sync_page')")
 
     assert "实验室" in nav_html
     assert lab_group_idx > order_analytics_idx > video_translate_idx
     assert lab_group_idx == nav_html.rfind(lab_group_marker)
-    assert nav_html.index("<details") > nav_html.rfind('<a href="/order-analytics"')
+    assert nav_html.index("<details") > nav_html.rfind('href="/order-analytics"')
     assert voice_library_idx > lab_group_idx
     assert voice_library_idx < prompt_library_idx < copywriting_idx
     assert copywriting_idx < text_translate_idx < video_creation_idx
-    assert video_creation_idx < video_review_idx < link_check_idx
-    assert link_check_idx < translate_lab_idx < ja_translate_idx < av_sync_idx
+    assert video_creation_idx < video_review_idx < link_check_idx < av_sync_idx
     assert '<details class="sidebar-group sidebar-lab-group" open' not in nav_html
+
+
+def test_dashboard_sidebar_hides_offline_video_translation_entries():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
+
+    assert 'href="/translate-lab"' not in template
+    assert 'href="/ja-translate"' not in template
+    assert 'href="/de-translate"' not in template
+    assert 'href="/fr-translate"' not in template
 
 
 def test_dashboard_sidebar_menu_links_open_new_tabs(authed_client_no_db):
