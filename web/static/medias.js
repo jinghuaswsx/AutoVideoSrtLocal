@@ -129,14 +129,14 @@
   }
 
   // 编辑页小语种素材沿用严格命名规范。
-  // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材({语种中文名})-指派-蔡靖华.mp4
-  // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（一字不差，半角括号）
+  // 模板：YYYY.MM.DD-{商品名中文}-原素材-补充素材[A-G可选]({语种中文名})-指派-蔡靖华.mp4
+  // 固定字段：原素材 / 补充素材 / 指派 / 蔡靖华（半角括号；补充素材后可选 A-G 字母）
   function validateMaterialFilename(filename, productName, langCode) {
     if (langCode === 'en') return validateSimpleMaterialFilename(filename, productName);
 
     const fn = String(filename || '');
     const TAIL = '-指派-蔡靖华.mp4';
-    const MID_PREFIX = '-原素材-补充素材(';
+    const LOCALIZED_SUPPLEMENT_MARKER = '-原素材-补充素材';
     const errs = [];
 
     const lang = (LANGUAGES || []).find(l => l.code === langCode);
@@ -179,14 +179,20 @@
       return errs;
     }
 
-    const midStart = rest.lastIndexOf(MID_PREFIX);
+    const midStart = rest.lastIndexOf(LOCALIZED_SUPPLEMENT_MARKER);
     if (midStart < 0) {
-      errs.push(`中间必须包含 "${MID_PREFIX}语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）`);
+      errs.push(`中间必须包含 "${LOCALIZED_SUPPLEMENT_MARKER}(语种中文名)" 或 "${LOCALIZED_SUPPLEMENT_MARKER}A(语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）`);
       return errs;
     }
 
     const productPart = rest.slice(0, midStart);
-    const langPart = rest.slice(midStart + MID_PREFIX.length, -1);
+    const slotLangPart = rest.slice(midStart + LOCALIZED_SUPPLEMENT_MARKER.length);
+    if (!/^[A-Ga-g]?\(/.test(slotLangPart)) {
+      errs.push('补充素材 后只能接 A-G 字母或直接接半角括号 "("');
+      return errs;
+    }
+    const langStart = slotLangPart[0] === '(' ? 1 : 2;
+    const langPart = slotLangPart.slice(langStart, -1);
 
     if (productPart !== productName) {
       errs.push(`商品名不符：文件名写的是 "${productPart}"，应为 "${productName}"（注意前后不能有空格）`);
@@ -259,12 +265,12 @@
     if (langCode !== 'en') {
       const lang = (LANGUAGES || []).find(l => l.code === langCode);
       const langZh = (lang && lang.name_zh) || '';
-      const strictTail = `-原素材-补充素材(${langZh})-指派-蔡靖华.mp4`;
+      const strictTailRe = new RegExp(`^-原素材-补充素材[A-Ga-g]?\\(${escapeRegExp(langZh)}\\)-指派-蔡靖华\\.mp4$`);
       return [
         paint(dateSegment || '(缺日期)', validDate),
         paint(separatorSegment || '(缺-)', separatorSegment === '-'),
         prefixOk
-          ? paint(productName, true) + paint(tail || '(缺后缀)', tail === strictTail)
+          ? paint(productName, true) + paint(tail || '(缺后缀)', strictTailRe.test(tail))
           : paint(restSegment || '(缺产品名)', false),
       ].join('');
     }
@@ -436,6 +442,10 @@
 
   function escapeHtml(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function escapeRegExp(s) {
+    return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   function compactCellText(value) {

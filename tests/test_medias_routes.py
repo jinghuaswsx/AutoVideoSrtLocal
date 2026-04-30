@@ -405,6 +405,32 @@ def test_item_bootstrap_accepts_valid_english_material_filename(
     assert data["object_key"].endswith("/2026.04.17-窗帘挂钩-原素材.mp4")
 
 
+def test_item_bootstrap_accepts_localized_material_filename_with_slot_letter(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    monkeypatch.setattr(
+        r.object_keys,
+        "build_media_object_key",
+        lambda user_id, pid, filename: f"{user_id}/medias/{pid}/{filename}",
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2026.04.17-窗帘挂钩-原素材-补充素材B(法语)-指派-蔡靖华.mp4",
+            "lang": "en",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["effective_lang"] == "fr"
+    assert data["object_key"].endswith(
+        "/2026.04.17-窗帘挂钩-原素材-补充素材B(法语)-指派-蔡靖华.mp4"
+    )
+
+
 def test_item_bootstrap_skip_validation_still_enforces_single_filename_rule(
     authed_client_no_db, monkeypatch
 ):
@@ -1610,6 +1636,52 @@ def test_update_item_display_name_patches_existing_item(authed_client_no_db, mon
     data = resp.get_json()
     assert data["item"]["id"] == 44
     assert data["item"]["display_name"] == "2026.04.18-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4"
+
+
+def test_update_item_display_name_accepts_supplement_slot_letter(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    item = {
+        "id": 44,
+        "product_id": 123,
+        "lang": "fr",
+        "filename": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+        "display_name": "2026.04.17-测试商品-原素材-补充素材(法语)-指派-蔡靖华.mp4",
+        "object_key": "1/medias/123/fr.mp4",
+    }
+    captured = {}
+
+    monkeypatch.setattr(r.medias, "get_item", lambda item_id: item if item_id == 44 else None)
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
+    )
+    monkeypatch.setattr(r.medias, "list_languages", lambda: [
+        {"code": "en", "name_zh": "英语"},
+        {"code": "fr", "name_zh": "法语"},
+    ])
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+
+    def fake_update_item_display_name(item_id, display_name):
+        captured["item_id"] = item_id
+        captured["display_name"] = display_name
+        item["display_name"] = display_name
+
+    monkeypatch.setattr(r.medias, "update_item_display_name", fake_update_item_display_name)
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/items/44",
+        json={"display_name": "2026.04.18-测试商品-原素材-补充素材B(法语)-指派-蔡靖华.mp4"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "item_id": 44,
+        "display_name": "2026.04.18-测试商品-原素材-补充素材B(法语)-指派-蔡靖华.mp4",
+    }
+    data = resp.get_json()
+    assert data["item"]["display_name"] == "2026.04.18-测试商品-原素材-补充素材B(法语)-指派-蔡靖华.mp4"
 
 
 def test_update_item_display_name_rejects_invalid_name_with_suggestion(authed_client_no_db, monkeypatch):

@@ -12,7 +12,8 @@ from typing import Any
 _DATE_RE = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})$")
 _LOCALIZED_MARKER = "补充素材"
 _LOCALIZED_TAIL = "-指派-蔡靖华.mp4"
-_LOCALIZED_MID_PREFIX = "-原素材-补充素材("
+_LOCALIZED_MID_MARKER = "-原素材-补充素材"
+_LOCALIZED_SLOT_LANG_RE = re.compile(r"^[A-Ga-g]?\(")
 
 
 @dataclass(frozen=True)
@@ -181,12 +182,16 @@ def _validate_localized_filename(
     if not rest.endswith(")"):
         return ['在 "-指派-蔡靖华.mp4" 之前必须紧跟 ")"（常见问题：多了空格、或用了中文全角括号 "）"）']
 
-    mid_start = rest.rfind(_LOCALIZED_MID_PREFIX)
+    mid_start = rest.rfind(_LOCALIZED_MID_MARKER)
     if mid_start < 0:
-        return [f'中间必须包含 "{_LOCALIZED_MID_PREFIX}语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）']
+        return [f'中间必须包含 "{_LOCALIZED_MID_MARKER}(语种中文名)" 或 "{_LOCALIZED_MID_MARKER}A(语种中文名)"（常见问题：多了/少了连字符、或用了全角括号）']
 
     product_part = rest[:mid_start]
-    lang_part = rest[mid_start + len(_LOCALIZED_MID_PREFIX) : -1]
+    slot_lang_part = rest[mid_start + len(_LOCALIZED_MID_MARKER) :]
+    if not _LOCALIZED_SLOT_LANG_RE.match(slot_lang_part):
+        return ['补充素材 后只能接 A-G 字母或直接接半角括号 "("']
+    lang_start = 1 if slot_lang_part.startswith("(") else 2
+    lang_part = slot_lang_part[lang_start:-1]
 
     if product_part != product_name:
         errors.append(f'商品名不符：文件名写的是 "{product_part}"，应为 "{product_name}"（注意前后不能有空格）')

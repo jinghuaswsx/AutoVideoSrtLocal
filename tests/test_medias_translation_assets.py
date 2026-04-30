@@ -183,6 +183,15 @@ def test_medias_js_material_filename_validation_detects_localized_language():
     assert "body: JSON.stringify({ filename: file.name, lang })" in script
 
 
+def test_medias_js_material_filename_validation_allows_supplement_slot_letters():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "const LOCALIZED_SUPPLEMENT_MARKER = '-原素材-补充素材';" in script
+    assert "/^[A-Ga-g]?\\(/" in script
+    assert "补充素材 后只能接 A-G 字母或直接接半角括号" in script
+
+
 def test_medias_search_input_runs_live_search():
     root = Path(__file__).resolve().parents[1]
     script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
