@@ -74,9 +74,9 @@ def test_asr_normalize_card_stays_grouped_after_asr_before_voice_selector():
     voice_selector = (root / "web" / "static" / "voice_selector_multi.js").read_text(encoding="utf-8")
     av_sync = (root / "web" / "templates" / "av_sync_detail.html").read_text(encoding="utf-8")
 
-    assert "#pipelineCard .steps > #step-asr { order: -3; }" in shared
-    assert "#pipelineCard .steps > #step-asr_normalize { order: -2; }" in shared
-    assert "#pipelineCard .steps > #step-extract { order: -1; }" in shared
+    assert "#pipelineCard .steps > #step-extract { order: -3; }" in shared
+    assert "#pipelineCard .steps > #step-asr { order: -2; }" in shared
+    assert "#pipelineCard .steps > #step-asr_normalize { order: -1; }" in shared
     assert 'document.getElementById("step-asr_normalize") || document.getElementById("step-asr")' in voice_selector
     assert "{% set pipeline_kind = 'multi_translate' %}" in av_sync
 
