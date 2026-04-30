@@ -66,16 +66,17 @@ TRANSLATE_PROVIDERS = [
 DEFAULT_TRANSLATE_PROVIDER = "vertex_gemini_31_flash_lite"
 
 BINDING_ALLOWED_PROVIDERS = (
-    "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
+    "openrouter", "doubao", "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc",
 )
 BINDING_PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "doubao": "Doubao ARK",
     "gemini_aistudio": "Google AI Studio",
     "gemini_vertex": "Google Cloud (Vertex AI)",
+    "gemini_vertex_adc": "Google Vertex AI (ADC)",
 }
 IMAGE_TEXT_DETECT_PROVIDERS = (
-    "gemini_aistudio", "gemini_vertex", "openrouter",
+    "gemini_aistudio", "gemini_vertex", "gemini_vertex_adc", "openrouter",
 )
 IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite-preview"
 HIDDEN_BINDING_CODES = {"image_translate.generate"}

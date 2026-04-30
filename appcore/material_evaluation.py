@@ -20,8 +20,8 @@ from appcore.db import execute, query, query_one
 logger = logging.getLogger(__name__)
 
 USE_CASE_CODE = "material_evaluation.evaluate"
-EVALUATION_PROVIDER = "openrouter"
-EVALUATION_MODEL = "google/gemini-3.1-pro-preview"
+EVALUATION_PROVIDER = "gemini_vertex_adc"
+EVALUATION_MODEL = "gemini-3.1-pro-preview"
 EVALUATION_SEARCH_ENABLED = True
 MAX_AUTOMATIC_ATTEMPTS = 1
 EVAL_CLIPS_ROOT = Path("instance") / "eval_clips"
@@ -29,7 +29,12 @@ _ACTIVE_PRODUCT_IDS: set[int] = set()
 _ACTIVE_LOCK = threading.Lock()
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-_SUPPORTED_EVALUATION_PROVIDERS = {"openrouter", "gemini_aistudio"}
+_SUPPORTED_EVALUATION_PROVIDERS = {
+    "openrouter",
+    "gemini_aistudio",
+    "gemini_vertex",
+    "gemini_vertex_adc",
+}
 
 
 def _search_tools_for_provider(provider: str) -> list[dict]:
@@ -43,7 +48,7 @@ def _normalize_model_for_provider(provider: str, model: str) -> str:
     model = (model or "").strip()
     if provider == "openrouter" and model.startswith("gemini-"):
         return f"google/{model}"
-    if provider == "gemini_aistudio" and model.startswith("google/"):
+    if provider in {"gemini_aistudio", "gemini_vertex", "gemini_vertex_adc"} and model.startswith("google/"):
         return model.split("/", 1)[1]
     return model
 
@@ -55,11 +60,11 @@ def resolve_evaluation_llm_config() -> dict:
         logger.debug("resolve material evaluation LLM binding failed; using defaults", exc_info=True)
         binding = {"provider": EVALUATION_PROVIDER, "model": EVALUATION_MODEL}
     provider = str(binding.get("provider") or EVALUATION_PROVIDER).strip() or EVALUATION_PROVIDER
-    if provider == "gemini_vertex":
-        provider = "gemini_aistudio"
     if provider not in _SUPPORTED_EVALUATION_PROVIDERS:
         raise ValueError(
-            f"素材评估仅支持 openrouter 或 gemini_aistudio，当前配置为 {provider}"
+            "material_evaluation.evaluate only supports openrouter, "
+            "gemini_aistudio, gemini_vertex or gemini_vertex_adc; "
+            f"current provider is {provider}"
         )
     model = _normalize_model_for_provider(
         provider,

@@ -8,6 +8,7 @@ def test_all_use_cases_have_required_fields():
         assert uc["label"], f"{code} missing label"
         assert uc["default_provider"] in {
             "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
+            "gemini_vertex_adc",
             "elevenlabs", "doubao_asr",
         }
         assert uc["default_model"], f"{code} missing default_model"
@@ -59,7 +60,7 @@ def test_image_and_link_check_defaults():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 40
+    assert len(USE_CASES) == 41
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -79,12 +80,12 @@ def test_copywriting_translate_audit_uses_gemini_flash_lite():
     assert uc["units_type"] == "tokens"
 
 
-def test_material_evaluation_defaults_to_openrouter_gemini_pro():
+def test_material_evaluation_defaults_to_vertex_adc_gemini_pro():
     uc = USE_CASES["material_evaluation.evaluate"]
     assert uc["module"] == "material"
-    assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.1-pro-preview"
-    assert uc["usage_log_service"] == "openrouter"
+    assert uc["default_provider"] == "gemini_vertex_adc"
+    assert uc["default_model"] == "gemini-3.1-pro-preview"
+    assert uc["usage_log_service"] == "gemini_vertex_adc"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"
 

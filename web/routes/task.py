@@ -909,6 +909,8 @@ def retranslate(task_id):
     source_full_text_zh = build_source_full_text_zh(script_segments)
     if model_provider == "doubao":
         billing_provider = "doubao"
+    elif model_provider.startswith("vertex_adc_"):
+        billing_provider = "gemini_vertex_adc"
     elif model_provider.startswith("vertex_"):
         billing_provider = "gemini_vertex"
     else:

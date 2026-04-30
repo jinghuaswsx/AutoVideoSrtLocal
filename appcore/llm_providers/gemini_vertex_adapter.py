@@ -33,6 +33,24 @@ def _normalize_media(media):
     return list(media)
 
 
+def _build_inline_contents(gemini_api, prompt: str, media) -> list:
+    parts = []
+    if media:
+        for item in media:
+            path = Path(item)
+            if not path.is_file():
+                raise gemini_api.GeminiError(f"文件不存在：{path}")
+            mime = gemini_api._guess_mime(path)
+            parts.append(
+                gemini_api.genai_types.Part.from_bytes(
+                    data=path.read_bytes(),
+                    mime_type=mime,
+                )
+            )
+    parts.append(gemini_api.genai_types.Part.from_text(text=prompt))
+    return parts
+
+
 def _client_cache_key(api_key: str, project: str, location: str) -> str:
     if project:
         return f"project:{project}:{location}"
@@ -112,10 +130,6 @@ class GeminiVertexAdapter(LLMAdapter):
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
                  max_output_tokens=None, google_search=None):
-        if google_search:
-            raise NotImplementedError(
-                "gemini_vertex generate() does not support google_search; use gemini_aistudio"
-            )
         media_list = _normalize_media(media)
         if media_list:
             return self._generate_with_media(
@@ -127,6 +141,11 @@ class GeminiVertexAdapter(LLMAdapter):
                 response_schema=response_schema,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                google_search=google_search,
+            )
+        if google_search:
+            raise NotImplementedError(
+                f"{self.provider_code} text generate() does not support google_search"
             )
         messages = []
         if system:
@@ -147,22 +166,19 @@ class GeminiVertexAdapter(LLMAdapter):
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
                              max_output_tokens=None, google_search=None):
-        if google_search:
-            raise NotImplementedError(
-                "gemini_vertex media generate() does not support google_search; use gemini_aistudio"
-            )
         # Reuse shared Gemini media/schema helpers, but resolve creds via DAO
         # so image flows can pick gemini_cloud_image when desired.
         from appcore import gemini as gemini_api
 
         creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
         client = _get_client(creds["api_key"], creds["project"], creds["location"])
-        contents = gemini_api._build_contents(client, prompt, media)
+        contents = _build_inline_contents(gemini_api, prompt, media)
         cfg = gemini_api._build_config(
             system=system,
             temperature=temperature,
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
+            google_search=google_search,
         )
 
         last_err: Exception | None = None
@@ -201,3 +217,87 @@ class GeminiVertexAdapter(LLMAdapter):
                     continue
                 break
         raise RuntimeError(f"Vertex Gemini call failed: {last_err}") from last_err
+
+
+class GeminiVertexADCAdapter(GeminiVertexAdapter):
+    provider_code = "gemini_vertex_adc"
+
+    def resolve_credentials(self, user_id, *, media_kind: str | None = None):
+        provider_code = credential_provider_for_adapter(
+            "gemini_vertex_adc",
+            media_kind=media_kind,
+        )
+        cfg = require_provider_config(provider_code)
+        extra = cfg.extra_config or {}
+        project = (extra.get("project") or "").strip()
+        location = (extra.get("location") or "global").strip() or "global"
+        if not project:
+            raise ProviderConfigError(
+                f"缺少供应商配置 {provider_code}.extra_config.project，"
+                f"请在 /settings 的「服务商接入」页填写（{cfg.display_name}）。"
+            )
+        return {
+            "api_key": "",
+            "base_url": None,
+            "extra": dict(extra),
+            "provider_code": provider_code,
+            "project": project,
+            "location": location,
+        }
+
+    def _call(self, *, model, messages, response_format, temperature, max_output_tokens):
+        return self._call_with_adc(
+            model=model,
+            messages=messages,
+            response_format=response_format,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+
+    def _call_with_adc(self, *, model, messages, response_format, temperature,
+                       max_output_tokens):
+        from google.genai import types as genai_types
+        from pipeline.translate import (
+            _extract_gemini_schema,
+            _split_oai_messages,
+            parse_json_content,
+        )
+
+        creds = self.resolve_credentials(None, media_kind="text")
+        system_prompt, user_content = _split_oai_messages(messages)
+        schema = _extract_gemini_schema(response_format)
+
+        cfg_kwargs: dict = {
+            "temperature": temperature if temperature is not None else 0.2,
+            "max_output_tokens": max_output_tokens or 4096,
+        }
+        if system_prompt:
+            cfg_kwargs["system_instruction"] = system_prompt
+        if schema is not None:
+            cfg_kwargs["response_mime_type"] = "application/json"
+            cfg_kwargs["response_schema"] = schema
+        cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
+
+        client = _get_client("", creds["project"], creds["location"])
+        resp = client.models.generate_content(
+            model=model,
+            contents=user_content,
+            config=cfg,
+        )
+        raw = resp.text or ""
+        parsed = getattr(resp, "parsed", None)
+        if isinstance(parsed, (dict, list)):
+            payload = parsed
+        elif schema is not None:
+            payload = parse_json_content(raw)
+        else:
+            payload = raw
+
+        usage = None
+        meta = getattr(resp, "usage_metadata", None)
+        if meta is not None:
+            usage = {
+                "input_tokens": getattr(meta, "prompt_token_count", None),
+                "output_tokens": getattr(meta, "candidates_token_count", None),
+            }
+        return payload, usage, raw

@@ -25,6 +25,7 @@ def _fake_same_image_payload(text=None, json_payload=None):
     [
         ("gemini_aistudio", "aistudio", "Google AI Studio"),
         ("gemini_vertex", "cloud", "Google Cloud (Vertex AI)"),
+        ("gemini_vertex_adc", "cloud_adc", "Google Vertex AI (ADC)"),
         ("openrouter", "openrouter", "OpenRouter"),
         ("doubao", "doubao", "豆包"),
     ],

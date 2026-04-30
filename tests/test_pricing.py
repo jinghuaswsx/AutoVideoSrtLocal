@@ -256,6 +256,54 @@ def test_gemini_aistudio_falls_back_to_vertex_exact(pricing_module, monkeypatch)
     assert source == "pricebook"
 
 
+def test_gemini_vertex_adc_falls_back_to_aistudio_exact(pricing_module, monkeypatch):
+    rows = [{
+        "provider": "gemini_aistudio",
+        "model": "gemini-2.5-flash",
+        "units_type": "tokens",
+        "unit_input_cny": Decimal("0.001"),
+        "unit_output_cny": Decimal("0.002"),
+        "unit_flat_cny": None,
+    }]
+    monkeypatch.setattr(pricing_module, "query", lambda sql: rows)
+
+    cost, source = pricing_module.compute_cost_cny(
+        provider="gemini_vertex_adc",
+        model="gemini-2.5-flash",
+        units_type="tokens",
+        input_tokens=100,
+        output_tokens=50,
+        request_units=None,
+    )
+
+    assert cost == Decimal("0.200000")
+    assert source == "pricebook"
+
+
+def test_gemini_aistudio_falls_back_to_vertex_adc_exact(pricing_module, monkeypatch):
+    rows = [{
+        "provider": "gemini_vertex_adc",
+        "model": "gemini-2.5-flash",
+        "units_type": "tokens",
+        "unit_input_cny": Decimal("0.003"),
+        "unit_output_cny": Decimal("0.004"),
+        "unit_flat_cny": None,
+    }]
+    monkeypatch.setattr(pricing_module, "query", lambda sql: rows)
+
+    cost, source = pricing_module.compute_cost_cny(
+        provider="gemini_aistudio",
+        model="gemini-2.5-flash",
+        units_type="tokens",
+        input_tokens=10,
+        output_tokens=5,
+        request_units=None,
+    )
+
+    assert cost == Decimal("0.050000")
+    assert source == "pricebook"
+
+
 def test_gemini_pair_exact_beats_self_wildcard(pricing_module, monkeypatch):
     """对家精确应优先于自家通配——通配是真正的最后兜底。"""
     rows = [

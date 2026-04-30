@@ -151,6 +151,8 @@ def _build_review_segments(script_segments: list[dict], localized_translation: d
 def _translate_billing_provider(provider: str) -> str:
     if provider == "doubao":
         return "doubao"
+    if provider.startswith("vertex_adc_"):
+        return "gemini_vertex_adc"
     if provider.startswith("vertex_"):
         return "gemini_vertex"
     return "openrouter"
@@ -227,6 +229,10 @@ _VALID_TRANSLATE_PREFS = (
     "vertex_gemini_31_flash_lite",   # gemini-3.1-flash-lite-preview（默认）
     "vertex_gemini_3_flash",         # gemini-3-flash-preview
     "vertex_gemini_31_pro",          # gemini-3.1-pro-preview
+    # Vertex AI ADC（凭据来自服务器 Application Default Credentials）
+    "vertex_adc_gemini_31_flash_lite",
+    "vertex_adc_gemini_3_flash",
+    "vertex_adc_gemini_31_pro",
     # OpenRouter
     "gemini_31_flash",               # google/gemini-3.1-flash-lite-preview via openrouter
     "gemini_31_pro",                 # google/gemini-3.1-pro-preview via openrouter

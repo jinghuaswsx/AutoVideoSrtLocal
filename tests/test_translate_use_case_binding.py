@@ -7,6 +7,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from appcore import runtime
 from pipeline import translate
 from pipeline.translate import (
     _binding_lookup_for_use_case,
@@ -53,6 +54,33 @@ def test_resolves_vertex_binding_to_custom_model():
         p = _resolve_use_case_provider("video_translate.localize")
     assert p == "vertex_custom"
     assert translate._VERTEX_PREF_MODELS["vertex_custom"] == "gemini-experimental-xyz"
+
+
+def test_resolves_vertex_adc_binding_to_known_pref_model():
+    with patch("pipeline.translate._binding_lookup_for_use_case",
+               return_value={"provider": "gemini_vertex_adc",
+                             "model": "gemini-3.1-pro-preview",
+                             "extra": {}, "source": "db"}):
+        p = _resolve_use_case_provider("video_translate.localize")
+    assert p == "vertex_adc_gemini_31_pro"
+    assert translate._vertex_provider_config_code(p) == "gemini_vertex_adc_text"
+
+
+def test_resolves_vertex_adc_binding_to_custom_model():
+    with patch("pipeline.translate._binding_lookup_for_use_case",
+               return_value={"provider": "gemini_vertex_adc",
+                             "model": "gemini-2.5-flash",
+                             "extra": {}, "source": "db"}):
+        p = _resolve_use_case_provider("video_translate.localize")
+    assert p == "vertex_adc_custom"
+    assert translate._VERTEX_PREF_MODELS["vertex_adc_custom"] == "gemini-2.5-flash"
+    assert translate._vertex_model_id(p) == "gemini-2.5-flash"
+
+
+def test_runtime_billing_provider_distinguishes_vertex_adc():
+    assert "vertex_adc_gemini_31_pro" in runtime._VALID_TRANSLATE_PREFS
+    assert runtime._translate_billing_provider("vertex_adc_gemini_31_pro") == "gemini_vertex_adc"
+    assert runtime._translate_billing_provider("vertex_gemini_31_pro") == "gemini_vertex"
 
 
 def test_resolves_aistudio_binding_falls_back_to_openrouter():

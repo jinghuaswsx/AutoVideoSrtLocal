@@ -134,6 +134,72 @@ def test_cloud_db_api_key_only_generate_stream_uses_vertex_api_key(monkeypatch):
     }
 
 
+def test_adc_binding_initializes_vertex_client_without_api_key(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+    monkeypatch.setattr(
+        gemini,
+        "_binding_lookup",
+        lambda service: {
+            "provider": "gemini_vertex_adc",
+            "model": "gemini-2.5-flash",
+        } if service == "video_score.run" else None,
+    )
+    monkeypatch.setattr(
+        gemini,
+        "get_provider_config",
+        lambda code: _cfg(
+            api_key="ignored-key",
+            model_id="gemini-2.5-flash",
+            extra={"project": "adc-project", "location": "global"},
+        ) if code == "gemini_vertex_adc_text" else None,
+    )
+
+    created = {}
+
+    def fake_client(**kwargs):
+        created.update(kwargs)
+        client = SimpleNamespace()
+        client.models = SimpleNamespace(
+            generate_content=lambda **_: SimpleNamespace(text="ok", parsed=None)
+        )
+        return client
+
+    monkeypatch.setattr(gemini.genai, "Client", fake_client)
+
+    out = gemini.generate(
+        "hello",
+        service="video_score.run",
+        max_retries=1,
+    )
+
+    assert out == "ok"
+    assert created == {
+        "vertexai": True,
+        "project": "adc-project",
+        "location": "global",
+    }
+
+
+def test_adc_binding_requires_project(monkeypatch):
+    _, gemini = _reload_gemini(monkeypatch)
+    monkeypatch.setattr(
+        gemini,
+        "_binding_lookup",
+        lambda service: {"provider": "gemini_vertex_adc", "model": "gemini-2.5-flash"},
+    )
+    monkeypatch.setattr(
+        gemini,
+        "get_provider_config",
+        lambda code: _cfg(api_key="ignored-key") if code == "gemini_vertex_adc_text" else None,
+    )
+
+    with pytest.raises(gemini.GeminiError) as exc_info:
+        gemini.generate("hello", service="video_score.run", max_retries=1)
+
+    assert "gemini_vertex_adc_text" in str(exc_info.value)
+    assert "extra_config.project" in str(exc_info.value)
+
+
 def test_generate_logs_usage_via_ai_billing(monkeypatch):
     _, gemini = _reload_gemini(monkeypatch)
 

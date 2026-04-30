@@ -42,23 +42,20 @@ def _load_prices() -> dict[tuple[str, str], dict]:
     return data
 
 
-# AI Studio 和 Vertex 对同名 Gemini 模型定价相同，这里维护一次即可
-# 查找顺序：自家精确 → 对家精确 → 自家通配 → 对家通配
-_GEMINI_PAIR = {
-    "gemini_aistudio": "gemini_vertex",
-    "gemini_vertex": "gemini_aistudio",
-}
+# AI Studio、Vertex 和 Vertex ADC 对同名 Gemini 模型定价相同，这里维护一次即可
+# 查找顺序：自家精确 → 同组精确 → 自家通配 → 同组通配
+_GEMINI_PRICING_GROUP = ("gemini_aistudio", "gemini_vertex", "gemini_vertex_adc")
 
 
 def _lookup(provider: str, model: str) -> dict | None:
     data = _load_prices()
-    pair = _GEMINI_PAIR.get(provider)
+    peer_providers = []
+    if provider in _GEMINI_PRICING_GROUP:
+        peer_providers = [p for p in _GEMINI_PRICING_GROUP if p != provider]
     keys: list[tuple[str, str]] = [(provider, model)]
-    if pair:
-        keys.append((pair, model))
+    keys.extend((peer, model) for peer in peer_providers)
     keys.append((provider, "*"))
-    if pair:
-        keys.append((pair, "*"))
+    keys.extend((peer, "*") for peer in peer_providers)
     for key in keys:
         row = data.get(key)
         if row is not None:

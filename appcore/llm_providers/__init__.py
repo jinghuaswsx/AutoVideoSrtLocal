@@ -8,10 +8,14 @@ provider_code 枚举：
     doubao          - OpenAI-compatible (火山引擎 ARK)
     gemini_aistudio - Google AI Studio (genai.Client(api_key=...))
     gemini_vertex   - Google Cloud Express Mode (genai.Client(vertexai=True, ...))
+    gemini_vertex_adc - Google Cloud Vertex AI via Application Default Credentials
 """
 from appcore.llm_providers.base import LLMAdapter
 from appcore.llm_providers.gemini_aistudio_adapter import GeminiAIStudioAdapter
-from appcore.llm_providers.gemini_vertex_adapter import GeminiVertexAdapter
+from appcore.llm_providers.gemini_vertex_adapter import (
+    GeminiVertexADCAdapter,
+    GeminiVertexAdapter,
+)
 from appcore.llm_providers.openrouter_adapter import DoubaoAdapter, OpenRouterAdapter
 
 PROVIDER_ADAPTERS: dict[str, LLMAdapter] = {
@@ -19,6 +23,7 @@ PROVIDER_ADAPTERS: dict[str, LLMAdapter] = {
     "doubao": DoubaoAdapter(),
     "gemini_aistudio": GeminiAIStudioAdapter(),
     "gemini_vertex": GeminiVertexAdapter(),
+    "gemini_vertex_adc": GeminiVertexADCAdapter(),
 }
 
 

@@ -304,9 +304,9 @@ USE_CASES: dict[str, UseCase] = {
         "material",
         "素材评估",
         "根据商品图、链接和视频评估市场适配度",
-        "openrouter",
-        "google/gemini-3.1-pro-preview",
-        "openrouter",
+        "gemini_vertex_adc",
+        "gemini-3.1-pro-preview",
+        "gemini_vertex_adc",
         "tokens",
     ),
     "push_quality.check": _uc(

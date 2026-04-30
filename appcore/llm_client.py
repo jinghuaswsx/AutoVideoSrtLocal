@@ -16,6 +16,7 @@ _PROXY_REQUIRED_PROVIDERS = {
     "anthropic",
     "gemini_aistudio",
     "gemini_vertex",
+    "gemini_vertex_adc",
     "openai",
     "openrouter",
 }

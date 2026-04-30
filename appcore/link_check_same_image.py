@@ -10,11 +10,13 @@ _DEFAULT_MODEL = get_use_case("link_check.same_image")["default_model"]
 _PROVIDER_CHANNELS = {
     "gemini_aistudio": "aistudio",
     "gemini_vertex": "cloud",
+    "gemini_vertex_adc": "cloud_adc",
     "openrouter": "openrouter",
     "doubao": "doubao",
 }
 _PROVIDER_LABELS = {
     "doubao": "豆包",
+    "gemini_vertex_adc": "Google Vertex AI (ADC)",
 }
 
 

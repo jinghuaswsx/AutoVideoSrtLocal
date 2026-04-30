@@ -37,6 +37,7 @@ _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _DEFAULT_AISTUDIO_PROVIDER = "gemini_aistudio_text"
 _DEFAULT_CLOUD_PROVIDER = "gemini_cloud_text"
+_DEFAULT_ADC_PROVIDER = "gemini_vertex_adc_text"
 _FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
 
 
@@ -76,18 +77,38 @@ def _binding_lookup(service: str) -> dict | None:
 def _resolve_provider_code(service: str) -> tuple[str, str]:
     """决定该 service 走哪个 llm_provider_configs 行。
 
-    返回 (provider_code, "aistudio" | "cloud")。
+    返回 (provider_code, "aistudio" | "cloud" | "adc")。
     """
     binding = _binding_lookup(service)
     if binding:
         provider = (binding.get("provider") or "").strip()
         if provider == "gemini_vertex":
             return _DEFAULT_CLOUD_PROVIDER, "cloud"
+        if provider == "gemini_vertex_adc":
+            return _DEFAULT_ADC_PROVIDER, "adc"
         if provider == "gemini_aistudio":
             return _DEFAULT_AISTUDIO_PROVIDER, "aistudio"
     if service in {"gemini_cloud", "gemini_cloud_text", "gemini_cloud_image"}:
         return _DEFAULT_CLOUD_PROVIDER, "cloud"
+    if service in {"gemini_vertex_adc", "gemini_vertex_adc_text", "gemini_vertex_adc_image"}:
+        provider_code = "gemini_vertex_adc_image" if service == "gemini_vertex_adc_image" else _DEFAULT_ADC_PROVIDER
+        return provider_code, "adc"
     return _DEFAULT_AISTUDIO_PROVIDER, "aistudio"
+
+
+def _binding_model_for_backend(service: str, backend: str) -> str:
+    binding = _binding_lookup(service)
+    if not binding:
+        return ""
+    provider = (binding.get("provider") or "").strip()
+    allowed = {
+        "aistudio": "gemini_aistudio",
+        "cloud": "gemini_vertex",
+        "adc": "gemini_vertex_adc",
+    }.get(backend)
+    if provider != allowed:
+        return ""
+    return (binding.get("model") or "").strip()
 
 
 def resolve_config(user_id: int | None = None, service: str = "gemini",
@@ -97,14 +118,11 @@ def resolve_config(user_id: int | None = None, service: str = "gemini",
     api_key 与 model_id 全部来自 llm_provider_configs；不读 .env，不读 google_api_key 文件。
     binding 命中时使用 binding 的 model_id，否则使用 DB 行 model_id 或调用方传入的 default。
     """
-    provider_code, _ = _resolve_provider_code(service)
+    provider_code, backend = _resolve_provider_code(service)
     cfg = get_provider_config(provider_code)
-    api_key = (cfg.api_key if cfg else "") or ""
+    api_key = "" if backend == "adc" else ((cfg.api_key if cfg else "") or "")
 
-    binding = _binding_lookup(service)
-    model_id = ""
-    if binding and binding.get("model"):
-        model_id = (binding["model"] or "").strip()
+    model_id = _binding_model_for_backend(service, backend)
     if not model_id and cfg and cfg.model_id:
         model_id = cfg.model_id
     if not model_id:
@@ -113,7 +131,12 @@ def resolve_config(user_id: int | None = None, service: str = "gemini",
 
 
 def _client_cache_key(provider_code: str, api_key: str, project: str, location: str) -> str:
-    if provider_code in {"gemini_cloud_text", "gemini_cloud_image"}:
+    if provider_code in {
+        "gemini_cloud_text",
+        "gemini_cloud_image",
+        "gemini_vertex_adc_text",
+        "gemini_vertex_adc_image",
+    }:
         if project:
             return f"cloud:{provider_code}:{project}:{location}"
         return f"cloud-legacy:{provider_code}:{api_key}"
@@ -130,15 +153,22 @@ def _get_client_for_service(service: str) -> tuple[genai.Client, str]:
         )
     api_key = (cfg.api_key or "").strip()
     extra = cfg.extra_config or {}
-    project = (extra.get("project") or "").strip() if backend == "cloud" else ""
-    location = (extra.get("location") or "global").strip() if backend == "cloud" else ""
+    project = (extra.get("project") or "").strip() if backend in {"cloud", "adc"} else ""
+    location = (extra.get("location") or "global").strip() if backend in {"cloud", "adc"} else ""
 
+    if backend == "adc":
+        api_key = ""
+        if not project:
+            raise GeminiError(
+                f"Gemini Vertex ADC（{provider_code}）缺少 extra_config.project，"
+                "请在 /settings 填写。"
+            )
     if backend == "cloud" and not (project or api_key):
         raise GeminiError(
             f"Gemini Cloud（{provider_code}）缺少 api_key 或 extra_config.project，"
             "请在 /settings 填写。"
         )
-    if backend != "cloud" and not api_key:
+    if backend == "aistudio" and not api_key:
         raise GeminiError(
             f"Gemini AI Studio（{provider_code}）缺少 api_key，请在 /settings 填写。"
         )
@@ -146,7 +176,7 @@ def _get_client_for_service(service: str) -> tuple[genai.Client, str]:
     cache_key = _client_cache_key(provider_code, api_key, project, location)
     client = _clients.get(cache_key)
     if client is None:
-        if backend == "cloud":
+        if backend in {"cloud", "adc"}:
             if project:
                 client = genai.Client(
                     vertexai=True,
@@ -159,7 +189,7 @@ def _get_client_for_service(service: str) -> tuple[genai.Client, str]:
             client = genai.Client(api_key=api_key)
         _clients[cache_key] = client
 
-    model_id = cfg.model_id or _FALLBACK_MODEL
+    model_id = _binding_model_for_backend(service, backend) or cfg.model_id or _FALLBACK_MODEL
     return client, model_id
 
 

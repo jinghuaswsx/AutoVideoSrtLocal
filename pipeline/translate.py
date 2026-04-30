@@ -82,11 +82,24 @@ def _resolve_use_case_provider(provider_arg: str) -> str:
     p = binding["provider"]
     m = binding["model"]
     if p == "gemini_vertex":
-        reverse = {v: k for k, v in _VERTEX_PREF_MODELS.items()}
+        reverse = {
+            v: k for k, v in _VERTEX_PREF_MODELS.items()
+            if k.startswith("vertex_") and not k.startswith("vertex_adc_")
+        }
         if m in reverse:
             return reverse[m]
         _VERTEX_PREF_MODELS["vertex_custom"] = m
         return "vertex_custom"
+    if p == "gemini_vertex_adc":
+        reverse = {
+            v: "vertex_adc_" + k[len("vertex_"):]
+            for k, v in _VERTEX_PREF_MODELS.items()
+            if k.startswith("vertex_") and not k.startswith("vertex_adc_")
+        }
+        if m in reverse:
+            return reverse[m]
+        _VERTEX_PREF_MODELS["vertex_adc_custom"] = m
+        return "vertex_adc_custom"
     if p == "gemini_aistudio":
         # translate.py 内没有 AIStudio 分支；回退到 OpenRouter 并补 google/ 前缀
         model_id = m if m.startswith("google/") else f"google/{m}"
@@ -138,7 +151,7 @@ def resolve_provider_config(
 def get_model_display_name(provider: str, user_id: int | None = None) -> str:
     """Return the model ID string for logging/display."""
     if provider.startswith("vertex_"):
-        return _VERTEX_PREF_MODELS.get(provider, "gemini-3.1-flash-lite-preview")
+        return _vertex_model_id(provider)
     _, model = resolve_provider_config(provider, user_id)
     return model
 
@@ -207,6 +220,7 @@ def _call_vertex_json(
     response_format: dict | None,
     temperature: float = 0.2,
     max_output_tokens: int = 4096,
+    provider_config_code: str = "gemini_cloud_text",
 ):
     """走 Vertex AI 返回 (parsed_payload, usage_dict, raw_text)。
 
@@ -217,7 +231,7 @@ def _call_vertex_json(
     from google.genai import types as genai_types
 
     try:
-        provider_cfg = require_provider_config("gemini_cloud_text")
+        provider_cfg = require_provider_config(provider_config_code)
     except ProviderConfigError as exc:
         raise RuntimeError(str(exc)) from exc
 
@@ -226,7 +240,15 @@ def _call_vertex_json(
     project = (extra.get("project") or "").strip()
     location = (extra.get("location") or "global").strip() or "global"
 
-    if not (api_key or project):
+    if provider_config_code == "gemini_vertex_adc_text":
+        api_key = ""
+        if not project:
+            raise RuntimeError(
+                "Missing provider config gemini_vertex_adc_text.extra_config.project; "
+                "set it in /settings provider access."
+            )
+
+    if provider_config_code != "gemini_vertex_adc_text" and not (api_key or project):
         raise RuntimeError(
             "缺少供应商配置 gemini_cloud_text.api_key 或 extra_config.project，"
             "请在 /settings 的「服务商接入」页填写。"
@@ -273,7 +295,19 @@ def _call_vertex_json(
 
 
 def _vertex_model_id(provider: str) -> str:
+    if provider.startswith("vertex_adc_"):
+        legacy_provider = "vertex_" + provider[len("vertex_adc_"):]
+        return _VERTEX_PREF_MODELS.get(
+            provider,
+            _VERTEX_PREF_MODELS.get(legacy_provider, "gemini-3.1-flash-lite-preview"),
+        )
     return _VERTEX_PREF_MODELS.get(provider, "gemini-3.1-flash-lite-preview")
+
+
+def _vertex_provider_config_code(provider: str) -> str:
+    if provider.startswith("vertex_adc_"):
+        return "gemini_vertex_adc_text"
+    return "gemini_cloud_text"
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +427,7 @@ def _generate_localized_translation_single(
     if provider.startswith("vertex_"):
         payload, usage, _ = _call_vertex_json(
             messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
+            provider_config_code=_vertex_provider_config_code(provider),
         )
     else:
         payload, usage, _, _ = _call_openai_compat(
@@ -523,7 +558,10 @@ def _generate_tts_script_single(
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
 
     if provider.startswith("vertex_"):
-        payload, usage, _ = _call_vertex_json(messages, _vertex_model_id(provider), rf)
+        payload, usage, _ = _call_vertex_json(
+            messages, _vertex_model_id(provider), rf,
+            provider_config_code=_vertex_provider_config_code(provider),
+        )
     else:
         payload, usage, _, _ = _call_openai_compat(
             messages, provider=provider, user_id=user_id,
@@ -746,6 +784,7 @@ def _generate_localized_rewrite_single(
         payload, usage, _ = _call_vertex_json(
             messages, _vertex_model_id(provider), LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
             temperature=temperature,
+            provider_config_code=_vertex_provider_config_code(provider),
         )
     else:
         payload, usage, _, _ = _call_openai_compat(

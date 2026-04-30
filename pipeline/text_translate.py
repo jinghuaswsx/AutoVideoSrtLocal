@@ -40,6 +40,8 @@ def _resolve_provider_and_model(
         return binding["provider"], binding["model"]
 
     normalized = _resolve_use_case_provider(provider)
+    if normalized.startswith("vertex_adc_"):
+        return "gemini_vertex_adc", get_model_display_name(normalized, user_id)
     if normalized.startswith("vertex_"):
         return "gemini_vertex", get_model_display_name(normalized, user_id)
 

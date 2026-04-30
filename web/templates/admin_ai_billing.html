@@ -1054,7 +1054,7 @@
           <span>供应商</span>
           <select class="billing-select" name="provider">
             <option value="">全部供应商</option>
-            {% for provider in ['openrouter', 'doubao', 'gemini_vertex', 'gemini_aistudio', 'elevenlabs', 'doubao_asr'] %}
+            {% for provider in ['openrouter', 'doubao', 'gemini_vertex', 'gemini_vertex_adc', 'gemini_aistudio', 'elevenlabs', 'doubao_asr'] %}
             <option value="{{ provider }}" {% if filters.provider == provider %}selected{% endif %}>{{ provider }}</option>
             {% endfor %}
           </select>

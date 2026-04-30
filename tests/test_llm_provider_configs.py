@@ -251,6 +251,19 @@ def test_save_provider_config_creates_row_when_admin_first_saves(fake_db):
     assert cfg.base_url == "https://api.apimart.ai"
 
 
+def test_save_provider_config_creates_google_vertex_adc_row(fake_db):
+    assert lpc.get_provider_config("gemini_vertex_adc_text") is None
+    lpc.save_provider_config(
+        "gemini_vertex_adc_text",
+        {"extra_config": {"project": "project-x", "location": "global"}},
+        updated_by=1,
+    )
+    cfg = lpc.get_provider_config("gemini_vertex_adc_text")
+    assert cfg is not None
+    assert cfg.api_key is None
+    assert cfg.extra_config == {"project": "project-x", "location": "global"}
+
+
 # ---------------------------------------------------------------------------
 # credential_provider_for_adapter
 # ---------------------------------------------------------------------------
@@ -262,6 +275,8 @@ def test_credential_provider_for_adapter_splits_text_and_image():
     assert lpc.credential_provider_for_adapter("gemini_aistudio", media_kind="image") == "gemini_aistudio_image"
     assert lpc.credential_provider_for_adapter("gemini_vertex") == "gemini_cloud_text"
     assert lpc.credential_provider_for_adapter("gemini_vertex", media_kind="image") == "gemini_cloud_image"
+    assert lpc.credential_provider_for_adapter("gemini_vertex_adc") == "gemini_vertex_adc_text"
+    assert lpc.credential_provider_for_adapter("gemini_vertex_adc", media_kind="image") == "gemini_vertex_adc_image"
 
 
 def test_credential_provider_for_adapter_single_row_providers():
