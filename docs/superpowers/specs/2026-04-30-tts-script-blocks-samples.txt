@@ -1,0 +1,97 @@
+================================================================================
+## D_car_mount -> de
+================================================================================
+### 输入：localize full_text
+Alte Halterungen kleben nur auf Glas, auf Leder funktioniert das nicht. Draufkleben, sofort wieder ab. Diese hier ist anders: Nano-Gel-Basis, haelt auch auf Leder bombenfest. Genau diese Stelle, perfekt. Einsteigen, Handy einfach draufschnappen. Navi laeuft, Nachrichten im Blick, kein Problem. Alte Halterungen lassen das Handy fallen, diese nicht. Nano-Gel-Kraft, wirklich stabil. Schuetteln, Schlagloecher, egal, sie haelt. Hinter dem Display, ja, sitzt fest. Winkel verstellbar, Magnetring dreht sich. Lange Fahrt oder Stadtverkehr, Handy sicher, ideal fuers Navi. Blockiert das Display nicht. Rueckspiegel bleibt frei. Fahrt filmen? Kein Problem. Schiebedach? Warum nicht. Passagiere hinten? Film schauen. Beifahrersitz? Auch moeglich. Einmal drehen, Halterung ab. Keine Spuren. Alte Halterungen brauchen glatte Flaechen, um stabil zu wirken. Schau mal hier. Direkt aufs Leder. Vakuum-Grip, haelt wie ein Fels. Android mit Ring einfach draufschnappen, schuetteln so viel du willst. iPhone klebt direkt, bewegt sich keinen Millimeter.
+
+### claude_sonnet blocks (23 blocks):
+  [00] Old mounts only stick to glass, they don't work on leather.
+  [01] Stick it on, right back off.
+  [02] This one is different: nano gel base, holds on leather like a rock.
+  [03] Right on this spot, perfect.
+  [04] Get in, just snap your phone on.
+  [05] Navigation running, messages in view, no problem.
+  [06] Old mounts drop your phone, this one doesn't.
+  [07] Nano gel power, truly stable.
+  [08] Shaking, potholes, doesn't matter, it holds.
+  [09] Behind the display, yes, sits tight.
+  [10] Angle adjustable, magnetic ring rotates.
+  [11] Long drive or city traffic, phone secure, ideal for navigation.
+  [12] Does not block the display. Rearview mirror stays clear.
+  [13] Filming your drive? No problem.
+  [14] Sunroof? Why not.
+  [15] Passengers in the back? Watch a movie.
+  [16] Passenger seat? Also possible.
+  [17] One turn, mount off. No marks.
+  [18] Old mounts need smooth surfaces to stay stable.
+  [19] Look right here. Directly onto the leather.
+  [20] Vacuum grip, holds like a rock.
+  [21] Android with ring just snap on, shake as much as you want.
+  [22] iPhone sticks directly, doesn't move a millimeter.
+
+### gemini_3_flash blocks (11 blocks):
+  [00] Alte Halterungen kleben nur auf Glas, auf Leder funktioniert das nicht. Draufkleben, sofort wieder ab.
+  [01] Diese hier ist anders: Nano-Gel-Basis, haelt auch auf Leder bombenfest. Genau diese Stelle, perfekt.
+  [02] Einsteigen, Handy einfach draufschnappen. Navi laeuft, Nachrichten im Blick, kein Problem.
+  [03] Alte Halterungen lassen das Handy fallen, diese nicht. Nano-Gel-Kraft, wirklich stabil.
+  [04] Schuetteln, Schlagloecher, egal, sie haelt. Hinter dem Display, ja, sitzt fest.
+  [05] Winkel verstellbar, Magnetring dreht sich. Lange Fahrt oder Stadtverkehr, Handy sicher, ideal fuers Navi.
+  [06] Blockiert das Display nicht. Rueckspiegel bleibt frei. Fahrt filmen? Kein Problem.
+  [07] Schiebedach? Warum nicht. Passagiere hinten? Film schauen. Beifahrersitz? Auch moeglich.
+  [08] Einmal drehen, Halterung ab. Keine Spuren. Alte Halterungen brauchen glatte Flaechen, um stabil zu wirken.
+  [09] Schau mal hier. Direkt aufs Leder. Vakuum-Grip, haelt wie ein Fels.
+  [10] Android mit Ring einfach draufschnappen, schuetteln so viel du willst. iPhone klebt direkt, bewegt sich keinen Millimeter.
+
+
+================================================================================
+## A_ice_ball -> fr
+================================================================================
+### 输入：localize full_text
+Franchement, j'ai abandonné l'idée de les garder pour moi. Tous mes invités veulent repartir avec mes glaçons géants. Ils fondent bien plus lentement que des glaçons classiques, et l'effet rafraîchissant est vraiment top. C'est devenu mon indispensable de l'été. Très simple à utiliser. On remplit le moule d'eau, on clipse le couvercle pour enlever l'excédent, et on glisse le tout dans un coin du congélateur. Le glaçon ressort parfaitement rond et lisse. Vous le déposez dans votre verre, que ce soit un cocktail ou un soda, et c'est vraiment rafraîchissant. Le prix est très correct en ce moment. Vous recevez six moules d'un coup.
+
+### claude_sonnet blocks (9 blocks):
+  [00] Honestly, I gave up on keeping them for myself.
+  [01] All my guests want to leave with my giant ice cubes.
+  [02] They melt much more slowly than regular ice cubes, and the cooling effect is really great.
+  [03] It has become my summer essential.
+  [04] Very simple to use.
+  [05] You fill the mold with water, clip the lid to remove the excess, and slide the whole thing into a corner of the freezer.
+  [06] The ice cube comes out perfectly round and smooth.
+  [07] You drop it in your glass, whether it's a cocktail or a soda, and it's really refreshing.
+  [08] The price is very reasonable right now. You get six molds at once.
+
+### gemini_3_flash blocks (6 blocks):
+  [00] Franchement, j'ai abandonné l'idée de les garder pour moi. Tous mes invités veulent repartir avec mes glaçons géants.
+  [01] Ils fondent bien plus lentement que des glaçons classiques, et l'effet rafraîchissant est vraiment top.
+  [02] C'est devenu mon indispensable de l'été. Très simple à utiliser.
+  [03] On remplit le moule d'eau, on clipse le couvercle pour enlever l'excédent, et on glisse le tout dans un coin du congélateur.
+  [04] Le glaçon ressort parfaitement rond et lisse. Vous le déposez dans votre verre, que ce soit un cocktail ou un soda, et c'est vraiment rafraîchissant.
+  [05] Le prix est très correct en ce moment. Vous recevez six moules d'un coup.
+
+
+================================================================================
+## B_utility_knife -> sv
+================================================================================
+### 输入：localize full_text
+Det här är den enda universalkniven du någonsin kommer att behöva. Den är gjord av massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad. Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare. Bakänden är en flasköppnare, med ett inbyggt linjal på sidan. Handtaget har också flera storlekar av insexnycklar. Den justerbara ratten låter dig styra bladlängden exakt. Rakvasst skarpa blad är enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i. Inget behov av en tung verktygslåda, det här verktyget klarar allt på en gång.
+
+### claude_sonnet blocks (8 blocks):
+  [00] Det här är den enda universalkniven du någonsin kommer att behöva.
+  [01] Den är gjord av massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad.
+  [02] Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare.
+  [03] Bakänden är en flasköppnare, med ett inbyggt linjal på sidan.
+  [04] Handtaget har också flera storlekar av insexnycklar.
+  [05] Den justerbara ratten låter dig styra bladlängden exakt.
+  [06] Rakvasst skarpa blad är enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i.
+  [07] Inget behov av en tung verktygslåda, det här verktyget klarar allt på en gång.
+
+### gemini_3_flash blocks (8 blocks):
+  [00] Det här är den enda universalkniven du någonsin kommer att behöva.
+  [01] Den är gjord av massivt rostfritt stål av hög kvalitet, ett 6-i-1 multiverktyg som håller länge, och den levereras med 10 utbytesblad.
+  [02] Den förstärkta spetsen fungerar som en spårskruvmejsel och konservöppnare.
+  [03] Bakänden är en flasköppnare, med ett inbyggt linjal på sidan.
+  [04] Handtaget har också flera storlekar av insexnycklar.
+  [05] Den justerbara ratten låter dig styra bladlängden exakt.
+  [06] Rakvasst skarpa blad är enkla att byta, och kroppen är tjock, stadig och bekväm att hålla i.
+  [07] Inget behov av en tung verktygslåda, det här verktyget klarar allt på en gång.
+
