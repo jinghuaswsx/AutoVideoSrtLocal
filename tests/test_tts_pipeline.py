@@ -70,6 +70,29 @@ def test_build_tts_segments_falls_back_to_last_segment_when_all_indices_invalid(
     assert segments[0]["end_time"] == 2.0
 
 
+def test_build_tts_segments_falls_back_when_block_missing_source_segment_indices_key():
+    """LLM 偶尔会完全省掉 source_segment_indices 字段（不是越界，是缺 key）。
+    修复前 build_tts_segments 直接 KeyError: 'source_segment_indices'，前端就弹
+    "错误：'source_segment_indices'"。修复后应当与缺索引一样退回 fallback。"""
+    script_segments = [
+        {"index": 0, "text": "a", "start_time": 0.0, "end_time": 1.0},
+        {"index": 1, "text": "b", "start_time": 1.0, "end_time": 2.0},
+    ]
+    tts_script = {
+        "full_text": "solo.",
+        "blocks": [
+            {"index": 0, "text": "solo", "sentence_indices": [0]},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    segments = build_tts_segments(tts_script, script_segments)
+
+    assert len(segments) == 1
+    assert segments[0]["source_segment_indices"] == [1]
+    assert segments[0]["end_time"] == 2.0
+
+
 def test_generate_segment_audio_passes_speed_via_voice_settings(tmp_path, monkeypatch):
     import pipeline.tts as tts
 

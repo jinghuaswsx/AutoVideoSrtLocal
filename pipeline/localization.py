@@ -394,7 +394,7 @@ def build_tts_segments(tts_script: dict, script_segments: list[dict]) -> list[di
     result = []
 
     for block in tts_script.get("blocks", []):
-        indices = block["source_segment_indices"]
+        indices = block.get("source_segment_indices") or []
         valid = [i for i in indices if i in segments_by_index]
         if not valid:
             valid = [fallback_index]
@@ -444,6 +444,11 @@ def validate_tts_script(payload, max_words: int = 10) -> dict:
     full_text = _sanitize_model_text(payload.get("full_text") or "")
     if not blocks:
         raise ValueError("tts_script requires blocks")
+
+    for block in blocks:
+        indices = block.get("source_segment_indices")
+        if not isinstance(indices, list) or not indices:
+            raise ValueError("tts_script block missing source_segment_indices")
 
     # full_text 缺失或不一致时，从 blocks 自动拼接
     concat = _concat_items(blocks, "text")

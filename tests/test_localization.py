@@ -1,5 +1,7 @@
 import types
 
+import pytest
+
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_SYSTEM_PROMPT,
     TTS_SCRIPT_SYSTEM_PROMPT,
@@ -214,6 +216,21 @@ def test_validate_tts_script_balances_long_sentence_to_avoid_tiny_tail_chunks():
 
     assert len(validated["subtitle_chunks"]) == 2
     assert all(5 <= count <= 10 for count in counts)
+
+
+def test_validate_tts_script_rejects_block_missing_source_segment_indices():
+    """LLM 偶尔漏返 source_segment_indices；早在 validate 阶段就给出明确 ValueError，
+    避免坏数据流到 build_tts_segments 抛 KeyError 弹 "错误：'source_segment_indices'"。"""
+    payload = {
+        "full_text": "say it smooth.",
+        "blocks": [
+            {"index": 0, "text": "say it smooth.", "sentence_indices": [0]},
+        ],
+        "subtitle_chunks": [],
+    }
+
+    with pytest.raises(ValueError, match="source_segment_indices"):
+        validate_tts_script(payload)
 
 
 def test_prompts_require_shorter_sentences_and_no_em_dash():
