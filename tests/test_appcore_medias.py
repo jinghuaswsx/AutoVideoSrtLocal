@@ -303,6 +303,52 @@ def test_update_item_display_name_updates_only_display_name(monkeypatch):
     assert captured["args"] == ("new-video-name.mp4", 77)
 
 
+def test_create_item_rejects_filename_with_space_before_db(monkeypatch):
+    calls = []
+    monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)
+
+    with pytest.raises(ValueError, match="文件名不能包含空格"):
+        medias.create_item(12, 3, "new video.mp4", "3/medias/12/new video.mp4")
+
+    assert calls == []
+
+
+def test_update_item_display_name_rejects_space_before_db(monkeypatch):
+    calls = []
+    monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)
+
+    with pytest.raises(ValueError, match="文件名不能包含空格"):
+        medias.update_item_display_name(77, "new-video-name.mp4 ")
+
+    assert calls == []
+
+
+def test_create_raw_source_rejects_display_name_with_space_before_db(monkeypatch):
+    calls = []
+    monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)
+
+    with pytest.raises(ValueError, match="文件名不能包含空格"):
+        medias.create_raw_source(
+            12,
+            3,
+            display_name="raw source.mp4",
+            video_object_key="3/medias/12/raw_sources/raw-source.mp4",
+            cover_object_key="3/medias/12/raw_sources/raw-source.cover.jpg",
+        )
+
+    assert calls == []
+
+
+def test_update_raw_source_rejects_display_name_with_space_before_db(monkeypatch):
+    calls = []
+    monkeypatch.setattr(medias, "execute", lambda *args, **kwargs: calls.append((args, kwargs)) or 1)
+
+    with pytest.raises(ValueError, match="文件名不能包含空格"):
+        medias.update_raw_source(88, display_name="raw source.mp4")
+
+    assert calls == []
+
+
 def test_parse_link_check_tasks_json_handles_str_dict_and_none():
     assert medias.parse_link_check_tasks_json(None) == {}
     assert medias.parse_link_check_tasks_json("") == {}

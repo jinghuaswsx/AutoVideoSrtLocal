@@ -1726,6 +1726,95 @@ def test_update_item_display_name_rejects_invalid_name_with_suggestion(authed_cl
     assert update_calls == []
 
 
+def test_item_bootstrap_skip_validation_rejects_filename_with_space(
+    authed_client_no_db, monkeypatch
+):
+    _stub_material_filename_product(monkeypatch)
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/bootstrap",
+        json={
+            "filename": "2026.04.17-窗帘挂钩-原 素材.mp4",
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "filename_invalid"
+    assert data["details"] == ["文件名不能包含空格"]
+
+
+def test_item_complete_rejects_leading_space_filename_before_insert(
+    authed_client_no_db, monkeypatch
+):
+    r = _stub_material_filename_product(monkeypatch)
+    created = []
+    monkeypatch.setattr(r, "_is_media_available", lambda object_key: True)
+    monkeypatch.setattr(
+        r.medias,
+        "create_item",
+        lambda *args, **kwargs: created.append((args, kwargs)) or 99,
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/123/items/complete",
+        json={
+            "object_key": "1/medias/123/with-leading-space.mp4",
+            "filename": " 2026.04.17-窗帘挂钩-原素材.mp4",
+            "file_size": 123,
+            "lang": "en",
+            "skip_validation": True,
+        },
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["error"] == "filename_invalid"
+    assert data["details"] == ["文件名不能包含空格"]
+    assert created == []
+
+
+def test_update_item_display_name_rejects_trailing_space(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import medias as r
+
+    monkeypatch.setattr(
+        r.medias,
+        "get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 123,
+            "lang": "en",
+            "filename": "2026.04.17-测试商品-原素材.mp4",
+            "display_name": "2026.04.17-测试商品-原素材.mp4",
+            "object_key": "1/medias/123/en.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        r.medias,
+        "get_product",
+        lambda pid: {"id": pid, "user_id": 1, "name": "测试商品", "product_code": "demo"},
+    )
+    monkeypatch.setattr(r.medias, "list_languages", lambda: [{"code": "en", "name_zh": "英语"}])
+    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
+    update_calls = []
+    monkeypatch.setattr(r.medias, "update_item_display_name", lambda *args: update_calls.append(args))
+
+    resp = authed_client_no_db.patch(
+        "/medias/api/items/44",
+        json={"display_name": "2026.04.17-测试商品-原素材.mp4 "},
+    )
+
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert body["error"] == "filename_invalid"
+    assert body["details"] == ["文件名不能包含空格"]
+    assert update_calls == []
+
+
 def test_update_item_display_name_rejects_blank_name(authed_client_no_db, monkeypatch):
     from web.routes import medias as r
 

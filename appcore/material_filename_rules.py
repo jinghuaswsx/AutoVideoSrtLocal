@@ -14,6 +14,7 @@ _LOCALIZED_MARKER = "补充素材"
 _LOCALIZED_TAIL = "-指派-蔡靖华.mp4"
 _LOCALIZED_MID_MARKER = "-原素材-补充素材"
 _LOCALIZED_SLOT_LANG_RE = re.compile(r"^[A-Ga-g]?\(")
+FILENAME_SPACE_ERROR = "文件名不能包含空格"
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,10 @@ def validate_material_filename(
     lang_map = _normalize_languages(languages)
     effective_lang = resolve_material_filename_lang(filename, lang_code, lang_map)
 
-    if effective_lang == "en":
+    space_errors = validate_video_filename_no_spaces(filename)
+    if space_errors:
+        errors = list(space_errors)
+    elif effective_lang == "en":
         errors = _validate_simple_filename(filename, product_name)
     else:
         errors = _validate_localized_filename(filename, product_name, effective_lang, lang_map)
@@ -68,7 +72,8 @@ def validate_initial_material_filename(
     product_name = (product_name or "").strip()
     lang_map = _normalize_languages(languages)
     effective_lang = resolve_material_filename_lang(filename, lang_code, lang_map)
-    errors = _validate_simple_filename(filename, product_name)
+    space_errors = validate_video_filename_no_spaces(filename)
+    errors = list(space_errors) if space_errors else _validate_simple_filename(filename, product_name)
     suggestion = None
     if errors and product_name:
         suggestion = build_initial_suggested_material_filename(filename, product_name)
@@ -78,6 +83,11 @@ def validate_initial_material_filename(
         effective_lang=effective_lang,
         suggested_filename=suggestion,
     )
+
+
+def validate_video_filename_no_spaces(filename: str) -> tuple[str, ...]:
+    """Return an error when the client-facing video filename contains ASCII spaces."""
+    return (FILENAME_SPACE_ERROR,) if " " in _basename(filename) else ()
 
 
 def resolve_material_filename_lang(
@@ -233,5 +243,5 @@ def _normalize_languages(
 
 
 def _basename(filename: str) -> str:
-    name = (filename or "").strip().replace("\\", "/")
+    name = (filename or "").replace("\\", "/")
     return os.path.basename(name)

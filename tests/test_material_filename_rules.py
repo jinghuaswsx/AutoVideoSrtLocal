@@ -67,3 +67,25 @@ def test_initial_material_filename_requires_only_date_product_tail_and_mp4():
         "2024.01.06-逝后指南-混剪-李文龙.mov",
         "逝后指南",
     ).ok
+
+
+def test_material_filename_rejects_spaces_anywhere():
+    languages = {"en": "英语", "fr": "法语"}
+
+    for filename in (
+        " 2026.04.17-窗帘挂钩-原素材.mp4",
+        "2026.04.17-窗帘挂钩-原 素材.mp4",
+        "2026.04.17-窗帘挂钩-原素材.mp4 ",
+    ):
+        result = validate_initial_material_filename(filename, "窗帘挂钩", "en", languages)
+        assert not result.ok
+        assert result.errors == ("文件名不能包含空格",)
+
+    result = validate_material_filename(
+        "2026.04.17-窗帘挂钩-原素材-补充素材 B(法语)-指派-蔡靖华.mp4",
+        "窗帘挂钩",
+        "fr",
+        languages,
+    )
+    assert not result.ok
+    assert result.errors == ("文件名不能包含空格",)
