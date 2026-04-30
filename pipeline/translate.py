@@ -659,6 +659,40 @@ def generate_tts_script(
     )
 
 
+def _patch_missing_source_indices_from_prev(
+    out_sentences,
+    prev_sentences: list[dict],
+) -> None:
+    """Rewrite outputs sometimes drop source_segment_indices from individual
+    sentences (long prompt, high temperature). Since rewrite never changes
+    the source-segment correspondence — it only adjusts wording / word
+    count — fill the missing field from the matching prev sentence
+    (or the union of all prev sentences as last-resort fallback).
+    Mutates out_sentences in place."""
+    if not isinstance(out_sentences, list) or not out_sentences:
+        return
+    if not prev_sentences:
+        return
+    fallback = sorted({
+        int(idx)
+        for s in prev_sentences
+        for idx in (s.get("source_segment_indices") or [])
+    })
+    for i, s in enumerate(out_sentences):
+        if not isinstance(s, dict):
+            continue
+        idxs = s.get("source_segment_indices")
+        if isinstance(idxs, list) and idxs:
+            continue
+        if i < len(prev_sentences):
+            prev_idx = prev_sentences[i].get("source_segment_indices") or []
+            if prev_idx:
+                s["source_segment_indices"] = sorted({int(x) for x in prev_idx})
+                continue
+        if fallback:
+            s["source_segment_indices"] = list(fallback)
+
+
 def _allocate_sub_target_words(sentence_batches: list[list[dict]], total_target: int) -> list[int]:
     """Distribute the global target_words proportionally across batches by
     character count. Last batch absorbs rounding remainder so sum == total."""
@@ -726,6 +760,14 @@ def _generate_localized_rewrite_single(
         "temperature=%.2f, feedback=%s)",
         provider, direction, target_words, temperature,
         "yes" if feedback_notes else "no",
+    )
+    # Rewrite 不应该改 source segment 对应关系——只是按字数重写文本。
+    # 长 prompt / 高 temperature 下 LLM 偶尔漏 source_segment_indices，从
+    # prev_localized_translation.sentences 按位补回（同位 → 取对应 prev sentence；
+    # 兜底 → 取整批 prev sentences 的 union），避免 validate 失败炸流水线。
+    _patch_missing_source_indices_from_prev(
+        (payload or {}).get("sentences") if isinstance(payload, dict) else None,
+        (prev_localized_translation or {}).get("sentences") or [],
     )
     result = validate_localized_translation(payload)
     if usage:
