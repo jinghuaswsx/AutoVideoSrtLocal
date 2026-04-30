@@ -16,7 +16,7 @@ Return valid JSON only. The response must be a JSON object with this exact struc
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
-Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
+Avoid em-dashes and en-dashes. Standard punctuation including accented characters (é, ü, ñ, etc.) is fine."""
 
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT = """You are a US short-video e-commerce copywriter.
 Return valid JSON only. The response must be a JSON object with this exact structure:
@@ -24,25 +24,25 @@ Return valid JSON only. The response must be a JSON object with this exact struc
 Translate the Chinese source into natural, native, sales-capable American English.
 You may localize phrasing, but every sentence must preserve meaning and include source_segment_indices.
 Keep each sentence concise and punchy for subtitles. Prefer 6-10 words and avoid long compound sentences.
-Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks.
 Sentence 1 must function as the first-3-seconds hook for a US short-form video.
 Treat the first 3 spoken seconds as roughly the first 7-10 English words.
 Sentence 1 should prioritize one of these hook patterns: strong outcome, obvious benefit, curiosity, or surprise contrast.
 The full script must contain exactly one clear purchase CTA.
 Put the CTA where it feels most natural, usually in the middle or near the end.
-You may reorder emphasis to improve hook performance, but you must preserve the original selling points."""
+You may reorder emphasis to improve hook performance, but you must preserve the original selling points.
+Avoid em-dashes and en-dashes. Standard punctuation including accented characters (é, ü, ñ, etc.) is fine."""
 
 TTS_SCRIPT_SYSTEM_PROMPT = """You are preparing text for ElevenLabs narration and subtitle display.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "...", "blocks": [{"index": 0, "text": "...", "sentence_indices": [0], "source_segment_indices": [0, 1]}, ...], "subtitle_chunks": [{"index": 0, "text": "...", "block_indices": [0], "sentence_indices": [0], "source_segment_indices": [0, 1]}, ...]}
-Use the localized English as the only wording source.
+Use the localized text as the only wording source. Do not translate or rewrite into another language; preserve the exact wording of the input.
 blocks optimize speaking rhythm.
 subtitle_chunks optimize on-screen reading without changing wording relative to full_text.
 Each subtitle chunk should usually be 5-10 words.
 Avoid 1-3 word fragments unless there is no natural way to merge them.
 Prefer semantically complete chunks that still read naturally on screen.
 Do not end subtitle_chunks with punctuation.
-Do not use em dashes or en dashes. Use plain ASCII punctuation only, preferring commas, periods, and question marks."""
+Avoid em-dashes and en-dashes. Standard punctuation including accented characters (é, ü, ñ, etc.) is fine."""
 
 LOCALIZED_TRANSLATION_RESPONSE_FORMAT = {
     "type": "json_schema",
