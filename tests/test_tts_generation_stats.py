@@ -65,3 +65,64 @@ def test_format_log_line_zero_counts():
     line = format_log_line({"translate_calls": 0, "audio_calls": 0})
     assert "0 次翻译" in line
     assert "0 次语音生成" in line
+
+
+def test_upsert_inserts_then_updates(monkeypatch):
+    """同一个 task_id 上调两次 upsert，第二次应更新而非重复插入。"""
+    from appcore import tts_generation_stats as stats_mod
+
+    captured: list[tuple] = []
+
+    def fake_execute(sql, args=None):
+        captured.append((sql, args or ()))
+        return 1
+
+    monkeypatch.setattr(stats_mod, "execute", fake_execute)
+
+    stats_mod.upsert(
+        task_id="task-x",
+        project_type="multi_translate",
+        target_lang="it",
+        user_id=42,
+        summary={"translate_calls": 3, "audio_calls": 18},
+        finished_at_iso="2026-04-30T10:00:00",
+    )
+    stats_mod.upsert(
+        task_id="task-x",
+        project_type="multi_translate",
+        target_lang="it",
+        user_id=42,
+        summary={"translate_calls": 5, "audio_calls": 27},
+        finished_at_iso="2026-04-30T10:05:00",
+    )
+
+    assert len(captured) == 2
+    sql0, args0 = captured[0]
+    sql_norm = " ".join(sql0.split()).upper()
+    assert "INSERT INTO TTS_GENERATION_STATS" in sql_norm
+    assert "ON DUPLICATE KEY UPDATE" in sql_norm
+    assert args0[0] == "task-x"
+    assert args0[1] == "multi_translate"
+    assert args0[2] == "it"
+    assert args0[3] == 42
+    assert args0[4] == 3
+    assert args0[5] == 18
+    assert args0[6] == "2026-04-30T10:00:00"
+
+
+def test_upsert_handles_null_user_id(monkeypatch):
+    from appcore import tts_generation_stats as stats_mod
+    captured: list[tuple] = []
+    monkeypatch.setattr(stats_mod, "execute",
+                        lambda sql, args=None: captured.append((sql, args or ())) or 1)
+
+    stats_mod.upsert(
+        task_id="task-y",
+        project_type="ja_translate",
+        target_lang="ja",
+        user_id=None,
+        summary={"translate_calls": 1, "audio_calls": 5},
+        finished_at_iso="2026-04-30T11:00:00",
+    )
+
+    assert captured[0][1][3] is None
