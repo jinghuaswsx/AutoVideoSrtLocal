@@ -49,26 +49,27 @@ def _patch(monkeypatch, fake):
 
 # ------------------------------------------------------------
 
-def test_copy_only_cross_product(monkeypatch):
-    """2 英文文案 × 2 目标语言 = 4 plan 项。"""
+def test_copy_only_uses_first_english_copy_per_target_language(monkeypatch):
+    """小语种只保留一条文案:多条英文文案时只取第一条生成目标语种计划。"""
     _patch(monkeypatch, _FakeDB(copies=[{"id": 10}, {"id": 11}]))
 
     from appcore.bulk_translate_plan import generate_plan
     plan = generate_plan(1, 77, ["de", "fr"], ["copy"], False)
 
-    assert len(plan) == 4
+    assert len(plan) == 2
     kinds = {p["kind"] for p in plan}
     assert kinds == {"copy"}
     langs = sorted(set(p["lang"] for p in plan))
     assert langs == ["de", "fr"]
     # idx 连续且从 0
-    assert [p["idx"] for p in plan] == [0, 1, 2, 3]
+    assert [p["idx"] for p in plan] == [0, 1]
+    assert [p["ref"]["source_copy_id"] for p in plan] == [10, 10]
     # 所有 status 默认 pending
     assert all(p["status"] == "pending" for p in plan)
 
 
 def test_copywriting_items_are_spaced_by_target_language(monkeypatch):
-    """素材管理文案翻译按语言每 3 秒启动一批,同语言内多条文案同一时间派发。"""
+    """素材管理文案翻译按语言每 3 秒启动,且每个语言只排一条文案任务。"""
     _patch(monkeypatch, _FakeDB(copies=[{"id": 10}, {"id": 11}]))
 
     from appcore.bulk_translate_plan import generate_plan
@@ -81,9 +82,6 @@ def test_copywriting_items_are_spaced_by_target_language(monkeypatch):
         (10, "de", 0),
         (10, "fr", 3),
         (10, "es", 6),
-        (11, "de", 0),
-        (11, "fr", 3),
-        (11, "es", 6),
     ]
 
 

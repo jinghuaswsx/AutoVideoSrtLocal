@@ -39,10 +39,10 @@ def generate_plan(
         copy_rows = query(
             "SELECT id FROM media_copywritings "
             "WHERE product_id = %s AND lang = 'en' "
-            "ORDER BY idx ASC, id ASC",
+            "ORDER BY idx ASC, id ASC LIMIT 1",
             (product_id,),
         )
-        for row in copy_rows:
+        for row in copy_rows[:1]:
             for lang in target_langs:
                 plan.append(
                     _new_item(

@@ -2712,6 +2712,14 @@ def test_medias_page_translates_copywriting_as_single_structured_block():
     assert "function edTranslateCopyField" not in medias_js
 
 
+def test_medias_page_translate_copywriting_replaces_current_language():
+    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "const remainingCopies = copies.filter((item) => (" in medias_js
+    assert "edState.productData.copywritings = remainingCopies;" in medias_js
+    assert "copies.push({ lang: targetLang, body: translatedBody });" not in medias_js
+
+
 def test_medias_copywriting_normalizer_strips_nested_field_labels():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     fn_block = (

@@ -57,8 +57,8 @@ def _patch_db(monkeypatch, fake):
 # Tests
 # ------------------------------------------------------------
 
-def test_copy_only_two_langs(monkeypatch):
-    """2 条英文文案 × 2 目标语言 = 4 次翻译。"""
+def test_copy_only_uses_first_english_copy_per_target_language(monkeypatch):
+    """小语种只保留一条文案:多条英文文案时只估算第一条。"""
     fake = _FakeDB(copies_en=[
         {"id": 1, "len_title": 10, "len_body": 40, "len_description": 0,
          "len_ad_carrier": 0, "len_ad_copy": 0, "len_ad_keywords": 0},
@@ -73,9 +73,8 @@ def test_copy_only_two_langs(monkeypatch):
                   content_types=["copy"],
                   force_retranslate=False)
 
-    # 文案 1 共 50 字符,文案 2 共 90 字符;每个 × 2 语种 × 1.3 × 1.5
-    # total_chars = 50*2 + 90*2 = 280; tokens = 280 * 1.3 * 1.5 = 546
-    assert r["copy_tokens"] == int(280 * CHARS_TO_TOKENS * TRANSLATION_EXPANSION)
+    # 只取第一条英文文案:50 字符 × 2 语种 × 1.3 × 1.5
+    assert r["copy_tokens"] == int(100 * CHARS_TO_TOKENS * TRANSLATION_EXPANSION)
     assert r["image_count"] == 0
     assert r["video_minutes"] == 0
     assert r["skipped"]["copy"] == 0
