@@ -1145,6 +1145,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
             "target_lang": lang,
         },
     )
+    store.set_preview_file(child_task_id, "source_video", video_path)
     runner.start(child_task_id, user_id=user_id)
     return child_task_id, child_project_type, "running"
 

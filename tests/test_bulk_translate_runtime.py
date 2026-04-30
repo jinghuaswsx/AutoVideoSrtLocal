@@ -628,8 +628,14 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
             fh.write(b"video")
         return destination
 
+    preview_files: dict[str, dict[str, str]] = {}
+
+    def fake_set_preview_file(task_id, name, path):
+        preview_files.setdefault(task_id, {})[name] = path
+
     monkeypatch.setattr(store, "create", fake_create)
     monkeypatch.setattr(store, "update", fake_update)
+    monkeypatch.setattr(store, "set_preview_file", fake_set_preview_file)
     monkeypatch.setattr(mod.local_media_storage, "download_to", fake_download_to)
     monkeypatch.setattr(multi_pipeline_runner, "start", lambda task_id, user_id: started.append((task_id, user_id)))
 
@@ -653,6 +659,7 @@ def test_create_video_child_materializes_media_raw_source_locally(runtime_env, m
     assert updated[child_task_id]["medias_context"]["source_media_object_key"] == raw_key
     assert updated[child_task_id]["subtitle_size"] == 18
     assert updated[child_task_id]["subtitle_position_y"] == 0.55
+    assert preview_files[child_task_id]["source_video"] == created["video_path"]
 
 
 def test_create_video_child_routes_ja_to_multi_translate(runtime_env, monkeypatch, tmp_path):
