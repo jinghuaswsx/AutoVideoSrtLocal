@@ -405,12 +405,77 @@ def test_payload_requires_admin(authed_user_client_no_db):
     assert resp.status_code == 403
 
 
-def test_payload_rejects_already_pushed(logged_in_client, seeded_item):
-    pid, item_id = seeded_item
-    from appcore.db import execute as db_execute
-    db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))
-    resp = logged_in_client.get(f"/pushes/api/items/{item_id}/payload")
-    assert resp.status_code == 409
+def test_payload_allows_already_pushed_for_review_and_link_repush(
+    authed_client_no_db, monkeypatch,
+):
+    item = {
+        "id": 903,
+        "product_id": 316,
+        "lang": "fr",
+        "filename": "fr-demo.mp4",
+        "display_name": "fr-demo.mp4",
+        "object_key": "79/medias/316/video.mp4",
+        "cover_object_key": "79/medias/316/cover.png",
+        "pushed_at": "2026-04-30 12:00:00",
+    }
+    product = {
+        "id": 316,
+        "name": "Demo",
+        "product_code": "demo-rjc",
+        "mk_id": 3749,
+        "localized_links_json": {},
+        "ad_supported_langs": "fr",
+        "selling_points": "",
+        "importance": 3,
+        "listing_status": "上架",
+    }
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.compute_readiness",
+        lambda item_arg, product_arg: {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "lang_supported": True,
+            "has_push_texts": True,
+            "shopify_image_confirmed": True,
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item_arg, product_arg: {"videos": []},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "https://push.example.test",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.resolve_localized_text_payload",
+        lambda item_arg: None,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item_arg: {"texts": []},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.build_localized_texts_target_url", lambda mk_id: "")
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_product_links_push_preview",
+        lambda product_arg: {
+            "target_url": "https://os.wedev.vip/dify/shopify/medias/links",
+            "payload": {
+                "handle": "demo-rjc",
+                "product_links": ["https://newjoyloo.com/fr/products/demo-rjc"],
+            },
+            "links": [],
+        },
+    )
+    resp = authed_client_no_db.get("/pushes/api/items/903/payload")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "payload" in data
+    assert data["product_links_push"]["target_url"].endswith("/dify/shopify/medias/links")
 
 
 def test_payload_rejects_not_ready(logged_in_client, seeded_item):

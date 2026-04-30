@@ -190,9 +190,6 @@ def api_build_payload(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return jsonify({"error": "product_not_found"}), 404
-    if item.get("pushed_at"):
-        return jsonify({"error": "already_pushed"}), 409
-
     readiness = pushes.compute_readiness(item, product)
     if not pushes.is_ready(readiness):
         missing = [k for k, v in readiness.items() if not v]
