@@ -38,6 +38,18 @@ def test_edit_english_material_filename_uses_loose_rule():
     ).ok
 
 
+def test_edit_localized_material_filename_accepts_supplement_slot_letter():
+    result = validate_material_filename(
+        "2024.01.06-逝后指南-原素材-补充素材B(法语)-指派-蔡靖华.mp4",
+        "逝后指南",
+        "fr",
+        {"en": "英语", "fr": "法语"},
+    )
+
+    assert result.ok
+    assert result.effective_lang == "fr"
+
+
 def test_initial_material_filename_requires_only_date_product_tail_and_mp4():
     assert validate_initial_material_filename(
         "2024.01.06-逝后指南-混剪-李文龙.mp4",
