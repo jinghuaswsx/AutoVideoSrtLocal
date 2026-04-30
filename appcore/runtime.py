@@ -63,6 +63,9 @@ def _skip_legacy_artifact_upload(task: dict, task_id: str) -> None:
     return
 
 
+logger = logging.getLogger(__name__)
+
+
 def _save_json(task_dir: str, filename: str, data) -> None:
     path = os.path.join(task_dir, filename)
     with open(path, "w", encoding="utf-8") as fh:
@@ -1285,6 +1288,7 @@ class PipelineRunner:
             from appcore.source_video import ensure_local_source_video
             ensure_local_source_video(task_id)
         except Exception as exc:
+            logger.exception("[task %s] source video ensure failed: %s", task_id, exc)
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})
@@ -1309,6 +1313,10 @@ class PipelineRunner:
                 if current.get("status") in {"failed", "error", "done"}:
                     return
         except Exception as exc:
+            current_step = (task_state.get(task_id) or {}).get("current_step") or "?"
+            logger.exception(
+                "[task %s] pipeline failed at step=%s: %s", task_id, current_step, exc,
+            )
             task_state.update(task_id, status="error", error=str(exc))
             task_state.set_expires_at(task_id, self.project_type)
             self._emit(task_id, EVT_PIPELINE_ERROR, {"error": str(exc)})

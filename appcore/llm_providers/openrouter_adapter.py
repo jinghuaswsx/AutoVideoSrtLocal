@@ -8,12 +8,21 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
+import ssl
 import time
 from decimal import Decimal
 from pathlib import Path
 
-from openai import OpenAI
+import httpx
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
 
 from appcore.llm_providers.base import LLMAdapter
 from appcore.llm_provider_configs import (
@@ -27,9 +36,54 @@ from config import (
     USD_TO_CNY,
 )
 
-DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 120.0
+logger = logging.getLogger(__name__)
+
+DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 600.0
 DEFAULT_OPENROUTER_MAX_RETRIES = 1
+DEFAULT_OPENROUTER_NETWORK_RETRY_ATTEMPTS = 3
 _OPENROUTER_RETRYABLE_ERROR_CODES = {429, 500, 502, 503, 504}
+
+_NETWORK_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    APIConnectionError,
+    APITimeoutError,
+    InternalServerError,
+    RateLimitError,
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteError,
+    ssl.SSLError,
+)
+
+
+def _call_with_network_retry(
+    fn,
+    *,
+    attempts: int = DEFAULT_OPENROUTER_NETWORK_RETRY_ATTEMPTS,
+    base_delay: float = 2.0,
+    label: str = "openrouter",
+):
+    """Wrap a single OpenAI-compatible SDK call so that transient network /
+    SSL / connection errors get exponential-backoff retries instead of
+    exploding the entire pipeline. Only retries on _NETWORK_RETRY_EXCEPTIONS;
+    business-level failures (auth, bad request) propagate immediately."""
+    total = max(1, attempts)
+    for attempt in range(total):
+        try:
+            return fn()
+        except _NETWORK_RETRY_EXCEPTIONS as exc:
+            if attempt >= total - 1:
+                logger.exception(
+                    "%s network retry exhausted (%d/%d): %s",
+                    label, attempt + 1, total, exc,
+                )
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "%s network error (%d/%d), retrying in %.1fs: %s",
+                label, attempt + 1, total, delay, exc,
+            )
+            time.sleep(delay)
 
 
 def _extra_float(extra: dict, key: str, default: float) -> float:
@@ -185,8 +239,12 @@ class OpenRouterAdapter(LLMAdapter):
                               DEFAULT_OPENROUTER_MAX_RETRIES) + 1
         resp = None
         choices = None
+        retry_label = f"openrouter:{creds.get('provider_code', 'unknown')}"
         for attempt in range(max(1, attempts)):
-            resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
+            resp = _call_with_network_retry(
+                lambda: client.chat.completions.create(model=model, messages=messages, **kwargs),
+                label=retry_label,
+            )
             choices = getattr(resp, "choices", None)
             if choices:
                 break
@@ -279,7 +337,10 @@ class DoubaoAdapter(LLMAdapter):
             kwargs["temperature"] = temperature
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
-        resp = client.chat.completions.create(model=model, messages=messages, **kwargs)
+        resp = _call_with_network_retry(
+            lambda: client.chat.completions.create(model=model, messages=messages, **kwargs),
+            label="doubao",
+        )
         usage = getattr(resp, "usage", None)
         return {
             "text": resp.choices[0].message.content or "",

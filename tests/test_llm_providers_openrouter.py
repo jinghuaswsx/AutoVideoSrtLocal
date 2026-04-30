@@ -181,6 +181,89 @@ def test_openrouter_chat_retries_retryable_response_without_choices(fake_provide
     assert mock_client.chat.completions.create.call_count == 2
 
 
+def test_openrouter_chat_retries_on_ssl_error_then_succeeds(fake_provider_db):
+    """长文/长响应偶发 SSL EOF；单次 SDK 调用抛连接异常时应当指数退避重试。
+    修复前：异常直接冒泡到 pipeline runner 弹「错误：[SSL: UNEXPECTED_EOF_WHILE_READING] ...」"""
+    import ssl
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    good_resp = MagicMock()
+    good_resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+    good_resp.usage = MagicMock(prompt_tokens=2, completion_tokens=3, cost=None)
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai, \
+         patch("appcore.llm_providers.openrouter_adapter.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [
+            ssl.SSLError("UNEXPECTED_EOF_WHILE_READING"),
+            good_resp,
+        ]
+        m_openai.return_value = mock_client
+        result = OpenRouterAdapter().chat(
+            model="anthropic/claude-sonnet-4.6",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert result["text"] == "ok"
+    assert mock_client.chat.completions.create.call_count == 2
+
+
+def test_openrouter_chat_raises_after_network_retries_exhausted(fake_provider_db):
+    """连续多次都拿到连接异常时，最后一次应当 propagate 出来；
+    pipeline runner 那边再决定怎么呈现。"""
+    import openai as openai_pkg
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    err = openai_pkg.APIConnectionError(request=MagicMock())
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai, \
+         patch("appcore.llm_providers.openrouter_adapter.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [err, err, err]
+        m_openai.return_value = mock_client
+        with pytest.raises(openai_pkg.APIConnectionError):
+            OpenRouterAdapter().chat(
+                model="x", messages=[{"role": "user", "content": "hi"}],
+            )
+
+    assert mock_client.chat.completions.create.call_count == 3
+
+
+def test_openrouter_chat_default_timeout_is_long_enough_for_long_prompts(fake_provider_db):
+    """长文翻译耗时常超过 120s；默认 timeout 必须给足空间，否则 SDK 自己提前
+    断连接，又重新触发 SSL 类问题。"""
+    fake_provider_db.seed("openrouter_text", api_key="k",
+                          base_url="https://openrouter.ai/api/v1")
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai:
+        _mock_openai(m_openai)
+        OpenRouterAdapter().chat(model="x", messages=[{"role": "user", "content": "hi"}])
+
+    assert m_openai.call_args.kwargs["timeout"] >= 600
+
+
+def test_doubao_chat_also_retries_on_network_error(fake_provider_db):
+    """Doubao 走同一个 OpenAI-compatible 通道，网络重试同样适用。"""
+    fake_provider_db.seed("doubao_llm", api_key="k",
+                          base_url="https://ark.example/api/v3")
+    good_resp = MagicMock()
+    good_resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+    good_resp.usage = MagicMock(prompt_tokens=1, completion_tokens=1)
+    with patch("appcore.llm_providers.openrouter_adapter.OpenAI") as m_openai, \
+         patch("appcore.llm_providers.openrouter_adapter.time.sleep"):
+        import httpx
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [
+            httpx.RemoteProtocolError("Server disconnected"),
+            good_resp,
+        ]
+        m_openai.return_value = mock_client
+        result = DoubaoAdapter().chat(
+            model="doubao-seed-2-0-pro",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert result["text"] == "ok"
+    assert mock_client.chat.completions.create.call_count == 2
+
+
 def test_openrouter_generate_enables_web_search_tool(fake_provider_db):
     fake_provider_db.seed("openrouter_text", api_key="k",
                           base_url="https://openrouter.ai/api/v1")
