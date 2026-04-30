@@ -566,7 +566,7 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
     }
     error_url = f"https://newjoyloo.com/products/{error_handle}"
     links_request = {
-        "handle": error_handle,
+        "handle": source_handle,
         "product_links": [error_url],
     }
     structured = {

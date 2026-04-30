@@ -83,7 +83,7 @@ def test_build_unsuitable_product_push_preview_uses_text_and_link_types(monkeypa
     assert link_type["label"] == "推送链接"
     assert link_type["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
     assert link_type["payload"] == {
-        "handle": "demo-error-rjc",
+        "handle": "demo-rjc",
         "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
     }
     assert preview["payload"] == {
@@ -151,7 +151,7 @@ def test_push_unsuitable_product_posts_to_text_and_link_endpoints(monkeypatch):
         "description": "这个产品有问题，不做，不要投放不要投放不要投放",
     }]}
     assert calls[1]["json"] == {
-        "handle": "demo-error-rjc",
+        "handle": "demo-rjc",
         "product_links": ["https://newjoyloo.com/products/demo-error-rjc"],
     }
 
