@@ -1077,29 +1077,31 @@
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON;
     }
 
+    function isProductLinksMode(m = activeMode) {
+      return m === PUSH_MODAL_MODES.PRODUCT_LINKS || m === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
+    }
+
     function isAuditHiddenMode(m) {
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON || m === PUSH_MODAL_MODES.PRODUCT_LINKS || m === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON;
     }
 
     function syncPushButton() {
-      if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON) {
-        btnPush.disabled = true;
-        btnPush.textContent = '预览无需推送';
-        return;
-      }
-      if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS) {
+      if (isProductLinksMode()) {
         const linkPayload = productLinksPreview && productLinksPreview.payload;
         const linkCount = linkPayload && Array.isArray(linkPayload.product_links)
           ? linkPayload.product_links.length
           : 0;
         const noTarget = !productLinksPreview || !productLinksPreview.target_url;
         const noLinks = !linkCount;
+        const readyLabel = activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS_JSON
+          ? '推送'
+          : '推送链接';
         btnPush.disabled = productLinksPushed || !payloadData || noTarget || noLinks;
         btnPush.textContent = productLinksPushed
           ? '链接已推送'
           : noTarget
             ? '未配链接接口'
-            : noLinks ? '无可推送链接' : '推送链接';
+            : noLinks ? '无可推送链接' : readyLabel;
         return;
       }
       if (isLocalizedMode()) {
@@ -1257,7 +1259,7 @@
       btnCancel.disabled = true;
       btnPush.textContent = '推送中…';
       try {
-        if (activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS) {
+        if (isProductLinksMode()) {
           const body = await fetchJSON(`/pushes/api/items/${itemId}/product-links-push`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1300,7 +1302,7 @@
         }
       } catch (err) {
         showResponse(describeError(err), true,
-          activeMode === PUSH_MODAL_MODES.PRODUCT_LINKS
+          isProductLinksMode()
             ? '推送链接失败'
             : isLocalizedMode() ? '小语种文案推送失败' : '素材推送失败');
       } finally {
