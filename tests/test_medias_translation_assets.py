@@ -199,7 +199,18 @@ def test_medias_search_input_runs_live_search():
     assert "function scheduleLiveSearch()" in script
     assert "window.setTimeout(runLiveSearch, 250);" in script
     assert "kwInput.addEventListener('input', scheduleLiveSearch);" in script
-    assert "searchBtn.addEventListener('click', runSearchNow);" in script
+    assert "searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));" in script
+
+
+def test_medias_search_enter_updates_query_url():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "function syncSearchQueryToAddressBar()" in script
+    assert "url.searchParams.set('q', kw);" in script
+    assert "url.searchParams.delete('q');" in script
+    assert "window.history.replaceState(null, '', url);" in script
+    assert "runSearchNow({ syncUrl: true });" in script
 
 
 def test_medias_translation_tasks_parent_meta_shows_raw_source_filenames():

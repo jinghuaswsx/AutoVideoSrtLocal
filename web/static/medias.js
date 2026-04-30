@@ -1362,12 +1362,27 @@
     }
   }
 
-  function runSearchNow() {
+  function syncSearchQueryToAddressBar() {
+    if (!window.history || !window.history.replaceState || !window.location) return;
+    const kwInput = $('kw');
+    const kw = kwInput ? kwInput.value.trim() : '';
+    const url = new URL(window.location.href);
+    url.searchParams.delete('keyword');
+    if (kw) {
+      url.searchParams.set('q', kw);
+    } else {
+      url.searchParams.delete('q');
+    }
+    window.history.replaceState(null, '', url);
+  }
+
+  function runSearchNow(options = {}) {
     if (liveSearchTimer) {
       window.clearTimeout(liveSearchTimer);
       liveSearchTimer = null;
     }
     state.page = 1;
+    if (options.syncUrl) syncSearchQueryToAddressBar();
     loadList();
   }
 
@@ -4988,9 +5003,9 @@
       kwInput.value = String(window.MEDIAS_LIST_INITIAL_QUERY || '');
     }
     if (searchBtn && kwInput) {
-      searchBtn.addEventListener('click', runSearchNow);
+      searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));
       kwInput.addEventListener('input', scheduleLiveSearch);
-      kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow(); } });
+      kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow({ syncUrl: true }); } });
     }
 
     const syncChip = (chipId, inputId) => {
