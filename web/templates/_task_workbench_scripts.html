@@ -1824,6 +1824,23 @@
       `);
     });
 
+    const generationSummary = currentTask && currentTask.tts_generation_summary;
+    if (generationSummary) {
+      const translateCalls = Number(generationSummary.translate_calls);
+      const audioCalls = Number(generationSummary.audio_calls);
+      const summaryBits = [];
+      if (Number.isFinite(translateCalls)) summaryBits.push(`${translateCalls} 次翻译`);
+      if (Number.isFinite(audioCalls)) summaryBits.push(`${audioCalls} 次语音生成`);
+      if (summaryBits.length) {
+        parts.push(`
+          <div class="duration-generation-summary">
+            <span class="duration-generation-summary-label">本任务用了</span>
+            <strong>${summaryBits.join('，')}</strong>
+          </div>
+        `);
+      }
+    }
+
     // 最终结果摘要（必现，说明选这个的理由）
     if (status === 'converged' && finalRound) {
       const winner = rounds.find(r => r.round === finalRound) || rounds[rounds.length - 1];

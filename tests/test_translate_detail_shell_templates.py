@@ -46,3 +46,16 @@ def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
 
     assert "{% if detail_mode in ('multi', 'ja', 'av_sync') %}" in shared
     assert "voice_selector_multi.js" in shared
+
+
+def test_tts_generation_summary_is_rendered_in_duration_log():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert "tts_generation_summary" in script
+    assert "本任务用了" in script
+    assert "次翻译" in script
+    assert "次语音生成" in script
+    assert "duration-generation-summary" in script
+    assert ".duration-generation-summary" in styles
