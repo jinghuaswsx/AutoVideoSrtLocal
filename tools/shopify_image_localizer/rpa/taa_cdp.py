@@ -8,6 +8,7 @@ replace the whole HTML value in one save, instead of clicking through the rich
 text editor image-by-image.
 """
 
+import hashlib
 import json
 import re
 import time
@@ -16,6 +17,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+
+
+def _file_sha256(path: str) -> str:
+    if not path:
+        return ""
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return ""
+
+
+def _url_sha256(url: str, *, timeout: float = 15.0) -> str:
+    if not url:
+        return ""
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return hashlib.sha256(response.read()).hexdigest()
+    except Exception:
+        return ""
+
+
+def _find_positional_fallback(localized_images: list[dict], src_idx: int) -> dict | None:
+    target = f"from_url_en_{src_idx:02d}_"
+    for row in localized_images:
+        if not row.get("fallback_original"):
+            continue
+        if target in str(row.get("filename") or ""):
+            return row
+    return None
 
 import websocket
 from appcore.payment_screenshot_filter import is_payment_screenshot
@@ -635,8 +667,9 @@ def plan_body_html_replacements(
     ]
     replacements: list[dict[str, Any]] = []
     skipped_existing: list[dict[str, Any]] = []
+    skipped_already_synced: list[dict[str, Any]] = []
     skipped_missing: list[dict[str, Any]] = []
-    for src in srcs:
+    for src_idx, src in enumerate(srcs):
         token = ez_cdp.md5_token(src)
         source_index = source_index_from_filename(src)
         match_method = "token"
@@ -674,13 +707,18 @@ def plan_body_html_replacements(
                 else:
                     raise ValueError(f"image src has no source token or source index mapping: {src}")
         except ValueError as exc:
-            skipped_missing.append({
-                "token": token,
-                "src": src,
-                "source_index": source_index,
-                "reason": str(exc),
-            })
-            continue
+            # 兜底：按 src 在 body_html 中的位置序号找已下载的 fallback_original
+            positional = _find_positional_fallback(localized_images, src_idx)
+            if positional is None:
+                skipped_missing.append({
+                    "token": token,
+                    "src": src,
+                    "source_index": source_index,
+                    "reason": str(exc),
+                })
+                continue
+            candidate = positional
+            match_method = "positional_fallback"
         is_shopify_cdn = "cdn.shopify.com/s/files/" in src
         if is_shopify_cdn and not replace_shopify_cdn:
             skipped_existing.append({
@@ -690,16 +728,34 @@ def plan_body_html_replacements(
                 "candidate": candidate,
             })
             continue
+        # 内容审计：candidate 文件 SHA vs 当前 src 内容 SHA
+        # 一致 → 不必重传（cdn 上就是这个内容）
+        # 不一致或拿不到 remote SHA → 强制重传（确保最新内容上线）
+        candidate_sha = _file_sha256(str(candidate.get("local_path") or ""))
+        remote_sha = _url_sha256(src)
+        if candidate_sha and remote_sha and candidate_sha == remote_sha:
+            skipped_already_synced.append({
+                "token": token,
+                "src": src,
+                "reason": f"content already synced (sha={candidate_sha[:16]})",
+                "candidate": candidate,
+                "candidate_sha": candidate_sha,
+                "remote_sha": remote_sha,
+            })
+            continue
         replacements.append({
             "token": token,
             "old": src,
             "candidate": candidate,
             "match_method": match_method,
+            "candidate_sha": candidate_sha,
+            "remote_sha": remote_sha,
         })
     return {
         "image_count": len(srcs),
         "replacements": replacements,
         "skipped_existing": skipped_existing,
+        "skipped_already_synced": skipped_already_synced,
         "skipped_missing": skipped_missing,
     }
 
@@ -853,10 +909,30 @@ def replace_detail_images(
             forced_replacements_by_src=forced_replacements_by_src,
             replace_shopify_cdn=replace_shopify_cdn,
         )
+        total = len(plan["replacements"])
+        already_synced_count = len(plan.get("skipped_already_synced") or [])
+        print(
+            f"详情图：图片配对完成 共 {plan['image_count']} 张；"
+            f"待替换 {total} 张；"
+            f"内容已同步跳过 {already_synced_count} 张；"
+            f"找不到候选 {len(plan.get('skipped_missing') or [])} 张；"
+            f"按规则跳过 {len(plan.get('skipped_existing') or [])} 张"
+        )
         uploaded_replacements: list[dict[str, Any]] = []
-        for row in plan["replacements"]:
+        for upload_idx, row in enumerate(plan["replacements"], start=1):
             cancellation.throw_if_cancelled(cancel_token)
-            cdn_url = taa.upload_image(str(row["candidate"]["local_path"]))
+            local_path = str(row["candidate"]["local_path"])
+            candidate_sha = row.get("candidate_sha") or _file_sha256(local_path)
+            remote_sha = row.get("remote_sha") or ""
+            print(
+                f"详情图：第 {upload_idx}/{total} 张 上传 "
+                f"file={Path(local_path).name} "
+                f"sha={candidate_sha[:16] if candidate_sha else '?'} "
+                f"old_sha={remote_sha[:16] if remote_sha else '-'} "
+                f"match={row.get('match_method')}"
+            )
+            cdn_url = taa.upload_image(local_path)
+            print(f"详情图：第 {upload_idx}/{total} 张 已上传 → {cdn_url}")
             uploaded_replacements.append({
                 "token": row["token"],
                 "old": row["old"],
@@ -864,6 +940,8 @@ def replace_detail_images(
                 "local_path": row["candidate"]["local_path"],
                 "source_index": row["candidate"].get("source_index"),
                 "match_method": row.get("match_method"),
+                "candidate_sha": candidate_sha,
+                "remote_sha": remote_sha,
             })
         taa.close_modal()
 
@@ -900,6 +978,7 @@ def replace_detail_images(
         "image_count": plan["image_count"],
         "replacement_count": len(uploaded_replacements),
         "skipped_existing_count": len(plan["skipped_existing"]),
+        "skipped_already_synced_count": len(plan.get("skipped_already_synced") or []),
         "skipped_missing_count": len(plan["skipped_missing"]),
         "replacements": uploaded_replacements,
         "skipped_existing": [
@@ -911,6 +990,18 @@ def replace_detail_images(
                 "source_index": row["candidate"].get("source_index"),
             }
             for row in plan["skipped_existing"]
+        ],
+        "skipped_already_synced": [
+            {
+                "token": row["token"],
+                "src": row["src"],
+                "reason": row["reason"],
+                "local_path": row["candidate"].get("local_path"),
+                "source_index": row["candidate"].get("source_index"),
+                "candidate_sha": row.get("candidate_sha", ""),
+                "remote_sha": row.get("remote_sha", ""),
+            }
+            for row in plan.get("skipped_already_synced") or []
         ],
         "skipped_missing": [
             {

@@ -643,20 +643,27 @@ def add_original_detail_fallbacks(
         if is_payment_screenshot(src, ref.get("alt") or ""):
             print(f"详情图：跳过收款截图原图兜底：{src}")
             continue
-        token = ez_cdp.md5_token(src)
-        if not token or token in candidates_by_token:
-            continue
         if src.lower().split("?", 1)[0].endswith(".gif"):
             continue
+        token = ez_cdp.md5_token(src) or ""
+        # 已有官方本地化候选时跳过原图兜底（避免覆盖正版翻译版本）
+        if token and token in candidates_by_token:
+            continue
         ext = _extension_from_url(src)
-        filename = f"fallback_original_from_url_en_{idx:02d}_{token}.{ext}"
+        # 无 token 时用 idx 占位；文件名保留 from_url_en_{idx:02d}_xxx 模式让按 source_index 匹配能命中
+        filename_token = token if token else f"idx{idx:02d}"
+        filename = f"fallback_original_from_url_en_{idx:02d}_{filename_token}.{ext}"
         output_path = workspace.source_localized_dir / filename
-        print(f"详情图：使用原图兜底（token={token}）：{src}")
+        print(f"详情图：原图兜底（位置 {idx:02d} token={token or '无'}）：{src}")
         request = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            output_path.write_bytes(response.read())
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                output_path.write_bytes(response.read())
+        except Exception as exc:
+            print(f"详情图：原图兜底下载失败（位置 {idx:02d}）：{exc}")
+            continue
         row = {
-            "id": f"fallback-{token}",
+            "id": f"fallback-{idx:02d}-{filename_token}",
             "kind": "detail",
             "filename": filename,
             "url": src,
@@ -664,7 +671,8 @@ def add_original_detail_fallbacks(
             "fallback_original": True,
         }
         localized_images.append(row)
-        candidates_by_token.setdefault(token, []).append(row)
+        if token:
+            candidates_by_token.setdefault(token, []).append(row)
         added.append(row)
     return added
 
