@@ -1072,6 +1072,7 @@
     let localizedPushed = false;
     let productLinksPushed = false;
     let anyPushSucceeded = false;
+    let payloadLoadFailed = false;
 
     function isLocalizedMode(m = activeMode) {
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON;
@@ -1086,6 +1087,11 @@
     }
 
     function syncPushButton() {
+      if (!payloadData) {
+        btnPush.disabled = true;
+        btnPush.textContent = payloadLoadFailed ? '载荷加载失败' : '加载中…';
+        return;
+      }
       if (isProductLinksMode()) {
         const linkPayload = productLinksPreview && productLinksPreview.payload;
         const linkCount = linkPayload && Array.isArray(linkPayload.product_links)
@@ -1246,10 +1252,12 @@
         paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
 
         loadingTip.remove();
-        setMode(PUSH_MODAL_MODES.CONFIRM);
+        setMode(activeMode);
       } catch (err) {
+        payloadLoadFailed = true;
         loadingTip.textContent = `载荷加载失败：${describeError(err)}`;
         loadingTip.classList.add('pm-error');
+        syncPushButton();
       }
     })();
 

@@ -1127,6 +1127,8 @@ def test_pushes_assets_include_product_link_push_tabs():
     assert "预览无需推送" not in script
     assert "function isProductLinksMode" in script
     assert "if (isProductLinksMode())" in script
+    assert "setMode(activeMode);" in script
+    assert "载荷加载失败" in script
 
 
 def test_pushes_assets_include_quality_check_panel():
