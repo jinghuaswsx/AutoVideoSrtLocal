@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 import appcore.task_state as task_state
 from appcore.api_keys import resolve_jianying_project_root
 from appcore import ai_billing
+from appcore import tts_generation_stats
 from appcore.events import (
     EVT_ALIGNMENT_READY,
     EVT_ASR_RESULT,
@@ -869,6 +870,11 @@ class PipelineRunner:
                     tts_final_distance=0.0,
                 )
                 self._emit_duration_round(task_id, round_index, "converged", round_record)
+                tts_generation_stats.finalize(
+                    task_id=task_id,
+                    task=task_state.get(task_id) or {},
+                    rounds=rounds,
+                )
                 return {
                     "localized_translation": localized_translation,
                     "tts_script": tts_script,
@@ -913,6 +919,11 @@ class PipelineRunner:
             tts_final_round=best_i + 1,
             tts_final_reason="best_pick",
             tts_final_distance=round(best_distance, 3),
+        )
+        tts_generation_stats.finalize(
+            task_id=task_id,
+            task=task_state.get(task_id) or {},
+            rounds=rounds,
         )
         return {
             "localized_translation": best_product["localized_translation"],
