@@ -241,9 +241,12 @@ _VALID_TRANSLATE_PREFS = (
 
 
 def _resolve_translate_provider(user_id: int | None) -> str:
-    """Return the user's preferred translate provider. 默认走 Vertex Flash-Lite。"""
+    """Return the user's preferred translate provider.
+    默认走 OpenRouter + Claude Sonnet 4.6。之前默认 Vertex Flash-Lite，
+    但 google/gemini-3-flash-preview 在内网 region 出现 403、长 prompt 漏字段，
+    在那之前先用 Claude 兜底配合分段 + source_segment_indices 派生修复。"""
     from appcore.api_keys import get_key
-    default = "vertex_gemini_31_flash_lite"
+    default = "claude_sonnet"
     if user_id is None:
         return default
     pref = get_key(user_id, "translate_pref")
