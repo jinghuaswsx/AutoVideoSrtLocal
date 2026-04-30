@@ -127,8 +127,8 @@ class SentenceTranslateRunner(MultiTranslateRunner):
 
             self._set_step(task_id, "translate", "running", "正在纯净化原文 ASR...")
             source_language = (
-                task.get("detected_source_language")
-                or task.get("source_language")
+                task.get("source_language")
+                or task.get("detected_source_language")
                 or "auto"
             )
             source_normalization = normalize_source_segments(

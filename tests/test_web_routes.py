@@ -162,6 +162,7 @@ def test_task_upload_route_rejects_disabled_av_target_language(tmp_path, authed_
             "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
             "target_lang": "fi",
             "target_market": "US",
+            "source_language": "en",
         },
         content_type="multipart/form-data",
     )
@@ -181,6 +182,24 @@ def test_task_upload_route_rejects_unsupported_av_source_language(tmp_path, auth
             "target_lang": "de",
             "target_market": "OTHER",
             "source_language": "ru",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "source_language" in response.get_json().get("error", "")
+
+
+def test_task_upload_route_requires_av_source_language(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.task.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.task.UPLOAD_DIR", str(tmp_path / "uploads"))
+
+    response = authed_client_no_db.post(
+        "/api/tasks",
+        data={
+            "video": (io.BytesIO(b"video-bytes"), "demo.mp4"),
+            "target_lang": "de",
+            "target_market": "OTHER",
         },
         content_type="multipart/form-data",
     )

@@ -121,10 +121,8 @@ def restart_task(
     """Restart a translation task and return the refreshed task state.
 
     ``source_language`` semantics:
-      - ``None`` (default): keep current task's source_language untouched.
-      - ``""``: reset to auto-detect (clears user_specified flag, ASR will re-detect).
-      - any allowed code (e.g. ``"en"``, ``"es"``): force that source language and
-        skip auto-detection by setting ``user_specified_source_language=True``.
+      - ``None`` (default): keep the current manual source_language.
+      - any allowed code (e.g. ``"en"``, ``"es"``): force that source language.
     """
     task = store.get(task_id) or {}
     if not task:
@@ -154,11 +152,17 @@ def restart_task(
         }
     )
     if source_language is not None:
-        payload["source_language"] = source_language or "zh"
-        payload["user_specified_source_language"] = bool(source_language)
+        selected_source_language = str(source_language or "").strip()
+        if not selected_source_language:
+            raise ValueError("source_language is required")
+        payload["source_language"] = selected_source_language
+        payload["user_specified_source_language"] = True
         payload["utterances_en"] = None
         payload["asr_normalize_artifact"] = None
         payload["detected_source_language"] = None
+    elif task.get("source_language"):
+        payload["source_language"] = task.get("source_language")
+        payload["user_specified_source_language"] = True
     store.update(task_id, **payload)
 
     runner.start(task_id, user_id=user_id)

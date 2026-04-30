@@ -48,23 +48,20 @@ class DeTranslateRunner(PipelineRunner):
     target_language_label = "de"
 
     def _step_asr(self, task_id: str, task_dir: str) -> None:
-        super()._step_asr(task_id, task_dir)
-        # Auto-detect source language from ASR text
         task = task_state.get(task_id)
-        if not task.get("source_language"):
-            from pipeline.language_detect import detect_language
-            asr_text = " ".join(
-                u.get("text", "") for u in task.get("utterances", []) if u.get("text")
-            )
-            detected = detect_language(asr_text)
-            task_state.update(task_id, source_language=detected)
-            lang_label = "中文" if detected == "zh" else "英文"
-            log.info("Auto-detected source language: %s (%s) for task %s", detected, lang_label, task_id)
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in ("zh", "en"):
+            message = "source_language is required and must be 'zh' or 'en'; 请手动选择源语言"
+            task_state.update(task_id, status="error", error=message)
+            self._set_step(task_id, "asr", "failed", message)
+            return
+        task_state.update(task_id, source_language=source_language, user_specified_source_language=True)
+        super()._step_asr(task_id, task_dir)
 
     def _step_translate(self, task_id: str) -> None:
         task = task_state.get(task_id)
         task_dir = task["task_dir"]
-        source_language = task.get("source_language", "zh")
+        source_language = (task.get("source_language") or "en").strip()
         lang_label = "中文" if source_language == "zh" else "英文"
         from pipeline.localization_de import (
             build_source_full_text_zh,

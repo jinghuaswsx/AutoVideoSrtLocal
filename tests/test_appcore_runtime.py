@@ -228,6 +228,19 @@ def test_fr_runner_overrides_tts_class_attributes():
     assert FrTranslateRunner.target_language_label == "fr"
 
 
+def test_de_fr_runners_never_auto_detect_source_language():
+    import inspect
+    from appcore.runtime_de import DeTranslateRunner
+    from appcore.runtime_fr import FrTranslateRunner
+
+    de_src = inspect.getsource(DeTranslateRunner._step_asr)
+    fr_src = inspect.getsource(FrTranslateRunner._step_asr)
+    assert "detect_language" not in de_src
+    assert "detect_language" not in fr_src
+    assert "Auto-detect" not in de_src
+    assert "Auto-detect" not in fr_src
+
+
 def test_run_av_localize_fallback_to_v1(tmp_path, monkeypatch):
     task_id = "test_av_localize_fallback"
     task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")

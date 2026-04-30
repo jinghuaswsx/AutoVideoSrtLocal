@@ -2,8 +2,8 @@
 
 Independent, opt-in module that adds:
 - ASR engine dispatch by source language: zh/en→Doubao, others→ElevenLabs Scribe
-- LLM-based language identification (LID) after ASR to auto-correct user's
-  source-language guess (especially when filename mislabels the language)
+- Source language is fully manual; ASR and downstream steps preserve the user's
+  selected language and never auto-correct it.
 - Per-target dynamic word_tolerance / max_rewrite_attempts for the duration
   convergence loop (loosen for de/ja/fi to avoid 5×5=25 burnouts)
 
@@ -17,7 +17,7 @@ import logging
 import uuid
 
 from appcore import task_state
-from appcore.runtime_multi import MultiTranslateRunner
+from appcore.runtime_multi import MultiTranslateRunner, _MANUAL_SOURCE_LANGUAGES
 
 log = logging.getLogger(__name__)
 
@@ -129,7 +129,16 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
         task = task_state.get(task_id)
         audio_path = task["audio_path"]
-        source_language = task.get("source_language", "zh")
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in _MANUAL_SOURCE_LANGUAGES:
+            message = (
+                f"source_language={source_language!r} 不在支持范围 "
+                f"({', '.join(_MANUAL_SOURCE_LANGUAGES)})；请手动选择源语言"
+            )
+            task_state.update(task_id, status="error", error=message)
+            self._set_step(task_id, "asr", "failed", message)
+            return
+        task_state.update(task_id, source_language=source_language, user_specified_source_language=True)
 
         # 先解析 adapter 拿元数据生成 model_tag，让前端在 running 状态就能看到
         # 当前用的是哪个 ASR provider（豆包 / Scribe）。
@@ -157,43 +166,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
         task_state.set_artifact(task_id, "asr", build_asr_artifact(utterances))
         _save_json(task_dir, "asr_result.json", {"utterances": utterances})
 
-        # === LLM-based LID auto-override ===
-        # 用户没明确选源语言时，让 LLM 看 ASR 文本判定语言并自动改写
-        # task.source_language。用户明确指定（user_specified_source_language=True）
-        # 时彻底跳过这层 LID，不调 LLM、不覆盖。
-        if source_full_text and not task.get("user_specified_source_language"):
-            try:
-                from pipeline.language_detect_llm import detect_language_llm
-                lid = detect_language_llm(
-                    source_full_text,
-                    fallback=source_language,
-                    user_id=self.user_id,
-                    project_id=task_id,
-                )
-                detected = lid["language"]
-                conf = lid["confidence"]
-                if (
-                    lid["source"] == "llm"
-                    and conf >= 0.7
-                    and detected != source_language
-                ):
-                    log.info(
-                        "[omni-lid-override] task=%s user_said=%s llm_says=%s (conf=%.2f) → overriding",
-                        task_id, source_language, detected, conf,
-                    )
-                    task_state.update(task_id, source_language=detected)
-                    source_language = detected
-                else:
-                    log.info(
-                        "[omni-lid-keep] task=%s source_language=%s (llm=%s conf=%.2f source=%s)",
-                        task_id, source_language, detected, conf, lid["source"],
-                    )
-            except Exception:
-                log.warning("[omni-lid] LID failed, keeping user-supplied source_language", exc_info=True)
-        elif source_full_text:
-            log.info(
-                "[omni-lid-skip] task=%s source_language=%s (user_specified=True, skipping LID)",
-                task_id, source_language,
+        if source_full_text:
+            task_state.update(
+                task_id,
+                source_language=source_language,
+                user_specified_source_language=True,
             )
 
         # === audio duration + billing ===
@@ -266,7 +243,7 @@ class OmniTranslateRunner(MultiTranslateRunner):
     def _step_asr_clean(self, task_id: str) -> None:
         """Same-language ASR purification (replaces asr_normalize for omni).
 
-        Detect if needed, then purify utterances in their own language. Does
+        Purify utterances in the manually selected source language. It does
         NOT translate to English — downstream omni runs alignment / translate
         on source-language utterances directly.
         """
@@ -283,8 +260,17 @@ class OmniTranslateRunner(MultiTranslateRunner):
             self._set_step(task_id, "asr_clean", "done", "已纯净化（resume 跳过）")
             return
 
-        source_language = task.get("source_language", "zh")
-        user_specified = bool(task.get("user_specified_source_language"))
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in _MANUAL_SOURCE_LANGUAGES:
+            message = (
+                f"source_language={source_language!r} 不在支持范围 "
+                f"({', '.join(_MANUAL_SOURCE_LANGUAGES)})；请手动选择源语言"
+            )
+            task_state.update(task_id, status="error", error=message)
+            self._set_step(task_id, "asr_clean", "failed", message)
+            return
+        task_state.update(task_id, source_language=source_language, user_specified_source_language=True)
+        user_specified = True
         self._set_step(task_id, "asr_clean", "running",
                        f"正在纯净化 {source_language.upper()} ASR 文本…")
 
@@ -363,7 +349,15 @@ class OmniTranslateRunner(MultiTranslateRunner):
         ):
             return
         lang = self._resolve_target_lang(task)
-        source_language = task.get("source_language") or "zh"
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in _MANUAL_SOURCE_LANGUAGES:
+            message = (
+                f"source_language={source_language!r} 不在支持范围 "
+                f"({', '.join(_MANUAL_SOURCE_LANGUAGES)})；请手动选择源语言"
+            )
+            task_state.update(task_id, status="error", error=message)
+            self._set_step(task_id, "translate", "failed", message)
+            return
 
         provider = _resolve_translate_provider(self.user_id)
         _model_tag = f"{provider} · {get_model_display_name(provider, self.user_id)}"
@@ -464,7 +458,9 @@ class OmniTranslateRunner(MultiTranslateRunner):
 
     def _get_localization_module(self, task: dict):
         lang = self._resolve_target_lang(task)
-        source_language = task.get("source_language") or "zh"
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in _MANUAL_SOURCE_LANGUAGES:
+            source_language = "unknown"
         utterances = task.get("utterances") or []
         original_asr_text = " ".join(
             (u.get("text") or "").strip() for u in utterances if u.get("text")

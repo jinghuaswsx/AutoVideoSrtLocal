@@ -43,8 +43,8 @@ USE_CASES: dict[str, UseCase] = {
     "omni_translate.lid": _uc(
         "omni_translate.lid",
         "omni_translate",
-        "源语言识别（LID）",
-        "ASR 后用 LLM 识别 transcript 真实语种，覆盖 task.source_language",
+        "源语言识别（已停用）",
+        "历史 LID 用例，当前语音源语言由用户手动选择，不再覆盖 task.source_language",
         "gemini_vertex",
         "gemini-3.1-flash-lite-preview",
         "gemini_vertex",
