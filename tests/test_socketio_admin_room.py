@@ -71,3 +71,47 @@ def test_join_admin_skips_join_for_non_admin(
         assert joined_rooms == []
     finally:
         sio_client.disconnect()
+
+
+def test_admin_can_join_other_users_task_room(authed_client_no_db, monkeypatch):
+    joined_rooms: list[str] = []
+    task = {
+        "id": "foreign-multi-task",
+        "type": "multi_translate",
+        "_user_id": 237,
+    }
+
+    monkeypatch.setattr("web.app.join_room", lambda room: joined_rooms.append(room))
+    monkeypatch.setattr("web.store.get", lambda task_id: task if task_id == task["id"] else None)
+
+    sio_client = socketio.test_client(
+        authed_client_no_db.application,
+        flask_test_client=authed_client_no_db,
+    )
+    try:
+        sio_client.emit("join_task", {"task_id": task["id"]})
+        assert joined_rooms == [task["id"]]
+    finally:
+        sio_client.disconnect()
+
+
+def test_normal_user_cannot_join_other_users_task_room(authed_user_client_no_db, monkeypatch):
+    joined_rooms: list[str] = []
+    task = {
+        "id": "foreign-multi-task",
+        "type": "multi_translate",
+        "_user_id": 237,
+    }
+
+    monkeypatch.setattr("web.app.join_room", lambda room: joined_rooms.append(room))
+    monkeypatch.setattr("web.store.get", lambda task_id: task if task_id == task["id"] else None)
+
+    sio_client = socketio.test_client(
+        authed_user_client_no_db.application,
+        flask_test_client=authed_user_client_no_db,
+    )
+    try:
+        sio_client.emit("join_task", {"task_id": task["id"]})
+        assert joined_rooms == []
+    finally:
+        sio_client.disconnect()

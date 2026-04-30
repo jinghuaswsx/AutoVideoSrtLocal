@@ -254,6 +254,14 @@ def create_app() -> Flask:
     _run_startup_recovery()
 
     # WebSocket 事件
+    def _can_join_task_room(task: dict | None, user) -> bool:
+        if not task or not getattr(user, "is_authenticated", False):
+            return False
+        owner_id = task.get("_user_id", task.get("user_id"))
+        if owner_id is not None and str(owner_id) == str(user.id):
+            return True
+        return bool(getattr(user, "is_admin", False))
+
     @socketio.on("join_task")
     def on_join(data):
         from flask_login import current_user
@@ -263,7 +271,7 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_copywriting_task")
@@ -275,7 +283,7 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_de_translate_task")
@@ -287,7 +295,7 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_fr_translate_task")
@@ -299,7 +307,7 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_multi_translate_task")
@@ -311,7 +319,7 @@ def create_app() -> Flask:
         if task_id:
             from web import store
             task = store.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_subtitle_removal_task")
@@ -334,7 +342,7 @@ def create_app() -> Flask:
         task_id = (data or {}).get("task_id")
         if task_id:
             task = task_state.get(task_id)
-            if task and task.get("_user_id") == current_user.id:
+            if _can_join_task_room(task, current_user):
                 join_room(task_id)
 
     @socketio.on("join_image_translate_task")
@@ -347,7 +355,7 @@ def create_app() -> Flask:
             return
         from web import store
         task = store.get(task_id)
-        if task and task.get("_user_id") == current_user.id \
+        if task and _can_join_task_room(task, current_user) \
                 and task.get("type") == "image_translate":
             join_room(task_id)
 

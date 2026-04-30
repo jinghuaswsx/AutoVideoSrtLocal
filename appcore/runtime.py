@@ -448,11 +448,8 @@ class PipelineRunner:
         self._emit(task_id, EVT_STEP_UPDATE, payload)
 
     def _emit_substep_msg(self, task_id: str, step: str, sub_msg: str) -> None:
-        """Emit EVT_STEP_UPDATE with a refreshed message but DO NOT persist.
-
-        Use for high-frequency sub-step progress (per ElevenLabs segment, etc.)
-        where persisting every event would thrash task_state.
-        """
+        """Emit and persist a refreshed step message for live UI and polling."""
+        task_state.set_step_message(task_id, step, sub_msg)
         task = task_state.get(task_id) or {}
         status = (task.get("steps") or {}).get(step, "running")
         payload = {"step": step, "status": status, "message": sub_msg}
@@ -485,7 +482,34 @@ class PipelineRunner:
         payload = dict(record)
         payload["round"] = round_index
         payload["phase"] = phase
+        payload["__current_phase"] = phase
+        self._persist_duration_round(task_id, payload)
         self._emit(task_id, EVT_TTS_DURATION_ROUND, payload)
+
+    def _persist_duration_round(self, task_id: str, payload: dict) -> None:
+        """Keep websocket-only TTS progress visible to polling clients."""
+        task = task_state.get(task_id) or {}
+        if not task:
+            return
+
+        rounds = [dict(item) for item in (task.get("tts_duration_rounds") or [])]
+        round_index = payload.get("round")
+        idx = next((i for i, item in enumerate(rounds) if item.get("round") == round_index), -1)
+        if idx >= 0:
+            merged = dict(rounds[idx])
+            merged.update(payload)
+            rounds[idx] = merged
+        else:
+            rounds.append(dict(payload))
+
+        phase = payload.get("phase")
+        if phase in {"converged", "best_pick", "trimmed", "truncated"}:
+            status = "converged"
+        elif phase == "failed":
+            status = "failed"
+        else:
+            status = "running"
+        task_state.update(task_id, tts_duration_rounds=rounds, tts_duration_status=status)
 
     def _run_tts_duration_loop(
         self, *, task_id: str, task_dir: str, loc_mod,
