@@ -835,6 +835,7 @@ def list_items_for_push(
     owner_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    sort: str = "created_at_desc",
     offset: int = 0,
     limit: int | None = 20,
 ) -> tuple[list[dict], int]:
@@ -879,6 +880,7 @@ def list_items_for_push(
     total = int((total_row or {}).get("c") or 0)
 
     owner_name_expr = medias._media_product_owner_name_expr()
+    order_direction = "ASC" if sort == "created_at_asc" else "DESC"
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
         f"       p.localized_links_json, p.ad_supported_langs, "
@@ -891,7 +893,7 @@ def list_items_for_push(
         f"JOIN media_products p ON p.id = i.product_id "
         f"LEFT JOIN users u ON u.id = p.user_id "
         f"WHERE {where_sql} "
-        f"ORDER BY i.created_at DESC, i.id DESC"
+        f"ORDER BY i.created_at {order_direction}, i.id {order_direction}"
     )
     if limit is None:
         rows = query(base_sql, tuple(args))

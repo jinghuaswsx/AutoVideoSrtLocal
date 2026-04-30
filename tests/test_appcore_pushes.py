@@ -549,6 +549,29 @@ def test_list_items_for_push_filter_by_owner_id(monkeypatch):
     assert 42 in captured["args"]
 
 
+def test_list_items_for_push_sorts_by_created_at_asc(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(sort="created_at_asc", offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    assert "ORDER BY i.created_at ASC, i.id ASC" in captured["sql"]
+
+
 # ---------- resolve_push_texts ----------
 
 

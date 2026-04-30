@@ -137,6 +137,9 @@ def api_list():
     owner_id_raw = (request.args.get("owner_id") or "").strip()
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
+    sort = (request.args.get("sort") or "created_at_desc").strip()
+    if sort not in {"created_at_asc", "created_at_desc"}:
+        sort = "created_at_desc"
 
     owner_id = None
     if owner_id_raw:
@@ -157,6 +160,7 @@ def api_list():
         owner_id=owner_id,
         date_from=date_from,
         date_to=date_to,
+        sort=sort,
         offset=0,
         limit=None,
     )

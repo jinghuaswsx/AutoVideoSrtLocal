@@ -24,6 +24,16 @@
   };
 
   const state = { page: 1, pageSize: 20, total: 0, items: [] };
+  const DEFAULT_FILTERS = {
+    status: 'pending',
+    lang: '',
+    product: '',
+    keyword: '',
+    owner_id: '',
+    date_from: '',
+    date_to: '',
+    sort: 'created_at_desc',
+  };
   let LANGUAGES = [];
   let OWNERS = [];
 
@@ -172,24 +182,86 @@
     }
   }
 
+  function normalizePage(value) {
+    const page = Number.parseInt(String(value || ''), 10);
+    return Number.isFinite(page) && page > 0 ? page : 1;
+  }
+
+  function normalizeSort(value) {
+    return value === 'created_at_asc' ? 'created_at_asc' : DEFAULT_FILTERS.sort;
+  }
+
+  function paramValue(params, key, fallback) {
+    return params.has(key) ? (params.get(key) || '') : fallback;
+  }
+
+  function setSelectValue(select, value, fallback) {
+    if (!select) return;
+    select.value = value;
+    if (select.value !== value) select.value = fallback;
+  }
+
+  function applyUrlToFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const statusSel = document.getElementById('f-status');
+    const langSel = document.getElementById('f-lang');
+    const ownerSel = document.getElementById('f-owner');
+    const sortSel = document.getElementById('f-sort');
+
+    setSelectValue(statusSel, paramValue(params, 'status', DEFAULT_FILTERS.status), DEFAULT_FILTERS.status);
+    setSelectValue(langSel, paramValue(params, 'lang', DEFAULT_FILTERS.lang), DEFAULT_FILTERS.lang);
+    setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
+    setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
+    document.getElementById('f-product').value = paramValue(params, 'product', DEFAULT_FILTERS.product);
+    document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
+    document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
+    document.getElementById('f-date-to').value = paramValue(params, 'date_to', DEFAULT_FILTERS.date_to);
+    state.page = params.has('page') ? normalizePage(params.get('page')) : 1;
+  }
+
   function buildQuery() {
     const params = new URLSearchParams();
     const statusSel = document.getElementById('f-status');
-    if (statusSel.value) params.set('status', statusSel.value);
+    params.set('status', statusSel.value);
     const langSel = document.getElementById('f-lang');
-    if (langSel.value) params.set('lang', langSel.value);
+    params.set('lang', langSel.value);
     const product = document.getElementById('f-product').value.trim();
-    if (product) params.set('product', product);
+    params.set('product', product);
     const keyword = document.getElementById('f-keyword').value.trim();
-    if (keyword) params.set('keyword', keyword);
+    params.set('keyword', keyword);
     const ownerSel = document.getElementById('f-owner');
-    if (ownerSel && ownerSel.value) params.set('owner_id', ownerSel.value);
+    params.set('owner_id', ownerSel ? ownerSel.value : '');
     const df = document.getElementById('f-date-from').value;
-    if (df) params.set('date_from', df);
+    params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
-    if (dt) params.set('date_to', dt);
+    params.set('date_to', dt);
+    const sortSel = document.getElementById('f-sort');
+    params.set('sort', sortSel.value || 'created_at_desc');
     params.set('page', String(state.page));
     return params.toString();
+  }
+
+  function syncUrlFromFilters(mode) {
+    if (!window.history || (!window.history.pushState && !window.history.replaceState)) return;
+    const query = buildQuery();
+    const nextUrl = `${window.location.pathname}?${query}${window.location.hash || ''}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash || ''}`;
+    if (nextUrl === currentUrl) return;
+    if (mode === 'replace' && window.history.replaceState) {
+      history.replaceState(null, '', nextUrl);
+      return;
+    }
+    if (window.history.pushState) {
+      history.pushState(null, '', nextUrl);
+    }
+  }
+
+  function buildPageHref(page) {
+    const oldPage = state.page;
+    state.page = page;
+    const query = buildQuery();
+    state.page = oldPage;
+    return `${window.location.pathname}?${query}${window.location.hash || ''}`;
   }
 
   function renderReadinessText(readiness) {
@@ -363,13 +435,17 @@
     </tr>`;
   }
 
-  async function load() {
+  async function load(options = {}) {
+    if (options.syncUrl !== false) {
+      syncUrlFromFilters(options.urlMode || 'push');
+    }
     const tbody = document.getElementById('push-tbody');
     const colspan = window.PUSH_IS_ADMIN ? 11 : 10;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());
       state.total = data.total;
+      state.pageSize = data.page_size || state.pageSize;
       state.items = data.items || [];
       if (!state.items.length) {
         tbody.innerHTML = `<tr><td colspan="${colspan}">无数据</td></tr>`;
@@ -388,7 +464,7 @@
     const parts = [`共 ${state.total} 条`];
     for (let p = 1; p <= totalPages; p++) {
       if (p === state.page) parts.push(`<strong>${p}</strong>`);
-      else parts.push(`<a href="#" data-page="${p}">${p}</a>`);
+      else parts.push(`<a href="${escapeAttr(buildPageHref(p))}" data-page="${p}">${p}</a>`);
     }
     box.innerHTML = parts.join(' ');
     box.querySelectorAll('a').forEach(a => {
@@ -404,11 +480,15 @@
     document.getElementById('btn-apply').addEventListener('click', () => {
       state.page = 1; load();
     });
+    document.getElementById('f-sort').addEventListener('change', () => {
+      state.page = 1; load();
+    });
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
       document.getElementById('f-lang').value = '';
       document.getElementById('f-owner').value = '';
+      document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });
   }
@@ -1284,6 +1364,15 @@
     document.getElementById('push-log-drawer').hidden = true;
   });
 
+  window.addEventListener('popstate', () => {
+    applyUrlToFilters();
+    load({ syncUrl: false });
+  });
+
   window._pushesLoad = load;
-  Promise.all([loadLanguages(), loadOwners()]).then(() => { bindFilters(); load(); });
+  Promise.all([loadLanguages(), loadOwners()]).then(() => {
+    applyUrlToFilters();
+    bindFilters();
+    load({ urlMode: 'replace' });
+  });
 })();

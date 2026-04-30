@@ -153,6 +153,7 @@
 
 /* 日期范围：起始 / 至 / 截止 同行对齐 */
 .filter-group-range { min-width: 260px; }
+.filter-group-sort { min-width: 180px; }
 .date-range {
   display: flex;
   align-items: center;

@@ -11,6 +11,15 @@ def test_pushes_template_contains_mk_id_column():
     assert 'id="f-owner"' in template
 
 
+def test_pushes_template_contains_created_at_sort_control():
+    template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
+
+    assert 'for="f-sort"' in template
+    assert 'id="f-sort"' in template
+    assert '<option value="created_at_asc">创建时间升序</option>' in template
+    assert '<option value="created_at_desc" selected>创建时间降序</option>' in template
+
+
 def test_pushes_script_renders_product_link_and_copy_button():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
 
@@ -35,6 +44,25 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "/medias/api/users/active" in script
     assert "owner_id" in script
     assert "f-owner" in script
+
+
+def test_pushes_script_persists_filters_pagination_and_sort_in_url():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "function applyUrlToFilters" in script
+    assert "function syncUrlFromFilters" in script
+    assert "window.addEventListener('popstate'" in script
+    assert "params.set('status', statusSel.value);" in script
+    assert "params.set('lang', langSel.value);" in script
+    assert "params.set('product', product);" in script
+    assert "params.set('keyword', keyword);" in script
+    assert "params.set('owner_id', ownerSel ? ownerSel.value : '');" in script
+    assert "params.set('date_from', df);" in script
+    assert "params.set('date_to', dt);" in script
+    assert "params.set('sort', sortSel.value || 'created_at_desc');" in script
+    assert "params.set('page', String(state.page));" in script
+    assert "history.replaceState" in script
+    assert "history.pushState" in script
 
 
 def test_pushes_css_styles_product_link_and_copy_button():
