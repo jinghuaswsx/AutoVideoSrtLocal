@@ -3167,7 +3167,11 @@
       const translatedBody = edNormalizeCopywritingBody(response.result || '');
 
       const copies = edEnsureCopywritingsArray();
-      copies.push({ lang: targetLang, body: translatedBody });
+      const remainingCopies = copies.filter((item) => (
+        (item.lang || '').trim().toLowerCase() !== targetLang
+      ));
+      remainingCopies.push({ lang: targetLang, body: translatedBody });
+      edState.productData.copywritings = remainingCopies;
 
       const { pid, payload } = edCollectProductPayload({ flushCopywritings: false });
       await fetchJSON('/medias/api/products/' + pid, {

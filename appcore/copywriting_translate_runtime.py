@@ -204,7 +204,7 @@ class CopywritingTranslateRunner:
         - parent_task_id: str|None   父任务 projects.id(可选)
 
     输出(写入):
-        - 新插入一行 media_copywritings(lang=target_lang,字段翻译版)
+        - 替换目标语种 media_copywritings，只保留一行字段翻译版
         - mark_auto_translated 写三字段
         - 更新本子任务 projects.status / state_json
     """
@@ -269,7 +269,7 @@ class CopywritingTranslateRunner:
         try:
             src = self._load_source_copy()
             translated, tokens = self._translate_fields(src)
-            target_id = self._insert_target_copy(src, translated)
+            target_id = self._replace_target_copy(src, translated)
             mark_auto_translated(
                 table="media_copywritings",
                 target_id=target_id,
@@ -320,8 +320,13 @@ class CopywritingTranslateRunner:
             total_tokens += tokens
         return translated, total_tokens
 
-    def _insert_target_copy(self, src: dict, translated: dict) -> int:
-        """新插入目标语言的 media_copywritings 行,返回新 id。"""
+    def _replace_target_copy(self, src: dict, translated: dict) -> int:
+        """替换目标语言的 media_copywritings 行,返回新 id。"""
+        target_lang = self.state["target_lang"]
+        execute(
+            "DELETE FROM media_copywritings WHERE product_id=%s AND lang=%s",
+            (src["product_id"], target_lang),
+        )
         new_id = execute(
             """
             INSERT INTO media_copywritings
@@ -332,8 +337,8 @@ class CopywritingTranslateRunner:
             """,
             (
                 src["product_id"],
-                self.state["target_lang"],
-                src.get("idx") or 1,
+                target_lang,
+                1,
                 translated.get("title"),
                 translated.get("body"),
                 translated.get("description"),

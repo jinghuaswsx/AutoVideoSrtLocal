@@ -101,14 +101,15 @@ def _estimate_copy(product_id, target_langs, force, skipped):
             f"COALESCE(CHAR_LENGTH({f}), 0) AS len_{f}"
             for f in _COPY_TEXT_FIELDS
         ]) + " FROM media_copywritings "
-        "WHERE product_id = %s AND lang = 'en'",
+        "WHERE product_id = %s AND lang = 'en' "
+        "ORDER BY idx ASC, id ASC LIMIT 1",
         (product_id,),
     )
     if not rows:
         return 0
 
     tokens = 0.0
-    for r in rows:
+    for r in rows[:1]:
         char_len = sum(r[f"len_{f}"] for f in _COPY_TEXT_FIELDS)
         for lang in target_langs:
             if not force and _translation_exists_copy(product_id, lang, r["id"]):

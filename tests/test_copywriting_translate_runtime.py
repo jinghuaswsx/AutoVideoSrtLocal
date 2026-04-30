@@ -219,6 +219,7 @@ class _FakeDB:
         self.sources = {s["id"]: s for s in (sources or [])}
         self.inserted = []                # INSERT 记录列表
         self.updates = []                 # (sql, args) 列表
+        self.deletes = []                 # (sql, args) 列表
         self.marks = []                   # mark_auto_translated 记录
         self._next_id = 1000
 
@@ -240,6 +241,9 @@ class _FakeDB:
             self._next_id += 1
             self.inserted.append({"id": new_id, "args": args})
             return new_id
+        if "DELETE FROM MEDIA_COPYWRITINGS" in sql_upper:
+            self.deletes.append((sql, args))
+            return 1
         if "UPDATE PROJECTS" in sql_upper:
             self.updates.append((sql, args))
             return 1
@@ -321,6 +325,31 @@ def test_runner_happy_path_inserts_and_marks(monkeypatch):
     assert status_updates, "应有 UPDATE projects SET status=..."
     final_status_update = status_updates[-1]
     assert final_status_update[1][0] == "done"
+
+
+def test_runner_replaces_existing_target_language_copywriting(monkeypatch):
+    """产出目标语种译文时,应先清掉该产品该语种旧文案,最终只保留新译文。"""
+    import json
+    src = {
+        "id": 101, "product_id": 55, "idx": 1, "lang": "en",
+        "title": "Welcome", "body": "Short body",
+        "description": "A description",
+        "ad_carrier": None, "ad_copy": "", "ad_keywords": None,
+    }
+    state = json.dumps({
+        "source_copy_id": 101,
+        "source_lang": "en", "target_lang": "de",
+        "parent_task_id": "parent_xxx",
+    })
+    fake = _make_fake(monkeypatch, sources=[src], initial_state=state)
+
+    from appcore.copywriting_translate_runtime import CopywritingTranslateRunner
+    CopywritingTranslateRunner("task_replace").start()
+
+    assert len(fake.deletes) == 1
+    assert "WHERE product_id=%s AND lang=%s" in fake.deletes[0][0]
+    assert fake.deletes[0][1] == (55, "de")
+    assert len(fake.inserted) == 1
 
 
 def test_runner_failure_marks_error_and_reraises(monkeypatch):
