@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from web import store
 
@@ -54,16 +55,11 @@ def test_translate_lab_detail_page_renders(authed_client_no_db, monkeypatch):
     assert "视频翻译（测试）" in body
 
 
-def test_layout_contains_translate_lab_link(authed_client_no_db, monkeypatch):
-    monkeypatch.setattr(
-        "web.routes.translate_lab.db_query",
-        lambda sql, args: [],
-    )
+def test_layout_hides_translate_lab_menu_entry():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "layout.html").read_text(encoding="utf-8")
 
-    resp = authed_client_no_db.get("/translate-lab")
-    assert resp.status_code == 200
-    body = resp.get_data(as_text=True)
-    assert "/translate-lab" in body
+    assert 'href="/translate-lab"' not in template
 
 
 # ── Task 13：API 路由测试 ──────────────────────────────

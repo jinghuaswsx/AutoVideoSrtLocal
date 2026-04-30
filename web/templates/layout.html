@@ -418,8 +418,6 @@
       or request.path.startswith('/video-creation')
       or request.path.startswith('/video-review')
       or request.path.startswith('/link-check')
-      or request.path.startswith('/translate-lab')
-      or request.path.startswith('/ja-translate')
       or request.endpoint == 'projects.av_sync_page'
     %}
     <a class="sidebar-brand" href="{{ url_for('projects.root') }}">
@@ -432,14 +430,6 @@
         <span class="nav-icon">📦</span> 素材管理
       </a>
       {% endif %}
-      {# 德语/法语独立入口已合并到多语种翻译，暂时隐藏
-      <a href="/de-translate" {% if request.path.startswith('/de-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🇩🇪</span> 视频翻译（德语）
-      </a>
-      <a href="/fr-translate" {% if request.path.startswith('/fr-translate') %}class="active"{% endif %}>
-        <span class="nav-icon">🇫🇷</span> 视频翻译（法语）
-      </a>
-      #}
       {% if has_permission('multi_translate') %}
       <a href="/multi-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/multi-translate') %}class="active"{% endif %}>
         <span class="nav-icon">🌐</span> 多语种视频翻译
@@ -563,12 +553,6 @@
           </a>
           <a href="{{ url_for('link_check.page') }}" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/link-check') %}class="active"{% endif %}>
             <span class="nav-icon">🔎</span> 链接检查
-          </a>
-          <a href="/translate-lab" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/translate-lab') %}class="active"{% endif %}>
-            <span class="nav-icon">🧪</span> 视频翻译（测试）
-          </a>
-          <a href="/ja-translate" target="_blank" rel="noopener noreferrer" {% if request.path.startswith('/ja-translate') %}class="active"{% endif %}>
-            <span class="nav-icon">日</span> 视频翻译（日语）
           </a>
           <a href="{{ url_for('projects.av_sync_page') }}" target="_blank" rel="noopener noreferrer" {% if request.endpoint == 'projects.av_sync_page' %}class="active"{% endif %}>
             <span class="nav-icon">🎧</span> 视频翻译音画同步
