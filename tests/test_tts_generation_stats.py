@@ -21,6 +21,8 @@ def test_compute_summary_round1_only_initial_translate():
     rounds = [_round(rewrite_attempts=0, audio_segments=9)]
     summary = compute_summary(rounds)
     assert summary["translate_calls"] == 1
+    assert summary["audio_rounds"] == 1
+    assert summary["audio_segment_calls"] == 9
     assert summary["audio_calls"] == 9
 
 
@@ -33,6 +35,8 @@ def test_compute_summary_multi_round_aggregates_rewrite_and_segments():
     ]
     summary = compute_summary(rounds)
     assert summary["translate_calls"] == 8
+    assert summary["audio_rounds"] == 3
+    assert summary["audio_segment_calls"] == 28
     assert summary["audio_calls"] == 28
 
 
@@ -41,6 +45,8 @@ def test_compute_summary_handles_missing_audio_segments_total():
     rounds = [{"rewrite_attempts": []}]
     summary = compute_summary(rounds)
     assert summary["translate_calls"] == 1
+    assert summary["audio_rounds"] == 0
+    assert summary["audio_segment_calls"] == 0
     assert summary["audio_calls"] == 0
 
 
@@ -48,23 +54,37 @@ def test_compute_summary_empty_rounds():
     from appcore.tts_generation_stats import compute_summary
     summary = compute_summary([])
     assert summary["translate_calls"] == 0
+    assert summary["audio_rounds"] == 0
+    assert summary["audio_segment_calls"] == 0
     assert summary["audio_calls"] == 0
 
 
 def test_format_log_line_contains_counts_and_ansi():
     from appcore.tts_generation_stats import format_log_line
-    line = format_log_line({"translate_calls": 4, "audio_calls": 27})
+    line = format_log_line({
+        "translate_calls": 4,
+        "audio_rounds": 3,
+        "audio_segment_calls": 27,
+        "audio_calls": 27,
+    })
     assert "\033[1;34m" in line
     assert "\033[0m" in line
-    assert "4 次翻译" in line
-    assert "27 次语音生成" in line
+    assert "4 次文本翻译" in line
+    assert "3 轮语音生成" in line
+    assert "27 次分段语音合成" in line
 
 
 def test_format_log_line_zero_counts():
     from appcore.tts_generation_stats import format_log_line
-    line = format_log_line({"translate_calls": 0, "audio_calls": 0})
-    assert "0 次翻译" in line
-    assert "0 次语音生成" in line
+    line = format_log_line({
+        "translate_calls": 0,
+        "audio_rounds": 0,
+        "audio_segment_calls": 0,
+        "audio_calls": 0,
+    })
+    assert "0 次文本翻译" in line
+    assert "0 轮语音生成" in line
+    assert "0 次分段语音合成" in line
 
 
 def test_upsert_inserts_then_updates(monkeypatch):
@@ -84,7 +104,7 @@ def test_upsert_inserts_then_updates(monkeypatch):
         project_type="multi_translate",
         target_lang="it",
         user_id=42,
-        summary={"translate_calls": 3, "audio_calls": 18},
+        summary={"translate_calls": 3, "audio_calls": 18, "audio_segment_calls": 18},
         finished_at_iso="2026-04-30T10:00:00",
     )
     stats_mod.upsert(
@@ -92,7 +112,7 @@ def test_upsert_inserts_then_updates(monkeypatch):
         project_type="multi_translate",
         target_lang="it",
         user_id=42,
-        summary={"translate_calls": 5, "audio_calls": 27},
+        summary={"translate_calls": 5, "audio_calls": 27, "audio_segment_calls": 27},
         finished_at_iso="2026-04-30T10:05:00",
     )
 
@@ -121,7 +141,7 @@ def test_upsert_handles_null_user_id(monkeypatch):
         project_type="ja_translate",
         target_lang="ja",
         user_id=None,
-        summary={"translate_calls": 1, "audio_calls": 5},
+        summary={"translate_calls": 1, "audio_calls": 5, "audio_segment_calls": 5},
         finished_at_iso="2026-04-30T11:00:00",
     )
 
@@ -162,16 +182,19 @@ def test_finalize_writes_state_json_db_and_logger(monkeypatch, caplog):
     stats_mod.finalize(task_id="task-z", task=task, rounds=rounds)
 
     assert state_updates["task-z"]["tts_generation_summary"]["translate_calls"] == 4
+    assert state_updates["task-z"]["tts_generation_summary"]["audio_rounds"] == 2
+    assert state_updates["task-z"]["tts_generation_summary"]["audio_segment_calls"] == 18
     assert state_updates["task-z"]["tts_generation_summary"]["audio_calls"] == 18
     assert "finished_at" in state_updates["task-z"]["tts_generation_summary"]
     assert len(db_calls) == 1
     assert db_calls[0][1][0] == "task-z"
     assert db_calls[0][1][4] == 4
     assert db_calls[0][1][5] == 18
-    log_record = next((r for r in caplog.records if "次翻译" in r.message), None)
+    log_record = next((r for r in caplog.records if "次文本翻译" in r.message), None)
     assert log_record is not None
-    assert "4 次翻译" in log_record.message
-    assert "18 次语音生成" in log_record.message
+    assert "4 次文本翻译" in log_record.message
+    assert "2 轮语音生成" in log_record.message
+    assert "18 次分段语音合成" in log_record.message
 
 
 def test_finalize_swallows_db_error_but_keeps_state_json_and_log(monkeypatch, caplog):
@@ -198,6 +221,6 @@ def test_finalize_swallows_db_error_but_keeps_state_json_and_log(monkeypatch, ca
     stats_mod.finalize(task_id="task-err", task=task, rounds=rounds)
 
     assert "task-err" in state_updates
-    assert any("次翻译" in r.message for r in caplog.records)
+    assert any("次文本翻译" in r.message for r in caplog.records)
     assert any("DB unreachable" in r.message and r.levelname == "WARNING"
                for r in caplog.records)

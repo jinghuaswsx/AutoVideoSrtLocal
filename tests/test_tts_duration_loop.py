@@ -674,13 +674,15 @@ class TestRewriteAttemptDiversity:
     "前几次给了多少词、目标多少"塞进 prompt（feedback_notes 非空）。
     """
 
-    def _setup_unconverging_rewrite(self, monkeypatch, tmp_path, captured_calls):
+    def _setup_unconverging_rewrite(self, monkeypatch, tmp_path, captured_calls, audio_calls=None):
         """让 fake_gen_rewrite 永远返回字数远偏 target 的译文，强制内层跑满 5 次。"""
         from appcore import task_state
         task_state.create("tdl-attempts", "v.mp4", str(tmp_path),
-                          original_filename="v.mp4", user_id=1)
+                          original_filename="v.mp4")
 
         def fake_gen_full_audio(tts_segments, voice_id, task_dir, variant=None, **kw):
+            if audio_calls is not None:
+                audio_calls.append(variant)
             out = os.path.join(task_dir, f"tts_full.{variant}.mp3")
             with open(out, "wb") as f:
                 f.write(b"fake")
@@ -768,6 +770,31 @@ class TestRewriteAttemptDiversity:
             # feedback 里必须列出前面 attempt 的 word counts
             assert "200" in notes, f"attempt {i+1} feedback missing prior word count: {notes}"
             assert f"attempt {i+1} of 5" in notes
+
+    def test_unconverged_rewrite_skips_audio_generation(self, tmp_path, monkeypatch):
+        captured: list[dict] = []
+        audio_calls: list[str] = []
+        runner, loc_mod, initial = self._setup_unconverging_rewrite(
+            monkeypatch, tmp_path, captured, audio_calls,
+        )
+        monkeypatch.setattr("appcore.tts_generation_stats.finalize", lambda *a, **kw: None)
+
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-attempts", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+
+        assert audio_calls == ["round_1"]
+        skipped_rounds = [r for r in result["rounds"] if r.get("rewrite_audio_skipped")]
+        assert skipped_rounds
+        assert all("audio_duration" not in r for r in skipped_rounds)
+        assert result["final_round"] == 1
 
 
 class TestPromoteFinalArtifacts:

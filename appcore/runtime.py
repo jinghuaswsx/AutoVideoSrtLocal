@@ -638,11 +638,17 @@ class PipelineRunner:
                 # 这两条同时上才有意义——单独打温度，LLM 仍可能落到同一 basin（85
                 # 词长版本 / 54 词短版本）；单独加反馈但保持低温也不会真的换文案。
                 MAX_REWRITE_ATTEMPTS = 5
-                WORD_TOLERANCE = 0.10
+                WORD_TOLERANCE = 0.20
                 candidates: list[tuple[int, dict]] = []  # (abs_diff, translation)
                 localized_translation = None
                 chosen_attempt_idx = None
                 tolerance_abs = max(1, int(target_words * WORD_TOLERANCE))
+                round_record["rewrite_word_tolerance_ratio"] = WORD_TOLERANCE
+                round_record["rewrite_word_tolerance_abs"] = tolerance_abs
+                round_record["rewrite_word_window"] = [
+                    target_words - tolerance_abs,
+                    target_words + tolerance_abs,
+                ]
                 prior_word_counts: list[int] = []
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
@@ -717,23 +723,46 @@ class PipelineRunner:
                         round_record["rewrite_words_actual"] = cand_words
                         break
                 if localized_translation is None:
-                    # 5 次都没收敛 → 挑最接近 target 的
+                    # 5 次都没收敛 → 记录最接近候选，但不进入 TTS。
+                    # 一旦 round 1 拿到实测语速，后续文案必须先落在词数置信区间内；
+                    # 偏离太多的候选即使合成音频也大概率无意义，只会浪费 TTS。
                     ranked = sorted(
                         enumerate(candidates), key=lambda kv: kv[1][0]
                     )
                     chosen_attempt_idx = ranked[0][0]
-                    localized_translation = candidates[chosen_attempt_idx][1]
-                    round_record["rewrite_attempt_used"] = chosen_attempt_idx + 1
+                    closest_diff, closest_candidate = candidates[chosen_attempt_idx]
+                    closest_words = _count_words(closest_candidate.get("full_text", ""))
+                    round_record["rewrite_attempt_closest"] = chosen_attempt_idx + 1
                     round_record["rewrite_words_actual"] = _count_words(
-                        localized_translation.get("full_text", "")
+                        closest_candidate.get("full_text", "")
                     )
                     round_record["rewrite_converged"] = False
-                    log.warning(
-                        "rewrite did not converge after %d attempts, picking closest (%d words, target %d)",
-                        MAX_REWRITE_ATTEMPTS,
-                        round_record["rewrite_words_actual"],
-                        target_words,
+                    round_record["rewrite_audio_skipped"] = True
+                    round_record["rewrite_reject_reason"] = (
+                        f"closest candidate has {closest_words} words; "
+                        f"target {target_words} ±{tolerance_abs}"
                     )
+                    log.warning(
+                        "rewrite did not converge after %d attempts, skipping TTS "
+                        "(closest %d words, target %d ±%d, diff %d)",
+                        MAX_REWRITE_ATTEMPTS,
+                        closest_words,
+                        target_words,
+                        tolerance_abs,
+                        closest_diff,
+                    )
+                    attempts_list = round_record.get("rewrite_attempts") or []
+                    for i, a in enumerate(attempts_list):
+                        a["is_closest"] = (i == chosen_attempt_idx)
+                        a["is_used_for_tts"] = False
+                    round_record["message"] = (
+                        f"第 {round_index} 轮文案未进入词数置信区间，跳过语音生成"
+                    )
+                    rounds.append(round_record)
+                    round_products.append(None)
+                    task_state.update(task_id, tts_duration_rounds=rounds)
+                    self._emit_duration_round(task_id, round_index, "rewrite_rejected", round_record)
+                    continue
                 else:
                     round_record["rewrite_converged"] = True
                 # 标记哪一次 attempt 被选用作本轮 TTS 输入
@@ -919,8 +948,16 @@ class PipelineRunner:
         # MAX_ROUNDS rounds completed without landing in [video-1, video+2].
         # Pick the round whose audio_duration is closest to the final target range.
         import appcore.task_state as task_state
+        eligible_indices = [
+            i for i, rec in enumerate(rounds)
+            if rec.get("audio_duration") is not None
+            and i < len(round_products)
+            and round_products[i]
+        ]
+        if not eligible_indices:
+            raise RuntimeError("No TTS audio round was generated")
         best_i = min(
-            range(len(rounds)),
+            eligible_indices,
             key=lambda i: _distance_to_duration_range(
                 rounds[i]["audio_duration"], final_target_lo, final_target_hi,
             ),

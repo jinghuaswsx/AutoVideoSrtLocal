@@ -1343,6 +1343,7 @@
     }
     return ({
       translate_rewrite: '正在重写译文',
+      rewrite_rejected:  '文案偏离目标，已跳过语音生成',
       tts_script_regen:  '正在切分朗读块',
       audio_gen:         '正在生成 TTS 音频',
       measure:           '测量音频时长',
@@ -1357,6 +1358,9 @@
   }
 
   function _roundStatusIcon(round, isFailed) {
+    if (round && round.rewrite_audio_skipped) {
+      return ['warning', '!'];
+    }
     const finalDuration = round.final_duration != null ? round.final_duration : round.audio_duration;
     if (finalDuration != null) {
       const lo = round.duration_lo;
@@ -1795,6 +1799,9 @@
         truncationParts.push(`✂️ 删除 ${round.removed_count} 个朗读块（${(round.removed_duration || 0).toFixed(1)}s）`);
       }
       const truncationInfo = truncationParts.join(' · ');
+      const skippedInfo = round.rewrite_audio_skipped
+        ? `文案未进入词数置信区间（目标 ${round.target_words} 词，允许 ${round.rewrite_word_window ? round.rewrite_word_window.join('–') : '±' + round.rewrite_word_tolerance_abs} 词），本轮未生成语音。`
+        : '';
 
       // 内联音频播放器
       let audioHtml = '';
@@ -1817,6 +1824,7 @@
           ${tokenStr ? `<div class="duration-round-meta">${tokenStr}</div>` : ''}
           ${phaseLabel ? `<div class="duration-round-phase">${phaseLabel}…</div>` : ''}
           ${_rewriteAttemptsHtml(round)}
+          ${skippedInfo ? `<div class="duration-round-meta warning">${escapeHtml(skippedInfo)}</div>` : ''}
           ${truncationInfo ? `<div class="duration-round-meta">${truncationInfo}</div>` : ''}
           ${audioHtml}
           ${actions.length ? `<div class="duration-round-files">${actions.join('')}</div>` : ''}
@@ -1827,10 +1835,17 @@
     const generationSummary = currentTask && currentTask.tts_generation_summary;
     if (generationSummary) {
       const translateCalls = Number(generationSummary.translate_calls);
-      const audioCalls = Number(generationSummary.audio_calls);
+      const audioRoundsValue = Number(generationSummary.audio_rounds);
+      const audioRounds = Number.isFinite(audioRoundsValue)
+        ? audioRoundsValue
+        : rounds.filter(r => Number(r.audio_segments_total) > 0 || Number.isFinite(Number(r.audio_duration))).length;
+      const audioSegmentCalls = Number(
+        generationSummary.audio_segment_calls ?? generationSummary.audio_calls
+      );
       const summaryBits = [];
-      if (Number.isFinite(translateCalls)) summaryBits.push(`${translateCalls} 次翻译`);
-      if (Number.isFinite(audioCalls)) summaryBits.push(`${audioCalls} 次语音生成`);
+      if (Number.isFinite(translateCalls)) summaryBits.push(`${translateCalls} 次文本翻译`);
+      if (Number.isFinite(audioRounds)) summaryBits.push(`${audioRounds} 轮语音生成`);
+      if (Number.isFinite(audioSegmentCalls)) summaryBits.push(`${audioSegmentCalls} 次分段语音合成`);
       if (summaryBits.length) {
         parts.push(`
           <div class="duration-generation-summary">

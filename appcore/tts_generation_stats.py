@@ -6,8 +6,10 @@
 3) 一条粗体蓝色 ANSI 日志（journalctl 可读）
 
 指标口径：
-- translate_calls: round 1 的 1 次初始翻译 + 每个 round 内所有 rewrite_attempt 之和
-- audio_calls:     所有 round 的 audio_segments_total 之和（段级 ElevenLabs 调用总数）
+- translate_calls:      round 1 的 1 次初始翻译 + 每个 round 内所有 rewrite_attempt 之和
+- audio_rounds:         实际进入完整音频合成的轮数
+- audio_segment_calls:  所有 round 的 audio_segments_total 之和（段级 ElevenLabs 调用总数）
+- audio_calls:          兼容旧字段，等同 audio_segment_calls
 """
 from __future__ import annotations
 
@@ -29,25 +31,44 @@ def compute_summary(rounds: Iterable[dict]) -> dict:
     """从 _step_tts 的 rounds 列表汇总两个核心指标。"""
     rounds_list = list(rounds)
     if not rounds_list:
-        return {"translate_calls": 0, "audio_calls": 0}
+        return {
+            "translate_calls": 0,
+            "audio_rounds": 0,
+            "audio_segment_calls": 0,
+            "audio_calls": 0,
+        }
 
     translate_calls = 0
-    audio_calls = 0
+    audio_rounds = 0
+    audio_segment_calls = 0
     for idx, rec in enumerate(rounds_list):
         if idx == 0:
             translate_calls += 1
         else:
             translate_calls += len(rec.get("rewrite_attempts") or [])
-        audio_calls += int(rec.get("audio_segments_total") or 0)
-    return {"translate_calls": translate_calls, "audio_calls": audio_calls}
+        segment_calls = int(rec.get("audio_segments_total") or 0)
+        audio_segment_calls += segment_calls
+        if segment_calls > 0:
+            audio_rounds += 1
+    return {
+        "translate_calls": translate_calls,
+        "audio_rounds": audio_rounds,
+        "audio_segment_calls": audio_segment_calls,
+        "audio_calls": audio_segment_calls,
+    }
 
 
 def format_log_line(summary: dict) -> str:
     """构造一条粗体蓝色 ANSI 总结日志。"""
+    audio_rounds = int(summary.get("audio_rounds") or 0)
+    audio_segment_calls = int(
+        summary.get("audio_segment_calls", summary.get("audio_calls", 0)) or 0
+    )
     return (
         f"{_ANSI_BOLD_BLUE}"
-        f"本任务用了 {summary['translate_calls']} 次翻译，"
-        f"{summary['audio_calls']} 次语音生成。"
+        f"本任务用了 {summary['translate_calls']} 次文本翻译，"
+        f"{audio_rounds} 轮语音生成，"
+        f"{audio_segment_calls} 次分段语音合成。"
         f"{_ANSI_RESET}"
     )
 
