@@ -518,10 +518,21 @@ _UNSUITABLE_PRODUCT_TEXT = "这个产品有问题，不做，不要投放不要�
 _UNSUITABLE_PRODUCT_TYPE = "unsuitable_product"
 
 
+def _unsuitable_error_handle(product_code: str) -> str:
+    handle = (product_code or "").strip()
+    if not handle:
+        raise ProductLinksPayloadError("missing_product_code")
+    if not handle.lower().endswith("-rjc"):
+        raise ProductLinksPayloadError("product_code_must_end_with_rjc")
+    return re.sub(r"-rjc$", "-error-rjc", handle, flags=re.IGNORECASE).lower()
+
+
 def build_unsuitable_product_push_preview(product: dict | None) -> dict:
     """组装“不合适产品”投放推送预览。
 
-    该入口只推一条英语文案，不推任何商品链接。
+    该入口复用两个独立下游接口：
+    1. 小语种文案接口：只推一条英语文案；
+    2. 投放链接接口：只推一条英语 error handle 链接。
     """
     if not isinstance(product, dict):
         raise ProductLinksPayloadError("product_not_found")
@@ -529,9 +540,20 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
         raise ProductNotListedError("product_not_listed")
 
     source_handle = str(product.get("product_code") or "").strip()
-    target_url = get_push_target_url()
-    if not target_url:
-        raise ProductLinksPushConfigError("push_target_url_missing")
+    error_handle = _unsuitable_error_handle(source_handle)
+    try:
+        mk_id = int(product.get("mk_id") or 0)
+    except (TypeError, ValueError):
+        mk_id = 0
+    if not mk_id:
+        raise ProductLocalizedTextsPayloadError("mk_id_missing")
+
+    text_target_url = build_localized_texts_target_url(mk_id)
+    if not text_target_url:
+        raise ProductLocalizedTextsPushConfigError("push_localized_texts_base_url_missing")
+    links_target_url = get_product_links_target_url()
+    if not links_target_url:
+        raise ProductLinksPushConfigError("push_product_links_base_url_missing")
 
     text_payload = {
         "lang": "英语",
@@ -539,53 +561,77 @@ def build_unsuitable_product_push_preview(product: dict | None) -> dict:
         "message": _UNSUITABLE_PRODUCT_TEXT,
         "description": _UNSUITABLE_PRODUCT_TEXT,
     }
-    payload = {
-        "type": _UNSUITABLE_PRODUCT_TYPE,
-        "mode": "create",
-        "product_name": product.get("name") or "",
+    copy_request = {
         "texts": [text_payload],
-        "product_links": [],
-        "videos": [],
-        "source": 0,
-        "level": int(product.get("importance") or 3),
-        "author": _FIXED_AUTHOR,
-        "push_admin": _FIXED_AUTHOR,
-        "roas": 1.6,
-        "platforms": ["tiktok"],
-        "selling_point": product.get("selling_points") or "",
-        "tags": [],
+    }
+    error_url = f"https://newjoyloo.com/products/{error_handle}"
+    links_request = {
+        "handle": error_handle,
+        "product_links": [error_url],
     }
     structured = {
         "type": _UNSUITABLE_PRODUCT_TYPE,
         "source_handle": source_handle,
+        "error_handle": error_handle,
         "language": "en",
         "language_name": "英语",
         "texts_count": 1,
-        "links_count": 0,
+        "links_count": 1,
         "text": _UNSUITABLE_PRODUCT_TEXT,
     }
+    types = [
+        {
+            "type": "copy",
+            "label": "推送文案",
+            "target_url": text_target_url,
+            "payload": copy_request,
+            "texts": [text_payload],
+        },
+        {
+            "type": "links",
+            "label": "推送链接",
+            "target_url": links_target_url,
+            "payload": links_request,
+            "links": [{
+                "lang": "en",
+                "language_name": "英语",
+                "url": error_url,
+            }],
+        },
+    ]
     return {
-        "target_url": target_url,
+        "target_url": "",
         "structured": structured,
-        "payload": payload,
-        "links": [],
+        "payload": {
+            "types": [
+                {"type": item["type"], "payload": item["payload"]}
+                for item in types
+            ],
+        },
+        "types": types,
+        "links": types[1]["links"],
         "texts": [text_payload],
     }
 
 
-def push_unsuitable_product(product: dict | None) -> dict:
-    preview = build_unsuitable_product_push_preview(product)
-    target_url = preview["target_url"]
-    payload = preview["payload"]
+def _post_unsuitable_push_type(
+    request_type: dict[str, Any],
+    headers: dict[str, str],
+    require_zero_code: bool,
+) -> dict[str, Any]:
+    target_url = request_type["target_url"]
+    payload = request_type["payload"]
     try:
         resp = requests.post(
             target_url,
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             timeout=30,
         )
     except requests.RequestException as exc:
         return {
+            "type": request_type.get("type"),
+            "label": request_type.get("label"),
             "ok": False,
             "error": "downstream_unreachable",
             "detail": str(exc),
@@ -602,8 +648,13 @@ def push_unsuitable_product(product: dict | None) -> dict:
     except ValueError:
         parsed = {}
 
+    ok = bool(resp.ok)
+    if require_zero_code and parsed:
+        ok = ok and parsed.get("code") == 0
     result: dict[str, Any] = {
-        "ok": bool(resp.ok),
+        "type": request_type.get("type"),
+        "label": request_type.get("label"),
+        "ok": ok,
         "upstream_status": resp.status_code,
         "response_body": body_text[:4000],
         "target_url": target_url,
@@ -611,11 +662,44 @@ def push_unsuitable_product(product: dict | None) -> dict:
     }
     if parsed:
         result["downstream_response"] = parsed
-    if not resp.ok:
+    if not ok:
         result["error"] = "downstream_error"
         result["message"] = parsed.get("message") or f"HTTP {resp.status_code}"
         result["upstream_code"] = parsed.get("code")
     return result
+
+
+def push_unsuitable_product(product: dict | None) -> dict:
+    preview = build_unsuitable_product_push_preview(product)
+    types = preview.get("types") or []
+    if len(types) != 2:
+        raise ProductLinksPayloadError("unsuitable_product_types_invalid")
+
+    text_headers = build_localized_texts_headers()
+    if "Authorization" not in text_headers and "Cookie" not in text_headers:
+        raise ProductLocalizedTextsPushConfigError("push_localized_texts_credentials_missing")
+    username = get_product_links_username()
+    password = get_product_links_password()
+    if not username or not password:
+        raise ProductLinksPushConfigError("push_product_links_credentials_missing")
+    link_headers = {
+        "Content-Type": "application/json",
+        "Authorization": _build_utf8_basic_auth_header(username, password),
+    }
+
+    results: list[dict[str, Any]] = []
+    copy_result = _post_unsuitable_push_type(types[0], text_headers, require_zero_code=False)
+    results.append(copy_result)
+    if not copy_result.get("ok"):
+        return {"ok": False, "results": results, "payload": preview["payload"]}
+
+    link_result = _post_unsuitable_push_type(types[1], link_headers, require_zero_code=True)
+    results.append(link_result)
+    return {
+        "ok": all(item.get("ok") for item in results),
+        "results": results,
+        "payload": preview["payload"],
+    }
 
 
 def probe_ad_url(url: str) -> tuple[bool, str | None]:

@@ -1055,6 +1055,21 @@ def _product_localized_texts_push_error_response(exc: Exception):
     return jsonify({"error": "product_localized_texts_push_failed", "message": message}), 500
 
 
+def _product_unsuitable_push_error_response(exc: Exception):
+    message = str(exc)
+    if isinstance(exc, pushes.ProductNotListedError):
+        return jsonify({"error": "product_not_listed", "message": "产品已下架，不能推送不合适标注"}), 409
+    if isinstance(exc, pushes.ProductLocalizedTextsPushConfigError):
+        return jsonify({"error": message or "push_localized_texts_config_missing"}), 500
+    if isinstance(exc, pushes.ProductLinksPushConfigError):
+        return jsonify({"error": message or "push_product_links_config_missing"}), 500
+    if isinstance(exc, pushes.ProductLocalizedTextsPayloadError):
+        return jsonify({"error": message or "localized_texts_payload_invalid"}), 400
+    if isinstance(exc, pushes.ProductLinksPayloadError):
+        return jsonify({"error": message or "product_links_payload_invalid"}), 400
+    return jsonify({"error": "product_unsuitable_push_failed", "message": message}), 500
+
+
 @bp.route("/api/products/<int:pid>/product-links-push/payload", methods=["GET"])
 @login_required
 def api_product_links_push_payload(pid: int):
@@ -1096,7 +1111,7 @@ def api_product_unsuitable_push_payload(pid: int):
     try:
         return jsonify(pushes.build_unsuitable_product_push_preview(product))
     except Exception as exc:
-        return _product_links_push_error_response(exc)
+        return _product_unsuitable_push_error_response(exc)
 
 
 @bp.route("/api/products/<int:pid>/product-unsuitable-push", methods=["POST"])
@@ -1110,7 +1125,7 @@ def api_product_unsuitable_push(pid: int):
     try:
         result = pushes.push_unsuitable_product(product)
     except Exception as exc:
-        return _product_links_push_error_response(exc)
+        return _product_unsuitable_push_error_response(exc)
     status = 200 if result.get("ok") else 502
     return jsonify(result), status
 

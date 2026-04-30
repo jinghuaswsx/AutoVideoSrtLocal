@@ -1981,17 +1981,15 @@
   }
 
   function renderProductUnsuitablePushInfo(data, product) {
-    const payload = data && data.payload ? data.payload : {};
     const structured = data && data.structured ? data.structured : {};
-    const texts = Array.isArray(payload.texts) ? payload.texts : [];
+    const types = Array.isArray(data?.types) ? data.types : [];
     const rows = [
-      ['type', structured.type || payload.type || '—'],
+      ['type', structured.type || '—'],
       ['产品', `${product?.name || ''} · ${structured.source_handle || product?.product_code || ''}`],
-      ['接口地址', data?.target_url || '—'],
-      ['方法', 'POST'],
-      ['Content-Type', 'application/json'],
+      ['错误 handle', structured.error_handle || '—'],
+      ['type 数量', String(types.length)],
       ['文案语言', structured.language_name || '英语'],
-      ['文案数量', String(texts.length)],
+      ['文案数量', String(structured.texts_count ?? 0)],
       ['链接数量', String(structured.links_count ?? 0)],
     ];
     return `<div class="oc-pl-info-block">
@@ -2000,6 +1998,30 @@
         ${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}
       </dl>
     </div>`;
+  }
+
+  function renderProductUnsuitablePushTypeList(data) {
+    const types = Array.isArray(data?.types) ? data.types : [];
+    if (!types.length) {
+      return '<div class="oc-pl-empty">暂无可推送 type</div>';
+    }
+    return `<div class="oc-copy-list">`
+      + types.map((item, index) => {
+        const payload = item.payload || {};
+        const count = item.type === 'copy'
+          ? ((payload.texts || []).length || 0)
+          : ((payload.product_links || []).length || 0);
+        const target = item.target_url || '—';
+        return `<div class="oc-copy-row">
+          <div class="oc-copy-head">${index + 1}. ${escapeHtml(item.label || item.type || '')}</div>
+          <dl class="oc-copy-kv">
+            <dt>type</dt><dd>${escapeHtml(item.type || '')}</dd>
+            <dt>接口</dt><dd>${escapeHtml(target)}</dd>
+            <dt>数量</dt><dd>${escapeHtml(String(count))}</dd>
+          </dl>
+        </div>`;
+      }).join('')
+      + `</div>`;
   }
 
   function productUnsuitablePushStructuredJson(data) {
@@ -2070,10 +2092,13 @@
     try {
       const data = await fetchJSON(`/medias/api/products/${product.id}/product-unsuitable-push/payload`);
       mask._productUnsuitablePreview = data;
-      if (info) info.innerHTML = renderProductUnsuitablePushInfo(data, product);
+      if (info) {
+        info.innerHTML = renderProductUnsuitablePushInfo(data, product)
+          + renderProductUnsuitablePushTypeList(data);
+      }
       structuredPre.textContent = productUnsuitablePushStructuredJson(data);
       jsonPre.textContent = productUnsuitablePushPreviewJson(data);
-      submit.disabled = !data.payload || !(data.payload.texts || []).length;
+      submit.disabled = !Array.isArray(data.types) || data.types.length !== 2;
     } catch (err) {
       const message = err.message || '加载失败';
       if (info) info.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
