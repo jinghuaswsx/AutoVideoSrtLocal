@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 bp = Blueprint("multi_translate", __name__)
 
 SUPPORTED_LANGS = ("de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en")
-ALLOWED_SOURCE_LANGUAGES = ("", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
+ALLOWED_SOURCE_LANGUAGES = ("zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi")
 
 
 def _list_enabled_target_langs() -> tuple[str, ...]:
@@ -261,9 +261,7 @@ def subtitle_preview(task_id: str):
 def upload_and_start():
     """上传视频，创建多语种翻译任务。
 
-    源语言由 ASR 后置 step `asr_normalize` 自动识别（Gemini Flash），
-    任意非中英文素材会进一步走 Claude Sonnet 标准化为 en-US 后再进入下游。
-    任务创建时不写入 source_language——由 _step_asr_normalize 唯一负责写入。
+    源语言必须由用户在创建时明确选择；运行时不再自动识别或覆盖该选择。
     """
     if "video" not in request.files:
         return jsonify({"error": "No video file"}), 400
@@ -277,18 +275,15 @@ def upload_and_start():
     if not validate_video_extension(original_filename):
         return jsonify({"error": "涓嶆敮鎸佺殑瑙嗛鏍煎紡"}), 400
 
+    raw_source_language = (request.form.get("source_language") or "").strip()
+    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
+    source_language = raw_source_language
+
     target_lang = (request.form.get("target_lang") or "").strip()
     enabled_langs = _list_enabled_target_langs()
     if target_lang not in enabled_langs:
         return jsonify({"error": f"target_lang must be one of {list(enabled_langs)}"}), 400
-
-    # 源语言：""=自动检测（默认按 zh 选 ASR 引擎，LID 复检覆盖）；
-    # 其他=用户明确指定，跳过两层 LLM 检测，直接走对应路径
-    raw_source_language = (request.form.get("source_language") or "").strip()
-    if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
-        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
-    user_specified_source_language = bool(raw_source_language)
-    source_language = raw_source_language or "zh"
 
     task_id = str(uuid.uuid4())
     task_dir = os.path.join(OUTPUT_DIR, task_id)
@@ -314,7 +309,7 @@ def upload_and_start():
         type="multi_translate",
         target_lang=target_lang,
         source_language=source_language,
-        user_specified_source_language=user_specified_source_language,
+        user_specified_source_language=True,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -366,6 +361,7 @@ def restart(task_id):
     body = request.get_json(silent=True) or {}
     raw_source_language = body.get("source_language", None)
     if raw_source_language is not None:
+        raw_source_language = str(raw_source_language).strip()
         if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
             return jsonify({
                 "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
@@ -419,10 +415,10 @@ def update_source_language(task_id):
     if not task or not _can_view_task(task):
         return jsonify({"error": "Task not found"}), 404
     body = request.get_json(silent=True) or {}
-    lang = body.get("source_language")
-    if lang not in ("zh", "en"):
-        return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
-    store.update(task_id, source_language=lang)
+    lang = str(body.get("source_language") or "").strip()
+    if lang not in ALLOWED_SOURCE_LANGUAGES:
+        return jsonify({"error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"}), 400
+    store.update(task_id, source_language=lang, user_specified_source_language=True)
     return jsonify({"status": "ok"})
 
 
@@ -438,10 +434,9 @@ def update_alignment(task_id):
     if not isinstance(break_after, list):
         return jsonify({"error": "break_after required"}), 400
 
-    # Save source_language if provided (user may override auto-detection)
     source_language = body.get("source_language")
-    if source_language in ("zh", "en"):
-        store.update(task_id, source_language=source_language)
+    if source_language in ALLOWED_SOURCE_LANGUAGES:
+        store.update(task_id, source_language=source_language, user_specified_source_language=True)
 
     from web.preview_artifacts import build_alignment_artifact
     source_utterances = task.get("utterances_en") or task.get("utterances", [])
@@ -523,10 +518,16 @@ def resume(task_id):
         return jsonify({"error": f"start_step must be one of {RESUMABLE_STEPS}"}), 400
 
     if start_step == "asr_normalize":
+        source_language = (task.get("source_language") or "").strip()
+        if source_language not in ALLOWED_SOURCE_LANGUAGES:
+            return jsonify({
+                "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
+            }), 400
         store.update(
             task_id,
             utterances_en=None,
-            source_language=None,
+            source_language=source_language,
+            user_specified_source_language=True,
             detected_source_language=None,
         )
 

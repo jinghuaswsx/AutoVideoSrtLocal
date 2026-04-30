@@ -288,7 +288,7 @@
       toggle.querySelectorAll(".sl-btn").forEach(b => {
         b.classList.toggle("sl-active", b.dataset.lang === lang);
       });
-      hint.textContent = "(自动检测)";
+      hint.textContent = "(手动选择)";
     }
   }
 
@@ -484,19 +484,18 @@
     const card = document.getElementById("taskStatusCard");
     if (!card || !currentTask) return;
 
-    // 1. 源语言：user_specified 优先，其次 detected，其次「识别中」
+    // 1. 源语言：优先展示人工选择值，兼容旧任务的 detected 字段
     const srcEl = document.getElementById("statusLangSource");
     if (srcEl) {
-      const userSpec = currentTask.user_specified_source_language;
       const srcLang = currentTask.source_language || "";
       const detected = currentTask.detected_source_language || "";
       let label;
-      if (userSpec && srcLang) {
+      if (srcLang) {
         label = langLabel(srcLang, srcLang);
       } else if (detected) {
-        label = `${langLabel(detected, detected)}（自动识别）`;
+        label = langLabel(detected, detected);
       } else {
-        label = "原始语言识别中";
+        label = "未选择源语言";
       }
       srcEl.textContent = label;
     }

@@ -152,7 +152,7 @@
   #voicePanel { display: none !important; }
   /* 老的"生成配置 + 开始处理"面板也由新音色选择器的字幕参数 + 开始处理按钮取代 */
   #configPanel { display: none !important; }
-  /* 源语言 zh/en 由 ASR 后自动判别，不给用户看无意义的选择器 */
+  /* 多语种详情页使用顶部原始语言选择器，隐藏旧的 zh/en 切换条 */
   #sourceLangPanel { display: none !important; }
   /* 仅调整多语种详情页的前端展示位置；实际流程仍按 STEP_ORDER: extract -> asr 执行 */
   #pipelineCard .steps > #step-asr { order: -2; }
@@ -199,8 +199,8 @@
 {% elif detail_mode == 'av_sync' %}
   {% set _force_restart_api = '/api/tasks' %}
 {% endif %}
-{% set _current_src_lang = state.source_language if state.user_specified_source_language else '' %}
-{% set _default_src_lang = _current_src_lang or state.detected_source_language or 'zh' %}
+{% set _current_src_lang = state.source_language or state.detected_source_language or default_source_language|default('zh') %}
+{% set _default_src_lang = _current_src_lang or 'zh' %}
 <div class="detail-topbar">
   <a class="back-link" href="{{ detail_back_href }}">{{ detail_back_label }}</a>
   {% if _force_restart_api %}
@@ -258,7 +258,7 @@
     </div>
     <div class="force-restart-modal-body">
       <p class="force-restart-modal-line">
-        原始语言：<strong id="forceRestartModalLang">自动识别</strong>
+        原始语言：<strong id="forceRestartModalLang">按当前选择</strong>
       </p>
       <p class="force-restart-modal-desc">
         这将清除该任务所有中间产物（识别、翻译、TTS、字幕、合成等），仅保留原始视频，从第一步「提取音频」按选定的原始语言重新跑。
@@ -280,7 +280,7 @@
 </div>
 {% endif %}
 {% if detail_mode in ('multi', 'av_sync') %}
-{# 顶部实时状态卡：源/目标语言按 user_specified / detected 真实值渲染，进度条 + 当前阶段 + 中断提示 + 可选项 #}
+{# 顶部实时状态卡：源/目标语言按人工选择值渲染，进度条 + 当前阶段 + 中断提示 + 可选项 #}
 {% set _LANG_LABELS = {
   'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
   'fr': '法语', 'it': '意大利语', 'ja': '日语', 'de': '德语',
@@ -288,12 +288,11 @@
 } %}
 {% set _src_lang = state.source_language or '' %}
 {% set _src_detected = state.detected_source_language or '' %}
-{% if state.user_specified_source_language and _src_lang %}
-  {% set _src_label_init = _LANG_LABELS.get(_src_lang, _src_lang) %}
-{% elif _src_detected %}
-  {% set _src_label_init = _LANG_LABELS.get(_src_detected, _src_detected) ~ '（自动识别）' %}
+{% set _src_display_lang = _src_lang or _src_detected %}
+{% if _src_display_lang %}
+  {% set _src_label_init = _LANG_LABELS.get(_src_display_lang, _src_display_lang) %}
 {% else %}
-  {% set _src_label_init = '原始语言识别中' %}
+  {% set _src_label_init = '未选择源语言' %}
 {% endif %}
 {% set _tgt_label_init = _LANG_LABELS.get(target_lang, target_lang|upper) %}
 <section class="task-status-card" id="taskStatusCard">
@@ -372,7 +371,7 @@
   var confirmBtn = document.getElementById('forceRestartModalConfirm');
 
   var LANGUAGE_LABELS = {
-    '': '自动识别', 'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
+    'zh': '中文', 'en': '英文', 'es': '西班牙语', 'pt': '葡萄牙语',
     'fr': '法语', 'it': '意大利语', 'ja': '日语', 'de': '德语',
     'nl': '荷兰语', 'sv': '瑞典语', 'fi': '芬兰语'
   };
@@ -383,7 +382,7 @@
   var keydownHandler = null;
 
   function labelFor(code) {
-    return LANGUAGE_LABELS[code] != null ? LANGUAGE_LABELS[code] : (code || '自动识别');
+    return LANGUAGE_LABELS[code] != null ? LANGUAGE_LABELS[code] : (code || '未选择源语言');
   }
 
   function openModal(nextCtx) {
@@ -448,8 +447,14 @@
         subtitle_position: btn.dataset.subtitlePosition || 'bottom',
         interactive_review: btn.dataset.interactiveReview === 'true'
       };
-      if (ctx.sourceLanguageOverride !== null) {
-        payload.source_language = ctx.sourceLanguageOverride;
+      payload.source_language = ctx.sourceLanguageOverride !== null
+        ? ctx.sourceLanguageOverride
+        : currentLang;
+      if (!payload.source_language) {
+        alert('请选择原始语言');
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+        return;
       }
 
       var originalText = confirmBtn.textContent;

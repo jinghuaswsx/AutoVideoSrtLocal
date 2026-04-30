@@ -25,29 +25,39 @@ def _utterances():
 
 @patch("appcore.runtime_multi.task_state")
 @patch("appcore.runtime_multi.pipeline_asr_normalize")
-def test_step_asr_normalize_writes_source_language_en_for_es_route(
+def test_step_asr_normalize_preserves_manual_source_language_for_es_route(
     mock_asr_norm, mock_state,
 ):
-    mock_state.get.return_value = {"utterances": _utterances(), "_user_id": 1}
+    mock_state.get.return_value = {
+        "utterances": _utterances(),
+        "_user_id": 1,
+        "source_language": "es",
+        "user_specified_source_language": True,
+    }
     fake_en = [{"index": 0, "start": 0.5, "end": 2.3, "text": "Hi"},
                {"index": 1, "start": 2.3, "end": 4.8, "text": "Look"}]
-    mock_asr_norm.run_asr_normalize.return_value = {
+    mock_asr_norm.run_user_specified.return_value = {
         "detected_source_language": "es",
-        "confidence": 0.97,
+        "confidence": 1.0,
         "is_mixed": False,
         "route": "es_specialized",
+        "detection_source": "user_specified",
         "input": {"language_label": "西班牙语", "full_text_preview": "Hola, este...",
                    "utterance_count": 2},
         "output": {"full_text_preview": "Hi Look", "utterance_count": 2},
         "tokens": {"detect": {}, "translate": {}},
         "elapsed_ms": 100,
-        "model": {"detect": "g", "translate": "c"},
+        "model": {"detect": None, "translate": "c"},
         "_utterances_en": fake_en,
     }
     runner = _make_runner()
     runner._step_asr_normalize("t1")
+    mock_asr_norm.run_user_specified.assert_called_once_with(
+        task_id="t1", user_id=1, utterances=_utterances(), source_language="es",
+    )
+    mock_asr_norm.run_asr_normalize.assert_not_called()
     update_kwargs = mock_state.update.call_args.kwargs
-    assert update_kwargs["source_language"] == "en"
+    assert update_kwargs["source_language"] == "es"
     assert update_kwargs["detected_source_language"] == "es"
     assert update_kwargs["utterances_en"] == fake_en
     # artifact 写入时不应该再含 _utterances_en
@@ -61,11 +71,17 @@ def test_step_asr_normalize_writes_source_language_en_for_es_route(
 def test_step_asr_normalize_routes_zh_keeps_source_language_zh(
     mock_asr_norm, mock_state,
 ):
-    mock_state.get.return_value = {"utterances": [{"index": 0, "start": 0, "end": 1,
-                                                      "text": "你好"}], "_user_id": 1}
-    mock_asr_norm.run_asr_normalize.return_value = {
+    utterances = [{"index": 0, "start": 0, "end": 1, "text": "你好"}]
+    mock_state.get.return_value = {
+        "utterances": utterances,
+        "_user_id": 1,
+        "source_language": "zh",
+        "user_specified_source_language": True,
+    }
+    mock_asr_norm.run_user_specified.return_value = {
         "detected_source_language": "zh",
         "confidence": 0.98, "is_mixed": False, "route": "zh_skip",
+        "detection_source": "user_specified",
         "input": {"language_label": "中文", "full_text_preview": "你好",
                    "utterance_count": 1},
         "output": {"full_text_preview": "你好", "utterance_count": 1},
@@ -74,6 +90,10 @@ def test_step_asr_normalize_routes_zh_keeps_source_language_zh(
     }
     runner = _make_runner()
     runner._step_asr_normalize("t-zh")
+    mock_asr_norm.run_user_specified.assert_called_once_with(
+        task_id="t-zh", user_id=1, utterances=utterances, source_language="zh",
+    )
+    mock_asr_norm.run_asr_normalize.assert_not_called()
     update_kwargs = mock_state.update.call_args.kwargs
     assert update_kwargs["source_language"] == "zh"
     assert update_kwargs["detected_source_language"] == "zh"
@@ -102,17 +122,14 @@ def test_step_asr_normalize_marks_failed_on_unsupported_language(
     mock_asr_norm, mock_state,
 ):
     mock_state.get.return_value = {"utterances": _utterances(), "_user_id": 1}
-    from pipeline.asr_normalize import UnsupportedSourceLanguageError
-    mock_asr_norm.UnsupportedSourceLanguageError = UnsupportedSourceLanguageError
-    mock_asr_norm.run_asr_normalize.side_effect = UnsupportedSourceLanguageError(
-        "原视频语言检测为「other」(confidence=0.88)，..."
-    )
     runner = _make_runner()
     runner._step_asr_normalize("t-other")
+    mock_asr_norm.run_user_specified.assert_not_called()
+    mock_asr_norm.run_asr_normalize.assert_not_called()
     set_step_call = runner._set_step.call_args
     assert set_step_call.args[1] == "asr_normalize"
     assert set_step_call.args[2] == "failed"
-    assert "other" in set_step_call.args[3]
+    assert "source_language" in set_step_call.args[3]
     update_kwargs = mock_state.update.call_args.kwargs
     assert "error" in update_kwargs
 
@@ -122,17 +139,19 @@ def test_step_asr_normalize_marks_failed_on_unsupported_language(
 def test_step_asr_normalize_marks_failed_on_detect_exhaustion(
     mock_asr_norm, mock_state,
 ):
-    mock_state.get.return_value = {"utterances": _utterances(), "_user_id": 1}
-    from pipeline.asr_normalize import DetectLanguageFailedError
-    mock_asr_norm.run_asr_normalize.side_effect = DetectLanguageFailedError(
-        "detect_language failed after 2 attempts: network"
-    )
+    mock_state.get.return_value = {
+        "utterances": _utterances(),
+        "_user_id": 1,
+        "source_language": "es",
+        "user_specified_source_language": True,
+    }
+    mock_asr_norm.run_user_specified.side_effect = RuntimeError("network")
     runner = _make_runner()
     runner._step_asr_normalize("t-net")
     set_step_call = runner._set_step.call_args
     assert set_step_call.args[2] == "failed"
     update_kwargs = mock_state.update.call_args.kwargs
-    assert "原文标准化失败" in update_kwargs["error"]
+    assert "按手动选择源语言标准化失败" in update_kwargs["error"]
 
 
 @patch("appcore.runtime_multi.task_state")
@@ -237,13 +256,12 @@ def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, m
 def test_step_asr_normalize_failure_sets_status_error_to_stop_pipeline(
     mock_asr_norm, mock_state,
 ):
-    """UnsupportedSourceLanguageError → task status='error' so _run loop exits."""
+    """缺少手动源语言 → task status='error' so _run loop exits."""
     mock_state.get.return_value = {"utterances": _utterances(), "_user_id": 1}
-    from pipeline.asr_normalize import UnsupportedSourceLanguageError
-    mock_asr_norm.UnsupportedSourceLanguageError = UnsupportedSourceLanguageError
-    mock_asr_norm.run_asr_normalize.side_effect = UnsupportedSourceLanguageError("xxx")
     runner = _make_runner()
     runner._step_asr_normalize("t1")
+    mock_asr_norm.run_user_specified.assert_not_called()
+    mock_asr_norm.run_asr_normalize.assert_not_called()
     update_kwargs = mock_state.update.call_args.kwargs
     assert update_kwargs.get("status") == "error"
     assert "error" in update_kwargs
@@ -287,7 +305,7 @@ def test_step_asr_normalize_user_specified_es_calls_run_user_specified(
     mock_asr_norm.run_user_specified.assert_called_once()
     mock_asr_norm.run_asr_normalize.assert_not_called()
     update_kwargs = mock_state.update.call_args.kwargs
-    assert update_kwargs["source_language"] == "en"
+    assert update_kwargs["source_language"] == "es"
     assert update_kwargs["detected_source_language"] == "es"
     assert update_kwargs["utterances_en"] == fake_en
     # 原始 artifact 通过 update 写入 task["asr_normalize_artifact"]
@@ -337,8 +355,7 @@ def test_step_asr_normalize_user_specified_zh_writes_artifact(
 ):
     """user_specified=True + zh → run_user_specified 返回 zh_skip，仍写 artifact。
 
-    与自动检测 zh_skip 路径（不写 artifact）不同：用户指定时一定会有 artifact，
-    让详情页能展示「用户指定语言」卡片。
+    用户指定时一定会有 artifact，让详情页能展示「用户指定语言」卡片。
     """
     mock_state.get.return_value = {
         "utterances": _utterances(), "_user_id": 1,
@@ -371,48 +388,63 @@ def test_step_asr_normalize_user_specified_zh_writes_artifact(
 
 @patch("appcore.runtime_multi.task_state")
 @patch("appcore.runtime_multi.pipeline_asr_normalize")
-def test_step_asr_normalize_user_specified_invalid_lang_marks_failed(
+def test_step_asr_normalize_user_specified_fr_uses_generic_fallback(
     mock_asr_norm, mock_state,
 ):
-    """user_specified=True 但 source_language 不在支持范围 → step failed。"""
+    """source_language=fr 也应按人工选择路径跑，不应被运行时拒绝。"""
     mock_state.get.return_value = {
         "utterances": _utterances(), "_user_id": 1,
-        "source_language": "ru",  # 不在 zh/en/es/pt
+        "source_language": "fr",
         "user_specified_source_language": True,
     }
+    mock_asr_norm.run_user_specified.return_value = {
+        "detected_source_language": "fr",
+        "confidence": 1.0, "is_mixed": False,
+        "route": "generic_fallback",
+        "detection_source": "user_specified",
+        "input": {"language_label": "法语", "full_text_preview": "Bonjour", "utterance_count": 2},
+        "output": {"full_text_preview": "Hello", "utterance_count": 2},
+        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 80,
+        "model": {"detect": None, "translate": "anthropic/claude-sonnet-4.6"},
+        "_utterances_en": [{"index": 0, "start": 0, "end": 1, "text": "Hello"}],
+    }
     runner = _make_runner()
-    runner._step_asr_normalize("t-bad")
-    mock_asr_norm.run_user_specified.assert_not_called()
+    runner._step_asr_normalize("t-fr")
+    mock_asr_norm.run_user_specified.assert_called_once_with(
+        task_id="t-fr", user_id=1, utterances=_utterances(), source_language="fr",
+    )
     mock_asr_norm.run_asr_normalize.assert_not_called()
     update_kwargs = mock_state.update.call_args.kwargs
-    assert update_kwargs.get("status") == "error"
+    assert update_kwargs["source_language"] == "fr"
 
 
 @patch("appcore.runtime_multi.task_state")
 @patch("appcore.runtime_multi.pipeline_asr_normalize")
-def test_step_asr_normalize_auto_detect_unaffected_when_user_specified_false(
+def test_step_asr_normalize_uses_source_language_even_when_legacy_flag_is_false(
     mock_asr_norm, mock_state,
 ):
-    """user_specified=False（默认）：仍走 run_asr_normalize 完整 detect 路径。"""
+    """兼容旧任务：只要有 source_language，就按该语言跑，不再走自动检测。"""
     mock_state.get.return_value = {
         "utterances": _utterances(), "_user_id": 1,
         "source_language": "es",
         "user_specified_source_language": False,
     }
-    mock_asr_norm.run_asr_normalize.return_value = {
+    mock_asr_norm.run_user_specified.return_value = {
         "detected_source_language": "es",
-        "confidence": 0.9, "is_mixed": False,
+        "confidence": 1.0, "is_mixed": False,
         "route": "es_specialized",
-        "detection_source": "llm",
+        "detection_source": "user_specified",
         "input": {"language_label": "西班牙语",
                    "full_text_preview": "Hola", "utterance_count": 2},
         "output": {"full_text_preview": "Hi", "utterance_count": 2},
-        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 100,
-        "model": {"detect": "g", "translate": "c"},
+        "tokens": {"detect": {}, "translate": {}}, "elapsed_ms": 80,
+        "model": {"detect": None, "translate": "c"},
         "_utterances_en": [{"index": 0, "start": 0, "end": 1, "text": "Hi"},
                            {"index": 1, "start": 1, "end": 2, "text": "Look"}],
     }
     runner = _make_runner()
-    runner._step_asr_normalize("t-auto")
-    mock_asr_norm.run_asr_normalize.assert_called_once()
-    mock_asr_norm.run_user_specified.assert_not_called()
+    runner._step_asr_normalize("t-legacy-manual")
+    mock_asr_norm.run_user_specified.assert_called_once_with(
+        task_id="t-legacy-manual", user_id=1, utterances=_utterances(), source_language="es",
+    )
+    mock_asr_norm.run_asr_normalize.assert_not_called()

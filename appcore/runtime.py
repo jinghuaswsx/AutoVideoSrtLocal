@@ -1250,7 +1250,7 @@ class PipelineRunner:
             task_id,
             utterances_en=None,
             asr_normalize_artifact=None,
-            detected_source_language=task.get("source_language") or "zh",
+            detected_source_language=task.get("source_language") or None,
         )
         self._set_step(task_id, "asr_normalize", "done", "AV Sync 保留原 ASR 分段，直接进入音色匹配")
 
@@ -1477,13 +1477,20 @@ class PipelineRunner:
         audio_path = task["audio_path"]
         from pipeline.extract import get_video_duration
         from appcore import asr_router
+        from pipeline.lang_labels import lang_label
 
         source_language = task.get("source_language") or "zh"
         # 先解析 adapter 拿元数据生成 model_tag，让 step 卡片在 running 状态就能
         # 显示当前用的是哪个 ASR provider；transcribe 内部会再次解析（廉价，instance 级）。
         _adapter, _ = asr_router.resolve_adapter("asr_main", source_language)
         _asr_model_tag = f"{_adapter.display_name} · {_adapter.model_id}"
-        self._set_step(task_id, "asr", "running", "正在识别中文语音...", model_tag=_asr_model_tag)
+        self._set_step(
+            task_id,
+            "asr",
+            "running",
+            f"正在识别{lang_label(source_language, in_chinese=True)}语音...",
+            model_tag=_asr_model_tag,
+        )
 
         result = asr_router.transcribe(
             audio_path, source_language=source_language, stage="asr_main",
@@ -2807,8 +2814,8 @@ def run_av_localize(task_id: str, runner: "PipelineRunner" | None = None, varian
         raw_script_segments = script_segments
         runner._set_step(task_id, "translate", "running", "正在纯净化原文 ASR...")
         source_language = (
-            task.get("detected_source_language")
-            or task.get("source_language")
+            task.get("source_language")
+            or task.get("detected_source_language")
             or "auto"
         )
         source_normalization = normalize_source_segments(

@@ -241,6 +241,7 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
         "/api/multi-translate/start",
         data={
             "target_lang": "de",
+            "source_language": "en",
             "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
         },
         content_type="multipart/form-data",
@@ -253,6 +254,8 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
     task = store.get(payload["task_id"])
     assert task["type"] == "multi_translate"
     assert task["target_lang"] == "de"
+    assert task["source_language"] == "en"
+    assert task["user_specified_source_language"] is True
     assert task["delivery_mode"] == "local_primary"
     assert task["source_tos_key"] == ""
     assert task["source_object_info"]["content_type"] == "video/mp4"
@@ -261,6 +264,31 @@ def test_multi_translate_start_accepts_local_multipart_and_marks_local_primary(t
     assert task["source_object_info"]["original_filename"] == "demo.mp4"
     assert task["source_object_info"]["uploaded_at"]
     assert started["task_id"] == payload["task_id"]
+
+
+def test_multi_translate_start_requires_manual_source_language(tmp_path, authed_client_no_db, monkeypatch):
+    monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
+    monkeypatch.setattr("web.routes.multi_translate.db_execute", lambda sql, args: None)
+    started = {}
+    monkeypatch.setattr(
+        "web.routes.multi_translate.multi_pipeline_runner.start",
+        lambda task_id, user_id=None: started.update({"task_id": task_id, "user_id": user_id}),
+    )
+
+    response = authed_client_no_db.post(
+        "/api/multi-translate/start",
+        data={
+            "target_lang": "de",
+            "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "source_language" in response.get_json()["error"]
+    assert started == {}
 
 
 def test_multi_translate_start_keeps_ja_on_multi_translate(tmp_path, authed_client_no_db, monkeypatch):
@@ -283,6 +311,7 @@ def test_multi_translate_start_keeps_ja_on_multi_translate(tmp_path, authed_clie
         "/api/multi-translate/start",
         data={
             "target_lang": "ja",
+            "source_language": "en",
             "video": (io.BytesIO(b"ja-multi-video"), "demo-ja.mp4"),
         },
         content_type="multipart/form-data",
@@ -317,6 +346,7 @@ def test_multi_translate_start_generates_thumbnail_from_uploaded_video(tmp_path,
         "/api/multi-translate/start",
         data={
             "target_lang": "de",
+            "source_language": "en",
             "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
         },
         content_type="multipart/form-data",
@@ -451,6 +481,7 @@ def test_multi_translate_start_uses_user_display_name(tmp_path, authed_client_no
         "/api/multi-translate/start",
         data={
             "target_lang": "de",
+            "source_language": "en",
             "display_name": "德语ABC-0425-1200",
             "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
         },
@@ -558,6 +589,7 @@ def test_multi_translate_start_rejects_disabled_target_lang(tmp_path, authed_cli
         "/api/multi-translate/start",
         data={
             "target_lang": "fi",
+            "source_language": "en",
             "video": (io.BytesIO(b"multi-video"), "demo.mp4"),
         },
         content_type="multipart/form-data",
@@ -752,6 +784,7 @@ def test_multi_translate_start_accepts_target_lang_en(tmp_path, authed_client_no
         "/api/multi-translate/start",
         data={
             "target_lang": "en",
+            "source_language": "en",
             "video": (io.BytesIO(b"english-video"), "demo-en.mp4"),
         },
         content_type="multipart/form-data",
@@ -900,8 +933,7 @@ def test_resume_accepts_asr_normalize_as_start_step(
 def test_resume_from_asr_normalize_clears_stale_state(
     tmp_path, authed_client_no_db, monkeypatch,
 ):
-    """resume start_step=asr_normalize 应清空 utterances_en / source_language /
-    detected_source_language，避免 _step_asr_normalize 的幂等守卫让 resume 成 no-op。"""
+    """resume start_step=asr_normalize 应清空标准化产物，但保留人工选择的 source_language。"""
     from web import store
     from web.routes import multi_translate as mt_module
 
@@ -924,7 +956,8 @@ def test_resume_from_asr_normalize_clears_stale_state(
     assert resp.status_code == 200
     task = store.get(task_id)
     assert not task.get("utterances_en")
-    assert not task.get("source_language")
+    assert task.get("source_language") == "en"
+    assert task.get("user_specified_source_language") is True
     assert not task.get("detected_source_language")
 
 
@@ -942,10 +975,10 @@ def test_multi_translate_list_upload_modal_text_requires_manual_source_language(
 # ── Task 13: source_language form field ──────────────────────────────────────
 
 def test_multi_translate_allowed_source_languages_constant():
-    """ALLOWED_SOURCE_LANGUAGES 必须包含空串 + 11 种语言代码（与 omni 对齐）。"""
+    """ALLOWED_SOURCE_LANGUAGES 只允许人工可选的 11 种语言代码（与 omni 对齐）。"""
     from web.routes.multi_translate import ALLOWED_SOURCE_LANGUAGES
     assert ALLOWED_SOURCE_LANGUAGES == (
-        "", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
+        "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
     )
 
 
@@ -980,10 +1013,10 @@ def test_multi_translate_start_accepts_source_language(
     assert task["user_specified_source_language"] is True
 
 
-def test_multi_translate_start_defaults_source_language_to_zh_when_blank(
+def test_multi_translate_start_rejects_blank_source_language(
     tmp_path, authed_client_no_db, monkeypatch,
 ):
-    """空值 = 自动检测：source_language 落 zh，user_specified=False。"""
+    """空源语言不再代表自动检测，必须由人工选择。"""
     monkeypatch.setattr("web.routes.multi_translate.OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setattr("web.routes.multi_translate.UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setattr("web.routes.multi_translate.db_query_one", lambda sql, args: None)
@@ -1002,12 +1035,8 @@ def test_multi_translate_start_defaults_source_language_to_zh_when_blank(
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 201
-    payload = response.get_json()
-    from web import store
-    task = store.get(payload["task_id"])
-    assert task["source_language"] == "zh"
-    assert task["user_specified_source_language"] is False
+    assert response.status_code == 400
+    assert "source_language" in response.get_json().get("error", "")
 
 
 def test_multi_translate_start_rejects_unsupported_source_language(

@@ -75,24 +75,27 @@ AV_SYNC_STEPS = (
 
 
 ALLOWED_SOURCE_LANGUAGES = (
-    "", "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
+    "zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi",
 )
 
 
 def _collect_av_source_language(payload: dict | None, current_task: dict | None = None) -> tuple[dict, str | None]:
     data = payload or {}
     if "source_language" not in data and current_task:
+        source_language = str(current_task.get("source_language") or "").strip().lower()
+        if source_language not in ALLOWED_SOURCE_LANGUAGES:
+            return {}, f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
         return {
-            "source_language": current_task.get("source_language") or "zh",
-            "user_specified_source_language": bool(current_task.get("user_specified_source_language")),
+            "source_language": source_language,
+            "user_specified_source_language": True,
         }, None
 
     raw_source_language = str(data.get("source_language") or "").strip().lower()
     if raw_source_language not in ALLOWED_SOURCE_LANGUAGES:
         return {}, f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
     return {
-        "source_language": raw_source_language or "zh",
-        "user_specified_source_language": bool(raw_source_language),
+        "source_language": raw_source_language,
+        "user_specified_source_language": True,
     }, None
 
 

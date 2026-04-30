@@ -37,8 +37,8 @@ def test_update_source_language_explicit_es_triggers_resume(authed_client_no_db)
     mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
 
 
-def test_update_source_language_empty_means_auto_detect(authed_client_no_db):
-    """body.source_language='' → source_language='zh' (默认 ASR 引擎) + user_specified=False。"""
+def test_update_source_language_rejects_empty_auto_detect(authed_client_no_db):
+    """body.source_language='' → 400；源语言必须由人工明确选择。"""
     fake_task = {"_user_id": 1, "source_language": "es"}
     with patch("web.routes.omni_translate.store") as mock_store, \
          patch("web.routes.omni_translate.omni_pipeline_runner") as mock_runner:
@@ -47,11 +47,10 @@ def test_update_source_language_empty_means_auto_detect(authed_client_no_db):
             "/api/omni-translate/t-1/source-language",
             json={"source_language": ""},
         )
-    assert resp.status_code == 200
-    update_kwargs = mock_store.update.call_args.kwargs
-    assert update_kwargs["source_language"] == "zh"
-    assert update_kwargs["user_specified_source_language"] is False
-    mock_runner.resume.assert_called_once_with("t-1", "asr_clean", user_id=1)
+    assert resp.status_code == 400
+    assert "source_language" in resp.get_json()["error"]
+    mock_store.update.assert_not_called()
+    mock_runner.resume.assert_not_called()
 
 
 def test_update_source_language_pt_is_accepted(authed_client_no_db):

@@ -91,7 +91,7 @@ def detail(task_id: str):
 @bp.route("/api/de-translate/start", methods=["POST"])
 @login_required
 def upload_and_start():
-    """上传视频，创建德语翻译任务。源语言将在 ASR 后自动检测。"""
+    """上传视频，创建德语翻译任务。默认源语言为英文，可在详情页手动切换。"""
     if "video" not in request.files:
         return jsonify({"error": "No video file"}), 400
     file = request.files["video"]
@@ -125,6 +125,7 @@ def upload_and_start():
         display_name=display_name,
         type="de_translate",
         source_language="en",
+        user_specified_source_language=True,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -219,7 +220,7 @@ def update_source_language(task_id):
     lang = body.get("source_language")
     if lang not in ("zh", "en"):
         return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
-    store.update(task_id, source_language=lang)
+    store.update(task_id, source_language=lang, user_specified_source_language=True)
     return jsonify({"status": "ok"})
 
 
@@ -235,10 +236,9 @@ def update_alignment(task_id):
     if not isinstance(break_after, list):
         return jsonify({"error": "break_after required"}), 400
 
-    # Save source_language if provided (user may override auto-detection)
     source_language = body.get("source_language")
     if source_language in ("zh", "en"):
-        store.update(task_id, source_language=source_language)
+        store.update(task_id, source_language=source_language, user_specified_source_language=True)
 
     from web.preview_artifacts import build_alignment_artifact
     script_segments = build_script_segments(task.get("utterances", []), break_after)

@@ -174,6 +174,7 @@ def create_ja_translate_task_from_upload(file, *, user_id: int | None = None, au
         type="ja_translate",
         target_lang="ja",
         source_language="en",
+        user_specified_source_language=True,
         source_tos_key="",
         source_object_info=build_source_object_info(
             original_filename=original_filename,
@@ -490,7 +491,12 @@ def restart(task_id: str):
         user_id=current_user.id,
         runner=ja_pipeline_runner,
     )
-    store.update(task_id, target_lang="ja", source_language=task.get("source_language", "en"))
+    store.update(
+        task_id,
+        target_lang="ja",
+        source_language=task.get("source_language", "en"),
+        user_specified_source_language=True,
+    )
     return jsonify({"status": "restarted", "task": updated})
 
 
@@ -504,7 +510,7 @@ def update_source_language(task_id: str):
     lang = body.get("source_language")
     if lang not in ("zh", "en"):
         return jsonify({"error": "source_language must be 'zh' or 'en'"}), 400
-    store.update(task_id, source_language=lang)
+    store.update(task_id, source_language=lang, user_specified_source_language=True)
     return jsonify({"status": "ok"})
 
 
@@ -522,7 +528,7 @@ def update_alignment(task_id: str):
 
     source_language = body.get("source_language")
     if source_language in ("zh", "en"):
-        store.update(task_id, source_language=source_language)
+        store.update(task_id, source_language=source_language, user_specified_source_language=True)
 
     from web.preview_artifacts import build_alignment_artifact
 

@@ -24,6 +24,26 @@ def test_shared_shell_contains_mode_specific_layout_rules():
     assert "#configPanel { display: none !important; }" in shared
 
 
+def test_shared_shell_does_not_label_source_language_as_auto_detected():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+
+    assert "（自动识别）" not in shared
+    assert "原始语言识别中" not in shared
+    assert "自动识别" not in shared
+    assert "（自动识别）" not in script
+    assert "原始语言识别中" not in script
+
+
+def test_omni_detail_reselect_source_language_offers_all_manual_codes():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "omni_translate_detail.html").read_text(encoding="utf-8")
+
+    for code in ("zh", "en", "es", "pt", "fr", "it", "ja", "de", "nl", "sv", "fi"):
+        assert f'<option value="{code}"' in template
+
+
 def test_shared_shell_keeps_parent_task_copy_mode_specific():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

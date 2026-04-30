@@ -6,7 +6,7 @@
 {% set api_base = '/api/multi-translate' %}
 {% set url_for_detail = '/multi-translate/__TASK_ID__' %}
 {% set voice_language = target_lang %}
-{% set default_source_language = 'en' %}
+{% set default_source_language = state.source_language or 'en' %}
 {% endif %}
 {% set detail_mode = 'multi' %}
 {% set pipeline_kind = 'multi_translate' %}
@@ -19,7 +19,7 @@
     <span class="badge route-{{ norm.route }}">{{ norm.route }}</span>
   </header>
   <div class="kv">
-    <div><span class="k">检测语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
+    <div><span class="k">源语言</span><span class="v">{{ norm.input.language_label }}（{{ norm.detected_source_language }}）</span></div>
     <div><span class="k">置信度</span><span class="v">{{ '%.2f' % norm.confidence }}</span></div>
     <div><span class="k">是否混合</span><span class="v">{{ '是' if norm.is_mixed else '否' }}</span></div>
     <div><span class="k">耗时</span><span class="v">{{ (norm.elapsed_ms / 1000) | round(1) }}s</span></div>
