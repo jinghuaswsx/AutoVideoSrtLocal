@@ -30,7 +30,7 @@ def start(task_id: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_handler(task_id))
     runner = MultiTranslateRunner(bus=bus, user_id=user_id)
-    threading.Thread(target=_run, args=(runner, task_id), daemon=True).start()
+    threading.Thread(target=_run, args=(runner, task_id), daemon=False).start()
 
 
 def resume(task_id: str, start_step: str, user_id: int | None = None):
@@ -38,4 +38,4 @@ def resume(task_id: str, start_step: str, user_id: int | None = None):
     bus = EventBus()
     bus.subscribe(_handler(task_id))
     runner = MultiTranslateRunner(bus=bus, user_id=user_id)
-    threading.Thread(target=_run, args=(runner, task_id, start_step), daemon=True).start()
+    threading.Thread(target=_run, args=(runner, task_id, start_step), daemon=False).start()

@@ -58,14 +58,14 @@ def _run_with_tracking(runner: PipelineRunner, task_id: str, start_step: str | N
 def start(task_id: str, user_id: int | None = None):
     runner = _make_runner(task_id, user_id)
     register_active_task(runner.project_type, task_id)
-    thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id), daemon=True)
+    thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id), daemon=False)
     thread.start()
 
 
 def resume(task_id: str, start_step: str, user_id: int | None = None):
     runner = _make_runner(task_id, user_id)
     register_active_task(runner.project_type, task_id)
-    thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id, start_step), daemon=True)
+    thread = threading.Thread(target=_run_with_tracking, args=(runner, task_id, start_step), daemon=False)
     thread.start()
 
 
@@ -79,6 +79,6 @@ def run_analysis(task_id: str, user_id: int | None = None):
     thread = threading.Thread(
         target=run_analysis_only,
         args=(task_id, runner),
-        daemon=True,
+        daemon=False,
     )
     thread.start()

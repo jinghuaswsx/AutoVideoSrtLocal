@@ -18,7 +18,10 @@ threads = 32
 bind = os.getenv("AUTOVIDEOSRT_GUNICORN_BIND", bind)
 threads = int(os.getenv("AUTOVIDEOSRT_GUNICORN_THREADS", str(threads)))
 timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_TIMEOUT", "300"))
-graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "30"))
+# 15 minutes — match systemd TimeoutStopSec so workers can finish in-flight
+# pipeline batches before exit (long multi-translate tasks would otherwise
+# get SIGKILL'd mid-batch on every service restart).
+graceful_timeout = int(os.getenv("AUTOVIDEOSRT_GUNICORN_GRACEFUL_TIMEOUT", "900"))
 keepalive = int(os.getenv("AUTOVIDEOSRT_GUNICORN_KEEPALIVE", "10"))
 capture_output = True
 accesslog = "-"

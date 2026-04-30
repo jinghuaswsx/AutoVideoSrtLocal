@@ -16,7 +16,10 @@ Environment="NUMEXPR_NUM_THREADS=1"
 ExecStart=/opt/autovideosrt/venv/bin/gunicorn --config /opt/autovideosrt/deploy/gunicorn.conf.py main:app
 Restart=always
 RestartSec=5
-TimeoutStopSec=30
+# Long-running pipeline tasks (multi-translate / image-translate etc.) run in
+# in-process non-daemon threads. On stop we want gunicorn workers to wait for
+# those threads via sys.exit, not get SIGKILL'd mid-batch — give 15 minutes.
+TimeoutStopSec=900
 LimitNOFILE=65535
 
 [Install]
