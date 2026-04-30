@@ -669,32 +669,44 @@ def _post_unsuitable_push_type(
     return result
 
 
-def push_unsuitable_product(product: dict | None) -> dict:
+def push_unsuitable_product(product: dict | None, only_type: str | None = None) -> dict:
     preview = build_unsuitable_product_push_preview(product)
     types = preview.get("types") or []
     if len(types) != 2:
         raise ProductLinksPayloadError("unsuitable_product_types_invalid")
+    selected_type = (only_type or "").strip().lower()
+    if selected_type:
+        if selected_type not in {"copy", "links"}:
+            raise ProductLinksPayloadError("unsuitable_product_type_invalid")
+        types = [item for item in types if item.get("type") == selected_type]
 
-    text_headers = build_localized_texts_headers()
-    if "Authorization" not in text_headers and "Cookie" not in text_headers:
-        raise ProductLocalizedTextsPushConfigError("push_localized_texts_credentials_missing")
-    username = get_product_links_username()
-    password = get_product_links_password()
-    if not username or not password:
-        raise ProductLinksPushConfigError("push_product_links_credentials_missing")
-    link_headers = {
-        "Content-Type": "application/json",
-        "Authorization": _build_utf8_basic_auth_header(username, password),
-    }
+    headers_by_type: dict[str, dict[str, str]] = {}
+    if any(item.get("type") == "copy" for item in types):
+        text_headers = build_localized_texts_headers()
+        if "Authorization" not in text_headers and "Cookie" not in text_headers:
+            raise ProductLocalizedTextsPushConfigError("push_localized_texts_credentials_missing")
+        headers_by_type["copy"] = text_headers
+    if any(item.get("type") == "links" for item in types):
+        username = get_product_links_username()
+        password = get_product_links_password()
+        if not username or not password:
+            raise ProductLinksPushConfigError("push_product_links_credentials_missing")
+        headers_by_type["links"] = {
+            "Content-Type": "application/json",
+            "Authorization": _build_utf8_basic_auth_header(username, password),
+        }
 
     results: list[dict[str, Any]] = []
-    copy_result = _post_unsuitable_push_type(types[0], text_headers, require_zero_code=False)
-    results.append(copy_result)
-    if not copy_result.get("ok"):
-        return {"ok": False, "results": results, "payload": preview["payload"]}
-
-    link_result = _post_unsuitable_push_type(types[1], link_headers, require_zero_code=True)
-    results.append(link_result)
+    for item in types:
+        item_type = item.get("type") or ""
+        result = _post_unsuitable_push_type(
+            item,
+            headers_by_type[item_type],
+            require_zero_code=(item_type == "links"),
+        )
+        results.append(result)
+        if not result.get("ok"):
+            break
     return {
         "ok": all(item.get("ok") for item in results),
         "results": results,

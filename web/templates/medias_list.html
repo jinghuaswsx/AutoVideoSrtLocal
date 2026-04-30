@@ -2005,24 +2005,46 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   width:104px;
   justify-content:center;
 }
+.oc-product-links-modal.oc-unsuitable-modal {
+  width:min(1770px, calc(100vw - 48px));
+}
 .oc-unsuitable-layout {
   display:grid;
-  grid-template-columns:minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap:var(--oc-sp-4);
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+  align-items:start;
+  gap:var(--oc-sp-5);
 }
 .oc-unsuitable-panel {
   min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-3);
+  padding:var(--oc-sp-4);
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg);
 }
-.oc-unsuitable-panel h4 {
-  margin:0 0 var(--oc-sp-3);
+.oc-unsuitable-panel-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--oc-sp-3);
+}
+.oc-unsuitable-panel-head h4 {
+  margin:0;
   font-size:13px;
   color:var(--oc-fg);
 }
-.oc-unsuitable-panel .oc-pl-info {
-  margin-bottom:var(--oc-sp-3);
+.oc-unsuitable-panel-head .oc-btn {
+  min-width:108px;
+  justify-content:center;
+}
+.oc-unsuitable-panel .oc-pl-info { margin:0; }
+.oc-unsuitable-kv {
+  grid-template-columns:68px minmax(0, 1fr);
 }
 .oc-unsuitable-panel .oc-pl-json {
-  min-height:300px;
+  min-height:360px;
   height:auto;
 }
 .oc-copy-list {
@@ -2329,7 +2351,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   </div>
 </div>
 <div id="productUnsuitablePushModalMask" class="oc-modal-mask oc oc-product-links-mask" hidden>
-  <div class="oc-modal oc-product-links-modal" role="dialog" aria-modal="true" aria-labelledby="productUnsuitablePushTitle">
+  <div class="oc-modal oc-product-links-modal oc-unsuitable-modal" role="dialog" aria-modal="true" aria-labelledby="productUnsuitablePushTitle">
     <div class="oc-modal-head">
       <div>
         <h3 id="productUnsuitablePushTitle">推送不合适产品</h3>
@@ -2340,15 +2362,23 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       </button>
     </div>
     <div class="oc-modal-body">
+      <div id="productUnsuitablePushInfo" class="oc-pl-info"></div>
       <div class="oc-unsuitable-layout">
-        <section class="oc-unsuitable-panel" aria-labelledby="productUnsuitableStructuredTitle">
-          <h4 id="productUnsuitableStructuredTitle">英文文案结构化内容</h4>
-          <div id="productUnsuitablePushInfo" class="oc-pl-info"></div>
-          <pre id="productUnsuitablePushStructured" class="oc-pl-json"></pre>
+        <section class="oc-unsuitable-panel" aria-labelledby="productUnsuitableCopyTitle">
+          <div class="oc-unsuitable-panel-head">
+            <h4 id="productUnsuitableCopyTitle">推送文案</h4>
+            <button type="button" id="productUnsuitableCopySubmit" class="oc-btn secondary">推送文案</button>
+          </div>
+          <div id="productUnsuitableCopyInfo" class="oc-pl-info"></div>
+          <pre id="productUnsuitableCopyJson" class="oc-pl-json"></pre>
         </section>
-        <section class="oc-unsuitable-panel" aria-labelledby="productUnsuitableJsonTitle">
-          <h4 id="productUnsuitableJsonTitle">不合适产品 JSON 预览</h4>
-          <pre id="productUnsuitablePushJson" class="oc-pl-json"></pre>
+        <section class="oc-unsuitable-panel" aria-labelledby="productUnsuitableLinksTitle">
+          <div class="oc-unsuitable-panel-head">
+            <h4 id="productUnsuitableLinksTitle">推送链接</h4>
+            <button type="button" id="productUnsuitableLinksSubmit" class="oc-btn secondary">推送链接</button>
+          </div>
+          <div id="productUnsuitableLinksInfo" class="oc-pl-info"></div>
+          <pre id="productUnsuitableLinksJson" class="oc-pl-json"></pre>
         </section>
       </div>
       <section id="productUnsuitablePushResponse" class="oc-pl-response" hidden>
@@ -2357,7 +2387,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       </section>
     </div>
     <div class="oc-modal-foot oc-product-links-footer">
-      <button type="button" id="productUnsuitablePushSubmit" class="oc-btn primary oc-product-links-submit">推送</button>
+      <button type="button" id="productUnsuitablePushSubmit" class="oc-btn primary oc-product-links-submit">一键推送</button>
     </div>
   </div>
 </div>

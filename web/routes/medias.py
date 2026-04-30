@@ -1122,8 +1122,14 @@ def api_product_unsuitable_push(pid: int):
     product = medias.get_product(pid)
     if not _can_access_product(product):
         abort(404)
+    body = request.get_json(silent=True) or {}
+    raw_type = (body.get("type") or "").strip().lower() if isinstance(body, dict) else ""
+    only_type = raw_type if raw_type in {"copy", "links"} else None
     try:
-        result = pushes.push_unsuitable_product(product)
+        if only_type:
+            result = pushes.push_unsuitable_product(product, only_type=only_type)
+        else:
+            result = pushes.push_unsuitable_product(product)
     except Exception as exc:
         return _product_unsuitable_push_error_response(exc)
     status = 200 if result.get("ok") else 502

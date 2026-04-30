@@ -2000,36 +2000,51 @@
     </div>`;
   }
 
-  function renderProductUnsuitablePushTypeList(data) {
+  function productUnsuitableType(data, type) {
     const types = Array.isArray(data?.types) ? data.types : [];
-    if (!types.length) {
-      return '<div class="oc-pl-empty">暂无可推送 type</div>';
-    }
-    return `<div class="oc-copy-list">`
-      + types.map((item, index) => {
-        const payload = item.payload || {};
-        const count = item.type === 'copy'
-          ? ((payload.texts || []).length || 0)
-          : ((payload.product_links || []).length || 0);
-        const target = item.target_url || '—';
-        return `<div class="oc-copy-row">
-          <div class="oc-copy-head">${index + 1}. ${escapeHtml(item.label || item.type || '')}</div>
-          <dl class="oc-copy-kv">
-            <dt>type</dt><dd>${escapeHtml(item.type || '')}</dd>
-            <dt>接口</dt><dd>${escapeHtml(target)}</dd>
-            <dt>数量</dt><dd>${escapeHtml(String(count))}</dd>
-          </dl>
-        </div>`;
-      }).join('')
-      + `</div>`;
-  }
-
-  function productUnsuitablePushStructuredJson(data) {
-    return JSON.stringify(data?.structured || {}, null, 2);
+    return types.find((item) => item && item.type === type) || null;
   }
 
   function productUnsuitablePushPreviewJson(data) {
     return JSON.stringify(data?.payload || {}, null, 2);
+  }
+
+  function productUnsuitableTypeJson(data, type) {
+    const item = productUnsuitableType(data, type);
+    return JSON.stringify(item?.payload || {}, null, 2);
+  }
+
+  function renderProductUnsuitablePushPanel(data, type) {
+    const item = productUnsuitableType(data, type);
+    if (!item) {
+      return '<div class="oc-pl-empty danger">缺少对应 type 报文</div>';
+    }
+    const payload = item.payload || {};
+    const count = type === 'copy'
+      ? ((payload.texts || []).length || 0)
+      : ((payload.product_links || []).length || 0);
+    const preview = type === 'copy'
+      ? ((payload.texts || [])[0] || {})
+      : { handle: payload.handle || '', link: (payload.product_links || [])[0] || '' };
+    const rows = [
+      ['type', item.type || '—'],
+      ['接口', item.target_url || '—'],
+      ['数量', String(count)],
+    ];
+    if (type === 'copy') {
+      rows.push(['语言', preview.lang || '英语']);
+      rows.push(['标题', preview.title || '—']);
+      rows.push(['文案', preview.message || '—']);
+      rows.push(['描述', preview.description || '—']);
+    } else {
+      rows.push(['handle', preview.handle || '—']);
+      rows.push(['英语链接', preview.link || '—']);
+    }
+    return `<div class="oc-pl-info-block">
+      <dl class="oc-pl-info-list oc-unsuitable-kv">
+        ${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}
+      </dl>
+    </div>`;
   }
 
   function resetProductUnsuitablePushResponse() {
@@ -2071,41 +2086,63 @@
     const title = $('productUnsuitablePushTitle');
     const meta = $('productUnsuitablePushMeta');
     const info = $('productUnsuitablePushInfo');
-    const structuredPre = $('productUnsuitablePushStructured');
-    const jsonPre = $('productUnsuitablePushJson');
+    const copyInfo = $('productUnsuitableCopyInfo');
+    const copyJson = $('productUnsuitableCopyJson');
+    const linksInfo = $('productUnsuitableLinksInfo');
+    const linksJson = $('productUnsuitableLinksJson');
+    const copySubmit = $('productUnsuitableCopySubmit');
+    const linksSubmit = $('productUnsuitableLinksSubmit');
     const submit = $('productUnsuitablePushSubmit');
-    if (!mask || !structuredPre || !jsonPre || !submit) return;
+    if (!mask || !copyInfo || !copyJson || !linksInfo || !linksJson || !submit) return;
 
     mask.hidden = false;
     mask.dataset.pid = String(product.id);
     resetProductUnsuitablePushResponse();
     if (title) title.textContent = '推送不合适产品';
     if (meta) meta.textContent = `${product.name || ''} · ${product.product_code || ''}`;
-    if (info) info.innerHTML = '<div class="oc-pl-empty">加载结构化信息中…</div>';
-    structuredPre.classList.remove('danger');
-    jsonPre.classList.remove('danger');
-    structuredPre.textContent = '加载中…';
-    jsonPre.textContent = '加载中…';
+    if (info) info.innerHTML = '<div class="oc-pl-empty">加载产品信息中…</div>';
+    copyInfo.innerHTML = '<div class="oc-pl-empty">加载推送文案中…</div>';
+    linksInfo.innerHTML = '<div class="oc-pl-empty">加载推送链接中…</div>';
+    copyJson.classList.remove('danger');
+    linksJson.classList.remove('danger');
+    copyJson.textContent = '加载中…';
+    linksJson.textContent = '加载中…';
+    if (copySubmit) {
+      copySubmit.disabled = true;
+      copySubmit.textContent = '推送文案';
+    }
+    if (linksSubmit) {
+      linksSubmit.disabled = true;
+      linksSubmit.textContent = '推送链接';
+    }
     submit.disabled = true;
-    submit.textContent = '推送';
+    submit.textContent = '一键推送';
 
     try {
       const data = await fetchJSON(`/medias/api/products/${product.id}/product-unsuitable-push/payload`);
       mask._productUnsuitablePreview = data;
       if (info) {
-        info.innerHTML = renderProductUnsuitablePushInfo(data, product)
-          + renderProductUnsuitablePushTypeList(data);
+        info.innerHTML = renderProductUnsuitablePushInfo(data, product);
       }
-      structuredPre.textContent = productUnsuitablePushStructuredJson(data);
-      jsonPre.textContent = productUnsuitablePushPreviewJson(data);
-      submit.disabled = !Array.isArray(data.types) || data.types.length !== 2;
+      copyInfo.innerHTML = renderProductUnsuitablePushPanel(data, 'copy');
+      linksInfo.innerHTML = renderProductUnsuitablePushPanel(data, 'links');
+      copyJson.textContent = productUnsuitableTypeJson(data, 'copy');
+      linksJson.textContent = productUnsuitableTypeJson(data, 'links');
+      const canPush = Array.isArray(data.types) && data.types.length === 2;
+      if (copySubmit) copySubmit.disabled = !productUnsuitableType(data, 'copy');
+      if (linksSubmit) linksSubmit.disabled = !productUnsuitableType(data, 'links');
+      submit.disabled = !canPush;
     } catch (err) {
       const message = err.message || '加载失败';
       if (info) info.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
-      structuredPre.classList.add('danger');
-      jsonPre.classList.add('danger');
-      structuredPre.textContent = JSON.stringify({ error: message }, null, 2);
-      jsonPre.textContent = JSON.stringify({ error: message }, null, 2);
+      copyInfo.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      linksInfo.innerHTML = `<div class="oc-pl-empty danger">${escapeHtml(message)}</div>`;
+      copyJson.classList.add('danger');
+      linksJson.classList.add('danger');
+      copyJson.textContent = JSON.stringify({ error: message }, null, 2);
+      linksJson.textContent = JSON.stringify({ error: message }, null, 2);
+      if (copySubmit) copySubmit.disabled = true;
+      if (linksSubmit) linksSubmit.disabled = true;
       submit.disabled = true;
     }
   }
@@ -2119,15 +2156,18 @@
     resetProductUnsuitablePushResponse();
   }
 
-  async function submitProductUnsuitablePush() {
+  async function submitProductUnsuitablePushType(pushType) {
     const mask = $('productUnsuitablePushModalMask');
-    const submit = $('productUnsuitablePushSubmit');
+    const submit = pushType === 'copy'
+      ? $('productUnsuitableCopySubmit')
+      : (pushType === 'links' ? $('productUnsuitableLinksSubmit') : $('productUnsuitablePushSubmit'));
     const resp = $('productUnsuitablePushResponse');
     const respPre = $('productUnsuitablePushResponseBody');
     const respTitle = $('productUnsuitablePushResponseTitle');
     const pid = mask && mask.dataset.pid;
     if (!mask || !pid || !submit) return;
     submit.disabled = true;
+    const defaultLabel = pushType === 'copy' ? '推送文案' : (pushType === 'links' ? '推送链接' : '一键推送');
     submit.textContent = '推送中…';
     if (resp) {
       resp.hidden = false;
@@ -2142,13 +2182,14 @@
       const data = await fetchJSON(`/medias/api/products/${pid}/product-unsuitable-push`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: pushType ? JSON.stringify({ type: pushType }) : undefined,
       });
       const success = productUnsuitablePushRenderResponse(data);
       if (success) {
         submit.textContent = '已推送';
       } else {
         submit.disabled = false;
-        submit.textContent = '推送';
+        submit.textContent = defaultLabel;
       }
     } catch (err) {
       productUnsuitablePushRenderResponse({
@@ -2161,8 +2202,12 @@
         detail: err.detail,
       }, false);
       submit.disabled = false;
-      submit.textContent = '推送';
+      submit.textContent = defaultLabel;
     }
+  }
+
+  async function submitProductUnsuitablePush() {
+    await submitProductUnsuitablePushType('');
   }
 
   window.setProductLinksPushActiveTab = setProductLinksPushActiveTab;
@@ -2172,6 +2217,7 @@
   window.submitProductCopyPush = submitProductCopyPush;
   window.closeProductCopyPushModal = closeProductCopyPushModal;
   window.openProductUnsuitablePushModal = openProductUnsuitablePushModal;
+  window.submitProductUnsuitablePushType = submitProductUnsuitablePushType;
   window.submitProductUnsuitablePush = submitProductUnsuitablePush;
   window.closeProductUnsuitablePushModal = closeProductUnsuitablePushModal;
 
@@ -6579,6 +6625,18 @@
     if (event.target.closest('#productCopyPushSubmit')) {
       event.preventDefault();
       await window.submitProductCopyPush();
+      return;
+    }
+
+    if (event.target.closest('#productUnsuitableCopySubmit')) {
+      event.preventDefault();
+      await window.submitProductUnsuitablePushType('copy');
+      return;
+    }
+
+    if (event.target.closest('#productUnsuitableLinksSubmit')) {
+      event.preventDefault();
+      await window.submitProductUnsuitablePushType('links');
       return;
     }
 

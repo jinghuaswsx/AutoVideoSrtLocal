@@ -156,6 +156,78 @@ def test_push_unsuitable_product_posts_to_text_and_link_endpoints(monkeypatch):
     }
 
 
+def test_push_unsuitable_product_can_post_only_copy_type(monkeypatch):
+    from appcore import pushes
+
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        text = "ok"
+
+        def json(self):
+            raise ValueError
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "build_localized_texts_target_url", lambda mk_id: "https://texts.example.test")
+    monkeypatch.setattr(pushes, "build_localized_texts_headers", lambda: {"Authorization": "Bearer token"})
+    monkeypatch.setattr(pushes, "get_product_links_target_url", lambda: "https://links.example.test")
+    monkeypatch.setattr(pushes, "get_product_links_username", lambda: "user")
+    monkeypatch.setattr(pushes, "get_product_links_password", lambda: "pass")
+    monkeypatch.setattr(pushes.requests, "post", fake_post)
+
+    result = pushes.push_unsuitable_product({
+        "id": 10,
+        "product_code": "demo-rjc",
+        "mk_id": 3836,
+    }, only_type="copy")
+
+    assert result["ok"] is True
+    assert [item["type"] for item in result["results"]] == ["copy"]
+    assert [call["url"] for call in calls] == ["https://texts.example.test"]
+
+
+def test_push_unsuitable_product_can_post_only_links_type(monkeypatch):
+    from appcore import pushes
+
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        status_code = 200
+        text = '{"code":0}'
+
+        def json(self):
+            return {"code": 0}
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes, "build_localized_texts_target_url", lambda mk_id: "https://texts.example.test")
+    monkeypatch.setattr(pushes, "build_localized_texts_headers", lambda: {"Authorization": "Bearer token"})
+    monkeypatch.setattr(pushes, "get_product_links_target_url", lambda: "https://links.example.test")
+    monkeypatch.setattr(pushes, "get_product_links_username", lambda: "user")
+    monkeypatch.setattr(pushes, "get_product_links_password", lambda: "pass")
+    monkeypatch.setattr(pushes.requests, "post", fake_post)
+
+    result = pushes.push_unsuitable_product({
+        "id": 10,
+        "product_code": "demo-rjc",
+        "mk_id": 3836,
+    }, only_type="links")
+
+    assert result["ok"] is True
+    assert [item["type"] for item in result["results"]] == ["links"]
+    assert [call["url"] for call in calls] == ["https://links.example.test"]
+
+
 def test_medias_product_links_push_payload_endpoint_returns_preview(
     authed_client_no_db, monkeypatch,
 ):
@@ -326,6 +398,38 @@ def test_medias_unsuitable_product_push_endpoint_posts_to_downstream(
     assert resp.get_json() == result
 
 
+def test_medias_unsuitable_product_push_endpoint_accepts_single_type(
+    authed_client_no_db, monkeypatch,
+):
+    product = {"id": 10, "product_code": "demo-rjc"}
+    captured = {}
+    result = {
+        "ok": True,
+        "results": [{"type": "copy", "ok": True}],
+    }
+
+    monkeypatch.setattr("web.routes.medias.medias.get_product", lambda pid: product)
+
+    def fake_push(row, only_type=None):
+        captured["only_type"] = only_type
+        return result
+
+    monkeypatch.setattr(
+        "web.routes.medias.pushes.push_unsuitable_product",
+        fake_push,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/medias/api/products/10/product-unsuitable-push",
+        json={"type": "copy"},
+    )
+
+    assert resp.status_code == 200
+    assert captured["only_type"] == "copy"
+    assert resp.get_json() == result
+
+
 def test_build_product_localized_texts_push_preview_reuses_product_texts(monkeypatch):
     from appcore import pushes
 
@@ -453,10 +557,16 @@ def test_medias_assets_include_unsuitable_product_push_entry():
     assert "product-unsuitable-push" in script
     assert "id=\"productUnsuitablePushModalMask\"" in template
     assert "id=\"productUnsuitablePushInfo\"" in template
-    assert "id=\"productUnsuitablePushStructured\"" in template
-    assert "id=\"productUnsuitablePushJson\"" in template
-    assert "renderProductUnsuitablePushTypeList" in script
-    assert "不合适产品 JSON 预览" in template
+    assert "id=\"productUnsuitableCopyJson\"" in template
+    assert "id=\"productUnsuitableLinksJson\"" in template
+    assert "id=\"productUnsuitableCopySubmit\"" in template
+    assert "id=\"productUnsuitableLinksSubmit\"" in template
+    assert "function submitProductUnsuitablePushType" in script
+    assert "renderProductUnsuitablePushPanel" in script
+    assert "oc-unsuitable-modal" in template
+    assert "width:min(1770px" in template
+    assert "推送文案" in template
+    assert "推送链接" in template
 
 
 
