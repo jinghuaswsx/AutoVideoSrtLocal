@@ -12,9 +12,9 @@
   const hardVideoArtifactUrl = `${apiBase}/${taskId}/artifact/hard_video`;
   void detailMode;
 
-  // 把音色选择器挪到 ASR 步骤卡之后，跟业务顺序（上传→提取→ASR→选音色→后续）一致
+  // 把音色选择器挪到原文标准化之后；没有该步骤时退回到 ASR 之后。
   function repositionAfterAsr() {
-    const anchor = document.getElementById("step-asr");
+    const anchor = document.getElementById("step-asr_normalize") || document.getElementById("step-asr");
     if (!anchor || !anchor.parentNode) return;
     if (anchor.nextSibling !== root) {
       anchor.parentNode.insertBefore(root, anchor.nextSibling);
